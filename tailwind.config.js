@@ -1,16 +1,16 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
-    './pages/**/*.{js,ts,jsx,tsx,mdx}',
-    './components/**/*.{js,ts,jsx,tsx,mdx}',
-    './app/**/*.{js,ts,jsx,tsx,mdx}',
+    './app/**/*.{js,jsx}',
+    './components/**/*.{js,jsx}',
   ],
   theme: {
     extend: {
       colors: {
-        'lighthouse-blue': '#3B7AB4',
-        'lighthouse-dark': '#1E3A5F',
-        'lighthouse-yellow': '#F4C430',
+        'lh-blue': '#3B7AB4',
+        'lh-dark': '#1E3A5F',
+        'lh-yellow': '#F4C430',
+        'lh-light': '#E8F2F8',
       },
     },
   },

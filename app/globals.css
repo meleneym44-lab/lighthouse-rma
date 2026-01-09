@@ -3,27 +3,61 @@
 @tailwind utilities;
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 @layer components {
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 inline-flex items-center justify-center gap-2;
+  }
   .btn-primary {
-    @apply px-4 py-2 bg-lighthouse-blue text-white rounded-lg hover:bg-lighthouse-dark transition-colors font-medium;
+    @apply bg-lh-blue text-white hover:bg-lh-dark;
   }
-  
   .btn-secondary {
-    @apply px-4 py-2 border border-gray-300 bg-white rounded-lg hover:bg-gray-50 transition-colors font-medium;
+    @apply bg-white border-2 border-lh-blue text-lh-blue hover:bg-lh-light;
   }
-  
   .btn-success {
-    @apply px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium;
+    @apply bg-green-600 text-white hover:bg-green-700;
+  }
+  .btn-danger {
+    @apply bg-red-600 text-white hover:bg-red-700;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+  .btn-lg {
+    @apply px-6 py-3 text-lg;
   }
   
-  .input-field {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-lighthouse-blue focus:border-lighthouse-blue outline-none;
+  .input {
+    @apply w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:border-lh-blue focus:ring-2 focus:ring-lh-blue/20 outline-none transition-all;
+  }
+  .input-error {
+    @apply border-red-500 focus:border-red-500 focus:ring-red-500/20;
+  }
+  
+  .label {
+    @apply block text-sm font-semibold text-gray-700 mb-1.5;
   }
   
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-gray-100;
+    @apply bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden;
+  }
+  .card-header {
+    @apply px-6 py-4 border-b border-gray-100 bg-gray-50/50;
+  }
+  .card-body {
+    @apply p-6;
+  }
+  
+  .badge {
+    @apply px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1;
+  }
+  
+  .table-header {
+    @apply bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider;
+  }
+  .table-cell {
+    @apply px-6 py-4 whitespace-nowrap;
   }
 }

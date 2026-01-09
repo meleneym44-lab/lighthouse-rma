@@ -1,8 +1,8 @@
 import './globals.css'
 
 export const metadata = {
-  title: 'Lighthouse France - RMA Portal',
-  description: 'Service de Calibration & Réparation',
+  title: 'Lighthouse France - Service Portal',
+  description: 'Equipment Service Request Portal - Calibration & Repair Services',
 }
 
 export default function RootLayout({ children }) {
