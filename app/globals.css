@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-lighthouse-blue text-white rounded-lg hover:bg-lighthouse-dark transition-colors font-medium;
+  }
+  
+  .btn-secondary {
+    @apply px-4 py-2 border border-gray-300 bg-white rounded-lg hover:bg-gray-50 transition-colors font-medium;
+  }
+  
+  .btn-success {
+    @apply px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium;
+  }
+  
+  .input-field {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-lighthouse-blue focus:border-lighthouse-blue outline-none;
+  }
+  
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-100;
+  }
+}
