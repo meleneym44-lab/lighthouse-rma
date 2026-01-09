@@ -7,6 +7,7 @@ module.exports = {
         'lh-blue': '#3B7AB4',
         'lh-dark': '#1E3A5F',
         'lh-yellow': '#F4C430',
+        'lh-light': '#E8F2F8',
       },
     },
   },
