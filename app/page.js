@@ -79,6 +79,8 @@ const T = {
     calibrationDesc: 'Calibration annuelle selon ISO 21501-4', repairDesc: 'Diagnostic et réparation de tous les modèles',
     diagnosticDesc: 'Évaluation complète de l\'état de votre équipement',
     fromPrice: 'À partir de', onQuote: 'Sur devis',
+    // Filter
+    all: 'Tous',
   },
   en: {
     login: 'Login', logout: 'Logout', register: 'Create Account', email: 'Email', password: 'Password',
@@ -127,6 +129,8 @@ const T = {
     calibrationDesc: 'Annual calibration per ISO 21501-4', repairDesc: 'Diagnosis and repair of all models',
     diagnosticDesc: 'Complete assessment of your equipment condition',
     fromPrice: 'From', onQuote: 'Quote based',
+    // Filter
+    all: 'All',
   }
 };
 
@@ -253,17 +257,26 @@ export default function App() {
   const refreshData = () => loadData(profile);
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-lh-dark to-lh-blue">
-      <div className="text-white text-xl animate-pulse flex items-center gap-3">
-        <svg className="animate-spin h-6 w-6" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-        {t('loading')}
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-lh-dark to-lh-blue">
+        <div className="text-white text-xl animate-pulse flex items-center gap-3">
+          <svg className="animate-spin h-6 w-6" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          </svg>
+          {t('loading')}
+        </div>
       </div>
-    </div>;
+    );
   }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {toast && <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg text-white font-medium ${toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`}>{toast.msg}</div>}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg text-white font-medium ${toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`}>
+          {toast.msg}
+        </div>
+      )}
       
       <Header user={user} profile={profile} isStaff={isStaff} lang={lang} setLang={setLang} t={t} page={page} setPage={setPage} onLogout={handleLogout} />
       
@@ -579,7 +592,15 @@ function CustomerDashboard({ profile, equipment, requests, t, lang, setPage }) {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead><tr><th className="th">#</th><th className="th">{t('model')}</th><th className="th">{t('serviceType')}</th><th className="th">Status</th><th className="th">Date</th></tr></thead>
+              <thead>
+                <tr>
+                  <th className="th">#</th>
+                  <th className="th">{t('model')}</th>
+                  <th className="th">{t('serviceType')}</th>
+                  <th className="th">Status</th>
+                  <th className="th">Date</th>
+                </tr>
+              </thead>
               <tbody className="divide-y">
                 {requests.slice(0, 5).map(r => {
                   const st = STATUS_CONFIG[r.status] || STATUS_CONFIG.pending;
@@ -700,7 +721,16 @@ function CustomerRequests({ requests, t, lang, setPage }) {
       ) : (
         <div className="card overflow-hidden">
           <table className="w-full">
-            <thead><tr><th className="th">#</th><th className="th">{t('serialNumber')}</th><th className="th">{t('model')}</th><th className="th">{t('serviceType')}</th><th className="th">Status</th><th className="th">Date</th></tr></thead>
+            <thead>
+              <tr>
+                <th className="th">#</th>
+                <th className="th">{t('serialNumber')}</th>
+                <th className="th">{t('model')}</th>
+                <th className="th">{t('serviceType')}</th>
+                <th className="th">Status</th>
+                <th className="th">Date</th>
+              </tr>
+            </thead>
             <tbody className="divide-y">
               {requests.map(r => {
                 const st = STATUS_CONFIG[r.status] || STATUS_CONFIG.pending;
@@ -1001,15 +1031,141 @@ function SettingsPage({ profile, addresses, t, lang, onRefresh, notify }) {
     </div>
   );
 }
- (${requests.filter(r => r.status === f).length})`}
-            </button>
-          ))}
-        </div>
+
+// ============================================
+// ADMIN PAGES
+// ============================================
+function AdminDashboard({ requests, companies, equipment, t, lang, setPage }) {
+  const stats = [
+    { label: t('newRequests'), value: requests.filter(r => r.status === 'submitted').length, icon: '📨', color: 'border-blue-500' },
+    { label: t('pendingQuotes'), value: requests.filter(r => r.status === 'quoted').length, icon: '💰', color: 'border-yellow-500' },
+    { label: t('activeRMAs'), value: requests.filter(r => ['approved', 'received', 'in_progress'].includes(r.status)).length, icon: '🔧', color: 'border-purple-500' },
+    { label: t('clients'), value: companies.length, icon: '👥', color: 'border-green-500' },
+  ];
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-8 space-y-8">
+      <h1 className="text-2xl font-bold text-gray-800">{t('dashboard')}</h1>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {stats.map((s, i) => (
+          <div key={i} className={`stat-card ${s.color}`}>
+            <div className="flex justify-between items-start">
+              <div><div className="text-3xl font-bold text-gray-800">{s.value}</div><div className="text-sm text-gray-500 mt-1">{s.label}</div></div>
+              <div className="text-3xl">{s.icon}</div>
+            </div>
+          </div>
+        ))}
       </div>
 
+      <div className="card">
+        <div className="card-header flex justify-between items-center">
+          <h2 className="card-title">{t('recentRequests')}</h2>
+          <button onClick={() => setPage('requests')} className="text-lh-blue text-sm font-medium hover:underline">{t('viewAll')} →</button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th className="th">#</th>
+                <th className="th">{t('company')}</th>
+                <th className="th">{t('model')}</th>
+                <th className="th">{t('serviceType')}</th>
+                <th className="th">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {requests.slice(0, 10).map(r => {
+                const st = STATUS_CONFIG[r.status] || STATUS_CONFIG.pending;
+                return (
+                  <tr key={r.id} className="hover:bg-gray-50">
+                    <td className="td font-mono text-lh-blue font-semibold">{r.request_number || '-'}</td>
+                    <td className="td font-medium">{r.companies?.name || '-'}</td>
+                    <td className="td">{r.model_name || '-'}</td>
+                    <td className="td capitalize">{r.requested_service}</td>
+                    <td className="td"><span className={`badge ${st.bg} ${st.text}`}>{st.icon} {r.status}</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminRequests({ requests, t, lang, onRefresh, notify }) {
+  const [filter, setFilter] = useState('all');
+  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [quoteForm, setQuoteForm] = useState({ calibration: 320, parts: 0, labor_hours: 0, labor_rate: 65, shipping: 25, notes: '' });
+  const [saving, setSaving] = useState(false);
+
+  const filters = ['all', 'submitted', 'quoted', 'approved', 'received', 'in_progress', 'completed', 'shipped'];
+  const filtered = filter === 'all' ? requests : requests.filter(r => r.status === filter);
+
+  const subtotal = quoteForm.calibration + quoteForm.parts + (quoteForm.labor_hours * quoteForm.labor_rate) + quoteForm.shipping;
+  const tax = subtotal * 0.2;
+  const total = subtotal + tax;
+
+  const updateStatus = async (id, newStatus) => {
+    const { error } = await supabase.from('service_requests').update({ status: newStatus }).eq('id', id);
+    if (error) notify(error.message, 'error');
+    else { notify(t('saved')); onRefresh(); }
+  };
+
+  const sendQuote = async () => {
+    setSaving(true);
+    const { error } = await supabase.from('service_requests').update({
+      status: 'quoted',
+      quote_calibration: quoteForm.calibration,
+      quote_parts: quoteForm.parts,
+      quote_labor_hours: quoteForm.labor_hours,
+      quote_labor_rate: quoteForm.labor_rate,
+      quote_shipping: quoteForm.shipping,
+      quote_notes: quoteForm.notes,
+      quote_subtotal: subtotal,
+      quote_tax: tax,
+      quote_total: total,
+      quoted_at: new Date().toISOString(),
+    }).eq('id', selectedRequest.id);
+    setSaving(false);
+    if (error) notify(error.message, 'error');
+    else { notify(t('saved')); setSelectedRequest(null); onRefresh(); }
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+      <h1 className="section-title">{t('requests')}</h1>
+
+      {/* Filter Tabs */}
+      <div className="flex gap-2 flex-wrap">
+        {filters.map(f => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === f ? 'bg-lh-blue text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+          >
+            {t(f)} ({f === 'all' ? requests.length : requests.filter(r => r.status === f).length})
+          </button>
+        ))}
+      </div>
+
+      {/* Requests Table */}
       <div className="card overflow-hidden">
         <table className="w-full">
-          <thead><tr><th className="th">#</th><th className="th">{t('company')}</th><th className="th">{t('serialNumber')}</th><th className="th">{t('model')}</th><th className="th">{t('serviceType')}</th><th className="th">{t('urgency')}</th><th className="th">Status</th><th className="th">Actions</th></tr></thead>
+          <thead>
+            <tr>
+              <th className="th">#</th>
+              <th className="th">{t('company')}</th>
+              <th className="th">{t('serialNumber')}</th>
+              <th className="th">{t('model')}</th>
+              <th className="th">{t('serviceType')}</th>
+              <th className="th">{t('urgency')}</th>
+              <th className="th">Status</th>
+              <th className="th">Actions</th>
+            </tr>
+          </thead>
           <tbody className="divide-y">
             {filtered.map(r => {
               const st = STATUS_CONFIG[r.status] || STATUS_CONFIG.pending;
@@ -1020,7 +1176,11 @@ function SettingsPage({ profile, addresses, t, lang, onRefresh, notify }) {
                   <td className="td font-mono text-sm">{r.serial_number}</td>
                   <td className="td">{r.model_name || '-'}</td>
                   <td className="td capitalize">{r.requested_service}</td>
-                  <td className="td"><span className={`badge ${r.urgency === 'critical' ? 'bg-red-100 text-red-700' : r.urgency === 'urgent' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-700'}`}>{r.urgency}</span></td>
+                  <td className="td">
+                    <span className={`badge ${r.urgency === 'critical' ? 'bg-red-100 text-red-700' : r.urgency === 'urgent' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-700'}`}>
+                      {r.urgency}
+                    </span>
+                  </td>
                   <td className="td"><span className={`badge ${st.bg} ${st.text}`}>{st.icon} {r.status}</span></td>
                   <td className="td">
                     <div className="flex gap-2">
@@ -1056,18 +1216,41 @@ function SettingsPage({ profile, addresses, t, lang, onRefresh, notify }) {
                   <div><span className="text-gray-500">{t('serviceType')}:</span> <strong className="capitalize">{selectedRequest.requested_service}</strong></div>
                   <div><span className="text-gray-500">{t('urgency')}:</span> <strong className="capitalize">{selectedRequest.urgency}</strong></div>
                 </div>
-                {selectedRequest.problem_description && <div className="mt-3 text-sm"><span className="text-gray-500">{t('problemDescription')}:</span><p className="mt-1">{selectedRequest.problem_description}</p></div>}
+                {selectedRequest.problem_description && (
+                  <div className="mt-3 text-sm">
+                    <span className="text-gray-500">{t('problemDescription')}:</span>
+                    <p className="mt-1">{selectedRequest.problem_description}</p>
+                  </div>
+                )}
               </div>
 
               {/* Pricing */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="form-group"><label className="label">{t('calibration')} (€)</label><input type="number" value={quoteForm.calibration} onChange={e => setQuoteForm({...quoteForm, calibration: Number(e.target.value)})} className="input" /></div>
-                <div className="form-group"><label className="label">{t('parts')} (€)</label><input type="number" value={quoteForm.parts} onChange={e => setQuoteForm({...quoteForm, parts: Number(e.target.value)})} className="input" /></div>
-                <div className="form-group"><label className="label">{t('labor')} ({t('hours')})</label><input type="number" step="0.5" value={quoteForm.labor_hours} onChange={e => setQuoteForm({...quoteForm, labor_hours: Number(e.target.value)})} className="input" /></div>
-                <div className="form-group"><label className="label">{t('rate')} (€/h)</label><input type="number" value={quoteForm.labor_rate} onChange={e => setQuoteForm({...quoteForm, labor_rate: Number(e.target.value)})} className="input" /></div>
-                <div className="form-group"><label className="label">{t('shipping')} (€)</label><input type="number" value={quoteForm.shipping} onChange={e => setQuoteForm({...quoteForm, shipping: Number(e.target.value)})} className="input" /></div>
+                <div className="form-group">
+                  <label className="label">{t('calibration')} (€)</label>
+                  <input type="number" value={quoteForm.calibration} onChange={e => setQuoteForm({...quoteForm, calibration: Number(e.target.value)})} className="input" />
+                </div>
+                <div className="form-group">
+                  <label className="label">{t('parts')} (€)</label>
+                  <input type="number" value={quoteForm.parts} onChange={e => setQuoteForm({...quoteForm, parts: Number(e.target.value)})} className="input" />
+                </div>
+                <div className="form-group">
+                  <label className="label">{t('labor')} ({t('hours')})</label>
+                  <input type="number" step="0.5" value={quoteForm.labor_hours} onChange={e => setQuoteForm({...quoteForm, labor_hours: Number(e.target.value)})} className="input" />
+                </div>
+                <div className="form-group">
+                  <label className="label">{t('rate')} (€/h)</label>
+                  <input type="number" value={quoteForm.labor_rate} onChange={e => setQuoteForm({...quoteForm, labor_rate: Number(e.target.value)})} className="input" />
+                </div>
+                <div className="form-group">
+                  <label className="label">{t('shipping')} (€)</label>
+                  <input type="number" value={quoteForm.shipping} onChange={e => setQuoteForm({...quoteForm, shipping: Number(e.target.value)})} className="input" />
+                </div>
               </div>
-              <div className="form-group"><label className="label">Notes</label><textarea value={quoteForm.notes} onChange={e => setQuoteForm({...quoteForm, notes: e.target.value})} className="input min-h-[80px]" /></div>
+              <div className="form-group">
+                <label className="label">Notes</label>
+                <textarea value={quoteForm.notes} onChange={e => setQuoteForm({...quoteForm, notes: e.target.value})} className="input min-h-[80px]" />
+              </div>
 
               {/* Totals */}
               <div className="bg-gray-50 rounded-lg p-4 space-y-2">
@@ -1121,13 +1304,25 @@ function AdminEquipment({ equipment, t, lang }) {
       <h1 className="section-title">{t('equipment')}</h1>
       <div className="card overflow-hidden">
         <table className="w-full">
-          <thead><tr><th className="th">{t('serialNumber')}</th><th className="th">{t('model')}</th><th className="th">{t('type')}</th><th className="th">{t('company')}</th><th className="th">{t('location')}</th></tr></thead>
+          <thead>
+            <tr>
+              <th className="th">{t('serialNumber')}</th>
+              <th className="th">{t('model')}</th>
+              <th className="th">{t('type')}</th>
+              <th className="th">{t('company')}</th>
+              <th className="th">{t('location')}</th>
+            </tr>
+          </thead>
           <tbody className="divide-y">
             {equipment.map(eq => (
               <tr key={eq.id} className="hover:bg-gray-50">
                 <td className="td font-mono font-semibold">{eq.serial_number}</td>
                 <td className="td">{eq.model_name || '-'}</td>
-                <td className="td"><span className={`badge ${eq.equipment_type === 'biocollector' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'}`}>{eq.equipment_type === 'biocollector' ? 'Bio' : 'Counter'}</span></td>
+                <td className="td">
+                  <span className={`badge ${eq.equipment_type === 'biocollector' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'}`}>
+                    {eq.equipment_type === 'biocollector' ? 'Bio' : 'Counter'}
+                  </span>
+                </td>
                 <td className="td">{eq.companies?.name || '-'}</td>
                 <td className="td text-gray-500">{eq.customer_location || '-'}</td>
               </tr>
