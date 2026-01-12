@@ -1,5 +1,3 @@
-import './globals.css'
-export const metadata = { title: 'Lighthouse France - RMA Portal', description: 'Equipment Service Portal' }
-export default function RootLayout({ children }) {
-  return <html lang="fr"><body className="bg-gray-50 min-h-screen">{children}</body></html>
-}
+import './globals.css';
+export const metadata = { title: 'Lighthouse France - RMA Portal', description: 'Service de calibration et réparation' };
+export default function RootLayout({ children }) { return (<html lang="fr"><body>{children}</body></html>); }
