@@ -716,10 +716,10 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           request_number: requestNumber,
           company_id: profile.company_id,
           submitted_by: profile.id,
-          serial_number: devices[0].serial_number, // Primary device serial
-          equipment_type: devices[0].brand === 'other' ? devices[0].brand_other : 'Lighthouse',
+          serial_number: devices[0].serial_number,
+          equipment_type: 'particle_counter', // Default - actual type stored in request_devices
           requested_service: devices[0].service_type === 'other' ? devices[0].service_other : devices[0].service_type,
-          problem_description: devices.map(d => `[${d.serial_number}] ${d.notes}`).join('\n\n'),
+          problem_description: devices.map(d => `[${d.brand === 'other' ? d.brand_other : 'Lighthouse'}] ${d.model} - ${d.serial_number}\n${d.notes}`).join('\n\n'),
           urgency: 'normal',
           shipping_address_id: addressId,
           status: 'submitted',
