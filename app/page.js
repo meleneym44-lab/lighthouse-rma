@@ -591,6 +591,7 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
 // ============================================
 function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, goBack }) {
   const [devices, setDevices] = useState([createNewDevice(1)]);
+  const [savedEquipment, setSavedEquipment] = useState([]);
   const [shipping, setShipping] = useState({ 
     address_id: addresses.find(a => a.is_default)?.id || '',
     showNewForm: false,
@@ -598,21 +599,58 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
   });
   const [saving, setSaving] = useState(false);
 
+  // Load saved equipment on mount
+  useEffect(() => {
+    const loadEquipment = async () => {
+      if (!profile?.company_id) return;
+      const { data } = await supabase
+        .from('equipment')
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      if (data) setSavedEquipment(data);
+    };
+    loadEquipment();
+  }, [profile?.company_id]);
+
   function createNewDevice(num) {
     return {
       id: `device_${Date.now()}_${num}`,
       num,
       brand: 'Lighthouse',
       brand_other: '',
+      nickname: '',
       model: '',
       serial_number: '',
       service_type: '',
       service_other: '',
       notes: '',
       accessories: [],
-      other_accessories: ''
+      other_accessories: '',
+      saveDevice: false, // Option to save this device
+      fromSaved: null // ID if loaded from saved
     };
   }
+
+  // Load from saved equipment
+  const loadFromSaved = (deviceId, equipmentId) => {
+    const equip = savedEquipment.find(e => e.id === equipmentId);
+    if (!equip) return;
+    
+    setDevices(devices.map(d => {
+      if (d.id !== deviceId) return d;
+      return {
+        ...d,
+        brand: equip.brand || 'Lighthouse',
+        brand_other: equip.brand_other || '',
+        nickname: equip.nickname || '',
+        model: equip.model_name || '',
+        serial_number: equip.serial_number || '',
+        fromSaved: equipmentId,
+        saveDevice: false // Already saved
+      };
+    }));
+  };
 
   const addDevice = () => {
     setDevices([...devices, createNewDevice(devices.length + 1)]);
@@ -730,7 +768,9 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
 
       if (reqErr) throw reqErr;
 
+      // Save devices to equipment table if requested
       for (const d of devices) {
+        // Insert request_device
         await supabase.from('request_devices').insert({
           request_id: request.id,
           serial_number: d.serial_number,
@@ -738,6 +778,19 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           equipment_type: d.brand === 'other' ? d.brand_other : 'Lighthouse',
           service_type: d.service_type === 'other' ? d.service_other : d.service_type,
         });
+
+        // Save to equipment if checkbox is checked and not already from saved
+        if (d.saveDevice && !d.fromSaved) {
+          await supabase.from('equipment').upsert({
+            company_id: profile.company_id,
+            serial_number: d.serial_number,
+            model_name: d.model,
+            nickname: d.nickname || null,
+            brand: d.brand === 'other' ? d.brand_other : 'Lighthouse',
+            equipment_type: 'particle_counter',
+            added_by: profile.id
+          }, { onConflict: 'serial_number' });
+        }
       }
 
       await supabase
@@ -772,6 +825,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
               toggleAccessory={toggleAccessory}
               removeDevice={removeDevice}
               canRemove={devices.length > 1}
+              savedEquipment={savedEquipment}
+              loadFromSaved={loadFromSaved}
             />
           ))}
         </div>
@@ -1243,7 +1298,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
 // ============================================
 // DEVICE CARD COMPONENT (Updated)
 // ============================================
-function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRemove }) {
+function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRemove, savedEquipment, loadFromSaved }) {
   const [charCount, setCharCount] = useState(device.notes.length);
   const maxChars = 500;
 
@@ -1256,7 +1311,7 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
   return (
     <div className="bg-[#F5F5F5] rounded-lg p-6 border-l-4 border-[#3B7AB4]">
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-bold text-[#1E3A5F]">Appareil #{device.num}</h3>
         {canRemove && (
           <button
@@ -1269,7 +1324,45 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
         )}
       </div>
 
+      {/* Saved Equipment Dropdown */}
+      {savedEquipment && savedEquipment.length > 0 && (
+        <div className="mb-4 p-3 bg-white rounded-lg border border-[#3B7AB4]/30">
+          <label className="block text-sm font-bold text-[#3B7AB4] mb-2">
+            📋 Charger un appareil enregistré
+          </label>
+          <select
+            value={device.fromSaved || ''}
+            onChange={e => {
+              if (e.target.value) {
+                loadFromSaved(device.id, e.target.value);
+              }
+            }}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+          >
+            <option value="">-- Sélectionner un appareil --</option>
+            {savedEquipment.map(eq => (
+              <option key={eq.id} value={eq.id}>
+                {eq.nickname ? `${eq.nickname} - ` : ''}{eq.model_name} (SN: {eq.serial_number})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div className="grid md:grid-cols-2 gap-4">
+        {/* Nickname for saving */}
+        <div className="md:col-span-2">
+          <label className="block text-sm font-bold text-gray-700 mb-1">Surnom de l'appareil (optionnel)</label>
+          <input
+            type="text"
+            value={device.nickname || ''}
+            onChange={e => updateDevice(device.id, 'nickname', e.target.value)}
+            placeholder="ex: Compteur Salle Blanche 1, Portable Labo 3..."
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          />
+          <p className="text-xs text-gray-500 mt-1">Pour identifier facilement cet appareil dans vos futures demandes</p>
+        </div>
+
         {/* Brand */}
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-1">Marque *</label>
@@ -1416,6 +1509,30 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
             Ajoutez des photos de l'appareil montrant les problèmes ou son état
           </p>
         </div>
+
+        {/* Save Device Option */}
+        {!device.fromSaved && (
+          <div className="md:col-span-2 mt-2 p-3 bg-green-50 rounded-lg border border-green-200">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={device.saveDevice || false}
+                onChange={e => updateDevice(device.id, 'saveDevice', e.target.checked)}
+                className="w-5 h-5 rounded border-green-400 text-green-600"
+              />
+              <div>
+                <span className="font-medium text-green-800">💾 Enregistrer cet appareil</span>
+                <p className="text-xs text-green-600">Pour le retrouver facilement lors de vos prochaines demandes</p>
+              </div>
+            </label>
+          </div>
+        )}
+
+        {device.fromSaved && (
+          <div className="md:col-span-2 mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <p className="text-sm text-blue-700">✓ Appareil chargé depuis vos équipements enregistrés</p>
+          </div>
+        )}
       </div>
     </div>
   );
