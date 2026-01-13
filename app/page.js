@@ -2,6 +2,23 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 
+// France Metropolitan postal code check
+// Metropolitan France: 01-95 (mainland)
+// Non-metropolitan: 97x (DOM), 98x (TOM), 20 (Corsica is included but different shipping)
+const isFranceMetropolitan = (postalCode) => {
+  if (!postalCode) return true; // Assume OK if no code
+  const prefix = parseInt(postalCode.substring(0, 2), 10);
+  // 01-19, 21-95 are metropolitan (20 is Corsica - special case but included)
+  // 97, 98 are DOM-TOM (overseas)
+  return prefix >= 1 && prefix <= 95;
+};
+
+const isOverseasFrance = (postalCode) => {
+  if (!postalCode) return false;
+  const prefix = parseInt(postalCode.substring(0, 2), 10);
+  return prefix === 97 || prefix === 98;
+};
+
 // Translations
 const T = {
   fr: {
@@ -293,6 +310,9 @@ export default function CustomerPortal() {
               <button onClick={() => setPage('new-request')} className={`font-medium ${page === 'new-request' ? 'text-[#3B7AB4]' : 'text-[#1E3A5F] hover:text-[#3B7AB4]'}`}>
                 {t('newRequest')}
               </button>
+              <button onClick={() => setPage('equipment')} className={`font-medium ${page === 'equipment' ? 'text-[#3B7AB4]' : 'text-[#1E3A5F] hover:text-[#3B7AB4]'}`}>
+                {t('myEquipment')}
+              </button>
               <button onClick={() => setPage('settings')} className={`font-medium ${page === 'settings' ? 'text-[#3B7AB4]' : 'text-[#1E3A5F] hover:text-[#3B7AB4]'}`}>
                 {t('settings')}
               </button>
@@ -320,7 +340,7 @@ export default function CustomerPortal() {
 
           {/* Mobile nav */}
           <nav className="md:hidden flex gap-2 pb-3 overflow-x-auto">
-            {['dashboard', 'new-request', 'settings'].map(p => (
+            {['dashboard', 'new-request', 'equipment', 'settings'].map(p => (
               <button
                 key={p}
                 onClick={() => setPage(p)}
@@ -362,6 +382,15 @@ export default function CustomerPortal() {
           <SettingsPage 
             profile={profile}
             addresses={addresses}
+            t={t}
+            notify={notify}
+            refresh={refresh}
+          />
+        )}
+        
+        {page === 'equipment' && (
+          <EquipmentPage 
+            profile={profile}
             t={t}
             notify={notify}
             refresh={refresh}
@@ -1127,6 +1156,11 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
 // SHIPPING SECTION (Reusable)
 // ============================================
 function ShippingSection({ shipping, setShipping, addresses, profile, notify, refresh }) {
+  // Check if selected address is overseas
+  const selectedAddress = addresses.find(a => a.id === shipping.address_id);
+  const isOverseas = selectedAddress ? isOverseasFrance(selectedAddress.postal_code) : false;
+  const newAddressIsOverseas = shipping.showNewForm && isOverseasFrance(shipping.newAddress.postal_code);
+
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
       <h2 className="text-xl font-bold text-[#1E3A5F] mb-4 pb-4 border-b-2 border-[#E8F2F8]">
@@ -1139,45 +1173,53 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
         
         {addresses.length > 0 ? (
           <div className="space-y-2 mb-4">
-            {addresses.map(addr => (
-              <label 
-                key={addr.id}
-                className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                  shipping.address_id === addr.id && !shipping.showNewForm
-                    ? 'border-[#3B7AB4] bg-[#E8F2F8]' 
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="shipping_address"
-                  checked={shipping.address_id === addr.id && !shipping.showNewForm}
-                  onChange={() => setShipping({ ...shipping, address_id: addr.id, showNewForm: false })}
-                  className="mt-1"
-                />
-                <div className="flex-1">
-                  <div className="font-medium text-[#1E3A5F]">
-                    {addr.company_name || addr.label}
-                    {addr.is_default && (
-                      <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
-                        Par défaut
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-sm text-gray-600">
-                    {addr.address_line1}
-                  </div>
-                  {addr.attention && (
-                    <div className="text-sm text-gray-500">
-                      À l'attention de: {addr.attention}
+            {addresses.map(addr => {
+              const addrIsOverseas = isOverseasFrance(addr.postal_code);
+              return (
+                <label 
+                  key={addr.id}
+                  className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+                    shipping.address_id === addr.id && !shipping.showNewForm
+                      ? 'border-[#3B7AB4] bg-[#E8F2F8]' 
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="shipping_address"
+                    checked={shipping.address_id === addr.id && !shipping.showNewForm}
+                    onChange={() => setShipping({ ...shipping, address_id: addr.id, showNewForm: false })}
+                    className="mt-1"
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium text-[#1E3A5F]">
+                      {addr.company_name || addr.label}
+                      {addr.is_default && (
+                        <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
+                          Par défaut
+                        </span>
+                      )}
+                      {addrIsOverseas && (
+                        <span className="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full">
+                          Hors métropole
+                        </span>
+                      )}
                     </div>
-                  )}
-                  <div className="text-sm text-gray-600">
-                    {addr.postal_code} {addr.city}, {addr.country || 'France'}
+                    <div className="text-sm text-gray-600">
+                      {addr.address_line1}
+                    </div>
+                    {addr.attention && (
+                      <div className="text-sm text-gray-500">
+                        À l'attention de: {addr.attention}
+                      </div>
+                    )}
+                    <div className="text-sm text-gray-600">
+                      {addr.postal_code} {addr.city}, {addr.country || 'France'}
+                    </div>
                   </div>
-                </div>
-              </label>
-            ))}
+                </label>
+              );
+            })}
           </div>
         ) : (
           <p className="text-gray-500 mb-4">Aucune adresse enregistrée</p>
@@ -1288,6 +1330,35 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               />
             </div>
+
+            {/* Warning for overseas in new address form */}
+            {newAddressIsOverseas && (
+              <div className="md:col-span-2 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+                <p className="text-amber-800 font-medium text-sm">⚠️ Adresse hors France métropolitaine</p>
+                <p className="text-amber-700 text-xs mt-1">
+                  Pour les adresses situées en dehors de la France métropolitaine (DOM-TOM), 
+                  les frais d'expédition sont à la charge du client. Vous serez contacté pour 
+                  organiser le transport.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Warning for overseas address selected */}
+      {(isOverseas || newAddressIsOverseas) && (
+        <div className="mt-4 p-4 bg-amber-50 border-2 border-amber-300 rounded-lg">
+          <div className="flex gap-3">
+            <span className="text-2xl">🚢</span>
+            <div>
+              <p className="text-amber-800 font-bold">Expédition hors France métropolitaine</p>
+              <p className="text-amber-700 text-sm mt-1">
+                L'adresse sélectionnée est située en dehors de la France métropolitaine. 
+                Les frais d'expédition pour le retour de vos équipements seront à votre charge. 
+                Notre équipe vous contactera pour organiser le transport et vous communiquer les options disponibles.
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -1325,29 +1396,39 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
       </div>
 
       {/* Saved Equipment Dropdown */}
-      {savedEquipment && savedEquipment.length > 0 && (
-        <div className="mb-4 p-3 bg-white rounded-lg border border-[#3B7AB4]/30">
-          <label className="block text-sm font-bold text-[#3B7AB4] mb-2">
-            📋 Charger un appareil enregistré
-          </label>
-          <select
-            value={device.fromSaved || ''}
-            onChange={e => {
-              if (e.target.value) {
-                loadFromSaved(device.id, e.target.value);
-              }
-            }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
-          >
-            <option value="">-- Sélectionner un appareil --</option>
-            {savedEquipment.map(eq => (
-              <option key={eq.id} value={eq.id}>
-                {eq.nickname ? `${eq.nickname} - ` : ''}{eq.model_name} (SN: {eq.serial_number})
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      <div className="mb-4 p-3 bg-white rounded-lg border border-[#3B7AB4]/30">
+        <label className="block text-sm font-bold text-[#3B7AB4] mb-2">
+          📋 Charger un appareil enregistré
+        </label>
+        <select
+          value={device.fromSaved || ''}
+          onChange={e => {
+            if (e.target.value === 'manual') {
+              // Clear form for manual entry
+              updateDevice(device.id, 'fromSaved', null);
+              updateDevice(device.id, 'brand', 'Lighthouse');
+              updateDevice(device.id, 'brand_other', '');
+              updateDevice(device.id, 'nickname', '');
+              updateDevice(device.id, 'model', '');
+              updateDevice(device.id, 'serial_number', '');
+            } else if (e.target.value) {
+              loadFromSaved(device.id, e.target.value);
+            }
+          }}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+        >
+          <option value="manual">✏️ Entrer manuellement un nouvel appareil</option>
+          {savedEquipment && savedEquipment.length > 0 && (
+            <optgroup label="Mes appareils enregistrés">
+              {savedEquipment.map(eq => (
+                <option key={eq.id} value={eq.id}>
+                  {eq.nickname ? `${eq.nickname} - ` : ''}{eq.model_name} (SN: {eq.serial_number})
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+      </div>
 
       <div className="grid md:grid-cols-2 gap-4">
         {/* Nickname for saving */}
@@ -1749,6 +1830,282 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
                   className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
                 >
                   {saving ? t('saving') : t('save')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// EQUIPMENT PAGE
+// ============================================
+function EquipmentPage({ profile, t, notify, refresh }) {
+  const [equipment, setEquipment] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editingEquipment, setEditingEquipment] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [newEquipment, setNewEquipment] = useState({
+    nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: ''
+  });
+
+  // Load equipment
+  useEffect(() => {
+    const loadEquipment = async () => {
+      if (!profile?.company_id) return;
+      const { data } = await supabase
+        .from('equipment')
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      if (data) setEquipment(data);
+      setLoading(false);
+    };
+    loadEquipment();
+  }, [profile?.company_id]);
+
+  const reloadEquipment = async () => {
+    const { data } = await supabase
+      .from('equipment')
+      .select('*')
+      .eq('company_id', profile.company_id)
+      .order('created_at', { ascending: false });
+    if (data) setEquipment(data);
+  };
+
+  const saveEquipment = async (e) => {
+    e.preventDefault();
+    if (!newEquipment.serial_number || !newEquipment.model_name) {
+      notify('Veuillez remplir le modèle et le numéro de série', 'error');
+      return;
+    }
+    
+    setSaving(true);
+    const equipData = {
+      company_id: profile.company_id,
+      nickname: newEquipment.nickname || null,
+      brand: newEquipment.brand === 'other' ? newEquipment.brand_other : 'Lighthouse',
+      model_name: newEquipment.model_name,
+      serial_number: newEquipment.serial_number,
+      equipment_type: 'particle_counter',
+      added_by: profile.id
+    };
+
+    let error;
+    if (editingEquipment) {
+      const result = await supabase.from('equipment').update(equipData).eq('id', editingEquipment.id);
+      error = result.error;
+    } else {
+      const result = await supabase.from('equipment').insert(equipData);
+      error = result.error;
+    }
+
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify(editingEquipment ? 'Équipement modifié!' : 'Équipement ajouté!');
+      setShowAddModal(false);
+      setEditingEquipment(null);
+      setNewEquipment({ nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '' });
+      await reloadEquipment();
+    }
+    setSaving(false);
+  };
+
+  const deleteEquipment = async (id) => {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cet équipement?')) return;
+    const { error } = await supabase.from('equipment').delete().eq('id', id);
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Équipement supprimé');
+      await reloadEquipment();
+    }
+  };
+
+  const openEditModal = (equip) => {
+    setEditingEquipment(equip);
+    setNewEquipment({
+      nickname: equip.nickname || '',
+      brand: equip.brand === 'Lighthouse' ? 'Lighthouse' : 'other',
+      brand_other: equip.brand !== 'Lighthouse' ? equip.brand : '',
+      model_name: equip.model_name || '',
+      serial_number: equip.serial_number || ''
+    });
+    setShowAddModal(true);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="w-8 h-8 border-4 border-[#3B7AB4] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-[#1E3A5F]">{t('myEquipment')}</h1>
+        <button
+          onClick={() => {
+            setEditingEquipment(null);
+            setNewEquipment({ nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '' });
+            setShowAddModal(true);
+          }}
+          className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
+        >
+          + Ajouter un Équipement
+        </button>
+      </div>
+
+      {equipment.length === 0 ? (
+        <div className="bg-white rounded-xl p-12 text-center shadow-sm border border-gray-100">
+          <p className="text-4xl mb-4">⚙️</p>
+          <p className="text-gray-500 mb-4">Aucun équipement enregistré</p>
+          <p className="text-gray-400 text-sm mb-6">
+            Ajoutez vos appareils pour les retrouver facilement lors de vos prochaines demandes
+          </p>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
+          >
+            + Ajouter votre premier équipement
+          </button>
+        </div>
+      ) : (
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {equipment.map(equip => (
+            <div key={equip.id} className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start mb-3">
+                <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded font-medium">
+                  {equip.brand || 'Lighthouse'}
+                </span>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => openEditModal(equip)}
+                    className="p-1 text-gray-400 hover:text-[#3B7AB4]"
+                    title="Modifier"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={() => deleteEquipment(equip.id)}
+                    className="p-1 text-gray-400 hover:text-red-500"
+                    title="Supprimer"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              </div>
+              
+              {equip.nickname && (
+                <p className="text-[#3B7AB4] font-medium text-sm mb-1">{equip.nickname}</p>
+              )}
+              <h3 className="font-bold text-[#1E3A5F] text-lg">{equip.model_name || 'Modèle inconnu'}</h3>
+              <p className="font-mono text-gray-600 text-sm mt-1">SN: {equip.serial_number}</p>
+              
+              {equip.last_calibration_date && (
+                <p className="text-xs text-gray-400 mt-3">
+                  Dernier étalonnage: {new Date(equip.last_calibration_date).toLocaleDateString('fr-FR')}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add/Edit Equipment Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowAddModal(false)}>
+          <div className="bg-white rounded-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b">
+              <h3 className="font-bold text-lg text-[#1E3A5F]">
+                {editingEquipment ? 'Modifier l\'équipement' : 'Ajouter un équipement'}
+              </h3>
+            </div>
+            <form onSubmit={saveEquipment} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Surnom (optionnel)</label>
+                <input
+                  type="text"
+                  value={newEquipment.nickname}
+                  onChange={e => setNewEquipment({ ...newEquipment, nickname: e.target.value })}
+                  placeholder="ex: Compteur Salle Blanche 1"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Marque *</label>
+                <select
+                  value={newEquipment.brand}
+                  onChange={e => setNewEquipment({ ...newEquipment, brand: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="Lighthouse">Lighthouse</option>
+                  <option value="other">Autre</option>
+                </select>
+              </div>
+              
+              {newEquipment.brand === 'other' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Préciser la marque *</label>
+                  <input
+                    type="text"
+                    value={newEquipment.brand_other}
+                    onChange={e => setNewEquipment({ ...newEquipment, brand_other: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    required
+                  />
+                </div>
+              )}
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Modèle *</label>
+                <input
+                  type="text"
+                  value={newEquipment.model_name}
+                  onChange={e => setNewEquipment({ ...newEquipment, model_name: e.target.value })}
+                  placeholder="ex: Solair 3100"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">N° de Série *</label>
+                <input
+                  type="text"
+                  value={newEquipment.serial_number}
+                  onChange={e => setNewEquipment({ ...newEquipment, serial_number: e.target.value })}
+                  placeholder="ex: LC-5012-A"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  required
+                />
+              </div>
+              
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddModal(false);
+                    setEditingEquipment(null);
+                  }}
+                  className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                >
+                  {saving ? 'Enregistrement...' : (editingEquipment ? 'Modifier' : 'Ajouter')}
                 </button>
               </div>
             </form>
