@@ -505,22 +505,110 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
 }
 
 // ============================================
-// NEW REQUEST FORM (Device Sections like HTML)
+// NEW REQUEST FORM - Type Selection First
 // ============================================
 function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
+  const [requestType, setRequestType] = useState(null); // 'service' or 'parts'
+  
+  // If no type selected, show selection screen
+  if (!requestType) {
+    return (
+      <div>
+        <h1 className="text-2xl font-bold text-[#1E3A5F] mb-6">Nouvelle Demande</h1>
+        
+        <p className="text-gray-600 mb-8">Quel type de demande souhaitez-vous soumettre?</p>
+        
+        <div className="grid md:grid-cols-2 gap-6">
+          {/* Service Request */}
+          <button
+            onClick={() => setRequestType('service')}
+            className="bg-white rounded-xl p-8 shadow-sm border-2 border-gray-200 hover:border-[#3B7AB4] transition-colors text-left group"
+          >
+            <div className="text-4xl mb-4">🔧</div>
+            <h2 className="text-xl font-bold text-[#1E3A5F] mb-2 group-hover:text-[#3B7AB4]">
+              Étalonnage / Réparation
+            </h2>
+            <p className="text-gray-600 text-sm">
+              Demande de calibration, réparation ou maintenance pour vos appareils de mesure
+            </p>
+          </button>
+          
+          {/* Parts Order */}
+          <button
+            onClick={() => setRequestType('parts')}
+            className="bg-white rounded-xl p-8 shadow-sm border-2 border-gray-200 hover:border-[#3B7AB4] transition-colors text-left group"
+          >
+            <div className="text-4xl mb-4">📦</div>
+            <h2 className="text-xl font-bold text-[#1E3A5F] mb-2 group-hover:text-[#3B7AB4]">
+              Commande de Pièces
+            </h2>
+            <p className="text-gray-600 text-sm">
+              Commander des pièces de rechange ou consommables pour vos équipements
+            </p>
+          </button>
+        </div>
+        
+        <button
+          onClick={() => setPage('dashboard')}
+          className="mt-8 text-gray-500 hover:text-gray-700"
+        >
+          ← Retour au tableau de bord
+        </button>
+      </div>
+    );
+  }
+  
+  // Show appropriate form based on type
+  if (requestType === 'parts') {
+    return (
+      <PartsOrderForm 
+        profile={profile}
+        addresses={addresses}
+        t={t}
+        notify={notify}
+        refresh={refresh}
+        setPage={setPage}
+        goBack={() => setRequestType(null)}
+      />
+    );
+  }
+  
+  return (
+    <ServiceRequestForm
+      profile={profile}
+      addresses={addresses}
+      t={t}
+      notify={notify}
+      refresh={refresh}
+      setPage={setPage}
+      goBack={() => setRequestType(null)}
+    />
+  );
+}
+
+// ============================================
+// SERVICE REQUEST FORM (Cal/Rep)
+// ============================================
+function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, goBack }) {
   const [devices, setDevices] = useState([createNewDevice(1)]);
-  const [shipping, setShipping] = useState({ attention: '', address_id: addresses[0]?.id || '' });
+  const [shipping, setShipping] = useState({ 
+    attention: '', 
+    address_id: addresses.find(a => a.is_default)?.id || '',
+    showNewForm: false,
+    newAddress: { label: '', address_line1: '', city: '', postal_code: '' }
+  });
   const [saving, setSaving] = useState(false);
 
   function createNewDevice(num) {
     return {
       id: `device_${Date.now()}_${num}`,
       num,
-      brand: '',
-      device_type: '',
+      brand: 'Lighthouse',
+      brand_other: '',
       model: '',
       serial_number: '',
       service_type: '',
+      service_other: '',
       notes: '',
       accessories: [],
       other_accessories: ''
@@ -550,26 +638,73 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
     }));
   };
 
+  // Save new address
+  const saveNewAddress = async () => {
+    const addr = shipping.newAddress;
+    if (!addr.label || !addr.address_line1 || !addr.city || !addr.postal_code) {
+      notify('Veuillez remplir tous les champs de l\'adresse', 'error');
+      return null;
+    }
+    
+    const { data, error } = await supabase.from('shipping_addresses').insert({
+      company_id: profile.company_id,
+      label: addr.label,
+      address_line1: addr.address_line1,
+      city: addr.city,
+      postal_code: addr.postal_code,
+      country: 'France',
+      is_default: false
+    }).select().single();
+    
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+      return null;
+    }
+    
+    notify('Adresse enregistrée!');
+    refresh();
+    return data.id;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Validate all devices have required fields
+    // Validate devices
     for (const d of devices) {
-      if (!d.brand || !d.device_type || !d.serial_number || !d.service_type || !d.notes) {
-        notify('Please fill all required fields for each device', 'error');
+      if (!d.model || !d.serial_number || !d.service_type || !d.notes) {
+        notify('Veuillez remplir tous les champs obligatoires pour chaque appareil', 'error');
+        return;
+      }
+      if (d.brand === 'other' && !d.brand_other) {
+        notify('Veuillez préciser la marque', 'error');
+        return;
+      }
+      if (d.service_type === 'other' && !d.service_other) {
+        notify('Veuillez préciser le type de service', 'error');
         return;
       }
     }
 
     if (!shipping.attention) {
-      notify('Please enter attention name', 'error');
+      notify('Veuillez entrer le nom du contact', 'error');
+      return;
+    }
+
+    // Handle address
+    let addressId = shipping.address_id;
+    if (shipping.showNewForm) {
+      addressId = await saveNewAddress();
+      if (!addressId) return;
+    }
+    
+    if (!addressId) {
+      notify('Veuillez sélectionner ou ajouter une adresse', 'error');
       return;
     }
 
     setSaving(true);
     
     try {
-      // Get next request number
       const { data: counter } = await supabase
         .from('system_settings')
         .select('value')
@@ -579,17 +714,16 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
       const nextNum = (counter?.value?.counter || 0) + 1;
       const requestNumber = `SR-${new Date().getFullYear()}-${String(nextNum).padStart(4, '0')}`;
 
-      // Create request
       const { data: request, error: reqErr } = await supabase
         .from('service_requests')
         .insert({
           request_number: requestNumber,
           company_id: profile.company_id,
           submitted_by: profile.id,
-          requested_service: devices[0].service_type, // Primary service
+          requested_service: devices[0].service_type === 'other' ? devices[0].service_other : devices[0].service_type,
           problem_description: devices.map(d => `[${d.serial_number}] ${d.notes}`).join('\n\n'),
           urgency: 'normal',
-          shipping_address_id: shipping.address_id || null,
+          shipping_address_id: addressId,
           status: 'submitted',
           submitted_at: new Date().toISOString()
         })
@@ -598,28 +732,25 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
 
       if (reqErr) throw reqErr;
 
-      // Create request_devices for each device
       for (const d of devices) {
         await supabase.from('request_devices').insert({
           request_id: request.id,
           serial_number: d.serial_number,
           model_name: d.model,
-          equipment_type: d.device_type,
-          service_type: d.service_type,
-          // Store extra info in a JSON field or separate columns if you add them
+          equipment_type: d.brand === 'other' ? d.brand_other : 'Lighthouse',
+          service_type: d.service_type === 'other' ? d.service_other : d.service_type,
         });
       }
 
-      // Update counter
       await supabase
         .from('system_settings')
         .upsert({ key: 'request_counter', value: { prefix: 'SR', counter: nextNum } });
 
-      notify(t('saved'));
+      notify('Demande soumise avec succès!');
       refresh();
       setPage('dashboard');
     } catch (err) {
-      notify(`Error: ${err.message}`, 'error');
+      notify(`Erreur: ${err.message}`, 'error');
     }
     
     setSaving(false);
@@ -627,16 +758,18 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-[#1E3A5F] mb-6">{t('newRequest')}</h1>
+      <div className="flex items-center gap-4 mb-6">
+        <button onClick={goBack} className="text-gray-500 hover:text-gray-700">←</button>
+        <h1 className="text-2xl font-bold text-[#1E3A5F]">Demande Étalonnage / Réparation</h1>
+      </div>
       
       <form onSubmit={handleSubmit}>
         {/* Devices */}
         <div className="space-y-6 mb-8">
-          {devices.map((device, index) => (
+          {devices.map((device) => (
             <DeviceCard
               key={device.id}
               device={device}
-              t={t}
               updateDevice={updateDevice}
               toggleAccessory={toggleAccessory}
               removeDevice={removeDevice}
@@ -651,66 +784,34 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
           onClick={addDevice}
           className="mb-8 px-4 py-2 border-2 border-[#3B7AB4] text-[#3B7AB4] rounded-lg font-medium hover:bg-[#E8F2F8] transition-colors"
         >
-          + {t('addDevice')}
+          + Ajouter un Appareil
         </button>
 
         {/* Shipping Section */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mb-8">
-          <h2 className="text-xl font-bold text-[#1E3A5F] mb-4 pb-4 border-b-2 border-[#E8F2F8]">
-            {t('shippingInfo')}
-          </h2>
-
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t('attention')} *
-              </label>
-              <input
-                type="text"
-                value={shipping.attention}
-                onChange={e => setShipping({ ...shipping, attention: e.target.value })}
-                placeholder="Contact person name"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t('selectAddress')} *
-              </label>
-              <select
-                value={shipping.address_id}
-                onChange={e => setShipping({ ...shipping, address_id: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
-                required
-              >
-                <option value="">Select an address</option>
-                {addresses.map(addr => (
-                  <option key={addr.id} value={addr.id}>
-                    {addr.label} - {addr.address_line1}, {addr.city}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
+        <ShippingSection 
+          shipping={shipping}
+          setShipping={setShipping}
+          addresses={addresses}
+          profile={profile}
+          notify={notify}
+          refresh={refresh}
+        />
 
         {/* Submit Buttons */}
-        <div className="flex gap-4">
+        <div className="flex gap-4 mt-8">
           <button
             type="button"
             onClick={() => setPage('dashboard')}
             className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
           >
-            {t('cancel')}
+            Annuler
           </button>
           <button
             type="submit"
             disabled={saving}
             className="flex-1 py-3 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F] transition-colors disabled:opacity-50"
           >
-            {saving ? t('saving') : t('submit')}
+            {saving ? 'Envoi en cours...' : 'Soumettre la Demande'}
           </button>
         </div>
       </form>
@@ -719,9 +820,415 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
 }
 
 // ============================================
-// DEVICE CARD COMPONENT
+// PARTS ORDER FORM
 // ============================================
-function DeviceCard({ device, t, updateDevice, toggleAccessory, removeDevice, canRemove }) {
+function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBack }) {
+  const [parts, setParts] = useState([createNewPart(1)]);
+  const [shipping, setShipping] = useState({ 
+    attention: '', 
+    address_id: addresses.find(a => a.is_default)?.id || '',
+    showNewForm: false,
+    newAddress: { label: '', address_line1: '', city: '', postal_code: '' }
+  });
+  const [saving, setSaving] = useState(false);
+
+  function createNewPart(num) {
+    return {
+      id: `part_${Date.now()}_${num}`,
+      num,
+      device_for: '',
+      part_number: '',
+      description: '',
+      quantity: 1
+    };
+  }
+
+  const addPart = () => {
+    setParts([...parts, createNewPart(parts.length + 1)]);
+  };
+
+  const removePart = (id) => {
+    if (parts.length === 1) return;
+    setParts(parts.filter(p => p.id !== id).map((p, i) => ({ ...p, num: i + 1 })));
+  };
+
+  const updatePart = (id, field, value) => {
+    setParts(parts.map(p => p.id === id ? { ...p, [field]: value } : p));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    for (const p of parts) {
+      if (!p.description) {
+        notify('Veuillez décrire la pièce demandée', 'error');
+        return;
+      }
+    }
+
+    if (!shipping.attention) {
+      notify('Veuillez entrer le nom du contact', 'error');
+      return;
+    }
+
+    let addressId = shipping.address_id;
+    if (shipping.showNewForm) {
+      const addr = shipping.newAddress;
+      if (!addr.label || !addr.address_line1 || !addr.city || !addr.postal_code) {
+        notify('Veuillez remplir tous les champs de l\'adresse', 'error');
+        return;
+      }
+      
+      const { data, error } = await supabase.from('shipping_addresses').insert({
+        company_id: profile.company_id,
+        label: addr.label,
+        address_line1: addr.address_line1,
+        city: addr.city,
+        postal_code: addr.postal_code,
+        country: 'France',
+        is_default: false
+      }).select().single();
+      
+      if (error) {
+        notify(`Erreur: ${error.message}`, 'error');
+        return;
+      }
+      addressId = data.id;
+      refresh();
+    }
+    
+    if (!addressId) {
+      notify('Veuillez sélectionner ou ajouter une adresse', 'error');
+      return;
+    }
+
+    setSaving(true);
+    
+    try {
+      const { data: counter } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'request_counter')
+        .single();
+      
+      const nextNum = (counter?.value?.counter || 0) + 1;
+      const requestNumber = `PO-${new Date().getFullYear()}-${String(nextNum).padStart(4, '0')}`;
+
+      const partsDescription = parts.map(p => 
+        `Pièce ${p.num}: ${p.description}${p.part_number ? ` (Réf: ${p.part_number})` : ''}${p.device_for ? ` - Pour: ${p.device_for}` : ''} - Qté: ${p.quantity}`
+      ).join('\n');
+
+      await supabase
+        .from('service_requests')
+        .insert({
+          request_number: requestNumber,
+          company_id: profile.company_id,
+          submitted_by: profile.id,
+          requested_service: 'parts_order',
+          problem_description: partsDescription,
+          urgency: 'normal',
+          shipping_address_id: addressId,
+          status: 'submitted',
+          submitted_at: new Date().toISOString()
+        });
+
+      await supabase
+        .from('system_settings')
+        .upsert({ key: 'request_counter', value: { prefix: 'PO', counter: nextNum } });
+
+      notify('Commande de pièces soumise!');
+      refresh();
+      setPage('dashboard');
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+    
+    setSaving(false);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-4 mb-6">
+        <button onClick={goBack} className="text-gray-500 hover:text-gray-700">←</button>
+        <h1 className="text-2xl font-bold text-[#1E3A5F]">Commande de Pièces</h1>
+      </div>
+      
+      <form onSubmit={handleSubmit}>
+        {/* Parts List */}
+        <div className="space-y-6 mb-8">
+          {parts.map((part) => (
+            <div key={part.id} className="bg-[#F5F5F5] rounded-lg p-6 border-l-4 border-amber-500">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-[#1E3A5F]">Pièce #{part.num}</h3>
+                {parts.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removePart(part.id)}
+                    className="px-3 py-1 text-sm border border-gray-300 text-gray-600 rounded hover:bg-white"
+                  >
+                    Retirer
+                  </button>
+                )}
+              </div>
+              
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Pour quel appareil? (optionnel)</label>
+                  <input
+                    type="text"
+                    value={part.device_for}
+                    onChange={e => updatePart(part.id, 'device_for', e.target.value)}
+                    placeholder="ex: Solair 3100 - SN: LC-1234"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Numéro de Pièce (optionnel)</label>
+                  <input
+                    type="text"
+                    value={part.part_number}
+                    onChange={e => updatePart(part.id, 'part_number', e.target.value)}
+                    placeholder="ex: PN-12345"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Quantité *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={part.quantity}
+                    onChange={e => updatePart(part.id, 'quantity', parseInt(e.target.value) || 1)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Description de la Pièce *</label>
+                  <textarea
+                    value={part.description}
+                    onChange={e => updatePart(part.id, 'description', e.target.value)}
+                    placeholder="Décrivez la pièce que vous recherchez..."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
+                    required
+                  />
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Photos (optionnel)</label>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+                  />
+                  <p className="text-sm text-gray-500 mt-1">
+                    Ajoutez des photos de la pièce ou de son emplacement sur l'appareil
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={addPart}
+          className="mb-8 px-4 py-2 border-2 border-amber-500 text-amber-600 rounded-lg font-medium hover:bg-amber-50 transition-colors"
+        >
+          + Ajouter une Pièce
+        </button>
+
+        {/* Shipping Section */}
+        <ShippingSection 
+          shipping={shipping}
+          setShipping={setShipping}
+          addresses={addresses}
+          profile={profile}
+          notify={notify}
+          refresh={refresh}
+        />
+
+        {/* Submit Buttons */}
+        <div className="flex gap-4 mt-8">
+          <button
+            type="button"
+            onClick={() => setPage('dashboard')}
+            className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200"
+          >
+            Annuler
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex-1 py-3 bg-amber-500 text-white rounded-lg font-medium hover:bg-amber-600 disabled:opacity-50"
+          >
+            {saving ? 'Envoi en cours...' : 'Soumettre la Commande'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ============================================
+// SHIPPING SECTION (Reusable)
+// ============================================
+function ShippingSection({ shipping, setShipping, addresses, profile, notify, refresh }) {
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
+      <h2 className="text-xl font-bold text-[#1E3A5F] mb-4 pb-4 border-b-2 border-[#E8F2F8]">
+        Information de Livraison
+      </h2>
+
+      {/* Attention */}
+      <div className="mb-4">
+        <label className="block text-sm font-bold text-gray-700 mb-1">À l'attention de *</label>
+        <input
+          type="text"
+          value={shipping.attention}
+          onChange={e => setShipping({ ...shipping, attention: e.target.value })}
+          placeholder="Nom du destinataire"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          required
+        />
+      </div>
+
+      {/* Existing Addresses */}
+      <div className="mb-4">
+        <label className="block text-sm font-bold text-gray-700 mb-2">Adresse de Livraison *</label>
+        
+        {addresses.length > 0 ? (
+          <div className="space-y-2 mb-4">
+            {addresses.map(addr => (
+              <label 
+                key={addr.id}
+                className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+                  shipping.address_id === addr.id && !shipping.showNewForm
+                    ? 'border-[#3B7AB4] bg-[#E8F2F8]' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="shipping_address"
+                  checked={shipping.address_id === addr.id && !shipping.showNewForm}
+                  onChange={() => setShipping({ ...shipping, address_id: addr.id, showNewForm: false })}
+                  className="mt-1"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-[#1E3A5F]">
+                    {addr.label}
+                    {addr.is_default && (
+                      <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
+                        Par défaut
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {addr.address_line1}, {addr.postal_code} {addr.city}
+                  </div>
+                </div>
+              </label>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-500 mb-4">Aucune adresse enregistrée</p>
+        )}
+
+        {/* Add New Address Option */}
+        <label 
+          className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+            shipping.showNewForm
+              ? 'border-[#3B7AB4] bg-[#E8F2F8]' 
+              : 'border-dashed border-gray-300 hover:border-gray-400'
+          }`}
+        >
+          <input
+            type="radio"
+            name="shipping_address"
+            checked={shipping.showNewForm}
+            onChange={() => setShipping({ ...shipping, showNewForm: true, address_id: '' })}
+            className="mt-1"
+          />
+          <div className="flex-1">
+            <div className="font-medium text-[#3B7AB4]">+ Ajouter une nouvelle adresse</div>
+            <div className="text-sm text-gray-500">Cette adresse sera enregistrée pour vos futures demandes</div>
+          </div>
+        </label>
+      </div>
+
+      {/* New Address Form */}
+      {shipping.showNewForm && (
+        <div className="mt-4 p-4 bg-[#F5F5F5] rounded-lg border-l-4 border-[#3B7AB4]">
+          <h3 className="font-bold text-[#1E3A5F] mb-4">Nouvelle Adresse</h3>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-gray-700 mb-1">Nom de l'adresse *</label>
+              <input
+                type="text"
+                value={shipping.newAddress.label}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, label: e.target.value }
+                })}
+                placeholder="ex: Bureau Principal, Labo 2, etc."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-gray-700 mb-1">Adresse *</label>
+              <input
+                type="text"
+                value={shipping.newAddress.address_line1}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, address_line1: e.target.value }
+                })}
+                placeholder="16 Rue de la République"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Code Postal *</label>
+              <input
+                type="text"
+                value={shipping.newAddress.postal_code}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, postal_code: e.target.value }
+                })}
+                placeholder="75001"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Ville *</label>
+              <input
+                type="text"
+                value={shipping.newAddress.city}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, city: e.target.value }
+                })}
+                placeholder="Paris"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// DEVICE CARD COMPONENT (Updated)
+// ============================================
+function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRemove }) {
   const [charCount, setCharCount] = useState(device.notes.length);
   const maxChars = 500;
 
@@ -731,20 +1238,27 @@ function DeviceCard({ device, t, updateDevice, toggleAccessory, removeDevice, ca
     setCharCount(value.length);
   };
 
+  // Models list for Lighthouse
+  const LIGHTHOUSE_MODELS = [
+    'Solair 3100', 'Solair 3200', 'Solair 1100', 'Solair 1100 LD',
+    'ApexZ', 'ApexR', 'ApexR5', 
+    'Handheld 3016', 'Handheld 5016', 
+    'LPC Remote', 'LWS-16', 
+    'Autre - Préciser dans les notes'
+  ];
+
   return (
     <div className="bg-[#F5F5F5] rounded-lg p-6 border-l-4 border-[#3B7AB4]">
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
-        <h3 className="text-lg font-bold text-[#1E3A5F]">
-          {t('deviceNumber')} #{device.num}
-        </h3>
+        <h3 className="text-lg font-bold text-[#1E3A5F]">Appareil #{device.num}</h3>
         {canRemove && (
           <button
             type="button"
             onClick={() => removeDevice(device.id)}
-            className="px-3 py-1 text-sm border border-gray-300 text-gray-600 rounded hover:bg-white transition-colors"
+            className="px-3 py-1 text-sm border border-gray-300 text-gray-600 rounded hover:bg-white"
           >
-            {t('removeDevice')}
+            Retirer
           </button>
         )}
       </div>
@@ -752,108 +1266,137 @@ function DeviceCard({ device, t, updateDevice, toggleAccessory, removeDevice, ca
       <div className="grid md:grid-cols-2 gap-4">
         {/* Brand */}
         <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">{t('brand')} *</label>
+          <label className="block text-sm font-bold text-gray-700 mb-1">Marque *</label>
           <select
             value={device.brand}
             onChange={e => updateDevice(device.id, 'brand', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
             required
           >
-            <option value="">Select brand</option>
-            {BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
+            <option value="Lighthouse">Lighthouse</option>
+            <option value="other">Autre</option>
           </select>
         </div>
 
-        {/* Device Type */}
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">{t('deviceType')} *</label>
-          <select
-            value={device.device_type}
-            onChange={e => {
-              updateDevice(device.id, 'device_type', e.target.value);
-              updateDevice(device.id, 'model', ''); // Reset model when type changes
-            }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
-            required
-          >
-            <option value="">Select device type</option>
-            {DEVICE_TYPES.map(dt => <option key={dt} value={dt}>{t(dt)}</option>)}
-          </select>
-        </div>
+        {/* Other Brand - shown only when "other" selected */}
+        {device.brand === 'other' && (
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Préciser la Marque *</label>
+            <input
+              type="text"
+              value={device.brand_other}
+              onChange={e => updateDevice(device.id, 'brand_other', e.target.value)}
+              placeholder="Nom de la marque"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              required
+            />
+          </div>
+        )}
 
-        {/* Model */}
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">{t('model')} *</label>
-          <select
-            value={device.model}
-            onChange={e => updateDevice(device.id, 'model', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
-            required
-            disabled={!device.device_type}
-          >
-            <option value="">{device.device_type ? 'Select model' : 'Select device type first'}</option>
-            {device.device_type && MODELS_BY_TYPE[device.device_type]?.map(m => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
+        {/* Model - dropdown for Lighthouse, text for other */}
+        <div className={device.brand === 'other' ? '' : 'md:col-span-1'}>
+          <label className="block text-sm font-bold text-gray-700 mb-1">Modèle *</label>
+          {device.brand === 'Lighthouse' ? (
+            <select
+              value={device.model}
+              onChange={e => updateDevice(device.id, 'model', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+              required
+            >
+              <option value="">Sélectionner le modèle</option>
+              {LIGHTHOUSE_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          ) : (
+            <input
+              type="text"
+              value={device.model}
+              onChange={e => updateDevice(device.id, 'model', e.target.value)}
+              placeholder="Modèle de l'appareil"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              required
+            />
+          )}
         </div>
 
         {/* Serial Number */}
         <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">{t('serialNumber')} *</label>
+          <label className="block text-sm font-bold text-gray-700 mb-1">N° de Série *</label>
           <input
             type="text"
             value={device.serial_number}
             onChange={e => updateDevice(device.id, 'serial_number', e.target.value)}
-            placeholder="e.g., LC-5012-A"
+            placeholder="ex: LC-5012-A"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             required
           />
         </div>
 
         {/* Service Type */}
-        <div className="md:col-span-2">
-          <label className="block text-sm font-bold text-gray-700 mb-1">{t('serviceType')} *</label>
+        <div className={device.service_type === 'other' ? '' : 'md:col-span-2'}>
+          <label className="block text-sm font-bold text-gray-700 mb-1">Type de Service *</label>
           <select
             value={device.service_type}
             onChange={e => updateDevice(device.id, 'service_type', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
             required
           >
-            <option value="">Select service type</option>
-            {SERVICE_TYPES.map(st => <option key={st} value={st}>{t(st)}</option>)}
+            <option value="">Sélectionner le service</option>
+            <option value="calibration">Étalonnage</option>
+            <option value="repair">Réparation</option>
+            <option value="calibration_repair">Étalonnage + Réparation</option>
+            <option value="other">Autre</option>
           </select>
         </div>
 
+        {/* Other Service - shown only when "other" selected */}
+        {device.service_type === 'other' && (
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Préciser le Service *</label>
+            <input
+              type="text"
+              value={device.service_other}
+              onChange={e => updateDevice(device.id, 'service_other', e.target.value)}
+              placeholder="Type de service demandé"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              required
+            />
+          </div>
+        )}
+
         {/* Notes for Technician */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-bold text-gray-700 mb-1">{t('notesForTech')} *</label>
+          <label className="block text-sm font-bold text-gray-700 mb-1">Notes pour le Technicien *</label>
           <textarea
             value={device.notes}
             onChange={handleNotesChange}
-            placeholder="Describe the issue or service needed for this device..."
+            placeholder="Décrivez le problème ou le service demandé pour cet appareil..."
             rows={4}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
             required
           />
           <p className="text-sm text-gray-500 mt-1">
-            {charCount}/{maxChars} {t('charactersRemaining').replace('remaining', '')}
+            {charCount}/{maxChars} caractères
           </p>
         </div>
 
         {/* Accessories */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-bold text-gray-700 mb-2">{t('accessories')}</label>
+          <label className="block text-sm font-bold text-gray-700 mb-2">Accessoires Inclus</label>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {ACCESSORIES.map(acc => (
-              <label key={acc} className="flex items-center gap-2 cursor-pointer">
+            {[
+              { key: 'charger', label: 'Chargeur' },
+              { key: 'battery', label: 'Batterie' },
+              { key: 'powerCable', label: 'Câble d\'alimentation' },
+              { key: 'carryingCase', label: 'Mallette' }
+            ].map(acc => (
+              <label key={acc.key} className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={device.accessories.includes(acc)}
-                  onChange={() => toggleAccessory(device.id, acc)}
+                  checked={device.accessories.includes(acc.key)}
+                  onChange={() => toggleAccessory(device.id, acc.key)}
                   className="w-4 h-4 rounded border-gray-300 text-[#3B7AB4]"
                 />
-                <span className="text-sm">{t(acc)}</span>
+                <span className="text-sm">{acc.label}</span>
               </label>
             ))}
           </div>
@@ -861,14 +1404,14 @@ function DeviceCard({ device, t, updateDevice, toggleAccessory, removeDevice, ca
             type="text"
             value={device.other_accessories}
             onChange={e => updateDevice(device.id, 'other_accessories', e.target.value)}
-            placeholder={t('otherAccessories') + ' (specify)'}
+            placeholder="Autres accessoires (préciser)"
             className="w-full mt-3 px-3 py-2 border border-gray-300 rounded-lg"
           />
         </div>
 
-        {/* Photo Upload (placeholder) */}
+        {/* Photo Upload */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-bold text-gray-700 mb-1">{t('uploadPhotos')}</label>
+          <label className="block text-sm font-bold text-gray-700 mb-1">Photos (optionnel)</label>
           <input
             type="file"
             multiple
@@ -876,7 +1419,7 @@ function DeviceCard({ device, t, updateDevice, toggleAccessory, removeDevice, ca
             className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
           />
           <p className="text-sm text-gray-500 mt-1">
-            Upload photos specifically for this device showing any issues or condition
+            Ajoutez des photos de l'appareil montrant les problèmes ou son état
           </p>
         </div>
       </div>
