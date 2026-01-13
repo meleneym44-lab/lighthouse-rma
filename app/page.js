@@ -592,10 +592,9 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
 function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, goBack }) {
   const [devices, setDevices] = useState([createNewDevice(1)]);
   const [shipping, setShipping] = useState({ 
-    attention: '', 
     address_id: addresses.find(a => a.is_default)?.id || '',
     showNewForm: false,
-    newAddress: { label: '', address_line1: '', city: '', postal_code: '' }
+    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' }
   });
   const [saving, setSaving] = useState(false);
 
@@ -641,14 +640,16 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
   // Save new address
   const saveNewAddress = async () => {
     const addr = shipping.newAddress;
-    if (!addr.label || !addr.address_line1 || !addr.city || !addr.postal_code) {
-      notify('Veuillez remplir tous les champs de l\'adresse', 'error');
+    if (!addr.company_name || !addr.address_line1 || !addr.attention || !addr.city || !addr.postal_code) {
+      notify('Veuillez remplir tous les champs obligatoires de l\'adresse', 'error');
       return null;
     }
     
     const { data, error } = await supabase.from('shipping_addresses').insert({
       company_id: profile.company_id,
-      label: addr.label,
+      label: addr.label || addr.company_name,
+      company_name: addr.company_name,
+      attention: addr.attention,
       address_line1: addr.address_line1,
       city: addr.city,
       postal_code: addr.postal_code,
@@ -685,11 +686,6 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       }
     }
 
-    if (!shipping.attention) {
-      notify('Veuillez entrer le nom du contact', 'error');
-      return;
-    }
-
     // Handle address
     let addressId = shipping.address_id;
     if (shipping.showNewForm) {
@@ -720,6 +716,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           request_number: requestNumber,
           company_id: profile.company_id,
           submitted_by: profile.id,
+          serial_number: devices[0].serial_number, // Primary device serial
+          equipment_type: devices[0].brand === 'other' ? devices[0].brand_other : 'Lighthouse',
           requested_service: devices[0].service_type === 'other' ? devices[0].service_other : devices[0].service_type,
           problem_description: devices.map(d => `[${d.serial_number}] ${d.notes}`).join('\n\n'),
           urgency: 'normal',
@@ -825,10 +823,9 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
 function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBack }) {
   const [parts, setParts] = useState([createNewPart(1)]);
   const [shipping, setShipping] = useState({ 
-    attention: '', 
     address_id: addresses.find(a => a.is_default)?.id || '',
     showNewForm: false,
-    newAddress: { label: '', address_line1: '', city: '', postal_code: '' }
+    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' }
   });
   const [saving, setSaving] = useState(false);
 
@@ -866,22 +863,19 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
       }
     }
 
-    if (!shipping.attention) {
-      notify('Veuillez entrer le nom du contact', 'error');
-      return;
-    }
-
     let addressId = shipping.address_id;
     if (shipping.showNewForm) {
       const addr = shipping.newAddress;
-      if (!addr.label || !addr.address_line1 || !addr.city || !addr.postal_code) {
-        notify('Veuillez remplir tous les champs de l\'adresse', 'error');
+      if (!addr.company_name || !addr.address_line1 || !addr.attention || !addr.city || !addr.postal_code) {
+        notify('Veuillez remplir tous les champs obligatoires de l\'adresse', 'error');
         return;
       }
       
       const { data, error } = await supabase.from('shipping_addresses').insert({
         company_id: profile.company_id,
-        label: addr.label,
+        label: addr.label || addr.company_name,
+        company_name: addr.company_name,
+        attention: addr.attention,
         address_line1: addr.address_line1,
         city: addr.city,
         postal_code: addr.postal_code,
@@ -1084,22 +1078,9 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
         Information de Livraison
       </h2>
 
-      {/* Attention */}
-      <div className="mb-4">
-        <label className="block text-sm font-bold text-gray-700 mb-1">À l'attention de *</label>
-        <input
-          type="text"
-          value={shipping.attention}
-          onChange={e => setShipping({ ...shipping, attention: e.target.value })}
-          placeholder="Nom du destinataire"
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          required
-        />
-      </div>
-
       {/* Existing Addresses */}
       <div className="mb-4">
-        <label className="block text-sm font-bold text-gray-700 mb-2">Adresse de Livraison *</label>
+        <label className="block text-sm font-bold text-gray-700 mb-2">Adresse de Retour *</label>
         
         {addresses.length > 0 ? (
           <div className="space-y-2 mb-4">
@@ -1121,7 +1102,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
                 />
                 <div className="flex-1">
                   <div className="font-medium text-[#1E3A5F]">
-                    {addr.label}
+                    {addr.company_name || addr.label}
                     {addr.is_default && (
                       <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
                         Par défaut
@@ -1129,7 +1110,15 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
                     )}
                   </div>
                   <div className="text-sm text-gray-600">
-                    {addr.address_line1}, {addr.postal_code} {addr.city}
+                    {addr.address_line1}
+                  </div>
+                  {addr.attention && (
+                    <div className="text-sm text-gray-500">
+                      À l'attention de: {addr.attention}
+                    </div>
+                  )}
+                  <div className="text-sm text-gray-600">
+                    {addr.postal_code} {addr.city}, {addr.country || 'France'}
                   </div>
                 </div>
               </label>
@@ -1167,15 +1156,15 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
           <h3 className="font-bold text-[#1E3A5F] mb-4">Nouvelle Adresse</h3>
           <div className="grid md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
-              <label className="block text-sm font-bold text-gray-700 mb-1">Nom de l'adresse *</label>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Nom de la Société *</label>
               <input
                 type="text"
-                value={shipping.newAddress.label}
+                value={shipping.newAddress.company_name || ''}
                 onChange={e => setShipping({
                   ...shipping,
-                  newAddress: { ...shipping.newAddress, label: e.target.value }
+                  newAddress: { ...shipping.newAddress, company_name: e.target.value }
                 })}
-                placeholder="ex: Bureau Principal, Labo 2, etc."
+                placeholder="ex: Lighthouse France"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               />
             </div>
@@ -1188,7 +1177,20 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
                   ...shipping,
                   newAddress: { ...shipping.newAddress, address_line1: e.target.value }
                 })}
-                placeholder="16 Rue de la République"
+                placeholder="ex: 16 Rue Paul Séjourne"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-gray-700 mb-1">À l'attention de *</label>
+              <input
+                type="text"
+                value={shipping.newAddress.attention || ''}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, attention: e.target.value }
+                })}
+                placeholder="ex: Marshall Meleney"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               />
             </div>
@@ -1201,7 +1203,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
                   ...shipping,
                   newAddress: { ...shipping.newAddress, postal_code: e.target.value }
                 })}
-                placeholder="75001"
+                placeholder="ex: 94000"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               />
             </div>
@@ -1214,7 +1216,20 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
                   ...shipping,
                   newAddress: { ...shipping.newAddress, city: e.target.value }
                 })}
-                placeholder="Paris"
+                placeholder="ex: Créteil"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-gray-700 mb-1">Nom de l'adresse (pour référence)</label>
+              <input
+                type="text"
+                value={shipping.newAddress.label}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, label: e.target.value }
+                })}
+                placeholder="ex: Bureau Principal, Labo 2, etc."
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               />
             </div>
@@ -1237,15 +1252,6 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
     updateDevice(device.id, 'notes', value);
     setCharCount(value.length);
   };
-
-  // Models list for Lighthouse
-  const LIGHTHOUSE_MODELS = [
-    'Solair 3100', 'Solair 3200', 'Solair 1100', 'Solair 1100 LD',
-    'ApexZ', 'ApexR', 'ApexR5', 
-    'Handheld 3016', 'Handheld 5016', 
-    'LPC Remote', 'LWS-16', 
-    'Autre - Préciser dans les notes'
-  ];
 
   return (
     <div className="bg-[#F5F5F5] rounded-lg p-6 border-l-4 border-[#3B7AB4]">
@@ -1293,29 +1299,17 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
           </div>
         )}
 
-        {/* Model - dropdown for Lighthouse, text for other */}
-        <div className={device.brand === 'other' ? '' : 'md:col-span-1'}>
+        {/* Model - always text input */}
+        <div>
           <label className="block text-sm font-bold text-gray-700 mb-1">Modèle *</label>
-          {device.brand === 'Lighthouse' ? (
-            <select
-              value={device.model}
-              onChange={e => updateDevice(device.id, 'model', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
-              required
-            >
-              <option value="">Sélectionner le modèle</option>
-              {LIGHTHOUSE_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-          ) : (
-            <input
-              type="text"
-              value={device.model}
-              onChange={e => updateDevice(device.id, 'model', e.target.value)}
-              placeholder="Modèle de l'appareil"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              required
-            />
-          )}
+          <input
+            type="text"
+            value={device.model}
+            onChange={e => updateDevice(device.id, 'model', e.target.value)}
+            placeholder="ex: Solair 3100, ApexZ, etc."
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            required
+          />
         </div>
 
         {/* Serial Number */}
