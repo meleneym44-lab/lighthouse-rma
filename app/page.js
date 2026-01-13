@@ -109,15 +109,82 @@ const T = {
 
 // Status styles
 const STATUS_STYLES = {
-  submitted: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'submitted' },
-  quoted: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'quoted' },
-  approved: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-300', label: 'approved' },
-  received: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'received' },
-  in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'in_progress' },
-  quality_check: { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-300', label: 'quality_check' },
-  completed: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-300', label: 'completed' },
-  shipped: { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-300', label: 'shipped' }
+  // === BOTH FLOWS - INITIAL ===
+  submitted: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Soumis', icon: '📝' },
+  pending: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Soumis', icon: '📝' },
+  
+  // === BOTH FLOWS - APPROVAL/BC ===
+  waiting_approval: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'En attente d\'approbation', icon: '⏳' },
+  approved: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '📋' },
+  waiting_bc: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '📋' },
+  waiting_po: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '📋' },
+  
+  // === BOTH FLOWS - WAITING FOR DEVICE ===
+  waiting_device: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-300', label: 'En attente réception', icon: '📦' },
+  
+  // === CALIBRATION FLOW ===
+  received_calibration: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu - En attente étalonnage', icon: '📥' },
+  calibration_in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'Étalonnage en cours', icon: '🔬' },
+  
+  // === REPAIR FLOW ===
+  received_repair: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu - En attente inspection', icon: '📥' },
+  inspection_complete: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Inspection terminée - En attente approbation client', icon: '🔍' },
+  repair_declined: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'Réparation refusée par client', icon: '❌' },
+  order_received: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-300', label: 'Commande reçue', icon: '✅' },
+  waiting_parts: { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-300', label: 'En attente de pièces', icon: '⏳' },
+  repair_in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'Réparation en cours', icon: '🔧' },
+  repair_complete: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-300', label: 'Réparation terminée', icon: '✓' },
+  
+  // === LEGACY (for backwards compatibility) ===
+  received: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu', icon: '📥' },
+  in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'En cours', icon: '🔧' },
+  quote_sent: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé', icon: '📧' },
+  quoted: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé', icon: '📧' },
+  
+  // === BOTH FLOWS - FINAL STAGES ===
+  final_qc: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-300', label: 'Contrôle qualité final', icon: '🔍' },
+  quality_check: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-300', label: 'Contrôle qualité final', icon: '🔍' },
+  ready_to_ship: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-300', label: 'Prêt pour expédition', icon: '📦' },
+  shipped: { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300', label: 'Expédié', icon: '🚚' },
+  delivered: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400', label: 'Livré', icon: '📬' },
+  completed: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400', label: 'Terminé', icon: '✅' },
+  
+  // === HOLD/ISSUES ===
+  on_hold: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'En attente', icon: '⚠️' },
+  cancelled: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-400', label: 'Annulé', icon: '❌' }
 };
+
+// Helper to get status label
+const getStatusLabel = (status) => {
+  return STATUS_STYLES[status]?.label || status || 'Inconnu';
+};
+
+// CALIBRATION FLOW (9 steps):
+// 1. submitted - Soumis
+// 2. waiting_approval - En attente d'approbation
+// 3. approved - Approuvé - En attente BC
+// 4. waiting_device - En attente réception
+// 5. received_calibration - Reçu - En attente étalonnage
+// 6. calibration_in_progress - Étalonnage en cours
+// 7. final_qc - Contrôle qualité final
+// 8. ready_to_ship - Prêt pour expédition
+// 9. shipped - Expédié
+
+// REPAIR FLOW (14 steps):
+// 1. submitted - Soumis
+// 2. waiting_approval - En attente d'approbation
+// 3. approved - Approuvé - En attente BC
+// 4. waiting_device - En attente réception
+// 5. received_repair - Reçu - En attente inspection
+// 6. inspection_complete - Inspection terminée - En attente approbation client
+// 6a. repair_declined - Réparation refusée par client (branch)
+// 7. order_received - Commande reçue
+// 8. waiting_parts - En attente de pièces (optional)
+// 9. repair_in_progress - Réparation en cours
+// 10. repair_complete - Réparation terminée
+// 11. final_qc - Contrôle qualité final
+// 12. ready_to_ship - Prêt pour expédition
+// 13. shipped - Expédié
 
 // Model options by device type
 const MODELS_BY_TYPE = {
@@ -450,14 +517,13 @@ export default function CustomerPortal() {
 function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
   const [messages, setMessages] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'devices', 'messages'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'service', 'parts', 'messages'
 
   // Load messages
   useEffect(() => {
     const loadMessages = async () => {
       if (!profile?.company_id) return;
       
-      // Get all messages for this company's requests
       const requestIds = requests.map(r => r.id);
       if (requestIds.length === 0) return;
       
@@ -475,8 +541,12 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
     loadMessages();
   }, [profile, requests]);
 
-  // Get all devices from all requests
-  const allDevices = requests.flatMap(req => 
+  // Separate service requests from parts orders
+  const serviceRequests = requests.filter(r => r.request_type !== 'parts' && r.requested_service !== 'parts_order');
+  const partsOrders = requests.filter(r => r.request_type === 'parts' || r.requested_service === 'parts_order');
+
+  // Get all devices from service requests
+  const allDevices = serviceRequests.flatMap(req => 
     (req.request_devices || []).map(dev => ({
       ...dev,
       request_number: req.request_number,
@@ -489,23 +559,28 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
   // Stats
   const stats = [
     { 
-      label: 'Appareils en cours', 
-      value: allDevices.filter(d => !['shipped', 'completed'].includes(d.status || d.request_status)).length,
-      color: 'bg-amber-500',
-      icon: '🔧'
+      label: 'Demandes Service', 
+      value: serviceRequests.filter(r => !['shipped', 'completed', 'delivered'].includes(r.status)).length,
+      total: serviceRequests.length,
+      color: 'bg-[#3B7AB4]',
+      icon: '🔧',
+      tab: 'service'
     },
     { 
-      label: 'Terminés', 
-      value: allDevices.filter(d => ['shipped', 'completed'].includes(d.status || d.request_status)).length,
-      color: 'bg-green-500',
-      icon: '✅'
+      label: 'Commandes Pièces', 
+      value: partsOrders.filter(r => !['shipped', 'completed', 'delivered'].includes(r.status)).length,
+      total: partsOrders.length,
+      color: 'bg-amber-500',
+      icon: '📦',
+      tab: 'parts'
     },
     { 
       label: 'Messages', 
       value: unreadCount,
       color: unreadCount > 0 ? 'bg-red-500' : 'bg-gray-400',
       icon: '💬',
-      highlight: unreadCount > 0
+      highlight: unreadCount > 0,
+      tab: 'messages'
     }
   ];
 
@@ -516,14 +591,17 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
 
   const viewDeviceHistory = (serialNumber) => {
     setPage('device-history');
-    // Store in sessionStorage for the device history page
     sessionStorage.setItem('viewDeviceSerial', serialNumber);
   };
 
-  // Pending requests (just submitted)
-  const pendingRequests = requests.filter(r => r.status === 'submitted' || r.status === 'pending');
-  const inProgressRequests = requests.filter(r => ['received', 'in_progress', 'calibration', 'repair', 'quote_sent'].includes(r.status));
-  const completedRequests = requests.filter(r => ['shipped', 'completed', 'delivered'].includes(r.status));
+  // Filter by status
+  const pendingService = serviceRequests.filter(r => ['submitted', 'waiting_approval'].includes(r.status));
+  const inProgressService = serviceRequests.filter(r => !['submitted', 'waiting_approval', 'shipped', 'completed', 'delivered', 'repair_declined', 'cancelled'].includes(r.status));
+  const completedService = serviceRequests.filter(r => ['shipped', 'completed', 'delivered'].includes(r.status));
+
+  const pendingParts = partsOrders.filter(r => ['submitted', 'waiting_approval'].includes(r.status));
+  const inProgressParts = partsOrders.filter(r => !['submitted', 'waiting_approval', 'shipped', 'completed', 'delivered', 'cancelled'].includes(r.status));
+  const completedParts = partsOrders.filter(r => ['shipped', 'completed', 'delivered'].includes(r.status));
 
   return (
     <div>
@@ -547,12 +625,15 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
           <div 
             key={i} 
             className={`bg-white rounded-lg p-4 shadow-sm border ${stat.highlight ? 'border-red-300 ring-2 ring-red-100' : 'border-gray-100'} cursor-pointer hover:shadow-md transition-shadow`}
-            onClick={() => stat.label === 'Messages' && setActiveTab('messages')}
+            onClick={() => stat.tab && setActiveTab(stat.tab)}
           >
             <div className="flex items-center gap-3">
               <span className="text-2xl">{stat.icon}</span>
               <div>
-                <div className="text-2xl font-bold text-gray-900">{stat.value}</div>
+                <div className="text-2xl font-bold text-gray-900">
+                  {stat.value}
+                  {stat.total !== undefined && <span className="text-sm text-gray-400 font-normal">/{stat.total}</span>}
+                </div>
                 <div className="text-sm text-gray-500">{stat.label}</div>
               </div>
             </div>
@@ -561,16 +642,17 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-lg w-fit">
+      <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-lg w-fit overflow-x-auto">
         {[
           { id: 'overview', label: 'Aperçu', icon: '📋' },
-          { id: 'devices', label: 'Mes Appareils', icon: '🔧' },
+          { id: 'service', label: 'Demandes Service', icon: '🔧', badge: pendingService.length },
+          { id: 'parts', label: 'Commandes Pièces', icon: '📦', badge: pendingParts.length },
           { id: 'messages', label: 'Messages', icon: '💬', badge: unreadCount }
         ].map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 rounded-md font-medium transition-colors flex items-center gap-2 ${
+            className={`px-4 py-2 rounded-md font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
               activeTab === tab.id 
                 ? 'bg-white text-[#3B7AB4] shadow-sm' 
                 : 'text-gray-600 hover:text-gray-900'
@@ -588,16 +670,42 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
       {/* Overview Tab */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* Pending Requests Alert */}
-          {pendingRequests.length > 0 && (
+          {/* Pending Service Requests */}
+          {pendingService.length > 0 && (
             <div className="bg-amber-50 border-l-4 border-amber-400 rounded-lg p-4">
-              <h3 className="font-bold text-amber-800 mb-2">⏳ Demandes en attente de traitement</h3>
+              <h3 className="font-bold text-amber-800 mb-2">⏳ Demandes service en attente</h3>
               <div className="space-y-2">
-                {pendingRequests.map(req => (
+                {pendingService.map(req => (
                   <div 
                     key={req.id}
                     onClick={() => viewRequest(req)}
                     className="flex justify-between items-center p-2 bg-white rounded cursor-pointer hover:bg-amber-100"
+                  >
+                    <div>
+                      <span className="font-mono font-medium">{req.request_number}</span>
+                      <span className="ml-2 text-sm text-gray-500">
+                        {req.request_devices?.length || 0} appareil(s)
+                      </span>
+                    </div>
+                    <span className="text-sm text-gray-500">
+                      {new Date(req.created_at).toLocaleDateString('fr-FR')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pending Parts Orders */}
+          {pendingParts.length > 0 && (
+            <div className="bg-orange-50 border-l-4 border-orange-400 rounded-lg p-4">
+              <h3 className="font-bold text-orange-800 mb-2">📦 Commandes pièces en attente</h3>
+              <div className="space-y-2">
+                {pendingParts.map(req => (
+                  <div 
+                    key={req.id}
+                    onClick={() => viewRequest(req)}
+                    className="flex justify-between items-center p-2 bg-white rounded cursor-pointer hover:bg-orange-100"
                   >
                     <span className="font-mono font-medium">{req.request_number}</span>
                     <span className="text-sm text-gray-500">
@@ -609,15 +717,15 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
             </div>
           )}
 
-          {/* In Progress */}
-          {inProgressRequests.length > 0 && (
+          {/* In Progress Service */}
+          {inProgressService.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-100">
               <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-                <h2 className="font-bold text-[#1E3A5F] text-lg">🔧 En cours de traitement</h2>
-                <span className="text-sm text-gray-500">{inProgressRequests.length} demande(s)</span>
+                <h2 className="font-bold text-[#1E3A5F] text-lg">🔧 Service en cours</h2>
+                <span className="text-sm text-gray-500">{inProgressService.length} demande(s)</span>
               </div>
               <div className="divide-y divide-gray-100">
-                {inProgressRequests.slice(0, 5).map(req => {
+                {inProgressService.slice(0, 5).map(req => {
                   const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
                   return (
                     <div 
@@ -629,23 +737,60 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
                         <div className="flex items-center gap-3">
                           <span className="font-mono font-bold text-[#3B7AB4]">{req.request_number}</span>
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
-                            {t(style.label)}
+                            {style.label}
                           </span>
                         </div>
                         <span className="text-sm text-gray-500">
                           {req.request_devices?.length || 0} appareil(s)
                         </span>
                       </div>
-                      {/* Device list preview */}
                       <div className="mt-2 flex flex-wrap gap-2">
                         {(req.request_devices || []).slice(0, 3).map((dev, i) => (
                           <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
                             {dev.model_name} - {dev.serial_number}
                           </span>
                         ))}
-                        {(req.request_devices?.length || 0) > 3 && (
-                          <span className="text-xs text-gray-400">+{req.request_devices.length - 3} autre(s)</span>
-                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {inProgressService.length > 5 && (
+                <div className="px-6 py-3 bg-gray-50 text-center">
+                  <button onClick={() => setActiveTab('service')} className="text-[#3B7AB4] text-sm font-medium">
+                    Voir toutes les demandes service →
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* In Progress Parts */}
+          {inProgressParts.length > 0 && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                <h2 className="font-bold text-[#1E3A5F] text-lg">📦 Commandes pièces en cours</h2>
+                <span className="text-sm text-gray-500">{inProgressParts.length} commande(s)</span>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {inProgressParts.slice(0, 3).map(req => {
+                  const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
+                  return (
+                    <div 
+                      key={req.id}
+                      onClick={() => viewRequest(req)}
+                      className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                    >
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono font-bold text-amber-600">{req.request_number}</span>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                            {style.label}
+                          </span>
+                        </div>
+                        <span className="text-sm text-gray-500">
+                          {new Date(req.created_at).toLocaleDateString('fr-FR')}
+                        </span>
                       </div>
                     </div>
                   );
@@ -655,32 +800,33 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
           )}
 
           {/* Recent Completed */}
-          {completedRequests.length > 0 && (
+          {(completedService.length > 0 || completedParts.length > 0) && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-100">
               <div className="px-6 py-4 border-b border-gray-100">
                 <h2 className="font-bold text-[#1E3A5F] text-lg">✅ Récemment terminés</h2>
               </div>
               <div className="divide-y divide-gray-100">
-                {completedRequests.slice(0, 3).map(req => (
+                {[...completedService, ...completedParts]
+                  .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                  .slice(0, 5)
+                  .map(req => (
                   <div 
                     key={req.id}
                     onClick={() => viewRequest(req)}
                     className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
                   >
                     <div className="flex justify-between items-center">
-                      <span className="font-mono font-medium text-gray-700">{req.request_number}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-medium text-gray-700">{req.request_number}</span>
+                        <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">
+                          {req.request_type === 'parts' || req.requested_service === 'parts_order' ? 'Pièces' : 'Service'}
+                        </span>
+                      </div>
                       <span className="text-green-600 text-sm font-medium">Terminé</span>
                     </div>
                   </div>
                 ))}
               </div>
-              {completedRequests.length > 3 && (
-                <div className="px-6 py-3 bg-gray-50 text-center">
-                  <button className="text-[#3B7AB4] text-sm font-medium">
-                    Voir tout l'historique →
-                  </button>
-                </div>
-              )}
             </div>
           )}
 
@@ -700,7 +846,111 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
         </div>
       )}
 
-      {/* Devices Tab */}
+      {/* Service Requests Tab */}
+      {activeTab === 'service' && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="font-bold text-[#1E3A5F] text-lg">Demandes de Service (Étalonnage / Réparation)</h2>
+            <p className="text-sm text-gray-500">{serviceRequests.length} demande(s) au total</p>
+          </div>
+          
+          {serviceRequests.length === 0 ? (
+            <div className="p-12 text-center">
+              <p className="text-4xl mb-3">🔧</p>
+              <p className="text-gray-500 mb-4">Aucune demande de service</p>
+              <button 
+                onClick={() => setPage('new-request')}
+                className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
+              >
+                Soumettre une demande
+              </button>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {serviceRequests.map(req => {
+                const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
+                return (
+                  <div 
+                    key={req.id}
+                    onClick={() => viewRequest(req)}
+                    className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono font-bold text-[#3B7AB4]">{req.request_number}</span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                          {style.label}
+                        </span>
+                      </div>
+                      <span className="text-sm text-gray-500">
+                        {new Date(req.created_at).toLocaleDateString('fr-FR')}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(req.request_devices || []).map((dev, i) => (
+                        <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
+                          {dev.model_name} - {dev.serial_number}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Parts Orders Tab */}
+      {activeTab === 'parts' && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="font-bold text-[#1E3A5F] text-lg">Commandes de Pièces</h2>
+            <p className="text-sm text-gray-500">{partsOrders.length} commande(s) au total</p>
+          </div>
+          
+          {partsOrders.length === 0 ? (
+            <div className="p-12 text-center">
+              <p className="text-4xl mb-3">📦</p>
+              <p className="text-gray-500 mb-4">Aucune commande de pièces</p>
+              <button 
+                onClick={() => setPage('new-request')}
+                className="px-6 py-2 bg-amber-500 text-white rounded-lg font-medium"
+              >
+                Commander des pièces
+              </button>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {partsOrders.map(req => {
+                const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
+                return (
+                  <div 
+                    key={req.id}
+                    onClick={() => viewRequest(req)}
+                    className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono font-bold text-amber-600">{req.request_number}</span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                          {style.label}
+                        </span>
+                      </div>
+                      <span className="text-sm text-gray-500">
+                        {new Date(req.created_at).toLocaleDateString('fr-FR')}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 line-clamp-2">{req.problem_description}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Devices Tab - Keep existing */}
       {activeTab === 'devices' && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-100">
           <div className="px-6 py-4 border-b border-gray-100">
@@ -739,7 +989,7 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
                         </td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
-                            {t(style.label)}
+                            {style.label}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-500">
@@ -1226,25 +1476,27 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     setSaving(true);
     
     try {
+      // Generate temporary draft number (FR number assigned after approval)
       const { data: counter } = await supabase
         .from('system_settings')
         .select('value')
-        .eq('key', 'request_counter')
+        .eq('key', 'draft_counter')
         .single();
       
-      const nextNum = (counter?.value?.counter || 0) + 1;
-      const requestNumber = `FR-${String(nextNum).padStart(5, '0')}`;
+      const nextDraft = (counter?.value?.counter || 0) + 1;
+      const draftNumber = `DRAFT-${String(nextDraft).padStart(5, '0')}`;
 
       const { data: request, error: reqErr } = await supabase
         .from('service_requests')
         .insert({
-          request_number: requestNumber,
+          request_number: draftNumber, // Temporary - FR number assigned after approval
           company_id: profile.company_id,
           submitted_by: profile.id,
+          request_type: 'service', // service or parts
           serial_number: devices[0].serial_number,
-          equipment_type: 'particle_counter', // Default - actual type stored in request_devices
+          equipment_type: 'particle_counter',
           requested_service: devices[0].service_type === 'other' ? devices[0].service_other : devices[0].service_type,
-          problem_description: devices.map(d => `[${d.brand === 'other' ? d.brand_other : 'Lighthouse'}] ${d.model} - ${d.serial_number}\n${d.notes}`).join('\n\n'),
+          problem_description: devices.map(d => `[${d.brand === 'other' ? d.brand_other : 'Lighthouse'}] ${d.model} - ${d.serial_number}\nService: ${d.service_type === 'other' ? d.service_other : d.service_type}\nAccessoires: ${d.accessories.join(', ') || 'Aucun'}\nNotes: ${d.notes}`).join('\n\n---\n\n'),
           urgency: 'normal',
           shipping_address_id: addressId,
           status: 'submitted',
@@ -1255,15 +1507,16 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
 
       if (reqErr) throw reqErr;
 
-      // Save devices to equipment table if requested
+      // Save devices with full details
       for (const d of devices) {
-        // Insert request_device
         await supabase.from('request_devices').insert({
           request_id: request.id,
           serial_number: d.serial_number,
           model_name: d.model,
           equipment_type: d.brand === 'other' ? d.brand_other : 'Lighthouse',
           service_type: d.service_type === 'other' ? d.service_other : d.service_type,
+          notes: d.notes,
+          accessories: d.accessories
         });
 
         // Save to equipment if checkbox is checked and not already from saved
@@ -1282,9 +1535,9 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
 
       await supabase
         .from('system_settings')
-        .upsert({ key: 'request_counter', value: { prefix: 'FR', counter: nextNum } });
+        .upsert({ key: 'draft_counter', value: { prefix: 'DRAFT', counter: nextDraft } });
 
-      notify('Demande soumise avec succès!');
+      notify('Demande soumise avec succès! Vous recevrez votre numéro FR après validation.');
       refresh();
       setPage('dashboard');
     } catch (err) {
@@ -1444,11 +1697,11 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
       const { data: counter } = await supabase
         .from('system_settings')
         .select('value')
-        .eq('key', 'request_counter')
+        .eq('key', 'draft_counter')
         .single();
       
-      const nextNum = (counter?.value?.counter || 0) + 1;
-      const requestNumber = `FR-${String(nextNum).padStart(5, '0')}`;
+      const nextDraft = (counter?.value?.counter || 0) + 1;
+      const draftNumber = `DRAFT-${String(nextDraft).padStart(5, '0')}`;
 
       const partsDescription = parts.map(p => 
         `Pièce ${p.num}: ${p.description}${p.part_number ? ` (Réf: ${p.part_number})` : ''}${p.device_for ? ` - Pour: ${p.device_for}` : ''} - Qté: ${p.quantity}`
@@ -1457,9 +1710,10 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
       await supabase
         .from('service_requests')
         .insert({
-          request_number: requestNumber,
+          request_number: draftNumber,
           company_id: profile.company_id,
           submitted_by: profile.id,
+          request_type: 'parts', // Mark as parts order
           requested_service: 'parts_order',
           problem_description: partsDescription,
           urgency: 'normal',
@@ -1470,9 +1724,9 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
 
       await supabase
         .from('system_settings')
-        .upsert({ key: 'request_counter', value: { prefix: 'FR', counter: nextNum } });
+        .upsert({ key: 'draft_counter', value: { prefix: 'DRAFT', counter: nextDraft } });
 
-      notify('Commande de pièces soumise!');
+      notify('Commande de pièces soumise! Vous recevrez votre numéro FR après validation.');
       refresh();
       setPage('dashboard');
     } catch (err) {
@@ -2661,7 +2915,7 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
               <div className="flex items-center gap-3 mb-2">
                 <h1 className="text-2xl font-bold text-[#1E3A5F]">{request.request_number}</h1>
                 <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>
-                  {t(style.label)}
+                  {style.label}
                 </span>
               </div>
               {request.rma_number && (
@@ -2998,7 +3252,7 @@ function DeviceHistoryPage({ profile, requests, t, setPage }) {
                           </div>
                           <div className="text-right">
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
-                              {t(style.label)}
+                              {style.label}
                             </span>
                             <p className="text-sm text-gray-400 mt-2">
                               {new Date(req.created_at).toLocaleDateString('fr-FR')}
