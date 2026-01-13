@@ -3,37 +3,34 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 
 // France Metropolitan postal code check
-// Metropolitan France: 01-95 (mainland)
-// Non-metropolitan: 97x (DOM), 98x (TOM)
-// Also check for known overseas city/region names
-const OVERSEAS_KEYWORDS = [
-  'guadeloupe', 'martinique', 'guyane', 'réunion', 'reunion', 'mayotte',
-  'saint-pierre', 'miquelon', 'saint-barthélemy', 'saint-martin',
-  'wallis', 'futuna', 'polynésie', 'polynesie', 'nouvelle-calédonie', 
-  'nouvelle-caledonie', 'tahiti', 'nouméa', 'noumea', 'cayenne',
-  'fort-de-france', 'pointe-à-pitre', 'saint-denis réunion'
-];
+// Valid France Metropolitan: 5 digits, starting with 01-95 (includes Corsica 20)
+// INVALID (show warning): DOM-TOM (97xxx, 98xxx), foreign addresses, or non-French codes
 
-const isOverseasFrance = (postalCode, city = '') => {
-  // Check postal code (97xxx, 98xxx are DOM-TOM)
-  if (postalCode) {
-    const prefix = parseInt(postalCode.substring(0, 2), 10);
-    if (prefix === 97 || prefix === 98) return true;
-  }
+const isFranceMetropolitan = (postalCode) => {
+  if (!postalCode) return false; // No postal code = can't verify = show warning
   
-  // Check city name for overseas keywords
-  if (city) {
-    const cityLower = city.toLowerCase();
-    if (OVERSEAS_KEYWORDS.some(keyword => cityLower.includes(keyword))) {
-      return true;
-    }
-  }
+  // Clean the postal code (remove spaces)
+  const cleaned = postalCode.toString().replace(/\s/g, '');
   
-  return false;
+  // Must be exactly 5 digits for France
+  if (!/^\d{5}$/.test(cleaned)) return false;
+  
+  // Get first 2 digits (department code)
+  const dept = parseInt(cleaned.substring(0, 2), 10);
+  
+  // France Metropolitan departments: 01-95
+  // 01-19: Valid
+  // 20: Corsica (2A/2B) - included in metropolitan
+  // 21-95: Valid
+  // 96: Not used
+  // 97-98: DOM-TOM (overseas) - NOT metropolitan
+  // 99: Not used
+  return dept >= 1 && dept <= 95;
 };
 
-const isFranceMetropolitan = (postalCode, city = '') => {
-  return !isOverseasFrance(postalCode, city);
+// Returns true if address is OUTSIDE France Metropolitan (needs warning)
+const isOutsideFranceMetropolitan = (postalCode) => {
+  return !isFranceMetropolitan(postalCode);
 };
 
 // Translations
@@ -1173,10 +1170,10 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
 // SHIPPING SECTION (Reusable)
 // ============================================
 function ShippingSection({ shipping, setShipping, addresses, profile, notify, refresh }) {
-  // Check if selected address is overseas
+  // Check if selected address is outside France Metropolitan
   const selectedAddress = addresses.find(a => a.id === shipping.address_id);
-  const isOverseas = selectedAddress ? isOverseasFrance(selectedAddress.postal_code, selectedAddress.city) : false;
-  const newAddressIsOverseas = shipping.showNewForm && isOverseasFrance(shipping.newAddress.postal_code, shipping.newAddress.city);
+  const isOutsideMetro = selectedAddress ? isOutsideFranceMetropolitan(selectedAddress.postal_code) : false;
+  const newAddressIsOutsideMetro = shipping.showNewForm && shipping.newAddress.postal_code && isOutsideFranceMetropolitan(shipping.newAddress.postal_code);
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
@@ -1191,7 +1188,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
         {addresses.length > 0 ? (
           <div className="space-y-2 mb-4">
             {addresses.map(addr => {
-              const addrIsOverseas = isOverseasFrance(addr.postal_code, addr.city);
+              const addrIsOutsideMetro = isOutsideFranceMetropolitan(addr.postal_code);
               return (
                 <label 
                   key={addr.id}
@@ -1216,9 +1213,9 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
                           Par défaut
                         </span>
                       )}
-                      {addrIsOverseas && (
+                      {addrIsOutsideMetro && (
                         <span className="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full">
-                          Hors métropole
+                          Hors France métropolitaine
                         </span>
                       )}
                     </div>
@@ -1348,12 +1345,12 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
               />
             </div>
 
-            {/* Warning for overseas in new address form */}
-            {newAddressIsOverseas && (
+            {/* Warning for outside France Metropolitan in new address form */}
+            {newAddressIsOutsideMetro && (
               <div className="md:col-span-2 p-3 bg-amber-50 border border-amber-300 rounded-lg">
                 <p className="text-amber-800 font-medium text-sm">⚠️ Adresse hors France métropolitaine</p>
                 <p className="text-amber-700 text-xs mt-1">
-                  Pour les adresses situées en dehors de la France métropolitaine (DOM-TOM), 
+                  Pour les adresses situées en dehors de la France métropolitaine, 
                   les frais d'expédition sont à la charge du client. Vous serez contacté pour 
                   organiser le transport.
                 </p>
@@ -1363,8 +1360,8 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
         </div>
       )}
 
-      {/* Warning for overseas address selected */}
-      {(isOverseas || newAddressIsOverseas) && (
+      {/* Warning for address outside France Metropolitan */}
+      {(isOutsideMetro || newAddressIsOutsideMetro) && (
         <div className="mt-4 p-4 bg-amber-50 border-2 border-amber-300 rounded-lg">
           <div className="flex gap-3">
             <span className="text-2xl">🚢</span>
