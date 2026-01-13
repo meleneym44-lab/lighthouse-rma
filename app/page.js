@@ -4,19 +4,36 @@ import { supabase } from '@/lib/supabase';
 
 // France Metropolitan postal code check
 // Metropolitan France: 01-95 (mainland)
-// Non-metropolitan: 97x (DOM), 98x (TOM), 20 (Corsica is included but different shipping)
-const isFranceMetropolitan = (postalCode) => {
-  if (!postalCode) return true; // Assume OK if no code
-  const prefix = parseInt(postalCode.substring(0, 2), 10);
-  // 01-19, 21-95 are metropolitan (20 is Corsica - special case but included)
-  // 97, 98 are DOM-TOM (overseas)
-  return prefix >= 1 && prefix <= 95;
+// Non-metropolitan: 97x (DOM), 98x (TOM)
+// Also check for known overseas city/region names
+const OVERSEAS_KEYWORDS = [
+  'guadeloupe', 'martinique', 'guyane', 'réunion', 'reunion', 'mayotte',
+  'saint-pierre', 'miquelon', 'saint-barthélemy', 'saint-martin',
+  'wallis', 'futuna', 'polynésie', 'polynesie', 'nouvelle-calédonie', 
+  'nouvelle-caledonie', 'tahiti', 'nouméa', 'noumea', 'cayenne',
+  'fort-de-france', 'pointe-à-pitre', 'saint-denis réunion'
+];
+
+const isOverseasFrance = (postalCode, city = '') => {
+  // Check postal code (97xxx, 98xxx are DOM-TOM)
+  if (postalCode) {
+    const prefix = parseInt(postalCode.substring(0, 2), 10);
+    if (prefix === 97 || prefix === 98) return true;
+  }
+  
+  // Check city name for overseas keywords
+  if (city) {
+    const cityLower = city.toLowerCase();
+    if (OVERSEAS_KEYWORDS.some(keyword => cityLower.includes(keyword))) {
+      return true;
+    }
+  }
+  
+  return false;
 };
 
-const isOverseasFrance = (postalCode) => {
-  if (!postalCode) return false;
-  const prefix = parseInt(postalCode.substring(0, 2), 10);
-  return prefix === 97 || prefix === 98;
+const isFranceMetropolitan = (postalCode, city = '') => {
+  return !isOverseasFrance(postalCode, city);
 };
 
 // Translations
@@ -1158,8 +1175,8 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
 function ShippingSection({ shipping, setShipping, addresses, profile, notify, refresh }) {
   // Check if selected address is overseas
   const selectedAddress = addresses.find(a => a.id === shipping.address_id);
-  const isOverseas = selectedAddress ? isOverseasFrance(selectedAddress.postal_code) : false;
-  const newAddressIsOverseas = shipping.showNewForm && isOverseasFrance(shipping.newAddress.postal_code);
+  const isOverseas = selectedAddress ? isOverseasFrance(selectedAddress.postal_code, selectedAddress.city) : false;
+  const newAddressIsOverseas = shipping.showNewForm && isOverseasFrance(shipping.newAddress.postal_code, shipping.newAddress.city);
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
@@ -1174,7 +1191,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
         {addresses.length > 0 ? (
           <div className="space-y-2 mb-4">
             {addresses.map(addr => {
-              const addrIsOverseas = isOverseasFrance(addr.postal_code);
+              const addrIsOverseas = isOverseasFrance(addr.postal_code, addr.city);
               return (
                 <label 
                   key={addr.id}
@@ -1287,7 +1304,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
                   ...shipping,
                   newAddress: { ...shipping.newAddress, attention: e.target.value }
                 })}
-                placeholder="ex: Marshall Meleney"
+                placeholder="Nom du destinataire"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               />
             </div>
@@ -1493,7 +1510,7 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
             type="text"
             value={device.serial_number}
             onChange={e => updateDevice(device.id, 'serial_number', e.target.value)}
-            placeholder="ex: LC-5012-A"
+            placeholder="ex: 205482857"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             required
           />
@@ -1978,42 +1995,54 @@ function EquipmentPage({ profile, t, notify, refresh }) {
           </button>
         </div>
       ) : (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {equipment.map(equip => (
-            <div key={equip.id} className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-              <div className="flex justify-between items-start mb-3">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          {/* Table Header */}
+          <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-gray-50 border-b text-sm font-bold text-gray-600">
+            <div className="col-span-2">Marque</div>
+            <div className="col-span-3">Modèle</div>
+            <div className="col-span-3">N° de Série</div>
+            <div className="col-span-3">Surnom</div>
+            <div className="col-span-1 text-right">Actions</div>
+          </div>
+          
+          {/* Table Rows - sorted alphabetically by model */}
+          {[...equipment]
+            .sort((a, b) => (a.model_name || '').localeCompare(b.model_name || ''))
+            .map((equip, index) => (
+            <div 
+              key={equip.id} 
+              className={`grid grid-cols-12 gap-4 px-4 py-3 items-center ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-[#E8F2F8] transition-colors border-b border-gray-100 last:border-b-0`}
+            >
+              <div className="col-span-2">
                 <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded font-medium">
                   {equip.brand || 'Lighthouse'}
                 </span>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => openEditModal(equip)}
-                    className="p-1 text-gray-400 hover:text-[#3B7AB4]"
-                    title="Modifier"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    onClick={() => deleteEquipment(equip.id)}
-                    className="p-1 text-gray-400 hover:text-red-500"
-                    title="Supprimer"
-                  >
-                    🗑️
-                  </button>
-                </div>
               </div>
-              
-              {equip.nickname && (
-                <p className="text-[#3B7AB4] font-medium text-sm mb-1">{equip.nickname}</p>
-              )}
-              <h3 className="font-bold text-[#1E3A5F] text-lg">{equip.model_name || 'Modèle inconnu'}</h3>
-              <p className="font-mono text-gray-600 text-sm mt-1">SN: {equip.serial_number}</p>
-              
-              {equip.last_calibration_date && (
-                <p className="text-xs text-gray-400 mt-3">
-                  Dernier étalonnage: {new Date(equip.last_calibration_date).toLocaleDateString('fr-FR')}
-                </p>
-              )}
+              <div className="col-span-3 font-medium text-[#1E3A5F]">
+                {equip.model_name || 'Modèle inconnu'}
+              </div>
+              <div className="col-span-3 font-mono text-gray-600 text-sm">
+                {equip.serial_number}
+              </div>
+              <div className="col-span-3 text-gray-500 text-sm">
+                {equip.nickname || '-'}
+              </div>
+              <div className="col-span-1 flex justify-end gap-1">
+                <button
+                  onClick={() => openEditModal(equip)}
+                  className="p-1.5 text-gray-400 hover:text-[#3B7AB4] hover:bg-white rounded"
+                  title="Modifier"
+                >
+                  ✏️
+                </button>
+                <button
+                  onClick={() => deleteEquipment(equip.id)}
+                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-white rounded"
+                  title="Supprimer"
+                >
+                  🗑️
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -2083,7 +2112,7 @@ function EquipmentPage({ profile, t, notify, refresh }) {
                   type="text"
                   value={newEquipment.serial_number}
                   onChange={e => setNewEquipment({ ...newEquipment, serial_number: e.target.value })}
-                  placeholder="ex: LC-5012-A"
+                  placeholder="ex: 205482857"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   required
                 />
