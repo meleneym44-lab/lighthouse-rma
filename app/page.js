@@ -414,6 +414,17 @@ export default function CustomerPortal() {
         {page === 'request-detail' && selectedRequest && (
           <RequestDetail 
             request={selectedRequest}
+            profile={profile}
+            t={t}
+            setPage={setPage}
+            notify={notify}
+          />
+        )}
+        
+        {page === 'device-history' && (
+          <DeviceHistoryPage 
+            profile={profile}
+            requests={requests}
             t={t}
             setPage={setPage}
           />
@@ -434,24 +445,67 @@ export default function CustomerPortal() {
 }
 
 // ============================================
-// DASHBOARD COMPONENT
+// DASHBOARD COMPONENT (Enhanced)
 // ============================================
 function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
+  const [messages, setMessages] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'devices', 'messages'
+
+  // Load messages
+  useEffect(() => {
+    const loadMessages = async () => {
+      if (!profile?.company_id) return;
+      
+      // Get all messages for this company's requests
+      const requestIds = requests.map(r => r.id);
+      if (requestIds.length === 0) return;
+      
+      const { data } = await supabase
+        .from('messages')
+        .select('*')
+        .in('request_id', requestIds)
+        .order('created_at', { ascending: false });
+      
+      if (data) {
+        setMessages(data);
+        setUnreadCount(data.filter(m => !m.is_read && m.sender_id !== profile.id).length);
+      }
+    };
+    loadMessages();
+  }, [profile, requests]);
+
+  // Get all devices from all requests
+  const allDevices = requests.flatMap(req => 
+    (req.request_devices || []).map(dev => ({
+      ...dev,
+      request_number: req.request_number,
+      request_id: req.id,
+      request_status: req.status,
+      request_date: req.created_at
+    }))
+  );
+
+  // Stats
   const stats = [
     { 
-      label: t('totalDevices'), 
-      value: requests.reduce((sum, r) => sum + (r.request_devices?.length || 0), 0),
-      color: 'bg-[#3B7AB4]'
+      label: 'Appareils en cours', 
+      value: allDevices.filter(d => !['shipped', 'completed'].includes(d.status || d.request_status)).length,
+      color: 'bg-amber-500',
+      icon: '🔧'
     },
     { 
-      label: t('inProgress'), 
-      value: requests.filter(r => !['shipped', 'completed'].includes(r.status)).length,
-      color: 'bg-amber-500'
+      label: 'Terminés', 
+      value: allDevices.filter(d => ['shipped', 'completed'].includes(d.status || d.request_status)).length,
+      color: 'bg-green-500',
+      icon: '✅'
     },
     { 
-      label: t('completed'), 
-      value: requests.filter(r => ['shipped', 'completed'].includes(r.status)).length,
-      color: 'bg-green-500'
+      label: 'Messages', 
+      value: unreadCount,
+      color: unreadCount > 0 ? 'bg-red-500' : 'bg-gray-400',
+      icon: '💬',
+      highlight: unreadCount > 0
     }
   ];
 
@@ -460,88 +514,478 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
     setPage('request-detail');
   };
 
+  const viewDeviceHistory = (serialNumber) => {
+    setPage('device-history');
+    // Store in sessionStorage for the device history page
+    sessionStorage.setItem('viewDeviceSerial', serialNumber);
+  };
+
+  // Pending requests (just submitted)
+  const pendingRequests = requests.filter(r => r.status === 'submitted' || r.status === 'pending');
+  const inProgressRequests = requests.filter(r => ['received', 'in_progress', 'calibration', 'repair', 'quote_sent'].includes(r.status));
+  const completedRequests = requests.filter(r => ['shipped', 'completed', 'delivered'].includes(r.status));
+
   return (
     <div>
-      {/* Welcome */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+      {/* Welcome Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-[#1E3A5F]">{t('myRequests')}</h1>
-          <p className="text-gray-600">{t('welcome')}, {profile?.full_name}</p>
+          <h1 className="text-2xl font-bold text-[#1E3A5F]">Bonjour, {profile?.full_name?.split(' ')[0] || 'Client'}</h1>
+          <p className="text-gray-600">Bienvenue sur votre espace client Lighthouse France</p>
         </div>
         <button 
           onClick={() => setPage('new-request')}
           className="px-6 py-3 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F] transition-colors"
         >
-          + {t('submitRequest')}
+          + Nouvelle Demande
         </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
         {stats.map((stat, i) => (
-          <div key={i} className="bg-white rounded-lg p-4 shadow-sm border border-gray-100">
-            <div className={`w-3 h-3 rounded-full ${stat.color} mb-2`} />
-            <div className="text-2xl font-bold text-gray-900">{stat.value}</div>
-            <div className="text-sm text-gray-500">{stat.label}</div>
+          <div 
+            key={i} 
+            className={`bg-white rounded-lg p-4 shadow-sm border ${stat.highlight ? 'border-red-300 ring-2 ring-red-100' : 'border-gray-100'} cursor-pointer hover:shadow-md transition-shadow`}
+            onClick={() => stat.label === 'Messages' && setActiveTab('messages')}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">{stat.icon}</span>
+              <div>
+                <div className="text-2xl font-bold text-gray-900">{stat.value}</div>
+                <div className="text-sm text-gray-500">{stat.label}</div>
+              </div>
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Requests List */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100">
-        <div className="px-6 py-4 border-b border-gray-100">
-          <h2 className="font-bold text-[#1E3A5F] text-lg">{t('myRequests')}</h2>
-        </div>
-        
-        {requests.length === 0 ? (
-          <div className="p-12 text-center">
-            <p className="text-4xl mb-3">📋</p>
-            <p className="text-gray-500 mb-4">{t('noRequests')}</p>
-            <button 
-              onClick={() => setPage('new-request')}
-              className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
-            >
-              {t('submitRequest')}
-            </button>
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {requests.map(req => {
-              const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
-              return (
-                <div 
-                  key={req.id}
-                  onClick={() => viewRequest(req)}
-                  className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono font-bold text-[#3B7AB4]">
-                        {req.request_number || '—'}
-                      </span>
-                      {req.rma_number && (
-                        <span className="font-mono text-green-600 text-sm">
-                          RMA: {req.rma_number}
+      {/* Tab Navigation */}
+      <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-lg w-fit">
+        {[
+          { id: 'overview', label: 'Aperçu', icon: '📋' },
+          { id: 'devices', label: 'Mes Appareils', icon: '🔧' },
+          { id: 'messages', label: 'Messages', icon: '💬', badge: unreadCount }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 rounded-md font-medium transition-colors flex items-center gap-2 ${
+              activeTab === tab.id 
+                ? 'bg-white text-[#3B7AB4] shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <span>{tab.icon}</span>
+            {tab.label}
+            {tab.badge > 0 && (
+              <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">{tab.badge}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Overview Tab */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          {/* Pending Requests Alert */}
+          {pendingRequests.length > 0 && (
+            <div className="bg-amber-50 border-l-4 border-amber-400 rounded-lg p-4">
+              <h3 className="font-bold text-amber-800 mb-2">⏳ Demandes en attente de traitement</h3>
+              <div className="space-y-2">
+                {pendingRequests.map(req => (
+                  <div 
+                    key={req.id}
+                    onClick={() => viewRequest(req)}
+                    className="flex justify-between items-center p-2 bg-white rounded cursor-pointer hover:bg-amber-100"
+                  >
+                    <span className="font-mono font-medium">{req.request_number}</span>
+                    <span className="text-sm text-gray-500">
+                      {new Date(req.created_at).toLocaleDateString('fr-FR')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* In Progress */}
+          {inProgressRequests.length > 0 && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                <h2 className="font-bold text-[#1E3A5F] text-lg">🔧 En cours de traitement</h2>
+                <span className="text-sm text-gray-500">{inProgressRequests.length} demande(s)</span>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {inProgressRequests.slice(0, 5).map(req => {
+                  const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
+                  return (
+                    <div 
+                      key={req.id}
+                      onClick={() => viewRequest(req)}
+                      className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono font-bold text-[#3B7AB4]">{req.request_number}</span>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                            {t(style.label)}
+                          </span>
+                        </div>
+                        <span className="text-sm text-gray-500">
+                          {req.request_devices?.length || 0} appareil(s)
                         </span>
-                      )}
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
-                        {t(style.label)}
-                      </span>
+                      </div>
+                      {/* Device list preview */}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {(req.request_devices || []).slice(0, 3).map((dev, i) => (
+                          <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
+                            {dev.model_name} - {dev.serial_number}
+                          </span>
+                        ))}
+                        {(req.request_devices?.length || 0) > 3 && (
+                          <span className="text-xs text-gray-400">+{req.request_devices.length - 3} autre(s)</span>
+                        )}
+                      </div>
                     </div>
-                    {req.quote_total && (
-                      <span className="font-bold text-lg text-[#1E3A5F]">
-                        {req.quote_total.toFixed(2)} €
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Recent Completed */}
+          {completedRequests.length > 0 && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h2 className="font-bold text-[#1E3A5F] text-lg">✅ Récemment terminés</h2>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {completedRequests.slice(0, 3).map(req => (
+                  <div 
+                    key={req.id}
+                    onClick={() => viewRequest(req)}
+                    className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="font-mono font-medium text-gray-700">{req.request_number}</span>
+                      <span className="text-green-600 text-sm font-medium">Terminé</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {completedRequests.length > 3 && (
+                <div className="px-6 py-3 bg-gray-50 text-center">
+                  <button className="text-[#3B7AB4] text-sm font-medium">
+                    Voir tout l'historique →
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Empty State */}
+          {requests.length === 0 && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-12 text-center">
+              <p className="text-4xl mb-3">📋</p>
+              <p className="text-gray-500 mb-4">Aucune demande pour le moment</p>
+              <button 
+                onClick={() => setPage('new-request')}
+                className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
+              >
+                Soumettre votre première demande
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Devices Tab */}
+      {activeTab === 'devices' && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="font-bold text-[#1E3A5F] text-lg">Suivi de vos appareils</h2>
+            <p className="text-sm text-gray-500">Tous les appareils que vous avez envoyés en service</p>
+          </div>
+          
+          {allDevices.length === 0 ? (
+            <div className="p-12 text-center">
+              <p className="text-4xl mb-3">🔧</p>
+              <p className="text-gray-500">Aucun appareil en cours de traitement</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 text-left text-sm text-gray-600">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Appareil</th>
+                    <th className="px-4 py-3 font-medium">N° Série</th>
+                    <th className="px-4 py-3 font-medium">Demande</th>
+                    <th className="px-4 py-3 font-medium">Statut</th>
+                    <th className="px-4 py-3 font-medium">Date</th>
+                    <th className="px-4 py-3 font-medium"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {allDevices.map((dev, i) => {
+                    const status = dev.status || dev.request_status || 'pending';
+                    const style = STATUS_STYLES[status] || STATUS_STYLES.submitted;
+                    return (
+                      <tr key={i} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium text-[#1E3A5F]">{dev.model_name || 'N/A'}</td>
+                        <td className="px-4 py-3 font-mono text-sm">{dev.serial_number}</td>
+                        <td className="px-4 py-3">
+                          <span className="text-[#3B7AB4] font-mono text-sm">{dev.request_number}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                            {t(style.label)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {new Date(dev.request_date).toLocaleDateString('fr-FR')}
+                        </td>
+                        <td className="px-4 py-3">
+                          <button 
+                            onClick={() => viewDeviceHistory(dev.serial_number)}
+                            className="text-[#3B7AB4] text-sm hover:underline"
+                          >
+                            Historique →
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Messages Tab */}
+      {activeTab === 'messages' && (
+        <MessagesPanel 
+          messages={messages} 
+          requests={requests} 
+          profile={profile} 
+          setMessages={setMessages}
+          setUnreadCount={setUnreadCount}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// MESSAGES PANEL COMPONENT
+// ============================================
+function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCount }) {
+  const [selectedThread, setSelectedThread] = useState(null);
+  const [newMessage, setNewMessage] = useState('');
+  const [sending, setSending] = useState(false);
+
+  // Group messages by request
+  const messagesByRequest = requests.map(req => {
+    const reqMessages = messages.filter(m => m.request_id === req.id);
+    const unread = reqMessages.filter(m => !m.is_read && m.sender_id !== profile.id).length;
+    const lastMessage = reqMessages[0];
+    return {
+      request: req,
+      messages: reqMessages,
+      unreadCount: unread,
+      lastMessage
+    };
+  }).filter(t => t.messages.length > 0 || t.request.status !== 'completed')
+    .sort((a, b) => {
+      // Sort by unread first, then by last message date
+      if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
+      if (a.unreadCount === 0 && b.unreadCount > 0) return 1;
+      const dateA = a.lastMessage?.created_at || a.request.created_at;
+      const dateB = b.lastMessage?.created_at || b.request.created_at;
+      return new Date(dateB) - new Date(dateA);
+    });
+
+  const markAsRead = async (requestId) => {
+    const unreadMessages = messages.filter(m => 
+      m.request_id === requestId && !m.is_read && m.sender_id !== profile.id
+    );
+    
+    if (unreadMessages.length === 0) return;
+    
+    for (const msg of unreadMessages) {
+      await supabase
+        .from('messages')
+        .update({ is_read: true, read_at: new Date().toISOString() })
+        .eq('id', msg.id);
+    }
+    
+    // Update local state
+    setMessages(messages.map(m => 
+      unreadMessages.find(um => um.id === m.id) 
+        ? { ...m, is_read: true } 
+        : m
+    ));
+    setUnreadCount(prev => Math.max(0, prev - unreadMessages.length));
+  };
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !selectedThread) return;
+    
+    setSending(true);
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        request_id: selectedThread.request.id,
+        sender_id: profile.id,
+        sender_type: 'customer',
+        content: newMessage.trim()
+      })
+      .select()
+      .single();
+    
+    if (!error && data) {
+      setMessages([data, ...messages]);
+      setNewMessage('');
+    }
+    setSending(false);
+  };
+
+  const openThread = (thread) => {
+    setSelectedThread(thread);
+    markAsRead(thread.request.id);
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+      <div className="grid md:grid-cols-3 h-[600px]">
+        {/* Thread List */}
+        <div className="border-r border-gray-100 overflow-y-auto">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+            <h3 className="font-bold text-[#1E3A5F]">Conversations</h3>
+          </div>
+          
+          {messagesByRequest.length === 0 ? (
+            <div className="p-6 text-center text-gray-500">
+              <p className="text-3xl mb-2">💬</p>
+              <p className="text-sm">Aucune conversation</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {messagesByRequest.map(thread => (
+                <div
+                  key={thread.request.id}
+                  onClick={() => openThread(thread)}
+                  className={`p-4 cursor-pointer transition-colors ${
+                    selectedThread?.request.id === thread.request.id 
+                      ? 'bg-[#E8F2F8]' 
+                      : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex justify-between items-start mb-1">
+                    <span className="font-mono font-medium text-[#3B7AB4] text-sm">
+                      {thread.request.request_number}
+                    </span>
+                    {thread.unreadCount > 0 && (
+                      <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">
+                        {thread.unreadCount}
                       </span>
                     )}
                   </div>
-                  <div className="mt-2 text-sm text-gray-600">
-                    {req.request_devices?.length || 0} {t('totalDevices')} • {new Date(req.created_at).toLocaleDateString()}
-                  </div>
+                  {thread.lastMessage && (
+                    <p className="text-sm text-gray-600 truncate">
+                      {thread.lastMessage.content}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-1">
+                    {thread.lastMessage 
+                      ? new Date(thread.lastMessage.created_at).toLocaleDateString('fr-FR')
+                      : 'Pas de messages'
+                    }
+                  </p>
                 </div>
-              );
-            })}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Message Thread */}
+        <div className="md:col-span-2 flex flex-col">
+          {selectedThread ? (
+            <>
+              {/* Thread Header */}
+              <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                <h3 className="font-bold text-[#1E3A5F]">
+                  Demande {selectedThread.request.request_number}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {selectedThread.request.request_devices?.length || 0} appareil(s) • 
+                  {new Date(selectedThread.request.created_at).toLocaleDateString('fr-FR')}
+                </p>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {selectedThread.messages.length === 0 ? (
+                  <div className="text-center text-gray-400 py-8">
+                    <p>Aucun message pour cette demande</p>
+                    <p className="text-sm">Envoyez un message pour démarrer la conversation</p>
+                  </div>
+                ) : (
+                  [...selectedThread.messages].reverse().map(msg => (
+                    <div 
+                      key={msg.id}
+                      className={`flex ${msg.sender_id === profile.id ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`max-w-[70%] rounded-lg p-3 ${
+                        msg.sender_id === profile.id 
+                          ? 'bg-[#3B7AB4] text-white' 
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        <p className="text-sm">{msg.content}</p>
+                        <p className={`text-xs mt-1 ${
+                          msg.sender_id === profile.id ? 'text-white/70' : 'text-gray-400'
+                        }`}>
+                          {new Date(msg.created_at).toLocaleString('fr-FR', {
+                            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Message Input */}
+              <form onSubmit={sendMessage} className="p-4 border-t border-gray-100">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={e => setNewMessage(e.target.value)}
+                    placeholder="Écrivez votre message..."
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B7AB4]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!newMessage.trim() || sending}
+                    className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                  >
+                    {sending ? '...' : 'Envoyer'}
+                  </button>
+                </div>
+              </form>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-gray-400">
+              <div className="text-center">
+                <p className="text-4xl mb-2">💬</p>
+                <p>Sélectionnez une conversation</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -2143,10 +2587,62 @@ function EquipmentPage({ profile, t, notify, refresh }) {
 }
 
 // ============================================
-// REQUEST DETAIL PAGE
+// REQUEST DETAIL PAGE (Enhanced)
 // ============================================
-function RequestDetail({ request, t, setPage }) {
+function RequestDetail({ request, profile, t, setPage, notify }) {
+  const [messages, setMessages] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [activeTab, setActiveTab] = useState('details');
+  
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
+
+  // Load messages and history
+  useEffect(() => {
+    const loadData = async () => {
+      // Load messages
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('request_id', request.id)
+        .order('created_at', { ascending: true });
+      if (msgs) setMessages(msgs);
+      
+      // Load device history
+      const { data: hist } = await supabase
+        .from('device_history')
+        .select('*')
+        .eq('request_id', request.id)
+        .order('event_date', { ascending: false });
+      if (hist) setHistory(hist);
+    };
+    loadData();
+  }, [request.id]);
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim()) return;
+    
+    setSending(true);
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        request_id: request.id,
+        sender_id: profile.id,
+        sender_type: 'customer',
+        content: newMessage.trim()
+      })
+      .select()
+      .single();
+    
+    if (!error && data) {
+      setMessages([...messages, data]);
+      setNewMessage('');
+      notify('Message envoyé!');
+    }
+    setSending(false);
+  };
 
   return (
     <div>
@@ -2154,78 +2650,392 @@ function RequestDetail({ request, t, setPage }) {
         onClick={() => setPage('dashboard')}
         className="mb-6 text-[#3B7AB4] hover:text-[#1E3A5F] font-medium"
       >
-        ← Back to {t('dashboard')}
+        ← Retour au tableau de bord
+      </button>
+
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+        {/* Header */}
+        <div className="p-6 border-b border-gray-100">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <h1 className="text-2xl font-bold text-[#1E3A5F]">{request.request_number}</h1>
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>
+                  {t(style.label)}
+                </span>
+              </div>
+              {request.rma_number && (
+                <p className="text-green-600 font-mono">RMA: {request.rma_number}</p>
+              )}
+              <p className="text-sm text-gray-500 mt-1">
+                Soumis le {new Date(request.created_at).toLocaleDateString('fr-FR')}
+              </p>
+            </div>
+            {request.quote_total && (
+              <div className="text-right">
+                <p className="text-sm text-gray-500">Total</p>
+                <p className="text-2xl font-bold text-[#1E3A5F]">{request.quote_total.toFixed(2)} €</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-gray-100">
+          {[
+            { id: 'details', label: 'Détails', icon: '📋' },
+            { id: 'messages', label: 'Messages', icon: '💬', count: messages.filter(m => !m.is_read && m.sender_id !== profile?.id).length },
+            { id: 'history', label: 'Historique', icon: '📜' },
+            { id: 'documents', label: 'Documents', icon: '📄' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-6 py-3 font-medium transition-colors flex items-center gap-2 ${
+                activeTab === tab.id 
+                  ? 'text-[#3B7AB4] border-b-2 border-[#3B7AB4] -mb-px' 
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <span>{tab.icon}</span>
+              {tab.label}
+              {tab.count > 0 && (
+                <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">{tab.count}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab Content */}
+        <div className="p-6">
+          {/* Details Tab */}
+          {activeTab === 'details' && (
+            <div className="space-y-6">
+              {/* Devices */}
+              <div>
+                <h2 className="text-lg font-bold text-[#1E3A5F] mb-4">
+                  Appareils ({request.request_devices?.length || 0})
+                </h2>
+                <div className="space-y-3">
+                  {request.request_devices?.map((device) => (
+                    <div key={device.id} className="p-4 bg-gray-50 rounded-lg border-l-4 border-[#3B7AB4]">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-bold text-[#1E3A5F]">{device.model_name || 'Modèle inconnu'}</p>
+                          <p className="font-mono text-[#3B7AB4]">{device.serial_number}</p>
+                          <p className="text-sm text-gray-500 mt-1">{device.equipment_type}</p>
+                        </div>
+                        <div className="text-right">
+                          <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded font-medium">
+                            {device.service_type === 'calibration' ? 'Étalonnage' : 
+                             device.service_type === 'repair' ? 'Réparation' :
+                             device.service_type === 'calibration_repair' ? 'Étal. + Rép.' :
+                             device.service_type}
+                          </span>
+                          {device.status && device.status !== 'pending' && (
+                            <p className="text-xs text-gray-400 mt-2">
+                              Statut: {device.status}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quote Details */}
+              {request.quote_total && (
+                <div className="bg-[#E8F2F8] rounded-lg p-4">
+                  <h3 className="font-bold text-[#1E3A5F] mb-3">Détails du Devis</h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span>Sous-total HT</span>
+                      <span>{request.quote_subtotal?.toFixed(2)} €</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>TVA (20%)</span>
+                      <span>{request.quote_tax?.toFixed(2)} €</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-lg border-t border-[#3B7AB4]/20 pt-2 mt-2">
+                      <span>Total TTC</span>
+                      <span>{request.quote_total?.toFixed(2)} €</span>
+                    </div>
+                  </div>
+                  
+                  {request.status === 'quote_sent' && (
+                    <div className="mt-4 flex gap-3">
+                      <button className="flex-1 py-2 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600">
+                        ✓ Accepter le devis
+                      </button>
+                      <button className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300">
+                        Demander des modifications
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Notes */}
+              {request.problem_description && (
+                <div>
+                  <h3 className="font-bold text-[#1E3A5F] mb-2">Notes</h3>
+                  <p className="text-gray-600 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg">
+                    {request.problem_description}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Messages Tab */}
+          {activeTab === 'messages' && (
+            <div>
+              <div className="h-[400px] overflow-y-auto mb-4 space-y-4">
+                {messages.length === 0 ? (
+                  <div className="text-center text-gray-400 py-12">
+                    <p className="text-4xl mb-2">💬</p>
+                    <p>Aucun message</p>
+                    <p className="text-sm">Envoyez un message à notre équipe</p>
+                  </div>
+                ) : (
+                  messages.map(msg => (
+                    <div 
+                      key={msg.id}
+                      className={`flex ${msg.sender_id === profile?.id ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`max-w-[70%] rounded-lg p-3 ${
+                        msg.sender_id === profile?.id 
+                          ? 'bg-[#3B7AB4] text-white' 
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {msg.sender_type !== 'customer' && (
+                          <p className={`text-xs font-medium mb-1 ${
+                            msg.sender_id === profile?.id ? 'text-white/70' : 'text-[#3B7AB4]'
+                          }`}>
+                            Lighthouse France
+                          </p>
+                        )}
+                        <p className="text-sm">{msg.content}</p>
+                        <p className={`text-xs mt-1 ${
+                          msg.sender_id === profile?.id ? 'text-white/70' : 'text-gray-400'
+                        }`}>
+                          {new Date(msg.created_at).toLocaleString('fr-FR', {
+                            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              
+              <form onSubmit={sendMessage} className="flex gap-2">
+                <input
+                  type="text"
+                  value={newMessage}
+                  onChange={e => setNewMessage(e.target.value)}
+                  placeholder="Écrivez votre message..."
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B7AB4]"
+                />
+                <button
+                  type="submit"
+                  disabled={!newMessage.trim() || sending}
+                  className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                >
+                  {sending ? '...' : 'Envoyer'}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* History Tab */}
+          {activeTab === 'history' && (
+            <div>
+              {history.length === 0 ? (
+                <div className="text-center text-gray-400 py-12">
+                  <p className="text-4xl mb-2">📜</p>
+                  <p>Aucun historique disponible</p>
+                </div>
+              ) : (
+                <div className="relative">
+                  <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
+                  <div className="space-y-6">
+                    {history.map((event, i) => (
+                      <div key={event.id} className="flex gap-4 ml-4">
+                        <div className="w-3 h-3 rounded-full bg-[#3B7AB4] border-2 border-white shadow -ml-[7px] mt-1.5 z-10"></div>
+                        <div className="flex-1 pb-4">
+                          <p className="font-medium text-[#1E3A5F]">{event.event_description}</p>
+                          <p className="text-sm text-gray-500">
+                            {new Date(event.event_date).toLocaleString('fr-FR')}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Documents Tab */}
+          {activeTab === 'documents' && (
+            <div className="text-center text-gray-400 py-12">
+              <p className="text-4xl mb-2">📄</p>
+              <p>Aucun document disponible</p>
+              <p className="text-sm">Les devis et certificats apparaîtront ici</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// DEVICE HISTORY PAGE
+// ============================================
+function DeviceHistoryPage({ profile, requests, t, setPage }) {
+  const [serialNumber, setSerialNumber] = useState('');
+  const [history, setHistory] = useState([]);
+  const [allRequests, setAllRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Get serial from sessionStorage
+    const storedSerial = sessionStorage.getItem('viewDeviceSerial');
+    if (storedSerial) {
+      setSerialNumber(storedSerial);
+      sessionStorage.removeItem('viewDeviceSerial');
+    }
+  }, []);
+
+  useEffect(() => {
+    const loadHistory = async () => {
+      if (!serialNumber) {
+        setLoading(false);
+        return;
+      }
+      
+      setLoading(true);
+      
+      // Find all requests containing this serial number
+      const matchingRequests = requests.filter(req => 
+        req.request_devices?.some(d => d.serial_number === serialNumber)
+      );
+      setAllRequests(matchingRequests);
+      
+      // Load device history
+      const { data } = await supabase
+        .from('device_history')
+        .select('*')
+        .eq('serial_number', serialNumber)
+        .order('event_date', { ascending: false });
+      
+      if (data) setHistory(data);
+      setLoading(false);
+    };
+    loadHistory();
+  }, [serialNumber, requests]);
+
+  // Get device info from first request
+  const deviceInfo = allRequests[0]?.request_devices?.find(d => d.serial_number === serialNumber);
+
+  return (
+    <div>
+      <button
+        onClick={() => setPage('dashboard')}
+        className="mb-6 text-[#3B7AB4] hover:text-[#1E3A5F] font-medium"
+      >
+        ← Retour au tableau de bord
       </button>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
-        {/* Header */}
-        <div className="flex flex-wrap items-start justify-between gap-4 mb-6 pb-6 border-b border-gray-100">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-2xl font-bold text-[#1E3A5F]">{request.request_number}</h1>
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>
-                {t(style.label)}
-              </span>
-            </div>
-            {request.rma_number && (
-              <p className="text-green-600 font-mono">RMA: {request.rma_number}</p>
-            )}
-          </div>
-          {request.quote_total && (
-            <div className="text-right">
-              <p className="text-sm text-gray-500">Total</p>
-              <p className="text-2xl font-bold text-[#1E3A5F]">{request.quote_total.toFixed(2)} €</p>
+        <div className="mb-6 pb-6 border-b border-gray-100">
+          <h1 className="text-2xl font-bold text-[#1E3A5F]">Historique de l'appareil</h1>
+          {deviceInfo && (
+            <div className="mt-2">
+              <p className="text-lg font-medium">{deviceInfo.model_name}</p>
+              <p className="font-mono text-[#3B7AB4]">SN: {serialNumber}</p>
             </div>
           )}
         </div>
 
-        {/* Devices */}
-        <div className="mb-6">
-          <h2 className="text-lg font-bold text-[#1E3A5F] mb-4">{t('totalDevices')} ({request.request_devices?.length || 0})</h2>
-          <div className="space-y-3">
-            {request.request_devices?.map((device, i) => (
-              <div key={device.id} className="p-4 bg-gray-50 rounded-lg border-l-4 border-[#3B7AB4]">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="font-mono text-[#3B7AB4] font-bold">{device.serial_number}</span>
-                    <p className="text-gray-600">{device.model_name || '—'}</p>
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="w-8 h-8 border-4 border-[#3B7AB4] border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {/* Service History from Requests */}
+            <div>
+              <h2 className="font-bold text-[#1E3A5F] mb-4">Historique des services</h2>
+              {allRequests.length === 0 ? (
+                <p className="text-gray-500">Aucun historique de service trouvé</p>
+              ) : (
+                <div className="space-y-4">
+                  {allRequests.map(req => {
+                    const device = req.request_devices?.find(d => d.serial_number === serialNumber);
+                    const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
+                    return (
+                      <div 
+                        key={req.id}
+                        className="p-4 border border-gray-200 rounded-lg hover:border-[#3B7AB4] cursor-pointer transition-colors"
+                        onClick={() => {
+                          setPage('request-detail');
+                          // Would need to pass the request somehow
+                        }}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className="font-mono font-bold text-[#3B7AB4]">{req.request_number}</span>
+                            <p className="text-sm text-gray-600 mt-1">
+                              {device?.service_type === 'calibration' ? 'Étalonnage' : 
+                               device?.service_type === 'repair' ? 'Réparation' :
+                               device?.service_type === 'calibration_repair' ? 'Étalonnage + Réparation' :
+                               device?.service_type}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                              {t(style.label)}
+                            </span>
+                            <p className="text-sm text-gray-400 mt-2">
+                              {new Date(req.created_at).toLocaleDateString('fr-FR')}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Event Timeline */}
+            {history.length > 0 && (
+              <div>
+                <h2 className="font-bold text-[#1E3A5F] mb-4">Événements</h2>
+                <div className="relative">
+                  <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
+                  <div className="space-y-4">
+                    {history.map(event => (
+                      <div key={event.id} className="flex gap-4 ml-4">
+                        <div className="w-3 h-3 rounded-full bg-[#3B7AB4] border-2 border-white shadow -ml-[7px] mt-1.5 z-10"></div>
+                        <div className="flex-1 pb-2">
+                          <p className="font-medium text-[#1E3A5F]">{event.event_description}</p>
+                          <p className="text-sm text-gray-500">
+                            {new Date(event.event_date).toLocaleString('fr-FR')}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
-                    {t(device.service_type)}
-                  </span>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Quote Details */}
-        {request.quote_total && (
-          <div className="bg-[#E8F2F8] rounded-lg p-4">
-            <h3 className="font-bold text-[#1E3A5F] mb-3">Quote Details</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span>Subtotal</span>
-                <span>{request.quote_subtotal?.toFixed(2)} €</span>
-              </div>
-              <div className="flex justify-between">
-                <span>TVA (20%)</span>
-                <span>{request.quote_tax?.toFixed(2)} €</span>
-              </div>
-              <div className="flex justify-between font-bold text-lg border-t border-[#3B7AB4]/20 pt-2 mt-2">
-                <span>Total TTC</span>
-                <span>{request.quote_total?.toFixed(2)} €</span>
-              </div>
-            </div>
+            )}
           </div>
         )}
-
-        {/* Timeline/History would go here */}
-        <div className="mt-6 pt-6 border-t border-gray-100">
-          <p className="text-sm text-gray-500">
-            Submitted: {new Date(request.created_at).toLocaleString()}
-          </p>
-        </div>
       </div>
     </div>
   );
