@@ -1233,7 +1233,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         .single();
       
       const nextNum = (counter?.value?.counter || 0) + 1;
-      const requestNumber = `SR-${new Date().getFullYear()}-${String(nextNum).padStart(4, '0')}`;
+      const requestNumber = `FR-${String(nextNum).padStart(5, '0')}`;
 
       const { data: request, error: reqErr } = await supabase
         .from('service_requests')
@@ -1282,7 +1282,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
 
       await supabase
         .from('system_settings')
-        .upsert({ key: 'request_counter', value: { prefix: 'SR', counter: nextNum } });
+        .upsert({ key: 'request_counter', value: { prefix: 'FR', counter: nextNum } });
 
       notify('Demande soumise avec succès!');
       refresh();
@@ -1448,7 +1448,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
         .single();
       
       const nextNum = (counter?.value?.counter || 0) + 1;
-      const requestNumber = `PO-${new Date().getFullYear()}-${String(nextNum).padStart(4, '0')}`;
+      const requestNumber = `FR-${String(nextNum).padStart(5, '0')}`;
 
       const partsDescription = parts.map(p => 
         `Pièce ${p.num}: ${p.description}${p.part_number ? ` (Réf: ${p.part_number})` : ''}${p.device_for ? ` - Pour: ${p.device_for}` : ''} - Qté: ${p.quantity}`
@@ -1470,7 +1470,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
 
       await supabase
         .from('system_settings')
-        .upsert({ key: 'request_counter', value: { prefix: 'PO', counter: nextNum } });
+        .upsert({ key: 'request_counter', value: { prefix: 'FR', counter: nextNum } });
 
       notify('Commande de pièces soumise!');
       refresh();
