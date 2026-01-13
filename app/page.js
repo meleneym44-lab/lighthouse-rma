@@ -165,7 +165,7 @@ export default function CustomerPortal() {
     
     const [reqRes, addrRes] = await Promise.all([
       supabase.from('service_requests')
-        .select('*, request_devices(*), quote_line_items(*)')
+        .select('*, request_devices(*)')
         .eq('company_id', p.company_id)
         .order('created_at', { ascending: false }),
       supabase.from('shipping_addresses')
