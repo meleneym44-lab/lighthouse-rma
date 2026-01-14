@@ -154,36 +154,107 @@ const STATUS_STYLES = {
   cancelled: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-400', label: 'Annulé', icon: '❌', progress: 0 }
 };
 
-// Progress bar component
-const ProgressBar = ({ status, serviceType }) => {
-  const style = STATUS_STYLES[status] || STATUS_STYLES.submitted;
-  const progress = style.progress || 0;
-  
-  // Color based on progress
-  const getBarColor = (p) => {
-    if (p >= 100) return 'bg-green-500';
-    if (p >= 80) return 'bg-emerald-500';
-    if (p >= 60) return 'bg-cyan-500';
-    if (p >= 40) return 'bg-blue-500';
-    if (p >= 20) return 'bg-amber-500';
-    return 'bg-gray-400';
+// Step Progress Tracker Component (Chevron Style)
+const StepProgress = ({ status, serviceType }) => {
+  // Define steps based on service type
+  const calibrationSteps = [
+    { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
+    { id: 'approved', label: 'Approuvé', shortLabel: 'Approuvé' },
+    { id: 'waiting_device', label: 'En attente', shortLabel: 'Attente' },
+    { id: 'received_calibration', label: 'Reçu', shortLabel: 'Reçu' },
+    { id: 'calibration_in_progress', label: 'Étalonnage', shortLabel: 'Étal.' },
+    { id: 'final_qc', label: 'Contrôle QC', shortLabel: 'QC' },
+    { id: 'ready_to_ship', label: 'Prêt', shortLabel: 'Prêt' },
+    { id: 'shipped', label: 'Expédié', shortLabel: 'Expédié' }
+  ];
+
+  const repairSteps = [
+    { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
+    { id: 'approved', label: 'Approuvé', shortLabel: 'Approuvé' },
+    { id: 'waiting_device', label: 'En attente', shortLabel: 'Attente' },
+    { id: 'received_repair', label: 'Inspection', shortLabel: 'Insp.' },
+    { id: 'repair_in_progress', label: 'Réparation', shortLabel: 'Rép.' },
+    { id: 'final_qc', label: 'Contrôle QC', shortLabel: 'QC' },
+    { id: 'ready_to_ship', label: 'Prêt', shortLabel: 'Prêt' },
+    { id: 'shipped', label: 'Expédié', shortLabel: 'Expédié' }
+  ];
+
+  const isRepair = serviceType === 'repair' || serviceType === 'réparation';
+  const steps = isRepair ? repairSteps : calibrationSteps;
+
+  // Map current status to step index
+  const getStepIndex = (currentStatus) => {
+    const statusMap = {
+      'submitted': 0, 'pending': 0,
+      'waiting_approval': 0,
+      'approved': 1, 'waiting_bc': 1, 'waiting_po': 1,
+      'waiting_device': 2,
+      'received': 3, 'received_calibration': 3, 'received_repair': 3,
+      'inspection_complete': 3,
+      'order_received': 4, 'waiting_parts': 4,
+      'in_progress': 4, 'calibration_in_progress': 4, 'repair_in_progress': 4,
+      'repair_complete': 5,
+      'final_qc': 5, 'quality_check': 5,
+      'ready_to_ship': 6,
+      'shipped': 7, 'delivered': 7, 'completed': 7
+    };
+    return statusMap[currentStatus] ?? 0;
   };
+
+  const currentIndex = getStepIndex(status);
 
   return (
     <div className="w-full">
-      <div className="flex justify-between text-xs text-gray-500 mb-1">
-        <span>{style.label}</span>
-        <span>{progress}%</span>
+      {/* Desktop version */}
+      <div className="hidden md:flex items-center">
+        {steps.map((step, index) => {
+          const isCompleted = index < currentIndex;
+          const isCurrent = index === currentIndex;
+          const isLast = index === steps.length - 1;
+          
+          return (
+            <div key={step.id} className="flex items-center flex-1">
+              <div 
+                className={`
+                  relative flex items-center justify-center flex-1 py-2 px-1 text-xs font-medium
+                  ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#1E3A5F] text-white' : 'bg-gray-200 text-gray-500'}
+                  ${index === 0 ? 'rounded-l-md' : ''}
+                  ${isLast ? 'rounded-r-md' : ''}
+                `}
+                style={{
+                  clipPath: isLast 
+                    ? 'polygon(0 0, 100% 0, 100% 100%, 0 100%, 8px 50%)' 
+                    : index === 0 
+                      ? 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)'
+                      : 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)'
+                }}
+              >
+                <span className="truncate px-1">{step.label}</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
-      <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-        <div 
-          className={`h-full rounded-full transition-all duration-500 ${getBarColor(progress)}`}
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-      <div className="flex justify-between text-xs text-gray-400 mt-1">
-        <span>Soumis</span>
-        <span>Expédié</span>
+      
+      {/* Mobile version - simplified */}
+      <div className="md:hidden">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium text-[#1E3A5F]">
+            Étape {currentIndex + 1} sur {steps.length}
+          </span>
+          <span className="text-sm text-gray-500">{steps[currentIndex]?.label}</span>
+        </div>
+        <div className="flex gap-1">
+          {steps.map((step, index) => (
+            <div 
+              key={step.id}
+              className={`h-2 flex-1 rounded-full ${
+                index < currentIndex ? 'bg-[#3B7AB4]' : 
+                index === currentIndex ? 'bg-[#1E3A5F]' : 'bg-gray-200'
+              }`}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -2985,7 +3056,7 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
           {/* Progress Bar */}
           {!isPartsOrder && (
             <div className="mt-4">
-              <ProgressBar status={request.status} serviceType={request.requested_service} />
+              <StepProgress status={request.status} serviceType={request.requested_service} />
             </div>
           )}
         </div>
@@ -3020,79 +3091,245 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
         <div className="p-6">
           {/* Details Tab */}
           {activeTab === 'details' && (
-            <div className="space-y-6">
-              {/* Devices */}
-              <div>
-                <h2 className="text-lg font-bold text-[#1E3A5F] mb-4">
-                  Appareils ({request.request_devices?.length || 0})
-                </h2>
-                <div className="space-y-3">
-                  {request.request_devices?.map((device) => (
-                    <div key={device.id} className="p-4 bg-gray-50 rounded-lg border-l-4 border-[#3B7AB4]">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-bold text-[#1E3A5F]">{device.model_name || 'Modèle inconnu'}</p>
-                          <p className="font-mono text-[#3B7AB4]">{device.serial_number}</p>
-                          <p className="text-sm text-gray-500 mt-1">{device.equipment_type}</p>
-                        </div>
-                        <div className="text-right">
-                          <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded font-medium">
-                            {device.service_type === 'calibration' ? 'Étalonnage' : 
-                             device.service_type === 'repair' ? 'Réparation' :
-                             device.service_type === 'calibration_repair' ? 'Étal. + Rép.' :
-                             device.service_type}
-                          </span>
-                          {device.status && device.status !== 'pending' && (
-                            <p className="text-xs text-gray-400 mt-2">
-                              Statut: {device.status}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+            <div className="space-y-8">
+              {/* Service Summary Card */}
+              <div className="bg-gradient-to-r from-[#1E3A5F] to-[#3B7AB4] rounded-xl p-6 text-white">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-white/70 text-sm uppercase tracking-wide mb-1">Type de service</p>
+                    <p className="text-2xl font-bold">
+                      {isPartsOrder ? 'Commande de Pièces' : 
+                       request.requested_service === 'calibration' ? 'Étalonnage' :
+                       request.requested_service === 'repair' ? 'Réparation' :
+                       request.requested_service === 'calibration_repair' ? 'Étalonnage + Réparation' :
+                       request.requested_service || 'Service'}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-white/70 text-sm uppercase tracking-wide mb-1">Référence</p>
+                    <p className="text-xl font-mono font-bold">
+                      {request.request_number || 'En attente'}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-white/20 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <p className="text-white/70">Date de soumission</p>
+                    <p className="font-medium">{new Date(request.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/70">Statut actuel</p>
+                    <p className="font-medium">{style.label}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/70">Appareils</p>
+                    <p className="font-medium">{request.request_devices?.length || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/70">Urgence</p>
+                    <p className="font-medium">{request.urgency === 'high' ? 'Haute' : request.urgency === 'low' ? 'Basse' : 'Normale'}</p>
+                  </div>
                 </div>
               </div>
 
-              {/* Quote Details */}
-              {request.quote_total && (
-                <div className="bg-[#E8F2F8] rounded-lg p-4">
-                  <h3 className="font-bold text-[#1E3A5F] mb-3">Détails du Devis</h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span>Sous-total HT</span>
-                      <span>{request.quote_subtotal?.toFixed(2)} €</span>
+              {/* Devices Section */}
+              {!isPartsOrder && (
+                <div>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-[#E8F2F8] flex items-center justify-center">
+                      <span className="text-lg">🔧</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>TVA (20%)</span>
-                      <span>{request.quote_tax?.toFixed(2)} €</span>
-                    </div>
-                    <div className="flex justify-between font-bold text-lg border-t border-[#3B7AB4]/20 pt-2 mt-2">
-                      <span>Total TTC</span>
-                      <span>{request.quote_total?.toFixed(2)} €</span>
+                    <div>
+                      <h2 className="text-lg font-bold text-[#1E3A5F]">Appareils</h2>
+                      <p className="text-sm text-gray-500">{request.request_devices?.length || 0} appareil(s) enregistré(s)</p>
                     </div>
                   </div>
                   
-                  {request.status === 'quote_sent' && (
-                    <div className="mt-4 flex gap-3">
-                      <button className="flex-1 py-2 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600">
-                        ✓ Accepter le devis
-                      </button>
-                      <button className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300">
-                        Demander des modifications
-                      </button>
-                    </div>
-                  )}
+                  <div className="grid gap-4">
+                    {request.request_devices?.map((device, idx) => (
+                      <div key={device.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                        <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                          <span className="text-sm font-medium text-gray-500">Appareil #{idx + 1}</span>
+                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            device.service_type === 'calibration' ? 'bg-blue-100 text-blue-700' : 
+                            device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' :
+                            device.service_type === 'calibration_repair' ? 'bg-purple-100 text-purple-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {device.service_type === 'calibration' ? '🔬 Étalonnage' : 
+                             device.service_type === 'repair' ? '🔧 Réparation' :
+                             device.service_type === 'calibration_repair' ? '🔬🔧 Étal. + Rép.' :
+                             device.service_type}
+                          </span>
+                        </div>
+                        <div className="p-4">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase tracking-wide">Modèle</p>
+                              <p className="font-semibold text-[#1E3A5F]">{device.model_name || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase tracking-wide">N° de série</p>
+                              <p className="font-mono font-semibold text-[#3B7AB4]">{device.serial_number}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase tracking-wide">Marque</p>
+                              <p className="font-medium">{device.equipment_type || 'Lighthouse'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase tracking-wide">Statut</p>
+                              <p className="font-medium">{STATUS_STYLES[device.status]?.label || 'En attente'}</p>
+                            </div>
+                          </div>
+                          {device.notes && (
+                            <div className="mt-4 pt-4 border-t border-gray-100">
+                              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Notes / Description du problème</p>
+                              <p className="text-gray-700 text-sm">{device.notes}</p>
+                            </div>
+                          )}
+                          {device.accessories && device.accessories.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <span className="text-xs text-gray-500">Accessoires:</span>
+                              {device.accessories.map((acc, i) => (
+                                <span key={i} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
+                                  {acc === 'charger' ? 'Chargeur' : 
+                                   acc === 'battery' ? 'Batterie' : 
+                                   acc === 'powerCable' ? 'Câble' : 
+                                   acc === 'carryingCase' ? 'Mallette' : acc}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {/* Tracking info if shipped */}
+                        {device.tracking_number && (
+                          <div className="bg-green-50 px-4 py-3 border-t border-green-100">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span>🚚</span>
+                                <span className="text-sm font-medium text-green-800">Expédié</span>
+                              </div>
+                              <a 
+                                href={device.tracking_url || `https://www.google.com/search?q=${device.tracking_number}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm text-green-700 font-mono hover:underline"
+                              >
+                                {device.tracking_number} →
+                              </a>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
-              {/* Notes */}
-              {request.problem_description && (
+              {/* Parts Order Details */}
+              {isPartsOrder && request.problem_description && (
                 <div>
-                  <h3 className="font-bold text-[#1E3A5F] mb-2">Notes</h3>
-                  <p className="text-gray-600 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg">
-                    {request.problem_description}
-                  </p>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                      <span className="text-lg">📦</span>
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-[#1E3A5F]">Détails de la commande</h2>
+                      <p className="text-sm text-gray-500">Pièces demandées</p>
+                    </div>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-4">
+                    {request.problem_description.split('\n').map((line, i) => (
+                      <div key={i} className="py-2 border-b border-gray-100 last:border-0">
+                        <p className="text-gray-700">{line}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Quote Details */}
+              {request.quote_total && (
+                <div>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                      <span className="text-lg">💰</span>
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-[#1E3A5F]">Devis</h2>
+                      <p className="text-sm text-gray-500">Détails financiers</p>
+                    </div>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                    <div className="p-4 space-y-3">
+                      <div className="flex justify-between text-gray-600">
+                        <span>Sous-total HT</span>
+                        <span className="font-medium">{request.quote_subtotal?.toFixed(2) || '0.00'} €</span>
+                      </div>
+                      <div className="flex justify-between text-gray-600">
+                        <span>TVA (20%)</span>
+                        <span className="font-medium">{request.quote_tax?.toFixed(2) || '0.00'} €</span>
+                      </div>
+                    </div>
+                    <div className="bg-[#1E3A5F] text-white px-4 py-3 flex justify-between items-center">
+                      <span className="font-medium">Total TTC</span>
+                      <span className="text-2xl font-bold">{request.quote_total?.toFixed(2)} €</span>
+                    </div>
+                    
+                    {request.status === 'quote_sent' && (
+                      <div className="p-4 bg-amber-50 border-t border-amber-200">
+                        <p className="text-sm text-amber-800 mb-3">⚠️ Action requise: Veuillez accepter ou modifier ce devis</p>
+                        <div className="flex gap-3">
+                          <button className="flex-1 py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition-colors">
+                            ✓ Accepter le devis
+                          </button>
+                          <button className="flex-1 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg font-semibold hover:bg-gray-50 transition-colors">
+                            Demander des modifications
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Shipping Address */}
+              {shippingAddress && (
+                <div>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                      <span className="text-lg">📍</span>
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-[#1E3A5F]">Adresse de retour</h2>
+                      <p className="text-sm text-gray-500">L'appareil sera renvoyé à cette adresse</p>
+                    </div>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-4">
+                    <p className="font-semibold text-[#1E3A5F]">{shippingAddress.company_name}</p>
+                    {shippingAddress.attention && <p className="text-gray-600">À l'attention de: {shippingAddress.attention}</p>}
+                    <p className="text-gray-600">{shippingAddress.address_line1}</p>
+                    <p className="text-gray-600">{shippingAddress.postal_code} {shippingAddress.city}</p>
+                    <p className="text-gray-600">{shippingAddress.country || 'France'}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Notes from request */}
+              {!isPartsOrder && request.problem_description && (
+                <div>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+                      <span className="text-lg">📝</span>
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-[#1E3A5F]">Notes complémentaires</h2>
+                      <p className="text-sm text-gray-500">Informations fournies lors de la soumission</p>
+                    </div>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-4">
+                    <p className="text-gray-700 whitespace-pre-wrap">{request.problem_description}</p>
+                  </div>
                 </div>
               )}
             </div>
@@ -3211,16 +3448,6 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
             </div>
           )}
         </div>
-        
-        {/* Shipping Address Footer */}
-        {shippingAddress && (
-          <div className="p-4 bg-gray-50 border-t border-gray-100">
-            <p className="text-sm text-gray-500 mb-1">Adresse de retour:</p>
-            <p className="text-sm font-medium">
-              {shippingAddress.company_name}, {shippingAddress.address_line1}, {shippingAddress.postal_code} {shippingAddress.city}
-            </p>
-          </div>
-        )}
         
         {/* Contact Support */}
         <div className="p-4 border-t border-gray-100 flex justify-between items-center">
