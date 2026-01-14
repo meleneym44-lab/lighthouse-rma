@@ -110,48 +110,50 @@ const T = {
 // Status styles
 const STATUS_STYLES = {
   // === BOTH FLOWS - INITIAL ===
-  submitted: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Soumis', icon: '📝', progress: 5 },
-  pending: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Soumis', icon: '📝', progress: 5 },
+  submitted: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Soumis', icon: '○', progress: 5 },
+  pending: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Soumis', icon: '○', progress: 5 },
   
   // === BOTH FLOWS - APPROVAL/BC ===
-  waiting_approval: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'En attente d\'approbation', icon: '⏳', progress: 10 },
-  approved: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '📋', progress: 20 },
-  waiting_bc: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '📋', progress: 20 },
-  waiting_po: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '📋', progress: 20 },
+  waiting_approval: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'En attente d\'approbation', icon: '◐', progress: 10 },
+  approved: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '◑', progress: 20 },
+  waiting_bc: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '◑', progress: 20 },
+  waiting_po: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '◑', progress: 20 },
+  // CUSTOMER ACTION REQUIRED - RED
+  waiting_customer: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'Action client requise', icon: '!', progress: 20 },
   
   // === BOTH FLOWS - WAITING FOR DEVICE ===
-  waiting_device: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-300', label: 'En attente réception', icon: '📦', progress: 30 },
+  waiting_device: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-300', label: 'En attente réception', icon: '◔', progress: 30 },
   
   // === CALIBRATION FLOW ===
-  received_calibration: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu - En attente étalonnage', icon: '📥', progress: 40 },
-  calibration_in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'Étalonnage en cours', icon: '🔬', progress: 60 },
+  received_calibration: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu - En attente étalonnage', icon: '◕', progress: 40 },
+  calibration_in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'Étalonnage en cours', icon: '◉', progress: 60 },
   
   // === REPAIR FLOW ===
-  received_repair: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu - En attente inspection', icon: '📥', progress: 35 },
-  inspection_complete: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Inspection terminée - En attente approbation client', icon: '🔍', progress: 40 },
-  repair_declined: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'Réparation refusée par client', icon: '❌', progress: 45 },
-  order_received: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-300', label: 'Commande reçue', icon: '✅', progress: 50 },
-  waiting_parts: { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-300', label: 'En attente de pièces', icon: '⏳', progress: 55 },
-  repair_in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'Réparation en cours', icon: '🔧', progress: 65 },
-  repair_complete: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-300', label: 'Réparation terminée', icon: '✓', progress: 75 },
+  received_repair: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu - En attente inspection', icon: '◕', progress: 35 },
+  inspection_complete: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Inspection terminée - En attente approbation client', icon: '◎', progress: 40 },
+  repair_declined: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'Réparation refusée par client', icon: '✕', progress: 45 },
+  order_received: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-300', label: 'Commande reçue', icon: '✓', progress: 50 },
+  waiting_parts: { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-300', label: 'En attente de pièces', icon: '◐', progress: 55 },
+  repair_in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'Réparation en cours', icon: '◉', progress: 65 },
+  repair_complete: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-300', label: 'Réparation terminée', icon: '●', progress: 75 },
   
   // === LEGACY (for backwards compatibility) ===
-  received: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu', icon: '📥', progress: 40 },
-  in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'En cours', icon: '🔧', progress: 60 },
-  quote_sent: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé', icon: '📧', progress: 45 },
-  quoted: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé', icon: '📧', progress: 45 },
+  received: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu', icon: '◕', progress: 40 },
+  in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'En cours', icon: '◉', progress: 60 },
+  quote_sent: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé', icon: '◎', progress: 45 },
+  quoted: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé', icon: '◎', progress: 45 },
   
   // === BOTH FLOWS - FINAL STAGES ===
-  final_qc: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-300', label: 'Contrôle qualité final', icon: '🔍', progress: 85 },
-  quality_check: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-300', label: 'Contrôle qualité final', icon: '🔍', progress: 85 },
-  ready_to_ship: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-300', label: 'Prêt pour expédition', icon: '📦', progress: 95 },
-  shipped: { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300', label: 'Expédié', icon: '🚚', progress: 100 },
-  delivered: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400', label: 'Livré', icon: '📬', progress: 100 },
-  completed: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400', label: 'Terminé', icon: '✅', progress: 100 },
+  final_qc: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-300', label: 'Contrôle qualité final', icon: '◈', progress: 85 },
+  quality_check: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-300', label: 'Contrôle qualité final', icon: '◈', progress: 85 },
+  ready_to_ship: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-300', label: 'Prêt pour expédition', icon: '◆', progress: 95 },
+  shipped: { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300', label: 'Expédié', icon: '▸', progress: 100 },
+  delivered: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400', label: 'Livré', icon: '●', progress: 100 },
+  completed: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400', label: 'Terminé', icon: '●', progress: 100 },
   
   // === HOLD/ISSUES ===
-  on_hold: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'En attente', icon: '⚠️', progress: 0 },
-  cancelled: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-400', label: 'Annulé', icon: '❌', progress: 0 }
+  on_hold: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'En attente', icon: '!', progress: 0 },
+  cancelled: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-400', label: 'Annulé', icon: '✕', progress: 0 }
 };
 
 // Step Progress Tracker Component (Chevron Style)
@@ -2923,18 +2925,28 @@ function EquipmentPage({ profile, t, notify, refresh }) {
 // ============================================
 // REQUEST DETAIL PAGE (Enhanced)
 // ============================================
-function RequestDetail({ request, profile, t, setPage, notify }) {
+function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
   const [messages, setMessages] = useState([]);
   const [history, setHistory] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [activeTab, setActiveTab] = useState('details');
   const [shippingAddress, setShippingAddress] = useState(null);
+  const [attachments, setAttachments] = useState([]);
+  
+  // BC Submission state
+  const [showBCModal, setShowBCModal] = useState(false);
+  const [bcFile, setBcFile] = useState(null);
+  const [signatureName, setSignatureName] = useState(profile?.full_name || '');
+  const [signatureDate, setSignatureDate] = useState(new Date().toISOString().split('T')[0]);
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [submittingBC, setSubmittingBC] = useState(false);
   
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
   const isPartsOrder = request.request_type === 'parts' || request.requested_service === 'parts_order';
+  const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(request.status);
 
-  // Load messages, history, and shipping address
+  // Load messages, history, attachments, and shipping address
   useEffect(() => {
     const loadData = async () => {
       // Load messages
@@ -2953,6 +2965,13 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
         .order('event_date', { ascending: false });
       if (hist) setHistory(hist);
       
+      // Load attachments
+      const { data: files } = await supabase
+        .from('request_attachments')
+        .select('*')
+        .eq('request_id', request.id);
+      if (files) setAttachments(files);
+      
       // Load shipping address
       if (request.shipping_address_id) {
         const { data: addr } = await supabase
@@ -2965,6 +2984,65 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
     };
     loadData();
   }, [request.id, request.shipping_address_id]);
+
+  // Submit BC / Approval
+  const submitBonCommande = async () => {
+    if (!acceptTerms) {
+      notify('Veuillez accepter les conditions générales', 'error');
+      return;
+    }
+    if (!signatureName.trim()) {
+      notify('Veuillez entrer votre nom', 'error');
+      return;
+    }
+    
+    setSubmittingBC(true);
+    
+    try {
+      // If file uploaded, store it
+      let fileUrl = null;
+      if (bcFile) {
+        const fileName = `bc_${request.id}_${Date.now()}.${bcFile.name.split('.').pop()}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('documents')
+          .upload(fileName, bcFile);
+        
+        if (uploadError) throw uploadError;
+        fileUrl = uploadData?.path;
+      }
+      
+      // Update request status
+      await supabase
+        .from('service_requests')
+        .update({ 
+          status: 'waiting_device',
+          bc_submitted_at: new Date().toISOString(),
+          bc_signed_by: signatureName,
+          bc_signature_date: signatureDate,
+          bc_file_url: fileUrl
+        })
+        .eq('id', request.id);
+      
+      // Add history entry
+      await supabase
+        .from('device_history')
+        .insert({
+          serial_number: request.serial_number || 'N/A',
+          request_id: request.id,
+          event_type: 'bc_submitted',
+          event_description: `Bon de commande soumis par ${signatureName}`,
+          event_date: new Date().toISOString()
+        });
+      
+      notify('Bon de commande soumis avec succès!');
+      setShowBCModal(false);
+      if (refresh) refresh();
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+    
+    setSubmittingBC(false);
+  };
 
   const sendMessage = async (e) => {
     e.preventDefault();
@@ -3061,13 +3139,178 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
           )}
         </div>
 
+        {/* Customer Action Required Alert */}
+        {needsCustomerAction && (
+          <div className="bg-red-50 border-b border-red-200 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <span className="text-red-600 font-bold text-lg">!</span>
+                </div>
+                <div>
+                  <p className="font-semibold text-red-800">Action requise</p>
+                  <p className="text-sm text-red-600">
+                    {request.status === 'inspection_complete' || request.status === 'quote_sent' 
+                      ? 'Veuillez approuver le devis ou soumettre votre bon de commande'
+                      : 'Veuillez soumettre votre bon de commande pour continuer'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowBCModal(true)}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+              >
+                Soumettre BC / Approuver
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* BC Submission Modal */}
+        {showBCModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold text-[#1E3A5F]">Soumettre Bon de Commande</h2>
+                  <button onClick={() => setShowBCModal(false)} className="text-gray-400 hover:text-gray-600">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                {/* Reference */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-500">Référence demande</p>
+                  <p className="font-mono font-bold text-[#1E3A5F]">{request.request_number || 'En attente'}</p>
+                </div>
+
+                {/* File Upload */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Télécharger votre Bon de Commande (optionnel)
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#3B7AB4] transition-colors">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      onChange={(e) => setBcFile(e.target.files?.[0] || null)}
+                      className="hidden"
+                      id="bc-file-input"
+                    />
+                    <label htmlFor="bc-file-input" className="cursor-pointer">
+                      {bcFile ? (
+                        <div className="flex items-center justify-center gap-2 text-[#3B7AB4]">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="font-medium">{bcFile.name}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <svg className="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                          <p className="text-sm text-gray-600">Cliquez pour télécharger ou glissez-déposez</p>
+                          <p className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX, JPG, PNG (max 10MB)</p>
+                        </>
+                      )}
+                    </label>
+                  </div>
+                </div>
+
+                {/* OR Divider */}
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 h-px bg-gray-200"></div>
+                  <span className="text-sm text-gray-500">ou</span>
+                  <div className="flex-1 h-px bg-gray-200"></div>
+                </div>
+
+                {/* Electronic Signature */}
+                <div className="bg-[#F5F9FC] rounded-lg p-4 border border-[#3B7AB4]/20">
+                  <h3 className="font-semibold text-[#1E3A5F] mb-4">Signature électronique</h3>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Nom complet du signataire *
+                      </label>
+                      <input
+                        type="text"
+                        value={signatureName}
+                        onChange={(e) => setSignatureName(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
+                        placeholder="Prénom et Nom"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Date *
+                      </label>
+                      <input
+                        type="date"
+                        value={signatureDate}
+                        onChange={(e) => setSignatureDate(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Legal Terms */}
+                <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={acceptTerms}
+                      onChange={(e) => setAcceptTerms(e.target.checked)}
+                      className="mt-1 w-4 h-4 text-[#3B7AB4] border-gray-300 rounded focus:ring-[#3B7AB4]"
+                    />
+                    <span className="text-sm text-gray-700">
+                      <strong>Lu et approuvé.</strong> Je soussigné(e), <strong>{signatureName || '[Nom]'}</strong>, 
+                      certifie avoir pris connaissance et accepter les conditions générales de vente de Lighthouse France. 
+                      Je m'engage à régler la facture correspondante selon les modalités convenues. 
+                      Cette validation électronique a valeur de signature manuscrite conformément aux articles 1366 et 1367 du Code civil français.
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-6 border-t border-gray-200 bg-gray-50 flex gap-3">
+                <button
+                  onClick={() => setShowBCModal(false)}
+                  className="flex-1 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={submitBonCommande}
+                  disabled={submittingBC || !acceptTerms}
+                  className={`flex-1 py-3 rounded-lg font-medium transition-colors ${
+                    acceptTerms 
+                      ? 'bg-[#1E3A5F] text-white hover:bg-[#2a4a6f]' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  {submittingBC ? 'Envoi en cours...' : 'Valider et soumettre'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Tabs */}
         <div className="flex border-b border-gray-100 overflow-x-auto">
           {[
-            { id: 'details', label: 'Détails', icon: '📋' },
-            { id: 'messages', label: 'Messages', icon: '💬', count: messages.filter(m => !m.is_read && m.sender_id !== profile?.id).length },
-            { id: 'history', label: 'Historique', icon: '📜' },
-            { id: 'documents', label: 'Documents', icon: '📄' }
+            { id: 'details', label: 'Détails', icon: '' },
+            { id: 'messages', label: 'Messages', icon: '', count: messages.filter(m => !m.is_read && m.sender_id !== profile?.id).length },
+            { id: 'history', label: 'Historique', icon: '' },
+            { id: 'documents', label: 'Documents', icon: '', count: attachments.length }
           ].map(tab => (
             <button
               key={tab.id}
@@ -3078,7 +3321,6 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              <span>{tab.icon}</span>
               {tab.label}
               {tab.count > 0 && (
                 <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">{tab.count}</span>
@@ -3200,13 +3442,49 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
                               ))}
                             </div>
                           )}
+                          {/* Photos for this device */}
+                          {attachments.filter(a => 
+                            a.file_type?.startsWith('image/') && 
+                            (a.device_serial === device.serial_number || !a.device_serial)
+                          ).length > 0 && (
+                            <div className="mt-4 pt-4 border-t border-gray-100">
+                              <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Photos</p>
+                              <div className="flex gap-2 flex-wrap">
+                                {attachments
+                                  .filter(a => a.file_type?.startsWith('image/') && (a.device_serial === device.serial_number || !a.device_serial))
+                                  .slice(0, 4)
+                                  .map((img) => (
+                                    <a 
+                                      key={img.id}
+                                      href={img.file_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 hover:opacity-80 transition-opacity border border-gray-200"
+                                    >
+                                      <img src={img.file_url} alt="" className="w-full h-full object-cover" />
+                                    </a>
+                                  ))
+                                }
+                                {attachments.filter(a => a.file_type?.startsWith('image/')).length > 4 && (
+                                  <button
+                                    onClick={() => setActiveTab('documents')}
+                                    className="w-16 h-16 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-500 text-xs hover:bg-gray-200"
+                                  >
+                                    +{attachments.filter(a => a.file_type?.startsWith('image/')).length - 4}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
                         {/* Tracking info if shipped */}
                         {device.tracking_number && (
                           <div className="bg-green-50 px-4 py-3 border-t border-green-100">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
-                                <span>🚚</span>
+                                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                                </svg>
                                 <span className="text-sm font-medium text-green-800">Expédié</span>
                               </div>
                               <a 
@@ -3441,10 +3719,141 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
 
           {/* Documents Tab */}
           {activeTab === 'documents' && (
-            <div className="text-center text-gray-400 py-12">
-              <p className="text-4xl mb-2">📄</p>
-              <p>Aucun document disponible</p>
-              <p className="text-sm">Les devis et certificats apparaîtront ici</p>
+            <div className="space-y-6">
+              {/* Photos from request */}
+              {attachments.filter(a => a.file_type?.startsWith('image/')).length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Photos soumises
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {attachments.filter(a => a.file_type?.startsWith('image/')).map((img) => (
+                      <a 
+                        key={img.id}
+                        href={img.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition-opacity border border-gray-200"
+                      >
+                        <img 
+                          src={img.file_url} 
+                          alt={img.file_name}
+                          className="w-full h-full object-cover"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Other documents */}
+              {attachments.filter(a => !a.file_type?.startsWith('image/')).length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Documents
+                  </h3>
+                  <div className="space-y-2">
+                    {attachments.filter(a => !a.file_type?.startsWith('image/')).map((doc) => (
+                      <a 
+                        key={doc.id}
+                        href={doc.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
+                      >
+                        <div className="w-10 h-10 bg-[#3B7AB4] rounded flex items-center justify-center text-white font-bold text-xs">
+                          {doc.file_name?.split('.').pop()?.toUpperCase() || 'DOC'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-[#1E3A5F] truncate">{doc.file_name}</p>
+                          <p className="text-xs text-gray-500">
+                            Ajouté le {new Date(doc.created_at).toLocaleDateString('fr-FR')}
+                          </p>
+                        </div>
+                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Certificates and Quotes - from Lighthouse */}
+              <div>
+                <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                  </svg>
+                  Certificats et Devis
+                </h3>
+                {request.quote_url || request.certificate_url ? (
+                  <div className="space-y-2">
+                    {request.quote_url && (
+                      <a 
+                        href={request.quote_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200"
+                      >
+                        <div className="w-10 h-10 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                          PDF
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-blue-900">Devis</p>
+                          <p className="text-xs text-blue-600">Télécharger le devis</p>
+                        </div>
+                        <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </a>
+                    )}
+                    {request.certificate_url && (
+                      <a 
+                        href={request.certificate_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-green-50 rounded-lg hover:bg-green-100 transition-colors border border-green-200"
+                      >
+                        <div className="w-10 h-10 bg-green-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                          PDF
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-green-900">Certificat d'étalonnage</p>
+                          <p className="text-xs text-green-600">Télécharger le certificat</p>
+                        </div>
+                        <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+                    <svg className="w-12 h-12 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p className="text-gray-500">Les certificats et devis apparaîtront ici une fois disponibles</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Empty state if no attachments at all */}
+              {attachments.length === 0 && !request.quote_url && !request.certificate_url && (
+                <div className="text-center py-12">
+                  <svg className="w-16 h-16 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-gray-500">Aucun document disponible</p>
+                  <p className="text-sm text-gray-400">Les photos, devis et certificats apparaîtront ici</p>
+                </div>
+              )}
             </div>
           )}
         </div>
