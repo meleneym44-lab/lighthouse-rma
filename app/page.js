@@ -695,11 +695,14 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
   const viewRequest = (req) => {
     setSelectedRequest(req);
     setPage('request-detail');
+    // Scroll to top when opening detail page
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const viewDeviceHistory = (serialNumber) => {
     setPage('device-history');
     sessionStorage.setItem('viewDeviceSerial', serialNumber);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Filter by status
@@ -778,10 +781,45 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
       {/* Overview Tab */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
+          {/* ACTION REQUIRED - Show at top */}
+          {serviceRequests.filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status)).length > 0 && (
+            <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4">
+              <h3 className="font-bold text-red-800 mb-2 flex items-center gap-2">
+                <span className="animate-pulse">⚠</span> Action requise
+              </h3>
+              <p className="text-sm text-red-600 mb-3">Les demandes suivantes nécessitent votre attention</p>
+              <div className="space-y-2">
+                {serviceRequests
+                  .filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status))
+                  .map(req => (
+                  <div 
+                    key={req.id}
+                    onClick={() => viewRequest(req)}
+                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-100 border border-red-200"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono font-bold text-red-700">{req.request_number || 'En attente'}</span>
+                      <span className="text-sm text-red-600">
+                        {req.status === 'approved' || req.status === 'waiting_bc' || req.status === 'waiting_po' 
+                          ? 'Soumettre bon de commande' 
+                          : req.status === 'inspection_complete' || req.status === 'quote_sent'
+                          ? 'Approuver le devis'
+                          : 'Action requise'}
+                      </span>
+                    </div>
+                    <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
+                      Agir →
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Pending Service Requests */}
           {pendingService.length > 0 && (
             <div className="bg-amber-50 border-l-4 border-amber-400 rounded-lg p-4">
-              <h3 className="font-bold text-amber-800 mb-2">⏳ Demandes service en attente</h3>
+              <h3 className="font-bold text-amber-800 mb-2">⏳ Demandes service en attente de validation</h3>
               <div className="space-y-2">
                 {pendingService.map(req => (
                   <div 
@@ -790,7 +828,7 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
                     className="flex justify-between items-center p-2 bg-white rounded cursor-pointer hover:bg-amber-100"
                   >
                     <div>
-                      <span className="font-mono font-medium">{req.request_number}</span>
+                      <span className="font-mono font-medium">{req.request_number || 'En attente'}</span>
                       <span className="ml-2 text-sm text-gray-500">
                         {req.request_devices?.length || 0} appareil(s)
                       </span>
@@ -835,18 +873,24 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
               <div className="divide-y divide-gray-100">
                 {inProgressService.slice(0, 5).map(req => {
                   const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
+                  const needsAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(req.status);
                   return (
                     <div 
                       key={req.id}
                       onClick={() => viewRequest(req)}
-                      className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                      className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${needsAction ? 'bg-red-50/50' : ''}`}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
-                          <span className="font-mono font-bold text-[#3B7AB4]">{req.request_number}</span>
+                          <span className="font-mono font-bold text-[#3B7AB4]">{req.request_number || 'En attente'}</span>
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
                             {style.label}
                           </span>
+                          {needsAction && (
+                            <span className="px-2 py-1 rounded-full text-xs font-bold bg-red-500 text-white animate-pulse">
+                              ⚠ Action requise
+                            </span>
+                          )}
                         </div>
                         <span className="text-sm text-gray-500">
                           {req.request_devices?.length || 0} appareil(s)
@@ -2951,8 +2995,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
   const isPartsOrder = request.request_type === 'parts' || request.requested_service === 'parts_order';
   const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(request.status);
   
-  // Check if signature is valid
-  const isSignatureValid = luEtApprouve.toLowerCase().trim() === 'lu et approuvé' && signatureName.trim().length > 0 && acceptTerms && signatureData;
+  // Check if submission is valid - need EITHER file OR signature (not both required)
+  const hasFile = bcFile !== null;
+  const hasSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
+  const isSubmissionValid = signatureName.trim().length > 0 && acceptTerms && (hasFile || hasSignature);
 
   // Signature pad functions
   const startDrawing = (e) => {
@@ -3050,12 +3096,11 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
       notify('Veuillez entrer votre nom', 'error');
       return;
     }
-    if (luEtApprouve.toLowerCase().trim() !== 'lu et approuvé') {
-      notify('Veuillez taper "Lu et approuvé"', 'error');
-      return;
-    }
-    if (!signatureData) {
-      notify('Veuillez dessiner votre signature', 'error');
+    
+    // Need either file OR signature
+    const hasValidSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
+    if (!bcFile && !hasValidSignature) {
+      notify('Veuillez télécharger un bon de commande OU signer électroniquement', 'error');
       return;
     }
     
@@ -3423,9 +3468,9 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
                 </button>
                 <button
                   onClick={submitBonCommande}
-                  disabled={submittingBC || !isSignatureValid}
+                  disabled={submittingBC || !isSubmissionValid}
                   className={`flex-1 py-3 rounded-lg font-medium transition-colors ${
-                    isSignatureValid 
+                    isSubmissionValid 
                       ? 'bg-[#1E3A5F] text-white hover:bg-[#2a4a6f]' 
                       : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   }`}
