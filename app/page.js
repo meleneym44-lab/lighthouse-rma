@@ -110,48 +110,83 @@ const T = {
 // Status styles
 const STATUS_STYLES = {
   // === BOTH FLOWS - INITIAL ===
-  submitted: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Soumis', icon: '📝' },
-  pending: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Soumis', icon: '📝' },
+  submitted: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Soumis', icon: '📝', progress: 5 },
+  pending: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Soumis', icon: '📝', progress: 5 },
   
   // === BOTH FLOWS - APPROVAL/BC ===
-  waiting_approval: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'En attente d\'approbation', icon: '⏳' },
-  approved: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '📋' },
-  waiting_bc: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '📋' },
-  waiting_po: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '📋' },
+  waiting_approval: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'En attente d\'approbation', icon: '⏳', progress: 10 },
+  approved: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '📋', progress: 20 },
+  waiting_bc: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '📋', progress: 20 },
+  waiting_po: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '📋', progress: 20 },
   
   // === BOTH FLOWS - WAITING FOR DEVICE ===
-  waiting_device: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-300', label: 'En attente réception', icon: '📦' },
+  waiting_device: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-300', label: 'En attente réception', icon: '📦', progress: 30 },
   
   // === CALIBRATION FLOW ===
-  received_calibration: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu - En attente étalonnage', icon: '📥' },
-  calibration_in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'Étalonnage en cours', icon: '🔬' },
+  received_calibration: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu - En attente étalonnage', icon: '📥', progress: 40 },
+  calibration_in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'Étalonnage en cours', icon: '🔬', progress: 60 },
   
   // === REPAIR FLOW ===
-  received_repair: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu - En attente inspection', icon: '📥' },
-  inspection_complete: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Inspection terminée - En attente approbation client', icon: '🔍' },
-  repair_declined: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'Réparation refusée par client', icon: '❌' },
-  order_received: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-300', label: 'Commande reçue', icon: '✅' },
-  waiting_parts: { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-300', label: 'En attente de pièces', icon: '⏳' },
-  repair_in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'Réparation en cours', icon: '🔧' },
-  repair_complete: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-300', label: 'Réparation terminée', icon: '✓' },
+  received_repair: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu - En attente inspection', icon: '📥', progress: 35 },
+  inspection_complete: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Inspection terminée - En attente approbation client', icon: '🔍', progress: 40 },
+  repair_declined: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'Réparation refusée par client', icon: '❌', progress: 45 },
+  order_received: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-300', label: 'Commande reçue', icon: '✅', progress: 50 },
+  waiting_parts: { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-300', label: 'En attente de pièces', icon: '⏳', progress: 55 },
+  repair_in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'Réparation en cours', icon: '🔧', progress: 65 },
+  repair_complete: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-300', label: 'Réparation terminée', icon: '✓', progress: 75 },
   
   // === LEGACY (for backwards compatibility) ===
-  received: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu', icon: '📥' },
-  in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'En cours', icon: '🔧' },
-  quote_sent: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé', icon: '📧' },
-  quoted: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé', icon: '📧' },
+  received: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu', icon: '📥', progress: 40 },
+  in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'En cours', icon: '🔧', progress: 60 },
+  quote_sent: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé', icon: '📧', progress: 45 },
+  quoted: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé', icon: '📧', progress: 45 },
   
   // === BOTH FLOWS - FINAL STAGES ===
-  final_qc: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-300', label: 'Contrôle qualité final', icon: '🔍' },
-  quality_check: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-300', label: 'Contrôle qualité final', icon: '🔍' },
-  ready_to_ship: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-300', label: 'Prêt pour expédition', icon: '📦' },
-  shipped: { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300', label: 'Expédié', icon: '🚚' },
-  delivered: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400', label: 'Livré', icon: '📬' },
-  completed: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400', label: 'Terminé', icon: '✅' },
+  final_qc: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-300', label: 'Contrôle qualité final', icon: '🔍', progress: 85 },
+  quality_check: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-300', label: 'Contrôle qualité final', icon: '🔍', progress: 85 },
+  ready_to_ship: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-300', label: 'Prêt pour expédition', icon: '📦', progress: 95 },
+  shipped: { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300', label: 'Expédié', icon: '🚚', progress: 100 },
+  delivered: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400', label: 'Livré', icon: '📬', progress: 100 },
+  completed: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400', label: 'Terminé', icon: '✅', progress: 100 },
   
   // === HOLD/ISSUES ===
-  on_hold: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'En attente', icon: '⚠️' },
-  cancelled: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-400', label: 'Annulé', icon: '❌' }
+  on_hold: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'En attente', icon: '⚠️', progress: 0 },
+  cancelled: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-400', label: 'Annulé', icon: '❌', progress: 0 }
+};
+
+// Progress bar component
+const ProgressBar = ({ status, serviceType }) => {
+  const style = STATUS_STYLES[status] || STATUS_STYLES.submitted;
+  const progress = style.progress || 0;
+  
+  // Color based on progress
+  const getBarColor = (p) => {
+    if (p >= 100) return 'bg-green-500';
+    if (p >= 80) return 'bg-emerald-500';
+    if (p >= 60) return 'bg-cyan-500';
+    if (p >= 40) return 'bg-blue-500';
+    if (p >= 20) return 'bg-amber-500';
+    return 'bg-gray-400';
+  };
+
+  return (
+    <div className="w-full">
+      <div className="flex justify-between text-xs text-gray-500 mb-1">
+        <span>{style.label}</span>
+        <span>{progress}%</span>
+      </div>
+      <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+        <div 
+          className={`h-full rounded-full transition-all duration-500 ${getBarColor(progress)}`}
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="flex justify-between text-xs text-gray-400 mt-1">
+        <span>Soumis</span>
+        <span>Expédié</span>
+      </div>
+    </div>
+  );
 };
 
 // Helper to get status label
@@ -1476,23 +1511,14 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     setSaving(true);
     
     try {
-      // Generate temporary draft number (FR number assigned after approval)
-      const { data: counter } = await supabase
-        .from('system_settings')
-        .select('value')
-        .eq('key', 'draft_counter')
-        .single();
-      
-      const nextDraft = (counter?.value?.counter || 0) + 1;
-      const draftNumber = `DRAFT-${String(nextDraft).padStart(5, '0')}`;
-
+      // No number assigned yet - will get FR-XXXXX after approval
       const { data: request, error: reqErr } = await supabase
         .from('service_requests')
         .insert({
-          request_number: draftNumber, // Temporary - FR number assigned after approval
+          request_number: null, // No number until approved
           company_id: profile.company_id,
           submitted_by: profile.id,
-          request_type: 'service', // service or parts
+          request_type: 'service',
           serial_number: devices[0].serial_number,
           equipment_type: 'particle_counter',
           requested_service: devices[0].service_type === 'other' ? devices[0].service_other : devices[0].service_type,
@@ -1533,11 +1559,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         }
       }
 
-      await supabase
-        .from('system_settings')
-        .upsert({ key: 'draft_counter', value: { prefix: 'DRAFT', counter: nextDraft } });
-
-      notify('Demande soumise avec succès! Vous recevrez votre numéro FR après validation.');
+      notify('Demande soumise avec succès! Numéro FR attribué après validation.');
       refresh();
       setPage('dashboard');
     } catch (err) {
@@ -1694,15 +1716,6 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
     setSaving(true);
     
     try {
-      const { data: counter } = await supabase
-        .from('system_settings')
-        .select('value')
-        .eq('key', 'draft_counter')
-        .single();
-      
-      const nextDraft = (counter?.value?.counter || 0) + 1;
-      const draftNumber = `DRAFT-${String(nextDraft).padStart(5, '0')}`;
-
       const partsDescription = parts.map(p => 
         `Pièce ${p.num}: ${p.description}${p.part_number ? ` (Réf: ${p.part_number})` : ''}${p.device_for ? ` - Pour: ${p.device_for}` : ''} - Qté: ${p.quantity}`
       ).join('\n');
@@ -1710,10 +1723,10 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
       await supabase
         .from('service_requests')
         .insert({
-          request_number: draftNumber,
+          request_number: null, // No number until approved
           company_id: profile.company_id,
           submitted_by: profile.id,
-          request_type: 'parts', // Mark as parts order
+          request_type: 'parts',
           requested_service: 'parts_order',
           problem_description: partsDescription,
           urgency: 'normal',
@@ -1722,11 +1735,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
           submitted_at: new Date().toISOString()
         });
 
-      await supabase
-        .from('system_settings')
-        .upsert({ key: 'draft_counter', value: { prefix: 'DRAFT', counter: nextDraft } });
-
-      notify('Commande de pièces soumise! Vous recevrez votre numéro FR après validation.');
+      notify('Commande de pièces soumise! Numéro FR attribué après validation.');
       refresh();
       setPage('dashboard');
     } catch (err) {
@@ -2849,10 +2858,12 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [activeTab, setActiveTab] = useState('details');
+  const [shippingAddress, setShippingAddress] = useState(null);
   
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
+  const isPartsOrder = request.request_type === 'parts' || request.requested_service === 'parts_order';
 
-  // Load messages and history
+  // Load messages, history, and shipping address
   useEffect(() => {
     const loadData = async () => {
       // Load messages
@@ -2870,9 +2881,19 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
         .eq('request_id', request.id)
         .order('event_date', { ascending: false });
       if (hist) setHistory(hist);
+      
+      // Load shipping address
+      if (request.shipping_address_id) {
+        const { data: addr } = await supabase
+          .from('shipping_addresses')
+          .select('*')
+          .eq('id', request.shipping_address_id)
+          .single();
+        if (addr) setShippingAddress(addr);
+      }
     };
     loadData();
-  }, [request.id]);
+  }, [request.id, request.shipping_address_id]);
 
   const sendMessage = async (e) => {
     e.preventDefault();
@@ -2898,6 +2919,33 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
     setSending(false);
   };
 
+  // Generate history from status if no history in DB
+  const getStatusHistory = () => {
+    const statusHistory = [];
+    
+    // Always add submission
+    statusHistory.push({
+      id: 'submitted',
+      event_type: 'submitted',
+      event_description: 'Demande soumise',
+      event_date: request.submitted_at || request.created_at
+    });
+    
+    // Add current status if different from submitted
+    if (request.status !== 'submitted') {
+      statusHistory.push({
+        id: 'current',
+        event_type: request.status,
+        event_description: style.label,
+        event_date: request.updated_at || request.created_at
+      });
+    }
+    
+    return statusHistory;
+  };
+
+  const displayHistory = history.length > 0 ? history : getStatusHistory();
+
   return (
     <div>
       <button
@@ -2910,19 +2958,20 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
       <div className="bg-white rounded-lg shadow-sm border border-gray-100">
         {/* Header */}
         <div className="p-6 border-b border-gray-100">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
             <div>
               <div className="flex items-center gap-3 mb-2">
-                <h1 className="text-2xl font-bold text-[#1E3A5F]">{request.request_number}</h1>
+                {request.request_number ? (
+                  <h1 className="text-2xl font-bold text-[#1E3A5F]">{request.request_number}</h1>
+                ) : (
+                  <h1 className="text-2xl font-bold text-amber-600">En attente de validation</h1>
+                )}
                 <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>
                   {style.label}
                 </span>
               </div>
-              {request.rma_number && (
-                <p className="text-green-600 font-mono">RMA: {request.rma_number}</p>
-              )}
-              <p className="text-sm text-gray-500 mt-1">
-                Soumis le {new Date(request.created_at).toLocaleDateString('fr-FR')}
+              <p className="text-sm text-gray-500">
+                {isPartsOrder ? 'Commande de pièces' : 'Demande de service'} • Soumis le {new Date(request.created_at).toLocaleDateString('fr-FR')}
               </p>
             </div>
             {request.quote_total && (
@@ -2932,10 +2981,17 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
               </div>
             )}
           </div>
+          
+          {/* Progress Bar */}
+          {!isPartsOrder && (
+            <div className="mt-4">
+              <ProgressBar status={request.status} serviceType={request.requested_service} />
+            </div>
+          )}
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-100">
+        <div className="flex border-b border-gray-100 overflow-x-auto">
           {[
             { id: 'details', label: 'Détails', icon: '📋' },
             { id: 'messages', label: 'Messages', icon: '💬', count: messages.filter(m => !m.is_read && m.sender_id !== profile?.id).length },
@@ -2945,7 +3001,7 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-6 py-3 font-medium transition-colors flex items-center gap-2 ${
+              className={`px-6 py-3 font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
                 activeTab === tab.id 
                   ? 'text-[#3B7AB4] border-b-2 border-[#3B7AB4] -mb-px' 
                   : 'text-gray-500 hover:text-gray-700'
@@ -3106,7 +3162,7 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
           {/* History Tab */}
           {activeTab === 'history' && (
             <div>
-              {history.length === 0 ? (
+              {displayHistory.length === 0 ? (
                 <div className="text-center text-gray-400 py-12">
                   <p className="text-4xl mb-2">📜</p>
                   <p>Aucun historique disponible</p>
@@ -3115,17 +3171,31 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
                 <div className="relative">
                   <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
                   <div className="space-y-6">
-                    {history.map((event, i) => (
-                      <div key={event.id} className="flex gap-4 ml-4">
-                        <div className="w-3 h-3 rounded-full bg-[#3B7AB4] border-2 border-white shadow -ml-[7px] mt-1.5 z-10"></div>
-                        <div className="flex-1 pb-4">
-                          <p className="font-medium text-[#1E3A5F]">{event.event_description}</p>
-                          <p className="text-sm text-gray-500">
-                            {new Date(event.event_date).toLocaleString('fr-FR')}
-                          </p>
+                    {displayHistory.map((event, i) => {
+                      const eventStyle = STATUS_STYLES[event.event_type] || {};
+                      return (
+                        <div key={event.id || i} className="flex gap-4 ml-4">
+                          <div className={`w-3 h-3 rounded-full border-2 border-white shadow -ml-[7px] mt-1.5 z-10 ${
+                            i === 0 ? 'bg-[#3B7AB4]' : 'bg-gray-400'
+                          }`}></div>
+                          <div className="flex-1 pb-4">
+                            <div className="flex items-center gap-2">
+                              {eventStyle.icon && <span>{eventStyle.icon}</span>}
+                              <p className="font-medium text-[#1E3A5F]">{event.event_description}</p>
+                            </div>
+                            <p className="text-sm text-gray-500">
+                              {new Date(event.event_date).toLocaleString('fr-FR', {
+                                day: '2-digit',
+                                month: 'long',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -3140,6 +3210,27 @@ function RequestDetail({ request, profile, t, setPage, notify }) {
               <p className="text-sm">Les devis et certificats apparaîtront ici</p>
             </div>
           )}
+        </div>
+        
+        {/* Shipping Address Footer */}
+        {shippingAddress && (
+          <div className="p-4 bg-gray-50 border-t border-gray-100">
+            <p className="text-sm text-gray-500 mb-1">Adresse de retour:</p>
+            <p className="text-sm font-medium">
+              {shippingAddress.company_name}, {shippingAddress.address_line1}, {shippingAddress.postal_code} {shippingAddress.city}
+            </p>
+          </div>
+        )}
+        
+        {/* Contact Support */}
+        <div className="p-4 border-t border-gray-100 flex justify-between items-center">
+          <p className="text-sm text-gray-500">Besoin d'aide?</p>
+          <a 
+            href="mailto:france@golighthouse.com?subject=Question sur demande"
+            className="text-[#3B7AB4] text-sm font-medium hover:underline"
+          >
+            Contacter le support →
+          </a>
         </div>
       </div>
     </div>
