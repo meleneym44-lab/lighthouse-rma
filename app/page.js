@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
 // France Metropolitan postal code check
@@ -2938,17 +2938,68 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
   const [showBCModal, setShowBCModal] = useState(false);
   const [bcFile, setBcFile] = useState(null);
   const [signatureName, setSignatureName] = useState(profile?.full_name || '');
-  const [signatureDate, setSignatureDate] = useState(new Date().toLocaleDateString('fr-FR'));
+  const [signatureDateDisplay, setSignatureDateDisplay] = useState(new Date().toLocaleDateString('fr-FR'));
+  const [signatureDateISO, setSignatureDateISO] = useState(new Date().toISOString().split('T')[0]);
   const [luEtApprouve, setLuEtApprouve] = useState('');
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [submittingBC, setSubmittingBC] = useState(false);
+  const [signatureData, setSignatureData] = useState(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const canvasRef = useRef(null);
   
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
   const isPartsOrder = request.request_type === 'parts' || request.requested_service === 'parts_order';
   const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(request.status);
   
   // Check if signature is valid
-  const isSignatureValid = luEtApprouve.toLowerCase().trim() === 'lu et approuvé' && signatureName.trim().length > 0 && acceptTerms;
+  const isSignatureValid = luEtApprouve.toLowerCase().trim() === 'lu et approuvé' && signatureName.trim().length > 0 && acceptTerms && signatureData;
+
+  // Signature pad functions
+  const startDrawing = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setIsDrawing(true);
+  };
+
+  const draw = (e) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#1E3A5F';
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    if (isDrawing) {
+      setIsDrawing(false);
+      const canvas = canvasRef.current;
+      if (canvas) {
+        setSignatureData(canvas.toDataURL());
+      }
+    }
+  };
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      setSignatureData(null);
+    }
+  };
 
   // Load messages, history, attachments, and shipping address
   useEffect(() => {
@@ -3000,14 +3051,18 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
       return;
     }
     if (luEtApprouve.toLowerCase().trim() !== 'lu et approuvé') {
-      notify('Veuillez taper "Lu et approuvé" pour signer', 'error');
+      notify('Veuillez taper "Lu et approuvé"', 'error');
+      return;
+    }
+    if (!signatureData) {
+      notify('Veuillez dessiner votre signature', 'error');
       return;
     }
     
     setSubmittingBC(true);
     
     try {
-      // If file uploaded, store it
+      // Upload BC file if provided
       let fileUrl = null;
       if (bcFile) {
         const fileName = `bc_${request.id}_${Date.now()}.${bcFile.name.split('.').pop()}`;
@@ -3017,22 +3072,39 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
         
         if (uploadError) throw uploadError;
         
-        // Get public URL
         const { data: publicUrl } = supabase.storage
           .from('documents')
           .getPublicUrl(fileName);
         fileUrl = publicUrl?.publicUrl;
       }
       
-      // Update request status
+      // Upload signature image
+      let signatureUrl = null;
+      if (signatureData) {
+        const signatureBlob = await fetch(signatureData).then(r => r.blob());
+        const signatureFileName = `signature_${request.id}_${Date.now()}.png`;
+        const { error: sigError } = await supabase.storage
+          .from('documents')
+          .upload(signatureFileName, signatureBlob);
+        
+        if (!sigError) {
+          const { data: sigUrl } = supabase.storage
+            .from('documents')
+            .getPublicUrl(signatureFileName);
+          signatureUrl = sigUrl?.publicUrl;
+        }
+      }
+      
+      // Update request status - use ISO date for database
       const { error: updateError } = await supabase
         .from('service_requests')
         .update({ 
           status: 'waiting_device',
           bc_submitted_at: new Date().toISOString(),
           bc_signed_by: signatureName,
-          bc_signature_date: signatureDate,
-          bc_file_url: fileUrl
+          bc_signature_date: signatureDateISO,
+          bc_file_url: fileUrl,
+          bc_signature_url: signatureUrl
         })
         .eq('id', request.id);
       
@@ -3239,34 +3311,36 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
                   <h3 className="font-semibold text-[#1E3A5F] mb-4">Signature électronique</h3>
                   
                   <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Nom complet du signataire *
-                      </label>
-                      <input
-                        type="text"
-                        value={signatureName}
-                        onChange={(e) => setSignatureName(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
-                        placeholder="Prénom et Nom"
-                      />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Nom complet du signataire *
+                        </label>
+                        <input
+                          type="text"
+                          value={signatureName}
+                          onChange={(e) => setSignatureName(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
+                          placeholder="Prénom et Nom"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Date
+                        </label>
+                        <input
+                          type="text"
+                          value={signatureDateDisplay}
+                          readOnly
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600"
+                        />
+                      </div>
                     </div>
                     
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Date
-                      </label>
-                      <input
-                        type="text"
-                        value={signatureDate}
-                        readOnly
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Tapez "Lu et approuvé" pour signer *
+                        Tapez "Lu et approuvé" *
                       </label>
                       <input
                         type="text"
@@ -3279,11 +3353,42 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
                         }`}
                         placeholder="Lu et approuvé"
                       />
-                      {luEtApprouve && luEtApprouve.toLowerCase().trim() !== 'lu et approuvé' && (
-                        <p className="text-xs text-red-500 mt-1">Veuillez taper exactement "Lu et approuvé"</p>
+                    </div>
+                    
+                    {/* Signature Pad */}
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Signature manuscrite *
+                        </label>
+                        <button
+                          type="button"
+                          onClick={clearSignature}
+                          className="text-xs text-red-600 hover:text-red-700"
+                        >
+                          Effacer
+                        </button>
+                      </div>
+                      <div className={`border-2 rounded-lg bg-white ${signatureData ? 'border-green-500' : 'border-gray-300 border-dashed'}`}>
+                        <canvas
+                          ref={canvasRef}
+                          width={400}
+                          height={150}
+                          className="w-full cursor-crosshair touch-none"
+                          onMouseDown={startDrawing}
+                          onMouseMove={draw}
+                          onMouseUp={stopDrawing}
+                          onMouseLeave={stopDrawing}
+                          onTouchStart={startDrawing}
+                          onTouchMove={draw}
+                          onTouchEnd={stopDrawing}
+                        />
+                      </div>
+                      {!signatureData && (
+                        <p className="text-xs text-gray-500 mt-1">Dessinez votre signature ci-dessus</p>
                       )}
-                      {luEtApprouve.toLowerCase().trim() === 'lu et approuvé' && (
-                        <p className="text-xs text-green-600 mt-1">✓ Signature valide</p>
+                      {signatureData && (
+                        <p className="text-xs text-green-600 mt-1">✓ Signature enregistrée</p>
                       )}
                     </div>
                   </div>
