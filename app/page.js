@@ -161,7 +161,7 @@ const StepProgress = ({ status, serviceType }) => {
   // Define steps based on service type
   const calibrationSteps = [
     { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
-    { id: 'approved', label: 'Approuvé', shortLabel: 'Approuvé' },
+    { id: 'rma_created', label: 'RMA Créé', shortLabel: 'RMA' },
     { id: 'waiting_device', label: 'En attente', shortLabel: 'Attente' },
     { id: 'received_calibration', label: 'Reçu', shortLabel: 'Reçu' },
     { id: 'calibration_in_progress', label: 'Étalonnage', shortLabel: 'Étal.' },
@@ -172,9 +172,10 @@ const StepProgress = ({ status, serviceType }) => {
 
   const repairSteps = [
     { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
-    { id: 'approved', label: 'Approuvé', shortLabel: 'Approuvé' },
+    { id: 'rma_created', label: 'RMA Créé', shortLabel: 'RMA' },
     { id: 'waiting_device', label: 'En attente', shortLabel: 'Attente' },
-    { id: 'received_repair', label: 'Inspection', shortLabel: 'Insp.' },
+    { id: 'inspection', label: 'Inspection', shortLabel: 'Insp.' },
+    { id: 'customer_approval', label: 'Approbation', shortLabel: 'Appr.' },
     { id: 'repair_in_progress', label: 'Réparation', shortLabel: 'Rép.' },
     { id: 'final_qc', label: 'Contrôle QC', shortLabel: 'QC' },
     { id: 'ready_to_ship', label: 'Prêt', shortLabel: 'Prêt' },
@@ -186,21 +187,36 @@ const StepProgress = ({ status, serviceType }) => {
 
   // Map current status to step index
   const getStepIndex = (currentStatus) => {
-    const statusMap = {
-      'submitted': 0, 'pending': 0,
-      'waiting_approval': 0,
-      'approved': 1, 'waiting_bc': 1, 'waiting_po': 1,
-      'waiting_device': 2,
-      'received': 3, 'received_calibration': 3, 'received_repair': 3,
-      'inspection_complete': 3,
-      'order_received': 4, 'waiting_parts': 4,
-      'in_progress': 4, 'calibration_in_progress': 4, 'repair_in_progress': 4,
-      'repair_complete': 5,
-      'final_qc': 5, 'quality_check': 5,
-      'ready_to_ship': 6,
-      'shipped': 7, 'delivered': 7, 'completed': 7
-    };
-    return statusMap[currentStatus] ?? 0;
+    if (isRepair) {
+      // Repair flow mapping
+      const repairMap = {
+        'submitted': 0, 'pending': 0,
+        'waiting_approval': 0,
+        'approved': 1, 'waiting_bc': 1, 'waiting_po': 1, // RMA Created = approved
+        'waiting_device': 2,
+        'received': 3, 'received_repair': 3, 'inspection_complete': 3,
+        'quote_sent': 4, 'waiting_customer': 4, // Customer approval stage
+        'order_received': 5, 'waiting_parts': 5, 'repair_in_progress': 5,
+        'repair_complete': 6, 'final_qc': 6, 'quality_check': 6,
+        'ready_to_ship': 7,
+        'shipped': 8, 'delivered': 8, 'completed': 8
+      };
+      return repairMap[currentStatus] ?? 0;
+    } else {
+      // Calibration flow mapping
+      const calibrationMap = {
+        'submitted': 0, 'pending': 0,
+        'waiting_approval': 0,
+        'approved': 1, 'waiting_bc': 1, 'waiting_po': 1, // RMA Created
+        'waiting_device': 2,
+        'received': 3, 'received_calibration': 3,
+        'in_progress': 4, 'calibration_in_progress': 4,
+        'final_qc': 5, 'quality_check': 5,
+        'ready_to_ship': 6,
+        'shipped': 7, 'delivered': 7, 'completed': 7
+      };
+      return calibrationMap[currentStatus] ?? 0;
+    }
   };
 
   const currentIndex = getStepIndex(status);
@@ -3107,40 +3123,48 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
     setSubmittingBC(true);
     
     try {
-      // Upload BC file if provided
+      // Try to upload BC file if provided (may fail if storage not configured)
       let fileUrl = null;
       if (bcFile) {
-        const fileName = `bc_${request.id}_${Date.now()}.${bcFile.name.split('.').pop()}`;
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('documents')
-          .upload(fileName, bcFile);
-        
-        if (uploadError) throw uploadError;
-        
-        const { data: publicUrl } = supabase.storage
-          .from('documents')
-          .getPublicUrl(fileName);
-        fileUrl = publicUrl?.publicUrl;
-      }
-      
-      // Upload signature image
-      let signatureUrl = null;
-      if (signatureData) {
-        const signatureBlob = await fetch(signatureData).then(r => r.blob());
-        const signatureFileName = `signature_${request.id}_${Date.now()}.png`;
-        const { error: sigError } = await supabase.storage
-          .from('documents')
-          .upload(signatureFileName, signatureBlob);
-        
-        if (!sigError) {
-          const { data: sigUrl } = supabase.storage
+        try {
+          const fileName = `bc_${request.id}_${Date.now()}.${bcFile.name.split('.').pop()}`;
+          const { error: uploadError } = await supabase.storage
             .from('documents')
-            .getPublicUrl(signatureFileName);
-          signatureUrl = sigUrl?.publicUrl;
+            .upload(fileName, bcFile);
+          
+          if (!uploadError) {
+            const { data: publicUrl } = supabase.storage
+              .from('documents')
+              .getPublicUrl(fileName);
+            fileUrl = publicUrl?.publicUrl;
+          }
+        } catch (e) {
+          console.log('File upload skipped - storage not configured');
         }
       }
       
-      // Update request status - use ISO date for database
+      // Try to upload signature image (may fail if storage not configured)
+      let signatureUrl = null;
+      if (signatureData) {
+        try {
+          const signatureBlob = await fetch(signatureData).then(r => r.blob());
+          const signatureFileName = `signature_${request.id}_${Date.now()}.png`;
+          const { error: sigError } = await supabase.storage
+            .from('documents')
+            .upload(signatureFileName, signatureBlob);
+          
+          if (!sigError) {
+            const { data: sigUrl } = supabase.storage
+              .from('documents')
+              .getPublicUrl(signatureFileName);
+            signatureUrl = sigUrl?.publicUrl;
+          }
+        } catch (e) {
+          console.log('Signature upload skipped - storage not configured');
+        }
+      }
+      
+      // Update request status - this is the important part
       const { error: updateError } = await supabase
         .from('service_requests')
         .update({ 
