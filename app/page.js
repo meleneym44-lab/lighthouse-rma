@@ -3307,10 +3307,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
         {/* Tabs */}
         <div className="flex border-b border-gray-100 overflow-x-auto">
           {[
-            { id: 'details', label: 'Détails', icon: '' },
-            { id: 'messages', label: 'Messages', icon: '', count: messages.filter(m => !m.is_read && m.sender_id !== profile?.id).length },
-            { id: 'history', label: 'Historique', icon: '' },
-            { id: 'documents', label: 'Documents', icon: '', count: attachments.length }
+            { id: 'details', label: 'Détails', icon: '📋' },
+            { id: 'messages', label: 'Messages', icon: '💬', count: messages.filter(m => !m.is_read && m.sender_id !== profile?.id).length },
+            { id: 'history', label: 'Historique', icon: '📜' },
+            { id: 'documents', label: 'Documents', icon: '📄', count: attachments.length }
           ].map(tab => (
             <button
               key={tab.id}
@@ -3321,6 +3321,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
+              <span>{tab.icon}</span>
               {tab.label}
               {tab.count > 0 && (
                 <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">{tab.count}</span>
@@ -3522,51 +3523,6 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
                         <p className="text-gray-700">{line}</p>
                       </div>
                     ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Quote Details */}
-              {request.quote_total && (
-                <div>
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                      <span className="text-lg">💰</span>
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-bold text-[#1E3A5F]">Devis</h2>
-                      <p className="text-sm text-gray-500">Détails financiers</p>
-                    </div>
-                  </div>
-                  <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                    <div className="p-4 space-y-3">
-                      <div className="flex justify-between text-gray-600">
-                        <span>Sous-total HT</span>
-                        <span className="font-medium">{request.quote_subtotal?.toFixed(2) || '0.00'} €</span>
-                      </div>
-                      <div className="flex justify-between text-gray-600">
-                        <span>TVA (20%)</span>
-                        <span className="font-medium">{request.quote_tax?.toFixed(2) || '0.00'} €</span>
-                      </div>
-                    </div>
-                    <div className="bg-[#1E3A5F] text-white px-4 py-3 flex justify-between items-center">
-                      <span className="font-medium">Total TTC</span>
-                      <span className="text-2xl font-bold">{request.quote_total?.toFixed(2)} €</span>
-                    </div>
-                    
-                    {request.status === 'quote_sent' && (
-                      <div className="p-4 bg-amber-50 border-t border-amber-200">
-                        <p className="text-sm text-amber-800 mb-3">⚠️ Action requise: Veuillez accepter ou modifier ce devis</p>
-                        <div className="flex gap-3">
-                          <button className="flex-1 py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition-colors">
-                            ✓ Accepter le devis
-                          </button>
-                          <button className="flex-1 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg font-semibold hover:bg-gray-50 transition-colors">
-                            Demander des modifications
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
