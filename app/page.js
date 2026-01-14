@@ -2938,13 +2938,17 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
   const [showBCModal, setShowBCModal] = useState(false);
   const [bcFile, setBcFile] = useState(null);
   const [signatureName, setSignatureName] = useState(profile?.full_name || '');
-  const [signatureDate, setSignatureDate] = useState(new Date().toISOString().split('T')[0]);
+  const [signatureDate, setSignatureDate] = useState(new Date().toLocaleDateString('fr-FR'));
+  const [luEtApprouve, setLuEtApprouve] = useState('');
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [submittingBC, setSubmittingBC] = useState(false);
   
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
   const isPartsOrder = request.request_type === 'parts' || request.requested_service === 'parts_order';
   const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(request.status);
+  
+  // Check if signature is valid
+  const isSignatureValid = luEtApprouve.toLowerCase().trim() === 'lu et approuvé' && signatureName.trim().length > 0 && acceptTerms;
 
   // Load messages, history, attachments, and shipping address
   useEffect(() => {
@@ -2995,6 +2999,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
       notify('Veuillez entrer votre nom', 'error');
       return;
     }
+    if (luEtApprouve.toLowerCase().trim() !== 'lu et approuvé') {
+      notify('Veuillez taper "Lu et approuvé" pour signer', 'error');
+      return;
+    }
     
     setSubmittingBC(true);
     
@@ -3008,11 +3016,16 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
           .upload(fileName, bcFile);
         
         if (uploadError) throw uploadError;
-        fileUrl = uploadData?.path;
+        
+        // Get public URL
+        const { data: publicUrl } = supabase.storage
+          .from('documents')
+          .getPublicUrl(fileName);
+        fileUrl = publicUrl?.publicUrl;
       }
       
       // Update request status
-      await supabase
+      const { error: updateError } = await supabase
         .from('service_requests')
         .update({ 
           status: 'waiting_device',
@@ -3023,20 +3036,12 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
         })
         .eq('id', request.id);
       
-      // Add history entry
-      await supabase
-        .from('device_history')
-        .insert({
-          serial_number: request.serial_number || 'N/A',
-          request_id: request.id,
-          event_type: 'bc_submitted',
-          event_description: `Bon de commande soumis par ${signatureName}`,
-          event_date: new Date().toISOString()
-        });
+      if (updateError) throw updateError;
       
       notify('Bon de commande soumis avec succès!');
       setShowBCModal(false);
       if (refresh) refresh();
+      setPage('dashboard');
     } catch (err) {
       notify(`Erreur: ${err.message}`, 'error');
     }
@@ -3249,14 +3254,37 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
                     
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Date *
+                        Date
                       </label>
                       <input
-                        type="date"
+                        type="text"
                         value={signatureDate}
-                        onChange={(e) => setSignatureDate(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
+                        readOnly
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600"
                       />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Tapez "Lu et approuvé" pour signer *
+                      </label>
+                      <input
+                        type="text"
+                        value={luEtApprouve}
+                        onChange={(e) => setLuEtApprouve(e.target.value)}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent font-medium ${
+                          luEtApprouve.toLowerCase().trim() === 'lu et approuvé' 
+                            ? 'border-green-500 bg-green-50 text-green-800' 
+                            : 'border-gray-300'
+                        }`}
+                        placeholder="Lu et approuvé"
+                      />
+                      {luEtApprouve && luEtApprouve.toLowerCase().trim() !== 'lu et approuvé' && (
+                        <p className="text-xs text-red-500 mt-1">Veuillez taper exactement "Lu et approuvé"</p>
+                      )}
+                      {luEtApprouve.toLowerCase().trim() === 'lu et approuvé' && (
+                        <p className="text-xs text-green-600 mt-1">✓ Signature valide</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -3271,7 +3299,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
                       className="mt-1 w-4 h-4 text-[#3B7AB4] border-gray-300 rounded focus:ring-[#3B7AB4]"
                     />
                     <span className="text-sm text-gray-700">
-                      <strong>Lu et approuvé.</strong> Je soussigné(e), <strong>{signatureName || '[Nom]'}</strong>, 
+                      Je soussigné(e), <strong>{signatureName || '[Nom]'}</strong>, 
                       certifie avoir pris connaissance et accepter les conditions générales de vente de Lighthouse France. 
                       Je m'engage à régler la facture correspondante selon les modalités convenues. 
                       Cette validation électronique a valeur de signature manuscrite conformément aux articles 1366 et 1367 du Code civil français.
@@ -3290,9 +3318,9 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
                 </button>
                 <button
                   onClick={submitBonCommande}
-                  disabled={submittingBC || !acceptTerms}
+                  disabled={submittingBC || !isSignatureValid}
                   className={`flex-1 py-3 rounded-lg font-medium transition-colors ${
-                    acceptTerms 
+                    isSignatureValid 
                       ? 'bg-[#1E3A5F] text-white hover:bg-[#2a4a6f]' 
                       : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   }`}
