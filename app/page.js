@@ -603,6 +603,9 @@ export default function CustomerPortal() {
             t={t}
             notify={notify}
             refresh={refresh}
+            setPage={setPage}
+            setSelectedRequest={setSelectedRequest}
+            requests={requests}
           />
         )}
         
@@ -2702,14 +2705,17 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
 // ============================================
 // EQUIPMENT PAGE
 // ============================================
-function EquipmentPage({ profile, t, notify, refresh }) {
+function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedRequest, requests }) {
   const [equipment, setEquipment] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingEquipment, setEditingEquipment] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [selectedDevice, setSelectedDevice] = useState(null);
+  const [deviceRMAs, setDeviceRMAs] = useState([]);
+  const [loadingRMAs, setLoadingRMAs] = useState(false);
   const [newEquipment, setNewEquipment] = useState({
-    nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: ''
+    nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '', notes: ''
   });
 
   // Load equipment
@@ -2726,6 +2732,43 @@ function EquipmentPage({ profile, t, notify, refresh }) {
     };
     loadEquipment();
   }, [profile?.company_id]);
+
+  // Load RMAs for selected device
+  useEffect(() => {
+    const loadDeviceRMAs = async () => {
+      if (!selectedDevice || !profile?.company_id) return;
+      setLoadingRMAs(true);
+      
+      // Get RMAs for this device from this company only
+      const { data } = await supabase
+        .from('service_requests')
+        .select(`
+          *,
+          request_devices(*)
+        `)
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      
+      // Filter to only requests containing this serial number
+      const filteredRMAs = (data || []).filter(req => 
+        req.request_devices?.some(d => d.serial_number === selectedDevice.serial_number) ||
+        req.serial_number === selectedDevice.serial_number
+      );
+      
+      // Sort: open RMAs first, then by date
+      const sortedRMAs = filteredRMAs.sort((a, b) => {
+        const aOpen = !['shipped', 'delivered', 'completed', 'cancelled'].includes(a.status);
+        const bOpen = !['shipped', 'delivered', 'completed', 'cancelled'].includes(b.status);
+        if (aOpen && !bOpen) return -1;
+        if (!aOpen && bOpen) return 1;
+        return new Date(b.created_at) - new Date(a.created_at);
+      });
+      
+      setDeviceRMAs(sortedRMAs);
+      setLoadingRMAs(false);
+    };
+    loadDeviceRMAs();
+  }, [selectedDevice, profile?.company_id]);
 
   const reloadEquipment = async () => {
     const { data } = await supabase
@@ -2750,6 +2793,7 @@ function EquipmentPage({ profile, t, notify, refresh }) {
       brand: newEquipment.brand === 'other' ? newEquipment.brand_other : 'Lighthouse',
       model_name: newEquipment.model_name,
       serial_number: newEquipment.serial_number,
+      notes: newEquipment.notes || null,
       equipment_type: 'particle_counter',
       added_by: profile.id
     };
@@ -2769,7 +2813,7 @@ function EquipmentPage({ profile, t, notify, refresh }) {
       notify(editingEquipment ? 'Équipement modifié!' : 'Équipement ajouté!');
       setShowAddModal(false);
       setEditingEquipment(null);
-      setNewEquipment({ nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '' });
+      setNewEquipment({ nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '', notes: '' });
       await reloadEquipment();
     }
     setSaving(false);
@@ -2786,16 +2830,31 @@ function EquipmentPage({ profile, t, notify, refresh }) {
     }
   };
 
-  const openEditModal = (equip) => {
+  const openEditModal = (equip, e) => {
+    e?.stopPropagation();
     setEditingEquipment(equip);
     setNewEquipment({
       nickname: equip.nickname || '',
       brand: equip.brand === 'Lighthouse' ? 'Lighthouse' : 'other',
       brand_other: equip.brand !== 'Lighthouse' ? equip.brand : '',
       model_name: equip.model_name || '',
-      serial_number: equip.serial_number || ''
+      serial_number: equip.serial_number || '',
+      notes: equip.notes || ''
     });
     setShowAddModal(true);
+  };
+
+  const viewDeviceDetail = (equip) => {
+    setSelectedDevice(equip);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const viewRMA = (rma) => {
+    if (setSelectedRequest && setPage) {
+      setSelectedRequest(rma);
+      setPage('request-detail');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   if (loading) {
@@ -2806,6 +2865,135 @@ function EquipmentPage({ profile, t, notify, refresh }) {
     );
   }
 
+  // Device Detail View
+  if (selectedDevice) {
+    const isOpen = (status) => !['shipped', 'delivered', 'completed', 'cancelled'].includes(status);
+    
+    return (
+      <div>
+        {/* Back Button */}
+        <button
+          onClick={() => setSelectedDevice(null)}
+          className="flex items-center gap-2 text-[#3B7AB4] font-medium mb-4 hover:underline"
+        >
+          ← Retour à mes équipements
+        </button>
+
+        {/* Device Info Card */}
+        <div className="bg-gradient-to-r from-[#1E3A5F] to-[#3B7AB4] rounded-xl p-6 text-white mb-6">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-white/70 text-sm uppercase tracking-wide mb-1">Équipement</p>
+              <p className="text-2xl font-bold">{selectedDevice.model_name}</p>
+              <p className="font-mono text-lg mt-1">{selectedDevice.serial_number}</p>
+            </div>
+            <div className="text-right">
+              <span className="px-3 py-1 bg-white/20 rounded-full text-sm">
+                {selectedDevice.brand || 'Lighthouse'}
+              </span>
+            </div>
+          </div>
+          
+          {selectedDevice.nickname && (
+            <div className="mt-4 pt-4 border-t border-white/20">
+              <p className="text-white/70 text-sm">Surnom</p>
+              <p className="font-medium">{selectedDevice.nickname}</p>
+            </div>
+          )}
+          
+          {selectedDevice.notes && (
+            <div className="mt-4 pt-4 border-t border-white/20">
+              <p className="text-white/70 text-sm">Notes</p>
+              <p className="text-sm">{selectedDevice.notes}</p>
+            </div>
+          )}
+          
+          <div className="mt-4 pt-4 border-t border-white/20 flex gap-4 text-sm">
+            <div>
+              <p className="text-white/70">Ajouté le</p>
+              <p>{new Date(selectedDevice.created_at).toLocaleDateString('fr-FR')}</p>
+            </div>
+            <div>
+              <p className="text-white/70">Total RMAs</p>
+              <p>{deviceRMAs.length}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* RMA History */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <h2 className="font-bold text-[#1E3A5F] text-lg">Historique des RMAs</h2>
+            <span className="text-sm text-gray-500">{deviceRMAs.length} demande(s)</span>
+          </div>
+          
+          {loadingRMAs ? (
+            <div className="flex justify-center py-12">
+              <div className="w-8 h-8 border-4 border-[#3B7AB4] border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : deviceRMAs.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">
+              <p className="text-4xl mb-2">📋</p>
+              <p>Aucune demande pour cet appareil</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {deviceRMAs.map(rma => {
+                const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
+                const open = isOpen(rma.status);
+                const shipDate = rma.shipped_at || (rma.status === 'shipped' ? rma.updated_at : null);
+                
+                return (
+                  <div 
+                    key={rma.id}
+                    onClick={() => viewRMA(rma)}
+                    className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${open ? 'bg-blue-50/30' : ''}`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono font-bold text-[#3B7AB4]">
+                          {rma.request_number || 'En attente'}
+                        </span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                          {style.label}
+                        </span>
+                        {open && (
+                          <span className="px-2 py-1 rounded-full text-xs font-bold bg-green-500 text-white">
+                            En cours
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-right text-sm">
+                        <p className="text-gray-500">
+                          Soumis: {new Date(rma.created_at).toLocaleDateString('fr-FR')}
+                        </p>
+                        {shipDate && (
+                          <p className="text-green-600 font-medium">
+                            Expédié: {new Date(shipDate).toLocaleDateString('fr-FR')}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-2 flex items-center gap-4 text-sm text-gray-500">
+                      <span>
+                        {rma.requested_service === 'calibration' ? '🔬 Étalonnage' : 
+                         rma.requested_service === 'repair' ? '🔧 Réparation' :
+                         rma.requested_service === 'calibration_repair' ? '🔬🔧 Étal. + Rép.' :
+                         rma.requested_service}
+                      </span>
+                      <span>→</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Equipment List View
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -2813,7 +3001,7 @@ function EquipmentPage({ profile, t, notify, refresh }) {
         <button
           onClick={() => {
             setEditingEquipment(null);
-            setNewEquipment({ nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '' });
+            setNewEquipment({ nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '', notes: '' });
             setShowAddModal(true);
           }}
           className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
@@ -2853,7 +3041,8 @@ function EquipmentPage({ profile, t, notify, refresh }) {
             .map((equip, index) => (
             <div 
               key={equip.id} 
-              className={`grid grid-cols-12 gap-4 px-4 py-3 items-center ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-[#E8F2F8] transition-colors border-b border-gray-100 last:border-b-0`}
+              onClick={() => viewDeviceDetail(equip)}
+              className={`grid grid-cols-12 gap-4 px-4 py-3 items-center cursor-pointer ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-[#E8F2F8] transition-colors border-b border-gray-100 last:border-b-0`}
             >
               <div className="col-span-2">
                 <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded font-medium">
@@ -2871,14 +3060,14 @@ function EquipmentPage({ profile, t, notify, refresh }) {
               </div>
               <div className="col-span-1 flex justify-end gap-1">
                 <button
-                  onClick={() => openEditModal(equip)}
+                  onClick={(e) => openEditModal(equip, e)}
                   className="p-1.5 text-gray-400 hover:text-[#3B7AB4] hover:bg-white rounded"
                   title="Modifier"
                 >
                   ✏️
                 </button>
                 <button
-                  onClick={() => deleteEquipment(equip.id)}
+                  onClick={(e) => { e.stopPropagation(); deleteEquipment(equip.id); }}
                   className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-white rounded"
                   title="Supprimer"
                 >
@@ -2957,6 +3146,17 @@ function EquipmentPage({ profile, t, notify, refresh }) {
                   placeholder="ex: 205482857"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optionnel)</label>
+                <textarea
+                  value={newEquipment.notes}
+                  onChange={e => setNewEquipment({ ...newEquipment, notes: e.target.value })}
+                  placeholder="Informations supplémentaires, emplacement, etc."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
               
@@ -3757,22 +3957,6 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
               )}
 
               {/* Notes from request */}
-              {!isPartsOrder && request.problem_description && (
-                <div>
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
-                      <span className="text-lg">📝</span>
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-bold text-[#1E3A5F]">Notes complémentaires</h2>
-                      <p className="text-sm text-gray-500">Informations fournies lors de la soumission</p>
-                    </div>
-                  </div>
-                  <div className="bg-white border border-gray-200 rounded-xl p-4">
-                    <p className="text-gray-700 whitespace-pre-wrap">{request.problem_description}</p>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
