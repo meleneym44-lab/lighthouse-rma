@@ -2893,10 +2893,29 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
               <p className="text-2xl font-bold">{selectedDevice.model_name}</p>
               <p className="font-mono text-lg mt-1">{selectedDevice.serial_number}</p>
             </div>
-            <div className="text-right">
+            <div className="flex flex-col items-end gap-2">
               <span className="px-3 py-1 bg-white/20 rounded-full text-sm">
                 {selectedDevice.brand || 'Lighthouse'}
               </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => openEditModal(selectedDevice)}
+                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                >
+                  ✏️ Modifier
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm('Êtes-vous sûr de vouloir supprimer cet équipement?')) {
+                      deleteEquipment(selectedDevice.id);
+                      setSelectedDevice(null);
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-red-500/50 hover:bg-red-500/70 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                >
+                  🗑️ Supprimer
+                </button>
+              </div>
             </div>
           </div>
           
@@ -3035,10 +3054,9 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
           {/* Table Header */}
           <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-gray-50 border-b text-sm font-bold text-gray-600">
             <div className="col-span-2">Marque</div>
-            <div className="col-span-3">Modèle</div>
+            <div className="col-span-4">Modèle</div>
             <div className="col-span-3">N° de Série</div>
             <div className="col-span-3">Surnom</div>
-            <div className="col-span-1 text-right">Actions</div>
           </div>
           
           {/* Table Rows - sorted alphabetically by model */}
@@ -3048,37 +3066,22 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
             <div 
               key={equip.id} 
               onClick={() => viewDeviceDetail(equip)}
-              className={`grid grid-cols-12 gap-4 px-4 py-3 items-center cursor-pointer ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-[#E8F2F8] transition-colors border-b border-gray-100 last:border-b-0`}
+              className={`grid grid-cols-12 gap-4 px-4 py-3 items-center cursor-pointer ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-[#E8F2F8] transition-colors border-b border-gray-100 last:border-b-0 group`}
             >
               <div className="col-span-2">
                 <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded font-medium">
                   {equip.brand || 'Lighthouse'}
                 </span>
               </div>
-              <div className="col-span-3 font-medium text-[#1E3A5F]">
+              <div className="col-span-4 font-medium text-[#1E3A5F] flex items-center gap-2">
                 {equip.model_name || 'Modèle inconnu'}
+                <span className="text-gray-300 group-hover:text-[#3B7AB4] transition-colors">→</span>
               </div>
               <div className="col-span-3 font-mono text-gray-600 text-sm">
                 {equip.serial_number}
               </div>
               <div className="col-span-3 text-gray-500 text-sm">
                 {equip.nickname || '-'}
-              </div>
-              <div className="col-span-1 flex justify-end gap-1">
-                <button
-                  onClick={(e) => openEditModal(equip, e)}
-                  className="p-1.5 text-gray-400 hover:text-[#3B7AB4] hover:bg-white rounded"
-                  title="Modifier"
-                >
-                  ✏️
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); deleteEquipment(equip.id); }}
-                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-white rounded"
-                  title="Supprimer"
-                >
-                  🗑️
-                </button>
               </div>
             </div>
           ))}
