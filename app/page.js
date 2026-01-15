@@ -341,6 +341,7 @@ export default function CustomerPortal() {
   const [loading, setLoading] = useState(true);
   const [lang, setLang] = useState('fr');
   const [page, setPage] = useState('home');
+  const [previousPage, setPreviousPage] = useState('dashboard');
   const [toast, setToast] = useState(null);
   
   // Data
@@ -573,6 +574,7 @@ export default function CustomerPortal() {
             t={t} 
             setPage={setPage}
             setSelectedRequest={setSelectedRequest}
+            setPreviousPage={setPreviousPage}
           />
         )}
         
@@ -606,6 +608,7 @@ export default function CustomerPortal() {
             setPage={setPage}
             setSelectedRequest={setSelectedRequest}
             requests={requests}
+            setPreviousPage={setPreviousPage}
           />
         )}
         
@@ -616,6 +619,7 @@ export default function CustomerPortal() {
             t={t}
             setPage={setPage}
             notify={notify}
+            previousPage={previousPage}
           />
         )}
         
@@ -645,7 +649,7 @@ export default function CustomerPortal() {
 // ============================================
 // DASHBOARD COMPONENT (Enhanced)
 // ============================================
-function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
+function Dashboard({ profile, requests, t, setPage, setSelectedRequest, setPreviousPage }) {
   const [messages, setMessages] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'service', 'parts', 'messages'
@@ -716,6 +720,7 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest }) {
   ];
 
   const viewRequest = (req) => {
+    if (setPreviousPage) setPreviousPage('dashboard');
     setSelectedRequest(req);
     setPage('request-detail');
     // Scroll to top when opening detail page
@@ -2705,7 +2710,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
 // ============================================
 // EQUIPMENT PAGE
 // ============================================
-function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedRequest, requests }) {
+function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedRequest, requests, setPreviousPage }) {
   const [equipment, setEquipment] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -2851,6 +2856,7 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
 
   const viewRMA = (rma) => {
     if (setSelectedRequest && setPage) {
+      if (setPreviousPage) setPreviousPage('equipment');
       setSelectedRequest(rma);
       setPage('request-detail');
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3190,7 +3196,7 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
 // ============================================
 // REQUEST DETAIL PAGE (Enhanced)
 // ============================================
-function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
+function RequestDetail({ request, profile, t, setPage, notify, refresh, previousPage = 'dashboard' }) {
   const [messages, setMessages] = useState([]);
   const [history, setHistory] = useState([]);
   const [newMessage, setNewMessage] = useState('');
@@ -3449,10 +3455,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh }) {
   return (
     <div>
       <button
-        onClick={() => setPage('dashboard')}
+        onClick={() => setPage(previousPage)}
         className="mb-6 text-[#3B7AB4] hover:text-[#1E3A5F] font-medium"
       >
-        ← Retour au tableau de bord
+        ← {previousPage === 'equipment' ? 'Retour à mes équipements' : 'Retour au tableau de bord'}
       </button>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-100">
