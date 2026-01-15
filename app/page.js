@@ -2817,6 +2817,12 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
     } else {
       notify(editingEquipment ? 'Équipement modifié!' : 'Équipement ajouté!');
       setShowAddModal(false);
+      
+      // Update selectedDevice if we were editing the currently viewed device
+      if (editingEquipment && selectedDevice && editingEquipment.id === selectedDevice.id) {
+        setSelectedDevice({ ...selectedDevice, ...equipData, id: editingEquipment.id });
+      }
+      
       setEditingEquipment(null);
       setNewEquipment({ nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '', notes: '' });
       await reloadEquipment();
@@ -2876,23 +2882,24 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
     const isOpen = (status) => !['shipped', 'delivered', 'completed', 'cancelled'].includes(status);
     
     return (
-      <div>
-        {/* Back Button */}
-        <button
-          onClick={() => setSelectedDevice(null)}
-          className="flex items-center gap-2 text-[#3B7AB4] font-medium mb-4 hover:underline"
-        >
-          ← Retour à mes équipements
-        </button>
+      <>
+        <div>
+          {/* Back Button */}
+          <button
+            onClick={() => setSelectedDevice(null)}
+            className="flex items-center gap-2 text-[#3B7AB4] font-medium mb-4 hover:underline"
+          >
+            ← Retour à mes équipements
+          </button>
 
-        {/* Device Info Card */}
-        <div className="bg-gradient-to-r from-[#1E3A5F] to-[#3B7AB4] rounded-xl p-6 text-white mb-6">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-white/70 text-sm uppercase tracking-wide mb-1">Équipement</p>
-              <p className="text-2xl font-bold">{selectedDevice.model_name}</p>
-              <p className="font-mono text-lg mt-1">{selectedDevice.serial_number}</p>
-            </div>
+          {/* Device Info Card */}
+          <div className="bg-gradient-to-r from-[#1E3A5F] to-[#3B7AB4] rounded-xl p-6 text-white mb-6">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-white/70 text-sm uppercase tracking-wide mb-1">Équipement</p>
+                <p className="text-2xl font-bold">{selectedDevice.model_name}</p>
+                <p className="font-mono text-lg mt-1">{selectedDevice.serial_number}</p>
+              </div>
             <div className="flex flex-col items-end gap-2">
               <span className="px-3 py-1 bg-white/20 rounded-full text-sm">
                 {selectedDevice.brand || 'Lighthouse'}
@@ -3014,25 +3021,132 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
             </div>
           )}
         </div>
-      </div>
+        </div>
+        
+        {/* Add/Edit Equipment Modal - Also available in device detail */}
+        {showAddModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowAddModal(false)}>
+            <div className="bg-white rounded-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+              <div className="px-6 py-4 border-b">
+                <h3 className="font-bold text-lg text-[#1E3A5F]">
+                  {editingEquipment ? 'Modifier l\'équipement' : 'Ajouter un équipement'}
+                </h3>
+              </div>
+              <form onSubmit={saveEquipment} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Surnom (optionnel)</label>
+                  <input
+                    type="text"
+                    value={newEquipment.nickname}
+                    onChange={e => setNewEquipment({ ...newEquipment, nickname: e.target.value })}
+                    placeholder="ex: Compteur Salle Blanche 1"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Marque *</label>
+                  <select
+                    value={newEquipment.brand}
+                    onChange={e => setNewEquipment({ ...newEquipment, brand: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="Lighthouse">Lighthouse</option>
+                    <option value="other">Autre</option>
+                  </select>
+                </div>
+                
+                {newEquipment.brand === 'other' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Préciser la marque *</label>
+                    <input
+                      type="text"
+                      value={newEquipment.brand_other}
+                      onChange={e => setNewEquipment({ ...newEquipment, brand_other: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      required
+                    />
+                  </div>
+                )}
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Modèle *</label>
+                  <input
+                    type="text"
+                    value={newEquipment.model_name}
+                    onChange={e => setNewEquipment({ ...newEquipment, model_name: e.target.value })}
+                    placeholder="ex: Solair 3100"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">N° de Série *</label>
+                  <input
+                    type="text"
+                    value={newEquipment.serial_number}
+                    onChange={e => setNewEquipment({ ...newEquipment, serial_number: e.target.value })}
+                    placeholder="ex: 205482857"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optionnel)</label>
+                  <textarea
+                    value={newEquipment.notes}
+                    onChange={e => setNewEquipment({ ...newEquipment, notes: e.target.value })}
+                    placeholder="Informations supplémentaires, emplacement, etc."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddModal(false);
+                      setEditingEquipment(null);
+                    }}
+                    className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                  >
+                    {saving ? 'Enregistrement...' : (editingEquipment ? 'Modifier' : 'Ajouter')}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
   // Equipment List View
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-[#1E3A5F]">{t('myEquipment')}</h1>
-        <button
-          onClick={() => {
-            setEditingEquipment(null);
-            setNewEquipment({ nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '', notes: '' });
-            setShowAddModal(true);
-          }}
-          className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
-        >
-          + Ajouter un Équipement
-        </button>
+    <>
+      <div>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold text-[#1E3A5F]">{t('myEquipment')}</h1>
+          <button
+            onClick={() => {
+              setEditingEquipment(null);
+              setNewEquipment({ nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '', notes: '' });
+              setShowAddModal(true);
+            }}
+            className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
+          >
+            + Ajouter un Équipement
+          </button>
       </div>
 
       {equipment.length === 0 ? (
@@ -3192,7 +3306,8 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 
