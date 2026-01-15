@@ -1546,7 +1546,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       accessories: [],
       other_accessories: '',
       saveDevice: false, // Option to save this device
-      fromSaved: null // ID if loaded from saved
+      fromSaved: null, // ID if loaded from saved
+      shipping_address_id: null // Per-device return address (null = use default)
     };
   }
 
@@ -1679,7 +1680,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
 
       if (reqErr) throw reqErr;
 
-      // Save devices with full details
+      // Save devices with full details including per-device shipping address
       for (const d of devices) {
         await supabase.from('request_devices').insert({
           request_id: request.id,
@@ -1688,7 +1689,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           equipment_type: d.brand === 'other' ? d.brand_other : 'Lighthouse',
           service_type: d.service_type === 'other' ? d.service_other : d.service_type,
           notes: d.notes,
-          accessories: d.accessories
+          accessories: d.accessories,
+          shipping_address_id: d.shipping_address_id || null // Per-device shipping address
         });
 
         // Save to equipment if checkbox is checked and not already from saved
@@ -1735,6 +1737,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
               canRemove={devices.length > 1}
               savedEquipment={savedEquipment}
               loadFromSaved={loadFromSaved}
+              addresses={addresses}
+              defaultAddressId={shipping.address_id}
             />
           ))}
         </div>
@@ -2236,8 +2240,9 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
 // ============================================
 // DEVICE CARD COMPONENT (Updated)
 // ============================================
-function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRemove, savedEquipment, loadFromSaved }) {
+function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRemove, savedEquipment, loadFromSaved, addresses, defaultAddressId }) {
   const [charCount, setCharCount] = useState(device.notes.length);
+  const [showDifferentAddress, setShowDifferentAddress] = useState(!!device.shipping_address_id);
   const maxChars = 500;
 
   const handleNotesChange = (e) => {
@@ -2481,6 +2486,44 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
             <p className="text-sm text-blue-700">✓ Appareil chargé depuis vos équipements enregistrés</p>
           </div>
         )}
+
+        {/* Per-Device Shipping Address */}
+        {addresses && addresses.length > 1 && (
+          <div className="md:col-span-2 mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
+            <label className="flex items-center gap-3 cursor-pointer mb-2">
+              <input
+                type="checkbox"
+                checked={showDifferentAddress}
+                onChange={e => {
+                  setShowDifferentAddress(e.target.checked);
+                  if (!e.target.checked) {
+                    updateDevice(device.id, 'shipping_address_id', null);
+                  }
+                }}
+                className="w-5 h-5 rounded border-amber-400 text-amber-600"
+              />
+              <div>
+                <span className="font-medium text-amber-800">📍 Envoyer à une adresse différente</span>
+                <p className="text-xs text-amber-600">Cet appareil sera retourné à une autre adresse</p>
+              </div>
+            </label>
+            
+            {showDifferentAddress && (
+              <select
+                value={device.shipping_address_id || ''}
+                onChange={e => updateDevice(device.id, 'shipping_address_id', e.target.value || null)}
+                className="w-full px-3 py-2 border border-amber-300 rounded-lg bg-white mt-2"
+              >
+                <option value="">-- Sélectionner une adresse --</option>
+                {addresses.map(addr => (
+                  <option key={addr.id} value={addr.id}>
+                    {addr.label} - {addr.city} {addr.is_default ? '(Par défaut)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2532,7 +2575,146 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
     email_marketing: false
   });
   
+  // Team management
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [pendingInvites, setPendingInvites] = useState([]);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteData, setInviteData] = useState({ email: '', role: 'user' });
+  const [loadingTeam, setLoadingTeam] = useState(false);
+  
   const [saving, setSaving] = useState(false);
+  
+  // Check if user is admin
+  const isAdmin = profile?.role === 'admin';
+  
+  // Load team members
+  useEffect(() => {
+    const loadTeam = async () => {
+      if (!profile?.company_id || !isAdmin) return;
+      setLoadingTeam(true);
+      
+      // Load team members
+      const { data: members } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, role, invitation_status, created_at')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: true });
+      
+      if (members) setTeamMembers(members);
+      
+      // Load pending invites
+      const { data: invites } = await supabase
+        .from('team_invitations')
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .is('accepted_at', null)
+        .gt('expires_at', new Date().toISOString());
+      
+      if (invites) setPendingInvites(invites);
+      setLoadingTeam(false);
+    };
+    loadTeam();
+  }, [profile?.company_id, isAdmin]);
+
+  // Invite team member
+  const inviteTeamMember = async (e) => {
+    e.preventDefault();
+    if (!inviteData.email) {
+      notify('Veuillez entrer un email', 'error');
+      return;
+    }
+    
+    setSaving(true);
+    
+    // Generate invite token
+    const token = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36);
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
+    
+    const { error } = await supabase.from('team_invitations').insert({
+      company_id: profile.company_id,
+      email: inviteData.email.toLowerCase(),
+      role: inviteData.role,
+      invited_by: profile.id,
+      token,
+      expires_at: expiresAt.toISOString()
+    });
+    
+    setSaving(false);
+    
+    if (error) {
+      if (error.code === '23505') {
+        notify('Une invitation pour cet email existe déjà', 'error');
+      } else {
+        notify(`Erreur: ${error.message}`, 'error');
+      }
+      return;
+    }
+    
+    notify(`Invitation envoyée à ${inviteData.email}!`);
+    setShowInviteModal(false);
+    setInviteData({ email: '', role: 'user' });
+    
+    // Reload invites
+    const { data: invites } = await supabase
+      .from('team_invitations')
+      .select('*')
+      .eq('company_id', profile.company_id)
+      .is('accepted_at', null);
+    if (invites) setPendingInvites(invites);
+  };
+
+  // Change team member role
+  const changeRole = async (memberId, newRole) => {
+    if (memberId === profile.id) {
+      notify('Vous ne pouvez pas modifier votre propre rôle', 'error');
+      return;
+    }
+    
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: newRole })
+      .eq('id', memberId);
+    
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Rôle modifié!');
+      setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, role: newRole } : m));
+    }
+  };
+
+  // Deactivate/reactivate team member
+  const toggleMemberStatus = async (memberId, currentStatus) => {
+    if (memberId === profile.id) {
+      notify('Vous ne pouvez pas désactiver votre propre compte', 'error');
+      return;
+    }
+    
+    const newStatus = currentStatus === 'active' ? 'deactivated' : 'active';
+    const { error } = await supabase
+      .from('profiles')
+      .update({ invitation_status: newStatus })
+      .eq('id', memberId);
+    
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify(newStatus === 'active' ? 'Compte réactivé!' : 'Compte désactivé!');
+      setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, invitation_status: newStatus } : m));
+    }
+  };
+
+  // Cancel pending invite
+  const cancelInvite = async (inviteId) => {
+    const { error } = await supabase.from('team_invitations').delete().eq('id', inviteId);
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Invitation annulée');
+      setPendingInvites(pendingInvites.filter(i => i.id !== inviteId));
+    }
+  };
 
   // Save profile
   const saveProfile = async () => {
@@ -2675,6 +2857,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
   const sections = [
     { id: 'profile', label: 'Profil', icon: '👤' },
     { id: 'company', label: 'Entreprise', icon: '🏢' },
+    ...(isAdmin ? [{ id: 'team', label: 'Équipe', icon: '👥' }] : []),
     { id: 'addresses', label: 'Adresses', icon: '📍' },
     { id: 'notifications', label: 'Notifications', icon: '🔔' },
     { id: 'security', label: 'Sécurité', icon: '🔒' }
@@ -2921,6 +3104,151 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
                 <div>
                   <p className="text-sm text-gray-500">N° TVA</p>
                   <p className="font-medium text-[#1E3A5F]">{profile?.companies?.vat_number || '—'}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Team Section - Admin Only */}
+      {activeSection === 'team' && isAdmin && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <div>
+              <h2 className="text-lg font-bold text-[#1E3A5F]">Gestion de l'équipe</h2>
+              <p className="text-sm text-gray-500">Invitez des membres et gérez leurs accès</p>
+            </div>
+            <button
+              onClick={() => setShowInviteModal(true)}
+              className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
+            >
+              + Inviter un membre
+            </button>
+          </div>
+          
+          <div className="p-6">
+            {loadingTeam ? (
+              <div className="flex justify-center py-8">
+                <div className="w-8 h-8 border-4 border-[#3B7AB4] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Current Team Members */}
+                <div>
+                  <h3 className="font-medium text-[#1E3A5F] mb-3">Membres actifs ({teamMembers.filter(m => m.invitation_status !== 'deactivated').length})</h3>
+                  <div className="space-y-3">
+                    {teamMembers.filter(m => m.invitation_status !== 'deactivated').map(member => (
+                      <div key={member.id} className={`p-4 rounded-xl border-2 ${member.id === profile.id ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 bg-gray-50'}`}>
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-[#1E3A5F] text-white flex items-center justify-center font-bold">
+                              {member.full_name?.charAt(0)?.toUpperCase() || '?'}
+                            </div>
+                            <div>
+                              <p className="font-medium text-[#1E3A5F]">
+                                {member.full_name}
+                                {member.id === profile.id && <span className="ml-2 text-xs text-gray-400">(vous)</span>}
+                              </p>
+                              <p className="text-sm text-gray-500">{member.email}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <select
+                              value={member.role || 'user'}
+                              onChange={e => changeRole(member.id, e.target.value)}
+                              disabled={member.id === profile.id}
+                              className={`px-3 py-1.5 border rounded-lg text-sm ${
+                                member.role === 'admin' ? 'bg-purple-50 border-purple-300 text-purple-700' :
+                                member.role === 'manager' ? 'bg-blue-50 border-blue-300 text-blue-700' :
+                                'bg-gray-50 border-gray-300 text-gray-700'
+                              } ${member.id === profile.id ? 'opacity-50' : ''}`}
+                            >
+                              <option value="admin">👑 Admin</option>
+                              <option value="manager">📋 Manager</option>
+                              <option value="user">👤 Utilisateur</option>
+                            </select>
+                            {member.id !== profile.id && (
+                              <button
+                                onClick={() => toggleMemberStatus(member.id, member.invitation_status)}
+                                className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                              >
+                                Désactiver
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Deactivated Members */}
+                {teamMembers.filter(m => m.invitation_status === 'deactivated').length > 0 && (
+                  <div>
+                    <h3 className="font-medium text-gray-500 mb-3">Comptes désactivés</h3>
+                    <div className="space-y-2">
+                      {teamMembers.filter(m => m.invitation_status === 'deactivated').map(member => (
+                        <div key={member.id} className="p-3 rounded-lg bg-gray-100 border border-gray-200 flex justify-between items-center">
+                          <div>
+                            <p className="font-medium text-gray-500">{member.full_name}</p>
+                            <p className="text-sm text-gray-400">{member.email}</p>
+                          </div>
+                          <button
+                            onClick={() => toggleMemberStatus(member.id, member.invitation_status)}
+                            className="px-3 py-1.5 text-sm text-green-600 border border-green-200 rounded-lg hover:bg-green-50"
+                          >
+                            Réactiver
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Pending Invitations */}
+                {pendingInvites.length > 0 && (
+                  <div>
+                    <h3 className="font-medium text-amber-600 mb-3">Invitations en attente ({pendingInvites.length})</h3>
+                    <div className="space-y-2">
+                      {pendingInvites.map(invite => (
+                        <div key={invite.id} className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex justify-between items-center">
+                          <div>
+                            <p className="font-medium text-amber-800">{invite.email}</p>
+                            <p className="text-xs text-amber-600">
+                              Rôle: {invite.role === 'admin' ? 'Admin' : invite.role === 'manager' ? 'Manager' : 'Utilisateur'}
+                              {' • '}Expire: {new Date(invite.expires_at).toLocaleDateString('fr-FR')}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => cancelInvite(invite.id)}
+                            className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                          >
+                            Annuler
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Role Explanation */}
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <h4 className="font-medium text-gray-700 mb-2">Niveaux d'accès</h4>
+                  <div className="grid md:grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <p className="font-medium text-purple-700">👑 Admin</p>
+                      <p className="text-gray-500">Accès complet, gestion des utilisateurs et paramètres</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-blue-700">📋 Manager</p>
+                      <p className="text-gray-500">Voir toutes les demandes, créer des demandes</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">👤 Utilisateur</p>
+                      <p className="text-gray-500">Voir uniquement ses propres demandes</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -3314,6 +3642,69 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
                   className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
                 >
                   {saving ? 'Modification...' : 'Modifier'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Invite Team Member Modal */}
+      {showInviteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowInviteModal(false)}>
+          <div className="bg-white rounded-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b">
+              <h3 className="font-bold text-lg text-[#1E3A5F]">Inviter un membre</h3>
+            </div>
+            <form onSubmit={inviteTeamMember} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Adresse email *</label>
+                <input
+                  type="email"
+                  value={inviteData.email}
+                  onChange={e => setInviteData({ ...inviteData, email: e.target.value })}
+                  placeholder="collegue@entreprise.com"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  required
+                />
+                <p className="text-xs text-gray-400 mt-1">Un email d'invitation sera envoyé à cette adresse</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Rôle *</label>
+                <select
+                  value={inviteData.role}
+                  onChange={e => setInviteData({ ...inviteData, role: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                >
+                  <option value="user">👤 Utilisateur - Voir ses propres demandes</option>
+                  <option value="manager">📋 Manager - Voir toutes les demandes</option>
+                  <option value="admin">👑 Admin - Accès complet</option>
+                </select>
+              </div>
+              
+              <div className="p-3 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-700">
+                  <strong>Note:</strong> L'utilisateur recevra un email avec un lien pour créer son compte et rejoindre votre entreprise.
+                </p>
+              </div>
+              
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowInviteModal(false);
+                    setInviteData({ email: '', role: 'user' });
+                  }}
+                  className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                >
+                  {saving ? 'Envoi...' : 'Envoyer l\'invitation'}
                 </button>
               </div>
             </form>
