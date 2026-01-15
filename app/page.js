@@ -2490,12 +2490,117 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
 // SETTINGS PAGE
 // ============================================
 function SettingsPage({ profile, addresses, t, notify, refresh }) {
-  const [showAddAddress, setShowAddAddress] = useState(false);
-  const [newAddress, setNewAddress] = useState({
-    label: '', attention: '', address_line1: '', city: '', postal_code: '', is_default: false
+  const [activeSection, setActiveSection] = useState('profile');
+  
+  // Profile editing
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileData, setProfileData] = useState({
+    full_name: profile?.full_name || '',
+    email: profile?.email || '',
+    phone: profile?.phone || ''
   });
+  
+  // Company editing
+  const [editingCompany, setEditingCompany] = useState(false);
+  const [companyData, setCompanyData] = useState({
+    name: profile?.companies?.name || '',
+    billing_address: profile?.companies?.billing_address || '',
+    billing_city: profile?.companies?.billing_city || '',
+    billing_postal_code: profile?.companies?.billing_postal_code || '',
+    siret: profile?.companies?.siret || '',
+    vat_number: profile?.companies?.vat_number || ''
+  });
+  
+  // Password change
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordData, setPasswordData] = useState({
+    current: '', new: '', confirm: ''
+  });
+  
+  // Address management
+  const [showAddAddress, setShowAddAddress] = useState(false);
+  const [editingAddress, setEditingAddress] = useState(null);
+  const [newAddress, setNewAddress] = useState({
+    label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false
+  });
+  
+  // Notification preferences
+  const [notifications, setNotifications] = useState({
+    email_status_updates: true,
+    email_quotes: true,
+    email_shipping: true,
+    email_marketing: false
+  });
+  
   const [saving, setSaving] = useState(false);
 
+  // Save profile
+  const saveProfile = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        full_name: profileData.full_name,
+        phone: profileData.phone
+      })
+      .eq('id', profile.id);
+    
+    setSaving(false);
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Profil mis à jour!');
+      setEditingProfile(false);
+      refresh();
+    }
+  };
+
+  // Save company
+  const saveCompany = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from('companies')
+      .update(companyData)
+      .eq('id', profile.company_id);
+    
+    setSaving(false);
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Entreprise mise à jour!');
+      setEditingCompany(false);
+      refresh();
+    }
+  };
+
+  // Change password
+  const changePassword = async (e) => {
+    e.preventDefault();
+    if (passwordData.new !== passwordData.confirm) {
+      notify('Les mots de passe ne correspondent pas', 'error');
+      return;
+    }
+    if (passwordData.new.length < 6) {
+      notify('Le mot de passe doit contenir au moins 6 caractères', 'error');
+      return;
+    }
+    
+    setSaving(true);
+    const { error } = await supabase.auth.updateUser({
+      password: passwordData.new
+    });
+    
+    setSaving(false);
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Mot de passe modifié!');
+      setShowPasswordModal(false);
+      setPasswordData({ current: '', new: '', confirm: '' });
+    }
+  };
+
+  // Save address
   const saveAddress = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -2508,195 +2613,707 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
         .eq('company_id', profile.company_id);
     }
     
-    const { error } = await supabase.from('shipping_addresses').insert({
-      ...newAddress,
-      company_id: profile.company_id,
-      country: 'France'
-    });
+    let error;
+    if (editingAddress) {
+      const result = await supabase
+        .from('shipping_addresses')
+        .update({ ...newAddress })
+        .eq('id', editingAddress.id);
+      error = result.error;
+    } else {
+      const result = await supabase.from('shipping_addresses').insert({
+        ...newAddress,
+        company_id: profile.company_id
+      });
+      error = result.error;
+    }
     
     setSaving(false);
     
     if (error) {
-      notify(`Error: ${error.message}`, 'error');
+      notify(`Erreur: ${error.message}`, 'error');
       return;
     }
     
-    notify(t('saved'));
+    notify(editingAddress ? 'Adresse modifiée!' : 'Adresse ajoutée!');
     setShowAddAddress(false);
-    setNewAddress({ label: '', attention: '', address_line1: '', city: '', postal_code: '', is_default: false });
+    setEditingAddress(null);
+    setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false });
     refresh();
   };
 
   const deleteAddress = async (id) => {
-    if (!confirm('Delete this address?')) return;
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cette adresse?')) return;
     await supabase.from('shipping_addresses').delete().eq('id', id);
-    notify(t('saved'));
+    notify('Adresse supprimée');
     refresh();
   };
 
   const setDefault = async (id) => {
     await supabase.from('shipping_addresses').update({ is_default: false }).eq('company_id', profile.company_id);
     await supabase.from('shipping_addresses').update({ is_default: true }).eq('id', id);
-    notify(t('saved'));
+    notify('Adresse par défaut mise à jour');
     refresh();
   };
 
+  const openEditAddress = (addr) => {
+    setEditingAddress(addr);
+    setNewAddress({
+      label: addr.label || '',
+      attention: addr.attention || '',
+      address_line1: addr.address_line1 || '',
+      address_line2: addr.address_line2 || '',
+      city: addr.city || '',
+      postal_code: addr.postal_code || '',
+      country: addr.country || 'France',
+      phone: addr.phone || '',
+      is_default: addr.is_default || false
+    });
+    setShowAddAddress(true);
+  };
+
+  const sections = [
+    { id: 'profile', label: 'Profil', icon: '👤' },
+    { id: 'company', label: 'Entreprise', icon: '🏢' },
+    { id: 'addresses', label: 'Adresses', icon: '📍' },
+    { id: 'notifications', label: 'Notifications', icon: '🔔' },
+    { id: 'security', label: 'Sécurité', icon: '🔒' }
+  ];
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-[#1E3A5F]">{t('settings')}</h1>
+      <h1 className="text-2xl font-bold text-[#1E3A5F]">Paramètres</h1>
 
-      {/* Account Info */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
-        <h2 className="text-xl font-bold text-[#1E3A5F] mb-4">{t('accountInfo')}</h2>
-        <div className="grid md:grid-cols-2 gap-4 text-sm">
-          <div><span className="text-gray-500">{t('contact')}:</span> {profile?.full_name}</div>
-          <div><span className="text-gray-500">{t('email')}:</span> {profile?.email}</div>
-          <div><span className="text-gray-500">{t('company')}:</span> {profile?.companies?.name}</div>
-          <div><span className="text-gray-500">{t('phone')}:</span> {profile?.phone || '—'}</div>
-        </div>
+      {/* Section Tabs */}
+      <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-4">
+        {sections.map(section => (
+          <button
+            key={section.id}
+            onClick={() => setActiveSection(section.id)}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+              activeSection === section.id
+                ? 'bg-[#1E3A5F] text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <span>{section.icon}</span>
+            {section.label}
+          </button>
+        ))}
       </div>
 
-      {/* Shipping Addresses */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100">
-        <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-          <h2 className="text-xl font-bold text-[#1E3A5F]">{t('shippingAddresses')}</h2>
-          <button
-            onClick={() => setShowAddAddress(true)}
-            className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
-          >
-            + {t('addNewAddress')}
-          </button>
-        </div>
-        
-        <div className="p-6 space-y-4">
-          {addresses.length === 0 ? (
-            <p className="text-center text-gray-500 py-4">No addresses yet</p>
-          ) : (
-            addresses.map(addr => (
-              <div 
-                key={addr.id}
-                className={`p-4 rounded-lg border-l-4 ${addr.is_default ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 bg-gray-50'}`}
+      {/* Profile Section */}
+      {activeSection === 'profile' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <h2 className="text-lg font-bold text-[#1E3A5F]">Informations personnelles</h2>
+            {!editingProfile && (
+              <button
+                onClick={() => setEditingProfile(true)}
+                className="px-4 py-2 text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]"
               >
-                <div className="flex justify-between items-start gap-4">
-                  <div className="flex-1">
-                    <h3 className="font-bold text-[#1E3A5F]">{addr.label}</h3>
-                    {addr.attention && <p className="text-gray-500 text-sm">À l'attention de: {addr.attention}</p>}
-                    <p className="text-sm">{addr.address_line1}</p>
-                    <p className="text-sm">{addr.postal_code} {addr.city}, France</p>
-                    {addr.is_default && (
-                      <span className="inline-block mt-2 px-2 py-0.5 bg-green-500 text-white text-xs rounded-full">
-                        {t('default')}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    {!addr.is_default && (
-                      <button
-                        onClick={() => setDefault(addr.id)}
-                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100"
-                      >
-                        {t('setDefault')}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => deleteAddress(addr.id)}
-                      className="px-3 py-1 text-sm border border-gray-300 text-red-600 rounded hover:bg-red-50"
-                    >
-                      {t('delete')}
-                    </button>
-                  </div>
+                ✏️ Modifier
+              </button>
+            )}
+          </div>
+          <div className="p-6">
+            {editingProfile ? (
+              <div className="space-y-4 max-w-md">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nom complet *</label>
+                  <input
+                    type="text"
+                    value={profileData.full_name}
+                    onChange={e => setProfileData({ ...profileData, full_name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={profileData.email}
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">L'email ne peut pas être modifié</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
+                  <input
+                    type="tel"
+                    value={profileData.phone}
+                    onChange={e => setProfileData({ ...profileData, phone: e.target.value })}
+                    placeholder="+33 1 23 45 67 89"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setEditingProfile(false);
+                      setProfileData({
+                        full_name: profile?.full_name || '',
+                        email: profile?.email || '',
+                        phone: profile?.phone || ''
+                      });
+                    }}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={saveProfile}
+                    disabled={saving}
+                    className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                  >
+                    {saving ? 'Enregistrement...' : 'Enregistrer'}
+                  </button>
                 </div>
               </div>
-            ))
-          )}
+            ) : (
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <p className="text-sm text-gray-500">Nom complet</p>
+                  <p className="font-medium text-[#1E3A5F]">{profile?.full_name || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Email</p>
+                  <p className="font-medium text-[#1E3A5F]">{profile?.email || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Téléphone</p>
+                  <p className="font-medium text-[#1E3A5F]">{profile?.phone || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Membre depuis</p>
+                  <p className="font-medium text-[#1E3A5F]">
+                    {profile?.created_at ? new Date(profile.created_at).toLocaleDateString('fr-FR') : '—'}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Add Address Modal */}
+      {/* Company Section */}
+      {activeSection === 'company' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <h2 className="text-lg font-bold text-[#1E3A5F]">Informations entreprise</h2>
+            {!editingCompany && (
+              <button
+                onClick={() => setEditingCompany(true)}
+                className="px-4 py-2 text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]"
+              >
+                ✏️ Modifier
+              </button>
+            )}
+          </div>
+          <div className="p-6">
+            {editingCompany ? (
+              <div className="space-y-4 max-w-lg">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nom de l'entreprise *</label>
+                  <input
+                    type="text"
+                    value={companyData.name}
+                    onChange={e => setCompanyData({ ...companyData, name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Adresse de facturation</label>
+                  <input
+                    type="text"
+                    value={companyData.billing_address}
+                    onChange={e => setCompanyData({ ...companyData, billing_address: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Code postal</label>
+                    <input
+                      type="text"
+                      value={companyData.billing_postal_code}
+                      onChange={e => setCompanyData({ ...companyData, billing_postal_code: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Ville</label>
+                    <input
+                      type="text"
+                      value={companyData.billing_city}
+                      onChange={e => setCompanyData({ ...companyData, billing_city: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label>
+                    <input
+                      type="text"
+                      value={companyData.siret}
+                      onChange={e => setCompanyData({ ...companyData, siret: e.target.value })}
+                      placeholder="123 456 789 00012"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">N° TVA</label>
+                    <input
+                      type="text"
+                      value={companyData.vat_number}
+                      onChange={e => setCompanyData({ ...companyData, vat_number: e.target.value })}
+                      placeholder="FR12345678901"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setEditingCompany(false);
+                      setCompanyData({
+                        name: profile?.companies?.name || '',
+                        billing_address: profile?.companies?.billing_address || '',
+                        billing_city: profile?.companies?.billing_city || '',
+                        billing_postal_code: profile?.companies?.billing_postal_code || '',
+                        siret: profile?.companies?.siret || '',
+                        vat_number: profile?.companies?.vat_number || ''
+                      });
+                    }}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={saveCompany}
+                    disabled={saving}
+                    className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                  >
+                    {saving ? 'Enregistrement...' : 'Enregistrer'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <p className="text-sm text-gray-500">Nom de l'entreprise</p>
+                  <p className="font-medium text-[#1E3A5F]">{profile?.companies?.name || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Adresse de facturation</p>
+                  <p className="font-medium text-[#1E3A5F]">
+                    {profile?.companies?.billing_address || '—'}
+                    {profile?.companies?.billing_postal_code && `, ${profile?.companies?.billing_postal_code}`}
+                    {profile?.companies?.billing_city && ` ${profile?.companies?.billing_city}`}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">SIRET</p>
+                  <p className="font-medium text-[#1E3A5F]">{profile?.companies?.siret || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">N° TVA</p>
+                  <p className="font-medium text-[#1E3A5F]">{profile?.companies?.vat_number || '—'}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Addresses Section */}
+      {activeSection === 'addresses' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <div>
+              <h2 className="text-lg font-bold text-[#1E3A5F]">Adresses de livraison</h2>
+              <p className="text-sm text-gray-500">Gérez vos adresses pour la réception et le retour des équipements</p>
+            </div>
+            <button
+              onClick={() => {
+                setEditingAddress(null);
+                setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false });
+                setShowAddAddress(true);
+              }}
+              className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
+            >
+              + Ajouter une adresse
+            </button>
+          </div>
+          
+          <div className="p-6">
+            {addresses.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                <p className="text-4xl mb-2">📍</p>
+                <p>Aucune adresse enregistrée</p>
+                <p className="text-sm">Ajoutez une adresse pour vos livraisons</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {addresses.map(addr => (
+                  <div 
+                    key={addr.id}
+                    className={`p-4 rounded-xl border-2 ${addr.is_default ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 bg-gray-50'}`}
+                  >
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-bold text-[#1E3A5F]">{addr.label}</h3>
+                          {addr.is_default && (
+                            <span className="px-2 py-0.5 bg-[#3B7AB4] text-white text-xs rounded-full">
+                              Par défaut
+                            </span>
+                          )}
+                        </div>
+                        {addr.attention && <p className="text-sm text-gray-600">À l'attention de: {addr.attention}</p>}
+                        <p className="text-sm text-gray-700">{addr.address_line1}</p>
+                        {addr.address_line2 && <p className="text-sm text-gray-700">{addr.address_line2}</p>}
+                        <p className="text-sm text-gray-700">{addr.postal_code} {addr.city}, {addr.country || 'France'}</p>
+                        {addr.phone && <p className="text-sm text-gray-500 mt-1">📞 {addr.phone}</p>}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <button
+                          onClick={() => openEditAddress(addr)}
+                          className="px-3 py-1.5 text-sm text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]"
+                        >
+                          ✏️ Modifier
+                        </button>
+                        {!addr.is_default && (
+                          <button
+                            onClick={() => setDefault(addr.id)}
+                            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
+                          >
+                            ⭐ Par défaut
+                          </button>
+                        )}
+                        <button
+                          onClick={() => deleteAddress(addr.id)}
+                          className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                        >
+                          🗑️ Supprimer
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Notifications Section */}
+      {activeSection === 'notifications' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="text-lg font-bold text-[#1E3A5F]">Préférences de notification</h2>
+            <p className="text-sm text-gray-500">Choisissez les notifications que vous souhaitez recevoir</p>
+          </div>
+          <div className="p-6 space-y-4">
+            <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
+              <div>
+                <p className="font-medium text-[#1E3A5F]">Mises à jour de statut</p>
+                <p className="text-sm text-gray-500">Recevoir un email quand le statut d'une demande change</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifications.email_status_updates}
+                onChange={e => setNotifications({ ...notifications, email_status_updates: e.target.checked })}
+                className="w-5 h-5 text-[#3B7AB4] rounded"
+              />
+            </label>
+            
+            <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
+              <div>
+                <p className="font-medium text-[#1E3A5F]">Devis et factures</p>
+                <p className="text-sm text-gray-500">Recevoir un email quand un devis ou une facture est disponible</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifications.email_quotes}
+                onChange={e => setNotifications({ ...notifications, email_quotes: e.target.checked })}
+                className="w-5 h-5 text-[#3B7AB4] rounded"
+              />
+            </label>
+            
+            <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
+              <div>
+                <p className="font-medium text-[#1E3A5F]">Notifications d'expédition</p>
+                <p className="text-sm text-gray-500">Recevoir un email avec le numéro de suivi lors de l'expédition</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifications.email_shipping}
+                onChange={e => setNotifications({ ...notifications, email_shipping: e.target.checked })}
+                className="w-5 h-5 text-[#3B7AB4] rounded"
+              />
+            </label>
+            
+            <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
+              <div>
+                <p className="font-medium text-[#1E3A5F]">Communications marketing</p>
+                <p className="text-sm text-gray-500">Recevoir des informations sur nos nouveaux produits et services</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifications.email_marketing}
+                onChange={e => setNotifications({ ...notifications, email_marketing: e.target.checked })}
+                className="w-5 h-5 text-[#3B7AB4] rounded"
+              />
+            </label>
+            
+            <div className="pt-4">
+              <button
+                onClick={() => notify('Préférences enregistrées!')}
+                className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
+              >
+                Enregistrer les préférences
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Security Section */}
+      {activeSection === 'security' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="text-lg font-bold text-[#1E3A5F]">Sécurité du compte</h2>
+          </div>
+          <div className="p-6 space-y-6">
+            {/* Password Change */}
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div>
+                <p className="font-medium text-[#1E3A5F]">Mot de passe</p>
+                <p className="text-sm text-gray-500">Modifiez votre mot de passe régulièrement pour plus de sécurité</p>
+              </div>
+              <button
+                onClick={() => setShowPasswordModal(true)}
+                className="px-4 py-2 text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]"
+              >
+                Modifier
+              </button>
+            </div>
+            
+            {/* Last Login */}
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <p className="font-medium text-[#1E3A5F]">Dernière connexion</p>
+              <p className="text-sm text-gray-500">
+                {new Date().toLocaleDateString('fr-FR')} à {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            </div>
+            
+            {/* Danger Zone */}
+            <div className="border-t border-gray-200 pt-6">
+              <h3 className="font-medium text-red-600 mb-4">Zone de danger</h3>
+              <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+                <p className="font-medium text-red-700">Supprimer le compte</p>
+                <p className="text-sm text-red-600 mb-3">Cette action est irréversible. Toutes vos données seront supprimées.</p>
+                <button className="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-100">
+                  Supprimer mon compte
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit Address Modal */}
       {showAddAddress && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowAddAddress(false)}>
-          <div className="bg-white rounded-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b">
-              <h3 className="font-bold text-lg text-[#1E3A5F]">{t('addNewAddress')}</h3>
+          <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b sticky top-0 bg-white">
+              <h3 className="font-bold text-lg text-[#1E3A5F]">
+                {editingAddress ? 'Modifier l\'adresse' : 'Ajouter une adresse'}
+              </h3>
             </div>
             <form onSubmit={saveAddress} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Location Name *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nom de l'adresse *</label>
                 <input
                   type="text"
                   value={newAddress.label}
                   onChange={e => setNewAddress({ ...newAddress, label: e.target.value })}
-                  placeholder="e.g., Main Office, Lab 2"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  placeholder="ex: Bureau principal, Laboratoire, Entrepôt"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('attention')}</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">À l'attention de</label>
                 <input
                   type="text"
                   value={newAddress.attention}
                   onChange={e => setNewAddress({ ...newAddress, attention: e.target.value })}
-                  placeholder="Contact person"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  placeholder="Nom du contact"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('address')} *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Adresse ligne 1 *</label>
                 <input
                   type="text"
                   value={newAddress.address_line1}
                   onChange={e => setNewAddress({ ...newAddress, address_line1: e.target.value })}
-                  placeholder="Street address"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  placeholder="Numéro et nom de rue"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
                   required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Adresse ligne 2</label>
+                <input
+                  type="text"
+                  value={newAddress.address_line2}
+                  onChange={e => setNewAddress({ ...newAddress, address_line2: e.target.value })}
+                  placeholder="Bâtiment, étage, etc."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('postalCode')} *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Code postal *</label>
                   <input
                     type="text"
                     value={newAddress.postal_code}
                     onChange={e => setNewAddress({ ...newAddress, postal_code: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('city')} *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ville *</label>
                   <input
                     type="text"
                     value={newAddress.city}
                     onChange={e => setNewAddress({ ...newAddress, city: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
                     required
                   />
                 </div>
               </div>
-              <label className="flex items-center gap-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Pays</label>
+                <select
+                  value={newAddress.country}
+                  onChange={e => setNewAddress({ ...newAddress, country: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                >
+                  <option value="France">France</option>
+                  <option value="Belgium">Belgique</option>
+                  <option value="Switzerland">Suisse</option>
+                  <option value="Luxembourg">Luxembourg</option>
+                  <option value="Germany">Allemagne</option>
+                  <option value="Spain">Espagne</option>
+                  <option value="Italy">Italie</option>
+                  <option value="United Kingdom">Royaume-Uni</option>
+                  <option value="Other">Autre</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
+                <input
+                  type="tel"
+                  value={newAddress.phone}
+                  onChange={e => setNewAddress({ ...newAddress, phone: e.target.value })}
+                  placeholder="+33 1 23 45 67 89"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                />
+              </div>
+              <label className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
                 <input
                   type="checkbox"
                   checked={newAddress.is_default}
                   onChange={e => setNewAddress({ ...newAddress, is_default: e.target.checked })}
-                  className="w-4 h-4"
+                  className="w-4 h-4 text-[#3B7AB4]"
                 />
-                <span className="text-sm">{t('setDefault')}</span>
+                <span className="text-sm">Définir comme adresse par défaut</span>
               </label>
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddAddress(false)}
+                  onClick={() => {
+                    setShowAddAddress(false);
+                    setEditingAddress(null);
+                  }}
                   className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
                 >
-                  {t('cancel')}
+                  Annuler
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
                   className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
                 >
-                  {saving ? t('saving') : t('save')}
+                  {saving ? 'Enregistrement...' : (editingAddress ? 'Modifier' : 'Ajouter')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Password Change Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowPasswordModal(false)}>
+          <div className="bg-white rounded-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b">
+              <h3 className="font-bold text-lg text-[#1E3A5F]">Modifier le mot de passe</h3>
+            </div>
+            <form onSubmit={changePassword} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nouveau mot de passe *</label>
+                <input
+                  type="password"
+                  value={passwordData.new}
+                  onChange={e => setPasswordData({ ...passwordData, new: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  required
+                  minLength={6}
+                />
+                <p className="text-xs text-gray-400 mt-1">Minimum 6 caractères</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Confirmer le mot de passe *</label>
+                <input
+                  type="password"
+                  value={passwordData.confirm}
+                  onChange={e => setPasswordData({ ...passwordData, confirm: e.target.value })}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B7AB4] ${
+                    passwordData.confirm && passwordData.new !== passwordData.confirm 
+                      ? 'border-red-300 bg-red-50' 
+                      : 'border-gray-300'
+                  }`}
+                  required
+                />
+                {passwordData.confirm && passwordData.new !== passwordData.confirm && (
+                  <p className="text-xs text-red-500 mt-1">Les mots de passe ne correspondent pas</p>
+                )}
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordModal(false);
+                    setPasswordData({ current: '', new: '', confirm: '' });
+                  }}
+                  className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving || passwordData.new !== passwordData.confirm}
+                  className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                >
+                  {saving ? 'Modification...' : 'Modifier'}
                 </button>
               </div>
             </form>
