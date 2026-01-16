@@ -5152,47 +5152,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           const grandTotal = quoteData.grandTotal || request.quote_total || 0;
 
           return (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" id="quote-modal-overlay">
-            <style>{`
-              @media print {
-                /* Hide the entire app */
-                body > div > * {
-                  display: none !important;
-                }
-                
-                /* But show this modal */
-                #quote-modal-overlay {
-                  display: block !important;
-                  position: absolute !important;
-                  inset: 0 !important;
-                  padding: 0 !important;
-                  background: white !important;
-                }
-                
-                /* Hide modal chrome */
-                .print-hide {
-                  display: none !important;
-                }
-                
-                /* Make the modal container print-friendly */
-                #quote-modal-overlay > div {
-                  max-height: none !important;
-                  overflow: visible !important;
-                  border-radius: 0 !important;
-                  max-width: 100% !important;
-                  width: 100% !important;
-                }
-                
-                /* Quote content should flow naturally */
-                #quote-print-content {
-                  position: relative !important;
-                  width: 100% !important;
-                }
-              }
-            `}</style>
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-              {/* Modal Header - Hidden on print */}
-              <div className="print-hide sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
+              {/* Modal Header */}
+              <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
                 <div>
                   <h2 className="text-xl font-bold">Offre de Prix</h2>
                   <p className="text-gray-400">{request.request_number}</p>
@@ -5393,7 +5356,103 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               {/* Action Buttons - Hidden on print */}
               <div className="print-hide sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex flex-wrap gap-3 justify-between items-center">
                 <div className="flex gap-2">
-                  <button onClick={() => window.print()} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
+                  <button onClick={() => {
+                    const content = document.getElementById('quote-print-content');
+                    const printWindow = window.open('', '_blank');
+                    printWindow.document.write(`
+                      <!DOCTYPE html>
+                      <html>
+                      <head>
+                        <title>Devis - ${request.request_number}</title>
+                        <style>
+                          * { margin: 0; padding: 0; box-sizing: border-box; }
+                          body { font-family: Arial, sans-serif; }
+                          .border-b { border-bottom: 1px solid #e5e7eb; }
+                          .border-b-4 { border-bottom: 4px solid; }
+                          .border-t { border-top: 1px solid #e5e7eb; }
+                          .border-t-2 { border-top: 2px solid #d1d5db; }
+                          .border-l-4 { border-left: 4px solid; }
+                          .border-blue-500 { border-color: #3b82f6; }
+                          .border-orange-500 { border-color: #f97316; }
+                          .border-green-200 { border-color: #bbf7d0; }
+                          .border-\\[\\#00A651\\] { border-color: #00A651; }
+                          .bg-gray-50 { background: #f9fafb; }
+                          .bg-gray-100 { background: #f3f4f6; }
+                          .bg-gray-200 { background: #e5e7eb; }
+                          .bg-white { background: white; }
+                          .bg-green-50 { background: #f0fdf4; }
+                          .bg-\\[\\#1a1a2e\\] { background: #1a1a2e; }
+                          .bg-\\[\\#00A651\\] { background: #00A651; }
+                          .text-white { color: white; }
+                          .text-gray-400 { color: #9ca3af; }
+                          .text-gray-500 { color: #6b7280; }
+                          .text-gray-600 { color: #4b5563; }
+                          .text-gray-700 { color: #374151; }
+                          .text-green-600 { color: #16a34a; }
+                          .text-green-700 { color: #15803d; }
+                          .text-green-800 { color: #166534; }
+                          .text-\\[\\#1a1a2e\\] { color: #1a1a2e; }
+                          .text-\\[\\#00A651\\] { color: #00A651; }
+                          .text-orange-500 { color: #f97316; }
+                          .text-xs { font-size: 0.75rem; }
+                          .text-sm { font-size: 0.875rem; }
+                          .text-lg { font-size: 1.125rem; }
+                          .text-xl { font-size: 1.25rem; }
+                          .text-2xl { font-size: 1.5rem; }
+                          .text-3xl { font-size: 1.875rem; }
+                          .font-medium { font-weight: 500; }
+                          .font-bold { font-weight: 700; }
+                          .font-mono { font-family: monospace; }
+                          .uppercase { text-transform: uppercase; }
+                          .text-left { text-align: left; }
+                          .text-right { text-align: right; }
+                          .text-center { text-align: center; }
+                          .px-4 { padding-left: 1rem; padding-right: 1rem; }
+                          .px-8 { padding-left: 2rem; padding-right: 2rem; }
+                          .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+                          .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+                          .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
+                          .py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+                          .pt-8 { padding-top: 2rem; }
+                          .pb-4 { padding-bottom: 1rem; }
+                          .pl-4 { padding-left: 1rem; }
+                          .pl-8 { padding-left: 2rem; }
+                          .p-4 { padding: 1rem; }
+                          .mb-1 { margin-bottom: 0.25rem; }
+                          .mb-2 { margin-bottom: 0.5rem; }
+                          .mb-3 { margin-bottom: 0.75rem; }
+                          .mb-4 { margin-bottom: 1rem; }
+                          .mt-1 { margin-top: 0.25rem; }
+                          .mt-2 { margin-top: 0.5rem; }
+                          .space-y-1 > * + * { margin-top: 0.25rem; }
+                          .space-y-6 > * + * { margin-top: 1.5rem; }
+                          .gap-2 { gap: 0.5rem; }
+                          .flex { display: flex; }
+                          .items-start { align-items: flex-start; }
+                          .items-end { align-items: flex-end; }
+                          .justify-between { justify-content: space-between; }
+                          .rounded-lg { border-radius: 0.5rem; }
+                          .w-full { width: 100%; }
+                          .w-48 { width: 12rem; }
+                          .h-20 { height: 5rem; }
+                          .max-h-16 { max-height: 4rem; }
+                          .border-2 { border-width: 2px; }
+                          .border-dashed { border-style: dashed; }
+                          .border-gray-300 { border-color: #d1d5db; }
+                          table { width: 100%; border-collapse: collapse; }
+                          th, td { padding: 0.75rem 1rem; }
+                          @media print {
+                            body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+                          }
+                        </style>
+                      </head>
+                      <body>${content.innerHTML}</body>
+                      </html>
+                    `);
+                    printWindow.document.close();
+                    printWindow.focus();
+                    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+                  }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
                     🖨️ Imprimer
                   </button>
                 </div>
