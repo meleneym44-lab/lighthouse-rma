@@ -883,8 +883,11 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   const today = new Date();
   
   // Check if client is in France Metropolitan for shipping
-  const clientPostalCode = request?.companies?.billing_postal_code || request?.companies?.postal_code || '';
-  const isMetro = isFranceMetropolitan(clientPostalCode);
+  // Check company billing postal code - this should be the main address
+  const clientPostalCode = request?.companies?.billing_postal_code || 
+                           request?.companies?.postal_code || 
+                           '';
+  const isMetro = clientPostalCode ? isFranceMetropolitan(clientPostalCode) : true; // Default to France if no postal code
   const defaultShipping = isMetro ? 45 : 0;
 
   // Determine which service sections are needed based on devices
