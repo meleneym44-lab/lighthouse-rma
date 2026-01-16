@@ -4567,6 +4567,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       }
       
       // Update request status - set to bc_review so admin can verify
+      // Also record quote approval if coming from quote_sent status
       const { error: updateError } = await supabase
         .from('service_requests')
         .update({ 
@@ -4575,7 +4576,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           bc_signed_by: signatureName,
           bc_signature_date: signatureDateISO,
           bc_file_url: fileUrl,
-          bc_signature_url: signatureUrl
+          bc_signature_url: signatureUrl,
+          quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
         })
         .eq('id', request.id);
       
@@ -4700,16 +4702,24 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 <div>
                   <p className="font-bold text-blue-800 text-lg">Devis reçu - Action requise</p>
                   <p className="text-sm text-blue-600">
-                    Veuillez examiner le devis et l'approuver ou demander des modifications
+                    Examinez le devis, puis approuvez et soumettez votre bon de commande
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setShowQuoteModal(true)}
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors"
-              >
-                📋 Voir le Devis
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowQuoteModal(true)}
+                  className="px-4 py-2 bg-white border border-blue-300 text-blue-700 rounded-lg font-medium hover:bg-blue-50 transition-colors"
+                >
+                  👁️ Voir le Devis
+                </button>
+                <button
+                  onClick={() => setShowBCModal(true)}
+                  className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors"
+                >
+                  ✅ Approuver et soumettre BC
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -5133,11 +5143,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     ✏️ Demander modification
                   </button>
                   <button 
-                    onClick={handleApproveQuote}
-                    disabled={approvingQuote}
-                    className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold disabled:opacity-50"
+                    onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
+                    className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold"
                   >
-                    {approvingQuote ? 'Traitement...' : '✅ Approuver le devis'}
+                    ✅ Approuver et soumettre BC
                   </button>
                 </div>
               </div>
