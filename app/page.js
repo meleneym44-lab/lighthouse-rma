@@ -142,7 +142,8 @@ const STATUS_STYLES = {
   // === LEGACY (for backwards compatibility) ===
   received: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu', icon: '◕', progress: 40 },
   in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'En cours', icon: '◉', progress: 60 },
-  quote_sent: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé', icon: '◎', progress: 45 },
+  quote_sent: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé - Action requise', icon: '💰', progress: 45 },
+  quote_revision_requested: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-300', label: 'Modification demandée', icon: '✏️', progress: 40 },
   quoted: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé', icon: '◎', progress: 45 },
   
   // === BOTH FLOWS - FINAL STAGES ===
@@ -4358,14 +4359,64 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   const [isDrawing, setIsDrawing] = useState(false);
   const canvasRef = useRef(null);
   
+  // Quote review state
+  const [showQuoteModal, setShowQuoteModal] = useState(false);
+  const [showRevisionModal, setShowRevisionModal] = useState(false);
+  const [revisionNotes, setRevisionNotes] = useState('');
+  const [approvingQuote, setApprovingQuote] = useState(false);
+  
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
   const isPartsOrder = request.request_type === 'parts' || request.requested_service === 'parts_order';
-  const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
+  const isQuoteSent = request.status === 'quote_sent';
+  const needsQuoteAction = isQuoteSent && !request.bc_submitted_at;
+  const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
   
   // Check if submission is valid - need EITHER file OR signature (not both required)
   const hasFile = bcFile !== null;
   const hasSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
   const isSubmissionValid = signatureName.trim().length > 0 && acceptTerms && (hasFile || hasSignature);
+
+  // Quote approval/revision handlers
+  const handleApproveQuote = async () => {
+    setApprovingQuote(true);
+    const { error } = await supabase.from('service_requests').update({
+      status: 'waiting_bc',
+      quote_approved_at: new Date().toISOString()
+    }).eq('id', request.id);
+    
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('✅ Devis approuvé! Veuillez soumettre votre bon de commande.', 'success');
+      setShowQuoteModal(false);
+      refresh();
+    }
+    setApprovingQuote(false);
+  };
+  
+  const handleRequestRevision = async () => {
+    if (!revisionNotes.trim()) {
+      notify('Veuillez indiquer les modifications souhaitées.', 'error');
+      return;
+    }
+    
+    setApprovingQuote(true);
+    const { error } = await supabase.from('service_requests').update({
+      status: 'quote_revision_requested',
+      quote_revision_notes: revisionNotes,
+      quote_revision_requested_at: new Date().toISOString()
+    }).eq('id', request.id);
+    
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('✅ Demande de modification envoyée!', 'success');
+      setShowRevisionModal(false);
+      setShowQuoteModal(false);
+      refresh();
+    }
+    setApprovingQuote(false);
+  };
 
   // Signature pad functions
   const startDrawing = (e) => {
@@ -4638,6 +4689,54 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           )}
         </div>
 
+        {/* Quote Sent - Review Required */}
+        {needsQuoteAction && (
+          <div className="bg-blue-50 border-b border-blue-300 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center">
+                  <span className="text-white text-2xl">💰</span>
+                </div>
+                <div>
+                  <p className="font-bold text-blue-800 text-lg">Devis reçu - Action requise</p>
+                  <p className="text-sm text-blue-600">
+                    Veuillez examiner le devis et l'approuver ou demander des modifications
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowQuoteModal(true)}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors"
+              >
+                📋 Voir le Devis
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Quote Revision Requested */}
+        {request.status === 'quote_revision_requested' && (
+          <div className="bg-orange-50 border-b border-orange-300 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center">
+                <span className="text-orange-600 text-2xl">✏️</span>
+              </div>
+              <div>
+                <p className="font-bold text-orange-800">Modification en cours</p>
+                <p className="text-sm text-orange-600">
+                  Votre demande de modification a été envoyée. Vous recevrez un nouveau devis sous peu.
+                </p>
+                {request.quote_revision_notes && (
+                  <div className="mt-2 p-2 bg-white rounded border border-orange-200">
+                    <p className="text-xs text-gray-500">Votre demande :</p>
+                    <p className="text-sm text-gray-700">{request.quote_revision_notes}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Customer Action Required Alert */}
         {needsCustomerAction && (
           <div className="bg-red-50 border-b border-red-200 px-6 py-4">
@@ -4877,6 +4976,199 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   {submittingBC ? 'Envoi en cours...' : 'Valider et soumettre'}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Quote Review Modal */}
+        {showQuoteModal && (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 print:p-0 print:bg-white">
+            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto print:max-w-none print:max-h-none print:rounded-none print:overflow-visible" onClick={e => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center print:hidden">
+                <div>
+                  <h2 className="text-xl font-bold">Offre de Prix</h2>
+                  <p className="text-gray-400">{request.request_number}</p>
+                </div>
+                <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
+              </div>
+
+              {/* Professional Quote Document */}
+              <div id="quote-print-area" className="print:block">
+                {/* Quote Header */}
+                <div className="px-8 pt-8 pb-6 border-b">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h1 className="text-3xl font-bold tracking-tight text-gray-800">LIGHTHOUSE</h1>
+                      <p className="text-lg text-gray-500">Worldwide Solutions</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
+                      <p className="text-gray-500 mt-1">N° {request.request_number}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Info Bar */}
+                <div className="bg-gray-100 px-8 py-4 flex justify-between text-sm">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Date</p>
+                    <p className="font-medium">{request.quoted_at ? new Date(request.quoted_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('fr-FR')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Validité</p>
+                    <p className="font-medium">30 jours</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Conditions</p>
+                    <p className="font-medium">À réception de facture</p>
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div className="px-8 py-6">
+                  {/* Service Title */}
+                  <div className="mb-6 pb-4 border-b-2 border-[#00A651]">
+                    <h2 className="text-xl font-bold text-gray-800">
+                      {request.requested_service === 'calibration' 
+                        ? "Réglage, entretien et vérification d'étalonnage" 
+                        : request.requested_service === 'repair'
+                        ? "Diagnostic et réparation"
+                        : "Services demandés"}
+                    </h2>
+                  </div>
+
+                  {/* Prestations */}
+                  <div className="mb-6">
+                    <p className="font-bold text-gray-700 mb-3">Prestations incluses :</p>
+                    <div className="space-y-2">
+                      {request.requested_service === 'calibration' ? (
+                        <>
+                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Vérification des fonctionnalités du compteur</span></div>
+                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Vérification et réglage du débit</span></div>
+                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Vérification de la cellule de mesure</span></div>
+                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Contrôle et réglage des seuils granulométriques</span></div>
+                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Vérification selon ISO 21501-4</span></div>
+                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Fourniture d'un rapport de test et de calibration</span></div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Diagnostic complet de l'appareil</span></div>
+                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Réparation et remplacement des pièces défectueuses</span></div>
+                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Tests de fonctionnement</span></div>
+                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Fourniture d'un rapport</span></div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Equipment Table */}
+                  <div className="mb-6">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-[#1a1a2e] text-white">
+                          <th className="px-4 py-3 text-left font-medium">Description</th>
+                          <th className="px-4 py-3 text-left font-medium">Modèle</th>
+                          <th className="px-4 py-3 text-left font-medium">N° Série</th>
+                          <th className="px-4 py-3 text-right font-medium">Prix HT</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(request.request_devices || []).map((device, i) => (
+                          <tr key={i} className={i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                            <td className="px-4 py-3 border-b">{request.requested_service === 'calibration' ? 'Étalonnage annuel' : 'Service'}</td>
+                            <td className="px-4 py-3 border-b font-medium">{device.model_name || '—'}</td>
+                            <td className="px-4 py-3 border-b font-mono text-sm">{device.serial_number || '—'}</td>
+                            <td className="px-4 py-3 border-b text-right font-medium">
+                              {request.quote_subtotal && (request.request_devices || []).length 
+                                ? ((request.quote_subtotal - (request.quote_shipping || 0)) / (request.request_devices || []).length).toFixed(2) 
+                                : '—'} €
+                            </td>
+                          </tr>
+                        ))}
+                        {request.quote_shipping > 0 && (
+                          <tr className="bg-gray-50">
+                            <td className="px-4 py-3 border-b" colSpan={3}>Frais de transport forfaitaires (aller-retour)</td>
+                            <td className="px-4 py-3 border-b text-right font-medium">{request.quote_shipping?.toFixed(2)} €</td>
+                          </tr>
+                        )}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-[#00A651] text-white">
+                          <td className="px-4 py-4 font-bold" colSpan={3}>TOTAL HT</td>
+                          <td className="px-4 py-4 text-right text-xl font-bold">{request.quote_total?.toFixed(2) || '—'} €</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  {/* Disclaimers */}
+                  <div className="mb-6 text-sm text-gray-600">
+                    <p className="font-medium text-gray-700 mb-2">Conditions :</p>
+                    <p className="mb-1">• Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.</p>
+                    <p className="mb-1">• Un devis sera systématiquement établi si des pièces sont trouvées défectueuses.</p>
+                    <p className="mb-1">• Les équipements devront être décontaminés de toutes substances avant envoi.</p>
+                  </div>
+                </div>
+
+                {/* Quote Footer */}
+                <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
+                  <p className="font-medium">Lighthouse France SAS</p>
+                  <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex flex-wrap gap-3 justify-between items-center print:hidden">
+                <div className="flex gap-2">
+                  <button onClick={() => window.print()} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
+                    🖨️ Imprimer
+                  </button>
+                </div>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => setShowRevisionModal(true)}
+                    className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium"
+                  >
+                    ✏️ Demander modification
+                  </button>
+                  <button 
+                    onClick={handleApproveQuote}
+                    disabled={approvingQuote}
+                    className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold disabled:opacity-50"
+                  >
+                    {approvingQuote ? 'Traitement...' : '✅ Approuver le devis'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Revision Request Sub-Modal */}
+              {showRevisionModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
+                  <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-xl font-bold text-gray-800 mb-4">Demander une modification</h3>
+                    <p className="text-gray-600 mb-4">Décrivez les modifications que vous souhaitez apporter au devis :</p>
+                    <textarea
+                      value={revisionNotes}
+                      onChange={e => setRevisionNotes(e.target.value)}
+                      className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                      placeholder="Ex: Veuillez ajouter un appareil supplémentaire, modifier le prix, retirer les frais de transport, etc."
+                    />
+                    <div className="mt-4 flex justify-end gap-3">
+                      <button onClick={() => setShowRevisionModal(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+                        Annuler
+                      </button>
+                      <button 
+                        onClick={handleRequestRevision}
+                        disabled={approvingQuote || !revisionNotes.trim()}
+                        className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50"
+                      >
+                        {approvingQuote ? 'Envoi...' : 'Envoyer la demande'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
