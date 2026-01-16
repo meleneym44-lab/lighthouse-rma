@@ -5152,73 +5152,27 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           const grandTotal = quoteData.grandTotal || request.quote_total || 0;
 
           return (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 print:block print:p-0 print:bg-white print:static print:inset-auto">
             <style>{`
               @media print {
-                /* Hide everything except quote */
-                body > *:not(.print-container) { display: none !important; }
-                
-                /* Reset the modal container for printing */
-                .print-container {
-                  position: static !important;
-                  display: block !important;
-                  width: 100% !important;
-                  height: auto !important;
-                  overflow: visible !important;
-                  background: white !important;
-                }
-                
-                /* Hide modal chrome */
+                body { margin: 0; padding: 0; }
                 .print-hide { display: none !important; }
-                
-                /* Make quote content flow naturally */
-                #quote-print-content {
+                .print-container {
                   position: static !important;
                   width: 100% !important;
                   max-width: none !important;
+                  max-height: none !important;
+                  height: auto !important;
+                  overflow: visible !important;
+                  border-radius: 0 !important;
+                  box-shadow: none !important;
                   margin: 0 !important;
                   padding: 0 !important;
-                  box-shadow: none !important;
-                  overflow: visible !important;
+                  background: white !important;
                 }
-                
-                /* Ensure proper page breaks */
-                #quote-print-content > div {
-                  page-break-inside: avoid;
+                #quote-print-content {
+                  width: 100% !important;
                 }
-                
-                /* Allow table to break across pages if needed */
-                table { page-break-inside: auto; }
-                tr { page-break-inside: avoid; }
-                
-                /* Reset any fixed/sticky positioning */
-                * {
-                  position: static !important;
-                  overflow: visible !important;
-                }
-                
-                /* Except for the print content structure */
-                #quote-print-content,
-                #quote-print-content * {
-                  visibility: visible !important;
-                  display: block;
-                }
-                
-                #quote-print-content table,
-                #quote-print-content tr,
-                #quote-print-content td,
-                #quote-print-content th,
-                #quote-print-content thead,
-                #quote-print-content tbody,
-                #quote-print-content tfoot {
-                  display: table;
-                }
-                #quote-print-content table { display: table; width: 100%; }
-                #quote-print-content thead { display: table-header-group; }
-                #quote-print-content tbody { display: table-row-group; }
-                #quote-print-content tfoot { display: table-footer-group; }
-                #quote-print-content tr { display: table-row; }
-                #quote-print-content td, #quote-print-content th { display: table-cell; }
               }
             `}</style>
             <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto print-container" onClick={e => e.stopPropagation()}>
