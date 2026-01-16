@@ -337,8 +337,8 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
       .from('service_requests')
       .update({ 
         status: 'waiting_device', 
-        bc_approved_at: new Date().toISOString(),
-        bc_approved_by: 'admin' // TODO: use actual admin ID
+        bc_approved_at: new Date().toISOString()
+        // bc_approved_by removed - was causing UUID error
       })
       .eq('id', rma.id);
     
@@ -361,10 +361,10 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
     const { error } = await supabase
       .from('service_requests')
       .update({ 
-        status: 'bc_rejected', // Status that shows rejection to customer
+        status: 'bc_rejected', // Show rejection to customer
         bc_rejected_at: new Date().toISOString(),
         bc_rejection_reason: rejectReason,
-        // Clear old BC data so they can resubmit
+        // Clear old BC data
         bc_file_url: null,
         bc_signature_url: null,
         bc_submitted_at: null
@@ -767,324 +767,135 @@ function SettingsSheet({ profile, staffMembers, notify, reload }) { return <div 
 
 function AdminSheet({ profile, staffMembers, notify, reload }) { return <div className="space-y-6"><h1 className="text-2xl font-bold text-gray-800">🔐 Administration</h1><div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4"><div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer"><div className="text-3xl mb-3">💰</div><h3 className="font-bold text-gray-800">Tarification</h3><p className="text-sm text-gray-500">Gérer les prix des services</p></div><div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer"><div className="text-3xl mb-3">🔑</div><h3 className="font-bold text-gray-800">Permissions</h3><p className="text-sm text-gray-500">Gérer les accès des employés</p></div><div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer"><div className="text-3xl mb-3">⚙️</div><h3 className="font-bold text-gray-800">Système</h3><p className="text-sm text-gray-500">Configuration avancée</p></div></div></div>; }
 
-// France Metropolitan check for shipping
-const isFranceMetropolitan = (postalCode) => {
-  if (!postalCode) return false;
-  const cleaned = postalCode.toString().replace(/\s/g, '');
-  if (!/^\d{5}$/.test(cleaned)) return false;
-  const dept = parseInt(cleaned.substring(0, 2), 10);
-  return dept >= 1 && dept <= 95;
-};
-
-// Device Type Configurations
-const DEVICE_TYPES = {
+// Quote Templates
+const QUOTE_TEMPLATES = {
   particle_counter: {
-    id: 'particle_counter',
-    label: 'Compteur de Particules (Air)',
-    icon: '🔬',
-    color: 'blue',
-    calibration: {
-      title: "Réglage, entretien et vérification d'étalonnage d'un compteur de particules aéroportées",
-      prestations: [
-        "Vérification des fonctionnalités du compteur",
-        "Vérification et réglage du débit",
-        "Vérification de la cellule de mesure",
-        "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
-        "Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4",
-        "Fourniture d'un rapport de test et de calibration"
-      ],
-      defaultPrice: 630
-    },
-    repair: {
-      title: "Réparation d'un compteur de particules",
-      prestations: [
-        "Diagnostic complet de l'appareil",
-        "Remplacement des pièces défectueuses (pièces facturées en sus)",
-        "Tests de fonctionnement complets",
-        "Vérification d'étalonnage post-réparation"
-      ],
-      defaultPrice: 200
-    }
+    title: "Réglage, entretien et vérification d'étalonnage d'un compteur de particules aéroportées",
+    prestations: [
+      "Vérification des fonctionnalités du compteur",
+      "Vérification et réglage du débit",
+      "Vérification de la cellule de mesure",
+      "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
+      "Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4",
+      "Fourniture d'un rapport de test et de calibration"
+    ],
+    disclaimers: [
+      "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+      "Un devis sera systématiquement établi si des pièces sont trouvées défectueuses et nécessitent un remplacement ou une réparation.",
+      "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de maintenance. Vérifiez que vous les avez bien sauvegardées avant d'envoyer votre appareil.",
+      "Les équipements envoyés pour calibration ou maintenance devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives."
+    ]
   },
   bio_collector: {
-    id: 'bio_collector',
-    label: 'Bio Collecteur',
-    icon: '🧫',
-    color: 'green',
-    calibration: {
-      title: "Vérification d'étalonnage d'un biocollecteur",
-      prestations: [
-        "Vérification des fonctionnalités de l'appareil",
-        "Vérification et réglage du débit",
-        "Vérification de la cellule d'impaction",
-        "Fourniture d'un rapport de test et de calibration"
-      ],
-      defaultPrice: 330
-    },
-    repair: {
-      title: "Réparation d'un biocollecteur",
-      prestations: [
-        "Diagnostic complet de l'appareil",
-        "Remplacement des pièces défectueuses",
-        "Tests de fonctionnement",
-        "Vérification post-réparation"
-      ],
-      defaultPrice: 180
-    }
+    title: "Vérification d'étalonnage d'un biocollecteur",
+    prestations: [
+      "Vérification des fonctionnalités de l'appareil",
+      "Vérification et réglage du débit",
+      "Vérification de la cellule d'impaction",
+      "Fourniture d'un rapport de test et de calibration"
+    ],
+    disclaimers: [
+      "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+      "Un devis sera systématiquement établi si des pièces sont trouvées défectueuses.",
+      "Les équipements envoyés pour calibration devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives."
+    ]
   },
   liquid_counter: {
-    id: 'liquid_counter',
-    label: 'Compteur de Particules (Liquide)',
-    icon: '💧',
-    color: 'cyan',
-    calibration: {
-      title: "Réglage, entretien et vérification d'étalonnage d'un compteur de particules en milieu liquide",
-      prestations: [
-        "Vérification des fonctionnalités du compteur",
-        "Vérification et réglage du débit",
-        "Vérification de la cellule de mesure optique",
-        "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
-        "Vérification en nombre par comparaison à un étalon",
-        "Fourniture d'un rapport de test et de calibration"
-      ],
-      defaultPrice: 750
-    },
-    repair: {
-      title: "Réparation d'un compteur liquide",
-      prestations: [
-        "Diagnostic complet de l'appareil",
-        "Remplacement des pièces défectueuses",
-        "Tests de fonctionnement complets",
-        "Vérification d'étalonnage post-réparation"
-      ],
-      defaultPrice: 250
-    }
+    title: "Réglage, entretien et vérification d'étalonnage d'un compteur de particules en milieu liquide",
+    prestations: [
+      "Vérification des fonctionnalités du compteur",
+      "Vérification et réglage du débit",
+      "Vérification de la cellule de mesure optique",
+      "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
+      "Vérification en nombre par comparaison à un étalon",
+      "Fourniture d'un rapport de test et de calibration"
+    ],
+    disclaimers: [
+      "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+      "Un devis sera systématiquement établi si des pièces sont trouvées défectueuses.",
+      "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de maintenance.",
+      "Les équipements envoyés pour calibration devront être décontaminés de toutes substances chimiques ou radioactives."
+    ]
   },
-  temp_humidity: {
-    id: 'temp_humidity',
-    label: 'Capteur Temp/Humidité',
-    icon: '🌡️',
-    color: 'orange',
-    calibration: {
-      title: "Étalonnage d'un capteur de température et humidité",
-      prestations: [
-        "Vérification des fonctionnalités du capteur",
-        "Étalonnage température sur points de référence",
-        "Étalonnage humidité relative",
-        "Fourniture d'un certificat d'étalonnage"
-      ],
-      defaultPrice: 280
-    },
-    repair: {
-      title: "Réparation d'un capteur",
-      prestations: [
-        "Diagnostic",
-        "Remplacement composants défectueux",
-        "Tests de fonctionnement"
-      ],
-      defaultPrice: 150
-    }
-  },
-  other: {
-    id: 'other',
-    label: 'Autre Équipement',
-    icon: '📦',
-    color: 'gray',
-    calibration: {
-      title: "Service d'étalonnage",
-      prestations: [
-        "Vérification des fonctionnalités",
-        "Étalonnage selon spécifications",
-        "Fourniture d'un rapport"
-      ],
-      defaultPrice: 400
-    },
-    repair: {
-      title: "Service de réparation",
-      prestations: [
-        "Diagnostic",
-        "Réparation",
-        "Tests"
-      ],
-      defaultPrice: 200
-    }
+  repair: {
+    title: "Devis de réparation",
+    prestations: [
+      "Diagnostic complet de l'appareil",
+      "Remplacement des pièces défectueuses (pièces facturées en sus)",
+      "Tests de fonctionnement complets",
+      "Vérification d'étalonnage post-réparation"
+    ],
+    disclaimers: [
+      "Ce devis est valable 30 jours à compter de sa date d'émission.",
+      "Les pièces remplacées restent la propriété de Lighthouse France.",
+      "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de réparation.",
+      "Garantie de 3 mois sur les pièces remplacées et la main d'œuvre."
+    ]
   }
 };
 
-const DISCLAIMERS = [
-  "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
-  "Un devis complémentaire sera établi si des pièces sont trouvées défectueuses.",
-  "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de maintenance.",
-  "Les équipements envoyés devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives."
-];
-
 function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
-  const [step, setStep] = useState(1); // 1=Configure, 2=Review by Type, 3=Final Summary, 4=Confirm
-  const [deviceQuotes, setDeviceQuotes] = useState([]);
+  const [step, setStep] = useState(1);
+  const [templateType, setTemplateType] = useState('particle_counter');
+  const [lineItems, setLineItems] = useState([]);
+  const [shipping, setShipping] = useState(45);
+  const [includeShipping, setIncludeShipping] = useState(true);
   const [saving, setSaving] = useState(false);
   const [quoteRef, setQuoteRef] = useState('');
 
+  const template = QUOTE_TEMPLATES[templateType];
   const devices = request?.request_devices || [];
   const signatory = profile?.full_name || 'Lighthouse France';
   const today = new Date();
-  
-  // Check if client is in France Metropolitan for shipping
-  const clientPostalCode = request?.companies?.billing_postal_code || request?.companies?.postal_code || '';
-  const isMetro = isFranceMetropolitan(clientPostalCode);
-  const shippingPerDevice = isMetro ? 45 : 0;
-  const shippingNote = isMetro ? null : "Retour géré par le client (hors France métropolitaine)";
+  const validUntil = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
 
   useEffect(() => {
+    // Generate quote reference
     const year = today.getFullYear().toString().slice(-2);
     const month = String(today.getMonth() + 1).padStart(2, '0');
-    setQuoteRef(`LM/${year}${month}/XXX`);
+    setQuoteRef(`RM/C/${year}${month}/XX`);
     
-    // Initialize device quotes from request
+    // Initialize line items from devices
     if (devices.length > 0) {
-      setDeviceQuotes(devices.map((d, i) => {
-        // Try to auto-detect device type from model name
-        const modelLower = (d.model_name || '').toLowerCase();
-        let detectedType = 'particle_counter'; // default
-        if (modelLower.includes('bio') || modelLower.includes('impac')) detectedType = 'bio_collector';
-        else if (modelLower.includes('liquid') || modelLower.includes('liqui')) detectedType = 'liquid_counter';
-        else if (modelLower.includes('temp') || modelLower.includes('humid') || modelLower.includes('thermo')) detectedType = 'temp_humidity';
-        
-        // Detect service type
-        const serviceType = d.service_type || request?.requested_service || 'calibration';
-        const needsCal = serviceType.includes('calibration') || serviceType === 'cal_repair';
-        const needsRepair = serviceType.includes('repair') || serviceType === 'cal_repair';
-        
-        const typeConfig = DEVICE_TYPES[detectedType];
-        
-        return {
-          id: d.id || `device-${i}`,
-          model: d.model_name || '',
-          serial: d.serial_number || '',
-          deviceType: detectedType,
-          needsCalibration: needsCal || serviceType === 'calibration',
-          needsRepair: needsRepair || serviceType === 'repair',
-          customerNotes: d.problem_description || d.notes || '', // Internal only
-          calibrationPrice: typeConfig.calibration.defaultPrice,
-          repairPrice: typeConfig.repair.defaultPrice,
-          parts: [], // Additional parts/items
-          shipping: shippingPerDevice
-        };
-      }));
+      setLineItems(devices.map((d, i) => ({ 
+        id: i + 1, 
+        description: 'Étalonnage annuel', 
+        model: d.model_name || '', 
+        serial: d.serial_number || '', 
+        price: 630, 
+        qty: 1 
+      })));
     } else {
-      // Single device fallback
-      setDeviceQuotes([{
-        id: 'device-1',
-        model: request?.model_name || '',
-        serial: request?.serial_number || '',
-        deviceType: 'particle_counter',
-        needsCalibration: true,
-        needsRepair: false,
-        customerNotes: request?.problem_description || '',
-        calibrationPrice: 630,
-        repairPrice: 200,
-        parts: [],
-        shipping: shippingPerDevice
-      }]);
+      setLineItems([{ id: 1, description: 'Étalonnage annuel', model: request?.model_name || '', serial: request?.serial_number || '', price: 630, qty: 1 }]);
     }
   }, []);
 
-  // Group devices by type for display
-  const devicesByType = deviceQuotes.reduce((acc, dq) => {
-    if (!acc[dq.deviceType]) acc[dq.deviceType] = [];
-    acc[dq.deviceType].push(dq);
-    return acc;
-  }, {});
+  const updateLineItem = (id, field, value) => setLineItems(lineItems.map(item => item.id === id ? { ...item, [field]: value } : item));
+  const removeLineItem = (id) => setLineItems(lineItems.filter(item => item.id !== id));
+  const addLineItem = () => setLineItems([...lineItems, { id: Date.now(), description: '', model: '', serial: '', price: 0, qty: 1 }]);
 
-  // Update device quote
-  const updateDevice = (deviceId, updates) => {
-    setDeviceQuotes(prev => prev.map(dq => 
-      dq.id === deviceId ? { ...dq, ...updates } : dq
-    ));
-  };
-
-  // Add part to device
-  const addPart = (deviceId) => {
-    setDeviceQuotes(prev => prev.map(dq => {
-      if (dq.id === deviceId) {
-        return { ...dq, parts: [...dq.parts, { id: Date.now(), description: '', price: 0, qty: 1 }] };
-      }
-      return dq;
-    }));
-  };
-
-  // Update part
-  const updatePart = (deviceId, partId, field, value) => {
-    setDeviceQuotes(prev => prev.map(dq => {
-      if (dq.id === deviceId) {
-        return {
-          ...dq,
-          parts: dq.parts.map(p => p.id === partId ? { ...p, [field]: value } : p)
-        };
-      }
-      return dq;
-    }));
-  };
-
-  // Remove part
-  const removePart = (deviceId, partId) => {
-    setDeviceQuotes(prev => prev.map(dq => {
-      if (dq.id === deviceId) {
-        return { ...dq, parts: dq.parts.filter(p => p.id !== partId) };
-      }
-      return dq;
-    }));
-  };
-
-  // Calculate device total
-  const getDeviceTotal = (dq) => {
-    let total = 0;
-    if (dq.needsCalibration) total += dq.calibrationPrice;
-    if (dq.needsRepair) total += dq.repairPrice;
-    total += dq.parts.reduce((sum, p) => sum + (p.price * p.qty), 0);
-    total += dq.shipping;
-    return total;
-  };
-
-  // Grand totals
-  const servicesTotal = deviceQuotes.reduce((sum, dq) => {
-    let t = 0;
-    if (dq.needsCalibration) t += dq.calibrationPrice;
-    if (dq.needsRepair) t += dq.repairPrice;
-    t += dq.parts.reduce((s, p) => s + (p.price * p.qty), 0);
-    return sum + t;
-  }, 0);
-  const shippingTotal = deviceQuotes.reduce((sum, dq) => sum + dq.shipping, 0);
-  const grandTotal = servicesTotal + shippingTotal;
+  const subtotal = lineItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  const total = subtotal + (includeShipping ? shipping : 0);
 
   const sendQuote = async () => {
     setSaving(true);
     
     let rmaNumber = request.request_number;
+    
+    // Only generate new RMA if this is a new request
     if (!rmaNumber) {
       const { data } = await supabase.from('service_requests').select('request_number').like('request_number', 'FR-%').order('request_number', { ascending: false }).limit(1);
       const lastNum = data?.[0]?.request_number ? parseInt(data[0].request_number.replace('FR-', '')) : 0;
       rmaNumber = 'FR-' + String(lastNum + 1).padStart(5, '0');
     }
 
-    // Store quote data for customer portal to display
+    // Save quote data for customer portal display
     const quoteData = {
-      devices: deviceQuotes.map(dq => ({
-        model: dq.model,
-        serial: dq.serial,
-        deviceType: dq.deviceType,
-        needsCalibration: dq.needsCalibration,
-        needsRepair: dq.needsRepair,
-        calibrationPrice: dq.calibrationPrice,
-        repairPrice: dq.repairPrice,
-        parts: dq.parts,
-        shipping: dq.shipping,
-        total: getDeviceTotal(dq)
-      })),
-      servicesTotal,
-      shippingTotal,
-      grandTotal,
-      isMetro,
-      shippingNote,
+      templateType,
+      lineItems,
+      shipping: includeShipping ? shipping : 0,
+      subtotal,
+      total,
       createdBy: signatory,
       createdAt: new Date().toISOString()
     };
@@ -1093,11 +904,11 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       request_number: rmaNumber,
       status: 'quote_sent',
       quoted_at: new Date().toISOString(),
-      quote_total: grandTotal,
-      quote_subtotal: servicesTotal,
-      quote_shipping: shippingTotal,
-      quote_data: quoteData, // Store full quote structure
-      quote_revision_notes: null
+      quote_total: total,
+      quote_subtotal: subtotal,
+      quote_shipping: includeShipping ? shipping : 0,
+      quote_data: quoteData,
+      quote_revision_notes: null // Clear revision notes when resending
     }).eq('id', request.id);
 
     if (error) { notify('Erreur: ' + error.message, 'error'); }
@@ -1107,450 +918,368 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={onClose}>
-      <div className="bg-white w-full h-full md:w-[98%] md:h-[98%] md:m-auto md:rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-        
+      <div className="bg-white w-full h-full md:w-[95%] md:h-[95%] md:m-auto md:rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="px-6 py-4 bg-[#1a1a2e] text-white flex justify-between items-center shrink-0">
           <div className="flex items-center gap-6">
             <div>
-              <h2 className="text-xl font-bold">
-                {step === 1 && '1. Configuration des appareils'}
-                {step === 2 && '2. Détails par type'}
-                {step === 3 && '3. Récapitulatif final'}
-                {step === 4 && '4. Confirmer l\'envoi'}
-              </h2>
-              <p className="text-gray-400">{request.companies?.name} • {deviceQuotes.length} appareil(s)</p>
+              <h2 className="text-xl font-bold">{step === 1 ? 'Créer le Devis' : step === 2 ? 'Aperçu du Devis' : 'Confirmer l\'envoi'}</h2>
+              <p className="text-gray-400">{request.companies?.name}</p>
             </div>
             <div className="flex gap-1">
-              {[1,2,3,4].map(s => (
-                <div key={s} className={`w-8 h-2 rounded-full ${step >= s ? 'bg-[#00A651]' : 'bg-gray-600'}`} />
+              {[1,2,3].map(s => (
+                <div key={s} className={`w-3 h-3 rounded-full ${step >= s ? 'bg-[#00A651]' : 'bg-gray-600'}`} />
               ))}
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-xs text-gray-400">Total HT</p>
-              <p className="text-2xl font-bold text-[#00A651]">{grandTotal.toFixed(2)} €</p>
-            </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
-          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
-          
-          {/* STEP 1: Configure Devices */}
           {step === 1 && (
-            <div className="p-6">
-              {/* Revision Warning */}
-              {request.status === 'quote_revision_requested' && (
-                <div className="mb-6 p-4 bg-red-100 border-2 border-red-300 rounded-xl">
-                  <p className="font-bold text-red-800">🔴 Modification demandée par le client</p>
-                  <p className="text-red-700 mt-1">{request.quote_revision_notes}</p>
-                </div>
-              )}
+            <div className="flex h-full">
+              {/* Left Sidebar - Customer Info */}
+              <div className="w-80 bg-gray-50 border-r p-6 overflow-y-auto shrink-0">
+                <h3 className="font-bold text-gray-800 mb-4 text-lg">Informations Client</h3>
+                
+                {/* Revision Request Alert */}
+                {request.status === 'quote_revision_requested' && (
+                  <div className="mb-4 p-4 bg-red-100 border-2 border-red-300 rounded-xl">
+                    <p className="font-bold text-red-800 mb-2">🔴 Modification demandée</p>
+                    <p className="text-sm text-red-700">{request.quote_revision_notes || 'Le client a demandé des modifications au devis.'}</p>
+                  </div>
+                )}
+                
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Entreprise</p>
+                    <p className="font-bold text-lg text-gray-800">{request.companies?.name}</p>
+                  </div>
+                  
+                  {request.companies?.billing_address && (
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Adresse</p>
+                      <p className="text-sm text-gray-700">{request.companies?.billing_address}</p>
+                      <p className="text-sm text-gray-700">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
+                    </div>
+                  )}
+                  
+                  {request.companies?.phone && (
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Téléphone</p>
+                      <p className="text-sm text-gray-700">{request.companies?.phone}</p>
+                    </div>
+                  )}
 
-              {/* Non-Metro Warning */}
-              {!isMetro && (
-                <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl">
-                  <p className="font-bold text-amber-800">⚠️ Client hors France métropolitaine</p>
-                  <p className="text-amber-700 text-sm">Les frais de retour ne sont pas inclus. Le client gère son propre transport.</p>
-                </div>
-              )}
+                  <div className="border-t pt-4">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Service demandé</p>
+                    <p className="font-medium">{request.requested_service === 'calibration' ? '🔬 Étalonnage' : request.requested_service === 'repair' ? '🔧 Réparation' : request.requested_service}</p>
+                  </div>
 
-              <div className="grid gap-4">
-                {deviceQuotes.map((dq, index) => {
-                  const typeConfig = DEVICE_TYPES[dq.deviceType];
-                  return (
-                    <div key={dq.id} className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden">
-                      {/* Device Header */}
-                      <div className={`bg-${typeConfig.color}-600 text-white px-4 py-3 flex items-center justify-between`} style={{backgroundColor: dq.deviceType === 'particle_counter' ? '#2563eb' : dq.deviceType === 'bio_collector' ? '#16a34a' : dq.deviceType === 'liquid_counter' ? '#0891b2' : dq.deviceType === 'temp_humidity' ? '#ea580c' : '#6b7280'}}>
-                        <div className="flex items-center gap-3">
-                          <span className="text-2xl">{typeConfig.icon}</span>
-                          <div>
-                            <p className="font-bold">{dq.model || `Appareil ${index + 1}`}</p>
-                            <p className="text-sm opacity-80">SN: {dq.serial || '—'}</p>
-                          </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Urgence</p>
+                    <p className={`font-medium ${request.urgency === 'urgent' ? 'text-orange-600' : request.urgency === 'critical' ? 'text-red-600' : 'text-gray-700'}`}>
+                      {request.urgency === 'urgent' ? '⚡ Urgent' : request.urgency === 'critical' ? '🚨 Critique' : '✓ Normal'}
+                    </p>
+                  </div>
+
+                  {request.problem_description && (
+                    <div className="border-t pt-4">
+                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Notes du client</p>
+                      <p className="text-sm bg-yellow-50 border border-yellow-200 rounded p-3 text-gray-700">{request.problem_description}</p>
+                    </div>
+                  )}
+
+                  {request.customer_shipping_account && (
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Compte transport</p>
+                      <p className="text-sm font-mono bg-gray-100 rounded p-2">{request.customer_shipping_account}</p>
+                    </div>
+                  )}
+
+                  <div className="border-t pt-4">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Appareils ({devices.length || 1})</p>
+                    <div className="space-y-2 mt-2">
+                      {devices.length > 0 ? devices.map((d, i) => (
+                        <div key={i} className="bg-white rounded p-2 border text-sm">
+                          <p className="font-medium">{d.model_name}</p>
+                          <p className="text-gray-500">SN: {d.serial_number}</p>
                         </div>
-                        <div className="text-right">
-                          <p className="text-xs opacity-80">Total appareil</p>
-                          <p className="text-xl font-bold">{getDeviceTotal(dq).toFixed(2)} €</p>
-                        </div>
-                      </div>
-
-                      {/* Customer Notes - Internal Only */}
-                      {dq.customerNotes && (
-                        <div className="bg-yellow-50 px-4 py-2 border-b border-yellow-200">
-                          <p className="text-xs text-yellow-700 font-medium">💬 Note interne (client):</p>
-                          <p className="text-sm text-yellow-800">{dq.customerNotes}</p>
+                      )) : (
+                        <div className="bg-white rounded p-2 border text-sm">
+                          <p className="font-medium">{request.model_name || 'Non spécifié'}</p>
+                          <p className="text-gray-500">SN: {request.serial_number || 'Non spécifié'}</p>
                         </div>
                       )}
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-                      <div className="p-4 grid md:grid-cols-2 gap-4">
-                        {/* Left: Device Type & Service Selection */}
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Type d'appareil</label>
-                            <select
-                              value={dq.deviceType}
-                              onChange={e => {
-                                const newType = e.target.value;
-                                const newConfig = DEVICE_TYPES[newType];
-                                updateDevice(dq.id, {
-                                  deviceType: newType,
-                                  calibrationPrice: newConfig.calibration.defaultPrice,
-                                  repairPrice: newConfig.repair.defaultPrice
-                                });
-                              }}
-                              className="w-full px-3 py-2 border rounded-lg"
-                            >
-                              {Object.values(DEVICE_TYPES).map(t => (
-                                <option key={t.id} value={t.id}>{t.icon} {t.label}</option>
-                              ))}
-                            </select>
-                          </div>
+              {/* Right - Quote Editor */}
+              <div className="flex-1 p-6 overflow-y-auto">
+                <div className="max-w-4xl space-y-6">
+                  {/* Template Type */}
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-3">Type de prestation</label>
+                    <div className="grid grid-cols-4 gap-3">
+                      {[
+                        { id: 'particle_counter', label: 'Compteur Particules', icon: '🔬' },
+                        { id: 'bio_collector', label: 'Biocollecteur', icon: '🧫' },
+                        { id: 'liquid_counter', label: 'Compteur Liquide', icon: '💧' },
+                        { id: 'repair', label: 'Réparation', icon: '🔧' }
+                      ].map(t => (
+                        <button key={t.id} onClick={() => setTemplateType(t.id)}
+                          className={`p-4 rounded-xl border-2 text-center transition-all ${templateType === t.id ? 'border-[#00A651] bg-green-50 shadow' : 'border-gray-200 hover:border-gray-300'}`}>
+                          <div className="text-2xl mb-1">{t.icon}</div>
+                          <div className="text-sm font-medium">{t.label}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-                          <div className="flex gap-4">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={dq.needsCalibration}
-                                onChange={e => updateDevice(dq.id, { needsCalibration: e.target.checked })}
-                                className="w-5 h-5 text-blue-600 rounded"
-                              />
-                              <span className="font-medium">🔬 Étalonnage</span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={dq.needsRepair}
-                                onChange={e => updateDevice(dq.id, { needsRepair: e.target.checked })}
-                                className="w-5 h-5 text-orange-600 rounded"
-                              />
-                              <span className="font-medium">🔧 Réparation</span>
-                            </label>
-                          </div>
-                        </div>
-
-                        {/* Right: Pricing */}
-                        <div className="space-y-3">
-                          {dq.needsCalibration && (
-                            <div className="flex items-center justify-between bg-blue-50 p-3 rounded-lg">
-                              <span className="text-sm font-medium text-blue-800">Main d'œuvre étalonnage</span>
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  value={dq.calibrationPrice}
-                                  onChange={e => updateDevice(dq.id, { calibrationPrice: parseFloat(e.target.value) || 0 })}
-                                  className="w-24 px-2 py-1 border rounded text-right"
-                                />
-                                <span className="text-gray-500">€</span>
-                              </div>
-                            </div>
-                          )}
-                          {dq.needsRepair && (
-                            <div className="flex items-center justify-between bg-orange-50 p-3 rounded-lg">
-                              <span className="text-sm font-medium text-orange-800">Main d'œuvre réparation</span>
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  value={dq.repairPrice}
-                                  onChange={e => updateDevice(dq.id, { repairPrice: parseFloat(e.target.value) || 0 })}
-                                  className="w-24 px-2 py-1 border rounded text-right"
-                                />
-                                <span className="text-gray-500">€</span>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Parts */}
-                          {dq.parts.map(part => (
-                            <div key={part.id} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg">
-                              <input
-                                type="text"
-                                value={part.description}
-                                onChange={e => updatePart(dq.id, part.id, 'description', e.target.value)}
-                                placeholder="Pièce / Service..."
-                                className="flex-1 px-2 py-1 border rounded text-sm"
-                              />
-                              <input
-                                type="number"
-                                value={part.price}
-                                onChange={e => updatePart(dq.id, part.id, 'price', parseFloat(e.target.value) || 0)}
-                                className="w-20 px-2 py-1 border rounded text-right text-sm"
-                              />
-                              <span className="text-xs text-gray-500">€ ×</span>
-                              <input
-                                type="number"
-                                value={part.qty}
-                                onChange={e => updatePart(dq.id, part.id, 'qty', parseInt(e.target.value) || 1)}
-                                className="w-12 px-2 py-1 border rounded text-center text-sm"
-                                min="1"
-                              />
-                              <button onClick={() => removePart(dq.id, part.id)} className="text-red-500 hover:text-red-700 text-lg">&times;</button>
-                            </div>
+                  {/* Line Items */}
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-3">Lignes du devis</label>
+                    <div className="border rounded-xl overflow-hidden">
+                      <table className="w-full">
+                        <thead className="bg-gray-100">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Description</th>
+                            <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Modèle</th>
+                            <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">N° Série</th>
+                            <th className="px-4 py-3 text-right text-sm font-bold text-gray-600">Prix HT</th>
+                            <th className="px-4 py-3 text-center text-sm font-bold text-gray-600">Qté</th>
+                            <th className="px-4 py-3 text-right text-sm font-bold text-gray-600">Total</th>
+                            <th className="px-4 py-3 w-10"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {lineItems.map(item => (
+                            <tr key={item.id} className="border-t">
+                              <td className="px-4 py-2"><input type="text" value={item.description} onChange={e => updateLineItem(item.id, 'description', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" /></td>
+                              <td className="px-4 py-2"><input type="text" value={item.model} onChange={e => updateLineItem(item.id, 'model', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" /></td>
+                              <td className="px-4 py-2"><input type="text" value={item.serial} onChange={e => updateLineItem(item.id, 'serial', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" /></td>
+                              <td className="px-4 py-2"><input type="number" value={item.price} onChange={e => updateLineItem(item.id, 'price', parseFloat(e.target.value) || 0)} className="w-24 px-3 py-2 border rounded-lg text-sm text-right" /></td>
+                              <td className="px-4 py-2"><input type="number" value={item.qty} onChange={e => updateLineItem(item.id, 'qty', parseInt(e.target.value) || 1)} className="w-16 px-3 py-2 border rounded-lg text-sm text-center" min="1" /></td>
+                              <td className="px-4 py-2 text-right font-bold text-[#00A651]">{(item.price * item.qty).toFixed(2)} €</td>
+                              <td className="px-4 py-2"><button onClick={() => removeLineItem(item.id)} className="text-red-500 hover:text-red-700 text-xl">&times;</button></td>
+                            </tr>
                           ))}
-                          <button onClick={() => addPart(dq.id)} className="text-sm text-[#00A651] font-medium hover:underline">+ Ajouter pièce/service</button>
+                        </tbody>
+                      </table>
+                      <div className="px-4 py-3 bg-gray-50 border-t">
+                        <button onClick={addLineItem} className="text-[#00A651] font-medium hover:underline">+ Ajouter une ligne</button>
+                      </div>
+                    </div>
+                  </div>
 
-                          {/* Shipping */}
-                          <div className="flex items-center justify-between bg-gray-100 p-3 rounded-lg mt-2">
-                            <span className="text-sm font-medium text-gray-700">
-                              {isMetro ? 'Frais de port (aller-retour)' : 'Transport (géré par client)'}
-                            </span>
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="number"
-                                value={dq.shipping}
-                                onChange={e => updateDevice(dq.id, { shipping: parseFloat(e.target.value) || 0 })}
-                                className="w-20 px-2 py-1 border rounded text-right"
-                              />
-                              <span className="text-gray-500">€</span>
-                            </div>
+                  {/* Shipping */}
+                  <div className="p-4 bg-gray-50 rounded-xl">
+                    <label className="flex items-center gap-3">
+                      <input type="checkbox" checked={includeShipping} onChange={e => setIncludeShipping(e.target.checked)} className="w-5 h-5 text-[#00A651] rounded" />
+                      <span className="font-medium">Inclure frais de transport forfaitaires</span>
+                      {includeShipping && (
+                        <>
+                          <input type="number" value={shipping} onChange={e => setShipping(parseFloat(e.target.value) || 0)} className="w-24 px-3 py-2 border rounded-lg text-right ml-4" />
+                          <span className="text-gray-500">€ HT</span>
+                        </>
+                      )}
+                    </label>
+                  </div>
+
+                  {/* Totals */}
+                  <div className="bg-gray-100 rounded-xl p-6">
+                    <div className="flex justify-end">
+                      <div className="w-64 space-y-2">
+                        <div className="flex justify-between text-gray-600">
+                          <span>Sous-total HT</span>
+                          <span className="font-medium">{subtotal.toFixed(2)} €</span>
+                        </div>
+                        {includeShipping && (
+                          <div className="flex justify-between text-gray-600">
+                            <span>Transport</span>
+                            <span className="font-medium">{shipping.toFixed(2)} €</span>
                           </div>
+                        )}
+                        <div className="flex justify-between text-xl font-bold pt-2 border-t-2 border-gray-300">
+                          <span>Total HT</span>
+                          <span className="text-[#00A651]">{total.toFixed(2)} €</span>
                         </div>
                       </div>
                     </div>
-                  );
-                })}
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
-          {/* STEP 2: Review by Device Type */}
           {step === 2 && (
-            <div className="p-6 bg-gray-100">
-              <div className="max-w-4xl mx-auto space-y-6">
-                {Object.entries(devicesByType).map(([typeId, devices]) => {
-                  const typeConfig = DEVICE_TYPES[typeId];
-                  const hasCalibration = devices.some(d => d.needsCalibration);
-                  const hasRepair = devices.some(d => d.needsRepair);
-                  
-                  return (
-                    <div key={typeId} className="bg-white rounded-xl shadow-lg overflow-hidden">
-                      {/* Type Header */}
-                      <div className="px-6 py-4 text-white flex items-center gap-3" style={{backgroundColor: typeId === 'particle_counter' ? '#2563eb' : typeId === 'bio_collector' ? '#16a34a' : typeId === 'liquid_counter' ? '#0891b2' : typeId === 'temp_humidity' ? '#ea580c' : '#6b7280'}}>
-                        <span className="text-3xl">{typeConfig.icon}</span>
-                        <div>
-                          <h3 className="text-xl font-bold">{typeConfig.label}</h3>
-                          <p className="text-sm opacity-80">{devices.length} appareil(s)</p>
-                        </div>
-                      </div>
-
-                      <div className="p-6">
-                        {/* Calibration Section */}
-                        {hasCalibration && (
-                          <div className="mb-6">
-                            <h4 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
-                              <span className="text-blue-600">🔬</span> {typeConfig.calibration.title}
-                            </h4>
-                            <div className="bg-gray-50 p-4 rounded-lg">
-                              <p className="text-sm font-medium text-gray-600 mb-2">Prestations incluses :</p>
-                              <ul className="space-y-1">
-                                {typeConfig.calibration.prestations.map((p, i) => (
-                                  <li key={i} className="text-sm text-gray-700 flex items-start gap-2">
-                                    <span className="text-[#00A651]">▸</span>
-                                    {p}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Repair Section */}
-                        {hasRepair && (
-                          <div className="mb-6">
-                            <h4 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
-                              <span className="text-orange-600">🔧</span> {typeConfig.repair.title}
-                            </h4>
-                            <div className="bg-gray-50 p-4 rounded-lg">
-                              <p className="text-sm font-medium text-gray-600 mb-2">Prestations incluses :</p>
-                              <ul className="space-y-1">
-                                {typeConfig.repair.prestations.map((p, i) => (
-                                  <li key={i} className="text-sm text-gray-700 flex items-start gap-2">
-                                    <span className="text-orange-500">▸</span>
-                                    {p}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Devices in this type */}
-                        <div className="border-t pt-4">
-                          <p className="text-sm font-medium text-gray-600 mb-2">Appareils concernés :</p>
-                          <div className="space-y-2">
-                            {devices.map(d => (
-                              <div key={d.id} className="flex justify-between items-center bg-gray-50 px-4 py-2 rounded">
-                                <div>
-                                  <span className="font-medium">{d.model}</span>
-                                  <span className="text-gray-500 ml-2">SN: {d.serial}</span>
-                                  <span className="ml-3 text-sm">
-                                    {d.needsCalibration && <span className="text-blue-600 mr-2">🔬 Cal</span>}
-                                    {d.needsRepair && <span className="text-orange-600">🔧 Rép</span>}
-                                  </span>
-                                </div>
-                                <span className="font-bold text-[#00A651]">{getDeviceTotal(d).toFixed(2)} €</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* STEP 3: Final Summary */}
-          {step === 3 && (
-            <div className="p-6 bg-gray-200">
-              <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-xl overflow-hidden" style={{ fontFamily: 'Arial, sans-serif' }}>
-                {/* Quote Header */}
-                <div className="px-8 pt-6 pb-4 border-b">
+            <div className="bg-gray-300 p-8 min-h-full">
+              {/* Professional Quote Preview */}
+              <div className="bg-white max-w-[210mm] mx-auto shadow-2xl" style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt' }}>
+                {/* Header */}
+                <div className="px-10 pt-8 pb-6">
                   <div className="flex justify-between items-start">
                     <div>
-                      <h1 className="text-2xl font-bold tracking-tight text-gray-800">LIGHTHOUSE</h1>
-                      <p className="text-gray-500">Worldwide Solutions</p>
+                      <h1 className="text-3xl font-bold tracking-tight text-gray-800">LIGHTHOUSE</h1>
+                      <p className="text-lg text-gray-500 font-light">Worldwide Solutions</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
-                      <p className="text-sm text-gray-500">Réf: {quoteRef}</p>
+                      <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
+                      <p className="text-gray-500 mt-1">N° {quoteRef}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Info Bar */}
-                <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm">
-                  <div><p className="text-xs text-gray-500">Date</p><p className="font-medium">{today.toLocaleDateString('fr-FR')}</p></div>
-                  <div><p className="text-xs text-gray-500">Validité</p><p className="font-medium">30 jours</p></div>
-                  <div><p className="text-xs text-gray-500">Conditions</p><p className="font-medium">À réception de facture</p></div>
+                <div className="bg-gray-100 px-10 py-4 flex justify-between">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Date</p>
+                    <p className="font-medium">{today.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Validité</p>
+                    <p className="font-medium">30 jours (jusqu'au {validUntil.toLocaleDateString('fr-FR')})</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Conditions</p>
+                    <p className="font-medium">À réception de facture</p>
+                  </div>
                 </div>
 
                 {/* Client Info */}
-                <div className="px-8 py-4 border-b">
-                  <p className="text-xs text-gray-500 uppercase">Client</p>
-                  <p className="font-bold text-lg">{request.companies?.name}</p>
-                  {request.companies?.billing_address && <p className="text-gray-600 text-sm">{request.companies?.billing_address}</p>}
-                  <p className="text-gray-600 text-sm">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
+                <div className="px-10 py-6 border-b">
+                  <div className="grid grid-cols-2 gap-8">
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Client</p>
+                      <p className="text-lg font-bold text-gray-800">{request.companies?.name}</p>
+                      {request.companies?.billing_address && <p className="text-gray-600">{request.companies?.billing_address}</p>}
+                      <p className="text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
+                      {request.companies?.phone && <p className="text-gray-600 mt-2">Tél: {request.companies?.phone}</p>}
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Lighthouse France</p>
+                      <p className="text-gray-600">16, rue Paul Séjourné</p>
+                      <p className="text-gray-600">94000 CRÉTEIL</p>
+                      <p className="text-gray-600 mt-2">Tél: 01 43 77 28 07</p>
+                      <p className="text-gray-600">salesfrance@golighthouse.com</p>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Summary Table - All Devices */}
-                <div className="px-8 py-6">
-                  <h3 className="font-bold text-gray-800 mb-4">Récapitulatif des prestations</h3>
-                  
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-[#1a1a2e] text-white">
-                        <th className="px-3 py-2 text-left">Appareil</th>
-                        <th className="px-3 py-2 text-left">N° Série</th>
-                        <th className="px-3 py-2 text-left">Service</th>
-                        <th className="px-3 py-2 text-right">Prix HT</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {deviceQuotes.map((dq, i) => {
-                        const services = [];
-                        if (dq.needsCalibration) services.push('Étalonnage');
-                        if (dq.needsRepair) services.push('Réparation');
-                        
-                        return (
-                          <tr key={dq.id} className={i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                            <td className="px-3 py-3 font-medium">{dq.model}</td>
-                            <td className="px-3 py-3 font-mono text-xs">{dq.serial}</td>
-                            <td className="px-3 py-3">{services.join(' + ')}</td>
-                            <td className="px-3 py-3 text-right font-medium">{getDeviceTotal(dq).toFixed(2)} €</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                {/* Content */}
+                <div className="px-10 py-6">
+                  {/* Title */}
+                  <div className="mb-6 pb-4 border-b-2 border-[#00A651]">
+                    <h2 className="text-xl font-bold text-gray-800">{template.title}</h2>
+                  </div>
 
-                  {/* Totals */}
-                  <div className="mt-6 border-t pt-4 space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Sous-total services</span>
-                      <span className="font-medium">{servicesTotal.toFixed(2)} €</span>
+                  {/* Prestations */}
+                  <div className="mb-6">
+                    <p className="font-bold text-gray-700 mb-3">Prestations incluses :</p>
+                    <div className="space-y-2">
+                      {template.prestations.map((p, i) => (
+                        <div key={i} className="flex items-start gap-3">
+                          <span className="text-[#00A651] mt-0.5">▸</span>
+                          <span className="text-gray-700">{p}</span>
+                        </div>
+                      ))}
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">
-                        {isMetro ? `Frais de port (${deviceQuotes.length} appareil(s) × ${shippingPerDevice}€)` : 'Transport (géré par client)'}
-                      </span>
-                      <span className="font-medium">{shippingTotal.toFixed(2)} €</span>
-                    </div>
-                    <div className="flex justify-between items-center bg-[#00A651] text-white px-4 py-3 rounded-lg mt-4">
-                      <span className="font-bold text-lg">TOTAL HT</span>
-                      <span className="font-bold text-2xl">{grandTotal.toFixed(2)} €</span>
-                    </div>
+                  </div>
+
+                  {/* Equipment Table */}
+                  <div className="mb-6">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-[#1a1a2e] text-white">
+                          <th className="px-4 py-3 text-left font-medium">Description</th>
+                          <th className="px-4 py-3 text-left font-medium">Modèle</th>
+                          <th className="px-4 py-3 text-left font-medium">N° Série</th>
+                          <th className="px-4 py-3 text-right font-medium">Prix Unitaire HT</th>
+                          <th className="px-4 py-3 text-center font-medium">Qté</th>
+                          <th className="px-4 py-3 text-right font-medium">Total HT</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lineItems.map((item, i) => (
+                          <tr key={i} className={i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                            <td className="px-4 py-3 border-b">{item.description}</td>
+                            <td className="px-4 py-3 border-b font-medium">{item.model}</td>
+                            <td className="px-4 py-3 border-b font-mono text-sm">{item.serial}</td>
+                            <td className="px-4 py-3 border-b text-right">{item.price.toFixed(2)} €</td>
+                            <td className="px-4 py-3 border-b text-center">{item.qty}</td>
+                            <td className="px-4 py-3 border-b text-right font-medium">{(item.price * item.qty).toFixed(2)} €</td>
+                          </tr>
+                        ))}
+                        {includeShipping && (
+                          <tr className="bg-gray-50">
+                            <td className="px-4 py-3 border-b" colSpan={5}>Frais de transport forfaitaires (aller-retour)</td>
+                            <td className="px-4 py-3 border-b text-right font-medium">{shipping.toFixed(2)} €</td>
+                          </tr>
+                        )}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-[#00A651] text-white">
+                          <td className="px-4 py-4 font-bold" colSpan={5}>TOTAL HT</td>
+                          <td className="px-4 py-4 text-right text-xl font-bold">{total.toFixed(2)} €</td>
+                        </tr>
+                      </tfoot>
+                    </table>
                   </div>
 
                   {/* Disclaimers */}
-                  <div className="mt-6 pt-4 border-t">
-                    <p className="text-xs text-gray-500 uppercase mb-2">Conditions</p>
-                    <ul className="text-xs text-gray-600 space-y-1">
-                      {DISCLAIMERS.map((d, i) => (
-                        <li key={i}>• {d}</li>
-                      ))}
-                    </ul>
+                  <div className="mb-6 text-sm text-gray-600">
+                    <p className="font-medium text-gray-700 mb-2">Conditions :</p>
+                    {template.disclaimers.map((d, i) => (
+                      <p key={i} className="mb-1">• {d}</p>
+                    ))}
                   </div>
 
-                  {/* Signature Area */}
-                  <div className="mt-6 pt-4 border-t flex justify-between items-end">
+                  {/* Signature */}
+                  <div className="mt-10 pt-6 border-t flex justify-between items-end">
                     <div>
-                      <p className="text-xs text-gray-500">Établi par</p>
-                      <p className="font-bold">{signatory}</p>
-                      <p className="text-sm text-gray-600">Lighthouse France</p>
+                      <p className="text-sm text-gray-500">Établi par</p>
+                      <p className="text-lg font-bold text-gray-800">{signatory}</p>
+                      <p className="text-gray-600">Lighthouse France</p>
                     </div>
-                    <div className="text-right text-xs text-gray-400">
-                      <p>Signature client</p>
-                      <div className="w-40 h-16 border-2 border-dashed border-gray-300 rounded mt-1"></div>
+                    <div className="text-right">
+                      <div className="w-24 h-16 border border-dashed border-gray-300 rounded flex items-center justify-center text-xs text-gray-400">
+                        CAPCERT
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 {/* Footer */}
-                <div className="bg-[#1a1a2e] text-white px-8 py-3 text-center text-xs">
+                <div className="bg-[#1a1a2e] text-white px-10 py-4 text-center text-sm">
                   <p className="font-medium">Lighthouse France SAS</p>
                   <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+                  <p className="text-gray-500 text-xs mt-1">SIRET 501781348 • TVA FR86501781348 • Capital 10 000 €</p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* STEP 4: Confirm */}
-          {step === 4 && (
-            <div className="flex items-center justify-center min-h-full p-8">
+          {step === 3 && (
+            <div className="flex items-center justify-center min-h-[60vh] p-8">
               <div className="text-center max-w-md">
-                <div className="w-24 h-24 bg-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6">
-                  <span className="text-5xl text-white">📧</span>
+                <div className="w-20 h-20 bg-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6">
+                  <span className="text-4xl text-white">📧</span>
                 </div>
                 <h3 className="text-2xl font-bold text-gray-800 mb-2">Confirmer l'envoi du devis</h3>
-                <p className="text-gray-600 mb-6">Le devis sera envoyé au client et disponible sur son portail.</p>
+                <p className="text-gray-600 mb-6">Le devis sera envoyé au client</p>
                 
-                <div className="bg-gray-50 rounded-xl p-6 mb-6 text-left">
-                  <p className="text-lg font-bold text-gray-800 mb-1">{request.companies?.name}</p>
-                  <p className="text-sm text-gray-500 mb-4">{deviceQuotes.length} appareil(s)</p>
-                  
-                  <div className="space-y-2 text-sm">
-                    {deviceQuotes.map(dq => (
-                      <div key={dq.id} className="flex justify-between">
-                        <span>{dq.model}</span>
-                        <span className="font-medium">{getDeviceTotal(dq).toFixed(2)} €</span>
-                      </div>
-                    ))}
-                    <div className="border-t pt-2 mt-2 flex justify-between font-bold text-lg">
-                      <span>Total HT</span>
-                      <span className="text-[#00A651]">{grandTotal.toFixed(2)} €</span>
-                    </div>
-                  </div>
+                <div className="bg-gray-50 rounded-xl p-6 mb-6">
+                  <p className="text-lg font-bold text-gray-800">{request.companies?.name}</p>
+                  <p className="text-4xl font-bold text-[#00A651] mt-4">{total.toFixed(2)} € HT</p>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 text-left">
-                  <p className="mb-1">✓ Un numéro RMA sera automatiquement attribué</p>
-                  <p className="mb-1">✓ Le client recevra une notification</p>
-                  <p>✓ Le devis sera disponible sur son portail</p>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+                  <p>✓ Un numéro RMA sera automatiquement attribué</p>
+                  <p>✓ Le client recevra une notification par email</p>
+                  <p>✓ Le devis sera enregistré dans le dossier</p>
                 </div>
               </div>
             </div>
@@ -1563,16 +1292,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
             {step === 1 ? 'Annuler' : '← Retour'}
           </button>
           <div className="flex gap-3">
-            {step < 4 && (
-              <button onClick={() => setStep(step + 1)} className="px-8 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">
-                Suivant →
-              </button>
-            )}
-            {step === 4 && (
-              <button onClick={sendQuote} disabled={saving} className="px-10 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold text-lg disabled:opacity-50">
-                {saving ? 'Envoi en cours...' : '✅ Confirmer et Envoyer'}
-              </button>
-            )}
+            {step === 1 && <button onClick={() => setStep(2)} className="px-8 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">Aperçu →</button>}
+            {step === 2 && <button onClick={() => setStep(3)} className="px-8 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">Envoyer →</button>}
+            {step === 3 && <button onClick={sendQuote} disabled={saving} className="px-10 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold text-lg disabled:opacity-50">{saving ? 'Envoi en cours...' : '✅ Confirmer et Envoyer'}</button>}
           </div>
         </div>
       </div>
