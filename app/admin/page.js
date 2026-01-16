@@ -324,8 +324,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
       .from('service_requests')
       .update({ 
         status: 'waiting_device', 
-        bc_approved_at: new Date().toISOString(),
-        bc_approved_by: 'admin' // TODO: use actual admin ID
+        bc_approved_at: new Date().toISOString()
       })
       .eq('id', rma.id);
     
