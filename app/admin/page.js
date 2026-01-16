@@ -13,6 +13,7 @@ const STATUS_STYLES = {
   calibration_in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Étalonnage' },
   repair_in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Réparation' },
   quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
+  quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: '🔴 Modification demandée' },
   quote_approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'Devis approuvé' },
   final_qc: { bg: 'bg-teal-100', text: 'text-teal-700', label: 'Contrôle final' },
   ready_to_ship: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Prêt à expédier' },
@@ -74,9 +75,15 @@ export default function AdminPortal() {
 
   const logout = async () => { await supabase.auth.signOut(); window.location.href = '/'; };
   const isAdmin = profile?.role === 'lh_admin';
+  
+  // Count pending requests and modification requests
+  const pendingCount = requests.filter(r => r.status === 'submitted' && !r.request_number).length;
+  const modificationCount = requests.filter(r => r.status === 'quote_revision_requested').length;
+  const totalBadge = pendingCount + modificationCount;
+  
   const sheets = [
     { id: 'dashboard', label: 'Tableau de Bord', icon: '📊' },
-    { id: 'requests', label: 'Demandes', icon: '📋' },
+    { id: 'requests', label: 'Demandes', icon: '📋', badge: totalBadge },
     { id: 'clients', label: 'Clients', icon: '👥' },
     { id: 'contracts', label: 'Contrats', icon: '📄' },
     { id: 'settings', label: 'Paramètres', icon: '⚙️' },
@@ -108,8 +115,13 @@ export default function AdminPortal() {
         <div className="max-w-full mx-auto px-6 flex gap-1 overflow-x-auto">
           {sheets.map(sheet => (
             <button key={sheet.id} onClick={() => setActiveSheet(sheet.id)}
-              className={`px-6 py-3 font-medium flex items-center gap-2 whitespace-nowrap ${activeSheet === sheet.id ? 'bg-[#00A651] text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
+              className={`px-6 py-3 font-medium flex items-center gap-2 whitespace-nowrap relative ${activeSheet === sheet.id ? 'bg-[#00A651] text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
               <span>{sheet.icon}</span>{sheet.label}
+              {sheet.badge > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1 animate-pulse">
+                  {sheet.badge}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -582,36 +594,86 @@ function RequestsSheet({ requests, notify, reload, profile }) {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [quoteRequest, setQuoteRequest] = useState(null);
   const [filter, setFilter] = useState('pending');
+  
   const pendingRequests = requests.filter(r => r.status === 'submitted' && !r.request_number);
-  const displayRequests = filter === 'pending' ? pendingRequests : requests;
+  const modificationRequests = requests.filter(r => r.status === 'quote_revision_requested');
+  const allPending = [...modificationRequests, ...pendingRequests];
+  const displayRequests = filter === 'pending' ? allPending : requests;
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">Demandes</h1>
         <div className="flex gap-2">
-          <button onClick={() => setFilter('pending')} className={`px-4 py-2 rounded-lg text-sm font-medium ${filter === 'pending' ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}>En attente ({pendingRequests.length})</button>
-          <button onClick={() => setFilter('all')} className={`px-4 py-2 rounded-lg text-sm font-medium ${filter === 'all' ? 'bg-gray-700 text-white' : 'bg-gray-200'}`}>Toutes ({requests.length})</button>
+          <button onClick={() => setFilter('pending')} className={`px-4 py-2 rounded-lg text-sm font-medium ${filter === 'pending' ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}>
+            En attente ({allPending.length})
+          </button>
+          <button onClick={() => setFilter('all')} className={`px-4 py-2 rounded-lg text-sm font-medium ${filter === 'all' ? 'bg-gray-700 text-white' : 'bg-gray-200'}`}>
+            Toutes ({requests.length})
+          </button>
         </div>
       </div>
-      {pendingRequests.length > 0 && filter === 'pending' && <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg"><p className="font-medium text-amber-800">⚠️ {pendingRequests.length} demande(s) en attente - Créez un devis pour traiter</p></div>}
+      
+      {/* Modification Requests Alert */}
+      {modificationRequests.length > 0 && filter === 'pending' && (
+        <div className="bg-red-50 border-2 border-red-300 p-4 rounded-xl">
+          <p className="font-bold text-red-800">🔴 {modificationRequests.length} demande(s) de modification de devis</p>
+          <p className="text-sm text-red-600">Le client a demandé des modifications - veuillez réviser et renvoyer</p>
+        </div>
+      )}
+      
+      {pendingRequests.length > 0 && filter === 'pending' && (
+        <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg">
+          <p className="font-medium text-amber-800">⚠️ {pendingRequests.length} nouvelle(s) demande(s) - Créez un devis pour traiter</p>
+        </div>
+      )}
+      
       <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-sm font-bold text-gray-600">ID / RMA</th><th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Client</th><th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Type</th><th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Appareils</th><th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Statut</th><th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Soumis</th><th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th></tr></thead>
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">ID / RMA</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Client</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Type</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Appareils</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Statut</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Soumis</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
+            </tr>
+          </thead>
           <tbody className="divide-y divide-gray-100">
-            {displayRequests.length === 0 ? <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{filter === 'pending' ? 'Aucune demande en attente' : 'Aucune demande'}</td></tr> : displayRequests.map(req => {
+            {displayRequests.length === 0 ? (
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{filter === 'pending' ? 'Aucune demande en attente' : 'Aucune demande'}</td></tr>
+            ) : displayRequests.map(req => {
               const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
               const devices = req.request_devices || [];
               const isPending = req.status === 'submitted' && !req.request_number;
+              const needsRevision = req.status === 'quote_revision_requested';
+              
               return (
-                <tr key={req.id} className={`hover:bg-gray-50 ${isPending ? 'bg-amber-50/50' : ''}`}>
-                  <td className="px-4 py-3">{req.request_number ? <span className="font-mono font-bold text-[#00A651]">{req.request_number}</span> : <span className="text-amber-600 font-medium">Nouvelle</span>}</td>
+                <tr key={req.id} className={`hover:bg-gray-50 ${needsRevision ? 'bg-red-50' : isPending ? 'bg-amber-50/50' : ''}`}>
+                  <td className="px-4 py-3">
+                    {req.request_number ? (
+                      <span className="font-mono font-bold text-[#00A651]">{req.request_number}</span>
+                    ) : (
+                      <span className="text-amber-600 font-medium">Nouvelle</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3"><p className="font-medium text-gray-800">{req.companies?.name || '—'}</p></td>
                   <td className="px-4 py-3"><span className="text-sm">{req.request_type === 'service' ? '🔧 Service' : '📦 Pièces'}</span></td>
                   <td className="px-4 py-3"><span className="text-sm text-gray-600">{devices.length > 0 ? devices.length + ' appareil(s)' : '1 appareil'}</span></td>
                   <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span></td>
                   <td className="px-4 py-3 text-sm text-gray-500">{new Date(req.created_at).toLocaleDateString('fr-FR')}</td>
-                  <td className="px-4 py-3"><div className="flex gap-2">{isPending && <button onClick={() => setQuoteRequest(req)} className="px-3 py-1 text-sm bg-[#00A651] hover:bg-[#008f45] text-white rounded font-medium">💰 Créer Devis</button>}<button onClick={() => setSelectedRequest(req)} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir</button></div></td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      {(isPending || needsRevision) && (
+                        <button onClick={() => setQuoteRequest(req)} className={`px-3 py-1 text-sm text-white rounded font-medium ${needsRevision ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}>
+                          {needsRevision ? '🔴 Réviser Devis' : '💰 Créer Devis'}
+                        </button>
+                      )}
+                      <button onClick={() => setSelectedRequest(req)} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir</button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
@@ -816,9 +878,15 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
 
   const sendQuote = async () => {
     setSaving(true);
-    const { data } = await supabase.from('service_requests').select('request_number').like('request_number', 'FR-%').order('request_number', { ascending: false }).limit(1);
-    const lastNum = data?.[0]?.request_number ? parseInt(data[0].request_number.replace('FR-', '')) : 0;
-    const rmaNumber = 'FR-' + String(lastNum + 1).padStart(5, '0');
+    
+    let rmaNumber = request.request_number;
+    
+    // Only generate new RMA if this is a new request
+    if (!rmaNumber) {
+      const { data } = await supabase.from('service_requests').select('request_number').like('request_number', 'FR-%').order('request_number', { ascending: false }).limit(1);
+      const lastNum = data?.[0]?.request_number ? parseInt(data[0].request_number.replace('FR-', '')) : 0;
+      rmaNumber = 'FR-' + String(lastNum + 1).padStart(5, '0');
+    }
 
     const { error } = await supabase.from('service_requests').update({
       request_number: rmaNumber,
@@ -826,7 +894,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       quoted_at: new Date().toISOString(),
       quote_total: total,
       quote_subtotal: subtotal,
-      quote_shipping: includeShipping ? shipping : 0
+      quote_shipping: includeShipping ? shipping : 0,
+      quote_revision_notes: null // Clear revision notes when resending
     }).eq('id', request.id);
 
     if (error) { notify('Erreur: ' + error.message, 'error'); }
@@ -860,6 +929,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
               {/* Left Sidebar - Customer Info */}
               <div className="w-80 bg-gray-50 border-r p-6 overflow-y-auto shrink-0">
                 <h3 className="font-bold text-gray-800 mb-4 text-lg">Informations Client</h3>
+                
+                {/* Revision Request Alert */}
+                {request.status === 'quote_revision_requested' && (
+                  <div className="mb-4 p-4 bg-red-100 border-2 border-red-300 rounded-xl">
+                    <p className="font-bold text-red-800 mb-2">🔴 Modification demandée</p>
+                    <p className="text-sm text-red-700">{request.quote_revision_notes || 'Le client a demandé des modifications au devis.'}</p>
+                  </div>
+                )}
                 
                 <div className="space-y-4">
                   <div>
