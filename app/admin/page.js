@@ -40,8 +40,9 @@ export default function AdminPortal() {
   const loadData = useCallback(async () => {
     console.log('Loading data...');
     
+    // Simplified query - removed shipping_addresses join that was causing 400 error
     const { data: reqs, error: reqErr } = await supabase.from('service_requests')
-      .select('*, companies(id, name, billing_city), request_devices(*), shipping_addresses(*)')
+      .select('*, companies(id, name, billing_city), request_devices(*)')
       .order('created_at', { ascending: false });
     console.log('Requests:', reqs, 'Error:', reqErr);
     if (reqs) setRequests(reqs);
