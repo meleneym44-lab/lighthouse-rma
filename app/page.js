@@ -387,6 +387,11 @@ export default function CustomerPortal() {
           .eq('id', session.user.id)
           .single();
         if (p) {
+          // Redirect Lighthouse staff to admin portal
+          if (p.role === 'lh_admin' || p.role === 'lh_employee') {
+            window.location.href = '/admin';
+            return;
+          }
           setProfile(p);
           await loadData(p);
         }
@@ -413,12 +418,19 @@ export default function CustomerPortal() {
   const login = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return error.message;
-    setUser(data.user);
+    
+    // Check if Lighthouse staff - redirect to admin
     const { data: p } = await supabase.from('profiles')
       .select('*, companies(*)')
       .eq('id', data.user.id)
       .single();
+    
     if (p) {
+      if (p.role === 'lh_admin' || p.role === 'lh_employee') {
+        window.location.href = '/admin';
+        return null;
+      }
+      setUser(data.user);
       setProfile(p);
       setPage('dashboard');
       await loadData(p);
@@ -2579,7 +2591,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
   const [teamMembers, setTeamMembers] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [inviteData, setInviteData] = useState({ email: '', role: 'user' });
+  const [inviteData, setInviteData] = useState({ email: '', role: 'customer' });
   const [loadingTeam, setLoadingTeam] = useState(false);
   
   const [saving, setSaving] = useState(false);
@@ -2653,7 +2665,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
     
     notify(`Invitation envoyée à ${inviteData.email}!`);
     setShowInviteModal(false);
-    setInviteData({ email: '', role: 'user' });
+    setInviteData({ email: '', role: 'customer' });
     
     // Reload invites
     const { data: invites } = await supabase
@@ -3155,18 +3167,18 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
                           </div>
                           <div className="flex items-center gap-3">
                             <select
-                              value={member.role || 'user'}
+                              value={member.role || 'customer'}
                               onChange={e => changeRole(member.id, e.target.value)}
                               disabled={member.id === profile.id}
                               className={`px-3 py-1.5 border rounded-lg text-sm ${
                                 member.role === 'admin' ? 'bg-purple-50 border-purple-300 text-purple-700' :
-                                member.role === 'manager' ? 'bg-blue-50 border-blue-300 text-blue-700' :
+                                member.role === 'technician' ? 'bg-blue-50 border-blue-300 text-blue-700' :
                                 'bg-gray-50 border-gray-300 text-gray-700'
                               } ${member.id === profile.id ? 'opacity-50' : ''}`}
                             >
                               <option value="admin">👑 Admin</option>
-                              <option value="manager">📋 Manager</option>
-                              <option value="user">👤 Utilisateur</option>
+                              <option value="technician">📋 Technicien</option>
+                              <option value="customer">👤 Utilisateur</option>
                             </select>
                             {member.id !== profile.id && (
                               <button
@@ -3216,7 +3228,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
                           <div>
                             <p className="font-medium text-amber-800">{invite.email}</p>
                             <p className="text-xs text-amber-600">
-                              Rôle: {invite.role === 'admin' ? 'Admin' : invite.role === 'manager' ? 'Manager' : 'Utilisateur'}
+                              Rôle: {invite.role === 'admin' ? 'Admin' : invite.role === 'technician' ? 'Technicien' : 'Utilisateur'}
                               {' • '}Expire: {new Date(invite.expires_at).toLocaleDateString('fr-FR')}
                             </p>
                           </div>
@@ -3241,7 +3253,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
                       <p className="text-gray-500">Accès complet, gestion des utilisateurs et paramètres</p>
                     </div>
                     <div>
-                      <p className="font-medium text-blue-700">📋 Manager</p>
+                      <p className="font-medium text-blue-700">📋 Technicien</p>
                       <p className="text-gray-500">Voir toutes les demandes, créer des demandes</p>
                     </div>
                     <div>
@@ -3676,8 +3688,8 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
                   onChange={e => setInviteData({ ...inviteData, role: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
                 >
-                  <option value="user">👤 Utilisateur - Voir ses propres demandes</option>
-                  <option value="manager">📋 Manager - Voir toutes les demandes</option>
+                  <option value="customer">👤 Utilisateur - Voir ses propres demandes</option>
+                  <option value="technician">📋 Technicien - Voir toutes les demandes</option>
                   <option value="admin">👑 Admin - Accès complet</option>
                 </select>
               </div>
@@ -3693,7 +3705,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
                   type="button"
                   onClick={() => {
                     setShowInviteModal(false);
-                    setInviteData({ email: '', role: 'user' });
+                    setInviteData({ email: '', role: 'customer' });
                   }}
                   className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
                 >
