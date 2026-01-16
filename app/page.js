@@ -4513,11 +4513,11 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         }
       }
       
-      // Update request status - this is the important part
+      // Update request status - set to bc_review so admin can verify
       const { error: updateError } = await supabase
         .from('service_requests')
         .update({ 
-          status: 'waiting_device',
+          status: 'bc_review',
           bc_submitted_at: new Date().toISOString(),
           bc_signed_by: signatureName,
           bc_signature_date: signatureDateISO,
