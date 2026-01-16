@@ -177,28 +177,31 @@ function LoginPage() {
 
 function DashboardSheet({ requests, notify, reload, isAdmin }) {
   const [selectedRMA, setSelectedRMA] = useState(null);
+  const [reviewingBC, setReviewingBC] = useState(null);
+  
   const activeRMAs = requests.filter(r => r.request_number && !['completed', 'cancelled'].includes(r.status));
-  const needsReview = requests.filter(r => r.status === 'bc_review' || (r.bc_signature_url && r.status === 'waiting_bc'));
+  // BC needs review if status is bc_review OR if bc_file_url/bc_signature_url exists and status is still waiting_bc
+  const needsReview = requests.filter(r => 
+    r.status === 'bc_review' || 
+    ((r.bc_file_url || r.bc_signature_url) && r.status === 'waiting_bc')
+  );
+  
   const byStatus = {
-    waiting: activeRMAs.filter(r => ['approved', 'waiting_bc', 'waiting_device'].includes(r.status)),
+    waiting: activeRMAs.filter(r => ['approved', 'waiting_bc', 'waiting_device'].includes(r.status) && !needsReview.find(n => n.id === r.id)),
     received: activeRMAs.filter(r => ['received', 'in_queue'].includes(r.status)),
     inProgress: activeRMAs.filter(r => ['calibration_in_progress', 'repair_in_progress', 'quote_sent'].includes(r.status)),
     ready: activeRMAs.filter(r => ['final_qc', 'ready_to_ship'].includes(r.status)),
     shipped: activeRMAs.filter(r => r.status === 'shipped')
   };
+  
   const stats = [
     { label: 'RMAs Actifs', value: activeRMAs.length, color: 'bg-blue-500', icon: '📋' },
-    { label: 'À vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
+    { label: 'BC à vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
     { label: 'En attente', value: byStatus.waiting.length, color: 'bg-amber-500', icon: '⏳' },
     { label: 'Reçus', value: byStatus.received.length, color: 'bg-cyan-500', icon: '📦' },
     { label: 'En cours', value: byStatus.inProgress.length, color: 'bg-indigo-500', icon: '🔧' },
     { label: 'Prêts', value: byStatus.ready.length, color: 'bg-green-500', icon: '✅' }
   ];
-
-  const approveBC = async (rma) => {
-    const { error } = await supabase.from('service_requests').update({ status: 'waiting_device', bc_approved_at: new Date().toISOString() }).eq('id', rma.id);
-    if (error) notify('Erreur: ' + error.message, 'error'); else { notify('BC approuvé!'); reload(); }
-  };
 
   return (
     <div className="space-y-6">
@@ -206,9 +209,11 @@ function DashboardSheet({ requests, notify, reload, isAdmin }) {
         <h1 className="text-2xl font-bold text-gray-800">Tableau de Bord</h1>
         <button onClick={reload} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">🔄 Actualiser</button>
       </div>
+      
+      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {stats.map((stat, i) => (
-          <div key={i} className={`bg-white rounded-xl p-4 shadow-sm ${stat.value > 0 && stat.label === 'À vérifier' ? 'ring-2 ring-red-500' : ''}`}>
+          <div key={i} className={`bg-white rounded-xl p-4 shadow-sm ${stat.value > 0 && stat.label === 'BC à vérifier' ? 'ring-2 ring-red-500 animate-pulse' : ''}`}>
             <div className="flex items-center gap-3">
               <div className={`w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center text-2xl text-white`}>{stat.icon}</div>
               <div><p className="text-2xl font-bold text-gray-800">{stat.value}</p><p className="text-sm text-gray-500">{stat.label}</p></div>
@@ -216,26 +221,41 @@ function DashboardSheet({ requests, notify, reload, isAdmin }) {
           </div>
         ))}
       </div>
+      
+      {/* BC Review Section - Top Priority */}
       {needsReview.length > 0 && (
-        <div className="bg-red-50 border-2 border-red-200 rounded-xl">
-          <div className="px-6 py-4 border-b border-red-200 bg-red-100"><h2 className="font-bold text-red-800">⚠️ Documents à vérifier ({needsReview.length})</h2></div>
+        <div className="bg-red-50 border-2 border-red-300 rounded-xl shadow-lg">
+          <div className="px-6 py-4 border-b border-red-200 bg-red-100 rounded-t-xl">
+            <h2 className="font-bold text-red-800 text-lg">⚠️ Bons de Commande à Vérifier ({needsReview.length})</h2>
+            <p className="text-sm text-red-600">Cliquez sur "Examiner" pour vérifier le document et approuver</p>
+          </div>
           <div className="p-4 space-y-3">
             {needsReview.map(rma => (
-              <div key={rma.id} className="bg-white rounded-lg p-4 flex items-center justify-between shadow-sm">
+              <div key={rma.id} className="bg-white rounded-lg p-4 flex items-center justify-between shadow-sm border border-red-100">
                 <div className="flex items-center gap-4">
-                  <span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span>
-                  <div><p className="font-medium">{rma.companies?.name}</p><p className="text-sm text-gray-500">BC reçu le {new Date(rma.updated_at).toLocaleDateString('fr-FR')}</p></div>
+                  <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
+                  <div>
+                    <span className="font-mono font-bold text-[#00A651] text-lg">{rma.request_number}</span>
+                    <p className="font-medium text-gray-800">{rma.companies?.name}</p>
+                    <p className="text-sm text-gray-500">
+                      BC soumis le {rma.bc_submitted_at ? new Date(rma.bc_submitted_at).toLocaleDateString('fr-FR') : new Date(rma.updated_at).toLocaleDateString('fr-FR')}
+                      {rma.bc_signed_by && <span className="ml-2">• Signé par: {rma.bc_signed_by}</span>}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {rma.bc_signature_url && <a href={rma.bc_signature_url} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200">📄 Voir BC</a>}
-                  <button onClick={() => approveBC(rma)} className="px-4 py-1.5 text-sm bg-green-500 text-white rounded hover:bg-green-600">✓ Approuver</button>
-                  <button onClick={() => setSelectedRMA(rma)} className="px-3 py-1.5 text-sm bg-gray-100 rounded hover:bg-gray-200">Détails</button>
-                </div>
+                <button
+                  onClick={() => setReviewingBC(rma)}
+                  className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium flex items-center gap-2"
+                >
+                  🔍 Examiner
+                </button>
               </div>
             ))}
           </div>
         </div>
       )}
+      
+      {/* Active RMAs Table */}
       <div className="bg-white rounded-xl shadow-sm">
         <div className="px-6 py-4 border-b border-gray-100"><h2 className="font-bold text-gray-800">RMAs Actifs ({activeRMAs.length})</h2></div>
         <div className="overflow-x-auto">
@@ -257,17 +277,24 @@ function DashboardSheet({ requests, notify, reload, isAdmin }) {
               ) : activeRMAs.map(rma => {
                 const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
                 const devices = rma.request_devices || [];
+                const hasBCToReview = needsReview.find(n => n.id === rma.id);
                 return (
-                  <tr key={rma.id} className="hover:bg-gray-50">
+                  <tr key={rma.id} className={`hover:bg-gray-50 ${hasBCToReview ? 'bg-red-50' : ''}`}>
                     <td className="px-4 py-3"><span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span></td>
-                    <td className="px-4 py-3"><p className="font-medium text-gray-800">{rma.companies?.name || '—'}</p><p className="text-xs text-gray-400">{rma.profiles?.email}</p></td>
+                    <td className="px-4 py-3"><p className="font-medium text-gray-800">{rma.companies?.name || '—'}</p></td>
                     <td className="px-4 py-3">
                       {devices.length > 0 ? <div className="text-sm">{devices.slice(0, 2).map((d, i) => <p key={i}>{d.model_name} <span className="text-gray-400">({d.serial_number})</span></p>)}{devices.length > 2 && <p className="text-gray-400">+{devices.length - 2} autres</p>}</div> : <span className="text-gray-400">{rma.serial_number || '—'}</span>}
                     </td>
                     <td className="px-4 py-3"><span className="text-sm">{rma.requested_service === 'calibration' ? '🔬 Étalonnage' : rma.requested_service === 'repair' ? '🔧 Réparation' : rma.requested_service}</span></td>
                     <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span></td>
                     <td className="px-4 py-3 text-sm text-gray-500">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</td>
-                    <td className="px-4 py-3"><button onClick={() => setSelectedRMA(rma)} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button></td>
+                    <td className="px-4 py-3">
+                      {hasBCToReview ? (
+                        <button onClick={() => setReviewingBC(rma)} className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded">🔍 Examiner BC</button>
+                      ) : (
+                        <button onClick={() => setSelectedRMA(rma)} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -275,7 +302,226 @@ function DashboardSheet({ requests, notify, reload, isAdmin }) {
           </table>
         </div>
       </div>
+      
+      {/* RMA Detail Modal */}
       {selectedRMA && <RMADetailModal rma={selectedRMA} onClose={() => setSelectedRMA(null)} notify={notify} reload={reload} />}
+      
+      {/* BC Review Modal */}
+      {reviewingBC && <BCReviewModal rma={reviewingBC} onClose={() => setReviewingBC(null)} notify={notify} reload={reload} />}
+    </div>
+  );
+}
+
+// BC Review Modal - Full screen document review
+function BCReviewModal({ rma, onClose, notify, reload }) {
+  const [approving, setApproving] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  
+  const approveBC = async () => {
+    setApproving(true);
+    const { error } = await supabase
+      .from('service_requests')
+      .update({ 
+        status: 'waiting_device', 
+        bc_approved_at: new Date().toISOString(),
+        bc_approved_by: 'admin' // TODO: use actual admin ID
+      })
+      .eq('id', rma.id);
+    
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('✅ BC approuvé! En attente de l\'appareil.');
+      reload();
+      onClose();
+    }
+    setApproving(false);
+  };
+  
+  const rejectBC = async () => {
+    if (!rejectReason.trim()) {
+      notify('Veuillez indiquer la raison du refus', 'error');
+      return;
+    }
+    setRejecting(true);
+    const { error } = await supabase
+      .from('service_requests')
+      .update({ 
+        status: 'waiting_bc', // Back to waiting for new BC
+        bc_rejected_at: new Date().toISOString(),
+        bc_rejected_reason: rejectReason,
+        // Clear old BC data
+        bc_file_url: null,
+        bc_signature_url: null,
+        bc_submitted_at: null
+      })
+      .eq('id', rma.id);
+    
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('BC refusé. Le client devra soumettre un nouveau BC.');
+      reload();
+      onClose();
+    }
+    setRejecting(false);
+  };
+  
+  const devices = rma.request_devices || [];
+  
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex" onClick={onClose}>
+      <div className="bg-white w-full max-w-6xl m-auto rounded-xl overflow-hidden flex flex-col max-h-[95vh]" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 bg-gradient-to-r from-red-500 to-red-600 text-white flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold">Vérification du Bon de Commande</h2>
+            <p className="text-red-100">{rma.request_number} • {rma.companies?.name}</p>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white text-3xl">&times;</button>
+        </div>
+        
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="grid lg:grid-cols-2 gap-6">
+            {/* Left: Document Preview */}
+            <div className="space-y-4">
+              <h3 className="font-bold text-gray-800 text-lg">📄 Document BC</h3>
+              
+              {/* BC File */}
+              {rma.bc_file_url ? (
+                <div className="border-2 border-gray-200 rounded-lg overflow-hidden">
+                  <div className="bg-gray-100 px-4 py-2 flex justify-between items-center">
+                    <span className="font-medium">Fichier BC uploadé</span>
+                    <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
+                      Ouvrir dans nouvel onglet ↗
+                    </a>
+                  </div>
+                  {rma.bc_file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                    <img src={rma.bc_file_url} alt="BC Document" className="w-full" />
+                  ) : rma.bc_file_url.match(/\.pdf$/i) ? (
+                    <iframe src={rma.bc_file_url} className="w-full h-96" title="BC PDF" />
+                  ) : (
+                    <div className="p-8 text-center">
+                      <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-6 py-3 bg-blue-500 text-white rounded-lg inline-block">
+                        📥 Télécharger le fichier
+                      </a>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center text-gray-400">
+                  Aucun fichier BC uploadé
+                </div>
+              )}
+              
+              {/* Signature */}
+              {rma.bc_signature_url && (
+                <div className="border-2 border-gray-200 rounded-lg overflow-hidden">
+                  <div className="bg-gray-100 px-4 py-2">
+                    <span className="font-medium">Signature électronique</span>
+                  </div>
+                  <div className="p-4 bg-white">
+                    <img src={rma.bc_signature_url} alt="Signature" className="max-h-32 mx-auto" />
+                    <p className="text-center text-sm text-gray-500 mt-2">
+                      Signé par: <strong>{rma.bc_signed_by || '—'}</strong>
+                      {rma.bc_signature_date && <span> le {new Date(rma.bc_signature_date).toLocaleDateString('fr-FR')}</span>}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* Right: Order Details */}
+            <div className="space-y-4">
+              <h3 className="font-bold text-gray-800 text-lg">📋 Détails de la Commande</h3>
+              
+              {/* RMA Info */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">N° RMA</p>
+                    <p className="font-mono font-bold text-[#00A651]">{rma.request_number}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Service demandé</p>
+                    <p className="font-medium">{rma.requested_service}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Date soumission BC</p>
+                    <p className="font-medium">{rma.bc_submitted_at ? new Date(rma.bc_submitted_at).toLocaleString('fr-FR') : '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Client</p>
+                    <p className="font-medium">{rma.companies?.name}</p>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Devices */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h4 className="font-medium text-gray-700 mb-3">Appareils ({devices.length})</h4>
+                <div className="space-y-2">
+                  {devices.map((d, i) => (
+                    <div key={i} className="bg-white rounded p-3 border">
+                      <p className="font-medium">{d.model_name}</p>
+                      <p className="text-sm text-gray-500">SN: {d.serial_number} • {d.service_type}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Quote Info (if available) */}
+              {(rma.quote_total || rma.quote_url) && (
+                <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                  <h4 className="font-medium text-blue-800 mb-2">💰 Devis envoyé</h4>
+                  {rma.quote_total && <p className="text-2xl font-bold text-blue-700">{rma.quote_total.toFixed(2)} €</p>}
+                  {rma.quote_url && (
+                    <a href={rma.quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
+                      Voir le devis ↗
+                    </a>
+                  )}
+                </div>
+              )}
+              
+              {/* Reject Reason Input */}
+              <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                <h4 className="font-medium text-red-800 mb-2">Refuser le BC?</h4>
+                <textarea
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  placeholder="Indiquez la raison du refus (document illisible, montant incorrect, etc.)..."
+                  className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm h-20 resize-none"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Footer Actions */}
+        <div className="px-6 py-4 bg-gray-100 border-t flex justify-between items-center">
+          <button onClick={onClose} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
+            Annuler
+          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={rejectBC}
+              disabled={rejecting}
+              className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50"
+            >
+              {rejecting ? 'Refus...' : '❌ Refuser BC'}
+            </button>
+            <button
+              onClick={approveBC}
+              disabled={approving}
+              className="px-8 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50"
+            >
+              {approving ? 'Approbation...' : '✅ Approuver BC'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -310,9 +556,14 @@ function RMADetailModal({ rma, onClose, notify, reload }) {
         </div>
         <div className="p-6 space-y-6">
           <div className="grid md:grid-cols-3 gap-4">
-            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Client</h3><p className="font-medium">{rma.companies?.name}</p><p className="text-sm text-gray-500">{rma.profiles?.full_name}</p><p className="text-sm text-gray-500">{rma.profiles?.email}</p></div>
-            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Service</h3><p className="font-medium">{rma.requested_service === 'calibration' ? '🔬 Étalonnage' : rma.requested_service === 'repair' ? '🔧 Réparation' : rma.requested_service}</p><p className="text-sm text-gray-500">Créé le {new Date(rma.created_at).toLocaleDateString('fr-FR')}</p></div>
-            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Documents</h3>{rma.bc_signature_url ? <a href={rma.bc_signature_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">📄 Voir le BC signé</a> : <p className="text-sm text-gray-400">Aucun BC</p>}</div>
+            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Client</h3><p className="font-medium">{rma.companies?.name}</p></div>
+            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Service</h3><p className="font-medium">{rma.requested_service}</p><p className="text-sm text-gray-500">Créé le {new Date(rma.created_at).toLocaleDateString('fr-FR')}</p></div>
+            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Documents</h3>
+              {rma.bc_file_url && <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">📄 BC Fichier</a>}
+              {rma.bc_signature_url && <a href={rma.bc_signature_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">✍️ Signature</a>}
+              {rma.quote_url && <a href={rma.quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">💰 Devis</a>}
+              {!rma.bc_file_url && !rma.bc_signature_url && !rma.quote_url && <p className="text-sm text-gray-400">Aucun document</p>}
+            </div>
           </div>
           <div><h3 className="font-bold text-gray-700 mb-3">Appareils ({devices.length || 1})</h3>
             {devices.length > 0 ? <div className="space-y-2">{devices.map((d, i) => <div key={i} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center"><div><p className="font-medium">{d.model_name}</p><p className="text-sm text-gray-500">SN: {d.serial_number}</p>{d.notes && <p className="text-sm text-gray-400 mt-1">{d.notes}</p>}</div><span className="text-sm text-gray-400">{d.service_type}</span></div>)}</div> : <div className="bg-gray-50 rounded-lg p-3"><p className="font-medium">{rma.serial_number}</p></div>}
@@ -366,7 +617,7 @@ function RequestsSheet({ requests, notify, reload }) {
               return (
                 <tr key={req.id} className={`hover:bg-gray-50 ${isPending ? 'bg-amber-50/50' : ''}`}>
                   <td className="px-4 py-3">{req.request_number ? <span className="font-mono font-bold text-[#00A651]">{req.request_number}</span> : <span className="text-amber-600 font-medium">Nouvelle</span>}</td>
-                  <td className="px-4 py-3"><p className="font-medium text-gray-800">{req.companies?.name || '—'}</p><p className="text-xs text-gray-400">{req.profiles?.full_name}</p></td>
+                  <td className="px-4 py-3"><p className="font-medium text-gray-800">{req.companies?.name || '—'}</p></td>
                   <td className="px-4 py-3"><span className="text-sm">{req.request_type === 'service' ? '🔧 Service' : '📦 Pièces'}</span></td>
                   <td className="px-4 py-3"><span className="text-sm text-gray-600">{devices.length > 0 ? devices.length + ' appareil(s)' : '1 appareil'}</span></td>
                   <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span></td>
@@ -393,8 +644,8 @@ function RequestDetailModal({ request, onClose, onApprove }) {
         <div className="px-6 py-4 border-b sticky top-0 bg-white flex justify-between items-center"><div><h2 className="text-xl font-bold text-gray-800">{request.request_number || 'Nouvelle Demande'}</h2><p className="text-sm text-gray-500">{request.companies?.name}</p></div><span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>{style.label}</span></div>
         <div className="p-6 space-y-6">
           <div className="grid md:grid-cols-2 gap-4">
-            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Client</h3><p className="font-medium">{request.companies?.name}</p><p className="text-sm text-gray-500">{request.profiles?.full_name}</p><p className="text-sm text-gray-500">{request.profiles?.email}</p></div>
-            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Service</h3><p className="font-medium">{request.requested_service === 'calibration' ? '🔬 Étalonnage' : request.requested_service === 'repair' ? '🔧 Réparation' : request.requested_service}</p><p className="text-sm text-gray-500">Soumis le {new Date(request.created_at).toLocaleDateString('fr-FR')}</p></div>
+            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Client</h3><p className="font-medium">{request.companies?.name}</p></div>
+            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Service</h3><p className="font-medium">{request.requested_service}</p><p className="text-sm text-gray-500">Soumis le {new Date(request.created_at).toLocaleDateString('fr-FR')}</p></div>
           </div>
           <div><h3 className="font-bold text-gray-700 mb-3">Appareils ({devices.length || 1})</h3>{devices.length > 0 ? <div className="space-y-2">{devices.map((d, i) => <div key={i} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center"><div><p className="font-medium">{d.model_name}</p><p className="text-sm text-gray-500">SN: {d.serial_number}</p></div><span className="text-sm text-gray-400">{d.equipment_type}</span></div>)}</div> : <div className="bg-gray-50 rounded-lg p-3"><p className="font-medium">{request.serial_number}</p></div>}</div>
           {request.problem_description && <div><h3 className="font-bold text-gray-700 mb-2">Notes du client</h3><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm whitespace-pre-wrap">{request.problem_description}</p></div></div>}
