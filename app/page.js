@@ -1551,6 +1551,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     return {
       id: `device_${Date.now()}_${num}`,
       num,
+      device_type: '', // particle_counter, bio_collector, liquid_counter, temp_humidity, other
       brand: 'Lighthouse',
       brand_other: '',
       nickname: '',
@@ -1645,8 +1646,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     
     // Validate devices
     for (const d of devices) {
-      if (!d.model || !d.serial_number || !d.service_type || !d.notes) {
-        notify('Veuillez remplir tous les champs obligatoires pour chaque appareil', 'error');
+      if (!d.device_type || !d.model || !d.serial_number || !d.service_type || !d.notes) {
+        notify('Veuillez remplir tous les champs obligatoires pour chaque appareil (type, modèle, n° série, service, notes)', 'error');
         return;
       }
       if (d.brand === 'other' && !d.brand_other) {
@@ -1702,6 +1703,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           request_id: request.id,
           serial_number: d.serial_number,
           model_name: d.model,
+          device_type: d.device_type, // NEW: particle_counter, bio_collector, etc.
           equipment_type: d.brand === 'other' ? d.brand_other : 'Lighthouse',
           service_type: d.service_type === 'other' ? d.service_other : d.service_type,
           notes: d.notes,
@@ -1717,7 +1719,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
             model_name: d.model,
             nickname: d.nickname || null,
             brand: d.brand === 'other' ? d.brand_other : 'Lighthouse',
-            equipment_type: 'particle_counter',
+            equipment_type: d.device_type || 'particle_counter', // Use selected device type
             added_by: profile.id
           }, { onConflict: 'serial_number' });
         }
@@ -2360,6 +2362,24 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
             />
           </div>
         )}
+
+        {/* Device Type - NEW */}
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-1">Type d'Appareil *</label>
+          <select
+            value={device.device_type}
+            onChange={e => updateDevice(device.id, 'device_type', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+            required
+          >
+            <option value="">Sélectionner le type</option>
+            <option value="particle_counter">🔬 Compteur de Particules (Air)</option>
+            <option value="bio_collector">🧫 Bio Collecteur</option>
+            <option value="liquid_counter">💧 Compteur de Particules (Liquide)</option>
+            <option value="temp_humidity">🌡️ Capteur Température/Humidité</option>
+            <option value="other">📦 Autre</option>
+          </select>
+        </div>
 
         {/* Model - always text input */}
         <div>
