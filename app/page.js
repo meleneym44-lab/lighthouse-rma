@@ -342,7 +342,7 @@ export default function CustomerPortal() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lang, setLang] = useState('fr');
-  const [page, setPage] = useState('home');
+  const [page, setPage] = useState('dashboard');
   const [previousPage, setPreviousPage] = useState('dashboard');
   const [toast, setToast] = useState(null);
   
