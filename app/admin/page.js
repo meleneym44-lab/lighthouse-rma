@@ -1405,26 +1405,32 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                         if (device.needsRepair) services.push('Réparation');
                         const deviceTotal = getDeviceServiceTotal(device);
                         
-                        return (
-                          <React.Fragment key={device.id}>
-                            <tr className={i % 2 === 0 ? 'bg-white' : 'bg-gray-100'}>
-                              <td className="px-4 py-3 font-medium">{device.model}</td>
-                              <td className="px-4 py-3 font-mono text-xs">{device.serial}</td>
-                              <td className="px-4 py-3">{services.join(' + ')}</td>
-                              <td className="px-4 py-3 text-right font-medium">{deviceTotal.toFixed(2)} €</td>
+                        const rows = [
+                          <tr key={`${device.id}-main`} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-100'}>
+                            <td className="px-4 py-3 font-medium">{device.model}</td>
+                            <td className="px-4 py-3 font-mono text-xs">{device.serial}</td>
+                            <td className="px-4 py-3">{services.join(' + ')}</td>
+                            <td className="px-4 py-3 text-right font-medium">{deviceTotal.toFixed(2)} €</td>
+                          </tr>
+                        ];
+                        
+                        device.additionalParts.forEach(part => {
+                          rows.push(
+                            <tr key={`${device.id}-part-${part.id}`} className="bg-gray-50 text-gray-600">
+                              <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ {part.description || 'Pièce/Service'}</td>
+                              <td className="px-4 py-2 text-right text-sm">{parseFloat(part.price || 0).toFixed(2)} €</td>
                             </tr>
-                            {device.additionalParts.length > 0 && device.additionalParts.map(part => (
-                              <tr key={part.id} className="bg-gray-50 text-gray-600">
-                                <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ {part.description || 'Pièce/Service'}</td>
-                                <td className="px-4 py-2 text-right text-sm">{parseFloat(part.price || 0).toFixed(2)} €</td>
-                              </tr>
-                            ))}
-                            <tr className="bg-gray-200 text-gray-600">
-                              <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ Frais de port</td>
-                              <td className="px-4 py-2 text-right text-sm">{device.shipping.toFixed(2)} €</td>
-                            </tr>
-                          </React.Fragment>
+                          );
+                        });
+                        
+                        rows.push(
+                          <tr key={`${device.id}-shipping`} className="bg-gray-200 text-gray-600">
+                            <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ Frais de port</td>
+                            <td className="px-4 py-2 text-right text-sm">{device.shipping.toFixed(2)} €</td>
+                          </tr>
                         );
+                        
+                        return rows;
                       })}
                     </tbody>
                     <tfoot>
