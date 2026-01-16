@@ -5152,30 +5152,44 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           const grandTotal = quoteData.grandTotal || request.quote_total || 0;
 
           return (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 print:block print:p-0 print:bg-white print:static print:inset-auto">
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 print:p-0 print:bg-white" id="quote-modal-overlay">
             <style>{`
               @media print {
-                body { margin: 0; padding: 0; }
-                .print-hide { display: none !important; }
-                .print-container {
-                  position: static !important;
-                  width: 100% !important;
-                  max-width: none !important;
-                  max-height: none !important;
-                  height: auto !important;
-                  overflow: visible !important;
-                  border-radius: 0 !important;
-                  box-shadow: none !important;
-                  margin: 0 !important;
-                  padding: 0 !important;
-                  background: white !important;
+                /* Hide everything on the page */
+                body * {
+                  visibility: hidden;
                 }
+                
+                /* Show only the quote content */
+                #quote-print-content,
+                #quote-print-content * {
+                  visibility: visible;
+                }
+                
+                /* Position quote at top of page */
                 #quote-print-content {
-                  width: 100% !important;
+                  position: fixed;
+                  left: 0;
+                  top: 0;
+                  width: 100%;
+                  background: white;
+                }
+                
+                /* Hide modal UI elements */
+                .print-hide {
+                  display: none !important;
+                  visibility: hidden !important;
+                }
+                
+                /* Hide the dark overlay */
+                #quote-modal-overlay {
+                  background: white !important;
+                  position: static !important;
+                  padding: 0 !important;
                 }
               }
             `}</style>
-            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto print-container" onClick={e => e.stopPropagation()}>
+            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto print:max-h-none print:overflow-visible print:rounded-none" onClick={e => e.stopPropagation()}>
               {/* Modal Header - Hidden on print */}
               <div className="print-hide sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
                 <div>
