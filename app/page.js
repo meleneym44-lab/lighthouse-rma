@@ -5155,20 +5155,73 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
             <style>{`
               @media print {
-                body * { visibility: hidden; }
-                #quote-print-content, #quote-print-content * { visibility: visible; }
-                #quote-print-content { 
-                  position: absolute; 
-                  left: 0; 
-                  top: 0; 
-                  width: 100%;
-                  padding: 0;
-                  margin: 0;
+                /* Hide everything except quote */
+                body > *:not(.print-container) { display: none !important; }
+                
+                /* Reset the modal container for printing */
+                .print-container {
+                  position: static !important;
+                  display: block !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  overflow: visible !important;
+                  background: white !important;
                 }
+                
+                /* Hide modal chrome */
                 .print-hide { display: none !important; }
+                
+                /* Make quote content flow naturally */
+                #quote-print-content {
+                  position: static !important;
+                  width: 100% !important;
+                  max-width: none !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  box-shadow: none !important;
+                  overflow: visible !important;
+                }
+                
+                /* Ensure proper page breaks */
+                #quote-print-content > div {
+                  page-break-inside: avoid;
+                }
+                
+                /* Allow table to break across pages if needed */
+                table { page-break-inside: auto; }
+                tr { page-break-inside: avoid; }
+                
+                /* Reset any fixed/sticky positioning */
+                * {
+                  position: static !important;
+                  overflow: visible !important;
+                }
+                
+                /* Except for the print content structure */
+                #quote-print-content,
+                #quote-print-content * {
+                  visibility: visible !important;
+                  display: block;
+                }
+                
+                #quote-print-content table,
+                #quote-print-content tr,
+                #quote-print-content td,
+                #quote-print-content th,
+                #quote-print-content thead,
+                #quote-print-content tbody,
+                #quote-print-content tfoot {
+                  display: table;
+                }
+                #quote-print-content table { display: table; width: 100%; }
+                #quote-print-content thead { display: table-header-group; }
+                #quote-print-content tbody { display: table-row-group; }
+                #quote-print-content tfoot { display: table-footer-group; }
+                #quote-print-content tr { display: table-row; }
+                #quote-print-content td, #quote-print-content th { display: table-cell; }
               }
             `}</style>
-            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto print-container" onClick={e => e.stopPropagation()}>
               {/* Modal Header - Hidden on print */}
               <div className="print-hide sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
                 <div>
