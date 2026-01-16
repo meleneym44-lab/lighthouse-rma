@@ -4533,13 +4533,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       notify('Bon de commande soumis avec succès!');
       setShowBCModal(false);
       
-      // Force refresh data and go back to dashboard
-      if (refresh) await refresh();
-      
-      // Small delay to ensure state updates before navigation
-      setTimeout(() => {
-        setPage('dashboard');
-      }, 100);
+      // Force full page reload to ensure fresh data
+      window.location.reload();
       
     } catch (err) {
       notify(`Erreur: ${err.message}`, 'error');
