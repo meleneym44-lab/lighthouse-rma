@@ -118,6 +118,8 @@ const STATUS_STYLES = {
   approved: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '◑', progress: 20 },
   waiting_bc: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '◑', progress: 20 },
   waiting_po: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '◑', progress: 20 },
+  // BC SUBMITTED - PENDING REVIEW
+  bc_review: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'BC soumis - En vérification', icon: '📄', progress: 25 },
   // CUSTOMER ACTION REQUIRED - RED
   waiting_customer: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'Action client requise', icon: '!', progress: 20 },
   
@@ -822,7 +824,7 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest, setPrevi
       {activeTab === 'overview' && (
         <div className="space-y-6">
           {/* ACTION REQUIRED - Show at top */}
-          {serviceRequests.filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status)).length > 0 && (
+          {serviceRequests.filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at).length > 0 && (
             <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4">
               <h3 className="font-bold text-red-800 mb-2 flex items-center gap-2">
                 <span className="animate-pulse">⚠</span> Action requise
@@ -830,7 +832,7 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest, setPrevi
               <p className="text-sm text-red-600 mb-3">Les demandes suivantes nécessitent votre attention</p>
               <div className="space-y-2">
                 {serviceRequests
-                  .filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status))
+                  .filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at)
                   .map(req => (
                   <div 
                     key={req.id}
@@ -4358,7 +4360,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
   const isPartsOrder = request.request_type === 'parts' || request.requested_service === 'parts_order';
-  const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(request.status);
+  const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
   
   // Check if submission is valid - need EITHER file OR signature (not both required)
   const hasFile = bcFile !== null;
@@ -4657,6 +4659,28 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               >
                 Soumettre BC / Approuver
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* BC Submitted - Pending Review */}
+        {(request.status === 'bc_review' || request.bc_submitted_at) && request.status !== 'waiting_device' && !['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'shipped', 'completed'].includes(request.status) && (
+          <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                <span className="text-blue-600 text-lg">📄</span>
+              </div>
+              <div>
+                <p className="font-semibold text-blue-800">Bon de commande soumis</p>
+                <p className="text-sm text-blue-600">
+                  Votre BC est en cours de vérification par notre équipe. Vous serez notifié une fois approuvé.
+                </p>
+                {request.bc_submitted_at && (
+                  <p className="text-xs text-blue-500 mt-1">
+                    Soumis le {new Date(request.bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(request.bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         )}
