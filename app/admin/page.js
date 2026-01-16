@@ -707,50 +707,103 @@ function AdminSheet({ profile, staffMembers, notify, reload }) { return <div cla
 // Quote Templates
 const QUOTE_TEMPLATES = {
   particle_counter: {
-    title: "Réglage, entretien et vérification d'étalonnage d'un compteur de particules",
+    title: "Réglage, entretien et vérification d'étalonnage d'un compteur de particules aéroportées",
     prestations: [
       "Vérification des fonctionnalités du compteur",
       "Vérification et réglage du débit",
       "Vérification de la cellule de mesure",
-      "Contrôle et réglage des seuils de mesures granulométrique",
-      "Vérification selon ISO 21501-4",
+      "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
+      "Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4",
       "Fourniture d'un rapport de test et de calibration"
     ],
     disclaimers: [
-      "Cette offre n'inclut pas la réparation ou l'échange de pièces.",
-      "Un devis sera établi si des pièces sont trouvées défectueuses.",
-      "Les mesures stockées seront éventuellement perdues.",
-      "Les équipements devront être décontaminés avant envoi."
+      "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+      "Un devis sera systématiquement établi si des pièces sont trouvées défectueuses et nécessitent un remplacement ou une réparation.",
+      "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de maintenance. Vérifiez que vous les avez bien sauvegardées avant d'envoyer votre appareil.",
+      "Les équipements envoyés pour calibration ou maintenance devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives."
     ]
   },
   bio_collector: {
     title: "Vérification d'étalonnage d'un biocollecteur",
-    prestations: ["Vérification et réglage du débit", "Vérification de la cellule d'impaction", "Fourniture d'un rapport"],
-    disclaimers: ["Cette offre n'inclut pas la réparation.", "Les équipements devront être décontaminés."]
+    prestations: [
+      "Vérification des fonctionnalités de l'appareil",
+      "Vérification et réglage du débit",
+      "Vérification de la cellule d'impaction",
+      "Fourniture d'un rapport de test et de calibration"
+    ],
+    disclaimers: [
+      "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+      "Un devis sera systématiquement établi si des pièces sont trouvées défectueuses.",
+      "Les équipements envoyés pour calibration devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives."
+    ]
+  },
+  liquid_counter: {
+    title: "Réglage, entretien et vérification d'étalonnage d'un compteur de particules en milieu liquide",
+    prestations: [
+      "Vérification des fonctionnalités du compteur",
+      "Vérification et réglage du débit",
+      "Vérification de la cellule de mesure optique",
+      "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
+      "Vérification en nombre par comparaison à un étalon",
+      "Fourniture d'un rapport de test et de calibration"
+    ],
+    disclaimers: [
+      "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+      "Un devis sera systématiquement établi si des pièces sont trouvées défectueuses.",
+      "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de maintenance.",
+      "Les équipements envoyés pour calibration devront être décontaminés de toutes substances chimiques ou radioactives."
+    ]
   },
   repair: {
     title: "Devis de réparation",
-    prestations: ["Diagnostic complet", "Remplacement des pièces défectueuses", "Tests de fonctionnement", "Vérification post-réparation"],
-    disclaimers: ["Ce devis est valable 30 jours.", "Les pièces remplacées restent propriété de Lighthouse France."]
+    prestations: [
+      "Diagnostic complet de l'appareil",
+      "Remplacement des pièces défectueuses (pièces facturées en sus)",
+      "Tests de fonctionnement complets",
+      "Vérification d'étalonnage post-réparation"
+    ],
+    disclaimers: [
+      "Ce devis est valable 30 jours à compter de sa date d'émission.",
+      "Les pièces remplacées restent la propriété de Lighthouse France.",
+      "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de réparation.",
+      "Garantie de 3 mois sur les pièces remplacées et la main d'œuvre."
+    ]
   }
 };
 
-function QuoteEditorModal({ request, onClose, notify, reload }) {
+function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   const [step, setStep] = useState(1);
   const [templateType, setTemplateType] = useState('particle_counter');
   const [lineItems, setLineItems] = useState([]);
   const [shipping, setShipping] = useState(45);
   const [includeShipping, setIncludeShipping] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [quoteRef, setQuoteRef] = useState('');
 
   const template = QUOTE_TEMPLATES[templateType];
   const devices = request?.request_devices || [];
+  const signatory = profile?.full_name || 'Lighthouse France';
+  const today = new Date();
+  const validUntil = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
 
   useEffect(() => {
+    // Generate quote reference
+    const year = today.getFullYear().toString().slice(-2);
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    setQuoteRef(`RM/C/${year}${month}/XX`);
+    
+    // Initialize line items from devices
     if (devices.length > 0) {
-      setLineItems(devices.map((d, i) => ({ id: i + 1, description: 'Étalonnage annuel ' + d.model_name, model: d.model_name, serial: d.serial_number, price: 630, qty: 1 })));
+      setLineItems(devices.map((d, i) => ({ 
+        id: i + 1, 
+        description: 'Étalonnage annuel', 
+        model: d.model_name || '', 
+        serial: d.serial_number || '', 
+        price: 630, 
+        qty: 1 
+      })));
     } else {
-      setLineItems([{ id: 1, description: 'Étalonnage annuel', model: '', serial: '', price: 630, qty: 1 }]);
+      setLineItems([{ id: 1, description: 'Étalonnage annuel', model: request?.model_name || '', serial: request?.serial_number || '', price: 630, qty: 1 }]);
     }
   }, []);
 
@@ -782,142 +835,376 @@ function QuoteEditorModal({ request, onClose, notify, reload }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex" onClick={onClose}>
-      <div className="bg-white w-full max-w-6xl m-auto rounded-xl overflow-hidden flex flex-col max-h-[95vh]" onClick={e => e.stopPropagation()}>
-        <div className="px-6 py-4 bg-[#1a1a2e] text-white flex justify-between items-center">
-          <div>
-            <h2 className="text-xl font-bold">{step === 1 ? '✏️ Créer Devis' : step === 2 ? '👁️ Aperçu' : '📧 Confirmer'}</h2>
-            <p className="text-gray-400">{request.companies?.name}</p>
+    <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={onClose}>
+      <div className="bg-white w-full h-full md:w-[95%] md:h-[95%] md:m-auto md:rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 bg-[#1a1a2e] text-white flex justify-between items-center shrink-0">
+          <div className="flex items-center gap-6">
+            <div>
+              <h2 className="text-xl font-bold">{step === 1 ? 'Créer le Devis' : step === 2 ? 'Aperçu du Devis' : 'Confirmer l\'envoi'}</h2>
+              <p className="text-gray-400">{request.companies?.name}</p>
+            </div>
+            <div className="flex gap-1">
+              {[1,2,3].map(s => (
+                <div key={s} className={`w-3 h-3 rounded-full ${step >= s ? 'bg-[#00A651]' : 'bg-gray-600'}`} />
+              ))}
+            </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex gap-2">{[1,2,3].map(s => <div key={s} className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${step >= s ? 'bg-[#00A651]' : 'bg-gray-600'}`}>{s}</div>)}</div>
-            <button onClick={onClose} className="text-2xl">×</button>
-          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto">
           {step === 1 && (
-            <div className="space-y-6">
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <h3 className="font-bold mb-3">📋 Infos Client</h3>
-                  <p className="font-bold text-lg">{request.companies?.name}</p>
-                  <p className="text-sm text-gray-600">{request.companies?.billing_city}</p>
-                  <p className="text-sm text-gray-500 mt-2">Service: {request.requested_service}</p>
-                  {request.problem_description && <p className="text-sm bg-yellow-50 p-2 rounded mt-2">{request.problem_description}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-bold mb-2">Type de prestation</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[{ id: 'particle_counter', label: 'Compteur', icon: '🔬' }, { id: 'bio_collector', label: 'Bio', icon: '🧫' }, { id: 'repair', label: 'Réparation', icon: '🔧' }].map(t => (
-                      <button key={t.id} onClick={() => setTemplateType(t.id)} className={`p-3 rounded-lg border-2 text-center ${templateType === t.id ? 'border-[#00A651] bg-green-50' : 'border-gray-200'}`}>
-                        <div className="text-2xl">{t.icon}</div>
-                        <div className="text-xs">{t.label}</div>
-                      </button>
-                    ))}
+            <div className="flex h-full">
+              {/* Left Sidebar - Customer Info */}
+              <div className="w-80 bg-gray-50 border-r p-6 overflow-y-auto shrink-0">
+                <h3 className="font-bold text-gray-800 mb-4 text-lg">Informations Client</h3>
+                
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Entreprise</p>
+                    <p className="font-bold text-lg text-gray-800">{request.companies?.name}</p>
+                  </div>
+                  
+                  {request.companies?.billing_address && (
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Adresse</p>
+                      <p className="text-sm text-gray-700">{request.companies?.billing_address}</p>
+                      <p className="text-sm text-gray-700">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
+                    </div>
+                  )}
+                  
+                  {request.companies?.phone && (
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Téléphone</p>
+                      <p className="text-sm text-gray-700">{request.companies?.phone}</p>
+                    </div>
+                  )}
+
+                  <div className="border-t pt-4">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Service demandé</p>
+                    <p className="font-medium">{request.requested_service === 'calibration' ? '🔬 Étalonnage' : request.requested_service === 'repair' ? '🔧 Réparation' : request.requested_service}</p>
+                  </div>
+
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Urgence</p>
+                    <p className={`font-medium ${request.urgency === 'urgent' ? 'text-orange-600' : request.urgency === 'critical' ? 'text-red-600' : 'text-gray-700'}`}>
+                      {request.urgency === 'urgent' ? '⚡ Urgent' : request.urgency === 'critical' ? '🚨 Critique' : '✓ Normal'}
+                    </p>
+                  </div>
+
+                  {request.problem_description && (
+                    <div className="border-t pt-4">
+                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Notes du client</p>
+                      <p className="text-sm bg-yellow-50 border border-yellow-200 rounded p-3 text-gray-700">{request.problem_description}</p>
+                    </div>
+                  )}
+
+                  {request.customer_shipping_account && (
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Compte transport</p>
+                      <p className="text-sm font-mono bg-gray-100 rounded p-2">{request.customer_shipping_account}</p>
+                    </div>
+                  )}
+
+                  <div className="border-t pt-4">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Appareils ({devices.length || 1})</p>
+                    <div className="space-y-2 mt-2">
+                      {devices.length > 0 ? devices.map((d, i) => (
+                        <div key={i} className="bg-white rounded p-2 border text-sm">
+                          <p className="font-medium">{d.model_name}</p>
+                          <p className="text-gray-500">SN: {d.serial_number}</p>
+                        </div>
+                      )) : (
+                        <div className="bg-white rounded p-2 border text-sm">
+                          <p className="font-medium">{request.model_name || 'Non spécifié'}</p>
+                          <p className="text-gray-500">SN: {request.serial_number || 'Non spécifié'}</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-bold mb-2">Lignes du devis</label>
-                <div className="border rounded-xl overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="px-3 py-2 text-left">Description</th>
-                        <th className="px-3 py-2 text-left">Modèle</th>
-                        <th className="px-3 py-2 text-left">N° Série</th>
-                        <th className="px-3 py-2 text-right">Prix</th>
-                        <th className="px-3 py-2 text-center">Qté</th>
-                        <th className="px-3 py-2 text-right">Total</th>
-                        <th className="px-3 py-2"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {lineItems.map(item => (
-                        <tr key={item.id} className="border-t">
-                          <td className="px-3 py-2"><input type="text" value={item.description} onChange={e => updateLineItem(item.id, 'description', e.target.value)} className="w-full px-2 py-1 border rounded" /></td>
-                          <td className="px-3 py-2"><input type="text" value={item.model} onChange={e => updateLineItem(item.id, 'model', e.target.value)} className="w-full px-2 py-1 border rounded" /></td>
-                          <td className="px-3 py-2"><input type="text" value={item.serial} onChange={e => updateLineItem(item.id, 'serial', e.target.value)} className="w-full px-2 py-1 border rounded" /></td>
-                          <td className="px-3 py-2"><input type="number" value={item.price} onChange={e => updateLineItem(item.id, 'price', parseFloat(e.target.value) || 0)} className="w-20 px-2 py-1 border rounded text-right" /></td>
-                          <td className="px-3 py-2"><input type="number" value={item.qty} onChange={e => updateLineItem(item.id, 'qty', parseInt(e.target.value) || 1)} className="w-14 px-2 py-1 border rounded text-center" min="1" /></td>
-                          <td className="px-3 py-2 text-right font-bold text-[#00A651]">{(item.price * item.qty).toFixed(2)} €</td>
-                          <td className="px-3 py-2"><button onClick={() => removeLineItem(item.id)} className="text-red-500">×</button></td>
-                        </tr>
+              {/* Right - Quote Editor */}
+              <div className="flex-1 p-6 overflow-y-auto">
+                <div className="max-w-4xl space-y-6">
+                  {/* Template Type */}
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-3">Type de prestation</label>
+                    <div className="grid grid-cols-4 gap-3">
+                      {[
+                        { id: 'particle_counter', label: 'Compteur Particules', icon: '🔬' },
+                        { id: 'bio_collector', label: 'Biocollecteur', icon: '🧫' },
+                        { id: 'liquid_counter', label: 'Compteur Liquide', icon: '💧' },
+                        { id: 'repair', label: 'Réparation', icon: '🔧' }
+                      ].map(t => (
+                        <button key={t.id} onClick={() => setTemplateType(t.id)}
+                          className={`p-4 rounded-xl border-2 text-center transition-all ${templateType === t.id ? 'border-[#00A651] bg-green-50 shadow' : 'border-gray-200 hover:border-gray-300'}`}>
+                          <div className="text-2xl mb-1">{t.icon}</div>
+                          <div className="text-sm font-medium">{t.label}</div>
+                        </button>
                       ))}
-                    </tbody>
-                  </table>
-                  <div className="px-3 py-2 bg-gray-50 border-t"><button onClick={addLineItem} className="text-[#00A651] text-sm font-medium">+ Ajouter ligne</button></div>
+                    </div>
+                  </div>
+
+                  {/* Line Items */}
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-3">Lignes du devis</label>
+                    <div className="border rounded-xl overflow-hidden">
+                      <table className="w-full">
+                        <thead className="bg-gray-100">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Description</th>
+                            <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Modèle</th>
+                            <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">N° Série</th>
+                            <th className="px-4 py-3 text-right text-sm font-bold text-gray-600">Prix HT</th>
+                            <th className="px-4 py-3 text-center text-sm font-bold text-gray-600">Qté</th>
+                            <th className="px-4 py-3 text-right text-sm font-bold text-gray-600">Total</th>
+                            <th className="px-4 py-3 w-10"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {lineItems.map(item => (
+                            <tr key={item.id} className="border-t">
+                              <td className="px-4 py-2"><input type="text" value={item.description} onChange={e => updateLineItem(item.id, 'description', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" /></td>
+                              <td className="px-4 py-2"><input type="text" value={item.model} onChange={e => updateLineItem(item.id, 'model', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" /></td>
+                              <td className="px-4 py-2"><input type="text" value={item.serial} onChange={e => updateLineItem(item.id, 'serial', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" /></td>
+                              <td className="px-4 py-2"><input type="number" value={item.price} onChange={e => updateLineItem(item.id, 'price', parseFloat(e.target.value) || 0)} className="w-24 px-3 py-2 border rounded-lg text-sm text-right" /></td>
+                              <td className="px-4 py-2"><input type="number" value={item.qty} onChange={e => updateLineItem(item.id, 'qty', parseInt(e.target.value) || 1)} className="w-16 px-3 py-2 border rounded-lg text-sm text-center" min="1" /></td>
+                              <td className="px-4 py-2 text-right font-bold text-[#00A651]">{(item.price * item.qty).toFixed(2)} €</td>
+                              <td className="px-4 py-2"><button onClick={() => removeLineItem(item.id)} className="text-red-500 hover:text-red-700 text-xl">&times;</button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div className="px-4 py-3 bg-gray-50 border-t">
+                        <button onClick={addLineItem} className="text-[#00A651] font-medium hover:underline">+ Ajouter une ligne</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Shipping */}
+                  <div className="p-4 bg-gray-50 rounded-xl">
+                    <label className="flex items-center gap-3">
+                      <input type="checkbox" checked={includeShipping} onChange={e => setIncludeShipping(e.target.checked)} className="w-5 h-5 text-[#00A651] rounded" />
+                      <span className="font-medium">Inclure frais de transport forfaitaires</span>
+                      {includeShipping && (
+                        <>
+                          <input type="number" value={shipping} onChange={e => setShipping(parseFloat(e.target.value) || 0)} className="w-24 px-3 py-2 border rounded-lg text-right ml-4" />
+                          <span className="text-gray-500">€ HT</span>
+                        </>
+                      )}
+                    </label>
+                  </div>
+
+                  {/* Totals */}
+                  <div className="bg-gray-100 rounded-xl p-6">
+                    <div className="flex justify-end">
+                      <div className="w-64 space-y-2">
+                        <div className="flex justify-between text-gray-600">
+                          <span>Sous-total HT</span>
+                          <span className="font-medium">{subtotal.toFixed(2)} €</span>
+                        </div>
+                        {includeShipping && (
+                          <div className="flex justify-between text-gray-600">
+                            <span>Transport</span>
+                            <span className="font-medium">{shipping.toFixed(2)} €</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-xl font-bold pt-2 border-t-2 border-gray-300">
+                          <span>Total HT</span>
+                          <span className="text-[#00A651]">{total.toFixed(2)} €</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={includeShipping} onChange={e => setIncludeShipping(e.target.checked)} className="w-4 h-4" />
-                  <span>Frais de transport</span>
-                </label>
-                {includeShipping && <input type="number" value={shipping} onChange={e => setShipping(parseFloat(e.target.value) || 0)} className="w-20 px-2 py-1 border rounded text-right" />}
-                {includeShipping && <span>€</span>}
-              </div>
-
-              <div className="text-right p-4 bg-gray-100 rounded-xl">
-                <p className="text-gray-600">Sous-total: {subtotal.toFixed(2)} €</p>
-                {includeShipping && <p className="text-gray-600">Transport: {shipping.toFixed(2)} €</p>}
-                <p className="text-2xl font-bold text-[#00A651] mt-2">Total HT: {total.toFixed(2)} €</p>
               </div>
             </div>
           )}
 
           {step === 2 && (
-            <div className="bg-gray-200 p-6">
-              <div className="bg-white max-w-[800px] mx-auto shadow-xl p-8">
-                <div className="flex justify-between items-start mb-6">
-                  <div><h1 className="text-3xl font-bold">LIGHTHOUSE</h1><p className="text-gray-500">FRANCE</p></div>
-                  <div className="text-right"><p className="text-xl font-bold text-[#00A651]">OFFRE DE PRIX</p><p className="text-gray-500">{new Date().toLocaleDateString('fr-FR')}</p></div>
+            <div className="bg-gray-300 p-8 min-h-full">
+              {/* Professional Quote Preview */}
+              <div className="bg-white max-w-[210mm] mx-auto shadow-2xl" style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt' }}>
+                {/* Header */}
+                <div className="px-10 pt-8 pb-6">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h1 className="text-3xl font-bold tracking-tight text-gray-800">LIGHTHOUSE</h1>
+                      <p className="text-lg text-gray-500 font-light">Worldwide Solutions</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
+                      <p className="text-gray-500 mt-1">N° {quoteRef}</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="bg-gray-100 p-4 rounded-lg mb-6">
-                  <p className="font-bold">{request.companies?.name}</p>
-                  <p className="text-sm text-gray-600">{request.companies?.billing_city}</p>
+
+                {/* Info Bar */}
+                <div className="bg-gray-100 px-10 py-4 flex justify-between">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Date</p>
+                    <p className="font-medium">{today.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Validité</p>
+                    <p className="font-medium">30 jours (jusqu'au {validUntil.toLocaleDateString('fr-FR')})</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Conditions</p>
+                    <p className="font-medium">À réception de facture</p>
+                  </div>
                 </div>
-                <h2 className="text-xl font-bold mb-4 border-b-2 border-[#00A651] pb-2">{template.title}</h2>
-                <div className="mb-6">
-                  <h3 className="font-bold mb-2">Prestations incluses:</h3>
-                  <ul className="space-y-1">{template.prestations.map((p, i) => <li key={i} className="flex items-center gap-2"><span className="text-[#00A651]">✓</span>{p}</li>)}</ul>
+
+                {/* Client Info */}
+                <div className="px-10 py-6 border-b">
+                  <div className="grid grid-cols-2 gap-8">
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Client</p>
+                      <p className="text-lg font-bold text-gray-800">{request.companies?.name}</p>
+                      {request.companies?.billing_address && <p className="text-gray-600">{request.companies?.billing_address}</p>}
+                      <p className="text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
+                      {request.companies?.phone && <p className="text-gray-600 mt-2">Tél: {request.companies?.phone}</p>}
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Lighthouse France</p>
+                      <p className="text-gray-600">16, rue Paul Séjourné</p>
+                      <p className="text-gray-600">94000 CRÉTEIL</p>
+                      <p className="text-gray-600 mt-2">Tél: 01 43 77 28 07</p>
+                      <p className="text-gray-600">salesfrance@golighthouse.com</p>
+                    </div>
+                  </div>
                 </div>
-                <table className="w-full mb-6 border">
-                  <thead className="bg-[#1a1a2e] text-white"><tr><th className="px-3 py-2 text-left">Description</th><th className="px-3 py-2">Modèle</th><th className="px-3 py-2">N° Série</th><th className="px-3 py-2 text-right">Prix</th></tr></thead>
-                  <tbody>{lineItems.map((item, i) => <tr key={i} className="border-t"><td className="px-3 py-2">{item.description}</td><td className="px-3 py-2 text-center">{item.model}</td><td className="px-3 py-2 text-center">{item.serial}</td><td className="px-3 py-2 text-right font-bold">{(item.price * item.qty).toFixed(2)} €</td></tr>)}
-                  {includeShipping && <tr className="border-t"><td className="px-3 py-2" colSpan={3}>Frais de transport</td><td className="px-3 py-2 text-right font-bold">{shipping.toFixed(2)} €</td></tr>}
-                  </tbody>
-                  <tfoot><tr className="bg-[#00A651] text-white"><td className="px-3 py-3 font-bold" colSpan={3}>TOTAL HT</td><td className="px-3 py-3 text-right text-xl font-bold">{total.toFixed(2)} €</td></tr></tfoot>
-                </table>
-                <div className="text-sm text-gray-600 space-y-1 mb-6">{template.disclaimers.map((d, i) => <p key={i}>• {d}</p>)}</div>
-                <div className="border-t pt-4 text-center text-sm text-gray-500">
-                  <p className="font-bold">Lighthouse France</p>
-                  <p>16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+
+                {/* Content */}
+                <div className="px-10 py-6">
+                  {/* Title */}
+                  <div className="mb-6 pb-4 border-b-2 border-[#00A651]">
+                    <h2 className="text-xl font-bold text-gray-800">{template.title}</h2>
+                  </div>
+
+                  {/* Prestations */}
+                  <div className="mb-6">
+                    <p className="font-bold text-gray-700 mb-3">Prestations incluses :</p>
+                    <div className="space-y-2">
+                      {template.prestations.map((p, i) => (
+                        <div key={i} className="flex items-start gap-3">
+                          <span className="text-[#00A651] mt-0.5">▸</span>
+                          <span className="text-gray-700">{p}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Equipment Table */}
+                  <div className="mb-6">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-[#1a1a2e] text-white">
+                          <th className="px-4 py-3 text-left font-medium">Description</th>
+                          <th className="px-4 py-3 text-left font-medium">Modèle</th>
+                          <th className="px-4 py-3 text-left font-medium">N° Série</th>
+                          <th className="px-4 py-3 text-right font-medium">Prix Unitaire HT</th>
+                          <th className="px-4 py-3 text-center font-medium">Qté</th>
+                          <th className="px-4 py-3 text-right font-medium">Total HT</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lineItems.map((item, i) => (
+                          <tr key={i} className={i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                            <td className="px-4 py-3 border-b">{item.description}</td>
+                            <td className="px-4 py-3 border-b font-medium">{item.model}</td>
+                            <td className="px-4 py-3 border-b font-mono text-sm">{item.serial}</td>
+                            <td className="px-4 py-3 border-b text-right">{item.price.toFixed(2)} €</td>
+                            <td className="px-4 py-3 border-b text-center">{item.qty}</td>
+                            <td className="px-4 py-3 border-b text-right font-medium">{(item.price * item.qty).toFixed(2)} €</td>
+                          </tr>
+                        ))}
+                        {includeShipping && (
+                          <tr className="bg-gray-50">
+                            <td className="px-4 py-3 border-b" colSpan={5}>Frais de transport forfaitaires (aller-retour)</td>
+                            <td className="px-4 py-3 border-b text-right font-medium">{shipping.toFixed(2)} €</td>
+                          </tr>
+                        )}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-[#00A651] text-white">
+                          <td className="px-4 py-4 font-bold" colSpan={5}>TOTAL HT</td>
+                          <td className="px-4 py-4 text-right text-xl font-bold">{total.toFixed(2)} €</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  {/* Disclaimers */}
+                  <div className="mb-6 text-sm text-gray-600">
+                    <p className="font-medium text-gray-700 mb-2">Conditions :</p>
+                    {template.disclaimers.map((d, i) => (
+                      <p key={i} className="mb-1">• {d}</p>
+                    ))}
+                  </div>
+
+                  {/* Signature */}
+                  <div className="mt-10 pt-6 border-t flex justify-between items-end">
+                    <div>
+                      <p className="text-sm text-gray-500">Établi par</p>
+                      <p className="text-lg font-bold text-gray-800">{signatory}</p>
+                      <p className="text-gray-600">Lighthouse France</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="w-24 h-16 border border-dashed border-gray-300 rounded flex items-center justify-center text-xs text-gray-400">
+                        CAPCERT
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="bg-[#1a1a2e] text-white px-10 py-4 text-center text-sm">
+                  <p className="font-medium">Lighthouse France SAS</p>
+                  <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+                  <p className="text-gray-500 text-xs mt-1">SIRET 501781348 • TVA FR86501781348 • Capital 10 000 €</p>
                 </div>
               </div>
             </div>
           )}
 
           {step === 3 && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <div className="text-6xl mb-4">📧</div>
-              <h3 className="text-2xl font-bold mb-2">Confirmer l'envoi</h3>
-              <p className="text-gray-600 mb-4">Envoyer le devis à {request.companies?.name}</p>
-              <p className="text-4xl font-bold text-[#00A651] mb-6">{total.toFixed(2)} € HT</p>
-              <p className="text-sm text-gray-500 bg-blue-50 p-4 rounded-lg max-w-md text-center">Un numéro RMA sera automatiquement attribué et le client recevra une notification.</p>
+            <div className="flex items-center justify-center min-h-[60vh] p-8">
+              <div className="text-center max-w-md">
+                <div className="w-20 h-20 bg-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6">
+                  <span className="text-4xl text-white">📧</span>
+                </div>
+                <h3 className="text-2xl font-bold text-gray-800 mb-2">Confirmer l'envoi du devis</h3>
+                <p className="text-gray-600 mb-6">Le devis sera envoyé au client</p>
+                
+                <div className="bg-gray-50 rounded-xl p-6 mb-6">
+                  <p className="text-lg font-bold text-gray-800">{request.companies?.name}</p>
+                  <p className="text-4xl font-bold text-[#00A651] mt-4">{total.toFixed(2)} € HT</p>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+                  <p>✓ Un numéro RMA sera automatiquement attribué</p>
+                  <p>✓ Le client recevra une notification par email</p>
+                  <p>✓ Le devis sera enregistré dans le dossier</p>
+                </div>
+              </div>
             </div>
           )}
         </div>
 
-        <div className="px-6 py-4 bg-gray-100 border-t flex justify-between">
-          <button onClick={step === 1 ? onClose : () => setStep(step - 1)} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">{step === 1 ? 'Annuler' : '← Retour'}</button>
+        {/* Footer */}
+        <div className="px-6 py-4 bg-gray-100 border-t flex justify-between items-center shrink-0">
+          <button onClick={step === 1 ? onClose : () => setStep(step - 1)} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
+            {step === 1 ? 'Annuler' : '← Retour'}
+          </button>
           <div className="flex gap-3">
-            {step === 1 && <button onClick={() => setStep(2)} className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">👁️ Aperçu →</button>}
-            {step === 2 && <button onClick={() => setStep(3)} className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">📧 Envoyer →</button>}
-            {step === 3 && <button onClick={sendQuote} disabled={saving} className="px-8 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold disabled:opacity-50">{saving ? 'Envoi...' : '✅ Confirmer et Envoyer'}</button>}
+            {step === 1 && <button onClick={() => setStep(2)} className="px-8 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">Aperçu →</button>}
+            {step === 2 && <button onClick={() => setStep(3)} className="px-8 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">Envoyer →</button>}
+            {step === 3 && <button onClick={sendQuote} disabled={saving} className="px-10 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold text-lg disabled:opacity-50">{saving ? 'Envoi en cours...' : '✅ Confirmer et Envoyer'}</button>}
           </div>
         </div>
       </div>
