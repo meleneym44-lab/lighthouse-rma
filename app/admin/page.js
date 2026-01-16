@@ -767,10 +767,13 @@ function SettingsSheet({ profile, staffMembers, notify, reload }) { return <div 
 
 function AdminSheet({ profile, staffMembers, notify, reload }) { return <div className="space-y-6"><h1 className="text-2xl font-bold text-gray-800">🔐 Administration</h1><div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4"><div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer"><div className="text-3xl mb-3">💰</div><h3 className="font-bold text-gray-800">Tarification</h3><p className="text-sm text-gray-500">Gérer les prix des services</p></div><div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer"><div className="text-3xl mb-3">🔑</div><h3 className="font-bold text-gray-800">Permissions</h3><p className="text-sm text-gray-500">Gérer les accès des employés</p></div><div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer"><div className="text-3xl mb-3">⚙️</div><h3 className="font-bold text-gray-800">Système</h3><p className="text-sm text-gray-500">Configuration avancée</p></div></div></div>; }
 
-// Quote Templates
-const QUOTE_TEMPLATES = {
+// ============================================
+// QUOTE TEMPLATES - Calibration by Device Type
+// ============================================
+const CALIBRATION_TEMPLATES = {
   particle_counter: {
-    title: "Réglage, entretien et vérification d'étalonnage d'un compteur de particules aéroportées",
+    icon: '🔬',
+    title: "Étalonnage Compteur de Particules Aéroportées",
     prestations: [
       "Vérification des fonctionnalités du compteur",
       "Vérification et réglage du débit",
@@ -779,29 +782,23 @@ const QUOTE_TEMPLATES = {
       "Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4",
       "Fourniture d'un rapport de test et de calibration"
     ],
-    disclaimers: [
-      "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
-      "Un devis sera systématiquement établi si des pièces sont trouvées défectueuses et nécessitent un remplacement ou une réparation.",
-      "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de maintenance. Vérifiez que vous les avez bien sauvegardées avant d'envoyer votre appareil.",
-      "Les équipements envoyés pour calibration ou maintenance devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives."
-    ]
+    defaultPrice: 630
   },
   bio_collector: {
-    title: "Vérification d'étalonnage d'un biocollecteur",
+    icon: '🧫',
+    title: "Étalonnage Bio Collecteur",
     prestations: [
       "Vérification des fonctionnalités de l'appareil",
       "Vérification et réglage du débit",
       "Vérification de la cellule d'impaction",
+      "Contrôle des paramètres de collecte",
       "Fourniture d'un rapport de test et de calibration"
     ],
-    disclaimers: [
-      "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
-      "Un devis sera systématiquement établi si des pièces sont trouvées défectueuses.",
-      "Les équipements envoyés pour calibration devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives."
-    ]
+    defaultPrice: 330
   },
   liquid_counter: {
-    title: "Réglage, entretien et vérification d'étalonnage d'un compteur de particules en milieu liquide",
+    icon: '💧',
+    title: "Étalonnage Compteur de Particules en Milieu Liquide",
     prestations: [
       "Vérification des fonctionnalités du compteur",
       "Vérification et réglage du débit",
@@ -810,92 +807,238 @@ const QUOTE_TEMPLATES = {
       "Vérification en nombre par comparaison à un étalon",
       "Fourniture d'un rapport de test et de calibration"
     ],
-    disclaimers: [
-      "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
-      "Un devis sera systématiquement établi si des pièces sont trouvées défectueuses.",
-      "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de maintenance.",
-      "Les équipements envoyés pour calibration devront être décontaminés de toutes substances chimiques ou radioactives."
-    ]
+    defaultPrice: 750
   },
-  repair: {
-    title: "Devis de réparation",
+  temp_humidity: {
+    icon: '🌡️',
+    title: "Étalonnage Capteur Température/Humidité",
     prestations: [
-      "Diagnostic complet de l'appareil",
-      "Remplacement des pièces défectueuses (pièces facturées en sus)",
-      "Tests de fonctionnement complets",
-      "Vérification d'étalonnage post-réparation"
+      "Vérification des fonctionnalités du capteur",
+      "Étalonnage température sur points de référence certifiés",
+      "Étalonnage humidité relative",
+      "Vérification de la stabilité des mesures",
+      "Fourniture d'un certificat d'étalonnage"
     ],
-    disclaimers: [
-      "Ce devis est valable 30 jours à compter de sa date d'émission.",
-      "Les pièces remplacées restent la propriété de Lighthouse France.",
-      "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de réparation.",
-      "Garantie de 3 mois sur les pièces remplacées et la main d'œuvre."
-    ]
+    defaultPrice: 280
+  },
+  other: {
+    icon: '📦',
+    title: "Étalonnage Équipement",
+    prestations: [
+      "Vérification des fonctionnalités de l'appareil",
+      "Étalonnage selon les spécifications du fabricant",
+      "Tests de fonctionnement",
+      "Fourniture d'un rapport de test"
+    ],
+    defaultPrice: 400
   }
 };
 
+// ============================================
+// REPAIR TEMPLATE - Same for all device types
+// ============================================
+const REPAIR_TEMPLATE = {
+  icon: '🔧',
+  title: "Réparation",
+  prestations: [
+    "Diagnostic complet de l'appareil",
+    "Identification des composants défectueux",
+    "Remplacement des pièces défectueuses (pièces facturées en sus)",
+    "Tests de fonctionnement complets",
+    "Vérification d'étalonnage post-réparation si applicable"
+  ],
+  defaultPrice: 200
+};
+
+// ============================================
+// DISCLAIMERS
+// ============================================
+const QUOTE_DISCLAIMERS = [
+  "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+  "Un devis complémentaire sera établi si des pièces sont trouvées défectueuses et nécessitent un remplacement.",
+  "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de maintenance.",
+  "Les équipements envoyés devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives."
+];
+
+// France Metropolitan check for shipping
+const isFranceMetropolitan = (postalCode) => {
+  if (!postalCode) return false;
+  const cleaned = postalCode.toString().replace(/\s/g, '');
+  if (!/^\d{5}$/.test(cleaned)) return false;
+  const dept = parseInt(cleaned.substring(0, 2), 10);
+  return dept >= 1 && dept <= 95;
+};
+
+// ============================================
+// QUOTE EDITOR MODAL
+// ============================================
 function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
-  const [step, setStep] = useState(1);
-  const [templateType, setTemplateType] = useState('particle_counter');
-  const [lineItems, setLineItems] = useState([]);
-  const [shipping, setShipping] = useState(45);
-  const [includeShipping, setIncludeShipping] = useState(true);
+  const [step, setStep] = useState(1); // 1=Edit Pricing, 2=Preview, 3=Confirm
+  const [devicePricing, setDevicePricing] = useState([]);
   const [saving, setSaving] = useState(false);
   const [quoteRef, setQuoteRef] = useState('');
 
-  const template = QUOTE_TEMPLATES[templateType];
   const devices = request?.request_devices || [];
   const signatory = profile?.full_name || 'Lighthouse France';
   const today = new Date();
-  const validUntil = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+  
+  // Check if client is in France Metropolitan for shipping
+  const clientPostalCode = request?.companies?.billing_postal_code || request?.companies?.postal_code || '';
+  const isMetro = isFranceMetropolitan(clientPostalCode);
+  const defaultShipping = isMetro ? 45 : 0;
+
+  // Determine which service sections are needed based on devices
+  const getRequiredSections = () => {
+    const sections = { calibration: new Set(), repair: false };
+    
+    devices.forEach(d => {
+      const serviceType = d.service_type || '';
+      const deviceType = d.device_type || 'particle_counter';
+      
+      if (serviceType.includes('calibration') || serviceType === 'calibration_repair' || serviceType === 'cal_repair') {
+        sections.calibration.add(deviceType);
+      }
+      if (serviceType.includes('repair') || serviceType === 'calibration_repair' || serviceType === 'cal_repair') {
+        sections.repair = true;
+      }
+    });
+    
+    return {
+      calibrationTypes: Array.from(sections.calibration),
+      hasRepair: sections.repair
+    };
+  };
+
+  const requiredSections = getRequiredSections();
 
   useEffect(() => {
     // Generate quote reference
     const year = today.getFullYear().toString().slice(-2);
     const month = String(today.getMonth() + 1).padStart(2, '0');
-    setQuoteRef(`RM/C/${year}${month}/XX`);
+    setQuoteRef(`LH/${year}${month}/XXX`);
     
-    // Initialize line items from devices
+    // Initialize device pricing from request
     if (devices.length > 0) {
-      setLineItems(devices.map((d, i) => ({ 
-        id: i + 1, 
-        description: 'Étalonnage annuel', 
-        model: d.model_name || '', 
-        serial: d.serial_number || '', 
-        price: 630, 
-        qty: 1 
-      })));
-    } else {
-      setLineItems([{ id: 1, description: 'Étalonnage annuel', model: request?.model_name || '', serial: request?.serial_number || '', price: 630, qty: 1 }]);
+      setDevicePricing(devices.map((d, i) => {
+        const deviceType = d.device_type || 'particle_counter';
+        const serviceType = d.service_type || 'calibration';
+        const needsCal = serviceType.includes('calibration') || serviceType === 'calibration_repair' || serviceType === 'cal_repair';
+        const needsRepair = serviceType.includes('repair') || serviceType === 'calibration_repair' || serviceType === 'cal_repair';
+        
+        const calTemplate = CALIBRATION_TEMPLATES[deviceType] || CALIBRATION_TEMPLATES.particle_counter;
+        
+        return {
+          id: d.id || `device-${i}`,
+          model: d.model_name || '',
+          serial: d.serial_number || '',
+          deviceType: deviceType,
+          serviceType: serviceType,
+          needsCalibration: needsCal,
+          needsRepair: needsRepair,
+          customerNotes: d.notes || d.problem_description || '',
+          calibrationPrice: needsCal ? calTemplate.defaultPrice : 0,
+          repairPrice: needsRepair ? REPAIR_TEMPLATE.defaultPrice : 0,
+          additionalParts: [], // For extra parts/labor
+          shipping: defaultShipping
+        };
+      }));
     }
   }, []);
 
-  const updateLineItem = (id, field, value) => setLineItems(lineItems.map(item => item.id === id ? { ...item, [field]: value } : item));
-  const removeLineItem = (id) => setLineItems(lineItems.filter(item => item.id !== id));
-  const addLineItem = () => setLineItems([...lineItems, { id: Date.now(), description: '', model: '', serial: '', price: 0, qty: 1 }]);
+  // Update device pricing
+  const updateDevice = (deviceId, field, value) => {
+    setDevicePricing(prev => prev.map(d => 
+      d.id === deviceId ? { ...d, [field]: value } : d
+    ));
+  };
 
-  const subtotal = lineItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
-  const total = subtotal + (includeShipping ? shipping : 0);
+  // Add part to device
+  const addPart = (deviceId) => {
+    setDevicePricing(prev => prev.map(d => {
+      if (d.id === deviceId) {
+        return { ...d, additionalParts: [...d.additionalParts, { id: Date.now(), description: '', price: 0 }] };
+      }
+      return d;
+    }));
+  };
 
+  // Update part
+  const updatePart = (deviceId, partId, field, value) => {
+    setDevicePricing(prev => prev.map(d => {
+      if (d.id === deviceId) {
+        return { ...d, additionalParts: d.additionalParts.map(p => p.id === partId ? { ...p, [field]: value } : p) };
+      }
+      return d;
+    }));
+  };
+
+  // Remove part
+  const removePart = (deviceId, partId) => {
+    setDevicePricing(prev => prev.map(d => {
+      if (d.id === deviceId) {
+        return { ...d, additionalParts: d.additionalParts.filter(p => p.id !== partId) };
+      }
+      return d;
+    }));
+  };
+
+  // Calculate device subtotal (services only, no shipping)
+  const getDeviceServiceTotal = (d) => {
+    let total = 0;
+    if (d.needsCalibration) total += d.calibrationPrice;
+    if (d.needsRepair) total += d.repairPrice;
+    total += d.additionalParts.reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0);
+    return total;
+  };
+
+  // Calculate totals
+  const servicesSubtotal = devicePricing.reduce((sum, d) => sum + getDeviceServiceTotal(d), 0);
+  const shippingTotal = devicePricing.reduce((sum, d) => sum + (parseFloat(d.shipping) || 0), 0);
+  const grandTotal = servicesSubtotal + shippingTotal;
+
+  // Get device type label
+  const getDeviceTypeLabel = (type) => {
+    const labels = {
+      particle_counter: 'Compteur Particules (Air)',
+      bio_collector: 'Bio Collecteur',
+      liquid_counter: 'Compteur Particules (Liquide)',
+      temp_humidity: 'Capteur Temp/Humidité',
+      other: 'Autre'
+    };
+    return labels[type] || type;
+  };
+
+  // Send quote
   const sendQuote = async () => {
     setSaving(true);
     
     let rmaNumber = request.request_number;
-    
-    // Only generate new RMA if this is a new request
     if (!rmaNumber) {
       const { data } = await supabase.from('service_requests').select('request_number').like('request_number', 'FR-%').order('request_number', { ascending: false }).limit(1);
       const lastNum = data?.[0]?.request_number ? parseInt(data[0].request_number.replace('FR-', '')) : 0;
       rmaNumber = 'FR-' + String(lastNum + 1).padStart(5, '0');
     }
 
-    // Save quote data for customer portal display
+    // Save complete quote data
     const quoteData = {
-      templateType,
-      lineItems,
-      shipping: includeShipping ? shipping : 0,
-      subtotal,
-      total,
+      devices: devicePricing.map(d => ({
+        model: d.model,
+        serial: d.serial,
+        deviceType: d.deviceType,
+        serviceType: d.serviceType,
+        needsCalibration: d.needsCalibration,
+        needsRepair: d.needsRepair,
+        calibrationPrice: d.calibrationPrice,
+        repairPrice: d.repairPrice,
+        additionalParts: d.additionalParts,
+        shipping: d.shipping,
+        serviceTotal: getDeviceServiceTotal(d)
+      })),
+      requiredSections,
+      servicesSubtotal,
+      shippingTotal,
+      grandTotal,
+      isMetro,
       createdBy: signatory,
       createdAt: new Date().toISOString()
     };
@@ -904,11 +1047,11 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       request_number: rmaNumber,
       status: 'quote_sent',
       quoted_at: new Date().toISOString(),
-      quote_total: total,
-      quote_subtotal: subtotal,
-      quote_shipping: includeShipping ? shipping : 0,
+      quote_total: grandTotal,
+      quote_subtotal: servicesSubtotal,
+      quote_shipping: shippingTotal,
       quote_data: quoteData,
-      quote_revision_notes: null // Clear revision notes when resending
+      quote_revision_notes: null
     }).eq('id', request.id);
 
     if (error) { notify('Erreur: ' + error.message, 'error'); }
@@ -918,383 +1061,477 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={onClose}>
-      <div className="bg-white w-full h-full md:w-[95%] md:h-[95%] md:m-auto md:rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-white w-full h-full md:w-[98%] md:h-[98%] md:m-auto md:rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        
         {/* Header */}
         <div className="px-6 py-4 bg-[#1a1a2e] text-white flex justify-between items-center shrink-0">
           <div className="flex items-center gap-6">
             <div>
-              <h2 className="text-xl font-bold">{step === 1 ? 'Créer le Devis' : step === 2 ? 'Aperçu du Devis' : 'Confirmer l\'envoi'}</h2>
-              <p className="text-gray-400">{request.companies?.name}</p>
+              <h2 className="text-xl font-bold">
+                {step === 1 && 'Créer le Devis'}
+                {step === 2 && 'Aperçu du Devis'}
+                {step === 3 && 'Confirmer l\'envoi'}
+              </h2>
+              <p className="text-gray-400">{request.companies?.name} • {devicePricing.length} appareil(s)</p>
             </div>
             <div className="flex gap-1">
               {[1,2,3].map(s => (
-                <div key={s} className={`w-3 h-3 rounded-full ${step >= s ? 'bg-[#00A651]' : 'bg-gray-600'}`} />
+                <div key={s} className={`w-8 h-2 rounded-full ${step >= s ? 'bg-[#00A651]' : 'bg-gray-600'}`} />
               ))}
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-xs text-gray-400">Total HT</p>
+              <p className="text-2xl font-bold text-[#00A651]">{grandTotal.toFixed(2)} €</p>
+            </div>
+            <button onClick={onClose} className="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
+          </div>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
+          
+          {/* ==================== STEP 1: PRICING EDITOR ==================== */}
           {step === 1 && (
             <div className="flex h-full">
-              {/* Left Sidebar - Customer Info */}
-              <div className="w-80 bg-gray-50 border-r p-6 overflow-y-auto shrink-0">
-                <h3 className="font-bold text-gray-800 mb-4 text-lg">Informations Client</h3>
+              {/* LEFT SIDE - Customer Info & Devices */}
+              <div className="flex-1 p-6 overflow-y-auto">
                 
                 {/* Revision Request Alert */}
                 {request.status === 'quote_revision_requested' && (
-                  <div className="mb-4 p-4 bg-red-100 border-2 border-red-300 rounded-xl">
-                    <p className="font-bold text-red-800 mb-2">🔴 Modification demandée</p>
-                    <p className="text-sm text-red-700">{request.quote_revision_notes || 'Le client a demandé des modifications au devis.'}</p>
+                  <div className="mb-6 p-4 bg-red-100 border-2 border-red-300 rounded-xl">
+                    <p className="font-bold text-red-800">🔴 Modification demandée par le client</p>
+                    <p className="text-red-700 mt-1">{request.quote_revision_notes}</p>
                   </div>
                 )}
-                
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Entreprise</p>
-                    <p className="font-bold text-lg text-gray-800">{request.companies?.name}</p>
+
+                {/* Non-Metro Warning */}
+                {!isMetro && (
+                  <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl">
+                    <p className="font-bold text-amber-800">⚠️ Client hors France métropolitaine</p>
+                    <p className="text-amber-700 text-sm">Les frais de retour sont à 0€ par défaut. Le client gère son propre transport.</p>
                   </div>
-                  
+                )}
+
+                {/* Customer Info Card */}
+                <div className="bg-gray-50 rounded-xl p-4 mb-6">
+                  <h3 className="font-bold text-gray-800 mb-3">Client</h3>
+                  <p className="text-lg font-bold text-[#1E3A5F]">{request.companies?.name}</p>
                   {request.companies?.billing_address && (
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Adresse</p>
-                      <p className="text-sm text-gray-700">{request.companies?.billing_address}</p>
-                      <p className="text-sm text-gray-700">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
-                    </div>
+                    <p className="text-sm text-gray-600">{request.companies?.billing_address}</p>
                   )}
-                  
-                  {request.companies?.phone && (
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Téléphone</p>
-                      <p className="text-sm text-gray-700">{request.companies?.phone}</p>
-                    </div>
-                  )}
+                  <p className="text-sm text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
+                </div>
 
-                  <div className="border-t pt-4">
-                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Service demandé</p>
-                    <p className="font-medium">{request.requested_service === 'calibration' ? '🔬 Étalonnage' : request.requested_service === 'repair' ? '🔧 Réparation' : request.requested_service}</p>
+                {/* Detected Service Sections */}
+                <div className="bg-blue-50 rounded-xl p-4 mb-6">
+                  <h3 className="font-bold text-blue-800 mb-2">Sections du devis (auto-détectées)</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {requiredSections.calibrationTypes.map(type => (
+                      <span key={type} className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
+                        {CALIBRATION_TEMPLATES[type]?.icon} Étal. {getDeviceTypeLabel(type)}
+                      </span>
+                    ))}
+                    {requiredSections.hasRepair && (
+                      <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-sm">
+                        🔧 Réparation
+                      </span>
+                    )}
                   </div>
+                </div>
 
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Urgence</p>
-                    <p className={`font-medium ${request.urgency === 'urgent' ? 'text-orange-600' : request.urgency === 'critical' ? 'text-red-600' : 'text-gray-700'}`}>
-                      {request.urgency === 'urgent' ? '⚡ Urgent' : request.urgency === 'critical' ? '🚨 Critique' : '✓ Normal'}
-                    </p>
-                  </div>
-
-                  {request.problem_description && (
-                    <div className="border-t pt-4">
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Notes du client</p>
-                      <p className="text-sm bg-yellow-50 border border-yellow-200 rounded p-3 text-gray-700">{request.problem_description}</p>
-                    </div>
-                  )}
-
-                  {request.customer_shipping_account && (
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Compte transport</p>
-                      <p className="text-sm font-mono bg-gray-100 rounded p-2">{request.customer_shipping_account}</p>
-                    </div>
-                  )}
-
-                  <div className="border-t pt-4">
-                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Appareils ({devices.length || 1})</p>
-                    <div className="space-y-2 mt-2">
-                      {devices.length > 0 ? devices.map((d, i) => (
-                        <div key={i} className="bg-white rounded p-2 border text-sm">
-                          <p className="font-medium">{d.model_name}</p>
-                          <p className="text-gray-500">SN: {d.serial_number}</p>
+                {/* Device Pricing Cards */}
+                <h3 className="font-bold text-gray-800 mb-3">Tarification par Appareil</h3>
+                <div className="space-y-4">
+                  {devicePricing.map((device, index) => {
+                    const calTemplate = CALIBRATION_TEMPLATES[device.deviceType] || CALIBRATION_TEMPLATES.particle_counter;
+                    return (
+                      <div key={device.id} className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden">
+                        {/* Device Header */}
+                        <div className="bg-[#1a1a2e] text-white px-4 py-3 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <span className="bg-white/20 px-2 py-1 rounded text-sm font-bold">#{index + 1}</span>
+                            <div>
+                              <p className="font-bold">{device.model || 'Appareil'}</p>
+                              <p className="text-sm text-gray-300">SN: {device.serial} • {getDeviceTypeLabel(device.deviceType)}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {device.needsCalibration && <span className="bg-blue-500 px-2 py-1 rounded text-xs">🔬 Cal</span>}
+                            {device.needsRepair && <span className="bg-orange-500 px-2 py-1 rounded text-xs">🔧 Rép</span>}
+                          </div>
                         </div>
-                      )) : (
-                        <div className="bg-white rounded p-2 border text-sm">
-                          <p className="font-medium">{request.model_name || 'Non spécifié'}</p>
-                          <p className="text-gray-500">SN: {request.serial_number || 'Non spécifié'}</p>
+
+                        {/* Customer Notes (Internal) */}
+                        {device.customerNotes && (
+                          <div className="bg-yellow-50 px-4 py-2 border-b border-yellow-200">
+                            <p className="text-xs text-yellow-700 font-medium">💬 Note client (interne) :</p>
+                            <p className="text-sm text-yellow-800">{device.customerNotes}</p>
+                          </div>
+                        )}
+
+                        {/* Pricing Inputs */}
+                        <div className="p-4 space-y-3">
+                          {device.needsCalibration && (
+                            <div className="flex items-center justify-between bg-blue-50 p-3 rounded-lg">
+                              <div>
+                                <span className="font-medium text-blue-800">Main d'œuvre étalonnage</span>
+                                <span className="text-xs text-blue-600 ml-2">({calTemplate.icon} {getDeviceTypeLabel(device.deviceType)})</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  value={device.calibrationPrice}
+                                  onChange={e => updateDevice(device.id, 'calibrationPrice', parseFloat(e.target.value) || 0)}
+                                  className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
+                                />
+                                <span className="text-gray-500 font-medium">€</span>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {device.needsRepair && (
+                            <div className="flex items-center justify-between bg-orange-50 p-3 rounded-lg">
+                              <span className="font-medium text-orange-800">Main d'œuvre réparation</span>
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  value={device.repairPrice}
+                                  onChange={e => updateDevice(device.id, 'repairPrice', parseFloat(e.target.value) || 0)}
+                                  className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
+                                />
+                                <span className="text-gray-500 font-medium">€</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Additional Parts */}
+                          {device.additionalParts.map(part => (
+                            <div key={part.id} className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg">
+                              <input
+                                type="text"
+                                value={part.description}
+                                onChange={e => updatePart(device.id, part.id, 'description', e.target.value)}
+                                placeholder="Pièce ou service supplémentaire..."
+                                className="flex-1 px-3 py-2 border rounded-lg"
+                              />
+                              <input
+                                type="number"
+                                value={part.price}
+                                onChange={e => updatePart(device.id, part.id, 'price', e.target.value)}
+                                className="w-24 px-3 py-2 border rounded-lg text-right"
+                                placeholder="0"
+                              />
+                              <span className="text-gray-500">€</span>
+                              <button onClick={() => removePart(device.id, part.id)} className="text-red-500 hover:text-red-700 text-xl px-2">×</button>
+                            </div>
+                          ))}
+                          
+                          <button onClick={() => addPart(device.id)} className="text-sm text-[#00A651] font-medium hover:underline">
+                            + Ajouter pièce/service
+                          </button>
+
+                          {/* Shipping */}
+                          <div className="flex items-center justify-between bg-gray-100 p-3 rounded-lg border-t mt-3">
+                            <span className="font-medium text-gray-700">
+                              {isMetro ? 'Frais de port' : 'Transport (géré par client)'}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                value={device.shipping}
+                                onChange={e => updateDevice(device.id, 'shipping', parseFloat(e.target.value) || 0)}
+                                className="w-20 px-3 py-2 border rounded-lg text-right"
+                              />
+                              <span className="text-gray-500">€</span>
+                            </div>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Right - Quote Editor */}
-              <div className="flex-1 p-6 overflow-y-auto">
-                <div className="max-w-4xl space-y-6">
-                  {/* Template Type */}
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-3">Type de prestation</label>
-                    <div className="grid grid-cols-4 gap-3">
-                      {[
-                        { id: 'particle_counter', label: 'Compteur Particules', icon: '🔬' },
-                        { id: 'bio_collector', label: 'Biocollecteur', icon: '🧫' },
-                        { id: 'liquid_counter', label: 'Compteur Liquide', icon: '💧' },
-                        { id: 'repair', label: 'Réparation', icon: '🔧' }
-                      ].map(t => (
-                        <button key={t.id} onClick={() => setTemplateType(t.id)}
-                          className={`p-4 rounded-xl border-2 text-center transition-all ${templateType === t.id ? 'border-[#00A651] bg-green-50 shadow' : 'border-gray-200 hover:border-gray-300'}`}>
-                          <div className="text-2xl mb-1">{t.icon}</div>
-                          <div className="text-sm font-medium">{t.label}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Line Items */}
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-3">Lignes du devis</label>
-                    <div className="border rounded-xl overflow-hidden">
-                      <table className="w-full">
-                        <thead className="bg-gray-100">
-                          <tr>
-                            <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Description</th>
-                            <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Modèle</th>
-                            <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">N° Série</th>
-                            <th className="px-4 py-3 text-right text-sm font-bold text-gray-600">Prix HT</th>
-                            <th className="px-4 py-3 text-center text-sm font-bold text-gray-600">Qté</th>
-                            <th className="px-4 py-3 text-right text-sm font-bold text-gray-600">Total</th>
-                            <th className="px-4 py-3 w-10"></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {lineItems.map(item => (
-                            <tr key={item.id} className="border-t">
-                              <td className="px-4 py-2"><input type="text" value={item.description} onChange={e => updateLineItem(item.id, 'description', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" /></td>
-                              <td className="px-4 py-2"><input type="text" value={item.model} onChange={e => updateLineItem(item.id, 'model', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" /></td>
-                              <td className="px-4 py-2"><input type="text" value={item.serial} onChange={e => updateLineItem(item.id, 'serial', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" /></td>
-                              <td className="px-4 py-2"><input type="number" value={item.price} onChange={e => updateLineItem(item.id, 'price', parseFloat(e.target.value) || 0)} className="w-24 px-3 py-2 border rounded-lg text-sm text-right" /></td>
-                              <td className="px-4 py-2"><input type="number" value={item.qty} onChange={e => updateLineItem(item.id, 'qty', parseInt(e.target.value) || 1)} className="w-16 px-3 py-2 border rounded-lg text-sm text-center" min="1" /></td>
-                              <td className="px-4 py-2 text-right font-bold text-[#00A651]">{(item.price * item.qty).toFixed(2)} €</td>
-                              <td className="px-4 py-2"><button onClick={() => removeLineItem(item.id)} className="text-red-500 hover:text-red-700 text-xl">&times;</button></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      <div className="px-4 py-3 bg-gray-50 border-t">
-                        <button onClick={addLineItem} className="text-[#00A651] font-medium hover:underline">+ Ajouter une ligne</button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Shipping */}
-                  <div className="p-4 bg-gray-50 rounded-xl">
-                    <label className="flex items-center gap-3">
-                      <input type="checkbox" checked={includeShipping} onChange={e => setIncludeShipping(e.target.checked)} className="w-5 h-5 text-[#00A651] rounded" />
-                      <span className="font-medium">Inclure frais de transport forfaitaires</span>
-                      {includeShipping && (
-                        <>
-                          <input type="number" value={shipping} onChange={e => setShipping(parseFloat(e.target.value) || 0)} className="w-24 px-3 py-2 border rounded-lg text-right ml-4" />
-                          <span className="text-gray-500">€ HT</span>
-                        </>
-                      )}
-                    </label>
-                  </div>
-
-                  {/* Totals */}
-                  <div className="bg-gray-100 rounded-xl p-6">
-                    <div className="flex justify-end">
-                      <div className="w-64 space-y-2">
-                        <div className="flex justify-between text-gray-600">
-                          <span>Sous-total HT</span>
-                          <span className="font-medium">{subtotal.toFixed(2)} €</span>
+              {/* RIGHT SIDE - Pricing Summary */}
+              <div className="w-80 bg-gray-50 border-l p-6 overflow-y-auto shrink-0">
+                <h3 className="font-bold text-gray-800 mb-4 text-lg">💰 Récapitulatif</h3>
+                
+                {/* Per-device totals */}
+                <div className="space-y-3 mb-6">
+                  {devicePricing.map((device, i) => (
+                    <div key={device.id} className="bg-white rounded-lg p-3 border">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-medium text-sm">{device.model}</p>
+                          <p className="text-xs text-gray-500">SN: {device.serial}</p>
                         </div>
-                        {includeShipping && (
-                          <div className="flex justify-between text-gray-600">
-                            <span>Transport</span>
-                            <span className="font-medium">{shipping.toFixed(2)} €</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between text-xl font-bold pt-2 border-t-2 border-gray-300">
-                          <span>Total HT</span>
-                          <span className="text-[#00A651]">{total.toFixed(2)} €</span>
+                        <div className="text-right">
+                          <p className="font-bold text-[#00A651]">{(getDeviceServiceTotal(device) + device.shipping).toFixed(2)} €</p>
+                          <p className="text-xs text-gray-400">dont port: {device.shipping}€</p>
                         </div>
                       </div>
                     </div>
+                  ))}
+                </div>
+
+                {/* Totals */}
+                <div className="border-t pt-4 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Sous-total services</span>
+                    <span className="font-medium">{servicesSubtotal.toFixed(2)} €</span>
                   </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Frais de port total</span>
+                    <span className="font-medium">{shippingTotal.toFixed(2)} €</span>
+                  </div>
+                  <div className="flex justify-between items-center bg-[#00A651] text-white px-4 py-3 rounded-lg mt-4">
+                    <span className="font-bold">TOTAL HT</span>
+                    <span className="font-bold text-xl">{grandTotal.toFixed(2)} €</span>
+                  </div>
+                </div>
+
+                {/* Signatory */}
+                <div className="mt-6 pt-4 border-t">
+                  <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
+                  <p className="font-medium">{signatory}</p>
                 </div>
               </div>
             </div>
           )}
 
+          {/* ==================== STEP 2: QUOTE PREVIEW ==================== */}
           {step === 2 && (
-            <div className="bg-gray-300 p-8 min-h-full">
-              {/* Professional Quote Preview */}
-              <div className="bg-white max-w-[210mm] mx-auto shadow-2xl" style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt' }}>
-                {/* Header */}
-                <div className="px-10 pt-8 pb-6">
+            <div className="p-6 bg-gray-200 min-h-full">
+              <div className="max-w-4xl mx-auto bg-white shadow-xl" style={{ fontFamily: 'Arial, sans-serif' }}>
+                
+                {/* Quote Header */}
+                <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
                   <div className="flex justify-between items-start">
                     <div>
-                      <h1 className="text-3xl font-bold tracking-tight text-gray-800">LIGHTHOUSE</h1>
-                      <p className="text-lg text-gray-500 font-light">Worldwide Solutions</p>
+                      <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
+                      <p className="text-gray-500">Worldwide Solutions</p>
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
-                      <p className="text-gray-500 mt-1">N° {quoteRef}</p>
+                      <p className="text-gray-500">Réf: {quoteRef}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Info Bar */}
-                <div className="bg-gray-100 px-10 py-4 flex justify-between">
+                <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Date</p>
-                    <p className="font-medium">{today.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                    <p className="text-xs text-gray-500 uppercase">Date</p>
+                    <p className="font-medium">{today.toLocaleDateString('fr-FR')}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Validité</p>
-                    <p className="font-medium">30 jours (jusqu'au {validUntil.toLocaleDateString('fr-FR')})</p>
+                    <p className="text-xs text-gray-500 uppercase">Validité</p>
+                    <p className="font-medium">30 jours</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Conditions</p>
+                    <p className="text-xs text-gray-500 uppercase">Conditions</p>
                     <p className="font-medium">À réception de facture</p>
                   </div>
                 </div>
 
                 {/* Client Info */}
-                <div className="px-10 py-6 border-b">
-                  <div className="grid grid-cols-2 gap-8">
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Client</p>
-                      <p className="text-lg font-bold text-gray-800">{request.companies?.name}</p>
-                      {request.companies?.billing_address && <p className="text-gray-600">{request.companies?.billing_address}</p>}
-                      <p className="text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
-                      {request.companies?.phone && <p className="text-gray-600 mt-2">Tél: {request.companies?.phone}</p>}
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Lighthouse France</p>
-                      <p className="text-gray-600">16, rue Paul Séjourné</p>
-                      <p className="text-gray-600">94000 CRÉTEIL</p>
-                      <p className="text-gray-600 mt-2">Tél: 01 43 77 28 07</p>
-                      <p className="text-gray-600">salesfrance@golighthouse.com</p>
-                    </div>
-                  </div>
+                <div className="px-8 py-4 border-b">
+                  <p className="text-xs text-gray-500 uppercase">Client</p>
+                  <p className="font-bold text-xl text-[#1a1a2e]">{request.companies?.name}</p>
+                  {request.companies?.billing_address && <p className="text-gray-600">{request.companies?.billing_address}</p>}
+                  <p className="text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
                 </div>
 
-                {/* Content */}
-                <div className="px-10 py-6">
-                  {/* Title */}
-                  <div className="mb-6 pb-4 border-b-2 border-[#00A651]">
-                    <h2 className="text-xl font-bold text-gray-800">{template.title}</h2>
-                  </div>
-
-                  {/* Prestations */}
-                  <div className="mb-6">
-                    <p className="font-bold text-gray-700 mb-3">Prestations incluses :</p>
-                    <div className="space-y-2">
-                      {template.prestations.map((p, i) => (
-                        <div key={i} className="flex items-start gap-3">
-                          <span className="text-[#00A651] mt-0.5">▸</span>
-                          <span className="text-gray-700">{p}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Equipment Table */}
-                  <div className="mb-6">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="bg-[#1a1a2e] text-white">
-                          <th className="px-4 py-3 text-left font-medium">Description</th>
-                          <th className="px-4 py-3 text-left font-medium">Modèle</th>
-                          <th className="px-4 py-3 text-left font-medium">N° Série</th>
-                          <th className="px-4 py-3 text-right font-medium">Prix Unitaire HT</th>
-                          <th className="px-4 py-3 text-center font-medium">Qté</th>
-                          <th className="px-4 py-3 text-right font-medium">Total HT</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {lineItems.map((item, i) => (
-                          <tr key={i} className={i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                            <td className="px-4 py-3 border-b">{item.description}</td>
-                            <td className="px-4 py-3 border-b font-medium">{item.model}</td>
-                            <td className="px-4 py-3 border-b font-mono text-sm">{item.serial}</td>
-                            <td className="px-4 py-3 border-b text-right">{item.price.toFixed(2)} €</td>
-                            <td className="px-4 py-3 border-b text-center">{item.qty}</td>
-                            <td className="px-4 py-3 border-b text-right font-medium">{(item.price * item.qty).toFixed(2)} €</td>
-                          </tr>
-                        ))}
-                        {includeShipping && (
-                          <tr className="bg-gray-50">
-                            <td className="px-4 py-3 border-b" colSpan={5}>Frais de transport forfaitaires (aller-retour)</td>
-                            <td className="px-4 py-3 border-b text-right font-medium">{shipping.toFixed(2)} €</td>
-                          </tr>
-                        )}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-[#00A651] text-white">
-                          <td className="px-4 py-4 font-bold" colSpan={5}>TOTAL HT</td>
-                          <td className="px-4 py-4 text-right text-xl font-bold">{total.toFixed(2)} €</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-
-                  {/* Disclaimers */}
-                  <div className="mb-6 text-sm text-gray-600">
-                    <p className="font-medium text-gray-700 mb-2">Conditions :</p>
-                    {template.disclaimers.map((d, i) => (
-                      <p key={i} className="mb-1">• {d}</p>
-                    ))}
-                  </div>
-
-                  {/* Signature */}
-                  <div className="mt-10 pt-6 border-t flex justify-between items-end">
-                    <div>
-                      <p className="text-sm text-gray-500">Établi par</p>
-                      <p className="text-lg font-bold text-gray-800">{signatory}</p>
-                      <p className="text-gray-600">Lighthouse France</p>
-                    </div>
-                    <div className="text-right">
-                      <div className="w-24 h-16 border border-dashed border-gray-300 rounded flex items-center justify-center text-xs text-gray-400">
-                        CAPCERT
+                {/* ===== SERVICE DESCRIPTION SECTIONS ===== */}
+                <div className="px-8 py-6 space-y-6">
+                  
+                  {/* Calibration Sections - One per device type */}
+                  {requiredSections.calibrationTypes.map(type => {
+                    const template = CALIBRATION_TEMPLATES[type];
+                    return (
+                      <div key={type} className="border-l-4 border-blue-500 pl-4">
+                        <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
+                          <span>{template.icon}</span> {template.title}
+                        </h3>
+                        <ul className="space-y-1">
+                          {template.prestations.map((p, i) => (
+                            <li key={i} className="text-gray-700 flex items-start gap-2">
+                              <span className="text-[#00A651] mt-1">▸</span>
+                              <span>{p}</span>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
+                    );
+                  })}
+
+                  {/* Repair Section */}
+                  {requiredSections.hasRepair && (
+                    <div className="border-l-4 border-orange-500 pl-4">
+                      <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
+                        <span>{REPAIR_TEMPLATE.icon}</span> {REPAIR_TEMPLATE.title}
+                      </h3>
+                      <ul className="space-y-1">
+                        {REPAIR_TEMPLATE.prestations.map((p, i) => (
+                          <li key={i} className="text-gray-700 flex items-start gap-2">
+                            <span className="text-orange-500 mt-1">▸</span>
+                            <span>{p}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
+                  )}
+                </div>
+
+                {/* ===== PRICING BREAKDOWN TABLE ===== */}
+                <div className="px-8 py-6 bg-gray-50">
+                  <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
+                  
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-[#1a1a2e] text-white">
+                        <th className="px-4 py-3 text-left">Appareil</th>
+                        <th className="px-4 py-3 text-left">N° Série</th>
+                        <th className="px-4 py-3 text-left">Service</th>
+                        <th className="px-4 py-3 text-right">Prix HT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {devicePricing.map((device, i) => {
+                        const services = [];
+                        if (device.needsCalibration) services.push('Étalonnage');
+                        if (device.needsRepair) services.push('Réparation');
+                        const deviceTotal = getDeviceServiceTotal(device);
+                        
+                        return (
+                          <React.Fragment key={device.id}>
+                            <tr className={i % 2 === 0 ? 'bg-white' : 'bg-gray-100'}>
+                              <td className="px-4 py-3 font-medium">{device.model}</td>
+                              <td className="px-4 py-3 font-mono text-xs">{device.serial}</td>
+                              <td className="px-4 py-3">{services.join(' + ')}</td>
+                              <td className="px-4 py-3 text-right font-medium">{deviceTotal.toFixed(2)} €</td>
+                            </tr>
+                            {device.additionalParts.length > 0 && device.additionalParts.map(part => (
+                              <tr key={part.id} className="bg-gray-50 text-gray-600">
+                                <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ {part.description || 'Pièce/Service'}</td>
+                                <td className="px-4 py-2 text-right text-sm">{parseFloat(part.price || 0).toFixed(2)} €</td>
+                              </tr>
+                            ))}
+                            <tr className="bg-gray-200 text-gray-600">
+                              <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ Frais de port</td>
+                              <td className="px-4 py-2 text-right text-sm">{device.shipping.toFixed(2)} €</td>
+                            </tr>
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-300">
+                        <td className="px-4 py-3 font-medium" colSpan={3}>Sous-total services</td>
+                        <td className="px-4 py-3 text-right font-medium">{servicesSubtotal.toFixed(2)} €</td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3 font-medium" colSpan={3}>Total frais de port</td>
+                        <td className="px-4 py-3 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
+                      </tr>
+                      <tr className="bg-[#00A651] text-white">
+                        <td className="px-4 py-4 font-bold text-lg" colSpan={3}>TOTAL HT</td>
+                        <td className="px-4 py-4 text-right font-bold text-2xl">{grandTotal.toFixed(2)} €</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Disclaimers */}
+                <div className="px-8 py-4 border-t">
+                  <p className="text-xs text-gray-500 uppercase mb-2">Conditions</p>
+                  <ul className="text-xs text-gray-600 space-y-1">
+                    {QUOTE_DISCLAIMERS.map((d, i) => (
+                      <li key={i}>• {d}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Signature Section */}
+                <div className="px-8 py-6 border-t flex justify-between items-end">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
+                    <p className="font-bold text-lg">{signatory}</p>
+                    <p className="text-gray-600">Lighthouse France</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-400 mb-1">Signature client</p>
+                    <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+                    <p className="text-xs text-gray-400 mt-1">Lu et approuvé</p>
                   </div>
                 </div>
 
                 {/* Footer */}
-                <div className="bg-[#1a1a2e] text-white px-10 py-4 text-center text-sm">
+                <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
                   <p className="font-medium">Lighthouse France SAS</p>
                   <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
-                  <p className="text-gray-500 text-xs mt-1">SIRET 501781348 • TVA FR86501781348 • Capital 10 000 €</p>
                 </div>
               </div>
             </div>
           )}
 
+          {/* ==================== STEP 3: CONFIRM ==================== */}
           {step === 3 && (
-            <div className="flex items-center justify-center min-h-[60vh] p-8">
-              <div className="text-center max-w-md">
-                <div className="w-20 h-20 bg-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6">
-                  <span className="text-4xl text-white">📧</span>
+            <div className="flex items-center justify-center min-h-full p-8">
+              <div className="text-center max-w-lg">
+                <div className="w-24 h-24 bg-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6">
+                  <span className="text-5xl text-white">📧</span>
                 </div>
                 <h3 className="text-2xl font-bold text-gray-800 mb-2">Confirmer l'envoi du devis</h3>
-                <p className="text-gray-600 mb-6">Le devis sera envoyé au client</p>
+                <p className="text-gray-600 mb-6">Le devis sera envoyé au client et disponible sur son portail.</p>
                 
-                <div className="bg-gray-50 rounded-xl p-6 mb-6">
-                  <p className="text-lg font-bold text-gray-800">{request.companies?.name}</p>
-                  <p className="text-4xl font-bold text-[#00A651] mt-4">{total.toFixed(2)} € HT</p>
+                <div className="bg-gray-50 rounded-xl p-6 mb-6 text-left">
+                  <p className="text-lg font-bold text-gray-800 mb-1">{request.companies?.name}</p>
+                  <p className="text-sm text-gray-500 mb-4">{devicePricing.length} appareil(s)</p>
+                  
+                  <div className="space-y-2 text-sm border-t pt-3">
+                    {devicePricing.map(d => (
+                      <div key={d.id} className="flex justify-between">
+                        <span>{d.model} <span className="text-gray-400">({d.serial})</span></span>
+                        <span className="font-medium">{(getDeviceServiceTotal(d) + d.shipping).toFixed(2)} €</span>
+                      </div>
+                    ))}
+                    <div className="border-t pt-2 mt-2 flex justify-between font-bold text-lg">
+                      <span>Total HT</span>
+                      <span className="text-[#00A651]">{grandTotal.toFixed(2)} €</span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
-                  <p>✓ Un numéro RMA sera automatiquement attribué</p>
-                  <p>✓ Le client recevra une notification par email</p>
-                  <p>✓ Le devis sera enregistré dans le dossier</p>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 text-left">
+                  <p className="font-medium mb-2">Après envoi :</p>
+                  <p className="mb-1">✓ Un numéro RMA sera attribué automatiquement</p>
+                  <p className="mb-1">✓ Le client recevra une notification</p>
+                  <p>✓ Le devis sera disponible sur son portail</p>
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer Navigation */}
         <div className="px-6 py-4 bg-gray-100 border-t flex justify-between items-center shrink-0">
           <button onClick={step === 1 ? onClose : () => setStep(step - 1)} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
             {step === 1 ? 'Annuler' : '← Retour'}
           </button>
           <div className="flex gap-3">
-            {step === 1 && <button onClick={() => setStep(2)} className="px-8 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">Aperçu →</button>}
-            {step === 2 && <button onClick={() => setStep(3)} className="px-8 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">Envoyer →</button>}
-            {step === 3 && <button onClick={sendQuote} disabled={saving} className="px-10 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold text-lg disabled:opacity-50">{saving ? 'Envoi en cours...' : '✅ Confirmer et Envoyer'}</button>}
+            {step < 3 && (
+              <button onClick={() => setStep(step + 1)} className="px-8 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">
+                Suivant →
+              </button>
+            )}
+            {step === 3 && (
+              <button onClick={sendQuote} disabled={saving} className="px-10 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold text-lg disabled:opacity-50">
+                {saving ? 'Envoi en cours...' : '✅ Confirmer et Envoyer'}
+              </button>
+            )}
           </div>
         </div>
       </div>
