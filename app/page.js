@@ -120,6 +120,7 @@ const STATUS_STYLES = {
   waiting_po: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '◑', progress: 20 },
   // BC SUBMITTED - PENDING REVIEW
   bc_review: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'BC soumis - En vérification', icon: '📄', progress: 25 },
+  bc_rejected: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'BC rejeté - Action requise', icon: '❌', progress: 22 },
   // CUSTOMER ACTION REQUIRED - RED
   waiting_customer: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'Action client requise', icon: '!', progress: 20 },
   
@@ -4369,7 +4370,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   const isPartsOrder = request.request_type === 'parts' || request.requested_service === 'parts_order';
   const isQuoteSent = request.status === 'quote_sent';
   const needsQuoteAction = isQuoteSent && !request.bc_submitted_at;
-  const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
+  const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
   
   // Check if submission is valid - need EITHER file OR signature (not both required)
   const hasFile = bcFile !== null;
@@ -4774,6 +4775,37 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           </div>
         )}
 
+        {/* BC Rejected - Customer Must Resubmit */}
+        {request.status === 'bc_rejected' && (
+          <div className="bg-red-50 border-b border-red-300 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center">
+                  <span className="text-white text-2xl">❌</span>
+                </div>
+                <div>
+                  <p className="font-bold text-red-800 text-lg">Bon de commande rejeté - Action requise</p>
+                  <p className="text-sm text-red-600">
+                    Votre bon de commande a été rejeté. Veuillez corriger et soumettre à nouveau.
+                  </p>
+                  {request.bc_rejection_reason && (
+                    <div className="mt-2 p-3 bg-white rounded-lg border-2 border-red-300">
+                      <p className="text-xs text-red-600 font-medium uppercase">Raison du rejet :</p>
+                      <p className="text-sm text-red-800 font-medium mt-1">{request.bc_rejection_reason}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setShowBCModal(true)}
+                className="px-6 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors"
+              >
+                📄 Resoumettre BC
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* BC Submitted - Pending Review */}
         {(request.status === 'bc_review' || request.bc_submitted_at) && request.status !== 'waiting_device' && !['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'shipped', 'completed'].includes(request.status) && (
           <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
@@ -5119,6 +5151,46 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     <p className="mb-1">• Un devis sera systématiquement établi si des pièces sont trouvées défectueuses.</p>
                     <p className="mb-1">• Les équipements devront être décontaminés de toutes substances avant envoi.</p>
                   </div>
+
+                  {/* Signature Section - Shows when BC is submitted */}
+                  {request.bc_submitted_at && (
+                    <div className="mt-6 pt-6 border-t-2 border-[#00A651]">
+                      <div className="bg-green-50 rounded-xl p-6">
+                        <h3 className="font-bold text-green-800 mb-4 flex items-center gap-2">
+                          <span className="text-xl">✅</span> Bon de Commande Approuvé
+                        </h3>
+                        <div className="grid md:grid-cols-2 gap-6">
+                          <div>
+                            <p className="text-xs text-gray-500 uppercase mb-1">Signataire</p>
+                            <p className="font-bold text-gray-800">{request.bc_signed_by || '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500 uppercase mb-1">Date de signature</p>
+                            <p className="font-medium text-gray-800">
+                              {request.bc_signature_date 
+                                ? new Date(request.bc_signature_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
+                                : request.bc_submitted_at 
+                                  ? new Date(request.bc_submitted_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
+                                  : '—'}
+                            </p>
+                          </div>
+                          {request.bc_signature_url && (
+                            <div className="md:col-span-2">
+                              <p className="text-xs text-gray-500 uppercase mb-2">Signature</p>
+                              <div className="bg-white p-4 rounded-lg border inline-block">
+                                <img src={request.bc_signature_url} alt="Signature" className="max-h-20" />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-4 pt-4 border-t border-green-200">
+                          <p className="text-sm text-green-700">
+                            <strong>Lu et approuvé</strong> • Soumis le {new Date(request.bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(request.bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Quote Footer */}
