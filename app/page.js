@@ -33,6 +33,87 @@ const isOutsideFranceMetropolitan = (postalCode) => {
   return !isFranceMetropolitan(postalCode);
 };
 
+// ============================================
+// QUOTE DISPLAY TEMPLATES
+// ============================================
+const CALIBRATION_TEMPLATES = {
+  particle_counter: {
+    icon: '🔬',
+    title: "Étalonnage Compteur de Particules Aéroportées",
+    prestations: [
+      "Vérification des fonctionnalités du compteur",
+      "Vérification et réglage du débit",
+      "Vérification de la cellule de mesure",
+      "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
+      "Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4",
+      "Fourniture d'un rapport de test et de calibration"
+    ]
+  },
+  bio_collector: {
+    icon: '🧫',
+    title: "Étalonnage Bio Collecteur",
+    prestations: [
+      "Vérification des fonctionnalités de l'appareil",
+      "Vérification et réglage du débit",
+      "Vérification de la cellule d'impaction",
+      "Contrôle des paramètres de collecte",
+      "Fourniture d'un rapport de test et de calibration"
+    ]
+  },
+  liquid_counter: {
+    icon: '💧',
+    title: "Étalonnage Compteur de Particules en Milieu Liquide",
+    prestations: [
+      "Vérification des fonctionnalités du compteur",
+      "Vérification et réglage du débit",
+      "Vérification de la cellule de mesure optique",
+      "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
+      "Vérification en nombre par comparaison à un étalon",
+      "Fourniture d'un rapport de test et de calibration"
+    ]
+  },
+  temp_humidity: {
+    icon: '🌡️',
+    title: "Étalonnage Capteur Température/Humidité",
+    prestations: [
+      "Vérification des fonctionnalités du capteur",
+      "Étalonnage température sur points de référence certifiés",
+      "Étalonnage humidité relative",
+      "Vérification de la stabilité des mesures",
+      "Fourniture d'un certificat d'étalonnage"
+    ]
+  },
+  other: {
+    icon: '📦',
+    title: "Étalonnage Équipement",
+    prestations: [
+      "Vérification des fonctionnalités de l'appareil",
+      "Étalonnage selon les spécifications du fabricant",
+      "Tests de fonctionnement",
+      "Fourniture d'un rapport de test"
+    ]
+  }
+};
+
+const REPAIR_TEMPLATE = {
+  icon: '🔧',
+  title: "Réparation",
+  prestations: [
+    "Diagnostic complet de l'appareil",
+    "Identification des composants défectueux",
+    "Remplacement des pièces défectueuses (pièces facturées en sus)",
+    "Tests de fonctionnement complets",
+    "Vérification d'étalonnage post-réparation si applicable"
+  ]
+};
+
+const QUOTE_DISCLAIMERS = [
+  "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+  "Un devis complémentaire sera établi si des pièces sont trouvées défectueuses et nécessitent un remplacement.",
+  "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de maintenance.",
+  "Les équipements envoyés devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives."
+];
+
 // Translations
 const T = {
   fr: {
@@ -5043,11 +5124,53 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         )}
 
         {/* Quote Review Modal */}
-        {showQuoteModal && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 print:p-0 print:bg-white">
-            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto print:max-w-none print:max-h-none print:rounded-none print:overflow-visible" onClick={e => e.stopPropagation()}>
-              {/* Modal Header */}
-              <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center print:hidden">
+        {showQuoteModal && (() => {
+          const quoteData = request.quote_data || {};
+          const devices = quoteData.devices || request.request_devices || [];
+          
+          // Detect required sections from quote_data or devices
+          let calibrationTypes = quoteData.requiredSections?.calibrationTypes || [];
+          let hasRepair = quoteData.requiredSections?.hasRepair || false;
+          
+          if (calibrationTypes.length === 0 && devices.length > 0) {
+            const calTypes = new Set();
+            devices.forEach(d => {
+              const deviceType = d.deviceType || d.device_type || 'particle_counter';
+              const serviceType = d.serviceType || d.service_type || 'calibration';
+              if (serviceType.includes('calibration') || serviceType === 'cal_repair' || serviceType === 'calibration_repair') {
+                calTypes.add(deviceType);
+              }
+              if (serviceType.includes('repair') || serviceType === 'cal_repair' || serviceType === 'calibration_repair') {
+                hasRepair = true;
+              }
+            });
+            calibrationTypes = Array.from(calTypes);
+          }
+
+          const servicesSubtotal = quoteData.servicesSubtotal || request.quote_subtotal || 0;
+          const shippingTotal = quoteData.shippingTotal || request.quote_shipping || 0;
+          const grandTotal = quoteData.grandTotal || request.quote_total || 0;
+
+          return (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+            <style>{`
+              @media print {
+                body * { visibility: hidden; }
+                #quote-print-content, #quote-print-content * { visibility: visible; }
+                #quote-print-content { 
+                  position: absolute; 
+                  left: 0; 
+                  top: 0; 
+                  width: 100%;
+                  padding: 0;
+                  margin: 0;
+                }
+                .print-hide { display: none !important; }
+              }
+            `}</style>
+            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              {/* Modal Header - Hidden on print */}
+              <div className="print-hide sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
                 <div>
                   <h2 className="text-xl font-bold">Offre de Prix</h2>
                   <p className="text-gray-400">{request.request_number}</p>
@@ -5055,173 +5178,198 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
               </div>
 
-              {/* Professional Quote Document */}
-              <div id="quote-print-area" className="print:block">
+              {/* Quote Document - This prints */}
+              <div id="quote-print-content">
                 {/* Quote Header */}
-                <div className="px-8 pt-8 pb-6 border-b">
+                <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
                   <div className="flex justify-between items-start">
                     <div>
-                      <h1 className="text-3xl font-bold tracking-tight text-gray-800">LIGHTHOUSE</h1>
-                      <p className="text-lg text-gray-500">Worldwide Solutions</p>
+                      <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
+                      <p className="text-gray-500">Worldwide Solutions</p>
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
-                      <p className="text-gray-500 mt-1">N° {request.request_number}</p>
+                      <p className="text-gray-500">N° {request.request_number}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Info Bar */}
-                <div className="bg-gray-100 px-8 py-4 flex justify-between text-sm">
+                <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Date</p>
-                    <p className="font-medium">{request.quoted_at ? new Date(request.quoted_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('fr-FR')}</p>
+                    <p className="text-xs text-gray-500 uppercase">Date</p>
+                    <p className="font-medium">{request.quoted_at ? new Date(request.quoted_at).toLocaleDateString('fr-FR') : '—'}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Validité</p>
+                    <p className="text-xs text-gray-500 uppercase">Validité</p>
                     <p className="font-medium">30 jours</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Conditions</p>
+                    <p className="text-xs text-gray-500 uppercase">Conditions</p>
                     <p className="font-medium">À réception de facture</p>
                   </div>
                 </div>
 
-                {/* Content */}
-                <div className="px-8 py-6">
-                  {/* Service Title */}
-                  <div className="mb-6 pb-4 border-b-2 border-[#00A651]">
-                    <h2 className="text-xl font-bold text-gray-800">
-                      {request.requested_service === 'calibration' 
-                        ? "Réglage, entretien et vérification d'étalonnage" 
-                        : request.requested_service === 'repair'
-                        ? "Diagnostic et réparation"
-                        : "Services demandés"}
-                    </h2>
-                  </div>
+                {/* Client Info */}
+                <div className="px-8 py-4 border-b">
+                  <p className="text-xs text-gray-500 uppercase">Client</p>
+                  <p className="font-bold text-xl text-[#1a1a2e]">{request.companies?.name}</p>
+                  {request.companies?.billing_address && <p className="text-gray-600">{request.companies?.billing_address}</p>}
+                  <p className="text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
+                </div>
 
-                  {/* Prestations */}
-                  <div className="mb-6">
-                    <p className="font-bold text-gray-700 mb-3">Prestations incluses :</p>
-                    <div className="space-y-2">
-                      {request.requested_service === 'calibration' ? (
-                        <>
-                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Vérification des fonctionnalités du compteur</span></div>
-                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Vérification et réglage du débit</span></div>
-                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Vérification de la cellule de mesure</span></div>
-                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Contrôle et réglage des seuils granulométriques</span></div>
-                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Vérification selon ISO 21501-4</span></div>
-                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Fourniture d'un rapport de test et de calibration</span></div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Diagnostic complet de l'appareil</span></div>
-                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Réparation et remplacement des pièces défectueuses</span></div>
-                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Tests de fonctionnement</span></div>
-                          <div className="flex items-start gap-3"><span className="text-[#00A651]">▸</span><span className="text-gray-700">Fourniture d'un rapport</span></div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Equipment Table */}
-                  <div className="mb-6">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="bg-[#1a1a2e] text-white">
-                          <th className="px-4 py-3 text-left font-medium">Description</th>
-                          <th className="px-4 py-3 text-left font-medium">Modèle</th>
-                          <th className="px-4 py-3 text-left font-medium">N° Série</th>
-                          <th className="px-4 py-3 text-right font-medium">Prix HT</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(request.request_devices || []).map((device, i) => (
-                          <tr key={i} className={i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                            <td className="px-4 py-3 border-b">{request.requested_service === 'calibration' ? 'Étalonnage annuel' : 'Service'}</td>
-                            <td className="px-4 py-3 border-b font-medium">{device.model_name || '—'}</td>
-                            <td className="px-4 py-3 border-b font-mono text-sm">{device.serial_number || '—'}</td>
-                            <td className="px-4 py-3 border-b text-right font-medium">
-                              {request.quote_subtotal && (request.request_devices || []).length 
-                                ? ((request.quote_subtotal - (request.quote_shipping || 0)) / (request.request_devices || []).length).toFixed(2) 
-                                : '—'} €
-                            </td>
-                          </tr>
-                        ))}
-                        {request.quote_shipping > 0 && (
-                          <tr className="bg-gray-50">
-                            <td className="px-4 py-3 border-b" colSpan={3}>Frais de transport forfaitaires (aller-retour)</td>
-                            <td className="px-4 py-3 border-b text-right font-medium">{request.quote_shipping?.toFixed(2)} €</td>
-                          </tr>
-                        )}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-[#00A651] text-white">
-                          <td className="px-4 py-4 font-bold" colSpan={3}>TOTAL HT</td>
-                          <td className="px-4 py-4 text-right text-xl font-bold">{request.quote_total?.toFixed(2) || '—'} €</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-
-                  {/* Disclaimers */}
-                  <div className="mb-6 text-sm text-gray-600">
-                    <p className="font-medium text-gray-700 mb-2">Conditions :</p>
-                    <p className="mb-1">• Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.</p>
-                    <p className="mb-1">• Un devis sera systématiquement établi si des pièces sont trouvées défectueuses.</p>
-                    <p className="mb-1">• Les équipements devront être décontaminés de toutes substances avant envoi.</p>
-                  </div>
-
-                  {/* Signature Section - Shows when BC is submitted */}
-                  {request.bc_submitted_at && (
-                    <div className="mt-6 pt-6 border-t-2 border-[#00A651]">
-                      <div className="bg-green-50 rounded-xl p-6">
-                        <h3 className="font-bold text-green-800 mb-4 flex items-center gap-2">
-                          <span className="text-xl">✅</span> Bon de Commande Approuvé
+                {/* SERVICE DESCRIPTION SECTIONS */}
+                <div className="px-8 py-6 space-y-6">
+                  {calibrationTypes.map(type => {
+                    const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.particle_counter;
+                    return (
+                      <div key={type} className="border-l-4 border-blue-500 pl-4">
+                        <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
+                          <span>{template.icon}</span> {template.title}
                         </h3>
-                        <div className="grid md:grid-cols-2 gap-6">
-                          <div>
-                            <p className="text-xs text-gray-500 uppercase mb-1">Signataire</p>
-                            <p className="font-bold text-gray-800">{request.bc_signed_by || '—'}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500 uppercase mb-1">Date de signature</p>
-                            <p className="font-medium text-gray-800">
-                              {request.bc_signature_date 
-                                ? new Date(request.bc_signature_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
-                                : request.bc_submitted_at 
-                                  ? new Date(request.bc_submitted_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
-                                  : '—'}
-                            </p>
-                          </div>
-                          {request.bc_signature_url && (
-                            <div className="md:col-span-2">
-                              <p className="text-xs text-gray-500 uppercase mb-2">Signature</p>
-                              <div className="bg-white p-4 rounded-lg border inline-block">
-                                <img src={request.bc_signature_url} alt="Signature" className="max-h-20" />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                        <div className="mt-4 pt-4 border-t border-green-200">
-                          <p className="text-sm text-green-700">
-                            <strong>Lu et approuvé</strong> • Soumis le {new Date(request.bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(request.bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
+                        <ul className="space-y-1">
+                          {template.prestations.map((p, i) => (
+                            <li key={i} className="text-gray-700 flex items-start gap-2">
+                              <span className="text-[#00A651] mt-1">▸</span>
+                              <span>{p}</span>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
+                    );
+                  })}
+
+                  {hasRepair && (
+                    <div className="border-l-4 border-orange-500 pl-4">
+                      <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
+                        <span>{REPAIR_TEMPLATE.icon}</span> {REPAIR_TEMPLATE.title}
+                      </h3>
+                      <ul className="space-y-1">
+                        {REPAIR_TEMPLATE.prestations.map((p, i) => (
+                          <li key={i} className="text-gray-700 flex items-start gap-2">
+                            <span className="text-orange-500 mt-1">▸</span>
+                            <span>{p}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                 </div>
 
-                {/* Quote Footer */}
+                {/* PRICING BREAKDOWN TABLE */}
+                <div className="px-8 py-6 bg-gray-50">
+                  <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
+                  
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-[#1a1a2e] text-white">
+                        <th className="px-4 py-3 text-left">Appareil</th>
+                        <th className="px-4 py-3 text-left">N° Série</th>
+                        <th className="px-4 py-3 text-left">Service</th>
+                        <th className="px-4 py-3 text-right">Prix HT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {devices.map((device, i) => {
+                        const services = [];
+                        const needsCal = device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration');
+                        const needsRep = device.needsRepair || (device.serviceType || device.service_type || '').includes('repair');
+                        if (needsCal) services.push('Étalonnage');
+                        if (needsRep) services.push('Réparation');
+                        
+                        const serviceTotal = device.serviceTotal || 
+                          ((device.calibrationPrice || 0) + (device.repairPrice || 0) + 
+                           (device.additionalParts || []).reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0));
+                        const shipping = device.shipping || 0;
+                        
+                        return [
+                          <tr key={`${i}-main`} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-100'}>
+                            <td className="px-4 py-3 font-medium">{device.model || device.model_name || '—'}</td>
+                            <td className="px-4 py-3 font-mono text-xs">{device.serial || device.serial_number || '—'}</td>
+                            <td className="px-4 py-3">{services.join(' + ') || 'Service'}</td>
+                            <td className="px-4 py-3 text-right font-medium">{serviceTotal.toFixed(2)} €</td>
+                          </tr>,
+                          ...(device.additionalParts || []).map(part => (
+                            <tr key={`${i}-part-${part.id}`} className="bg-gray-50 text-gray-600">
+                              <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ {part.description || 'Pièce/Service'}</td>
+                              <td className="px-4 py-2 text-right text-sm">{parseFloat(part.price || 0).toFixed(2)} €</td>
+                            </tr>
+                          )),
+                          <tr key={`${i}-shipping`} className="bg-gray-200 text-gray-600">
+                            <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ Frais de port</td>
+                            <td className="px-4 py-2 text-right text-sm">{shipping.toFixed(2)} €</td>
+                          </tr>
+                        ];
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-300">
+                        <td className="px-4 py-3 font-medium" colSpan={3}>Sous-total services</td>
+                        <td className="px-4 py-3 text-right font-medium">{servicesSubtotal.toFixed(2)} €</td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3 font-medium" colSpan={3}>Total frais de port</td>
+                        <td className="px-4 py-3 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
+                      </tr>
+                      <tr className="bg-[#00A651] text-white">
+                        <td className="px-4 py-4 font-bold text-lg" colSpan={3}>TOTAL HT</td>
+                        <td className="px-4 py-4 text-right font-bold text-2xl">{grandTotal.toFixed(2)} €</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Disclaimers */}
+                <div className="px-8 py-4 border-t">
+                  <p className="text-xs text-gray-500 uppercase mb-2">Conditions</p>
+                  <ul className="text-xs text-gray-600 space-y-1">
+                    {QUOTE_DISCLAIMERS.map((d, i) => (
+                      <li key={i}>• {d}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Signature Section */}
+                <div className="px-8 py-6 border-t flex justify-between items-end">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
+                    <p className="font-bold text-lg">{quoteData.createdBy || 'Lighthouse France'}</p>
+                    <p className="text-gray-600">Lighthouse France</p>
+                  </div>
+                  
+                  {request.bc_submitted_at ? (
+                    <div className="text-right">
+                      <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+                        <p className="text-xs text-green-600 uppercase mb-1">✅ Approuvé</p>
+                        <p className="font-bold text-green-800">{request.bc_signed_by || 'Client'}</p>
+                        <p className="text-sm text-green-700">
+                          {request.bc_signature_date 
+                            ? new Date(request.bc_signature_date).toLocaleDateString('fr-FR')
+                            : new Date(request.bc_submitted_at).toLocaleDateString('fr-FR')}
+                        </p>
+                        {request.bc_signature_url && (
+                          <img src={request.bc_signature_url} alt="Signature" className="max-h-16 mt-2" />
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-right">
+                      <p className="text-xs text-gray-400 mb-1">Signature client</p>
+                      <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+                      <p className="text-xs text-gray-400 mt-1">Lu et approuvé</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
                 <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
                   <p className="font-medium">Lighthouse France SAS</p>
                   <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex flex-wrap gap-3 justify-between items-center print:hidden">
+              {/* Action Buttons - Hidden on print */}
+              <div className="print-hide sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex flex-wrap gap-3 justify-between items-center">
                 <div className="flex gap-2">
                   <button onClick={() => window.print()} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
                     🖨️ Imprimer
@@ -5272,7 +5420,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               )}
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Tabs */}
         <div className="flex border-b border-gray-100 overflow-x-auto">
