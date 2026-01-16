@@ -38,27 +38,20 @@ export default function AdminPortal() {
   }, []);
 
   const loadData = useCallback(async () => {
-    console.log('Loading data...');
-    
-    // Simplified query - removed shipping_addresses join that was causing 400 error
-    const { data: reqs, error: reqErr } = await supabase.from('service_requests')
+    const { data: reqs } = await supabase.from('service_requests')
       .select('*, companies(id, name, billing_city), request_devices(*)')
       .order('created_at', { ascending: false });
-    console.log('Requests:', reqs, 'Error:', reqErr);
     if (reqs) setRequests(reqs);
 
-    const { data: companies, error: compErr } = await supabase.from('companies')
+    const { data: companies } = await supabase.from('companies')
       .select('*, profiles(id, full_name, email, phone, role), shipping_addresses(*)')
       .order('name', { ascending: true });
-    console.log('Companies:', companies, 'Error:', compErr);
     if (companies) setClients(companies);
 
-    const { data: equip, error: equipErr } = await supabase.from('equipment').select('*, companies(name)').order('created_at', { ascending: false });
-    console.log('Equipment:', equip, 'Error:', equipErr);
+    const { data: equip } = await supabase.from('equipment').select('*, companies(name)').order('created_at', { ascending: false });
     if (equip) setEquipment(equip);
 
-    const { data: staff, error: staffErr } = await supabase.from('profiles').select('*').in('role', ['lh_admin', 'lh_employee']).order('full_name');
-    console.log('Staff:', staff, 'Error:', staffErr);
+    const { data: staff } = await supabase.from('profiles').select('*').in('role', ['lh_admin', 'lh_employee']).order('full_name');
     if (staff) setStaffMembers(staff);
   }, []);
 
