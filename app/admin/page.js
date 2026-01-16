@@ -116,7 +116,7 @@ export default function AdminPortal() {
       </nav>
       <main className="max-w-full mx-auto p-6">
         {activeSheet === 'dashboard' && <DashboardSheet requests={requests} notify={notify} reload={loadData} isAdmin={isAdmin} />}
-        {activeSheet === 'requests' && <RequestsSheet requests={requests} notify={notify} reload={loadData} />}
+        {activeSheet === 'requests' && <RequestsSheet requests={requests} notify={notify} reload={loadData} profile={profile} />}
         {activeSheet === 'clients' && <ClientsSheet clients={clients} requests={requests} equipment={equipment} notify={notify} reload={loadData} isAdmin={isAdmin} />}
         {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} />}
         {activeSheet === 'settings' && <SettingsSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
@@ -578,7 +578,7 @@ function RMADetailModal({ rma, onClose, notify, reload }) {
   );
 }
 
-function RequestsSheet({ requests, notify, reload }) {
+function RequestsSheet({ requests, notify, reload, profile }) {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [quoteRequest, setQuoteRequest] = useState(null);
   const [filter, setFilter] = useState('pending');
@@ -619,7 +619,7 @@ function RequestsSheet({ requests, notify, reload }) {
         </table>
       </div>
       {selectedRequest && <RequestDetailModal request={selectedRequest} onClose={() => setSelectedRequest(null)} onCreateQuote={() => { setSelectedRequest(null); setQuoteRequest(selectedRequest); }} />}
-      {quoteRequest && <QuoteEditorModal request={quoteRequest} onClose={() => setQuoteRequest(null)} notify={notify} reload={reload} />}
+      {quoteRequest && <QuoteEditorModal request={quoteRequest} onClose={() => setQuoteRequest(null)} notify={notify} reload={reload} profile={profile} />}
     </div>
   );
 }
