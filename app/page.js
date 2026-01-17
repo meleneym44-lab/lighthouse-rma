@@ -6869,8 +6869,18 @@ function HomePage({ t, setPage }) {
           <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
-                {/* Text logo for dark background */}
-                <div className="flex items-center gap-2 text-white">
+                {/* Logo - with filter for dark background */}
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-12 w-auto"
+                  style={{ filter: 'brightness(0) invert(1)' }}
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+                <div className="items-center gap-2 text-white hidden">
                   <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
                   <span className="font-semibold text-lg text-[#00A651]">FRANCE</span>
                 </div>
@@ -6937,11 +6947,11 @@ function HomePage({ t, setPage }) {
                   <div className="grid grid-cols-2 gap-3">
                     {/* Airborne Particle Counter */}
                     <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
-                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
+                      <div className="w-full h-44 mb-3 flex items-center justify-center rounded-xl">
                         <img 
                           src="/images/products/particle-counter.png" 
                           alt="Airborne Particle Counter" 
-                          className="max-w-full max-h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
+                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
                       <p className="text-white font-bold text-sm">Compteurs de Particules</p>
@@ -6950,11 +6960,11 @@ function HomePage({ t, setPage }) {
                     
                     {/* Bio Collector */}
                     <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
-                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
+                      <div className="w-full h-44 mb-3 flex items-center justify-center rounded-xl">
                         <img 
                           src="/images/products/bio-collector.png" 
                           alt="Bio Collector" 
-                          className="max-w-full max-h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
+                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
                       <p className="text-white font-bold text-sm">Bio Collecteurs</p>
@@ -6963,11 +6973,11 @@ function HomePage({ t, setPage }) {
                     
                     {/* Liquid Particle Counter */}
                     <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
-                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
+                      <div className="w-full h-44 mb-3 flex items-center justify-center rounded-xl">
                         <img 
                           src="/images/products/liquid-counter.png" 
                           alt="Liquid Particle Counter" 
-                          className="max-w-full max-h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
+                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
                       <p className="text-white font-bold text-sm">Compteurs de Particules</p>
@@ -6976,11 +6986,11 @@ function HomePage({ t, setPage }) {
                     
                     {/* Temperature & Humidity Probe */}
                     <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
-                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
+                      <div className="w-full h-44 mb-3 flex items-center justify-center rounded-xl">
                         <img 
                           src="/images/products/temp-probe.png" 
                           alt="Temperature & Humidity Probe" 
-                          className="max-w-full max-h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
+                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
                       <p className="text-white font-bold text-sm">Sondes Temperature</p>
