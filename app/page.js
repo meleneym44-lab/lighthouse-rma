@@ -602,7 +602,7 @@ async function generateQuotePDF(options) {
     try {
       console.log('Attempting to add capcert logo');
       const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(capcertLogo, format, margin + 55, sigY + 5, 28, 28);
+      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
       console.log('Capcert logo added successfully');
     } catch (e) {
       console.log('Capcert logo failed:', e);
@@ -5984,7 +5984,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     <img 
                       src="/images/logos/capcert-logo.png" 
                       alt="Capcert Certification" 
-                      className="h-16 w-auto"
+                      className="h-20 w-auto"
                       onError={(e) => { e.target.style.display = 'none'; }}
                     />
                   </div>
@@ -7019,18 +7019,18 @@ function LoginPage({ t, login, setPage }) {
       <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
           <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-            <div className="bg-[#1E3A5F] px-6 py-8 text-center">
+            <div className="bg-white px-6 py-8 text-center border-b-4 border-[#00A651]">
               <img 
                 src="/images/logos/lighthouse-logo.png" 
                 alt="Lighthouse France" 
-                className="h-12 w-auto mx-auto mb-3 brightness-0 invert"
+                className="h-14 w-auto mx-auto mb-3"
                 onError={(e) => {
                   e.target.style.display = 'none';
                   e.target.nextSibling.style.display = 'block';
                 }}
               />
-              <h1 className="text-2xl font-bold text-white hidden">LIGHTHOUSE FRANCE</h1>
-              <p className="text-white/70 mt-2">Service Portal</p>
+              <h1 className="text-2xl font-bold text-[#1E3A5F] hidden">LIGHTHOUSE FRANCE</h1>
+              <p className="text-gray-500 mt-2">Service Portal</p>
             </div>
             
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
