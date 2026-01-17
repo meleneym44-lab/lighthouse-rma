@@ -4672,15 +4672,25 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       let signedQuotePdfUrl = null;
       if (hasValidSignature) {
         try {
-          // Load html2pdf
-          await new Promise((resolve, reject) => {
-            if (window.html2pdf) { resolve(); return; }
-            const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-            script.onload = resolve;
-            script.onerror = reject;
-            document.head.appendChild(script);
-          });
+          // Load jsPDF and html2canvas
+          await Promise.all([
+            new Promise((resolve, reject) => {
+              if (window.jspdf) { resolve(); return; }
+              const script = document.createElement('script');
+              script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+              script.onload = resolve;
+              script.onerror = reject;
+              document.head.appendChild(script);
+            }),
+            new Promise((resolve, reject) => {
+              if (window.html2canvas) { resolve(); return; }
+              const script = document.createElement('script');
+              script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+              script.onload = resolve;
+              script.onerror = reject;
+              document.head.appendChild(script);
+            })
+          ]);
           
           // Build quote HTML content with signature
           const quoteData = request.quote_data || {};
@@ -4689,8 +4699,9 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           const servicesSubtotal = quoteData.servicesSubtotal || (grandTotal - (quoteData.shippingTotal || 0));
           const shippingTotal = quoteData.shippingTotal || request.quote_shipping || 0;
           
-          // Create PDF container - must be visible for html2canvas to work
+          // Create container
           const container = document.createElement('div');
+          container.id = 'pdf-container-temp';
           container.style.width = '800px';
           container.style.padding = '40px';
           container.style.fontFamily = 'Arial, sans-serif';
@@ -4781,24 +4792,34 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           document.body.appendChild(container);
           
           // Wait for content to render
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(resolve, 800));
           
-          // Generate PDF blob with proper settings
-          const opt = {
-            margin: [10, 10, 10, 10],
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: { 
-              scale: 2, 
-              useCORS: true, 
-              logging: true,
-              allowTaint: true,
-              scrollY: 0,
-              windowWidth: 800
-            },
-            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-          };
+          // Use html2canvas to capture the content
+          const canvas = await window.html2canvas(container, {
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#ffffff',
+            logging: false
+          });
           
-          const pdfBlob = await window.html2pdf().set(opt).from(container).toPdf().output('blob');
+          // Create PDF with jsPDF
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          
+          const imgData = canvas.toDataURL('image/jpeg', 0.95);
+          const pdfWidth = pdf.internal.pageSize.getWidth();
+          const pdfHeight = pdf.internal.pageSize.getHeight();
+          const imgWidth = canvas.width;
+          const imgHeight = canvas.height;
+          const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+          const imgX = (pdfWidth - imgWidth * ratio) / 2;
+          const imgY = 0;
+          
+          pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+          
+          // Get PDF as blob
+          const pdfBlob = pdf.output('blob');
           
           document.body.removeChild(container);
           
@@ -5664,61 +5685,36 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
                     🖨️ Imprimer
                   </button>
-                  <button onClick={async () => {
-                    // Load html2pdf if not already loaded
-                    if (!window.html2pdf) {
-                      await new Promise((resolve, reject) => {
-                        const script = document.createElement('script');
-                        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-                        script.onload = resolve;
-                        script.onerror = reject;
-                        document.head.appendChild(script);
-                      });
-                    }
-                    
+                  <button onClick={() => {
+                    // Open print dialog which allows saving as PDF
                     const content = document.getElementById('quote-print-content');
                     if (!content) return;
                     
-                    // Clone and prepare for PDF - must be visible for html2canvas
-                    const clone = content.cloneNode(true);
-                    clone.style.width = '794px'; // A4 width at 96dpi minus margins
-                    clone.style.padding = '20px';
-                    clone.style.background = 'white';
-                    clone.style.position = 'fixed';
-                    clone.style.top = '0';
-                    clone.style.left = '0';
-                    clone.style.zIndex = '99999';
-                    clone.style.overflow = 'visible';
-                    document.body.appendChild(clone);
-                    
-                    // Wait for images and content to load
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    try {
-                      const opt = {
-                        margin: [10, 10, 10, 10],
-                        filename: `Devis_${request.request_number}.pdf`,
-                        image: { type: 'jpeg', quality: 0.98 },
-                        html2canvas: { 
-                          scale: 2, 
-                          useCORS: true, 
-                          logging: true,
-                          allowTaint: true,
-                          scrollY: 0,
-                          windowWidth: 794
-                        },
-                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-                      };
-                      
-                      await window.html2pdf().set(opt).from(clone).toPdf().save();
-                    } catch (err) {
-                      console.error('PDF generation error:', err);
-                      alert('Erreur lors de la génération du PDF');
-                    } finally {
-                      document.body.removeChild(clone);
-                    }
+                    const printWindow = window.open('', '_blank');
+                    printWindow.document.write(`
+                      <!DOCTYPE html>
+                      <html>
+                      <head>
+                        <title>Devis_${request.request_number}</title>
+                        <style>
+                          * { margin: 0; padding: 0; box-sizing: border-box; }
+                          body { font-family: Arial, sans-serif; padding: 20px; }
+                          table { width: 100%; border-collapse: collapse; }
+                          th, td { padding: 8px 12px; text-align: left; }
+                          @media print { body { padding: 0; } }
+                        </style>
+                      </head>
+                      <body>${content.innerHTML}</body>
+                      </html>
+                    `);
+                    printWindow.document.close();
+                    printWindow.focus();
+                    // User can choose "Save as PDF" in print dialog
+                    setTimeout(() => { 
+                      printWindow.print();
+                    }, 500);
                   }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
-                    💾 Télécharger PDF
+                    💾 Enregistrer PDF
                   </button>
                 </div>
                 <div className="flex gap-3">
