@@ -6847,58 +6847,60 @@ function DeviceHistoryPage({ profile, requests, t, setPage }) {
 // ============================================
 function HomePage({ t, setPage }) {
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-3">
-              <img 
-                src="/images/logos/lighthouse-logo.png" 
-                alt="Lighthouse France" 
-                className="h-10 w-auto"
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                  e.target.nextSibling.style.display = 'flex';
-                }}
-              />
-              <div className="items-center gap-2 hidden">
-                <span className="text-[#1E3A5F] font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
-                <span className="text-[#00A651] font-semibold text-sm">FRANCE</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <button onClick={() => setPage('login')} className="px-4 py-2 text-[#1E3A5F] font-medium hover:text-[#00A651] transition-colors">
-                Connexion
-              </button>
-              <button onClick={() => setPage('register')} className="px-5 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008f45] transition-colors">
-                S'inscrire
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Hero Section with Background */}
-      <div className="relative overflow-hidden">
-        {/* Background with overlay */}
-        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e] via-[#1E3A5F] to-[#2d4a6f]">
-          {/* Animated gradient overlay */}
-          <div className="absolute inset-0 opacity-30" style={{
-            backgroundImage: 'radial-gradient(circle at 20% 50%, rgba(0,166,81,0.3) 0%, transparent 50%), radial-gradient(circle at 80% 50%, rgba(59,122,180,0.3) 0%, transparent 50%)'
-          }}></div>
-          {/* Grid pattern overlay */}
-          <div className="absolute inset-0 opacity-5" style={{
-            backgroundImage: 'linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px)',
-            backgroundSize: '50px 50px'
-          }}></div>
+    <div className="min-h-screen bg-[#1a1a2e]">
+      {/* Hero Section with Background Image */}
+      <div className="relative min-h-screen overflow-hidden">
+        {/* Background Image */}
+        <div className="absolute inset-0">
+          <img 
+            src="/images/products/hero-background.png" 
+            alt="" 
+            className="w-full h-full object-cover"
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
+          {/* Dark overlay for readability */}
+          <div className="absolute inset-0 bg-gradient-to-r from-[#1a1a2e]/95 via-[#1a1a2e]/80 to-[#1a1a2e]/60"></div>
+          {/* Subtle gradient overlay */}
+          <div className="absolute inset-0 bg-gradient-to-br from-[#00A651]/10 via-transparent to-[#3B7AB4]/10"></div>
         </div>
         
-        <div className="relative max-w-7xl mx-auto px-6 py-20 md:py-28">
-          <div className="grid md:grid-cols-2 gap-12 items-center">
+        {/* Header - Now integrated into hero */}
+        <header className="relative z-20">
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-10 w-auto brightness-0 invert"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+                <div className="items-center gap-2 hidden text-white">
+                  <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                  <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <button onClick={() => setPage('login')} className="px-4 py-2 text-white/90 font-medium hover:text-[#00A651] transition-colors">
+                  Connexion
+                </button>
+                <button onClick={() => setPage('register')} className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-all hover:scale-105">
+                  S'inscrire
+                </button>
+              </div>
+            </div>
+          </div>
+        </header>
+        
+        {/* Hero Content */}
+        <div className="relative z-10 max-w-7xl mx-auto px-6 pt-16 pb-24 md:pt-24 md:pb-32">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
             {/* Left: Text Content */}
             <div className="text-white">
-              <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full mb-6">
+              <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full mb-6 border border-white/10">
                 <span className="w-2 h-2 bg-[#00A651] rounded-full animate-pulse"></span>
                 <span className="text-sm font-medium">Portail Service Lighthouse France</span>
               </div>
@@ -6906,67 +6908,115 @@ function HomePage({ t, setPage }) {
                 Service &<br/>
                 <span className="text-[#00A651]">Calibration</span> Portal
               </h1>
-              <p className="text-lg md:text-xl text-white/80 mb-8 max-w-lg">
+              <p className="text-lg md:text-xl text-white/70 mb-8 max-w-lg leading-relaxed">
                 Gerez vos demandes de calibration et reparation d'equipements de mesure de contamination en temps reel.
               </p>
               <div className="flex flex-wrap gap-4">
-                <button onClick={() => setPage('register')} className="px-8 py-4 bg-[#00A651] text-white rounded-lg font-bold text-lg hover:bg-[#008f45] transition-all hover:scale-105 shadow-lg shadow-[#00A651]/30">
+                <button onClick={() => setPage('register')} className="px-8 py-4 bg-[#00A651] text-white rounded-xl font-bold text-lg hover:bg-[#008f45] transition-all hover:scale-105 shadow-lg shadow-[#00A651]/25">
                   Creer un compte
                 </button>
-                <button onClick={() => setPage('login')} className="px-8 py-4 bg-white/10 backdrop-blur-sm border border-white/30 text-white rounded-lg font-bold text-lg hover:bg-white/20 transition-all">
+                <button onClick={() => setPage('login')} className="px-8 py-4 bg-white/10 backdrop-blur-sm border border-white/20 text-white rounded-xl font-bold text-lg hover:bg-white/20 transition-all">
                   Se connecter
                 </button>
               </div>
+              
+              {/* Trust indicators */}
+              <div className="flex flex-wrap items-center gap-6 mt-10 pt-8 border-t border-white/10">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-white/70 text-sm">ISO 21501-4</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-white/70 text-sm">ISO 9001</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <img 
+                    src="/images/logos/capcert-logo.png" 
+                    alt="Capcert" 
+                    className="h-5 w-auto brightness-0 invert opacity-70"
+                    onError={(e) => { e.target.style.display = 'none'; }}
+                  />
+                  <span className="text-white/70 text-sm">Certifie</span>
+                </div>
+              </div>
             </div>
             
-            {/* Right: Equipment Image Showcase */}
-            <div className="relative hidden md:block">
+            {/* Right: Equipment Showcase */}
+            <div className="relative hidden lg:block">
               <div className="relative">
-                {/* Main equipment card */}
-                <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20">
+                {/* Main equipment grid */}
+                <div className="bg-white/5 backdrop-blur-md rounded-3xl p-6 border border-white/10">
                   <div className="grid grid-cols-2 gap-4">
-                    {/* Equipment images using placeholder with product descriptions */}
-                    <div className="bg-white rounded-xl p-4 text-center hover:scale-105 transition-transform">
-                      <div className="w-full h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg mb-3 flex items-center justify-center">
-                        <svg className="w-16 h-16 text-[#1E3A5F]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                        </svg>
+                    {/* Particle Counter */}
+                    <div className="bg-white rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
+                      <div className="w-full h-28 rounded-xl mb-3 overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
+                        <img 
+                          src="/images/products/particle-counter.png" 
+                          alt="Particle Counter" 
+                          className="w-full h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
+                          onError={(e) => { e.target.parentElement.innerHTML = '<div class="w-full h-full flex items-center justify-center text-gray-400"><svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg></div>'; }}
+                        />
                       </div>
-                      <p className="text-[#1E3A5F] font-semibold text-sm">ApexZ Series</p>
-                      <p className="text-gray-500 text-xs">Particle Counter</p>
+                      <p className="text-[#1E3A5F] font-bold text-sm">Compteurs de Particules</p>
+                      <p className="text-gray-500 text-xs">Airborne & Portable</p>
                     </div>
-                    <div className="bg-white rounded-xl p-4 text-center hover:scale-105 transition-transform">
-                      <div className="w-full h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg mb-3 flex items-center justify-center">
-                        <svg className="w-16 h-16 text-[#1E3A5F]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                        </svg>
+                    
+                    {/* Bio Collector */}
+                    <div className="bg-white rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
+                      <div className="w-full h-28 rounded-xl mb-3 overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
+                        <img 
+                          src="/images/products/bio-collector.png" 
+                          alt="Bio Collector" 
+                          className="w-full h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
+                          onError={(e) => { e.target.parentElement.innerHTML = '<div class="w-full h-full flex items-center justify-center text-gray-400"><svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg></div>'; }}
+                        />
                       </div>
-                      <p className="text-[#1E3A5F] font-semibold text-sm">Solair Series</p>
-                      <p className="text-gray-500 text-xs">Air Quality</p>
+                      <p className="text-[#1E3A5F] font-bold text-sm">Bio Collecteurs</p>
+                      <p className="text-gray-500 text-xs">Echantillonneurs Microbiens</p>
                     </div>
-                    <div className="bg-white rounded-xl p-4 text-center hover:scale-105 transition-transform">
-                      <div className="w-full h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg mb-3 flex items-center justify-center">
-                        <svg className="w-16 h-16 text-[#1E3A5F]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                        </svg>
+                    
+                    {/* Liquid Counter */}
+                    <div className="bg-white rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
+                      <div className="w-full h-28 rounded-xl mb-3 overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
+                        <img 
+                          src="/images/products/liquid-counter.png" 
+                          alt="Liquid Counter" 
+                          className="w-full h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
+                          onError={(e) => { e.target.parentElement.innerHTML = '<div class="w-full h-full flex items-center justify-center text-gray-400"><svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg></div>'; }}
+                        />
                       </div>
-                      <p className="text-[#1E3A5F] font-semibold text-sm">ActiveCount</p>
-                      <p className="text-gray-500 text-xs">Microbial Sampler</p>
+                      <p className="text-[#1E3A5F] font-bold text-sm">Compteurs Liquides</p>
+                      <p className="text-gray-500 text-xs">Analyse de Particules</p>
                     </div>
-                    <div className="bg-white rounded-xl p-4 text-center hover:scale-105 transition-transform">
-                      <div className="w-full h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg mb-3 flex items-center justify-center">
-                        <svg className="w-16 h-16 text-[#1E3A5F]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                        </svg>
+                    
+                    {/* Temperature Probe */}
+                    <div className="bg-white rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
+                      <div className="w-full h-28 rounded-xl mb-3 overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
+                        <img 
+                          src="/images/products/temp-probe.png" 
+                          alt="Temperature Probe" 
+                          className="w-full h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
+                          onError={(e) => { e.target.parentElement.innerHTML = '<div class="w-full h-full flex items-center justify-center text-gray-400"><svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg></div>'; }}
+                        />
                       </div>
-                      <p className="text-[#1E3A5F] font-semibold text-sm">Vertex Series</p>
-                      <p className="text-gray-500 text-xs">Liquid Particle</p>
+                      <p className="text-[#1E3A5F] font-bold text-sm">Sondes de Temperature</p>
+                      <p className="text-gray-500 text-xs">Capteurs Environnementaux</p>
                     </div>
+                  </div>
+                  
+                  {/* "And more" indicator */}
+                  <div className="mt-4 text-center">
+                    <span className="text-white/60 text-sm">+ Systemes de monitoring, capteurs de pression, et plus...</span>
                   </div>
                 </div>
                 
-                {/* Floating stats card */}
-                <div className="absolute -bottom-6 -left-6 bg-white rounded-xl p-4 shadow-xl">
+                {/* Floating badge */}
+                <div className="absolute -bottom-4 -left-4 bg-white rounded-xl p-4 shadow-2xl border border-gray-100">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 bg-[#00A651]/10 rounded-full flex items-center justify-center">
                       <svg className="w-6 h-6 text-[#00A651]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -6974,8 +7024,8 @@ function HomePage({ t, setPage }) {
                       </svg>
                     </div>
                     <div>
-                      <p className="text-2xl font-bold text-[#1E3A5F]">ISO 21501-4</p>
-                      <p className="text-gray-500 text-sm">Certifie</p>
+                      <p className="text-xl font-bold text-[#1E3A5F]">40+ ans</p>
+                      <p className="text-gray-500 text-sm">d'expertise</p>
                     </div>
                   </div>
                 </div>
@@ -6983,39 +7033,11 @@ function HomePage({ t, setPage }) {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Trust Bar */}
-      <div className="bg-gray-50 border-y border-gray-200 py-6">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="flex flex-wrap justify-center items-center gap-8 md:gap-16 text-gray-400">
-            <div className="flex items-center gap-2">
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-              <span className="font-medium text-gray-600">Certifie ISO 9001</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" />
-              </svg>
-              <span className="font-medium text-gray-600">40+ ans d'expertise</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.498-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.03 11H4.083a6.004 6.004 0 002.783 4.118z" clipRule="evenodd" />
-              </svg>
-              <span className="font-medium text-gray-600">Support mondial</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <img 
-                src="/images/logos/capcert-logo.png" 
-                alt="Capcert" 
-                className="h-6 w-auto opacity-60"
-                onError={(e) => { e.target.style.display = 'none'; }}
-              />
-              <span className="font-medium text-gray-600">Capcert</span>
-            </div>
+        
+        {/* Scroll indicator */}
+        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10 hidden md:block">
+          <div className="w-6 h-10 border-2 border-white/30 rounded-full flex justify-center">
+            <div className="w-1.5 h-3 bg-white/50 rounded-full mt-2 animate-bounce"></div>
           </div>
         </div>
       </div>
@@ -7032,10 +7054,10 @@ function HomePage({ t, setPage }) {
             <div className="hidden md:block absolute top-10 left-[12%] right-[12%] h-0.5 bg-gradient-to-r from-[#00A651] via-[#3B7AB4] to-[#00A651]"></div>
             
             {[
-              { num: '1', title: 'Creer un compte', desc: 'Enregistrez votre societe et vos coordonnees en quelques minutes', icon: 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z' },
-              { num: '2', title: 'Soumettre une demande', desc: 'Detaillez vos equipements et besoins de service', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-              { num: '3', title: 'Recevoir le devis', desc: 'Obtenez votre devis et numero RMA rapidement', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4' },
-              { num: '4', title: 'Suivre le progres', desc: 'Surveillez l\'etat de vos demandes en temps reel', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' }
+              { num: '1', title: 'Creer un compte', desc: 'Enregistrez votre societe et vos coordonnees en quelques minutes' },
+              { num: '2', title: 'Soumettre une demande', desc: 'Detaillez vos equipements et besoins de service' },
+              { num: '3', title: 'Recevoir le devis', desc: 'Obtenez votre devis et numero RMA rapidement' },
+              { num: '4', title: 'Suivre le progres', desc: 'Surveillez l\'etat de vos demandes en temps reel' }
             ].map((step, i) => (
               <div key={i} className="text-center relative z-10 group">
                 <div className="w-20 h-20 bg-white border-4 border-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg group-hover:scale-110 transition-transform group-hover:shadow-[#00A651]/30 group-hover:shadow-xl">
@@ -7117,7 +7139,7 @@ function HomePage({ t, setPage }) {
       </div>
 
       {/* Footer */}
-      <footer className="bg-[#1E3A5F] text-white py-12">
+      <footer className="bg-[#0f0f1a] text-white py-12">
         <div className="max-w-6xl mx-auto px-6">
           <div className="grid md:grid-cols-3 gap-8 mb-8">
             <div>
@@ -7142,7 +7164,7 @@ function HomePage({ t, setPage }) {
               </div>
             </div>
           </div>
-          <div className="border-t border-white/20 pt-8 text-center">
+          <div className="border-t border-white/10 pt-8 text-center">
             <p className="text-white/40 text-sm">© 2026 Lighthouse France SAS. Tous droits reserves.</p>
           </div>
         </div>
