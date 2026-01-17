@@ -4780,13 +4780,25 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           
           document.body.appendChild(container);
           
-          // Generate PDF blob
-          const pdfBlob = await window.html2pdf().set({
-            margin: 10,
-            image: { type: 'jpeg', quality: 0.95 },
-            html2canvas: { scale: 2, useCORS: true, logging: false },
+          // Wait for content to render
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Generate PDF blob with proper settings
+          const opt = {
+            margin: [10, 10, 10, 10],
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { 
+              scale: 2, 
+              useCORS: true, 
+              logging: true,
+              allowTaint: true,
+              scrollY: 0,
+              windowWidth: 800
+            },
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-          }).from(container).outputPdf('blob');
+          };
+          
+          const pdfBlob = await window.html2pdf().set(opt).from(container).toPdf().output('blob');
           
           document.body.removeChild(container);
           
@@ -5669,26 +5681,39 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     
                     // Clone and prepare for PDF - must be visible for html2canvas
                     const clone = content.cloneNode(true);
-                    clone.style.width = '800px';
+                    clone.style.width = '794px'; // A4 width at 96dpi minus margins
                     clone.style.padding = '20px';
                     clone.style.background = 'white';
                     clone.style.position = 'fixed';
                     clone.style.top = '0';
                     clone.style.left = '0';
                     clone.style.zIndex = '99999';
+                    clone.style.overflow = 'visible';
                     document.body.appendChild(clone);
                     
+                    // Wait for images and content to load
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
                     try {
-                      await window.html2pdf()
-                        .set({
-                          margin: 10,
-                          filename: `Devis_${request.request_number}.pdf`,
-                          image: { type: 'jpeg', quality: 0.95 },
-                          html2canvas: { scale: 2, useCORS: true, logging: false },
-                          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-                        })
-                        .from(clone)
-                        .save();
+                      const opt = {
+                        margin: [10, 10, 10, 10],
+                        filename: `Devis_${request.request_number}.pdf`,
+                        image: { type: 'jpeg', quality: 0.98 },
+                        html2canvas: { 
+                          scale: 2, 
+                          useCORS: true, 
+                          logging: true,
+                          allowTaint: true,
+                          scrollY: 0,
+                          windowWidth: 794
+                        },
+                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                      };
+                      
+                      await window.html2pdf().set(opt).from(clone).toPdf().save();
+                    } catch (err) {
+                      console.error('PDF generation error:', err);
+                      alert('Erreur lors de la génération du PDF');
                     } finally {
                       document.body.removeChild(clone);
                     }
