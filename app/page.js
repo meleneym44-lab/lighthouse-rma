@@ -281,8 +281,8 @@ async function generateQuotePDF(options) {
   let capcertLogo = null;
   try {
     [lighthouseLogo, capcertLogo] = await Promise.all([
-      loadImage('/images/logos/Lighthouse France Logo.png'),
-      loadImage('/images/logos/Capcert Logo.png')
+      loadImage('/images/logos/Lighthouse%20France%20Logo.png'),
+      loadImage('/images/logos/Capcert%20Logo.png')
     ]);
   } catch (e) {
     console.log('Logo loading skipped:', e);
