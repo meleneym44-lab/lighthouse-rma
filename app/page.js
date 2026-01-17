@@ -114,6 +114,414 @@ const QUOTE_DISCLAIMERS = [
   "Les équipements envoyés devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives."
 ];
 
+// ============================================
+// PDF GENERATION UTILITY - BLOCK-BASED APPROACH
+// Each section is treated as an indivisible block
+// If it doesn't fit on the current page, it moves to the next page
+// ============================================
+
+function getQuoteDataFromRequest(request) {
+  const quoteData = request.quote_data || {};
+  const devices = quoteData.devices || request.request_devices || [];
+  
+  let calibrationTypes = quoteData.requiredSections?.calibrationTypes || [];
+  let hasRepair = quoteData.requiredSections?.hasRepair || false;
+  
+  if (calibrationTypes.length === 0 && devices.length > 0) {
+    const calTypes = new Set();
+    devices.forEach(d => {
+      const deviceType = d.deviceType || d.device_type || 'particle_counter';
+      const serviceType = d.serviceType || d.service_type || 'calibration';
+      if (serviceType.includes('calibration') || serviceType === 'cal_repair' || serviceType === 'calibration_repair') {
+        calTypes.add(deviceType);
+      }
+      if (serviceType.includes('repair') || serviceType === 'cal_repair' || serviceType === 'calibration_repair') {
+        hasRepair = true;
+      }
+    });
+    calibrationTypes = Array.from(calTypes);
+  }
+  
+  if (calibrationTypes.length === 0) {
+    calibrationTypes = ['particle_counter'];
+  }
+
+  return {
+    devices,
+    calibrationTypes,
+    hasRepair,
+    servicesSubtotal: quoteData.servicesSubtotal || request.quote_subtotal || 0,
+    shippingTotal: quoteData.shippingTotal || request.quote_shipping || 0,
+    grandTotal: quoteData.grandTotal || request.quote_total || 0,
+    createdBy: quoteData.createdBy || 'M. Meleney'
+  };
+}
+
+async function generateQuotePDF(options) {
+  const {
+    request,
+    devices = [],
+    servicesSubtotal = 0,
+    shippingTotal = 0,
+    grandTotal = 0,
+    calibrationTypes = ['particle_counter'],
+    hasRepair = false,
+    isSigned = false,
+    signatureName = '',
+    signatureDate = '',
+    signatureImage = null,
+    createdBy = 'M. Meleney'
+  } = options;
+
+  // Load jsPDF
+  await new Promise((resolve, reject) => {
+    if (window.jspdf) { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  
+  const pageWidth = 210;
+  const pageHeight = 297;
+  const margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  const footerHeight = 20;
+  const usableHeight = pageHeight - footerHeight - margin;
+  
+  const primaryGreen = [0, 166, 81];
+  const darkBlue = [26, 26, 46];
+  const gray600 = [75, 85, 99];
+  const gray400 = [156, 163, 175];
+  const gray200 = [229, 231, 235];
+  const white = [255, 255, 255];
+  
+  let y = margin;
+  
+  const addFooter = () => {
+    const footerY = pageHeight - footerHeight;
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(0, footerY, pageWidth, footerHeight, 'F');
+    pdf.setTextColor(...white);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Lighthouse France SAS', pageWidth / 2, footerY + 8, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray400);
+    pdf.text('16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07', pageWidth / 2, footerY + 14, { align: 'center' });
+  };
+  
+  const checkPageBreak = (neededHeight) => {
+    if (y + neededHeight > usableHeight) {
+      addFooter();
+      pdf.addPage();
+      y = margin;
+      return true;
+    }
+    return false;
+  };
+  
+  // BLOCK 1: HEADER
+  pdf.setFontSize(24);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('LIGHTHOUSE', margin, y + 8);
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray600);
+  pdf.text('Worldwide Solutions', margin, y + 14);
+  pdf.setFontSize(18);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...primaryGreen);
+  pdf.text(isSigned ? 'DEVIS SIGNÉ' : 'OFFRE DE PRIX', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray600);
+  pdf.text(`N° ${request.request_number || 'FR-XXXXX'}`, pageWidth - margin, y + 14, { align: 'right' });
+  y += 20;
+  pdf.setDrawColor(...primaryGreen);
+  pdf.setLineWidth(1);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 8;
+  
+  // BLOCK 2: INFO BAR
+  const barHeight = 18;
+  checkPageBreak(barHeight + 5);
+  pdf.setFillColor(243, 244, 246);
+  pdf.rect(margin, y, contentWidth, barHeight, 'F');
+  const colWidth = contentWidth / 3;
+  pdf.setFontSize(8);
+  pdf.setTextColor(...gray400);
+  pdf.text('DATE', margin + 5, y + 6);
+  pdf.text('VALIDITÉ', margin + colWidth + 5, y + 6);
+  pdf.text('CONDITIONS', margin + colWidth * 2 + 5, y + 6);
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  const quoteDate = request.quoted_at ? new Date(request.quoted_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
+  pdf.text(quoteDate, margin + 5, y + 12);
+  pdf.text('30 jours', margin + colWidth + 5, y + 12);
+  pdf.text('À réception de facture', margin + colWidth * 2 + 5, y + 12);
+  y += barHeight + 5;
+  
+  // BLOCK 3: CLIENT INFO
+  checkPageBreak(25);
+  pdf.setFontSize(8);
+  pdf.setTextColor(...gray400);
+  pdf.text('CLIENT', margin, y);
+  y += 5;
+  pdf.setFontSize(14);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(request.companies?.name || 'Client', margin, y);
+  y += 6;
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray600);
+  if (request.companies?.billing_address) {
+    pdf.text(request.companies.billing_address, margin, y);
+    y += 5;
+  }
+  const cityLine = `${request.companies?.billing_postal_code || ''} ${request.companies?.billing_city || ''}`.trim();
+  if (cityLine) {
+    pdf.text(cityLine, margin, y);
+    y += 5;
+  }
+  y += 5;
+  
+  // BLOCK 4: SERVICE DESCRIPTION SECTIONS
+  const drawServiceSection = (template, borderColor) => {
+    const titleHeight = 8;
+    const lineHeight = 5;
+    let totalLines = 0;
+    template.prestations.forEach(p => {
+      totalLines += pdf.splitTextToSize(p, contentWidth - 15).length;
+    });
+    const totalHeight = titleHeight + (totalLines * lineHeight) + 10;
+    
+    checkPageBreak(totalHeight);
+    
+    pdf.setDrawColor(...borderColor);
+    pdf.setLineWidth(1);
+    pdf.line(margin, y, margin, y + totalHeight - 5);
+    
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(`${template.icon} ${template.title}`, margin + 5, y + 5);
+    y += titleHeight + 3;
+    
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    template.prestations.forEach(prestation => {
+      pdf.setTextColor(...borderColor);
+      pdf.text('▸', margin + 5, y);
+      pdf.setTextColor(...gray600);
+      const lines = pdf.splitTextToSize(prestation, contentWidth - 15);
+      lines.forEach(line => {
+        pdf.text(line, margin + 10, y);
+        y += lineHeight;
+      });
+    });
+    y += 5;
+  };
+  
+  calibrationTypes.forEach(type => {
+    const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.particle_counter;
+    drawServiceSection(template, [59, 130, 246]);
+  });
+  
+  if (hasRepair) {
+    drawServiceSection(REPAIR_TEMPLATE, [249, 115, 22]);
+  }
+  
+  // BLOCK 5: PRICING TABLE
+  const headerHeight = 10;
+  const rowHeight = 8;
+  let totalRows = 0;
+  devices.forEach(device => {
+    totalRows += 1 + (device.additionalParts || []).length + 1;
+  });
+  const tableHeight = headerHeight + (totalRows * rowHeight) + 36 + 20;
+  
+  checkPageBreak(tableHeight);
+  
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Récapitulatif des Prix', margin, y);
+  y += 8;
+  
+  pdf.setFillColor(...darkBlue);
+  pdf.rect(margin, y, contentWidth, headerHeight, 'F');
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...white);
+  const col1 = margin + 3;
+  const col2 = margin + 55;
+  const col3 = margin + 100;
+  const col4 = pageWidth - margin - 3;
+  pdf.text('Appareil', col1, y + 7);
+  pdf.text('N° Série', col2, y + 7);
+  pdf.text('Service', col3, y + 7);
+  pdf.text('Prix HT', col4, y + 7, { align: 'right' });
+  y += headerHeight;
+  
+  devices.forEach((device, index) => {
+    const services = [];
+    const needsCal = device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration');
+    const needsRep = device.needsRepair || (device.serviceType || device.service_type || '').includes('repair');
+    if (needsCal) services.push('Étalonnage');
+    if (needsRep) services.push('Réparation');
+    
+    const serviceTotal = device.serviceTotal || ((device.calibrationPrice || 0) + (device.repairPrice || 0) + (device.additionalParts || []).reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0));
+    
+    const bgColor = index % 2 === 0 ? white : [249, 250, 251];
+    pdf.setFillColor(...bgColor);
+    pdf.rect(margin, y, contentWidth, rowHeight, 'F');
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    pdf.setTextColor(...darkBlue);
+    pdf.text(device.model || device.model_name || '—', col1, y + 5.5);
+    pdf.setFont('courier', 'normal');
+    pdf.setFontSize(8);
+    pdf.text(device.serial || device.serial_number || '—', col2, y + 5.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    pdf.text(services.join(' + ') || 'Service', col3, y + 5.5);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(`${serviceTotal.toFixed(2)} €`, col4, y + 5.5, { align: 'right' });
+    y += rowHeight;
+    
+    (device.additionalParts || []).forEach(part => {
+      pdf.setFillColor(249, 250, 251);
+      pdf.rect(margin, y, contentWidth, rowHeight, 'F');
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(...gray600);
+      pdf.text(`↳ ${part.description || 'Pièce/Service'}`, col1 + 5, y + 5.5);
+      pdf.text(`${parseFloat(part.price || 0).toFixed(2)} €`, col4, y + 5.5, { align: 'right' });
+      y += rowHeight;
+    });
+    
+    pdf.setFillColor(...gray200);
+    pdf.rect(margin, y, contentWidth, rowHeight, 'F');
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.setTextColor(...gray600);
+    pdf.text('↳ Frais de port', col1 + 5, y + 5.5);
+    pdf.text(`${(device.shipping || 0).toFixed(2)} €`, col4, y + 5.5, { align: 'right' });
+    y += rowHeight;
+  });
+  
+  pdf.setDrawColor(209, 213, 219);
+  pdf.setLineWidth(0.5);
+  pdf.line(margin, y, pageWidth - margin, y);
+  
+  pdf.setFillColor(...white);
+  pdf.rect(margin, y, contentWidth, rowHeight, 'F');
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(9);
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Sous-total services', col1, y + 5.5);
+  pdf.text(`${servicesSubtotal.toFixed(2)} €`, col4, y + 5.5, { align: 'right' });
+  y += rowHeight;
+  
+  pdf.setFillColor(...white);
+  pdf.rect(margin, y, contentWidth, rowHeight, 'F');
+  pdf.text('Total frais de port', col1, y + 5.5);
+  pdf.text(`${shippingTotal.toFixed(2)} €`, col4, y + 5.5, { align: 'right' });
+  y += rowHeight;
+  
+  pdf.setFillColor(...primaryGreen);
+  pdf.rect(margin, y, contentWidth, 12, 'F');
+  pdf.setTextColor(...white);
+  pdf.setFontSize(12);
+  pdf.text('TOTAL HT', col1, y + 8);
+  pdf.setFontSize(16);
+  pdf.text(`${grandTotal.toFixed(2)} €`, col4, y + 9, { align: 'right' });
+  y += 17;
+  
+  // BLOCK 6: CONDITIONS
+  const conditionsHeight = 8 + (QUOTE_DISCLAIMERS.length * 4.5) + 5;
+  checkPageBreak(conditionsHeight);
+  pdf.setFontSize(8);
+  pdf.setTextColor(...gray400);
+  pdf.text('CONDITIONS', margin, y);
+  y += 5;
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray600);
+  QUOTE_DISCLAIMERS.forEach(disclaimer => {
+    pdf.text(`• ${disclaimer}`, margin, y);
+    y += 4.5;
+  });
+  y += 5;
+  
+  // BLOCK 7: SIGNATURE SECTION
+  const sigHeight = isSigned ? 55 : 45;
+  checkPageBreak(sigHeight);
+  pdf.setDrawColor(...gray200);
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 8;
+  
+  pdf.setFontSize(8);
+  pdf.setTextColor(...gray400);
+  pdf.text('ÉTABLI PAR', margin, y);
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(createdBy, margin, y + 7);
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray600);
+  pdf.text('Lighthouse France', margin, y + 13);
+  
+  const sigBoxX = pageWidth - margin - 65;
+  const sigBoxY = y - 3;
+  
+  if (isSigned && signatureName) {
+    pdf.setFillColor(240, 253, 244);
+    pdf.setDrawColor(34, 197, 94);
+    pdf.setLineWidth(0.5);
+    pdf.roundedRect(sigBoxX, sigBoxY, 65, 42, 3, 3, 'FD');
+    pdf.setFontSize(8);
+    pdf.setTextColor(22, 101, 52);
+    pdf.text('✓ APPROUVÉ PAR', sigBoxX + 5, sigBoxY + 8);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(signatureName, sigBoxX + 5, sigBoxY + 16);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`Date: ${signatureDate}`, sigBoxX + 5, sigBoxY + 23);
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(21, 128, 61);
+    pdf.text('Lu et approuvé', sigBoxX + 5, sigBoxY + 30);
+    if (signatureImage) {
+      try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 35, sigBoxY + 10, 25, 18); } catch (e) {}
+    }
+  } else {
+    pdf.setFontSize(8);
+    pdf.setTextColor(...gray400);
+    pdf.text('Signature client', sigBoxX + 10, sigBoxY + 5);
+    pdf.setDrawColor(209, 213, 219);
+    pdf.setLineWidth(0.3);
+    pdf.setLineDashPattern([2, 2], 0);
+    pdf.roundedRect(sigBoxX + 5, sigBoxY + 8, 55, 25, 2, 2, 'D');
+    pdf.setLineDashPattern([], 0);
+    pdf.text('Lu et approuvé', sigBoxX + 20, sigBoxY + 38);
+  }
+  
+  addFooter();
+  return pdf.output('blob');
+}
+
 // Translations
 const T = {
   fr: {
@@ -4668,172 +5076,19 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         }
       }
       
-      // Generate signed quote PDF
+      // Generate signed quote PDF using block-based approach
       let signedQuotePdfUrl = null;
       if (hasValidSignature) {
         try {
-          // Load jsPDF and html2canvas
-          await Promise.all([
-            new Promise((resolve, reject) => {
-              if (window.jspdf) { resolve(); return; }
-              const script = document.createElement('script');
-              script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-              script.onload = resolve;
-              script.onerror = reject;
-              document.head.appendChild(script);
-            }),
-            new Promise((resolve, reject) => {
-              if (window.html2canvas) { resolve(); return; }
-              const script = document.createElement('script');
-              script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-              script.onload = resolve;
-              script.onerror = reject;
-              document.head.appendChild(script);
-            })
-          ]);
-          
-          // Build quote HTML content with signature
-          const quoteData = request.quote_data || {};
-          const devices = quoteData.devices || request.request_devices || [];
-          const grandTotal = quoteData.grandTotal || request.quote_total || 0;
-          const servicesSubtotal = quoteData.servicesSubtotal || (grandTotal - (quoteData.shippingTotal || 0));
-          const shippingTotal = quoteData.shippingTotal || request.quote_shipping || 0;
-          
-          // Create container
-          const container = document.createElement('div');
-          container.id = 'pdf-container-temp';
-          container.style.width = '800px';
-          container.style.padding = '40px';
-          container.style.fontFamily = 'Arial, sans-serif';
-          container.style.fontSize = '12px';
-          container.style.background = 'white';
-          container.style.position = 'fixed';
-          container.style.top = '0';
-          container.style.left = '0';
-          container.style.zIndex = '99999';
-          
-          container.innerHTML = `
-            <div style="border-bottom: 4px solid #00A651; padding-bottom: 20px; margin-bottom: 20px;">
-              <div style="display: flex; justify-content: space-between;">
-                <div>
-                  <h1 style="font-size: 28px; font-weight: bold; color: #1a1a2e; margin: 0;">LIGHTHOUSE</h1>
-                  <p style="color: #666; margin: 4px 0 0 0;">Worldwide Solutions</p>
-                </div>
-                <div style="text-align: right;">
-                  <p style="font-size: 20px; font-weight: bold; color: #00A651; margin: 0;">DEVIS SIGNÉ</p>
-                  <p style="color: #666; margin: 4px 0 0 0;">N° ${request.request_number}</p>
-                </div>
-              </div>
-            </div>
-            
-            <div style="display: flex; justify-content: space-between; background: #f3f4f6; padding: 12px 20px; margin-bottom: 20px;">
-              <div><p style="font-size: 10px; color: #666; margin: 0;">Date</p><p style="font-weight: 500; margin: 4px 0 0 0;">${request.quoted_at ? new Date(request.quoted_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p></div>
-              <div><p style="font-size: 10px; color: #666; margin: 0;">Client</p><p style="font-weight: 500; margin: 4px 0 0 0;">${request.companies?.name || ''}</p></div>
-              <div><p style="font-size: 10px; color: #666; margin: 0;">Validité</p><p style="font-weight: 500; margin: 4px 0 0 0;">30 jours</p></div>
-            </div>
-            
-            <h3 style="font-size: 14px; color: #1a1a2e; margin: 20px 0 10px 0;">Équipements</h3>
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-              <thead>
-                <tr style="background: #1a1a2e; color: white;">
-                  <th style="padding: 10px; text-align: left;">Appareil</th>
-                  <th style="padding: 10px; text-align: left;">N° Série</th>
-                  <th style="padding: 10px; text-align: left;">Service</th>
-                  <th style="padding: 10px; text-align: right;">Prix HT</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${devices.map((d, i) => `
-                  <tr style="background: ${i % 2 === 0 ? '#f9fafb' : 'white'};">
-                    <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">${d.model || d.model_name || '—'}</td>
-                    <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; font-family: monospace;">${d.serial || d.serial_number || '—'}</td>
-                    <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">${d.service_type || 'Service'}</td>
-                    <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; text-align: right;">${(d.serviceTotal || d.calibrationPrice || 0).toFixed(2)} €</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-              <tfoot>
-                <tr style="border-top: 2px solid #d1d5db;">
-                  <td colspan="3" style="padding: 10px; font-weight: 500;">Sous-total services</td>
-                  <td style="padding: 10px; text-align: right; font-weight: 500;">${servicesSubtotal.toFixed(2)} €</td>
-                </tr>
-                <tr>
-                  <td colspan="3" style="padding: 10px; font-weight: 500;">Frais de port</td>
-                  <td style="padding: 10px; text-align: right; font-weight: 500;">${shippingTotal.toFixed(2)} €</td>
-                </tr>
-                <tr style="background: #00A651; color: white;">
-                  <td colspan="3" style="padding: 12px; font-weight: bold; font-size: 14px;">TOTAL HT</td>
-                  <td style="padding: 12px; text-align: right; font-weight: bold; font-size: 18px;">${grandTotal.toFixed(2)} €</td>
-                </tr>
-              </tfoot>
-            </table>
-            
-            <div style="margin-top: 30px; padding: 20px; border: 2px solid #00A651; border-radius: 8px; background: #f0fdf4;">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                  <p style="font-size: 10px; color: #666; margin: 0 0 4px 0;">✅ APPROUVÉ PAR</p>
-                  <p style="font-size: 16px; font-weight: bold; color: #166534; margin: 0;">${signatureName}</p>
-                  <p style="font-size: 12px; color: #15803d; margin: 4px 0 0 0;">Date: ${new Date(signatureDateISO).toLocaleDateString('fr-FR')}</p>
-                  <p style="font-size: 11px; color: #16a34a; margin: 4px 0 0 0; font-style: italic;">Lu et approuvé</p>
-                </div>
-                <div style="text-align: right;">
-                  <p style="font-size: 10px; color: #666; margin: 0 0 4px 0;">Signature</p>
-                  <img src="${signatureData}" style="max-height: 60px; border: 1px solid #bbf7d0; border-radius: 4px; padding: 8px; background: white;" />
-                </div>
-              </div>
-            </div>
-            
-            <div style="margin-top: 30px; text-align: center; padding: 15px; background: #1a1a2e; color: white; font-size: 11px;">
-              <p style="font-weight: 500; margin: 0;">Lighthouse France SAS</p>
-              <p style="color: #9ca3af; margin: 4px 0 0 0;">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
-            </div>
-          `;
-          
-          document.body.appendChild(container);
-          
-          // Wait for content to render
-          await new Promise(resolve => setTimeout(resolve, 800));
-          
-          // Use html2canvas to capture the content
-          const canvas = await window.html2canvas(container, {
-            scale: 2,
-            useCORS: true,
-            allowTaint: true,
-            backgroundColor: '#ffffff',
-            logging: false
+          const quoteInfo = getQuoteDataFromRequest(request);
+          const pdfBlob = await generateQuotePDF({
+            request,
+            ...quoteInfo,
+            isSigned: true,
+            signatureName: signatureName,
+            signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+            signatureImage: signatureData
           });
-          
-          // Create PDF with jsPDF - handle multiple pages
-          const { jsPDF } = window.jspdf;
-          const pdf = new jsPDF('p', 'mm', 'a4');
-          
-          const imgData = canvas.toDataURL('image/jpeg', 0.95);
-          const pdfWidth = pdf.internal.pageSize.getWidth();
-          const pdfHeight = pdf.internal.pageSize.getHeight();
-          
-          // Scale image to fit width, then paginate by height
-          const imgWidth = pdfWidth - 20; // 10mm margin on each side
-          const imgHeight = (canvas.height * imgWidth) / canvas.width;
-          
-          let heightLeft = imgHeight;
-          let position = 10; // Start 10mm from top
-          
-          // Add first page
-          pdf.addImage(imgData, 'JPEG', 10, position, imgWidth, imgHeight);
-          heightLeft -= (pdfHeight - 20); // Account for margins
-          
-          // Add additional pages if needed
-          while (heightLeft > 0) {
-            position = heightLeft - imgHeight + 10; // Calculate position for next page
-            pdf.addPage();
-            pdf.addImage(imgData, 'JPEG', 10, position, imgWidth, imgHeight);
-            heightLeft -= (pdfHeight - 20);
-          }
-          
-          // Get PDF as blob
-          const pdfBlob = pdf.output('blob');
-          
-          document.body.removeChild(container);
           
           // Upload PDF to Supabase
           const pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
@@ -5698,78 +5953,25 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     🖨️ Imprimer
                   </button>
                   <button onClick={async () => {
-                    // Load jsPDF and html2canvas
-                    await Promise.all([
-                      new Promise((resolve, reject) => {
-                        if (window.jspdf) { resolve(); return; }
-                        const script = document.createElement('script');
-                        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-                        script.onload = resolve;
-                        script.onerror = reject;
-                        document.head.appendChild(script);
-                      }),
-                      new Promise((resolve, reject) => {
-                        if (window.html2canvas) { resolve(); return; }
-                        const script = document.createElement('script');
-                        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-                        script.onload = resolve;
-                        script.onerror = reject;
-                        document.head.appendChild(script);
-                      })
-                    ]);
-                    
-                    const content = document.getElementById('quote-print-content');
-                    if (!content) return;
-                    
-                    // Clone and position for capture
-                    const clone = content.cloneNode(true);
-                    clone.style.width = '800px';
-                    clone.style.padding = '30px';
-                    clone.style.background = 'white';
-                    clone.style.position = 'fixed';
-                    clone.style.top = '0';
-                    clone.style.left = '0';
-                    clone.style.zIndex = '99999';
-                    document.body.appendChild(clone);
-                    
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
                     try {
-                      const canvas = await window.html2canvas(clone, {
-                        scale: 2,
-                        useCORS: true,
-                        allowTaint: true,
-                        backgroundColor: '#ffffff',
-                        logging: false
+                      const quoteInfo = getQuoteDataFromRequest(request);
+                      const pdfBlob = await generateQuotePDF({
+                        request,
+                        ...quoteInfo,
+                        isSigned: false
                       });
                       
-                      const { jsPDF } = window.jspdf;
-                      const pdf = new jsPDF('p', 'mm', 'a4');
-                      
-                      const imgData = canvas.toDataURL('image/jpeg', 0.95);
-                      const pdfWidth = pdf.internal.pageSize.getWidth();
-                      const pdfHeight = pdf.internal.pageSize.getHeight();
-                      
-                      // Scale image to fit width, then paginate by height
-                      const imgWidth = pdfWidth - 20;
-                      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-                      
-                      let heightLeft = imgHeight;
-                      let position = 10;
-                      
-                      pdf.addImage(imgData, 'JPEG', 10, position, imgWidth, imgHeight);
-                      heightLeft -= (pdfHeight - 20);
-                      
-                      while (heightLeft > 0) {
-                        position = heightLeft - imgHeight + 10;
-                        pdf.addPage();
-                        pdf.addImage(imgData, 'JPEG', 10, position, imgWidth, imgHeight);
-                        heightLeft -= (pdfHeight - 20);
-                      }
-                      
-                      pdf.save(`Devis_${request.request_number}.pdf`);
-                    } finally {
-                      document.body.removeChild(clone);
+                      // Download the PDF
+                      const url = URL.createObjectURL(pdfBlob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `Devis_${request.request_number}.pdf`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    } catch (err) {
+                      console.error('PDF generation error:', err);
                     }
                   }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
                     💾 Télécharger PDF
