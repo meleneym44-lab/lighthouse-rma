@@ -4668,6 +4668,82 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         }
       }
       
+      // Generate signed quote PDF
+      let signedQuotePdfUrl = null;
+      if (hasValidSignature) {
+        try {
+          // Load html2pdf
+          await new Promise((resolve, reject) => {
+            if (window.html2pdf) { resolve(); return; }
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+          
+          // Get quote content and add signature
+          const quoteContent = document.getElementById('quote-print-content');
+          if (quoteContent) {
+            // Clone the content and add signature
+            const container = document.createElement('div');
+            container.innerHTML = quoteContent.innerHTML;
+            container.style.width = '210mm';
+            container.style.padding = '10mm';
+            container.style.fontFamily = 'Arial, sans-serif';
+            container.style.background = 'white';
+            
+            // Add signature section to the cloned content
+            const signatureSection = document.createElement('div');
+            signatureSection.style.marginTop = '20px';
+            signatureSection.style.padding = '20px';
+            signatureSection.style.borderTop = '2px solid #00A651';
+            signatureSection.style.background = '#f0fdf4';
+            signatureSection.innerHTML = `
+              <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                <div>
+                  <p style="font-size: 12px; color: #666; margin-bottom: 4px;">Approuvé par</p>
+                  <p style="font-size: 18px; font-weight: bold; color: #166534;">${signatureName}</p>
+                  <p style="font-size: 14px; color: #15803d;">Date: ${new Date(signatureDateISO).toLocaleDateString('fr-FR')}</p>
+                </div>
+                <div style="text-align: right;">
+                  <p style="font-size: 10px; color: #16a34a; margin-bottom: 4px;">✅ LU ET APPROUVÉ</p>
+                  <img src="${signatureData}" style="max-height: 60px; border: 1px solid #bbf7d0; border-radius: 4px; padding: 4px; background: white;" />
+                </div>
+              </div>
+            `;
+            container.appendChild(signatureSection);
+            
+            document.body.appendChild(container);
+            
+            // Generate PDF blob
+            const pdfBlob = await window.html2pdf().set({
+              margin: 10,
+              image: { type: 'jpeg', quality: 0.98 },
+              html2canvas: { scale: 2, useCORS: true },
+              jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            }).from(container).outputPdf('blob');
+            
+            document.body.removeChild(container);
+            
+            // Upload PDF to Supabase
+            const pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
+            const { error: pdfUploadError } = await supabase.storage
+              .from('documents')
+              .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
+            
+            if (!pdfUploadError) {
+              const { data: pdfUrl } = supabase.storage
+                .from('documents')
+                .getPublicUrl(pdfFileName);
+              signedQuotePdfUrl = pdfUrl?.publicUrl;
+            }
+          }
+        } catch (e) {
+          console.log('Signed quote PDF generation skipped:', e);
+        }
+      }
+      
       // Update request status - set to bc_review so admin can verify
       // Also record quote approval if coming from quote_sent status
       const { error: updateError } = await supabase
@@ -4679,13 +4755,14 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           bc_signature_date: signatureDateISO,
           bc_file_url: fileUrl,
           bc_signature_url: signatureUrl,
+          signed_quote_url: signedQuotePdfUrl,
           quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
         })
         .eq('id', request.id);
       
       if (updateError) throw updateError;
       
-      // Also save BC documents to request_attachments so they appear in Documents tab
+      // Save documents to request_attachments
       if (fileUrl) {
         await supabase.from('request_attachments').insert({
           request_id: request.id,
@@ -4698,15 +4775,16 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         });
       }
       
-      if (signatureUrl) {
+      // Save signed quote PDF to attachments (this is the main document)
+      if (signedQuotePdfUrl) {
         await supabase.from('request_attachments').insert({
           request_id: request.id,
-          file_name: `Signature_${signatureName}_${new Date().toLocaleDateString('fr-FR')}.png`,
-          file_url: signatureUrl,
-          file_type: 'image/png',
+          file_name: `Devis_Signé_${request.request_number}.pdf`,
+          file_url: signedQuotePdfUrl,
+          file_type: 'application/pdf',
           file_size: 0,
           uploaded_by: profile.id,
-          category: 'signature'
+          category: 'devis_signe'
         });
       }
       
@@ -4810,8 +4888,37 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             )}
           </div>
           
-          {/* Progress Bar */}
-          {!isPartsOrder && (
+          {/* Per-Device Progress Bars */}
+          {!isPartsOrder && (request.request_devices || []).length > 0 && (
+            <div className="mt-4 space-y-3">
+              <p className="text-xs text-gray-500 uppercase font-medium">Suivi par appareil</p>
+              {(request.request_devices || []).map((device, idx) => {
+                // Each device can have its own status, fallback to RMA status
+                const deviceStatus = device.status || request.status;
+                const deviceServiceType = device.service_type || request.requested_service;
+                return (
+                  <div key={device.id || idx} className="bg-gray-50 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-800">{device.model_name || device.model || 'Appareil'}</span>
+                        <span className="text-xs text-gray-500 font-mono">SN: {device.serial_number || '—'}</span>
+                      </div>
+                      <span className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-600">
+                        {deviceServiceType === 'calibration' ? '🔬 Étalonnage' : 
+                         deviceServiceType === 'repair' ? '🔧 Réparation' : 
+                         deviceServiceType === 'calibration_repair' || deviceServiceType === 'cal_repair' ? '🔬+🔧 Étal. & Rép.' :
+                         deviceServiceType}
+                      </span>
+                    </div>
+                    <StepProgress status={deviceStatus} serviceType={deviceServiceType} />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          
+          {/* Fallback: Single progress bar if no devices */}
+          {!isPartsOrder && (request.request_devices || []).length === 0 && (
             <div className="mt-4">
               <StepProgress status={request.status} serviceType={request.requested_service} />
             </div>
@@ -5570,17 +5677,30 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                       <body>${content.innerHTML}</body>
                       </html>
                     `;
-                    const blob = new Blob([htmlContent], { type: 'text/html' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `Devis_${request.request_number}.html`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
+                    // Load html2pdf dynamically and generate PDF
+                    const script = document.createElement('script');
+                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+                    script.onload = () => {
+                      const container = document.createElement('div');
+                      container.innerHTML = content.innerHTML;
+                      container.style.width = '210mm';
+                      container.style.padding = '10mm';
+                      container.style.fontFamily = 'Arial, sans-serif';
+                      document.body.appendChild(container);
+                      
+                      window.html2pdf().set({
+                        margin: 10,
+                        filename: `Devis_${request.request_number}.pdf`,
+                        image: { type: 'jpeg', quality: 0.98 },
+                        html2canvas: { scale: 2, useCORS: true },
+                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                      }).from(container).save().then(() => {
+                        document.body.removeChild(container);
+                      });
+                    };
+                    document.head.appendChild(script);
                   }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
-                    💾 Télécharger
+                    💾 Télécharger PDF
                   </button>
                 </div>
                 <div className="flex gap-3">
