@@ -4689,15 +4689,17 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           const servicesSubtotal = quoteData.servicesSubtotal || (grandTotal - (quoteData.shippingTotal || 0));
           const shippingTotal = quoteData.shippingTotal || request.quote_shipping || 0;
           
-          // Create PDF container
+          // Create PDF container - must be visible for html2canvas to work
           const container = document.createElement('div');
           container.style.width = '800px';
           container.style.padding = '40px';
           container.style.fontFamily = 'Arial, sans-serif';
           container.style.fontSize = '12px';
           container.style.background = 'white';
-          container.style.position = 'absolute';
-          container.style.left = '-9999px';
+          container.style.position = 'fixed';
+          container.style.top = '0';
+          container.style.left = '0';
+          container.style.zIndex = '99999';
           
           container.innerHTML = `
             <div style="border-bottom: 4px solid #00A651; padding-bottom: 20px; margin-bottom: 20px;">
@@ -5665,13 +5667,15 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     const content = document.getElementById('quote-print-content');
                     if (!content) return;
                     
-                    // Clone and prepare for PDF
+                    // Clone and prepare for PDF - must be visible for html2canvas
                     const clone = content.cloneNode(true);
                     clone.style.width = '800px';
                     clone.style.padding = '20px';
                     clone.style.background = 'white';
-                    clone.style.position = 'absolute';
-                    clone.style.left = '-9999px';
+                    clone.style.position = 'fixed';
+                    clone.style.top = '0';
+                    clone.style.left = '0';
+                    clone.style.zIndex = '99999';
                     document.body.appendChild(clone);
                     
                     try {
