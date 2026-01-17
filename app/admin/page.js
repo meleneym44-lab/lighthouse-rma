@@ -98,18 +98,29 @@ export default function AdminPortal() {
   return (
     <div className="min-h-screen bg-gray-100">
       {toast && <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg text-white ${toast.type === 'error' ? 'bg-red-500' : 'bg-green-500'}`}>{toast.msg}</div>}
-      <header className="bg-[#1a1a2e] text-white shadow-lg">
-        <div className="max-w-full mx-auto px-6 py-4 flex items-center justify-between">
+      <header className="bg-white text-[#1a1a2e] shadow-lg border-b-4 border-[#00A651]">
+        <div className="max-w-full mx-auto px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="text-2xl font-bold text-[#00A651]">LIGHTHOUSE</div>
-            <div className="text-sm text-gray-400">France • Admin Portal</div>
+            <img 
+              src="/images/logos/lighthouse-logo.png" 
+              alt="Lighthouse France" 
+              className="h-10 w-auto"
+              onError={(e) => {
+                e.target.style.display = 'none';
+                e.target.nextSibling.style.display = 'flex';
+              }}
+            />
+            <div className="items-center gap-2 hidden">
+              <span className="text-2xl font-bold text-[#00A651]">LIGHTHOUSE</span>
+            </div>
+            <div className="text-sm text-gray-500">France • Admin Portal</div>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
               <p className="font-medium">{profile?.full_name}</p>
-              <p className="text-xs text-gray-400">{isAdmin ? '👑 Administrateur' : '👤 Employé'}</p>
+              <p className="text-xs text-gray-500">{isAdmin ? 'Administrateur' : 'Employe'}</p>
             </div>
-            <button onClick={logout} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm">Déconnexion</button>
+            <button onClick={logout} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm text-white">Deconnexion</button>
           </div>
         </div>
       </header>
@@ -166,8 +177,17 @@ function LoginPage() {
     <div className="min-h-screen bg-[#1a1a2e] flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-8">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-[#00A651]">LIGHTHOUSE</h1>
-          <p className="text-gray-500 mt-2">France • Portail Administrateur</p>
+          <img 
+            src="/images/logos/lighthouse-logo.png" 
+            alt="Lighthouse France" 
+            className="h-14 w-auto mx-auto mb-3"
+            onError={(e) => {
+              e.target.style.display = 'none';
+              e.target.nextSibling.style.display = 'block';
+            }}
+          />
+          <h1 className="text-3xl font-bold text-[#00A651] hidden">LIGHTHOUSE</h1>
+          <p className="text-gray-500 mt-2">France - Portail Administrateur</p>
         </div>
         {error && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
         <form onSubmit={handleLogin} className="space-y-4">
@@ -1464,12 +1484,23 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                 <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
                   <div className="flex justify-between items-start">
                     <div>
-                      <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
-                      <p className="text-gray-500">Worldwide Solutions</p>
+                      <img 
+                        src="/images/logos/lighthouse-logo.png" 
+                        alt="Lighthouse France" 
+                        className="h-14 w-auto mb-1"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'block';
+                        }}
+                      />
+                      <div className="hidden">
+                        <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
+                        <p className="text-gray-500">Worldwide Solutions</p>
+                      </div>
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
-                      <p className="text-gray-500">Réf: {quoteRef}</p>
+                      <p className="text-gray-500">Ref: {quoteRef}</p>
                     </div>
                   </div>
                 </div>
@@ -1616,22 +1647,31 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
 
                 {/* Signature Section */}
                 <div className="px-8 py-6 border-t flex justify-between items-end">
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
-                    <p className="font-bold text-lg">{signatory}</p>
-                    <p className="text-gray-600">Lighthouse France</p>
+                  <div className="flex items-end gap-6">
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase mb-1">Etabli par</p>
+                      <p className="font-bold text-lg">{signatory}</p>
+                      <p className="text-gray-600">Lighthouse France</p>
+                    </div>
+                    {/* Capcert Logo */}
+                    <img 
+                      src="/images/logos/capcert-logo.png" 
+                      alt="Capcert Certification" 
+                      className="h-16 w-auto"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-gray-400 mb-1">Signature client</p>
                     <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
-                    <p className="text-xs text-gray-400 mt-1">Lu et approuvé</p>
+                    <p className="text-xs text-gray-400 mt-1">Lu et approuve</p>
                   </div>
                 </div>
 
                 {/* Footer */}
                 <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
                   <p className="font-medium">Lighthouse France SAS</p>
-                  <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+                  <p className="text-gray-400">16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07</p>
                 </div>
               </div>
             </div>
