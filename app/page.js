@@ -1143,9 +1143,20 @@ export default function CustomerPortal() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
-            <div className="flex items-center gap-3">
-              <div className="text-[#1E3A5F] font-bold text-2xl tracking-tight">LIGHTHOUSE</div>
-              <div className="text-[#3B7AB4] font-semibold text-sm">FRANCE</div>
+            <div className="flex items-center gap-3 cursor-pointer" onClick={() => setPage('dashboard')}>
+              <img 
+                src="/images/logos/lighthouse-logo.png" 
+                alt="Lighthouse France" 
+                className="h-10 w-auto"
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                  e.target.nextSibling.style.display = 'flex';
+                }}
+              />
+              <div className="items-center gap-2 hidden">
+                <span className="text-[#1E3A5F] font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                <span className="text-[#3B7AB4] font-semibold text-sm">FRANCE</span>
+              </div>
             </div>
 
             {/* Nav */}
@@ -1272,7 +1283,16 @@ export default function CustomerPortal() {
       {/* Footer */}
       <footer className="bg-[#1E3A5F] text-white py-8 mt-auto">
         <div className="max-w-7xl mx-auto px-6 text-center">
-          <div className="font-bold text-xl mb-2">LIGHTHOUSE FRANCE</div>
+          <img 
+            src="/images/logos/lighthouse-logo.png" 
+            alt="Lighthouse France" 
+            className="h-8 w-auto mx-auto mb-2 brightness-0 invert"
+            onError={(e) => {
+              e.target.style.display = 'none';
+              e.target.nextSibling.style.display = 'block';
+            }}
+          />
+          <div className="font-bold text-xl mb-2 hidden">LIGHTHOUSE FRANCE</div>
           <p className="text-white/60 text-sm">
             16 Rue Paul Séjourne, 94000 Créteil • France@golighthouse.com
           </p>
@@ -6822,8 +6842,19 @@ function HomePage({ t, setPage }) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-3">
-              <div className="text-[#1E3A5F] font-bold text-2xl tracking-tight">LIGHTHOUSE</div>
-              <div className="text-[#3B7AB4] font-semibold text-sm">FRANCE</div>
+              <img 
+                src="/images/logos/lighthouse-logo.png" 
+                alt="Lighthouse France" 
+                className="h-10 w-auto"
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                  e.target.nextSibling.style.display = 'flex';
+                }}
+              />
+              <div className="items-center gap-2 hidden">
+                <span className="text-[#1E3A5F] font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                <span className="text-[#3B7AB4] font-semibold text-sm">FRANCE</span>
+              </div>
             </div>
             <div className="flex gap-3">
               <button onClick={() => setPage('login')} className="px-4 py-2 text-[#3B7AB4] font-medium">
@@ -6901,7 +6932,16 @@ function HomePage({ t, setPage }) {
       {/* Footer */}
       <footer className="bg-[#1E3A5F] text-white py-8">
         <div className="max-w-6xl mx-auto px-6 text-center">
-          <div className="font-bold text-xl mb-2">LIGHTHOUSE FRANCE</div>
+          <img 
+            src="/images/logos/lighthouse-logo.png" 
+            alt="Lighthouse France" 
+            className="h-8 w-auto mx-auto mb-2 brightness-0 invert"
+            onError={(e) => {
+              e.target.style.display = 'none';
+              e.target.nextSibling.style.display = 'block';
+            }}
+          />
+          <div className="font-bold text-xl mb-2 hidden">LIGHTHOUSE FRANCE</div>
           <p className="text-white/60 text-sm">16 Rue Paul Séjourne, 94000 Créteil</p>
         </div>
       </footer>
@@ -6934,8 +6974,19 @@ function LoginPage({ t, login, setPage }) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex justify-between items-center h-16">
             <button onClick={() => setPage('home')} className="flex items-center gap-3">
-              <div className="text-[#1E3A5F] font-bold text-2xl tracking-tight">LIGHTHOUSE</div>
-              <div className="text-[#3B7AB4] font-semibold text-sm">FRANCE</div>
+              <img 
+                src="/images/logos/lighthouse-logo.png" 
+                alt="Lighthouse France" 
+                className="h-10 w-auto"
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                  e.target.nextSibling.style.display = 'flex';
+                }}
+              />
+              <div className="items-center gap-2 hidden">
+                <span className="text-[#1E3A5F] font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                <span className="text-[#3B7AB4] font-semibold text-sm">FRANCE</span>
+              </div>
             </button>
             <button onClick={() => setPage('home')} className="text-[#3B7AB4] font-medium">
               ← Retour
@@ -7049,8 +7100,19 @@ function RegisterPage({ t, register, setPage }) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex justify-between items-center h-16">
             <button onClick={() => setPage('home')} className="flex items-center gap-3">
-              <div className="text-[#1E3A5F] font-bold text-2xl tracking-tight">LIGHTHOUSE</div>
-              <div className="text-[#3B7AB4] font-semibold text-sm">FRANCE</div>
+              <img 
+                src="/images/logos/lighthouse-logo.png" 
+                alt="Lighthouse France" 
+                className="h-10 w-auto"
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                  e.target.nextSibling.style.display = 'flex';
+                }}
+              />
+              <div className="items-center gap-2 hidden">
+                <span className="text-[#1E3A5F] font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                <span className="text-[#3B7AB4] font-semibold text-sm">FRANCE</span>
+              </div>
             </button>
             <button onClick={() => setPage('home')} className="text-[#3B7AB4] font-medium">
               ← Retour
