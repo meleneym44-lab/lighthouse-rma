@@ -6869,29 +6869,14 @@ function HomePage({ t, setPage }) {
           <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
-                {/* Logo image with white filter for dark background */}
-                <img 
-                  src="/images/logos/lighthouse-logo.png" 
-                  alt="Lighthouse France" 
-                  className="h-10 w-auto brightness-0 invert"
-                  onError={(e) => { 
-                    e.target.style.display = 'none'; 
-                    e.target.nextSibling.style.display = 'flex'; 
-                  }}
-                />
-                <div className="items-center gap-2 text-white hidden">
+                {/* Text logo for dark background */}
+                <div className="flex items-center gap-2 text-white">
                   <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
-                  <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
+                  <span className="font-semibold text-lg text-[#00A651]">FRANCE</span>
                 </div>
               </div>
-              <div className="flex items-center gap-4">
-                <button onClick={() => setPage('login')} className="px-4 py-2 text-white/90 font-medium hover:text-[#00A651] transition-colors">
-                  Connexion
-                </button>
-                <button onClick={() => setPage('register')} className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-all hover:scale-105">
-                  S'inscrire
-                </button>
-              </div>
+              {/* Empty right side - buttons are in main content */}
+              <div></div>
             </div>
           </div>
         </header>
@@ -6950,22 +6935,22 @@ function HomePage({ t, setPage }) {
                 {/* Main equipment grid */}
                 <div className="bg-white/5 backdrop-blur-md rounded-3xl p-5 border border-white/10">
                   <div className="grid grid-cols-2 gap-3">
-                    {/* Particle Counter */}
+                    {/* Airborne Particle Counter */}
                     <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
-                      <div className="w-full h-36 mb-3 flex items-center justify-center bg-white/90 rounded-xl">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
                         <img 
                           src="/images/products/particle-counter.png" 
-                          alt="Particle Counter" 
+                          alt="Airborne Particle Counter" 
                           className="max-w-full max-h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
                       <p className="text-white font-bold text-sm">Compteurs de Particules</p>
-                      <p className="text-white/60 text-xs">Airborne & Portable</p>
+                      <p className="text-white/60 text-xs">Aeroportees</p>
                     </div>
                     
                     {/* Bio Collector */}
                     <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
-                      <div className="w-full h-36 mb-3 flex items-center justify-center bg-white/90 rounded-xl">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
                         <img 
                           src="/images/products/bio-collector.png" 
                           alt="Bio Collector" 
@@ -6976,30 +6961,30 @@ function HomePage({ t, setPage }) {
                       <p className="text-white/60 text-xs">Echantillonneurs Microbiens</p>
                     </div>
                     
-                    {/* Liquid Counter */}
+                    {/* Liquid Particle Counter */}
                     <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
-                      <div className="w-full h-36 mb-3 flex items-center justify-center bg-white/90 rounded-xl">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
                         <img 
                           src="/images/products/liquid-counter.png" 
-                          alt="Liquid Counter" 
+                          alt="Liquid Particle Counter" 
                           className="max-w-full max-h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
-                      <p className="text-white font-bold text-sm">Compteurs Liquides</p>
-                      <p className="text-white/60 text-xs">Analyse de Particules</p>
+                      <p className="text-white font-bold text-sm">Compteurs de Particules</p>
+                      <p className="text-white/60 text-xs">Liquides</p>
                     </div>
                     
-                    {/* Temperature Probe */}
+                    {/* Temperature & Humidity Probe */}
                     <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
-                      <div className="w-full h-36 mb-3 flex items-center justify-center bg-white/90 rounded-xl">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
                         <img 
                           src="/images/products/temp-probe.png" 
-                          alt="Temperature Probe" 
+                          alt="Temperature & Humidity Probe" 
                           className="max-w-full max-h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
-                      <p className="text-white font-bold text-sm">Sondes de Temperature</p>
-                      <p className="text-white/60 text-xs">Capteurs Environnementaux</p>
+                      <p className="text-white font-bold text-sm">Sondes Temperature</p>
+                      <p className="text-white/60 text-xs">& Humidite</p>
                     </div>
                   </div>
                   
