@@ -341,7 +341,7 @@ async function generateQuotePDF(options) {
       console.log('Attempting to add lighthouse logo, data length:', lighthouseLogo.length);
       // Detect format from base64 header
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 50, 18);
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
       logoAdded = true;
       console.log('Lighthouse logo added successfully');
     } catch (e) {
@@ -1283,18 +1283,9 @@ export default function CustomerPortal() {
       {/* Footer */}
       <footer className="bg-[#1E3A5F] text-white py-8 mt-auto">
         <div className="max-w-7xl mx-auto px-6 text-center">
-          <img 
-            src="/images/logos/lighthouse-logo.png" 
-            alt="Lighthouse France" 
-            className="h-8 w-auto mx-auto mb-2 brightness-0 invert"
-            onError={(e) => {
-              e.target.style.display = 'none';
-              e.target.nextSibling.style.display = 'block';
-            }}
-          />
-          <div className="font-bold text-xl mb-2 hidden">LIGHTHOUSE FRANCE</div>
+          <div className="font-bold text-xl mb-2">LIGHTHOUSE FRANCE</div>
           <p className="text-white/60 text-sm">
-            16 Rue Paul Séjourne, 94000 Créteil • France@golighthouse.com
+            16 Rue Paul Sejourne, 94000 Creteil - France@golighthouse.com
           </p>
         </div>
       </footer>
@@ -5984,7 +5975,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     <img 
                       src="/images/logos/capcert-logo.png" 
                       alt="Capcert Certification" 
-                      className="h-20 w-auto"
+                      className="h-14 w-auto"
                       onError={(e) => { e.target.style.display = 'none'; }}
                     />
                   </div>
@@ -6952,17 +6943,8 @@ function HomePage({ t, setPage }) {
       {/* Footer */}
       <footer className="bg-[#1E3A5F] text-white py-8">
         <div className="max-w-6xl mx-auto px-6 text-center">
-          <img 
-            src="/images/logos/lighthouse-logo.png" 
-            alt="Lighthouse France" 
-            className="h-8 w-auto mx-auto mb-2 brightness-0 invert"
-            onError={(e) => {
-              e.target.style.display = 'none';
-              e.target.nextSibling.style.display = 'block';
-            }}
-          />
-          <div className="font-bold text-xl mb-2 hidden">LIGHTHOUSE FRANCE</div>
-          <p className="text-white/60 text-sm">16 Rue Paul Séjourne, 94000 Créteil</p>
+          <div className="font-bold text-xl mb-2">LIGHTHOUSE FRANCE</div>
+          <p className="text-white/60 text-sm">16 Rue Paul Sejourne, 94000 Creteil</p>
         </div>
       </footer>
     </div>
