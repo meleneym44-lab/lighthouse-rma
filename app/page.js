@@ -247,17 +247,16 @@ async function generateQuotePDF(options) {
   
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
-  const footerHeight = 18;
-  const signatureBlockHeight = isSigned ? 50 : 45;
+  const footerHeight = 16;
+  const signatureBlockHeight = 42;
   
   const green = [0, 166, 81];
   const darkBlue = [26, 26, 46];
-  const gray = [100, 100, 100];
-  const lightGray = [150, 150, 150];
+  const gray = [80, 80, 80];
+  const lightGray = [130, 130, 130];
   const white = [255, 255, 255];
   
   let y = margin;
-  let currentPage = 1;
   
   const addFooter = () => {
     pdf.setFillColor(...darkBlue);
@@ -265,19 +264,20 @@ async function generateQuotePDF(options) {
     pdf.setTextColor(...white);
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'bold');
-    pdf.text('Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 7, { align: 'center' });
+    pdf.text('Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
     pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...lightGray);
-    pdf.text('16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07', pageWidth / 2, pageHeight - footerHeight + 12, { align: 'center' });
+    pdf.setTextColor(180, 180, 180);
+    pdf.setFontSize(8);
+    pdf.text('16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07', pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
   };
   
-  const getUsableHeight = () => pageHeight - footerHeight - margin - signatureBlockHeight - 5;
+  // Don't reserve signature space for page break checks - we'll place it at the end
+  const getUsableHeight = () => pageHeight - footerHeight - margin;
   
   const checkPageBreak = (needed) => {
     if (y + needed > getUsableHeight()) {
       addFooter();
       pdf.addPage();
-      currentPage++;
       y = margin;
       return true;
     }
@@ -285,107 +285,107 @@ async function generateQuotePDF(options) {
   };
 
   // ===== HEADER =====
-  pdf.setFontSize(22);
+  pdf.setFontSize(26);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text('LIGHTHOUSE', margin, y + 7);
-  pdf.setFontSize(10);
+  pdf.text('LIGHTHOUSE', margin, y + 8);
+  pdf.setFontSize(11);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text('Worldwide Solutions', margin, y + 12);
+  pdf.text('Worldwide Solutions', margin, y + 14);
   
-  pdf.setFontSize(16);
+  pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...green);
-  pdf.text(isSigned ? 'DEVIS SIGNE' : 'OFFRE DE PRIX', pageWidth - margin, y + 7, { align: 'right' });
-  pdf.setFontSize(10);
+  pdf.text(isSigned ? 'DEVIS SIGNE' : 'OFFRE DE PRIX', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.setFontSize(11);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text('N. ' + (request.request_number || 'FR-XXXXX'), pageWidth - margin, y + 12, { align: 'right' });
+  pdf.text('N. ' + (request.request_number || 'FR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
   
-  y += 16;
+  y += 18;
   pdf.setDrawColor(...green);
-  pdf.setLineWidth(0.8);
+  pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
-  y += 6;
+  y += 7;
 
   // ===== INFO BAR =====
   pdf.setFillColor(245, 245, 245);
-  pdf.rect(margin, y, contentWidth, 14, 'F');
-  pdf.setFontSize(7);
+  pdf.rect(margin, y, contentWidth, 16, 'F');
+  pdf.setFontSize(8);
   pdf.setTextColor(...lightGray);
-  pdf.text('DATE', margin + 4, y + 4);
-  pdf.text('VALIDITE', margin + 55, y + 4);
-  pdf.text('CONDITIONS', margin + 110, y + 4);
-  pdf.setFontSize(9);
+  pdf.text('DATE', margin + 5, y + 5);
+  pdf.text('VALIDITE', margin + 60, y + 5);
+  pdf.text('CONDITIONS', margin + 115, y + 5);
+  pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   const qDate = request.quoted_at ? new Date(request.quoted_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
-  pdf.text(qDate, margin + 4, y + 10);
-  pdf.text('30 jours', margin + 55, y + 10);
-  pdf.text('A reception de facture', margin + 110, y + 10);
-  y += 18;
+  pdf.text(qDate, margin + 5, y + 12);
+  pdf.text('30 jours', margin + 60, y + 12);
+  pdf.text('A reception de facture', margin + 115, y + 12);
+  y += 20;
 
   // ===== CLIENT =====
-  pdf.setFontSize(7);
+  pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...lightGray);
   pdf.text('CLIENT', margin, y);
-  y += 4;
-  pdf.setFontSize(12);
+  y += 5;
+  pdf.setFontSize(14);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   pdf.text(request.companies?.name || 'Client', margin, y);
-  y += 5;
-  pdf.setFontSize(9);
+  y += 6;
+  pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
   if (request.companies?.billing_address) {
     pdf.text(request.companies.billing_address, margin, y);
-    y += 4;
+    y += 5;
   }
   const city = [request.companies?.billing_postal_code, request.companies?.billing_city].filter(Boolean).join(' ');
   if (city) {
     pdf.text(city, margin, y);
-    y += 4;
+    y += 5;
   }
-  y += 4;
+  y += 3;
 
   // ===== SERVICE SECTIONS =====
   const drawServiceBlock = (data, color) => {
-    const lineH = 4.5;
+    const lineH = 5;
     let lines = [];
     data.prestations.forEach(p => {
-      const wrapped = pdf.splitTextToSize(p, contentWidth - 12);
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
       wrapped.forEach(l => lines.push(l));
     });
-    const blockH = 10 + (lines.length * lineH);
+    const blockH = 12 + (lines.length * lineH);
     checkPageBreak(blockH);
     
     pdf.setDrawColor(...color);
-    pdf.setLineWidth(0.8);
+    pdf.setLineWidth(1);
     pdf.line(margin, y, margin, y + blockH - 3);
     
-    pdf.setFontSize(11);
+    pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
-    pdf.text(data.title, margin + 4, y + 5);
-    y += 9;
+    pdf.text(data.title, margin + 5, y + 6);
+    y += 10;
     
-    pdf.setFontSize(8);
+    pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...gray);
     data.prestations.forEach(p => {
-      const wrapped = pdf.splitTextToSize(p, contentWidth - 12);
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
       wrapped.forEach((line, i) => {
         if (i === 0) {
-          pdf.text('>', margin + 4, y);
+          pdf.text('-', margin + 5, y);
         }
-        pdf.text(line, margin + 8, y);
+        pdf.text(line, margin + 9, y);
         y += lineH;
       });
     });
-    y += 4;
+    y += 3;
   };
 
   calibrationTypes.forEach(type => {
@@ -398,31 +398,31 @@ async function generateQuotePDF(options) {
   }
 
   // ===== PRICING TABLE =====
-  const rowH = 7;
+  const rowH = 8;
   let tableRows = devices.length;
   devices.forEach(d => {
     tableRows += (d.additionalParts || []).length + 1;
   });
-  const tableH = 10 + (tableRows * rowH) + 30;
+  const tableH = 12 + (tableRows * rowH) + 32;
   checkPageBreak(tableH);
 
-  pdf.setFontSize(11);
+  pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   pdf.text('Recapitulatif des Prix', margin, y);
-  y += 6;
+  y += 7;
 
   // Header row
   pdf.setFillColor(...darkBlue);
-  pdf.rect(margin, y, contentWidth, 8, 'F');
-  pdf.setFontSize(8);
+  pdf.rect(margin, y, contentWidth, 9, 'F');
+  pdf.setFontSize(9);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...white);
-  pdf.text('Appareil', margin + 3, y + 5.5);
-  pdf.text('N. Serie', margin + 50, y + 5.5);
-  pdf.text('Service', margin + 95, y + 5.5);
-  pdf.text('Prix HT', pageWidth - margin - 3, y + 5.5, { align: 'right' });
-  y += 8;
+  pdf.text('Appareil', margin + 3, y + 6);
+  pdf.text('N. Serie', margin + 55, y + 6);
+  pdf.text('Service', margin + 100, y + 6);
+  pdf.text('Prix HT', pageWidth - margin - 3, y + 6, { align: 'right' });
+  y += 9;
 
   devices.forEach((device, idx) => {
     const svc = [];
@@ -430,38 +430,38 @@ async function generateQuotePDF(options) {
     if (device.needsRepair || (device.serviceType || device.service_type || '').includes('repair')) svc.push('Reparation');
     const total = device.serviceTotal || ((device.calibrationPrice || 0) + (device.repairPrice || 0) + (device.additionalParts || []).reduce((s, p) => s + (parseFloat(p.price) || 0), 0));
     
-    pdf.setFillColor(idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 248);
+    pdf.setFillColor(idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250);
     pdf.rect(margin, y, contentWidth, rowH, 'F');
-    pdf.setFontSize(8);
+    pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...darkBlue);
-    pdf.text(device.model || device.model_name || '-', margin + 3, y + 5);
+    pdf.text(device.model || device.model_name || '-', margin + 3, y + 5.5);
     pdf.setFont('courier', 'normal');
-    pdf.text(device.serial || device.serial_number || '-', margin + 50, y + 5);
+    pdf.text(device.serial || device.serial_number || '-', margin + 55, y + 5.5);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(svc.join(' + ') || 'Service', margin + 95, y + 5);
+    pdf.text(svc.join(' + ') || 'Service', margin + 100, y + 5.5);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(total.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5, { align: 'right' });
+    pdf.text(total.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
     y += rowH;
 
     (device.additionalParts || []).forEach(part => {
       pdf.setFillColor(250, 250, 250);
       pdf.rect(margin, y, contentWidth, rowH, 'F');
       pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(7);
+      pdf.setFontSize(8);
       pdf.setTextColor(...gray);
-      pdf.text('   > ' + (part.description || 'Piece/Service'), margin + 3, y + 5);
-      pdf.text((parseFloat(part.price) || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5, { align: 'right' });
+      pdf.text('    > ' + (part.description || 'Piece/Service'), margin + 3, y + 5.5);
+      pdf.text((parseFloat(part.price) || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
       y += rowH;
     });
 
-    pdf.setFillColor(240, 240, 240);
+    pdf.setFillColor(242, 242, 242);
     pdf.rect(margin, y, contentWidth, rowH, 'F');
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7);
+    pdf.setFontSize(8);
     pdf.setTextColor(...gray);
-    pdf.text('   > Frais de port', margin + 3, y + 5);
-    pdf.text((device.shipping || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5, { align: 'right' });
+    pdf.text('    > Frais de port', margin + 3, y + 5.5);
+    pdf.text((device.shipping || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
     y += rowH;
   });
 
@@ -472,101 +472,106 @@ async function generateQuotePDF(options) {
   pdf.setFillColor(255, 255, 255);
   pdf.rect(margin, y, contentWidth, rowH, 'F');
   pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(8);
+  pdf.setFontSize(9);
   pdf.setTextColor(...darkBlue);
-  pdf.text('Sous-total services', margin + 3, y + 5);
-  pdf.text(servicesSubtotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5, { align: 'right' });
+  pdf.text('Sous-total services', margin + 3, y + 5.5);
+  pdf.text(servicesSubtotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
   y += rowH;
 
   pdf.rect(margin, y, contentWidth, rowH, 'F');
-  pdf.text('Total frais de port', margin + 3, y + 5);
-  pdf.text(shippingTotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5, { align: 'right' });
+  pdf.text('Total frais de port', margin + 3, y + 5.5);
+  pdf.text(shippingTotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
   y += rowH;
 
   pdf.setFillColor(...green);
-  pdf.rect(margin, y, contentWidth, 10, 'F');
+  pdf.rect(margin, y, contentWidth, 11, 'F');
   pdf.setTextColor(...white);
-  pdf.setFontSize(10);
-  pdf.text('TOTAL HT', margin + 3, y + 7);
-  pdf.setFontSize(14);
-  pdf.text(grandTotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 7, { align: 'right' });
-  y += 14;
+  pdf.setFontSize(11);
+  pdf.text('TOTAL HT', margin + 4, y + 7.5);
+  pdf.setFontSize(16);
+  pdf.text(grandTotal.toFixed(2) + ' EUR', pageWidth - margin - 4, y + 8, { align: 'right' });
+  y += 15;
 
   // ===== CONDITIONS =====
-  checkPageBreak(25);
-  pdf.setFontSize(7);
+  const conditionsHeight = 22;
+  checkPageBreak(conditionsHeight + signatureBlockHeight + 5);
+  
+  pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...lightGray);
   pdf.text('CONDITIONS', margin, y);
   y += 4;
-  pdf.setFontSize(7);
+  pdf.setFontSize(8);
   pdf.setTextColor(...gray);
   PDF_DISCLAIMERS.forEach(d => {
     pdf.text('- ' + d, margin, y);
-    y += 3.5;
+    y += 4;
   });
+  y += 2;
 
-  // ===== SIGNATURE - ALWAYS AT BOTTOM =====
-  const sigY = pageHeight - footerHeight - signatureBlockHeight;
+  // ===== SIGNATURE - AT BOTTOM OF CURRENT PAGE =====
+  // Calculate where to place signature so it's at the bottom
+  const sigY = Math.max(y + 5, pageHeight - footerHeight - signatureBlockHeight - 3);
   
-  pdf.setDrawColor(220, 220, 220);
+  pdf.setDrawColor(200, 200, 200);
   pdf.setLineWidth(0.3);
   pdf.line(margin, sigY, pageWidth - margin, sigY);
   
-  pdf.setFontSize(7);
+  pdf.setFontSize(8);
   pdf.setTextColor(...lightGray);
-  pdf.text('ETABLI PAR', margin, sigY + 6);
-  pdf.setFontSize(11);
+  pdf.text('ETABLI PAR', margin, sigY + 7);
+  pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(createdBy, margin, sigY + 12);
-  pdf.setFontSize(9);
+  pdf.text(createdBy, margin, sigY + 14);
+  pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text('Lighthouse France', margin, sigY + 17);
+  pdf.text('Lighthouse France', margin, sigY + 20);
 
-  const sigBoxX = pageWidth - margin - 60;
+  const sigBoxX = pageWidth - margin - 62;
   
   if (isSigned && signatureName) {
     pdf.setFillColor(245, 255, 250);
     pdf.setDrawColor(...green);
     pdf.setLineWidth(0.5);
-    pdf.roundedRect(sigBoxX, sigY + 2, 60, 38, 2, 2, 'FD');
+    pdf.roundedRect(sigBoxX, sigY + 3, 62, 36, 2, 2, 'FD');
     
-    pdf.setFontSize(7);
+    pdf.setFontSize(8);
     pdf.setTextColor(...green);
-    pdf.text('APPROUVE PAR', sigBoxX + 4, sigY + 9);
-    pdf.setFontSize(10);
+    pdf.text('APPROUVE PAR', sigBoxX + 4, sigY + 10);
+    pdf.setFontSize(11);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
-    pdf.text(signatureName, sigBoxX + 4, sigY + 16);
-    pdf.setFontSize(8);
+    pdf.text(signatureName, sigBoxX + 4, sigY + 17);
+    pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...gray);
-    pdf.text('Date: ' + signatureDate, sigBoxX + 4, sigY + 22);
-    pdf.setFontSize(7);
+    pdf.text('Date: ' + signatureDate, sigBoxX + 4, sigY + 24);
+    pdf.setFontSize(8);
     pdf.setFont('helvetica', 'italic');
     pdf.setTextColor(...green);
-    pdf.text('Lu et approuve', sigBoxX + 4, sigY + 28);
+    pdf.text('Lu et approuve', sigBoxX + 4, sigY + 30);
     
     if (signatureImage) {
-      try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 38, sigY + 8, 18, 14); } catch(e) {}
+      try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 40, sigY + 9, 18, 16); } catch(e) {}
     }
   } else {
-    pdf.setFontSize(7);
+    pdf.setFontSize(8);
     pdf.setTextColor(...lightGray);
-    pdf.text('Signature client', sigBoxX + 15, sigY + 6);
-    pdf.setDrawColor(200, 200, 200);
+    pdf.text('Signature client', sigBoxX + 16, sigY + 7);
+    pdf.setDrawColor(180, 180, 180);
     pdf.setLineWidth(0.3);
     pdf.setLineDashPattern([2, 2], 0);
-    pdf.roundedRect(sigBoxX + 5, sigY + 9, 50, 22, 2, 2, 'D');
+    pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 22, 2, 2, 'D');
     pdf.setLineDashPattern([], 0);
-    pdf.text('Lu et approuve', sigBoxX + 18, sigY + 36);
+    pdf.text('Lu et approuve', sigBoxX + 18, sigY + 37);
   }
 
   addFooter();
   return pdf.output('blob');
 }
+
 
 // Translations
 const T = {
