@@ -4682,75 +4682,129 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             document.head.appendChild(script);
           });
           
-          // Get quote content and add signature
-          const quoteContent = document.getElementById('quote-print-content');
-          if (quoteContent) {
-            // Clone the content and add signature
-            const container = document.createElement('div');
-            container.innerHTML = quoteContent.innerHTML;
-            container.style.width = '190mm';
-            container.style.maxWidth = '190mm';
-            container.style.padding = '0';
-            container.style.margin = '0';
-            container.style.fontFamily = 'Arial, sans-serif';
-            container.style.fontSize = '11px';
-            container.style.lineHeight = '1.4';
-            container.style.background = 'white';
-            
-            // Add signature section to the cloned content
-            const signatureSection = document.createElement('div');
-            signatureSection.style.marginTop = '20px';
-            signatureSection.style.padding = '15px';
-            signatureSection.style.borderTop = '2px solid #00A651';
-            signatureSection.style.background = '#f0fdf4';
-            signatureSection.innerHTML = `
-              <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+          // Build quote HTML content with signature
+          const quoteData = request.quote_data || {};
+          const devices = quoteData.devices || request.request_devices || [];
+          const grandTotal = quoteData.grandTotal || request.quote_total || 0;
+          const servicesSubtotal = quoteData.servicesSubtotal || (grandTotal - (quoteData.shippingTotal || 0));
+          const shippingTotal = quoteData.shippingTotal || request.quote_shipping || 0;
+          
+          // Create PDF container
+          const container = document.createElement('div');
+          container.style.width = '800px';
+          container.style.padding = '40px';
+          container.style.fontFamily = 'Arial, sans-serif';
+          container.style.fontSize = '12px';
+          container.style.background = 'white';
+          container.style.position = 'absolute';
+          container.style.left = '-9999px';
+          
+          container.innerHTML = `
+            <div style="border-bottom: 4px solid #00A651; padding-bottom: 20px; margin-bottom: 20px;">
+              <div style="display: flex; justify-content: space-between;">
                 <div>
-                  <p style="font-size: 10px; color: #666; margin-bottom: 4px;">Approuvé par</p>
-                  <p style="font-size: 14px; font-weight: bold; color: #166534;">${signatureName}</p>
-                  <p style="font-size: 11px; color: #15803d;">Date: ${new Date(signatureDateISO).toLocaleDateString('fr-FR')}</p>
+                  <h1 style="font-size: 28px; font-weight: bold; color: #1a1a2e; margin: 0;">LIGHTHOUSE</h1>
+                  <p style="color: #666; margin: 4px 0 0 0;">Worldwide Solutions</p>
                 </div>
                 <div style="text-align: right;">
-                  <p style="font-size: 9px; color: #16a34a; margin-bottom: 4px;">✅ LU ET APPROUVÉ</p>
-                  <img src="${signatureData}" style="max-height: 50px; border: 1px solid #bbf7d0; border-radius: 4px; padding: 4px; background: white;" />
+                  <p style="font-size: 20px; font-weight: bold; color: #00A651; margin: 0;">DEVIS SIGNÉ</p>
+                  <p style="color: #666; margin: 4px 0 0 0;">N° ${request.request_number}</p>
                 </div>
               </div>
-            `;
-            container.appendChild(signatureSection);
+            </div>
             
-            document.body.appendChild(container);
+            <div style="display: flex; justify-content: space-between; background: #f3f4f6; padding: 12px 20px; margin-bottom: 20px;">
+              <div><p style="font-size: 10px; color: #666; margin: 0;">Date</p><p style="font-weight: 500; margin: 4px 0 0 0;">${request.quoted_at ? new Date(request.quoted_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p></div>
+              <div><p style="font-size: 10px; color: #666; margin: 0;">Client</p><p style="font-weight: 500; margin: 4px 0 0 0;">${request.companies?.name || ''}</p></div>
+              <div><p style="font-size: 10px; color: #666; margin: 0;">Validité</p><p style="font-weight: 500; margin: 4px 0 0 0;">30 jours</p></div>
+            </div>
             
-            // Generate PDF blob
-            const pdfBlob = await window.html2pdf().set({
-              margin: [10, 10, 10, 10],
-              image: { type: 'jpeg', quality: 0.98 },
-              html2canvas: { 
-                scale: 2, 
-                useCORS: true,
-                width: 190 * 3.78,
-                windowWidth: 190 * 3.78
-              },
-              jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-              pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-            }).from(container).outputPdf('blob');
+            <h3 style="font-size: 14px; color: #1a1a2e; margin: 20px 0 10px 0;">Équipements</h3>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+              <thead>
+                <tr style="background: #1a1a2e; color: white;">
+                  <th style="padding: 10px; text-align: left;">Appareil</th>
+                  <th style="padding: 10px; text-align: left;">N° Série</th>
+                  <th style="padding: 10px; text-align: left;">Service</th>
+                  <th style="padding: 10px; text-align: right;">Prix HT</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${devices.map((d, i) => `
+                  <tr style="background: ${i % 2 === 0 ? '#f9fafb' : 'white'};">
+                    <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">${d.model || d.model_name || '—'}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; font-family: monospace;">${d.serial || d.serial_number || '—'}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">${d.service_type || 'Service'}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; text-align: right;">${(d.serviceTotal || d.calibrationPrice || 0).toFixed(2)} €</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+              <tfoot>
+                <tr style="border-top: 2px solid #d1d5db;">
+                  <td colspan="3" style="padding: 10px; font-weight: 500;">Sous-total services</td>
+                  <td style="padding: 10px; text-align: right; font-weight: 500;">${servicesSubtotal.toFixed(2)} €</td>
+                </tr>
+                <tr>
+                  <td colspan="3" style="padding: 10px; font-weight: 500;">Frais de port</td>
+                  <td style="padding: 10px; text-align: right; font-weight: 500;">${shippingTotal.toFixed(2)} €</td>
+                </tr>
+                <tr style="background: #00A651; color: white;">
+                  <td colspan="3" style="padding: 12px; font-weight: bold; font-size: 14px;">TOTAL HT</td>
+                  <td style="padding: 12px; text-align: right; font-weight: bold; font-size: 18px;">${grandTotal.toFixed(2)} €</td>
+                </tr>
+              </tfoot>
+            </table>
             
-            document.body.removeChild(container);
+            <div style="margin-top: 30px; padding: 20px; border: 2px solid #00A651; border-radius: 8px; background: #f0fdf4;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <p style="font-size: 10px; color: #666; margin: 0 0 4px 0;">✅ APPROUVÉ PAR</p>
+                  <p style="font-size: 16px; font-weight: bold; color: #166534; margin: 0;">${signatureName}</p>
+                  <p style="font-size: 12px; color: #15803d; margin: 4px 0 0 0;">Date: ${new Date(signatureDateISO).toLocaleDateString('fr-FR')}</p>
+                  <p style="font-size: 11px; color: #16a34a; margin: 4px 0 0 0; font-style: italic;">Lu et approuvé</p>
+                </div>
+                <div style="text-align: right;">
+                  <p style="font-size: 10px; color: #666; margin: 0 0 4px 0;">Signature</p>
+                  <img src="${signatureData}" style="max-height: 60px; border: 1px solid #bbf7d0; border-radius: 4px; padding: 8px; background: white;" />
+                </div>
+              </div>
+            </div>
             
-            // Upload PDF to Supabase
-            const pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
-            const { error: pdfUploadError } = await supabase.storage
+            <div style="margin-top: 30px; text-align: center; padding: 15px; background: #1a1a2e; color: white; font-size: 11px;">
+              <p style="font-weight: 500; margin: 0;">Lighthouse France SAS</p>
+              <p style="color: #9ca3af; margin: 4px 0 0 0;">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+            </div>
+          `;
+          
+          document.body.appendChild(container);
+          
+          // Generate PDF blob
+          const pdfBlob = await window.html2pdf().set({
+            margin: 10,
+            image: { type: 'jpeg', quality: 0.95 },
+            html2canvas: { scale: 2, useCORS: true, logging: false },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+          }).from(container).outputPdf('blob');
+          
+          document.body.removeChild(container);
+          
+          // Upload PDF to Supabase
+          const pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
+          const { error: pdfUploadError } = await supabase.storage
+            .from('documents')
+            .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
+          
+          if (!pdfUploadError) {
+            const { data: pdfUrl } = supabase.storage
               .from('documents')
-              .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
-            
-            if (!pdfUploadError) {
-              const { data: pdfUrl } = supabase.storage
-                .from('documents')
-                .getPublicUrl(pdfFileName);
-              signedQuotePdfUrl = pdfUrl?.publicUrl;
-            }
+              .getPublicUrl(pdfFileName);
+            signedQuotePdfUrl = pdfUrl?.publicUrl;
+            console.log('Signed quote PDF uploaded:', signedQuotePdfUrl);
+          } else {
+            console.log('PDF upload error:', pdfUploadError);
           }
         } catch (e) {
-          console.log('Signed quote PDF generation skipped:', e);
+          console.log('Signed quote PDF generation error:', e);
         }
       }
       
@@ -5596,129 +5650,44 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
                     🖨️ Imprimer
                   </button>
-                  <button onClick={() => {
-                    const content = document.getElementById('quote-print-content');
-                    const htmlContent = `
-                      <!DOCTYPE html>
-                      <html>
-                      <head>
-                        <title>Devis_${request.request_number}</title>
-                        <meta charset="utf-8">
-                        <style>
-                          * { margin: 0; padding: 0; box-sizing: border-box; }
-                          body { font-family: Arial, sans-serif; }
-                          .border-b { border-bottom: 1px solid #e5e7eb; }
-                          .border-b-4 { border-bottom: 4px solid; }
-                          .border-t { border-top: 1px solid #e5e7eb; }
-                          .border-t-2 { border-top: 2px solid #d1d5db; }
-                          .border-l-4 { border-left: 4px solid; }
-                          .border-blue-500 { border-color: #3b82f6; }
-                          .border-orange-500 { border-color: #f97316; }
-                          .border-green-200 { border-color: #bbf7d0; }
-                          .border-\\[\\#00A651\\] { border-color: #00A651; }
-                          .bg-gray-50 { background: #f9fafb; }
-                          .bg-gray-100 { background: #f3f4f6; }
-                          .bg-gray-200 { background: #e5e7eb; }
-                          .bg-white { background: white; }
-                          .bg-green-50 { background: #f0fdf4; }
-                          .bg-\\[\\#1a1a2e\\] { background: #1a1a2e; }
-                          .bg-\\[\\#00A651\\] { background: #00A651; }
-                          .text-white { color: white; }
-                          .text-gray-400 { color: #9ca3af; }
-                          .text-gray-500 { color: #6b7280; }
-                          .text-gray-600 { color: #4b5563; }
-                          .text-gray-700 { color: #374151; }
-                          .text-green-600 { color: #16a34a; }
-                          .text-green-700 { color: #15803d; }
-                          .text-green-800 { color: #166534; }
-                          .text-\\[\\#1a1a2e\\] { color: #1a1a2e; }
-                          .text-\\[\\#00A651\\] { color: #00A651; }
-                          .text-orange-500 { color: #f97316; }
-                          .text-xs { font-size: 0.75rem; }
-                          .text-sm { font-size: 0.875rem; }
-                          .text-lg { font-size: 1.125rem; }
-                          .text-xl { font-size: 1.25rem; }
-                          .text-2xl { font-size: 1.5rem; }
-                          .text-3xl { font-size: 1.875rem; }
-                          .font-medium { font-weight: 500; }
-                          .font-bold { font-weight: 700; }
-                          .font-mono { font-family: monospace; }
-                          .uppercase { text-transform: uppercase; }
-                          .text-left { text-align: left; }
-                          .text-right { text-align: right; }
-                          .text-center { text-align: center; }
-                          .px-4 { padding-left: 1rem; padding-right: 1rem; }
-                          .px-8 { padding-left: 2rem; padding-right: 2rem; }
-                          .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
-                          .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
-                          .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
-                          .py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
-                          .pt-8 { padding-top: 2rem; }
-                          .pb-4 { padding-bottom: 1rem; }
-                          .pl-4 { padding-left: 1rem; }
-                          .pl-8 { padding-left: 2rem; }
-                          .p-4 { padding: 1rem; }
-                          .mb-1 { margin-bottom: 0.25rem; }
-                          .mb-2 { margin-bottom: 0.5rem; }
-                          .mb-3 { margin-bottom: 0.75rem; }
-                          .mb-4 { margin-bottom: 1rem; }
-                          .mt-1 { margin-top: 0.25rem; }
-                          .mt-2 { margin-top: 0.5rem; }
-                          .space-y-1 > * + * { margin-top: 0.25rem; }
-                          .space-y-6 > * + * { margin-top: 1.5rem; }
-                          .gap-2 { gap: 0.5rem; }
-                          .flex { display: flex; }
-                          .items-start { align-items: flex-start; }
-                          .items-end { align-items: flex-end; }
-                          .justify-between { justify-content: space-between; }
-                          .rounded-lg { border-radius: 0.5rem; }
-                          .w-full { width: 100%; }
-                          .w-48 { width: 12rem; }
-                          .h-20 { height: 5rem; }
-                          .max-h-16 { max-height: 4rem; }
-                          .border-2 { border-width: 2px; }
-                          .border-dashed { border-style: dashed; }
-                          .border-gray-300 { border-color: #d1d5db; }
-                          table { width: 100%; border-collapse: collapse; }
-                          th, td { padding: 0.75rem 1rem; }
-                        </style>
-                      </head>
-                      <body>${content.innerHTML}</body>
-                      </html>
-                    `;
-                    // Load html2pdf dynamically and generate PDF
-                    const script = document.createElement('script');
-                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-                    script.onload = () => {
-                      const container = document.createElement('div');
-                      container.innerHTML = content.innerHTML;
-                      container.style.width = '190mm'; // A4 width minus margins
-                      container.style.maxWidth = '190mm';
-                      container.style.padding = '0';
-                      container.style.margin = '0';
-                      container.style.fontFamily = 'Arial, sans-serif';
-                      container.style.fontSize = '11px'; // Slightly smaller font for better fit
-                      container.style.lineHeight = '1.4';
-                      container.style.background = 'white';
-                      document.body.appendChild(container);
-                      
-                      window.html2pdf().set({
-                        margin: [10, 10, 10, 10],
-                        filename: `Devis_${request.request_number}.pdf`,
-                        image: { type: 'jpeg', quality: 0.98 },
-                        html2canvas: { 
-                          scale: 2, 
-                          useCORS: true,
-                          width: 190 * 3.78, // 190mm in pixels at 96dpi
-                          windowWidth: 190 * 3.78
-                        },
-                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-                        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-                      }).from(container).save().then(() => {
-                        document.body.removeChild(container);
+                  <button onClick={async () => {
+                    // Load html2pdf if not already loaded
+                    if (!window.html2pdf) {
+                      await new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+                        script.onload = resolve;
+                        script.onerror = reject;
+                        document.head.appendChild(script);
                       });
-                    };
-                    document.head.appendChild(script);
+                    }
+                    
+                    const content = document.getElementById('quote-print-content');
+                    if (!content) return;
+                    
+                    // Clone and prepare for PDF
+                    const clone = content.cloneNode(true);
+                    clone.style.width = '800px';
+                    clone.style.padding = '20px';
+                    clone.style.background = 'white';
+                    clone.style.position = 'absolute';
+                    clone.style.left = '-9999px';
+                    document.body.appendChild(clone);
+                    
+                    try {
+                      await window.html2pdf()
+                        .set({
+                          margin: 10,
+                          filename: `Devis_${request.request_number}.pdf`,
+                          image: { type: 'jpeg', quality: 0.95 },
+                          html2canvas: { scale: 2, useCORS: true, logging: false },
+                          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                        })
+                        .from(clone)
+                        .save();
+                    } finally {
+                      document.body.removeChild(clone);
+                    }
                   }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
                     💾 Télécharger PDF
                   </button>
