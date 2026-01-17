@@ -634,18 +634,75 @@ function RMADetailModal({ rma, onClose, notify, reload }) {
             <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Documents</h3>
               {rma.bc_file_url && <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">📄 BC Fichier</a>}
               {rma.bc_signature_url && <a href={rma.bc_signature_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">✍️ Signature</a>}
+              {rma.signed_quote_url && <a href={rma.signed_quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">📝 Devis Signé</a>}
               {rma.quote_url && <a href={rma.quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">💰 Devis</a>}
-              {!rma.bc_file_url && !rma.bc_signature_url && !rma.quote_url && <p className="text-sm text-gray-400">Aucun document</p>}
+              {!rma.bc_file_url && !rma.bc_signature_url && !rma.quote_url && !rma.signed_quote_url && <p className="text-sm text-gray-400">Aucun document</p>}
             </div>
           </div>
-          <div><h3 className="font-bold text-gray-700 mb-3">Appareils ({devices.length || 1})</h3>
-            {devices.length > 0 ? <div className="space-y-2">{devices.map((d, i) => <div key={i} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center"><div><p className="font-medium">{d.model_name}</p><p className="text-sm text-gray-500">SN: {d.serial_number}</p>{d.notes && <p className="text-sm text-gray-400 mt-1">{d.notes}</p>}</div><span className="text-sm text-gray-400">{d.service_type}</span></div>)}</div> : <div className="bg-gray-50 rounded-lg p-3"><p className="font-medium">{rma.serial_number}</p></div>}
+          
+          {/* Per-Device Status Management */}
+          <div>
+            <h3 className="font-bold text-gray-700 mb-3">Appareils ({devices.length || 1}) - Statut par appareil</h3>
+            {devices.length > 0 ? (
+              <div className="space-y-3">
+                {devices.map((d, i) => {
+                  const deviceStatus = d.status || rma.status;
+                  const deviceStyle = STATUS_STYLES[deviceStatus] || STATUS_STYLES.submitted;
+                  return (
+                    <div key={d.id || i} className="bg-gray-50 rounded-lg p-4 border">
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <p className="font-medium text-gray-800">{d.model_name}</p>
+                          <p className="text-sm text-gray-500">SN: {d.serial_number}</p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {d.service_type === 'calibration' ? '🔬 Étalonnage' : 
+                             d.service_type === 'repair' ? '🔧 Réparation' : 
+                             d.service_type === 'calibration_repair' || d.service_type === 'cal_repair' ? '🔬+🔧' : d.service_type}
+                          </p>
+                          {d.notes && <p className="text-sm text-gray-400 mt-1 italic">{d.notes}</p>}
+                        </div>
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${deviceStyle.bg} ${deviceStyle.text}`}>
+                          {deviceStyle.label}
+                        </span>
+                      </div>
+                      {rma.status !== 'archived' && (
+                        <div className="flex flex-wrap gap-1">
+                          {['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped', 'completed'].map(key => {
+                            const val = STATUS_STYLES[key];
+                            if (!val) return null;
+                            return (
+                              <button 
+                                key={key} 
+                                onClick={async () => {
+                                  setSaving(true);
+                                  const { error } = await supabase.from('request_devices').update({ status: key, status_updated_at: new Date().toISOString() }).eq('id', d.id);
+                                  if (error) notify('Erreur: ' + error.message, 'error'); 
+                                  else { notify(`Appareil mis à jour: ${val.label}`); reload(); }
+                                  setSaving(false);
+                                }} 
+                                disabled={saving || key === deviceStatus} 
+                                className={`px-2 py-1 rounded text-xs font-medium ${val.bg} ${val.text} ${key === deviceStatus ? 'ring-2 ring-offset-1 ring-gray-400' : 'hover:opacity-80'} disabled:opacity-50`}
+                              >
+                                {val.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="bg-gray-50 rounded-lg p-3"><p className="font-medium">{rma.serial_number}</p></div>
+            )}
           </div>
+          
           {rma.problem_description && <div><h3 className="font-bold text-gray-700 mb-2">Notes du client</h3><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm whitespace-pre-wrap">{rma.problem_description}</p></div></div>}
           <div><h3 className="font-bold text-gray-700 mb-2">Notes internes</h3><textarea value={internalNotes} onChange={e => setInternalNotes(e.target.value)} placeholder="Ajouter des notes internes..." className="w-full px-4 py-3 border border-gray-300 rounded-lg h-24 resize-none" /><button onClick={saveNotes} disabled={saving} className="mt-2 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">{saving ? 'Enregistrement...' : 'Enregistrer les notes'}</button></div>
           
           {rma.status !== 'archived' && (
-            <div><h3 className="font-bold text-gray-700 mb-2">Mettre à jour le statut</h3><div className="flex flex-wrap gap-2">{workflowStatuses.map(key => { const val = STATUS_STYLES[key]; if (!val) return null; return <button key={key} onClick={() => updateStatus(key)} disabled={saving || key === rma.status} className={`px-3 py-1.5 rounded text-sm font-medium ${val.bg} ${val.text} ${key === rma.status ? 'ring-2 ring-offset-2 ring-gray-400' : 'hover:opacity-80'} disabled:opacity-50`}>{val.label}</button>; })}</div></div>
+            <div><h3 className="font-bold text-gray-700 mb-2">Statut global RMA</h3><p className="text-xs text-gray-500 mb-2">Change le statut de tous les appareils en même temps</p><div className="flex flex-wrap gap-2">{workflowStatuses.map(key => { const val = STATUS_STYLES[key]; if (!val) return null; return <button key={key} onClick={() => updateStatus(key)} disabled={saving || key === rma.status} className={`px-3 py-1.5 rounded text-sm font-medium ${val.bg} ${val.text} ${key === rma.status ? 'ring-2 ring-offset-2 ring-gray-400' : 'hover:opacity-80'} disabled:opacity-50`}>{val.label}</button>; })}</div></div>
           )}
           
           {/* Archive/Unarchive Section */}
