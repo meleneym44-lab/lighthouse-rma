@@ -1657,7 +1657,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                     <img 
                       src="/images/logos/capcert-logo.png" 
                       alt="Capcert Certification" 
-                      className="h-16 w-auto"
+                      className="h-20 w-auto"
                       onError={(e) => { e.target.style.display = 'none'; }}
                     />
                   </div>
