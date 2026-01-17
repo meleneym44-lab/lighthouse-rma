@@ -4685,6 +4685,31 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       
       if (updateError) throw updateError;
       
+      // Also save BC documents to request_attachments so they appear in Documents tab
+      if (fileUrl) {
+        await supabase.from('request_attachments').insert({
+          request_id: request.id,
+          file_name: bcFile?.name || 'Bon de Commande.pdf',
+          file_url: fileUrl,
+          file_type: bcFile?.type || 'application/pdf',
+          file_size: bcFile?.size || 0,
+          uploaded_by: profile.id,
+          category: 'bon_commande'
+        });
+      }
+      
+      if (signatureUrl) {
+        await supabase.from('request_attachments').insert({
+          request_id: request.id,
+          file_name: `Signature_${signatureName}_${new Date().toLocaleDateString('fr-FR')}.png`,
+          file_url: signatureUrl,
+          file_type: 'image/png',
+          file_size: 0,
+          uploaded_by: profile.id,
+          category: 'signature'
+        });
+      }
+      
       notify('Bon de commande soumis avec succès!');
       setShowBCModal(false);
       
@@ -5454,6 +5479,108 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
                   }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
                     🖨️ Imprimer
+                  </button>
+                  <button onClick={() => {
+                    const content = document.getElementById('quote-print-content');
+                    const htmlContent = `
+                      <!DOCTYPE html>
+                      <html>
+                      <head>
+                        <title>Devis_${request.request_number}</title>
+                        <meta charset="utf-8">
+                        <style>
+                          * { margin: 0; padding: 0; box-sizing: border-box; }
+                          body { font-family: Arial, sans-serif; }
+                          .border-b { border-bottom: 1px solid #e5e7eb; }
+                          .border-b-4 { border-bottom: 4px solid; }
+                          .border-t { border-top: 1px solid #e5e7eb; }
+                          .border-t-2 { border-top: 2px solid #d1d5db; }
+                          .border-l-4 { border-left: 4px solid; }
+                          .border-blue-500 { border-color: #3b82f6; }
+                          .border-orange-500 { border-color: #f97316; }
+                          .border-green-200 { border-color: #bbf7d0; }
+                          .border-\\[\\#00A651\\] { border-color: #00A651; }
+                          .bg-gray-50 { background: #f9fafb; }
+                          .bg-gray-100 { background: #f3f4f6; }
+                          .bg-gray-200 { background: #e5e7eb; }
+                          .bg-white { background: white; }
+                          .bg-green-50 { background: #f0fdf4; }
+                          .bg-\\[\\#1a1a2e\\] { background: #1a1a2e; }
+                          .bg-\\[\\#00A651\\] { background: #00A651; }
+                          .text-white { color: white; }
+                          .text-gray-400 { color: #9ca3af; }
+                          .text-gray-500 { color: #6b7280; }
+                          .text-gray-600 { color: #4b5563; }
+                          .text-gray-700 { color: #374151; }
+                          .text-green-600 { color: #16a34a; }
+                          .text-green-700 { color: #15803d; }
+                          .text-green-800 { color: #166534; }
+                          .text-\\[\\#1a1a2e\\] { color: #1a1a2e; }
+                          .text-\\[\\#00A651\\] { color: #00A651; }
+                          .text-orange-500 { color: #f97316; }
+                          .text-xs { font-size: 0.75rem; }
+                          .text-sm { font-size: 0.875rem; }
+                          .text-lg { font-size: 1.125rem; }
+                          .text-xl { font-size: 1.25rem; }
+                          .text-2xl { font-size: 1.5rem; }
+                          .text-3xl { font-size: 1.875rem; }
+                          .font-medium { font-weight: 500; }
+                          .font-bold { font-weight: 700; }
+                          .font-mono { font-family: monospace; }
+                          .uppercase { text-transform: uppercase; }
+                          .text-left { text-align: left; }
+                          .text-right { text-align: right; }
+                          .text-center { text-align: center; }
+                          .px-4 { padding-left: 1rem; padding-right: 1rem; }
+                          .px-8 { padding-left: 2rem; padding-right: 2rem; }
+                          .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+                          .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+                          .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
+                          .py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+                          .pt-8 { padding-top: 2rem; }
+                          .pb-4 { padding-bottom: 1rem; }
+                          .pl-4 { padding-left: 1rem; }
+                          .pl-8 { padding-left: 2rem; }
+                          .p-4 { padding: 1rem; }
+                          .mb-1 { margin-bottom: 0.25rem; }
+                          .mb-2 { margin-bottom: 0.5rem; }
+                          .mb-3 { margin-bottom: 0.75rem; }
+                          .mb-4 { margin-bottom: 1rem; }
+                          .mt-1 { margin-top: 0.25rem; }
+                          .mt-2 { margin-top: 0.5rem; }
+                          .space-y-1 > * + * { margin-top: 0.25rem; }
+                          .space-y-6 > * + * { margin-top: 1.5rem; }
+                          .gap-2 { gap: 0.5rem; }
+                          .flex { display: flex; }
+                          .items-start { align-items: flex-start; }
+                          .items-end { align-items: flex-end; }
+                          .justify-between { justify-content: space-between; }
+                          .rounded-lg { border-radius: 0.5rem; }
+                          .w-full { width: 100%; }
+                          .w-48 { width: 12rem; }
+                          .h-20 { height: 5rem; }
+                          .max-h-16 { max-height: 4rem; }
+                          .border-2 { border-width: 2px; }
+                          .border-dashed { border-style: dashed; }
+                          .border-gray-300 { border-color: #d1d5db; }
+                          table { width: 100%; border-collapse: collapse; }
+                          th, td { padding: 0.75rem 1rem; }
+                        </style>
+                      </head>
+                      <body>${content.innerHTML}</body>
+                      </html>
+                    `;
+                    const blob = new Blob([htmlContent], { type: 'text/html' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `Devis_${request.request_number}.html`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
+                    💾 Télécharger
                   </button>
                 </div>
                 <div className="flex gap-3">
