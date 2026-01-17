@@ -4688,27 +4688,31 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             // Clone the content and add signature
             const container = document.createElement('div');
             container.innerHTML = quoteContent.innerHTML;
-            container.style.width = '210mm';
-            container.style.padding = '10mm';
+            container.style.width = '190mm';
+            container.style.maxWidth = '190mm';
+            container.style.padding = '0';
+            container.style.margin = '0';
             container.style.fontFamily = 'Arial, sans-serif';
+            container.style.fontSize = '11px';
+            container.style.lineHeight = '1.4';
             container.style.background = 'white';
             
             // Add signature section to the cloned content
             const signatureSection = document.createElement('div');
             signatureSection.style.marginTop = '20px';
-            signatureSection.style.padding = '20px';
+            signatureSection.style.padding = '15px';
             signatureSection.style.borderTop = '2px solid #00A651';
             signatureSection.style.background = '#f0fdf4';
             signatureSection.innerHTML = `
               <div style="display: flex; justify-content: space-between; align-items: flex-end;">
                 <div>
-                  <p style="font-size: 12px; color: #666; margin-bottom: 4px;">Approuvé par</p>
-                  <p style="font-size: 18px; font-weight: bold; color: #166534;">${signatureName}</p>
-                  <p style="font-size: 14px; color: #15803d;">Date: ${new Date(signatureDateISO).toLocaleDateString('fr-FR')}</p>
+                  <p style="font-size: 10px; color: #666; margin-bottom: 4px;">Approuvé par</p>
+                  <p style="font-size: 14px; font-weight: bold; color: #166534;">${signatureName}</p>
+                  <p style="font-size: 11px; color: #15803d;">Date: ${new Date(signatureDateISO).toLocaleDateString('fr-FR')}</p>
                 </div>
                 <div style="text-align: right;">
-                  <p style="font-size: 10px; color: #16a34a; margin-bottom: 4px;">✅ LU ET APPROUVÉ</p>
-                  <img src="${signatureData}" style="max-height: 60px; border: 1px solid #bbf7d0; border-radius: 4px; padding: 4px; background: white;" />
+                  <p style="font-size: 9px; color: #16a34a; margin-bottom: 4px;">✅ LU ET APPROUVÉ</p>
+                  <img src="${signatureData}" style="max-height: 50px; border: 1px solid #bbf7d0; border-radius: 4px; padding: 4px; background: white;" />
                 </div>
               </div>
             `;
@@ -4718,10 +4722,16 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             
             // Generate PDF blob
             const pdfBlob = await window.html2pdf().set({
-              margin: 10,
+              margin: [10, 10, 10, 10],
               image: { type: 'jpeg', quality: 0.98 },
-              html2canvas: { scale: 2, useCORS: true },
-              jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+              html2canvas: { 
+                scale: 2, 
+                useCORS: true,
+                width: 190 * 3.78,
+                windowWidth: 190 * 3.78
+              },
+              jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+              pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
             }).from(container).outputPdf('blob');
             
             document.body.removeChild(container);
@@ -4755,7 +4765,6 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           bc_signature_date: signatureDateISO,
           bc_file_url: fileUrl,
           bc_signature_url: signatureUrl,
-          signed_quote_url: signedQuotePdfUrl,
           quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
         })
         .eq('id', request.id);
@@ -5683,17 +5692,28 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     script.onload = () => {
                       const container = document.createElement('div');
                       container.innerHTML = content.innerHTML;
-                      container.style.width = '210mm';
-                      container.style.padding = '10mm';
+                      container.style.width = '190mm'; // A4 width minus margins
+                      container.style.maxWidth = '190mm';
+                      container.style.padding = '0';
+                      container.style.margin = '0';
                       container.style.fontFamily = 'Arial, sans-serif';
+                      container.style.fontSize = '11px'; // Slightly smaller font for better fit
+                      container.style.lineHeight = '1.4';
+                      container.style.background = 'white';
                       document.body.appendChild(container);
                       
                       window.html2pdf().set({
-                        margin: 10,
+                        margin: [10, 10, 10, 10],
                         filename: `Devis_${request.request_number}.pdf`,
                         image: { type: 'jpeg', quality: 0.98 },
-                        html2canvas: { scale: 2, useCORS: true },
-                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                        html2canvas: { 
+                          scale: 2, 
+                          useCORS: true,
+                          width: 190 * 3.78, // 190mm in pixels at 96dpi
+                          windowWidth: 190 * 3.78
+                        },
+                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
                       }).from(container).save().then(() => {
                         document.body.removeChild(container);
                       });
