@@ -4803,20 +4803,32 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             logging: false
           });
           
-          // Create PDF with jsPDF
+          // Create PDF with jsPDF - handle multiple pages
           const { jsPDF } = window.jspdf;
           const pdf = new jsPDF('p', 'mm', 'a4');
           
           const imgData = canvas.toDataURL('image/jpeg', 0.95);
           const pdfWidth = pdf.internal.pageSize.getWidth();
           const pdfHeight = pdf.internal.pageSize.getHeight();
-          const imgWidth = canvas.width;
-          const imgHeight = canvas.height;
-          const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-          const imgX = (pdfWidth - imgWidth * ratio) / 2;
-          const imgY = 0;
           
-          pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+          // Scale image to fit width, then paginate by height
+          const imgWidth = pdfWidth - 20; // 10mm margin on each side
+          const imgHeight = (canvas.height * imgWidth) / canvas.width;
+          
+          let heightLeft = imgHeight;
+          let position = 10; // Start 10mm from top
+          
+          // Add first page
+          pdf.addImage(imgData, 'JPEG', 10, position, imgWidth, imgHeight);
+          heightLeft -= (pdfHeight - 20); // Account for margins
+          
+          // Add additional pages if needed
+          while (heightLeft > 0) {
+            position = heightLeft - imgHeight + 10; // Calculate position for next page
+            pdf.addPage();
+            pdf.addImage(imgData, 'JPEG', 10, position, imgWidth, imgHeight);
+            heightLeft -= (pdfHeight - 20);
+          }
           
           // Get PDF as blob
           const pdfBlob = pdf.output('blob');
@@ -5685,36 +5697,82 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
                     🖨️ Imprimer
                   </button>
-                  <button onClick={() => {
-                    // Open print dialog which allows saving as PDF
+                  <button onClick={async () => {
+                    // Load jsPDF and html2canvas
+                    await Promise.all([
+                      new Promise((resolve, reject) => {
+                        if (window.jspdf) { resolve(); return; }
+                        const script = document.createElement('script');
+                        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+                        script.onload = resolve;
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                      }),
+                      new Promise((resolve, reject) => {
+                        if (window.html2canvas) { resolve(); return; }
+                        const script = document.createElement('script');
+                        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+                        script.onload = resolve;
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                      })
+                    ]);
+                    
                     const content = document.getElementById('quote-print-content');
                     if (!content) return;
                     
-                    const printWindow = window.open('', '_blank');
-                    printWindow.document.write(`
-                      <!DOCTYPE html>
-                      <html>
-                      <head>
-                        <title>Devis_${request.request_number}</title>
-                        <style>
-                          * { margin: 0; padding: 0; box-sizing: border-box; }
-                          body { font-family: Arial, sans-serif; padding: 20px; }
-                          table { width: 100%; border-collapse: collapse; }
-                          th, td { padding: 8px 12px; text-align: left; }
-                          @media print { body { padding: 0; } }
-                        </style>
-                      </head>
-                      <body>${content.innerHTML}</body>
-                      </html>
-                    `);
-                    printWindow.document.close();
-                    printWindow.focus();
-                    // User can choose "Save as PDF" in print dialog
-                    setTimeout(() => { 
-                      printWindow.print();
-                    }, 500);
+                    // Clone and position for capture
+                    const clone = content.cloneNode(true);
+                    clone.style.width = '800px';
+                    clone.style.padding = '30px';
+                    clone.style.background = 'white';
+                    clone.style.position = 'fixed';
+                    clone.style.top = '0';
+                    clone.style.left = '0';
+                    clone.style.zIndex = '99999';
+                    document.body.appendChild(clone);
+                    
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    try {
+                      const canvas = await window.html2canvas(clone, {
+                        scale: 2,
+                        useCORS: true,
+                        allowTaint: true,
+                        backgroundColor: '#ffffff',
+                        logging: false
+                      });
+                      
+                      const { jsPDF } = window.jspdf;
+                      const pdf = new jsPDF('p', 'mm', 'a4');
+                      
+                      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                      const pdfWidth = pdf.internal.pageSize.getWidth();
+                      const pdfHeight = pdf.internal.pageSize.getHeight();
+                      
+                      // Scale image to fit width, then paginate by height
+                      const imgWidth = pdfWidth - 20;
+                      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                      
+                      let heightLeft = imgHeight;
+                      let position = 10;
+                      
+                      pdf.addImage(imgData, 'JPEG', 10, position, imgWidth, imgHeight);
+                      heightLeft -= (pdfHeight - 20);
+                      
+                      while (heightLeft > 0) {
+                        position = heightLeft - imgHeight + 10;
+                        pdf.addPage();
+                        pdf.addImage(imgData, 'JPEG', 10, position, imgWidth, imgHeight);
+                        heightLeft -= (pdfHeight - 20);
+                      }
+                      
+                      pdf.save(`Devis_${request.request_number}.pdf`);
+                    } finally {
+                      document.body.removeChild(clone);
+                    }
                   }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
-                    💾 Enregistrer PDF
+                    💾 Télécharger PDF
                   </button>
                 </div>
                 <div className="flex gap-3">
