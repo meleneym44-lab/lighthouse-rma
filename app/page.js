@@ -335,21 +335,23 @@ async function generateQuotePDF(options) {
   };
 
   // ===== HEADER =====
+  let logoAdded = false;
   if (lighthouseLogo) {
     try {
-      pdf.addImage(lighthouseLogo, 'PNG', margin, y - 2, 50, 18);
+      console.log('Attempting to add lighthouse logo, data length:', lighthouseLogo.length);
+      // Detect format from base64 header
+      const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 50, 18);
+      logoAdded = true;
+      console.log('Lighthouse logo added successfully');
     } catch (e) {
-      // Fallback to text if image fails
-      pdf.setFontSize(26);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(...darkBlue);
-      pdf.text('LIGHTHOUSE', margin, y + 8);
-      pdf.setFontSize(11);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...gray);
-      pdf.text('Worldwide Solutions', margin, y + 14);
+      console.log('Lighthouse logo addImage failed:', e);
+      logoAdded = false;
     }
-  } else {
+  }
+  
+  if (!logoAdded) {
+    // Fallback to text if image fails
     pdf.setFontSize(26);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
@@ -598,9 +600,12 @@ async function generateQuotePDF(options) {
   // Add Capcert certification logo (bottom left, next to ETABLI PAR)
   if (capcertLogo) {
     try {
-      pdf.addImage(capcertLogo, 'PNG', margin + 55, sigY + 5, 28, 28);
+      console.log('Attempting to add capcert logo');
+      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(capcertLogo, format, margin + 55, sigY + 5, 28, 28);
+      console.log('Capcert logo added successfully');
     } catch (e) {
-      console.log('Capcert logo failed to load');
+      console.log('Capcert logo failed:', e);
     }
   }
 
