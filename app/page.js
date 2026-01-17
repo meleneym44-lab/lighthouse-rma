@@ -6869,8 +6869,17 @@ function HomePage({ t, setPage }) {
           <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
-                {/* Text-based logo for dark background */}
-                <div className="flex items-center gap-2 text-white">
+                {/* Logo image with white filter for dark background */}
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-10 w-auto brightness-0 invert"
+                  onError={(e) => { 
+                    e.target.style.display = 'none'; 
+                    e.target.nextSibling.style.display = 'flex'; 
+                  }}
+                />
+                <div className="items-center gap-2 text-white hidden">
                   <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
                   <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
                 </div>
@@ -6897,8 +6906,8 @@ function HomePage({ t, setPage }) {
                 <span className="text-sm font-medium">Portail Service Lighthouse France</span>
               </div>
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-                Service &<br/>
-                <span className="text-[#00A651]">Calibration</span> Portal
+                Portail de<br/>
+                <span className="text-[#00A651]">Service</span> & Pieces
               </h1>
               <p className="text-lg md:text-xl text-white/70 mb-8 max-w-lg leading-relaxed">
                 Gerez vos demandes de calibration et reparation d'equipements de mesure de contamination en temps reel.
@@ -6935,83 +6944,68 @@ function HomePage({ t, setPage }) {
               </div>
             </div>
             
-            {/* Right: Equipment Showcase - Bigger images, no double background */}
+            {/* Right: Equipment Showcase - Dark glass style */}
             <div className="relative hidden lg:block">
               <div className="relative">
                 {/* Main equipment grid */}
                 <div className="bg-white/5 backdrop-blur-md rounded-3xl p-5 border border-white/10">
                   <div className="grid grid-cols-2 gap-3">
                     {/* Particle Counter */}
-                    <div className="bg-white rounded-2xl p-3 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
-                      <div className="w-full h-36 mb-2 flex items-center justify-center">
+                    <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center bg-white/90 rounded-xl">
                         <img 
                           src="/images/products/particle-counter.png" 
                           alt="Particle Counter" 
-                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
+                          className="max-w-full max-h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
-                      <p className="text-[#1E3A5F] font-bold text-sm">Compteurs de Particules</p>
-                      <p className="text-gray-500 text-xs">Airborne & Portable</p>
+                      <p className="text-white font-bold text-sm">Compteurs de Particules</p>
+                      <p className="text-white/60 text-xs">Airborne & Portable</p>
                     </div>
                     
                     {/* Bio Collector */}
-                    <div className="bg-white rounded-2xl p-3 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
-                      <div className="w-full h-36 mb-2 flex items-center justify-center">
+                    <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center bg-white/90 rounded-xl">
                         <img 
                           src="/images/products/bio-collector.png" 
                           alt="Bio Collector" 
-                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
+                          className="max-w-full max-h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
-                      <p className="text-[#1E3A5F] font-bold text-sm">Bio Collecteurs</p>
-                      <p className="text-gray-500 text-xs">Echantillonneurs Microbiens</p>
+                      <p className="text-white font-bold text-sm">Bio Collecteurs</p>
+                      <p className="text-white/60 text-xs">Echantillonneurs Microbiens</p>
                     </div>
                     
                     {/* Liquid Counter */}
-                    <div className="bg-white rounded-2xl p-3 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
-                      <div className="w-full h-36 mb-2 flex items-center justify-center">
+                    <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center bg-white/90 rounded-xl">
                         <img 
                           src="/images/products/liquid-counter.png" 
                           alt="Liquid Counter" 
-                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
+                          className="max-w-full max-h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
-                      <p className="text-[#1E3A5F] font-bold text-sm">Compteurs Liquides</p>
-                      <p className="text-gray-500 text-xs">Analyse de Particules</p>
+                      <p className="text-white font-bold text-sm">Compteurs Liquides</p>
+                      <p className="text-white/60 text-xs">Analyse de Particules</p>
                     </div>
                     
                     {/* Temperature Probe */}
-                    <div className="bg-white rounded-2xl p-3 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
-                      <div className="w-full h-36 mb-2 flex items-center justify-center">
+                    <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center bg-white/90 rounded-xl">
                         <img 
                           src="/images/products/temp-probe.png" 
                           alt="Temperature Probe" 
-                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
+                          className="max-w-full max-h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
-                      <p className="text-[#1E3A5F] font-bold text-sm">Sondes de Temperature</p>
-                      <p className="text-gray-500 text-xs">Capteurs Environnementaux</p>
+                      <p className="text-white font-bold text-sm">Sondes de Temperature</p>
+                      <p className="text-white/60 text-xs">Capteurs Environnementaux</p>
                     </div>
                   </div>
                   
                   {/* "And more" indicator */}
-                  <div className="mt-3 text-center">
-                    <span className="text-white/60 text-sm">+ Systemes de monitoring, capteurs de pression, et plus...</span>
-                  </div>
-                </div>
-                
-                {/* Floating badge */}
-                <div className="absolute -bottom-4 -left-4 bg-white rounded-xl p-4 shadow-2xl border border-gray-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-[#00A651]/10 rounded-full flex items-center justify-center">
-                      <svg className="w-6 h-6 text-[#00A651]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-xl font-bold text-[#1E3A5F]">40+ ans</p>
-                      <p className="text-gray-500 text-sm">d'expertise</p>
-                    </div>
+                  <div className="mt-4 text-center">
+                    <span className="text-white/50 text-sm">+ Systemes de monitoring, capteurs de pression, et plus...</span>
                   </div>
                 </div>
               </div>
