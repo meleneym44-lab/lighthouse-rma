@@ -259,31 +259,52 @@ async function generateQuotePDF(options) {
   let y = margin;
   
   // === LOGO LOADING ===
-  const loadImage = (url) => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        resolve(canvas.toDataURL('image/png'));
-      };
-      img.onerror = () => resolve(null);
-      img.src = url;
-    });
+  const loadImageAsBase64 = async (url) => {
+    try {
+      // First try fetch approach (works better with Next.js)
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.log('Logo fetch failed:', url, response.status);
+        return null;
+      }
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      console.log('Logo loading error:', url, e);
+      // Fallback to Image approach
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+      });
+    }
   };
   
   // Load logos (with fallback if not available)
   let lighthouseLogo = null;
   let capcertLogo = null;
   try {
-    [lighthouseLogo, capcertLogo] = await Promise.all([
-      loadImage('/images/logos/lighthouse-logo.png'),
-      loadImage('/images/logos/capcert-logo.png')
+    const results = await Promise.all([
+      loadImageAsBase64('/images/logos/lighthouse-logo.png'),
+      loadImageAsBase64('/images/logos/capcert-logo.png')
     ]);
+    lighthouseLogo = results[0];
+    capcertLogo = results[1];
+    console.log('Logos loaded:', !!lighthouseLogo, !!capcertLogo);
   } catch (e) {
     console.log('Logo loading skipped:', e);
   }
