@@ -6869,16 +6869,8 @@ function HomePage({ t, setPage }) {
           <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
-                <img 
-                  src="/images/logos/lighthouse-logo.png" 
-                  alt="Lighthouse France" 
-                  className="h-10 w-auto brightness-0 invert"
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                    e.target.nextSibling.style.display = 'flex';
-                  }}
-                />
-                <div className="items-center gap-2 hidden text-white">
+                {/* Text-based logo for dark background */}
+                <div className="flex items-center gap-2 text-white">
                   <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
                   <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
                 </div>
@@ -6920,46 +6912,42 @@ function HomePage({ t, setPage }) {
                 </button>
               </div>
               
-              {/* Trust indicators */}
+              {/* Trust indicators - Fixed */}
               <div className="flex flex-wrap items-center gap-6 mt-10 pt-8 border-t border-white/10">
                 <div className="flex items-center gap-2">
                   <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                   </svg>
-                  <span className="text-white/70 text-sm">ISO 21501-4</span>
+                  <span className="text-white/70 text-sm">Certifie ISO 9001</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                   </svg>
-                  <span className="text-white/70 text-sm">ISO 9001</span>
+                  <span className="text-white/70 text-sm">40+ ans d'expertise</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <img 
-                    src="/images/logos/capcert-logo.png" 
-                    alt="Capcert" 
-                    className="h-5 w-auto brightness-0 invert opacity-70"
-                    onError={(e) => { e.target.style.display = 'none'; }}
-                  />
-                  <span className="text-white/70 text-sm">Certifie</span>
+                  <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-white/70 text-sm">Support mondial</span>
                 </div>
               </div>
             </div>
             
-            {/* Right: Equipment Showcase */}
+            {/* Right: Equipment Showcase - Bigger images, no double background */}
             <div className="relative hidden lg:block">
               <div className="relative">
                 {/* Main equipment grid */}
-                <div className="bg-white/5 backdrop-blur-md rounded-3xl p-6 border border-white/10">
-                  <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white/5 backdrop-blur-md rounded-3xl p-5 border border-white/10">
+                  <div className="grid grid-cols-2 gap-3">
                     {/* Particle Counter */}
-                    <div className="bg-white rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
-                      <div className="w-full h-28 rounded-xl mb-3 overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
+                    <div className="bg-white rounded-2xl p-3 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
+                      <div className="w-full h-36 mb-2 flex items-center justify-center">
                         <img 
                           src="/images/products/particle-counter.png" 
                           alt="Particle Counter" 
-                          className="w-full h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
-                          onError={(e) => { e.target.parentElement.innerHTML = '<div class="w-full h-full flex items-center justify-center text-gray-400"><svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg></div>'; }}
+                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
                       <p className="text-[#1E3A5F] font-bold text-sm">Compteurs de Particules</p>
@@ -6967,13 +6955,12 @@ function HomePage({ t, setPage }) {
                     </div>
                     
                     {/* Bio Collector */}
-                    <div className="bg-white rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
-                      <div className="w-full h-28 rounded-xl mb-3 overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
+                    <div className="bg-white rounded-2xl p-3 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
+                      <div className="w-full h-36 mb-2 flex items-center justify-center">
                         <img 
                           src="/images/products/bio-collector.png" 
                           alt="Bio Collector" 
-                          className="w-full h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
-                          onError={(e) => { e.target.parentElement.innerHTML = '<div class="w-full h-full flex items-center justify-center text-gray-400"><svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg></div>'; }}
+                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
                       <p className="text-[#1E3A5F] font-bold text-sm">Bio Collecteurs</p>
@@ -6981,13 +6968,12 @@ function HomePage({ t, setPage }) {
                     </div>
                     
                     {/* Liquid Counter */}
-                    <div className="bg-white rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
-                      <div className="w-full h-28 rounded-xl mb-3 overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
+                    <div className="bg-white rounded-2xl p-3 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
+                      <div className="w-full h-36 mb-2 flex items-center justify-center">
                         <img 
                           src="/images/products/liquid-counter.png" 
                           alt="Liquid Counter" 
-                          className="w-full h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
-                          onError={(e) => { e.target.parentElement.innerHTML = '<div class="w-full h-full flex items-center justify-center text-gray-400"><svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg></div>'; }}
+                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
                       <p className="text-[#1E3A5F] font-bold text-sm">Compteurs Liquides</p>
@@ -6995,13 +6981,12 @@ function HomePage({ t, setPage }) {
                     </div>
                     
                     {/* Temperature Probe */}
-                    <div className="bg-white rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
-                      <div className="w-full h-28 rounded-xl mb-3 overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
+                    <div className="bg-white rounded-2xl p-3 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
+                      <div className="w-full h-36 mb-2 flex items-center justify-center">
                         <img 
                           src="/images/products/temp-probe.png" 
                           alt="Temperature Probe" 
-                          className="w-full h-full object-contain p-2 group-hover:scale-110 transition-transform duration-300"
-                          onError={(e) => { e.target.parentElement.innerHTML = '<div class="w-full h-full flex items-center justify-center text-gray-400"><svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg></div>'; }}
+                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
                       <p className="text-[#1E3A5F] font-bold text-sm">Sondes de Temperature</p>
@@ -7010,7 +6995,7 @@ function HomePage({ t, setPage }) {
                   </div>
                   
                   {/* "And more" indicator */}
-                  <div className="mt-4 text-center">
+                  <div className="mt-3 text-center">
                     <span className="text-white/60 text-sm">+ Systemes de monitoring, capteurs de pression, et plus...</span>
                   </div>
                 </div>
