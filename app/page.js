@@ -258,6 +258,36 @@ async function generateQuotePDF(options) {
   
   let y = margin;
   
+  // === LOGO LOADING ===
+  const loadImage = (url) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => resolve(null);
+      img.src = url;
+    });
+  };
+  
+  // Load logos (with fallback if not available)
+  let lighthouseLogo = null;
+  let capcertLogo = null;
+  try {
+    [lighthouseLogo, capcertLogo] = await Promise.all([
+      loadImage('/images/logos/Lighthouse France Logo.png'),
+      loadImage('/images/logos/Capcert Logo.png')
+    ]);
+  } catch (e) {
+    console.log('Logo loading skipped:', e);
+  }
+  
   const addFooter = () => {
     pdf.setFillColor(...darkBlue);
     pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
@@ -271,7 +301,6 @@ async function generateQuotePDF(options) {
     pdf.text('16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07', pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
   };
   
-  // Don't reserve signature space for page break checks - we'll place it at the end
   const getUsableHeight = () => pageHeight - footerHeight - margin;
   
   const checkPageBreak = (needed) => {
@@ -285,14 +314,30 @@ async function generateQuotePDF(options) {
   };
 
   // ===== HEADER =====
-  pdf.setFontSize(26);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  pdf.text('LIGHTHOUSE', margin, y + 8);
-  pdf.setFontSize(11);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  pdf.text('Worldwide Solutions', margin, y + 14);
+  if (lighthouseLogo) {
+    try {
+      pdf.addImage(lighthouseLogo, 'PNG', margin, y - 2, 50, 18);
+    } catch (e) {
+      // Fallback to text if image fails
+      pdf.setFontSize(26);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...darkBlue);
+      pdf.text('LIGHTHOUSE', margin, y + 8);
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...gray);
+      pdf.text('Worldwide Solutions', margin, y + 14);
+    }
+  } else {
+    pdf.setFontSize(26);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('LIGHTHOUSE', margin, y + 8);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Worldwide Solutions', margin, y + 14);
+  }
   
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
@@ -308,6 +353,7 @@ async function generateQuotePDF(options) {
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
   y += 7;
+
 
   // ===== INFO BAR =====
   pdf.setFillColor(245, 245, 245);
@@ -397,7 +443,24 @@ async function generateQuotePDF(options) {
     drawServiceBlock(PDF_REPAIR_DATA, [249, 115, 22]);
   }
 
-  // ===== PRICING TABLE =====
+  // ===== CONDITIONS (moved up - right after service descriptions) =====
+  const conditionsHeight = 22;
+  checkPageBreak(conditionsHeight);
+  
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS', margin, y);
+  y += 4;
+  pdf.setFontSize(8);
+  pdf.setTextColor(...gray);
+  PDF_DISCLAIMERS.forEach(d => {
+    pdf.text('- ' + d, margin, y);
+    y += 4;
+  });
+  y += 5;
+
+  // ===== PRICING TABLE (moved down - after conditions) =====
   const rowH = 8;
   let tableRows = devices.length;
   devices.forEach(d => {
@@ -492,25 +555,7 @@ async function generateQuotePDF(options) {
   pdf.text(grandTotal.toFixed(2) + ' EUR', pageWidth - margin - 4, y + 8, { align: 'right' });
   y += 15;
 
-  // ===== CONDITIONS =====
-  const conditionsHeight = 22;
-  checkPageBreak(conditionsHeight + signatureBlockHeight + 5);
-  
-  pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...lightGray);
-  pdf.text('CONDITIONS', margin, y);
-  y += 4;
-  pdf.setFontSize(8);
-  pdf.setTextColor(...gray);
-  PDF_DISCLAIMERS.forEach(d => {
-    pdf.text('- ' + d, margin, y);
-    y += 4;
-  });
-  y += 2;
-
   // ===== SIGNATURE - AT BOTTOM OF CURRENT PAGE =====
-  // Calculate where to place signature so it's at the bottom
   const sigY = Math.max(y + 5, pageHeight - footerHeight - signatureBlockHeight - 3);
   
   pdf.setDrawColor(200, 200, 200);
@@ -528,6 +573,15 @@ async function generateQuotePDF(options) {
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
   pdf.text('Lighthouse France', margin, sigY + 20);
+
+  // Add Capcert certification logo (bottom left, next to ETABLI PAR)
+  if (capcertLogo) {
+    try {
+      pdf.addImage(capcertLogo, 'PNG', margin + 55, sigY + 5, 28, 28);
+    } catch (e) {
+      console.log('Capcert logo failed to load');
+    }
+  }
 
   const sigBoxX = pageWidth - margin - 62;
   
