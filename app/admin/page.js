@@ -20,7 +20,8 @@ const STATUS_STYLES = {
   ready_to_ship: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Prêt à expédier' },
   shipped: { bg: 'bg-green-100', text: 'text-green-700', label: 'Expédié' },
   completed: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Terminé' },
-  cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
+  cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' },
+  archived: { bg: 'bg-slate-100', text: 'text-slate-500', label: '📦 Archivé' }
 };
 
 export default function AdminPortal() {
@@ -191,8 +192,10 @@ function LoginPage() {
 function DashboardSheet({ requests, notify, reload, isAdmin }) {
   const [selectedRMA, setSelectedRMA] = useState(null);
   const [reviewingBC, setReviewingBC] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
   
-  const activeRMAs = requests.filter(r => r.request_number && !['completed', 'cancelled'].includes(r.status));
+  const archivedRMAs = requests.filter(r => r.status === 'archived');
+  const activeRMAs = requests.filter(r => r.request_number && !['completed', 'cancelled', 'archived'].includes(r.status));
   // BC needs review if status is bc_review OR if bc_file_url/bc_signature_url exists and status is still waiting_bc
   const needsReview = requests.filter(r => 
     r.status === 'bc_review' || 
@@ -220,8 +223,40 @@ function DashboardSheet({ requests, notify, reload, isAdmin }) {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">Tableau de Bord</h1>
-        <button onClick={reload} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">🔄 Actualiser</button>
+        <div className="flex gap-2">
+          {archivedRMAs.length > 0 && (
+            <button 
+              onClick={() => setShowArchived(!showArchived)} 
+              className={`px-4 py-2 rounded-lg text-sm ${showArchived ? 'bg-slate-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
+            >
+              📦 Archives ({archivedRMAs.length})
+            </button>
+          )}
+          <button onClick={reload} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">🔄 Actualiser</button>
+        </div>
       </div>
+      
+      {/* Archived RMAs Section */}
+      {showArchived && archivedRMAs.length > 0 && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl">
+          <div className="px-6 py-4 border-b border-slate-200">
+            <h2 className="font-bold text-slate-700">📦 RMAs Archivés ({archivedRMAs.length})</h2>
+          </div>
+          <div className="p-4 space-y-2 max-h-64 overflow-y-auto">
+            {archivedRMAs.map(rma => (
+              <div key={rma.id} onClick={() => setSelectedRMA(rma)} className="bg-white rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-slate-100 border border-slate-200">
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-sm text-slate-500">{rma.request_number}</span>
+                  <span className="text-sm text-slate-600">{rma.companies?.name}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs text-slate-400">Archivé le {rma.archived_at ? new Date(rma.archived_at).toLocaleDateString('fr-FR') : '—'}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -542,6 +577,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
 function RMADetailModal({ rma, onClose, notify, reload }) {
   const [saving, setSaving] = useState(false);
   const [internalNotes, setInternalNotes] = useState(rma.internal_notes || '');
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
   const devices = rma.request_devices || [];
   const workflowStatuses = ['approved', 'waiting_bc', 'bc_review', 'waiting_device', 'received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'quote_sent', 'quote_approved', 'final_qc', 'ready_to_ship', 'shipped', 'completed'];
@@ -557,6 +593,30 @@ function RMADetailModal({ rma, onClose, notify, reload }) {
     setSaving(true);
     const { error } = await supabase.from('service_requests').update({ internal_notes: internalNotes }).eq('id', rma.id);
     if (error) notify('Erreur: ' + error.message, 'error'); else notify('Notes enregistrées!');
+    setSaving(false);
+  };
+
+  const archiveRMA = async () => {
+    setSaving(true);
+    const { error } = await supabase.from('service_requests').update({ 
+      status: 'archived', 
+      archived_at: new Date().toISOString(),
+      updated_at: new Date().toISOString() 
+    }).eq('id', rma.id);
+    if (error) notify('Erreur: ' + error.message, 'error'); 
+    else { notify('📦 RMA archivé!'); reload(); onClose(); }
+    setSaving(false);
+  };
+
+  const unarchiveRMA = async () => {
+    setSaving(true);
+    const { error } = await supabase.from('service_requests').update({ 
+      status: 'completed', // Set back to completed when unarchiving
+      archived_at: null,
+      updated_at: new Date().toISOString() 
+    }).eq('id', rma.id);
+    if (error) notify('Erreur: ' + error.message, 'error'); 
+    else { notify('RMA restauré!'); reload(); }
     setSaving(false);
   };
 
@@ -583,7 +643,41 @@ function RMADetailModal({ rma, onClose, notify, reload }) {
           </div>
           {rma.problem_description && <div><h3 className="font-bold text-gray-700 mb-2">Notes du client</h3><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm whitespace-pre-wrap">{rma.problem_description}</p></div></div>}
           <div><h3 className="font-bold text-gray-700 mb-2">Notes internes</h3><textarea value={internalNotes} onChange={e => setInternalNotes(e.target.value)} placeholder="Ajouter des notes internes..." className="w-full px-4 py-3 border border-gray-300 rounded-lg h-24 resize-none" /><button onClick={saveNotes} disabled={saving} className="mt-2 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">{saving ? 'Enregistrement...' : 'Enregistrer les notes'}</button></div>
-          <div><h3 className="font-bold text-gray-700 mb-2">Mettre à jour le statut</h3><div className="flex flex-wrap gap-2">{workflowStatuses.map(key => { const val = STATUS_STYLES[key]; if (!val) return null; return <button key={key} onClick={() => updateStatus(key)} disabled={saving || key === rma.status} className={`px-3 py-1.5 rounded text-sm font-medium ${val.bg} ${val.text} ${key === rma.status ? 'ring-2 ring-offset-2 ring-gray-400' : 'hover:opacity-80'} disabled:opacity-50`}>{val.label}</button>; })}</div></div>
+          
+          {rma.status !== 'archived' && (
+            <div><h3 className="font-bold text-gray-700 mb-2">Mettre à jour le statut</h3><div className="flex flex-wrap gap-2">{workflowStatuses.map(key => { const val = STATUS_STYLES[key]; if (!val) return null; return <button key={key} onClick={() => updateStatus(key)} disabled={saving || key === rma.status} className={`px-3 py-1.5 rounded text-sm font-medium ${val.bg} ${val.text} ${key === rma.status ? 'ring-2 ring-offset-2 ring-gray-400' : 'hover:opacity-80'} disabled:opacity-50`}>{val.label}</button>; })}</div></div>
+          )}
+          
+          {/* Archive/Unarchive Section */}
+          <div className="border-t pt-4">
+            <h3 className="font-bold text-gray-700 mb-2">Actions</h3>
+            {rma.status === 'archived' ? (
+              <button onClick={unarchiveRMA} disabled={saving} className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-sm font-medium">
+                📤 Restaurer ce RMA
+              </button>
+            ) : (
+              <>
+                {!showArchiveConfirm ? (
+                  <button onClick={() => setShowArchiveConfirm(true)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium">
+                    📦 Archiver ce RMA
+                  </button>
+                ) : (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <p className="text-amber-800 font-medium mb-2">⚠️ Confirmer l'archivage ?</p>
+                    <p className="text-sm text-amber-700 mb-3">Ce RMA sera masqué de la vue principale mais restera accessible dans les archives.</p>
+                    <div className="flex gap-2">
+                      <button onClick={archiveRMA} disabled={saving} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium">
+                        {saving ? 'Archivage...' : 'Oui, archiver'}
+                      </button>
+                      <button onClick={() => setShowArchiveConfirm(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
         <div className="px-6 py-4 border-t bg-gray-50 sticky bottom-0"><button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Fermer</button></div>
       </div>
