@@ -5816,8 +5816,19 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
                   <div className="flex justify-between items-start">
                     <div>
-                      <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
-                      <p className="text-gray-500">Worldwide Solutions</p>
+                      <img 
+                        src="/images/logos/lighthouse-logo.png" 
+                        alt="Lighthouse France" 
+                        className="h-14 w-auto mb-1"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'block';
+                        }}
+                      />
+                      <div className="hidden">
+                        <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
+                        <p className="text-gray-500">Worldwide Solutions</p>
+                      </div>
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
@@ -5963,16 +5974,25 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
 
                 {/* Signature Section */}
                 <div className="px-8 py-6 border-t flex justify-between items-end">
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
-                    <p className="font-bold text-lg">{quoteData.createdBy || 'Lighthouse France'}</p>
-                    <p className="text-gray-600">Lighthouse France</p>
+                  <div className="flex items-end gap-6">
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
+                      <p className="font-bold text-lg">{quoteData.createdBy || 'Lighthouse France'}</p>
+                      <p className="text-gray-600">Lighthouse France</p>
+                    </div>
+                    {/* Capcert Logo */}
+                    <img 
+                      src="/images/logos/capcert-logo.png" 
+                      alt="Capcert Certification" 
+                      className="h-16 w-auto"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
                   </div>
                   
                   {request.bc_submitted_at ? (
                     <div className="text-right">
                       <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
-                        <p className="text-xs text-green-600 uppercase mb-1">✅ Approuvé</p>
+                        <p className="text-xs text-green-600 uppercase mb-1">Approuve</p>
                         <p className="font-bold text-green-800">{request.bc_signed_by || 'Client'}</p>
                         <p className="text-sm text-green-700">
                           {request.bc_signature_date 
@@ -7000,7 +7020,16 @@ function LoginPage({ t, login, setPage }) {
         <div className="w-full max-w-md">
           <div className="bg-white rounded-xl shadow-lg overflow-hidden">
             <div className="bg-[#1E3A5F] px-6 py-8 text-center">
-              <h1 className="text-2xl font-bold text-white">LIGHTHOUSE FRANCE</h1>
+              <img 
+                src="/images/logos/lighthouse-logo.png" 
+                alt="Lighthouse France" 
+                className="h-12 w-auto mx-auto mb-3 brightness-0 invert"
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                  e.target.nextSibling.style.display = 'block';
+                }}
+              />
+              <h1 className="text-2xl font-bold text-white hidden">LIGHTHOUSE FRANCE</h1>
               <p className="text-white/70 mt-2">Service Portal</p>
             </div>
             
