@@ -7588,7 +7588,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
   const [revisionNotes, setRevisionNotes] = useState('');
   const [showBCModal, setShowBCModal] = useState(false);
   const [bcFile, setBcFile] = useState(null);
-  const [signatureName, setSignatureName] = useState('');
+  const [signatureName, setSignatureName] = useState(profile?.full_name || `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || '');
   const [luEtApprouve, setLuEtApprouve] = useState('');
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [signatureData, setSignatureData] = useState(null);
@@ -7596,8 +7596,6 @@ function ContractsPage({ profile, t, notify, setPage }) {
   const [submittingBC, setSubmittingBC] = useState(false);
   const [approvingQuote, setApprovingQuote] = useState(false);
   const canvasRef = useRef(null);
-  
-  const [signatureName, setSignatureName] = useState(profile?.full_name || `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || '');
   
   const signatureDateDisplay = new Date().toLocaleDateString('fr-FR');
   
