@@ -7552,6 +7552,9 @@ function ContractsPage({ profile, t, notify, setPage }) {
   const [loading, setLoading] = useState(true);
   const [selectedContract, setSelectedContract] = useState(null);
   
+  // Quote Modal (like RMA)
+  const [showQuoteModal, setShowQuoteModal] = useState(false);
+  
   // BC/Signature state (like RMA)
   const [showBCModal, setShowBCModal] = useState(false);
   const [bcFile, setBcFile] = useState(null);
@@ -7562,6 +7565,8 @@ function ContractsPage({ profile, t, notify, setPage }) {
   const [isDrawing, setIsDrawing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const canvasRef = useRef(null);
+  
+  const signatureDateDisplay = new Date().toLocaleDateString('fr-FR');
 
   // Load contracts
   const loadContracts = useCallback(async () => {
@@ -7569,7 +7574,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
     
     const { data, error } = await supabase
       .from('contracts')
-      .select('*, contract_devices(*)')
+      .select('*, contract_devices(*), companies(*)')
       .eq('company_id', profile.company_id)
       .order('created_at', { ascending: false });
     
@@ -7589,7 +7594,6 @@ function ContractsPage({ profile, t, notify, setPage }) {
     const styles = {
       requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'En attente de devis' },
       quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: '💰 Devis à approuver' },
-      quote_approved: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis approuvé' },
       bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: '📄 BC en révision' },
       active: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Actif' },
       expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Expiré' },
@@ -7773,7 +7777,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
                   <h3 className="font-bold text-blue-800 text-xl mb-2">Devis de Contrat d'Étalonnage</h3>
                   <p className="text-blue-700 mb-4">
                     Lighthouse vous a envoyé un devis pour votre contrat annuel. 
-                    Consultez les détails ci-dessous, puis approuvez et signez pour activer votre contrat.
+                    Consultez le devis, puis approuvez et signez pour activer votre contrat.
                   </p>
                   
                   {/* Quote Summary */}
@@ -7795,10 +7799,10 @@ function ContractsPage({ profile, t, notify, setPage }) {
                   </div>
                   
                   <button
-                    onClick={() => setShowBCModal(true)}
+                    onClick={() => setShowQuoteModal(true)}
                     className="px-8 py-3 bg-[#00A651] text-white rounded-lg font-bold text-lg hover:bg-[#008c44] flex items-center gap-2"
                   >
-                    ✅ Approuver et Signer
+                    📄 Voir le Devis et Approuver
                   </button>
                 </div>
               </div>
@@ -7911,6 +7915,211 @@ function ContractsPage({ profile, t, notify, setPage }) {
             )}
           </div>
         </div>
+        
+        {/* CONTRACT QUOTE PREVIEW MODAL - Same as RMA */}
+        {showQuoteModal && (() => {
+          const getDeviceTypeLabel = (type) => {
+            const labels = {
+              particle_counter: 'Compteur Particules Aéroportées',
+              bio_collector: 'Bio Collecteur',
+              liquid_counter: 'Compteur Particules Liquide',
+              temp_humidity: 'Capteur Temp/Humidité',
+              other: 'Autre Équipement'
+            };
+            return labels[type] || type || 'Équipement';
+          };
+
+          return (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
+                <div>
+                  <h2 className="text-xl font-bold">Offre de Prix - Contrat d'Étalonnage</h2>
+                  <p className="text-gray-400">{contract.contract_number || 'Nouveau Contrat'}</p>
+                </div>
+                <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
+              </div>
+
+              {/* Quote Document */}
+              <div id="contract-quote-print-content">
+                {/* Quote Header */}
+                <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <img 
+                        src="/images/logos/lighthouse-logo.png" 
+                        alt="Lighthouse France" 
+                        className="h-14 w-auto mb-1"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'block';
+                        }}
+                      />
+                      <div className="hidden">
+                        <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
+                        <p className="text-gray-500">Worldwide Solutions</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
+                      <p className="text-lg font-medium text-gray-700">CONTRAT D'ÉTALONNAGE</p>
+                      <p className="text-gray-500">N° {contract.contract_number || '—'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Info Bar */}
+                <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Date</p>
+                    <p className="font-medium">{contract.quote_sent_at ? new Date(contract.quote_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Période du contrat</p>
+                    <p className="font-medium">{new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Validité</p>
+                    <p className="font-medium">30 jours</p>
+                  </div>
+                </div>
+
+                {/* Client Info */}
+                <div className="px-8 py-4 border-b">
+                  <p className="text-xs text-gray-500 uppercase">Client</p>
+                  <p className="font-bold text-xl text-[#1a1a2e]">{contract.companies?.name || profile?.company_name}</p>
+                </div>
+
+                {/* SERVICE DESCRIPTION */}
+                <div className="px-8 py-6">
+                  <div className="border-l-4 border-blue-500 pl-4 mb-6">
+                    <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
+                      <span>📋</span> Contrat d'Étalonnage Annuel
+                    </h3>
+                    <ul className="space-y-1">
+                      <li className="text-gray-700 flex items-start gap-2">
+                        <span className="text-[#00A651] mt-1">▸</span>
+                        <span>Étalonnage(s) inclus pour chaque appareil selon le forfait</span>
+                      </li>
+                      <li className="text-gray-700 flex items-start gap-2">
+                        <span className="text-[#00A651] mt-1">▸</span>
+                        <span>Vérification complète des fonctionnalités</span>
+                      </li>
+                      <li className="text-gray-700 flex items-start gap-2">
+                        <span className="text-[#00A651] mt-1">▸</span>
+                        <span>Fourniture de rapports de test et certificats d'étalonnage</span>
+                      </li>
+                      <li className="text-gray-700 flex items-start gap-2">
+                        <span className="text-[#00A651] mt-1">▸</span>
+                        <span>Frais de port inclus (France métropolitaine)</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+
+                {/* PRICING TABLE */}
+                <div className="px-8 py-6 bg-gray-50">
+                  <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
+                  
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-[#1a1a2e] text-white">
+                        <th className="px-4 py-3 text-left">Appareil</th>
+                        <th className="px-4 py-3 text-left">N° Série</th>
+                        <th className="px-4 py-3 text-left">Type</th>
+                        <th className="px-4 py-3 text-center">Étal./an</th>
+                        <th className="px-4 py-3 text-right">Prix HT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {devices.map((device, i) => (
+                        <tr key={device.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-100'}>
+                          <td className="px-4 py-3 font-medium">{device.model_name || '—'}</td>
+                          <td className="px-4 py-3 font-mono text-xs">{device.serial_number || '—'}</td>
+                          <td className="px-4 py-3">{getDeviceTypeLabel(device.device_type)}</td>
+                          <td className="px-4 py-3 text-center">{device.tokens_total || 1}</td>
+                          <td className="px-4 py-3 text-right font-medium">{(device.unit_price || 0).toFixed(2)} €</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-[#00A651] text-white">
+                        <td className="px-4 py-4 font-bold text-lg" colSpan={4}>TOTAL HT / AN</td>
+                        <td className="px-4 py-4 text-right font-bold text-2xl">{totalPrice.toFixed(2)} €</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Conditions */}
+                <div className="px-8 py-4 border-t">
+                  <p className="text-xs text-gray-500 uppercase mb-2">Conditions du Contrat</p>
+                  <ul className="text-xs text-gray-600 space-y-1">
+                    <li>• Validité du contrat: {new Date(contract.start_date).toLocaleDateString('fr-FR')} au {new Date(contract.end_date).toLocaleDateString('fr-FR')}</li>
+                    <li>• {totalTokens} étalonnage(s) inclus à utiliser pendant la période contractuelle</li>
+                    <li>• Étalonnages supplémentaires facturés au tarif standard en vigueur</li>
+                    <li>• Frais de port inclus (France métropolitaine)</li>
+                    <li>• Paiement à 30 jours date de facture</li>
+                  </ul>
+                </div>
+
+                {/* Signature Section */}
+                <div className="px-8 py-6 border-t flex justify-between items-end">
+                  <div className="flex items-end gap-6">
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
+                      <p className="font-bold text-lg">Lighthouse France</p>
+                    </div>
+                    <img 
+                      src="/images/logos/capcert-logo.png" 
+                      alt="Capcert Certification" 
+                      className="h-14 w-auto"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  </div>
+                  
+                  <div className="text-right">
+                    <p className="text-xs text-gray-400 mb-1">Signature client</p>
+                    <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+                    <p className="text-xs text-gray-400 mt-1">Lu et approuvé</p>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
+                  <p className="font-medium">Lighthouse France SAS</p>
+                  <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex flex-wrap gap-3 justify-between items-center">
+                <button onClick={() => {
+                  const content = document.getElementById('contract-quote-print-content');
+                  if (content) window.print();
+                }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
+                  🖨️ Imprimer
+                </button>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => setShowQuoteModal(false)}
+                    className="px-5 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium"
+                  >
+                    Fermer
+                  </button>
+                  <button 
+                    onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
+                    className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold"
+                  >
+                    ✅ Approuver et soumettre BC
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          );
+        })()}
         
         {/* BC/Signature Modal (like RMA) */}
         {showBCModal && (
