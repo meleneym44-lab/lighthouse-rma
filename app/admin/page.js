@@ -1757,19 +1757,37 @@ function PricingSheet({ notify, isAdmin }) {
   // Load parts from database
   const loadParts = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('parts_pricing')
-      .select('*')
-      .order('part_number', { ascending: true })
-      .limit(10000); // Load up to 10,000 parts
     
-    if (error) {
-      console.error('Error loading parts:', error);
-      notify('Erreur de chargement des pièces', 'error');
-    } else {
-      setParts(data || []);
-      console.log(`Loaded ${data?.length || 0} parts`);
+    // Load all parts using pagination (Supabase has 1000 row limit per request)
+    let allParts = [];
+    let offset = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('parts_pricing')
+        .select('*')
+        .order('part_number', { ascending: true })
+        .range(offset, offset + pageSize - 1);
+      
+      if (error) {
+        console.error('Error loading parts:', error);
+        notify('Erreur de chargement des pièces', 'error');
+        break;
+      }
+      
+      if (data && data.length > 0) {
+        allParts = [...allParts, ...data];
+        offset += pageSize;
+        hasMore = data.length === pageSize; // If we got less than pageSize, we're done
+      } else {
+        hasMore = false;
+      }
     }
+    
+    setParts(allParts);
+    console.log(`Loaded ${allParts.length} parts total`);
     setLoading(false);
   }, [notify]);
 
