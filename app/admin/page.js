@@ -1914,20 +1914,34 @@ function PricingSheet({ notify, isAdmin }) {
             });
           }
 
+          // DEDUPLICATE - keep last occurrence of each part number (in case Excel has duplicates)
+          const partsMap = new Map();
+          for (const part of partsToUpsert) {
+            partsMap.set(part.part_number, part); // Later entries overwrite earlier ones
+          }
+          const uniqueParts = Array.from(partsMap.values());
+          const duplicatesRemoved = partsToUpsert.length - uniqueParts.length;
+          
+          console.log('=== DEDUPLICATION ===');
+          console.log(`Original: ${partsToUpsert.length}, Unique: ${uniqueParts.length}, Duplicates removed: ${duplicatesRemoved}`);
+
           // Log sample
-          if (partsToUpsert.length > 0) {
+          if (uniqueParts.length > 0) {
             console.log('=== PARSED DATA SAMPLE ===');
-            console.log('First part:', partsToUpsert[0]);
-            console.log('Second part:', partsToUpsert[1]);
-            const withDesc = partsToUpsert.filter(p => p.description);
-            console.log(`Parts with description: ${withDesc.length}/${partsToUpsert.length}`);
+            console.log('First part:', uniqueParts[0]);
+            console.log('Second part:', uniqueParts[1]);
+            const withDesc = uniqueParts.filter(p => p.description);
+            console.log(`Parts with description: ${withDesc.length}/${uniqueParts.length}`);
           }
 
-          if (partsToUpsert.length === 0) {
+          if (uniqueParts.length === 0) {
             notify('Aucune pièce valide trouvée dans le fichier', 'error');
             setUploading(false);
             return;
           }
+          
+          // Replace partsToUpsert with deduplicated list
+          const partsToImport = uniqueParts;
 
           // Step 2: Get ALL existing part numbers
           const { data: existingParts, error: fetchError } = await supabase
@@ -1941,14 +1955,15 @@ function PricingSheet({ notify, isAdmin }) {
           const existingPartNumbers = new Set((existingParts || []).map(p => p.part_number));
           
           // Separate into inserts and updates
-          const toInsert = partsToUpsert.filter(p => !existingPartNumbers.has(p.part_number));
-          const toUpdate = partsToUpsert.filter(p => existingPartNumbers.has(p.part_number));
+          const toInsert = partsToImport.filter(p => !existingPartNumbers.has(p.part_number));
+          const toUpdate = partsToImport.filter(p => existingPartNumbers.has(p.part_number));
 
           console.log(`=== IMPORT PLAN ===`);
-          console.log(`Total parts: ${partsToUpsert.length}`);
+          console.log(`Total unique parts: ${partsToImport.length}`);
           console.log(`New (INSERT): ${toInsert.length}`);
           console.log(`Existing (UPDATE): ${toUpdate.length}`);
           console.log(`Skipped (no part number): ${skipped}`);
+          console.log(`Duplicates in Excel: ${duplicatesRemoved}`);
 
           // Step 3: Process inserts in batches
           const batchSize = 200; // Smaller batches for reliability
