@@ -86,14 +86,15 @@ export default function AdminPortal() {
   const pendingCount = requests.filter(r => r.status === 'submitted' && !r.request_number).length;
   const modificationCount = requests.filter(r => r.status === 'quote_revision_requested').length;
   const totalBadge = pendingCount + modificationCount;
-  const contractRequestCount = contracts.filter(c => c.status === 'requested').length;
+  // Contract badge: new requests OR BC pending review
+  const contractActionCount = contracts.filter(c => c.status === 'requested' || c.status === 'bc_pending').length;
   
   const sheets = [
     { id: 'dashboard', label: 'Tableau de Bord', icon: '📊' },
     { id: 'requests', label: 'Demandes', icon: '📋', badge: totalBadge },
     { id: 'clients', label: 'Clients', icon: '👥' },
     { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
-    { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractRequestCount },
+    { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
     { id: 'settings', label: 'Paramètres', icon: '⚙️' },
     ...(isAdmin ? [{ id: 'admin', label: 'Admin', icon: '🔐' }] : [])
   ];
@@ -150,7 +151,7 @@ export default function AdminPortal() {
         {activeSheet === 'requests' && <RequestsSheet requests={requests} notify={notify} reload={loadData} profile={profile} />}
         {activeSheet === 'clients' && <ClientsSheet clients={clients} requests={requests} equipment={equipment} notify={notify} reload={loadData} isAdmin={isAdmin} />}
         {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} />}
-        {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} />}
+        {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} />}
         {activeSheet === 'settings' && <SettingsSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
         {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
       </main>
@@ -1076,7 +1077,7 @@ function ClientDetailModal({ client, requests, equipment, onClose, notify, reloa
 // ============================================
 // CONTRACTS SHEET - Full Implementation
 // ============================================
-function ContractsSheet({ clients, notify }) {
+function ContractsSheet({ clients, notify, profile }) {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedContract, setSelectedContract] = useState(null);
@@ -1164,6 +1165,7 @@ function ContractsSheet({ clients, notify }) {
     return (
       <ContractQuoteEditor
         contract={quoteContract}
+        profile={profile}
         notify={notify}
         onClose={() => setQuoteContract(null)}
         onSent={() => { setQuoteContract(null); loadContracts(); }}
@@ -1416,11 +1418,14 @@ function ContractsSheet({ clients, notify }) {
 // ============================================
 // CONTRACT QUOTE EDITOR - Like RMA Quote Editor
 // ============================================
-function ContractQuoteEditor({ contract, notify, onClose, onSent }) {
+function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
   const [step, setStep] = useState(1); // 1=Edit, 2=Preview, 3=Confirm
   const [saving, setSaving] = useState(false);
   const [quoteRef, setQuoteRef] = useState('');
   const today = new Date();
+  
+  // Signatory name from profile
+  const signatory = profile?.full_name || 'Lighthouse France';
   
   // Contract dates (editable)
   const [contractDates, setContractDates] = useState({
@@ -1859,7 +1864,8 @@ function ContractQuoteEditor({ contract, notify, onClose, onSent }) {
                 <div className="flex items-end gap-6">
                   <div>
                     <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
-                    <p className="font-bold text-lg">Lighthouse France</p>
+                    <p className="font-bold text-lg">{signatory}</p>
+                    <p className="text-gray-600">Lighthouse France</p>
                   </div>
                   <img 
                     src="/images/logos/capcert-logo.png" 
