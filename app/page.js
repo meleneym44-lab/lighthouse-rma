@@ -1116,7 +1116,7 @@ async function generateContractQuotePDF(options) {
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...lightGray);
-  pdf.text('CONDITIONS DU CONTRAT', margin, y);
+  pdf.text('CONDITIONS DU CONTRAT', margin + 3, y);
   y += 4;
   pdf.setFontSize(8);
   pdf.setTextColor(...gray);
@@ -1128,7 +1128,7 @@ async function generateContractQuotePDF(options) {
     'Paiement a 30 jours date de facture'
   ];
   contractConditions.forEach(d => {
-    pdf.text('- ' + d, margin, y);
+    pdf.text('- ' + d, margin + 3, y);
     y += 4;
   });
   y += 5;
