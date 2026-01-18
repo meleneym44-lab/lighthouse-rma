@@ -86,12 +86,16 @@ export default function AdminPortal() {
   const pendingCount = requests.filter(r => r.status === 'submitted' && !r.request_number).length;
   const modificationCount = requests.filter(r => r.status === 'quote_revision_requested').length;
   const totalBadge = pendingCount + modificationCount;
-  // Contract badge: new requests OR BC pending review
-  const contractActionCount = contracts.filter(c => c.status === 'requested' || c.status === 'bc_pending').length;
+  // Contract badge: new requests, BC pending review, OR quote revision requested
+  const contractActionCount = contracts.filter(c => 
+    c.status === 'requested' || 
+    c.status === 'bc_pending' || 
+    c.status === 'quote_revision_requested'
+  ).length;
   
   const sheets = [
     { id: 'dashboard', label: 'Tableau de Bord', icon: '📊' },
-    { id: 'requests', label: 'Demandes', icon: '📋', badge: totalBadge },
+    { id: 'requests', label: 'Demandes', icon: '📋', badge: totalBadge > 0 ? totalBadge : null },
     { id: 'clients', label: 'Clients', icon: '👥' },
     { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
     { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
@@ -151,7 +155,7 @@ export default function AdminPortal() {
         {activeSheet === 'requests' && <RequestsSheet requests={requests} notify={notify} reload={loadData} profile={profile} />}
         {activeSheet === 'clients' && <ClientsSheet clients={clients} requests={requests} equipment={equipment} notify={notify} reload={loadData} isAdmin={isAdmin} />}
         {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} />}
-        {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} />}
+        {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} reloadMain={loadData} />}
         {activeSheet === 'settings' && <SettingsSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
         {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
       </main>
@@ -1077,7 +1081,7 @@ function ClientDetailModal({ client, requests, equipment, onClose, notify, reloa
 // ============================================
 // CONTRACTS SHEET - Full Implementation
 // ============================================
-function ContractsSheet({ clients, notify, profile }) {
+function ContractsSheet({ clients, notify, profile, reloadMain }) {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedContract, setSelectedContract] = useState(null);
@@ -1155,7 +1159,7 @@ function ContractsSheet({ clients, notify, profile }) {
         clients={clients}
         notify={notify}
         onClose={() => setSelectedContract(null)}
-        onUpdate={loadContracts}
+        onUpdate={() => { loadContracts(); if (reloadMain) reloadMain(); }}
       />
     );
   }
@@ -1168,7 +1172,7 @@ function ContractsSheet({ clients, notify, profile }) {
         profile={profile}
         notify={notify}
         onClose={() => setQuoteContract(null)}
-        onSent={() => { setQuoteContract(null); loadContracts(); }}
+        onSent={() => { setQuoteContract(null); loadContracts(); if (reloadMain) reloadMain(); }}
       />
     );
   }
@@ -1180,7 +1184,7 @@ function ContractsSheet({ clients, notify, profile }) {
         clients={clients}
         notify={notify}
         onClose={() => setShowCreateModal(false)}
-        onCreated={() => { setShowCreateModal(false); loadContracts(); }}
+        onCreated={() => { setShowCreateModal(false); loadContracts(); if (reloadMain) reloadMain(); }}
       />
     );
   }
