@@ -1081,6 +1081,7 @@ function ContractsSheet({ clients, notify }) {
   const [loading, setLoading] = useState(true);
   const [selectedContract, setSelectedContract] = useState(null);
   const [filter, setFilter] = useState('all'); // all, requested, active, expired
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   // Load contracts
   const loadContracts = useCallback(async () => {
@@ -1160,11 +1161,29 @@ function ContractsSheet({ clients, notify }) {
       />
     );
   }
+  
+  // Create Contract Modal
+  if (showCreateModal) {
+    return (
+      <CreateContractModal
+        clients={clients}
+        notify={notify}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={() => { setShowCreateModal(false); loadContracts(); }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">Contrats d'Étalonnage</h1>
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium flex items-center gap-2"
+        >
+          <span>+</span> Créer Contrat Manuellement
+        </button>
       </div>
 
       {/* Stats Cards */}
@@ -1699,6 +1718,350 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
               ❌ Annuler
             </button>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// CREATE CONTRACT MODAL - Manual Contract Creation
+// ============================================
+function CreateContractModal({ clients, notify, onClose, onCreated }) {
+  const [step, setStep] = useState(1);
+  const [saving, setSaving] = useState(false);
+  const [contractData, setContractData] = useState({
+    company_id: '',
+    company_name: '', // For display when no company selected
+    contract_number: '',
+    start_date: new Date().toISOString().split('T')[0],
+    end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+    status: 'active',
+    internal_notes: '',
+    bc_url: ''
+  });
+  const [devices, setDevices] = useState([
+    { id: Date.now(), serial_number: '', model_name: '', device_type: 'particle_counter', nickname: '', tokens_total: 2, unit_price: 0 }
+  ]);
+
+  const addDevice = () => {
+    setDevices([...devices, { id: Date.now(), serial_number: '', model_name: '', device_type: 'particle_counter', nickname: '', tokens_total: 2, unit_price: 0 }]);
+  };
+
+  const removeDevice = (id) => {
+    if (devices.length > 1) {
+      setDevices(devices.filter(d => d.id !== id));
+    }
+  };
+
+  const updateDevice = (id, field, value) => {
+    setDevices(devices.map(d => d.id === id ? { ...d, [field]: value } : d));
+  };
+
+  const generateContractNumber = () => {
+    const year = new Date().getFullYear();
+    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    return `CTR-${year}-${random}`;
+  };
+
+  useEffect(() => {
+    if (!contractData.contract_number) {
+      setContractData(prev => ({ ...prev, contract_number: generateContractNumber() }));
+    }
+  }, []);
+
+  const handleSubmit = async () => {
+    // Validate
+    if (!contractData.company_id && !contractData.company_name) {
+      notify('Veuillez sélectionner un client ou entrer un nom', 'error');
+      return;
+    }
+    if (devices.length === 0 || !devices.some(d => d.serial_number)) {
+      notify('Veuillez ajouter au moins un appareil avec un numéro de série', 'error');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // Create contract
+      const { data: contract, error: contractError } = await supabase
+        .from('contracts')
+        .insert({
+          company_id: contractData.company_id || null,
+          company_name_manual: contractData.company_id ? null : contractData.company_name,
+          contract_number: contractData.contract_number,
+          start_date: contractData.start_date,
+          end_date: contractData.end_date,
+          status: contractData.status,
+          internal_notes: contractData.internal_notes,
+          bc_url: contractData.bc_url || null
+        })
+        .select()
+        .single();
+
+      if (contractError) throw contractError;
+
+      // Add devices
+      const deviceInserts = devices.filter(d => d.serial_number).map(d => ({
+        contract_id: contract.id,
+        serial_number: d.serial_number,
+        model_name: d.model_name,
+        device_type: d.device_type,
+        nickname: d.nickname,
+        tokens_total: d.tokens_total || 2,
+        tokens_used: 0,
+        unit_price: d.unit_price || 0
+      }));
+
+      const { error: devicesError } = await supabase
+        .from('contract_devices')
+        .insert(deviceInserts);
+
+      if (devicesError) throw devicesError;
+
+      notify('✅ Contrat créé avec succès!');
+      onCreated();
+    } catch (err) {
+      console.error('Error creating contract:', err);
+      notify('Erreur: ' + err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const totalPrice = devices.reduce((sum, d) => sum + (parseFloat(d.unit_price) || 0), 0);
+  const totalTokens = devices.reduce((sum, d) => sum + (parseInt(d.tokens_total) || 0), 0);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">← Retour</button>
+          <h1 className="text-2xl font-bold text-gray-800">Créer un Contrat Manuellement</h1>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        {/* Header */}
+        <div className="px-6 py-4 bg-[#1a1a2e] text-white">
+          <h2 className="text-xl font-bold">Nouveau Contrat d'Étalonnage</h2>
+          <p className="text-gray-300 text-sm">Pour les contrats existants non créés par le client</p>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Client Selection */}
+          <div className="grid md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Client existant</label>
+              <select
+                value={contractData.company_id}
+                onChange={e => setContractData({ ...contractData, company_id: e.target.value, company_name: '' })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
+              >
+                <option value="">— Sélectionner un client —</option>
+                {clients.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Ou nom du client (si pas de compte)</label>
+              <input
+                type="text"
+                value={contractData.company_name}
+                onChange={e => setContractData({ ...contractData, company_name: e.target.value, company_id: '' })}
+                placeholder="Nom de l'entreprise..."
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
+                disabled={!!contractData.company_id}
+              />
+              <p className="text-xs text-gray-500 mt-1">Vous pourrez lier le contrat à un compte plus tard</p>
+            </div>
+          </div>
+
+          {/* Contract Details */}
+          <div className="grid md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">N° Contrat</label>
+              <input
+                type="text"
+                value={contractData.contract_number}
+                onChange={e => setContractData({ ...contractData, contract_number: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Date début</label>
+              <input
+                type="date"
+                value={contractData.start_date}
+                onChange={e => setContractData({ ...contractData, start_date: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Date fin</label>
+              <input
+                type="date"
+                value={contractData.end_date}
+                onChange={e => setContractData({ ...contractData, end_date: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Statut</label>
+              <select
+                value={contractData.status}
+                onChange={e => setContractData({ ...contractData, status: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              >
+                <option value="active">✅ Actif</option>
+                <option value="bc_pending">📄 Attente BC</option>
+                <option value="quote_approved">✅ Devis approuvé</option>
+                <option value="expired">⏰ Expiré</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Lien BC (optionnel)</label>
+              <input
+                type="url"
+                value={contractData.bc_url}
+                onChange={e => setContractData({ ...contractData, bc_url: e.target.value })}
+                placeholder="https://..."
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Notes internes</label>
+            <textarea
+              value={contractData.internal_notes}
+              onChange={e => setContractData({ ...contractData, internal_notes: e.target.value })}
+              rows={2}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              placeholder="Notes sur ce contrat..."
+            />
+          </div>
+
+          {/* Devices Section */}
+          <div className="border-t pt-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-gray-800">Appareils sous contrat ({devices.length})</h3>
+              <button
+                onClick={addDevice}
+                className="px-4 py-2 bg-[#00A651] text-white rounded-lg text-sm hover:bg-[#008f45]"
+              >
+                + Ajouter appareil
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {devices.map((device, index) => (
+                <div key={device.id} className="bg-gray-50 rounded-lg p-4 border">
+                  <div className="flex items-start gap-4">
+                    <span className="bg-[#1a1a2e] text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">{index + 1}</span>
+                    <div className="flex-1 grid md:grid-cols-6 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">N° Série *</label>
+                        <input
+                          type="text"
+                          value={device.serial_number}
+                          onChange={e => updateDevice(device.id, 'serial_number', e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm"
+                          placeholder="SN..."
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Modèle</label>
+                        <input
+                          type="text"
+                          value={device.model_name}
+                          onChange={e => updateDevice(device.id, 'model_name', e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm"
+                          placeholder="Modèle..."
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Type</label>
+                        <select
+                          value={device.device_type}
+                          onChange={e => updateDevice(device.id, 'device_type', e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm"
+                        >
+                          <option value="particle_counter">Compteur particules</option>
+                          <option value="bio_collector">Bio collecteur</option>
+                          <option value="liquid_counter">Compteur liquide</option>
+                          <option value="temp_humidity">Temp/Humidité</option>
+                          <option value="other">Autre</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Tokens/an</label>
+                        <input
+                          type="number"
+                          value={device.tokens_total}
+                          onChange={e => updateDevice(device.id, 'tokens_total', parseInt(e.target.value) || 2)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm"
+                          min="1"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Prix €</label>
+                        <input
+                          type="number"
+                          value={device.unit_price}
+                          onChange={e => updateDevice(device.id, 'unit_price', parseFloat(e.target.value) || 0)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm"
+                          min="0"
+                          step="0.01"
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        {devices.length > 1 && (
+                          <button
+                            onClick={() => removeDevice(device.id)}
+                            className="px-3 py-2 text-red-500 hover:bg-red-50 rounded-lg text-sm"
+                          >
+                            🗑️
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Summary */}
+            <div className="mt-4 bg-emerald-50 rounded-lg p-4 flex justify-between items-center">
+              <div>
+                <span className="text-emerald-800 font-medium">{devices.filter(d => d.serial_number).length} appareil(s)</span>
+                <span className="text-emerald-600 mx-3">•</span>
+                <span className="text-emerald-800">{totalTokens} tokens total</span>
+              </div>
+              <div className="text-right">
+                <span className="text-emerald-800 font-bold text-xl">{totalPrice.toFixed(2)} €</span>
+                <span className="text-emerald-600 text-sm ml-2">HT</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 bg-gray-100 border-t flex justify-between">
+          <button onClick={onClose} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
+            Annuler
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            className="px-8 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold disabled:opacity-50"
+          >
+            {saving ? 'Création...' : '✅ Créer le Contrat'}
+          </button>
         </div>
       </div>
     </div>
@@ -2719,7 +3082,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
             {step === 1 ? 'Annuler' : '← Retour'}
           </button>
           <div className="flex gap-3">
-            {step < 3 && (
+            {step < 3 && !loadingContract && (
               <button onClick={() => setStep(step + 1)} className="px-8 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">
                 Suivant →
               </button>
@@ -2732,6 +3095,11 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
               >
                 {saving ? 'Envoi en cours...' : isFullyContractCovered ? '📋 Créer RMA Contrat' : '✅ Confirmer et Envoyer'}
               </button>
+            )}
+            {loadingContract && step === 1 && (
+              <div className="px-8 py-2 bg-gray-300 text-gray-500 rounded-lg font-medium">
+                Chargement...
+              </div>
             )}
           </div>
         </div>
