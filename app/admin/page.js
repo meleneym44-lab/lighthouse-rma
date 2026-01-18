@@ -1080,10 +1080,10 @@ function ContractsSheet({ clients, notify }) {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedContract, setSelectedContract] = useState(null);
-  const [filter, setFilter] = useState('all'); // all, requested, active, expired
+  const [quoteContract, setQuoteContract] = useState(null); // For opening quote editor
+  const [filter, setFilter] = useState('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  // Load contracts
   const loadContracts = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -1116,29 +1116,26 @@ function ContractsSheet({ clients, notify }) {
 
   const getStatusBadge = (status) => {
     const style = CONTRACT_STATUS_STYLES[status] || CONTRACT_STATUS_STYLES.requested;
-    return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
-        {style.label}
-      </span>
-    );
+    return <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>;
   };
 
-  // Filter contracts
-  const filteredContracts = contracts.filter(c => {
+  // Separate new requests from processed contracts
+  const newRequests = contracts.filter(c => c.status === 'requested');
+  const processedContracts = contracts.filter(c => c.status !== 'requested');
+  
+  // Filter processed contracts
+  const filteredContracts = processedContracts.filter(c => {
     if (filter === 'all') return true;
-    if (filter === 'requested') return c.status === 'requested';
     if (filter === 'active') return c.status === 'active';
     if (filter === 'pending') return ['quote_sent', 'quote_approved', 'bc_pending'].includes(c.status);
     if (filter === 'expired') return c.status === 'expired';
     return true;
   });
 
-  // Stats
   const stats = {
-    requested: contracts.filter(c => c.status === 'requested').length,
-    pending: contracts.filter(c => ['quote_sent', 'quote_approved', 'bc_pending'].includes(c.status)).length,
-    active: contracts.filter(c => c.status === 'active').length,
-    expired: contracts.filter(c => c.status === 'expired').length
+    pending: processedContracts.filter(c => ['quote_sent', 'quote_approved', 'bc_pending'].includes(c.status)).length,
+    active: processedContracts.filter(c => c.status === 'active').length,
+    expired: processedContracts.filter(c => c.status === 'expired').length
   };
 
   if (loading) {
@@ -1149,7 +1146,7 @@ function ContractsSheet({ clients, notify }) {
     );
   }
 
-  // Contract Detail/Edit View
+  // Contract Detail View
   if (selectedContract) {
     return (
       <ContractDetailView 
@@ -1162,7 +1159,19 @@ function ContractsSheet({ clients, notify }) {
     );
   }
   
-  // Create Contract Modal
+  // Contract Quote Editor
+  if (quoteContract) {
+    return (
+      <ContractQuoteEditor
+        contract={quoteContract}
+        notify={notify}
+        onClose={() => setQuoteContract(null)}
+        onSent={() => { setQuoteContract(null); loadContracts(); }}
+      />
+    );
+  }
+  
+  // Manual Contract Creation
   if (showCreateModal) {
     return (
       <CreateContractModal
@@ -1185,16 +1194,56 @@ function ContractsSheet({ clients, notify }) {
           <span>+</span> Créer Contrat Manuellement
         </button>
       </div>
+      
+      {/* ============================================ */}
+      {/* NOUVELLES DEMANDES DE CONTRAT - Top Priority */}
+      {/* ============================================ */}
+      {newRequests.length > 0 && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl shadow-lg">
+          <div className="px-6 py-4 border-b border-amber-200 bg-amber-100 rounded-t-xl">
+            <h2 className="font-bold text-amber-800 text-lg">🆕 Nouvelles Demandes de Contrat ({newRequests.length})</h2>
+            <p className="text-sm text-amber-600">Cliquez sur "Créer Devis Contrat" pour établir le devis</p>
+          </div>
+          <div className="p-4 space-y-3">
+            {newRequests.map(contract => {
+              const devices = contract.contract_devices || [];
+              return (
+                <div key={contract.id} className="bg-white rounded-lg p-4 flex items-center justify-between shadow-sm border border-amber-100">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
+                    <div>
+                      <p className="font-medium text-gray-800">{contract.companies?.name || 'Client'}</p>
+                      <p className="text-sm text-gray-500">
+                        {devices.length} appareil(s) • Demandé le {new Date(contract.created_at).toLocaleDateString('fr-FR')}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Période souhaitée: {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setSelectedContract(contract)}
+                      className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium"
+                    >
+                      Voir détails
+                    </button>
+                    <button
+                      onClick={() => setQuoteContract(contract)}
+                      className="px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium"
+                    >
+                      💰 Créer Devis Contrat
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-4 gap-4">
-        <div 
-          onClick={() => setFilter('requested')}
-          className={`bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${filter === 'requested' ? 'ring-2 ring-amber-400' : ''}`}
-        >
-          <div className="text-3xl font-bold text-amber-600">{stats.requested}</div>
-          <div className="text-sm text-gray-600">Nouvelles demandes</div>
-        </div>
         <div 
           onClick={() => setFilter('pending')}
           className={`bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${filter === 'pending' ? 'ring-2 ring-blue-400' : ''}`}
@@ -1210,10 +1259,17 @@ function ContractsSheet({ clients, notify }) {
           <div className="text-sm text-gray-600">Actifs</div>
         </div>
         <div 
-          onClick={() => setFilter('all')}
-          className={`bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${filter === 'all' ? 'ring-2 ring-gray-400' : ''}`}
+          onClick={() => setFilter('expired')}
+          className={`bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${filter === 'expired' ? 'ring-2 ring-gray-400' : ''}`}
         >
-          <div className="text-3xl font-bold text-gray-600">{contracts.length}</div>
+          <div className="text-3xl font-bold text-gray-600">{stats.expired}</div>
+          <div className="text-sm text-gray-600">Expirés</div>
+        </div>
+        <div 
+          onClick={() => setFilter('all')}
+          className={`bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${filter === 'all' ? 'ring-2 ring-purple-400' : ''}`}
+        >
+          <div className="text-3xl font-bold text-purple-600">{processedContracts.length}</div>
           <div className="text-sm text-gray-600">Total</div>
         </div>
       </div>
@@ -1223,15 +1279,11 @@ function ContractsSheet({ clients, notify }) {
         <div className="px-6 py-4 border-b flex justify-between items-center">
           <h2 className="font-bold text-gray-800">
             {filter === 'all' ? 'Tous les contrats' : 
-             filter === 'requested' ? 'Nouvelles demandes' :
              filter === 'pending' ? 'En cours de traitement' :
              filter === 'active' ? 'Contrats actifs' : 'Contrats expirés'}
           </h2>
           {filter !== 'all' && (
-            <button 
-              onClick={() => setFilter('all')}
-              className="text-sm text-gray-500 hover:text-gray-700"
-            >
+            <button onClick={() => setFilter('all')} className="text-sm text-gray-500 hover:text-gray-700">
               Voir tout
             </button>
           )}
@@ -1264,12 +1316,10 @@ function ContractsSheet({ clients, notify }) {
                 return (
                   <tr key={contract.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
-                      <span className="font-mono font-bold text-[#1E3A5F]">
-                        {contract.contract_number || '—'}
-                      </span>
+                      <span className="font-mono font-bold text-[#1E3A5F]">{contract.contract_number || '—'}</span>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="font-medium">{contract.companies?.name || 'N/A'}</div>
+                      <div className="font-medium">{contract.companies?.name || contract.company_name_manual || 'N/A'}</div>
                     </td>
                     <td className="px-6 py-4 text-sm">
                       {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
@@ -1282,15 +1332,13 @@ function ContractsSheet({ clients, notify }) {
                         {totalTokens - usedTokens}/{totalTokens}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
-                      {getStatusBadge(contract.status)}
-                    </td>
+                    <td className="px-6 py-4">{getStatusBadge(contract.status)}</td>
                     <td className="px-6 py-4">
                       <button
                         onClick={() => setSelectedContract(contract)}
                         className="px-3 py-1 bg-[#3B7AB4] text-white text-sm rounded hover:bg-[#1E3A5F]"
                       >
-                        {contract.status === 'requested' ? 'Traiter' : 'Voir'}
+                        Voir
                       </button>
                     </td>
                   </tr>
@@ -1299,6 +1347,362 @@ function ContractsSheet({ clients, notify }) {
             </tbody>
           </table>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// CONTRACT QUOTE EDITOR - Like RMA Quote Editor
+// ============================================
+function ContractQuoteEditor({ contract, notify, onClose, onSent }) {
+  const [step, setStep] = useState(1); // 1=Edit, 2=Preview, 3=Confirm
+  const [saving, setSaving] = useState(false);
+  const [devices, setDevices] = useState(contract.contract_devices || []);
+  const [quoteRef, setQuoteRef] = useState('');
+  const today = new Date();
+  
+  // Initialize pricing for each device
+  const [devicePricing, setDevicePricing] = useState(
+    (contract.contract_devices || []).map(d => ({
+      id: d.id,
+      serial_number: d.serial_number,
+      model_name: d.model_name || '',
+      device_type: d.device_type || 'particle_counter',
+      tokens_total: d.tokens_total || 1,
+      unit_price: d.unit_price || 350 // Default calibration contract price
+    }))
+  );
+
+  useEffect(() => {
+    const year = today.getFullYear().toString().slice(-2);
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    setQuoteRef(`CTR/${year}${month}/XXX`);
+  }, []);
+
+  const updateDevice = (id, field, value) => {
+    setDevicePricing(prev => prev.map(d => d.id === id ? { ...d, [field]: value } : d));
+  };
+
+  const totalPrice = devicePricing.reduce((sum, d) => sum + (parseFloat(d.unit_price) || 0), 0);
+  const totalTokens = devicePricing.reduce((sum, d) => sum + (parseInt(d.tokens_total) || 0), 0);
+
+  const getDeviceTypeLabel = (type) => {
+    const labels = {
+      particle_counter: 'Compteur Particules',
+      bio_collector: 'Bio Collecteur',
+      liquid_counter: 'Compteur Liquide',
+      temp_humidity: 'Temp/Humidité',
+      other: 'Autre'
+    };
+    return labels[type] || type;
+  };
+
+  const sendQuote = async () => {
+    setSaving(true);
+    try {
+      // Generate contract number if not exists
+      let contractNumber = contract.contract_number;
+      if (!contractNumber) {
+        const year = new Date().getFullYear();
+        const { data: existing } = await supabase
+          .from('contracts')
+          .select('contract_number')
+          .like('contract_number', `CTR-${year}-%`)
+          .order('contract_number', { ascending: false })
+          .limit(1);
+        const lastNum = existing?.[0]?.contract_number 
+          ? parseInt(existing[0].contract_number.split('-')[2]) 
+          : 0;
+        contractNumber = `CTR-${year}-${String(lastNum + 1).padStart(3, '0')}`;
+      }
+
+      // Update contract with quote data
+      const quoteData = {
+        devices: devicePricing,
+        totalPrice,
+        totalTokens,
+        createdAt: new Date().toISOString()
+      };
+
+      await supabase.from('contracts').update({
+        contract_number: contractNumber,
+        status: 'quote_sent',
+        quote_total: totalPrice,
+        quote_data: quoteData,
+        quote_sent_at: new Date().toISOString()
+      }).eq('id', contract.id);
+
+      // Update device pricing
+      for (const d of devicePricing) {
+        await supabase.from('contract_devices').update({
+          tokens_total: d.tokens_total,
+          unit_price: d.unit_price
+        }).eq('id', d.id);
+      }
+
+      notify(`✅ Devis contrat envoyé! N° ${contractNumber}`);
+      onSent();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-4">
+        <button onClick={onClose} className="text-gray-500 hover:text-gray-700">← Retour</button>
+        <h1 className="text-2xl font-bold text-gray-800">Créer Devis Contrat</h1>
+        <div className="flex gap-1 ml-4">
+          {[1,2,3].map(s => (
+            <div key={s} className={`w-8 h-2 rounded-full ${step >= s ? 'bg-[#00A651]' : 'bg-gray-300'}`} />
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        {/* Header */}
+        <div className="px-6 py-4 bg-[#1a1a2e] text-white flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold">
+              {step === 1 && 'Tarification du Contrat'}
+              {step === 2 && 'Aperçu du Devis'}
+              {step === 3 && 'Confirmer l\'envoi'}
+            </h2>
+            <p className="text-gray-300">{contract.companies?.name} • {devicePricing.length} appareil(s)</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-gray-400">Total HT</p>
+            <p className="text-2xl font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</p>
+          </div>
+        </div>
+
+        {/* Step 1: Pricing */}
+        {step === 1 && (
+          <div className="p-6 space-y-6">
+            {/* Contract Info */}
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm text-gray-500">Client</p>
+                <p className="font-bold text-lg">{contract.companies?.name}</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm text-gray-500">Période du contrat</p>
+                <p className="font-bold">{new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}</p>
+              </div>
+            </div>
+
+            {/* Devices Pricing */}
+            <div>
+              <h3 className="font-bold text-gray-800 mb-4">Tarification par Appareil</h3>
+              <div className="space-y-3">
+                {devicePricing.map((device, index) => (
+                  <div key={device.id} className="bg-gray-50 rounded-lg p-4 border">
+                    <div className="flex items-center gap-4">
+                      <span className="bg-[#1a1a2e] text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">{index + 1}</span>
+                      <div className="flex-1 grid md:grid-cols-5 gap-4 items-center">
+                        <div>
+                          <p className="font-medium">{device.model_name || 'Appareil'}</p>
+                          <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Type</p>
+                          <p className="text-sm">{getDeviceTypeLabel(device.device_type)}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500">Étalonnages/an</label>
+                          <input
+                            type="number"
+                            value={device.tokens_total}
+                            onChange={e => updateDevice(device.id, 'tokens_total', parseInt(e.target.value) || 1)}
+                            className="w-full px-3 py-2 border rounded-lg"
+                            min="1"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500">Prix unitaire €</label>
+                          <input
+                            type="number"
+                            value={device.unit_price}
+                            onChange={e => updateDevice(device.id, 'unit_price', parseFloat(e.target.value) || 0)}
+                            className="w-full px-3 py-2 border rounded-lg"
+                            min="0"
+                            step="0.01"
+                          />
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-gray-500">Sous-total</p>
+                          <p className="font-bold text-[#00A651]">{(device.unit_price || 0).toFixed(2)} €</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Summary */}
+            <div className="bg-emerald-50 rounded-lg p-4 flex justify-between items-center border border-emerald-200">
+              <div>
+                <span className="text-emerald-800 font-medium">{devicePricing.length} appareil(s)</span>
+                <span className="text-emerald-600 mx-3">•</span>
+                <span className="text-emerald-800">{totalTokens} étalonnage(s) inclus</span>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-emerald-600">Total HT</p>
+                <p className="text-2xl font-bold text-emerald-800">{totalPrice.toFixed(2)} €</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: Preview */}
+        {step === 2 && (
+          <div className="p-6 bg-gray-200">
+            <div className="max-w-4xl mx-auto bg-white shadow-xl">
+              {/* Quote Header */}
+              <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h1 className="text-3xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h1>
+                    <p className="text-gray-500">Worldwide Solutions</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
+                    <p className="text-lg font-medium text-gray-700">CONTRAT D'ÉTALONNAGE</p>
+                    <p className="text-gray-500">Ref: {quoteRef}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Info */}
+              <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
+                <div>
+                  <p className="text-xs text-gray-500">Date</p>
+                  <p className="font-medium">{today.toLocaleDateString('fr-FR')}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Période</p>
+                  <p className="font-medium">{new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Validité</p>
+                  <p className="font-medium">30 jours</p>
+                </div>
+              </div>
+
+              {/* Client */}
+              <div className="px-8 py-4">
+                <p className="text-xs text-gray-500 uppercase">Client</p>
+                <p className="text-lg font-bold text-[#1a1a2e]">{contract.companies?.name}</p>
+              </div>
+
+              {/* Devices Table */}
+              <div className="px-8 py-4">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-[#1a1a2e] text-white">
+                      <th className="px-4 py-3 text-left">Appareil</th>
+                      <th className="px-4 py-3 text-left">N° Série</th>
+                      <th className="px-4 py-3 text-center">Étal./an</th>
+                      <th className="px-4 py-3 text-right">Prix HT</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {devicePricing.map((d, i) => (
+                      <tr key={d.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-4 py-3 font-medium">{d.model_name || getDeviceTypeLabel(d.device_type)}</td>
+                        <td className="px-4 py-3 font-mono text-sm">{d.serial_number}</td>
+                        <td className="px-4 py-3 text-center">{d.tokens_total}</td>
+                        <td className="px-4 py-3 text-right font-medium">{(d.unit_price || 0).toFixed(2)} €</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-[#00A651] text-white">
+                      <td className="px-4 py-4 font-bold text-lg" colSpan={3}>TOTAL HT / AN</td>
+                      <td className="px-4 py-4 text-right font-bold text-2xl">{totalPrice.toFixed(2)} €</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Terms */}
+              <div className="px-8 py-4 border-t">
+                <p className="text-xs text-gray-500 uppercase mb-2">Conditions du contrat</p>
+                <ul className="text-xs text-gray-600 space-y-1">
+                  <li>• {totalTokens} étalonnage(s) inclus pendant la période du contrat</li>
+                  <li>• Validité du contrat: {new Date(contract.start_date).toLocaleDateString('fr-FR')} au {new Date(contract.end_date).toLocaleDateString('fr-FR')}</li>
+                  <li>• Étalonnages supplémentaires facturés au tarif standard</li>
+                  <li>• Frais de port inclus (France métropolitaine)</li>
+                </ul>
+              </div>
+
+              {/* Footer */}
+              <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
+                <p className="font-medium">Lighthouse France SAS</p>
+                <p className="text-gray-400">16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Confirm */}
+        {step === 3 && (
+          <div className="p-8 text-center max-w-lg mx-auto">
+            <div className="w-24 h-24 bg-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6">
+              <span className="text-5xl text-white">📧</span>
+            </div>
+            <h3 className="text-2xl font-bold text-gray-800 mb-2">Confirmer l'envoi du devis</h3>
+            <p className="text-gray-600 mb-6">Le devis de contrat sera envoyé au client et disponible sur son portail.</p>
+            
+            <div className="bg-gray-50 rounded-xl p-6 mb-6 text-left">
+              <p className="text-lg font-bold text-gray-800 mb-1">{contract.companies?.name}</p>
+              <p className="text-sm text-gray-500 mb-4">{devicePricing.length} appareil(s) • {totalTokens} étalonnage(s)/an</p>
+              <div className="border-t pt-3 flex justify-between font-bold text-lg">
+                <span>Total HT / an</span>
+                <span className="text-[#00A651]">{totalPrice.toFixed(2)} €</span>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 text-left">
+              <p className="font-medium mb-2">Après envoi :</p>
+              <p className="mb-1">✓ Le client recevra le devis sur son portail</p>
+              <p className="mb-1">✓ Il pourra approuver et soumettre son BC</p>
+              <p>✓ Le contrat sera activé après validation du BC</p>
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="px-6 py-4 bg-gray-100 border-t flex justify-between">
+          <button 
+            onClick={step === 1 ? onClose : () => setStep(step - 1)} 
+            className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium"
+          >
+            {step === 1 ? 'Annuler' : '← Retour'}
+          </button>
+          <div className="flex gap-3">
+            {step < 3 && (
+              <button 
+                onClick={() => setStep(step + 1)} 
+                className="px-8 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium"
+              >
+                Suivant →
+              </button>
+            )}
+            {step === 3 && (
+              <button 
+                onClick={sendQuote} 
+                disabled={saving}
+                className="px-10 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold text-lg disabled:opacity-50"
+              >
+                {saving ? 'Envoi...' : '✅ Envoyer le Devis'}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1709,13 +2113,20 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
             </button>
           )}
 
-          {contract.status !== 'cancelled' && contract.status !== 'active' && (
+          {contract.status !== 'cancelled' && contract.status !== 'active' && !editMode && (
             <button
-              onClick={() => updateContractStatus('cancelled')}
+              onClick={() => {
+                if (window.confirm('Êtes-vous sûr de vouloir annuler ce contrat? Tapez "annuler contrat" pour confirmer.')) {
+                  const confirmation = window.prompt('Tapez "annuler contrat" pour confirmer:');
+                  if (confirmation?.toLowerCase() === 'annuler contrat') {
+                    updateContractStatus('cancelled');
+                  }
+                }
+              }}
               disabled={saving}
               className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50"
             >
-              ❌ Annuler
+              ❌ Annuler Contrat
             </button>
           )}
         </div>
@@ -1741,11 +2152,11 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
     bc_url: ''
   });
   const [devices, setDevices] = useState([
-    { id: Date.now(), serial_number: '', model_name: '', device_type: 'particle_counter', nickname: '', tokens_total: 2, unit_price: 0 }
+    { id: Date.now(), serial_number: '', model_name: '', device_type: 'particle_counter', nickname: '', tokens_total: 1, unit_price: 0 }
   ]);
 
   const addDevice = () => {
-    setDevices([...devices, { id: Date.now(), serial_number: '', model_name: '', device_type: 'particle_counter', nickname: '', tokens_total: 2, unit_price: 0 }]);
+    setDevices([...devices, { id: Date.now(), serial_number: '', model_name: '', device_type: 'particle_counter', nickname: '', tokens_total: 1, unit_price: 0 }]);
   };
 
   const removeDevice = (id) => {
