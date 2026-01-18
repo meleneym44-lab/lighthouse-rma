@@ -606,6 +606,233 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
   );
 }
 
+// ============================================
+// CONTRACT BC REVIEW MODAL - Copied from RMA BCReviewModal
+// ============================================
+function ContractBCReviewModal({ contract, onClose, notify, reload }) {
+  const [approving, setApproving] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  
+  const approveBC = async () => {
+    setApproving(true);
+    const { error } = await supabase
+      .from('contracts')
+      .update({ 
+        status: 'active', 
+        bc_approved_at: new Date().toISOString()
+      })
+      .eq('id', contract.id);
+    
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('✅ Contrat activé! Le client peut maintenant utiliser ses tokens.');
+      reload();
+      onClose();
+    }
+    setApproving(false);
+  };
+  
+  const rejectBC = async () => {
+    if (!rejectReason.trim()) {
+      notify('Veuillez indiquer la raison du refus', 'error');
+      return;
+    }
+    setRejecting(true);
+    const { error } = await supabase
+      .from('contracts')
+      .update({ 
+        status: 'bc_rejected',
+        bc_rejection_reason: rejectReason,
+        // Clear old BC data so customer can resubmit
+        bc_file_url: null,
+        signed_quote_url: null,
+        bc_submitted_at: null
+      })
+      .eq('id', contract.id);
+    
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('BC refusé. Le client devra soumettre un nouveau BC.');
+      reload();
+      onClose();
+    }
+    setRejecting(false);
+  };
+  
+  const devices = contract.contract_devices || [];
+  const totalPrice = devices.reduce((sum, d) => sum + (d.unit_price || 0), 0);
+  const totalTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
+  
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex" onClick={onClose}>
+      <div className="bg-white w-full max-w-6xl m-auto rounded-xl overflow-hidden flex flex-col max-h-[95vh]" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold">Vérification du Bon de Commande - Contrat</h2>
+            <p className="text-orange-100">{contract.contract_number} • {contract.companies?.name}</p>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white text-3xl">&times;</button>
+        </div>
+        
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="grid lg:grid-cols-2 gap-6">
+            {/* Left: Document Preview */}
+            <div className="space-y-4">
+              <h3 className="font-bold text-gray-800 text-lg">📄 Documents</h3>
+              
+              {/* Signed Quote PDF */}
+              {contract.signed_quote_url ? (
+                <div className="border-2 border-green-200 rounded-lg overflow-hidden">
+                  <div className="bg-green-100 px-4 py-2 flex justify-between items-center">
+                    <span className="font-medium text-green-800">✅ Devis Signé (PDF)</span>
+                    <a href={contract.signed_quote_url} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:underline text-sm">
+                      Ouvrir dans nouvel onglet ↗
+                    </a>
+                  </div>
+                  <iframe src={contract.signed_quote_url} className="w-full h-96" title="Devis Signé PDF" />
+                </div>
+              ) : (
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center text-gray-400">
+                  Aucun devis signé (signature électronique uniquement)
+                </div>
+              )}
+              
+              {/* BC File (if uploaded separately) */}
+              {contract.bc_file_url && (
+                <div className="border-2 border-purple-200 rounded-lg overflow-hidden">
+                  <div className="bg-purple-100 px-4 py-2 flex justify-between items-center">
+                    <span className="font-medium text-purple-800">📋 Bon de Commande Client</span>
+                    <a href={contract.bc_file_url} target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:underline text-sm">
+                      Ouvrir dans nouvel onglet ↗
+                    </a>
+                  </div>
+                  {contract.bc_file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                    <img src={contract.bc_file_url} alt="BC Document" className="w-full" />
+                  ) : contract.bc_file_url.match(/\.pdf$/i) ? (
+                    <iframe src={contract.bc_file_url} className="w-full h-64" title="BC PDF" />
+                  ) : (
+                    <div className="p-8 text-center">
+                      <a href={contract.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-6 py-3 bg-purple-500 text-white rounded-lg inline-block">
+                        📥 Télécharger le fichier
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Signature Info */}
+              {contract.bc_signed_by && (
+                <div className="bg-gray-50 rounded-lg p-4 border">
+                  <p className="text-sm text-gray-600">
+                    <strong>Signé par:</strong> {contract.bc_signed_by}
+                  </p>
+                  {contract.bc_submitted_at && (
+                    <p className="text-sm text-gray-500">
+                      <strong>Date:</strong> {new Date(contract.bc_submitted_at).toLocaleString('fr-FR')}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            {/* Right: Contract Details */}
+            <div className="space-y-4">
+              <h3 className="font-bold text-gray-800 text-lg">📋 Détails du Contrat</h3>
+              
+              {/* Contract Info */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">N° Contrat</p>
+                    <p className="font-mono font-bold text-[#00A651]">{contract.contract_number}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Période</p>
+                    <p className="font-medium text-sm">
+                      {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Date soumission BC</p>
+                    <p className="font-medium">{contract.bc_submitted_at ? new Date(contract.bc_submitted_at).toLocaleString('fr-FR') : '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Client</p>
+                    <p className="font-medium">{contract.companies?.name}</p>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Pricing Summary */}
+              <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                <h4 className="font-medium text-green-800 mb-2">💰 Récapitulatif</h4>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-sm text-green-700">{devices.length} appareils • {totalTokens} étalonnages/an</p>
+                  </div>
+                  <p className="text-2xl font-bold text-green-700">{totalPrice.toFixed(2)} € HT</p>
+                </div>
+              </div>
+              
+              {/* Devices */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h4 className="font-medium text-gray-700 mb-3">Appareils ({devices.length})</h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {devices.map((d, i) => (
+                    <div key={i} className="bg-white rounded p-3 border">
+                      <p className="font-medium">{d.model_name || 'Appareil'}</p>
+                      <p className="text-sm text-gray-500">SN: {d.serial_number} • {d.tokens_total || 1} étal./an • {(d.unit_price || 0).toFixed(2)} €</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Reject Reason Input */}
+              <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                <h4 className="font-medium text-red-800 mb-2">Refuser le BC?</h4>
+                <textarea
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  placeholder="Indiquez la raison du refus (document illisible, montant incorrect, etc.)..."
+                  className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm h-20 resize-none"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Footer Actions */}
+        <div className="px-6 py-4 bg-gray-100 border-t flex justify-between items-center">
+          <button onClick={onClose} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
+            Annuler
+          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={rejectBC}
+              disabled={rejecting}
+              className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50"
+            >
+              {rejecting ? 'Refus...' : '❌ Refuser BC'}
+            </button>
+            <button
+              onClick={approveBC}
+              disabled={approving}
+              className="px-8 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50"
+            >
+              {approving ? 'Activation...' : '✅ Approuver & Activer Contrat'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RMADetailModal({ rma, onClose, notify, reload }) {
   const [saving, setSaving] = useState(false);
   const [internalNotes, setInternalNotes] = useState(rma.internal_notes || '');
@@ -1086,6 +1313,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain }) {
   const [loading, setLoading] = useState(true);
   const [selectedContract, setSelectedContract] = useState(null);
   const [quoteContract, setQuoteContract] = useState(null); // For opening quote editor
+  const [reviewingContractBC, setReviewingContractBC] = useState(null); // For BC review modal
   const [filter, setFilter] = useState('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
 
@@ -1177,6 +1405,16 @@ function ContractsSheet({ clients, notify, profile, reloadMain }) {
     );
   }
   
+  // Contract BC Review Modal - render on top of main view
+  const contractBCModal = reviewingContractBC && (
+    <ContractBCReviewModal 
+      contract={reviewingContractBC}
+      onClose={() => setReviewingContractBC(null)}
+      notify={notify}
+      reload={() => { loadContracts(); if (reloadMain) reloadMain(); }}
+    />
+  );
+  
   // Manual Contract Creation
   if (showCreateModal) {
     return (
@@ -1191,6 +1429,9 @@ function ContractsSheet({ clients, notify, profile, reloadMain }) {
 
   return (
     <div className="space-y-6">
+      {/* BC Review Modal - renders on top */}
+      {contractBCModal}
+      
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">Contrats d'Étalonnage</h1>
         <button
@@ -1227,34 +1468,12 @@ function ContractsSheet({ clients, notify, profile, reloadMain }) {
                       </p>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    {contract.bc_url && (
-                      <a 
-                        href={contract.bc_url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium"
-                      >
-                        📄 Voir BC
-                      </a>
-                    )}
-                    {contract.bc_signature_url && (
-                      <a 
-                        href={contract.bc_signature_url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium"
-                      >
-                        ✍️ Signature
-                      </a>
-                    )}
-                    <button
-                      onClick={() => setSelectedContract(contract)}
-                      className="px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium"
-                    >
-                      ✅ Examiner & Activer
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => setReviewingContractBC(contract)}
+                    className="px-6 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold"
+                  >
+                    📋 Vérifier BC & Activer
+                  </button>
                 </div>
               ))}
             </div>
