@@ -7958,6 +7958,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedContract, setSelectedContract] = useState(null);
+  const [contractTab, setContractTab] = useState('details');
   
   // IDENTICAL to RMA - Quote and BC state
   const [showQuoteModal, setShowQuoteModal] = useState(false);
@@ -8174,6 +8175,8 @@ function ContractsPage({ profile, t, notify, setPage }) {
     const needsQuoteAction = isQuoteSent && !contract.bc_submitted_at;
     const totalPrice = devices.reduce((sum, d) => sum + (d.unit_price || 0), 0);
     const totalTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
+    const usedTokens = devices.reduce((sum, d) => sum + (d.tokens_used || 0), 0);
+    const isActive = contract.status === 'active';
     
     // Detect calibration types from devices
     const calibrationTypes = [...new Set(devices.map(d => d.device_type || 'particle_counter'))];
@@ -8309,54 +8312,292 @@ function ContractsPage({ profile, t, notify, setPage }) {
             </div>
           )}
 
-          {/* Contract Details */}
-          <div className="p-6">
-            {/* Stats */}
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="bg-gray-50 rounded-lg p-4 text-center">
-                <div className="text-3xl font-bold text-[#1E3A5F]">{devices.length}</div>
-                <div className="text-sm text-gray-600">Appareils</div>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4 text-center">
-                <div className="text-3xl font-bold text-green-600">{totalTokens}</div>
-                <div className="text-sm text-gray-600">Étalonnages/an</div>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4 text-center">
-                <div className="text-3xl font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</div>
-                <div className="text-sm text-gray-600">Total HT/an</div>
-              </div>
+          {/* TABS - Like RMA */}
+          <div className="border-b border-gray-200">
+            <div className="flex">
+              {[
+                { id: 'details', label: 'Détails', icon: '📋' },
+                { id: 'devices', label: 'Appareils', icon: '🔬' },
+                { id: 'documents', label: 'Documents', icon: '📄' },
+                { id: 'history', label: 'Historique', icon: '📜' }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setContractTab(tab.id)}
+                  className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${
+                    contractTab === tab.id
+                      ? 'border-[#00A651] text-[#00A651]'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {tab.icon} {tab.label}
+                </button>
+              ))}
             </div>
+          </div>
 
-            {/* Devices Table */}
-            <h3 className="font-bold text-[#1E3A5F] mb-3">Appareils sous contrat</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="bg-[#1E3A5F] text-white">
-                    <th className="px-4 py-3 text-left text-xs font-bold">Modèle</th>
-                    <th className="px-4 py-3 text-left text-xs font-bold">N° Série</th>
-                    <th className="px-4 py-3 text-left text-xs font-bold">Type</th>
-                    <th className="px-4 py-3 text-center text-xs font-bold">Étal./an</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {devices.map((device, idx) => (
-                    <tr key={device.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="px-4 py-3 font-medium">{device.model_name || '—'}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{device.serial_number}</td>
-                      <td className="px-4 py-3 text-sm">
-                        {device.device_type === 'particle_counter' && '🔬 Compteur Particules'}
-                        {device.device_type === 'bio_collector' && '🧫 Bio Collecteur'}
-                        {device.device_type === 'liquid_counter' && '💧 Compteur Liquide'}
-                        {device.device_type === 'temp_humidity' && '🌡️ Temp/Humidité'}
-                        {(!device.device_type || device.device_type === 'other') && '📦 Autre'}
-                      </td>
-                      <td className="px-4 py-3 text-center font-bold text-green-600">{device.tokens_total || 1}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {/* TAB CONTENT */}
+          <div className="p-6">
+            {/* DETAILS TAB */}
+            {contractTab === 'details' && (
+              <>
+                {/* Stats */}
+                <div className="grid grid-cols-4 gap-4 mb-6">
+                  <div className="bg-gray-50 rounded-lg p-4 text-center">
+                    <div className="text-3xl font-bold text-[#1E3A5F]">{devices.length}</div>
+                    <div className="text-sm text-gray-600">Appareils</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4 text-center">
+                    <div className="text-3xl font-bold text-green-600">{totalTokens}</div>
+                    <div className="text-sm text-gray-600">Étalonnages inclus</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4 text-center">
+                    <div className={`text-3xl font-bold ${usedTokens >= totalTokens ? 'text-red-600' : 'text-blue-600'}`}>
+                      {totalTokens - usedTokens}
+                    </div>
+                    <div className="text-sm text-gray-600">Restants</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4 text-center">
+                    <div className="text-3xl font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</div>
+                    <div className="text-sm text-gray-600">Total HT/an</div>
+                  </div>
+                </div>
+
+                {/* Contract Info */}
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h3 className="font-bold text-gray-700 mb-3">Informations Contrat</h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Numéro</span>
+                        <span className="font-mono font-bold">{contract.contract_number || '—'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Début</span>
+                        <span>{new Date(contract.start_date).toLocaleDateString('fr-FR')}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Fin</span>
+                        <span>{new Date(contract.end_date).toLocaleDateString('fr-FR')}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Créé le</span>
+                        <span>{new Date(contract.created_at).toLocaleDateString('fr-FR')}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h3 className="font-bold text-gray-700 mb-3">Utilisation des Tokens</h3>
+                    <div className="mb-3">
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-600">Utilisés: {usedTokens} / {totalTokens}</span>
+                        <span className="font-bold">{totalTokens > 0 ? Math.round((usedTokens / totalTokens) * 100) : 0}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div 
+                          className={`h-3 rounded-full ${usedTokens >= totalTokens ? 'bg-red-500' : 'bg-green-500'}`}
+                          style={{ width: `${Math.min((usedTokens / totalTokens) * 100, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                    {usedTokens >= totalTokens && (
+                      <p className="text-xs text-red-600">⚠️ Tous les tokens ont été utilisés</p>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Actions */}
+                {isActive && (
+                  <div className="mt-6 flex justify-end">
+                    <button
+                      onClick={() => window.location.href = '/request?contract=' + contract.id}
+                      className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45]"
+                    >
+                      🔬 Créer une demande d'étalonnage
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* DEVICES TAB */}
+            {contractTab === 'devices' && (
+              <>
+                <h3 className="font-bold text-[#1E3A5F] mb-3">Appareils sous contrat ({devices.length})</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="bg-[#1E3A5F] text-white">
+                        <th className="px-4 py-3 text-left text-xs font-bold">Modèle</th>
+                        <th className="px-4 py-3 text-left text-xs font-bold">N° Série</th>
+                        <th className="px-4 py-3 text-left text-xs font-bold">Type</th>
+                        <th className="px-4 py-3 text-center text-xs font-bold">Étal./an</th>
+                        <th className="px-4 py-3 text-center text-xs font-bold">Utilisés</th>
+                        <th className="px-4 py-3 text-center text-xs font-bold">Statut</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {devices.map((device, idx) => {
+                        const deviceUsed = device.tokens_used || 0;
+                        const deviceTotal = device.tokens_total || 1;
+                        const needsCalibration = deviceUsed < deviceTotal;
+                        
+                        return (
+                          <tr key={device.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="px-4 py-3 font-medium">{device.model_name || '—'}</td>
+                            <td className="px-4 py-3 font-mono text-xs">{device.serial_number}</td>
+                            <td className="px-4 py-3 text-sm">
+                              {device.device_type === 'particle_counter' && '🔬 Compteur Particules'}
+                              {device.device_type === 'bio_collector' && '🧫 Bio Collecteur'}
+                              {device.device_type === 'liquid_counter' && '💧 Compteur Liquide'}
+                              {device.device_type === 'temp_humidity' && '🌡️ Temp/Humidité'}
+                              {(!device.device_type || device.device_type === 'other') && '📦 Autre'}
+                            </td>
+                            <td className="px-4 py-3 text-center font-bold">{deviceTotal}</td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={deviceUsed >= deviceTotal ? 'text-green-600 font-bold' : 'text-gray-600'}>
+                                {deviceUsed}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              {deviceUsed >= deviceTotal ? (
+                                <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                  ✅ Étalonné
+                                </span>
+                              ) : (
+                                <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">
+                                  ⏳ En attente
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* DOCUMENTS TAB */}
+            {contractTab === 'documents' && (
+              <>
+                <h3 className="font-bold text-[#1E3A5F] mb-3">Documents</h3>
+                <div className="space-y-3">
+                  {/* Quote */}
+                  {contract.quote_sent_at && (
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                          <span className="text-blue-600">📄</span>
+                        </div>
+                        <div>
+                          <p className="font-medium">Devis Contrat</p>
+                          <p className="text-xs text-gray-500">
+                            Envoyé le {new Date(contract.quote_sent_at).toLocaleDateString('fr-FR')}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setShowQuoteModal(true)}
+                        className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600"
+                      >
+                        👁️ Voir
+                      </button>
+                    </div>
+                  )}
+                  
+                  {/* Signed BC/Quote */}
+                  {contract.bc_submitted_at && (
+                    <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                          <span className="text-green-600">✅</span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-green-800">Devis Signé / Bon de Commande</p>
+                          <p className="text-xs text-green-600">
+                            Soumis le {new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR')}
+                            {contract.bc_signed_by && ` par ${contract.bc_signed_by}`}
+                          </p>
+                        </div>
+                      </div>
+                      {contract.bc_url && (
+                        <a
+                          href={contract.bc_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
+                        >
+                          📥 Télécharger
+                        </a>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* No documents message */}
+                  {!contract.quote_sent_at && !contract.bc_submitted_at && (
+                    <div className="text-center py-8 text-gray-500">
+                      <p className="text-4xl mb-2">📭</p>
+                      <p>Aucun document disponible</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* HISTORY TAB */}
+            {contractTab === 'history' && (
+              <>
+                <h3 className="font-bold text-[#1E3A5F] mb-3">Historique</h3>
+                <div className="space-y-3">
+                  {/* Build history from contract data */}
+                  {contract.bc_approved_at && (
+                    <div className="flex items-start gap-3 p-3 bg-green-50 rounded-lg">
+                      <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-sm">✓</span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-green-800">Contrat activé</p>
+                        <p className="text-xs text-green-600">{new Date(contract.bc_approved_at).toLocaleString('fr-FR')}</p>
+                      </div>
+                    </div>
+                  )}
+                  {contract.bc_submitted_at && (
+                    <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
+                      <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-sm">📄</span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-blue-800">BC soumis</p>
+                        <p className="text-xs text-blue-600">{new Date(contract.bc_submitted_at).toLocaleString('fr-FR')}</p>
+                      </div>
+                    </div>
+                  )}
+                  {contract.quote_sent_at && (
+                    <div className="flex items-start gap-3 p-3 bg-purple-50 rounded-lg">
+                      <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-sm">📧</span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-purple-800">Devis envoyé</p>
+                        <p className="text-xs text-purple-600">{new Date(contract.quote_sent_at).toLocaleString('fr-FR')}</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                    <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <span className="text-white text-sm">🆕</span>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-800">Demande créée</p>
+                      <p className="text-xs text-gray-600">{new Date(contract.created_at).toLocaleString('fr-FR')}</p>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
         
@@ -8721,7 +8962,8 @@ function ContractsPage({ profile, t, notify, setPage }) {
                   <div className="flex items-end gap-6">
                     <div>
                       <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
-                      <p className="font-bold text-lg">Lighthouse France</p>
+                      <p className="font-bold text-lg">{contract.quote_data?.createdBy || 'Lighthouse France'}</p>
+                      <p className="text-gray-600">Lighthouse France</p>
                     </div>
                     <img 
                       src="/images/logos/capcert-logo.png" 
