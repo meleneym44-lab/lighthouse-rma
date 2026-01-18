@@ -1128,7 +1128,7 @@ export default function CustomerPortal() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F9F9F9]">
+    <div className="min-h-screen bg-[#f0f2f5]">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white font-medium ${
@@ -1139,7 +1139,7 @@ export default function CustomerPortal() {
       )}
 
       {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-50">
+      <header className="bg-[#1a1a2e] shadow-lg sticky top-0 z-50 border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
@@ -1147,33 +1147,33 @@ export default function CustomerPortal() {
               <img 
                 src="/images/logos/lighthouse-logo.png" 
                 alt="Lighthouse France" 
-                className="h-10 w-auto"
+                className="h-10 w-auto invert brightness-0 invert"
                 onError={(e) => {
                   e.target.style.display = 'none';
                   e.target.nextSibling.style.display = 'flex';
                 }}
               />
               <div className="items-center gap-2 hidden">
-                <span className="text-[#1E3A5F] font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
-                <span className="text-[#3B7AB4] font-semibold text-sm">FRANCE</span>
+                <span className="text-white font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                <span className="text-[#00A651] font-semibold text-sm">FRANCE</span>
               </div>
             </div>
 
             {/* Nav */}
             <nav className="hidden md:flex items-center gap-6">
-              <button onClick={() => setPage('dashboard')} className={`font-medium ${page === 'dashboard' ? 'text-[#3B7AB4]' : 'text-[#1E3A5F] hover:text-[#3B7AB4]'}`}>
+              <button onClick={() => setPage('dashboard')} className={`font-medium ${page === 'dashboard' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('dashboard')}
               </button>
-              <button onClick={() => setPage('new-request')} className={`font-medium ${page === 'new-request' ? 'text-[#3B7AB4]' : 'text-[#1E3A5F] hover:text-[#3B7AB4]'}`}>
+              <button onClick={() => setPage('new-request')} className={`font-medium ${page === 'new-request' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('newRequest')}
               </button>
-              <button onClick={() => setPage('equipment')} className={`font-medium ${page === 'equipment' ? 'text-[#3B7AB4]' : 'text-[#1E3A5F] hover:text-[#3B7AB4]'}`}>
+              <button onClick={() => setPage('equipment')} className={`font-medium ${page === 'equipment' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('myEquipment')}
               </button>
-              <button onClick={() => setPage('settings')} className={`font-medium ${page === 'settings' ? 'text-[#3B7AB4]' : 'text-[#1E3A5F] hover:text-[#3B7AB4]'}`}>
+              <button onClick={() => setPage('settings')} className={`font-medium ${page === 'settings' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('settings')}
               </button>
-              <button onClick={logout} className="text-gray-500 hover:text-gray-700">
+              <button onClick={logout} className="text-white/50 hover:text-white/80">
                 {t('logout')}
               </button>
             </nav>
@@ -1182,13 +1182,13 @@ export default function CustomerPortal() {
             <div className="flex items-center gap-2">
               <button 
                 onClick={() => setLang('fr')} 
-                className={`px-2 py-1 rounded text-sm font-bold ${lang === 'fr' ? 'bg-[#1E3A5F] text-white' : 'text-gray-500'}`}
+                className={`px-2 py-1 rounded text-sm font-bold ${lang === 'fr' ? 'bg-[#00A651] text-white' : 'text-white/50'}`}
               >
                 FR
               </button>
               <button 
                 onClick={() => setLang('en')} 
-                className={`px-2 py-1 rounded text-sm font-bold ${lang === 'en' ? 'bg-[#1E3A5F] text-white' : 'text-gray-500'}`}
+                className={`px-2 py-1 rounded text-sm font-bold ${lang === 'en' ? 'bg-[#00A651] text-white' : 'text-white/50'}`}
               >
                 EN
               </button>
@@ -1202,7 +1202,7 @@ export default function CustomerPortal() {
                 key={p}
                 onClick={() => setPage(p)}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap ${
-                  page === p ? 'bg-[#3B7AB4] text-white' : 'bg-gray-100 text-gray-700'
+                  page === p ? 'bg-[#00A651] text-white' : 'bg-white/10 text-white/70'
                 }`}
               >
                 {t(p === 'new-request' ? 'newRequest' : p)}
@@ -7163,98 +7163,112 @@ function LoginPage({ t, login, setPage }) {
   };
 
   return (
-    <div>
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex justify-between items-center h-16">
-            <button onClick={() => setPage('home')} className="flex items-center gap-3">
-              <img 
-                src="/images/logos/lighthouse-logo.png" 
-                alt="Lighthouse France" 
-                className="h-10 w-auto"
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                  e.target.nextSibling.style.display = 'flex';
-                }}
-              />
-              <div className="items-center gap-2 hidden">
-                <span className="text-[#1E3A5F] font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
-                <span className="text-[#3B7AB4] font-semibold text-sm">FRANCE</span>
-              </div>
-            </button>
-            <button onClick={() => setPage('home')} className="text-[#3B7AB4] font-medium">
-              ← Retour
-            </button>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen">
+      {/* Fixed Background */}
+      <div className="fixed inset-0 z-0">
+        <img 
+          src="/images/products/hero-background.png" 
+          alt="" 
+          className="w-full h-full object-cover"
+          onError={(e) => { e.target.style.display = 'none'; }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e]/90 via-[#1a1a2e]/85 to-[#1a1a2e]/80"></div>
+      </div>
 
-      {/* Login Form */}
-      <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-md">
-          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-            <div className="bg-white px-6 py-8 text-center border-b-4 border-[#00A651]">
-              <img 
-                src="/images/logos/lighthouse-logo.png" 
-                alt="Lighthouse France" 
-                className="h-14 w-auto mx-auto mb-3"
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                  e.target.nextSibling.style.display = 'block';
-                }}
-              />
-              <h1 className="text-2xl font-bold text-[#1E3A5F] hidden">LIGHTHOUSE FRANCE</h1>
-              <p className="text-gray-500 mt-2">Service Portal</p>
-            </div>
-            
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
-                  placeholder="votre@email.com"
-                  required
+      {/* Content */}
+      <div className="relative z-10">
+        {/* Header */}
+        <header className="bg-[#1a1a2e]/50 backdrop-blur-md border-b border-white/10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="flex justify-between items-center h-16">
+              <button onClick={() => setPage('home')} className="flex items-center gap-3">
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-10 w-auto invert brightness-0 invert"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
                 />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
-                  placeholder="••••••••"
-                  required
-                />
-              </div>
-              
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                  {error}
+                <div className="items-center gap-2 hidden text-white">
+                  <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                  <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
                 </div>
-              )}
-              
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 bg-[#3B7AB4] text-white rounded-lg font-semibold hover:bg-[#1E3A5F] transition-colors disabled:opacity-50"
-              >
-                {loading ? 'Connexion...' : 'Se connecter'}
               </button>
-            </form>
-            
-            <div className="px-6 pb-6 text-center">
-              <p className="text-gray-600">
-                Pas de compte?{' '}
-                <button onClick={() => setPage('register')} className="text-[#3B7AB4] font-semibold">
-                  Créer un compte
+              <button onClick={() => setPage('home')} className="text-white/70 hover:text-white font-medium transition-colors">
+                ← Retour
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Login Form */}
+        <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
+          <div className="w-full max-w-md">
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden">
+              <div className="px-6 py-8 text-center border-b border-white/10">
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-14 w-auto mx-auto mb-3 invert brightness-0 invert"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'block';
+                  }}
+                />
+                <h1 className="text-2xl font-bold text-white hidden">LIGHTHOUSE FRANCE</h1>
+                <p className="text-white/60 mt-2">Portail de Service</p>
+              </div>
+              
+              <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-white/80 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                    placeholder="votre@email.com"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-white/80 mb-1">Mot de passe</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+                
+                {error && (
+                  <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
+                    {error}
+                  </div>
+                )}
+                
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50"
+                >
+                  {loading ? 'Connexion...' : 'Se connecter'}
                 </button>
-              </p>
+              </form>
+              
+              <div className="px-6 pb-6 text-center">
+                <p className="text-white/60">
+                  Pas de compte?{' '}
+                  <button onClick={() => setPage('register')} className="text-[#00A651] font-semibold hover:text-[#00c564]">
+                    Créer un compte
+                  </button>
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -7298,195 +7312,209 @@ function RegisterPage({ t, register, setPage }) {
   };
 
   return (
-    <div>
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex justify-between items-center h-16">
-            <button onClick={() => setPage('home')} className="flex items-center gap-3">
-              <img 
-                src="/images/logos/lighthouse-logo.png" 
-                alt="Lighthouse France" 
-                className="h-10 w-auto"
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                  e.target.nextSibling.style.display = 'flex';
-                }}
-              />
-              <div className="items-center gap-2 hidden">
-                <span className="text-[#1E3A5F] font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
-                <span className="text-[#3B7AB4] font-semibold text-sm">FRANCE</span>
-              </div>
-            </button>
-            <button onClick={() => setPage('home')} className="text-[#3B7AB4] font-medium">
-              ← Retour
-            </button>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen">
+      {/* Fixed Background */}
+      <div className="fixed inset-0 z-0">
+        <img 
+          src="/images/products/hero-background.png" 
+          alt="" 
+          className="w-full h-full object-cover"
+          onError={(e) => { e.target.style.display = 'none'; }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e]/90 via-[#1a1a2e]/85 to-[#1a1a2e]/80"></div>
+      </div>
 
-      {/* Register Form */}
-      <div className="py-12 px-4">
-        <div className="max-w-2xl mx-auto">
-          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-            <div className="bg-[#1E3A5F] px-6 py-6">
-              <h1 className="text-xl font-bold text-white">Créer un compte</h1>
-              <p className="text-white/70 text-sm mt-1">Enregistrez votre société pour accéder au portail</p>
+      {/* Content */}
+      <div className="relative z-10">
+        {/* Header */}
+        <header className="bg-[#1a1a2e]/50 backdrop-blur-md border-b border-white/10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="flex justify-between items-center h-16">
+              <button onClick={() => setPage('home')} className="flex items-center gap-3">
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-10 w-auto invert brightness-0 invert"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+                <div className="items-center gap-2 hidden text-white">
+                  <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                  <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
+                </div>
+              </button>
+              <button onClick={() => setPage('home')} className="text-white/70 hover:text-white font-medium transition-colors">
+                ← Retour
+              </button>
             </div>
-            
-            <form onSubmit={handleSubmit} className="p-6 space-y-6">
-              {/* Company Section */}
-              <div>
-                <h2 className="text-lg font-bold text-[#1E3A5F] mb-4 pb-2 border-b-2 border-[#E8F2F8]">
-                  Information Société
-                </h2>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nom de la société *</label>
-                    <input
-                      type="text"
-                      value={formData.companyName}
-                      onChange={(e) => updateField('companyName', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nom du contact *</label>
-                    <input
-                      type="text"
-                      value={formData.contactName}
-                      onChange={(e) => updateField('contactName', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
-                    <input
-                      type="tel"
-                      value={formData.phone}
-                      onChange={(e) => updateField('phone', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="+33 1 23 45 67 89"
-                    />
-                  </div>
-                </div>
-              </div>
+          </div>
+        </header>
 
-              {/* Address Section */}
-              <div>
-                <h2 className="text-lg font-bold text-[#1E3A5F] mb-4 pb-2 border-b-2 border-[#E8F2F8]">
-                  Adresse
-                </h2>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Adresse *</label>
-                    <input
-                      type="text"
-                      value={formData.address}
-                      onChange={(e) => updateField('address', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="16 Rue de la République"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Code Postal *</label>
-                    <input
-                      type="text"
-                      value={formData.postalCode}
-                      onChange={(e) => updateField('postalCode', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="75001"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Ville *</label>
-                    <input
-                      type="text"
-                      value={formData.city}
-                      onChange={(e) => updateField('city', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="Paris"
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Account Section */}
-              <div>
-                <h2 className="text-lg font-bold text-[#1E3A5F] mb-4 pb-2 border-b-2 border-[#E8F2F8]">
-                  Identifiants
-                </h2>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-                    <input
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => updateField('email', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe *</label>
-                    <input
-                      type="password"
-                      value={formData.password}
-                      onChange={(e) => updateField('password', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="Minimum 6 caractères"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Confirmer *</label>
-                    <input
-                      type="password"
-                      value={formData.confirmPassword}
-                      onChange={(e) => updateField('confirmPassword', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      required
-                    />
-                  </div>
-                </div>
+        {/* Register Form */}
+        <div className="py-12 px-4">
+          <div className="max-w-2xl mx-auto">
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden">
+              <div className="bg-[#00A651]/20 backdrop-blur-sm px-6 py-6 border-b border-white/10">
+                <h1 className="text-xl font-bold text-white">Créer un compte</h1>
+                <p className="text-white/60 text-sm mt-1">Enregistrez votre société pour accéder au portail</p>
               </div>
               
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                  {error}
+              <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                {/* Company Section */}
+                <div>
+                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
+                    Information Société
+                  </h2>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-white/80 mb-1">Nom de la société *</label>
+                      <input
+                        type="text"
+                        value={formData.companyName}
+                        onChange={(e) => updateField('companyName', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Nom du contact *</label>
+                      <input
+                        type="text"
+                        value={formData.contactName}
+                        onChange={(e) => updateField('contactName', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Téléphone</label>
+                      <input
+                        type="tel"
+                        value={formData.phone}
+                        onChange={(e) => updateField('phone', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="+33 1 23 45 67 89"
+                      />
+                    </div>
+                  </div>
                 </div>
-              )}
+
+                {/* Address Section */}
+                <div>
+                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
+                    Adresse
+                  </h2>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-white/80 mb-1">Adresse *</label>
+                      <input
+                        type="text"
+                        value={formData.address}
+                        onChange={(e) => updateField('address', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="16 Rue de la République"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Code Postal *</label>
+                      <input
+                        type="text"
+                        value={formData.postalCode}
+                        onChange={(e) => updateField('postalCode', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="75001"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Ville *</label>
+                      <input
+                        type="text"
+                        value={formData.city}
+                        onChange={(e) => updateField('city', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="Paris"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Account Section */}
+                <div>
+                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
+                    Identifiants
+                  </h2>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-white/80 mb-1">Email *</label>
+                      <input
+                        type="email"
+                        value={formData.email}
+                        onChange={(e) => updateField('email', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Mot de passe *</label>
+                      <input
+                        type="password"
+                        value={formData.password}
+                        onChange={(e) => updateField('password', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="Minimum 6 caractères"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Confirmer *</label>
+                      <input
+                        type="password"
+                        value={formData.confirmPassword}
+                        onChange={(e) => updateField('confirmPassword', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                {error && (
+                  <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
+                    {error}
+                  </div>
+                )}
+                
+                <div className="flex gap-4 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setPage('login')}
+                    className="flex-1 py-3 bg-white/10 border border-white/20 text-white rounded-lg font-medium hover:bg-white/20 transition-colors"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50"
+                  >
+                    {loading ? 'Création...' : 'Créer le compte'}
+                  </button>
+                </div>
+              </form>
               
-              <div className="flex gap-4 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setPage('login')}
-                  className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 py-3 bg-[#3B7AB4] text-white rounded-lg font-semibold disabled:opacity-50"
-                >
-                  {loading ? 'Création...' : 'Créer le compte'}
-                </button>
+              <div className="px-6 pb-6 text-center">
+                <p className="text-white/60">
+                  Déjà un compte?{' '}
+                  <button onClick={() => setPage('login')} className="text-[#00A651] font-semibold hover:text-[#00c564]">
+                    Se connecter
+                  </button>
+                </p>
               </div>
-            </form>
-            
-            <div className="px-6 pb-6 text-center">
-              <p className="text-gray-600">
-                Déjà un compte?{' '}
-                <button onClick={() => setPage('login')} className="text-[#3B7AB4] font-semibold">
-                  Se connecter
-                </button>
-              </p>
             </div>
           </div>
         </div>
