@@ -7542,6 +7542,134 @@ function DeviceHistoryPage({ profile, requests, t, setPage }) {
 // ============================================
 // CONTRACTS PAGE (Customer View)
 // ============================================
+// ============================================
+// BC UPLOADER COMPONENT (for Contracts)
+// ============================================
+function BCUploader({ contractId, notify, onUploaded }) {
+  const [uploading, setUploading] = useState(false);
+  const [bcUrl, setBcUrl] = useState('');
+  const [uploadMethod, setUploadMethod] = useState('url'); // 'url' or 'file'
+  
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `contract_bc_${contractId}_${Date.now()}.${fileExt}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('bc-documents')
+        .upload(fileName, file);
+      
+      if (uploadError) throw uploadError;
+      
+      const { data: { publicUrl } } = supabase.storage
+        .from('bc-documents')
+        .getPublicUrl(fileName);
+      
+      await supabase.from('contracts').update({
+        bc_url: publicUrl,
+        status: 'bc_pending',
+        bc_submitted_at: new Date().toISOString()
+      }).eq('id', contractId);
+      
+      notify('✅ Bon de commande soumis!');
+      onUploaded();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setUploading(false);
+  };
+  
+  const handleUrlSubmit = async () => {
+    if (!bcUrl.trim()) {
+      notify('Veuillez entrer une URL', 'error');
+      return;
+    }
+    
+    setUploading(true);
+    try {
+      await supabase.from('contracts').update({
+        bc_url: bcUrl,
+        status: 'bc_pending',
+        bc_submitted_at: new Date().toISOString()
+      }).eq('id', contractId);
+      
+      notify('✅ Bon de commande soumis!');
+      onUploaded();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setUploading(false);
+  };
+  
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <button
+          onClick={() => setUploadMethod('url')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium ${uploadMethod === 'url' ? 'bg-orange-500 text-white' : 'bg-orange-100 text-orange-700'}`}
+        >
+          🔗 Lien URL
+        </button>
+        <button
+          onClick={() => setUploadMethod('file')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium ${uploadMethod === 'file' ? 'bg-orange-500 text-white' : 'bg-orange-100 text-orange-700'}`}
+        >
+          📄 Fichier PDF
+        </button>
+      </div>
+      
+      {uploadMethod === 'url' ? (
+        <div className="flex gap-2">
+          <input
+            type="url"
+            value={bcUrl}
+            onChange={e => setBcUrl(e.target.value)}
+            placeholder="https://drive.google.com/... ou autre lien"
+            className="flex-1 px-4 py-2 border border-orange-200 rounded-lg focus:ring-2 focus:ring-orange-300"
+          />
+          <button
+            onClick={handleUrlSubmit}
+            disabled={uploading}
+            className="px-6 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 disabled:opacity-50"
+          >
+            {uploading ? '...' : 'Soumettre'}
+          </button>
+        </div>
+      ) : (
+        <div>
+          <label className="block">
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+              onChange={handleFileUpload}
+              disabled={uploading}
+              className="hidden"
+            />
+            <div className="border-2 border-dashed border-orange-300 rounded-lg p-6 text-center cursor-pointer hover:border-orange-400 hover:bg-orange-50">
+              {uploading ? (
+                <div className="flex items-center justify-center gap-2">
+                  <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-orange-600">Téléchargement...</span>
+                </div>
+              ) : (
+                <>
+                  <div className="text-3xl mb-2">📄</div>
+                  <p className="text-orange-600 font-medium">Cliquez pour sélectionner un fichier</p>
+                  <p className="text-xs text-gray-500 mt-1">PDF, DOC, PNG, JPG acceptés</p>
+                </>
+              )}
+            </div>
+          </label>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ContractsPage({ profile, t, notify, setPage }) {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -7610,6 +7738,31 @@ function ContractsPage({ profile, t, notify, setPage }) {
   if (selectedContract) {
     const contract = selectedContract;
     const devices = contract.contract_devices || [];
+    const quoteData = contract.quote_data || {};
+    const isQuotePending = contract.status === 'quote_sent';
+    
+    // Approve quote handler
+    const approveQuote = async () => {
+      try {
+        await supabase.from('contracts').update({
+          status: 'quote_approved',
+          quote_approved_at: new Date().toISOString()
+        }).eq('id', contract.id);
+        
+        // Reload contracts
+        const { data } = await supabase
+          .from('contracts')
+          .select('*, contract_devices(*)')
+          .eq('company_id', profile.company_id)
+          .order('created_at', { ascending: false });
+        
+        if (data) setContracts(data);
+        setSelectedContract(data?.find(c => c.id === contract.id) || null);
+        notify('✅ Devis approuvé! Vous pouvez maintenant soumettre votre bon de commande.');
+      } catch (err) {
+        notify('Erreur: ' + err.message, 'error');
+      }
+    };
     
     return (
       <div>
@@ -7625,7 +7778,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
           <div className="flex justify-between items-start mb-6">
             <div>
               <h1 className="text-2xl font-bold text-[#1E3A5F]">
-                Contrat {contract.contract_number}
+                {contract.contract_number ? `Contrat ${contract.contract_number}` : 'Demande de Contrat'}
               </h1>
               <p className="text-gray-600">
                 {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
@@ -7633,6 +7786,81 @@ function ContractsPage({ profile, t, notify, setPage }) {
             </div>
             {getStatusBadge(contract.status)}
           </div>
+          
+          {/* QUOTE APPROVAL BANNER */}
+          {isQuotePending && (
+            <div className="mb-6 p-6 bg-blue-50 border-2 border-blue-300 rounded-xl">
+              <div className="flex items-start gap-4">
+                <div className="w-14 h-14 bg-blue-100 rounded-lg flex items-center justify-center text-3xl">💰</div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-blue-800 text-lg mb-1">Devis de Contrat à Approuver</h3>
+                  <p className="text-blue-700 text-sm mb-3">
+                    Lighthouse vous a envoyé un devis pour votre contrat d'étalonnage. 
+                    Vérifiez les détails ci-dessous et approuvez pour continuer.
+                  </p>
+                  
+                  <div className="bg-white rounded-lg p-4 mb-4 border border-blue-200">
+                    <div className="grid grid-cols-3 gap-4 text-center">
+                      <div>
+                        <p className="text-2xl font-bold text-[#1E3A5F]">{devices.length}</p>
+                        <p className="text-xs text-gray-500">Appareil(s)</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-green-600">
+                          {devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0)}
+                        </p>
+                        <p className="text-xs text-gray-500">Étalonnage(s)/an</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-[#00A651]">
+                          {(contract.quote_total || 0).toFixed(2)} €
+                        </p>
+                        <p className="text-xs text-gray-500">Total HT/an</p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={approveQuote}
+                    className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008c44] flex items-center gap-2"
+                  >
+                    ✅ Approuver le Devis
+                  </button>
+                  <p className="text-xs text-blue-600 mt-2">
+                    Après approbation, vous pourrez soumettre votre bon de commande.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* BC Upload Banner - After quote approval */}
+          {contract.status === 'quote_approved' && (
+            <div className="mb-6 p-6 bg-orange-50 border-2 border-orange-300 rounded-xl">
+              <div className="flex items-start gap-4">
+                <div className="w-14 h-14 bg-orange-100 rounded-lg flex items-center justify-center text-3xl">📄</div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-orange-800 text-lg mb-1">Bon de Commande Requis</h3>
+                  <p className="text-orange-700 text-sm mb-3">
+                    Devis approuvé! Veuillez soumettre votre bon de commande pour activer le contrat.
+                  </p>
+                  <BCUploader 
+                    contractId={contract.id}
+                    notify={notify}
+                    onUploaded={async () => {
+                      const { data } = await supabase
+                        .from('contracts')
+                        .select('*, contract_devices(*)')
+                        .eq('company_id', profile.company_id)
+                        .order('created_at', { ascending: false });
+                      if (data) setContracts(data);
+                      setSelectedContract(data?.find(c => c.id === contract.id) || null);
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Contract Stats */}
           <div className="grid grid-cols-3 gap-4 mb-6">
@@ -7665,6 +7893,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
                   <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 border">Modèle</th>
                   <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 border">Type</th>
                   <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 border">Étalonnages</th>
+                  {isQuotePending && <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 border">Prix HT</th>}
                 </tr>
               </thead>
               <tbody>
@@ -7684,18 +7913,33 @@ function ContractsPage({ profile, t, notify, setPage }) {
                     <td className="px-4 py-3 border text-center">
                       {getTokensDisplay(device)}
                     </td>
+                    {isQuotePending && (
+                      <td className="px-4 py-3 border text-right font-medium">
+                        {(device.unit_price || 0).toFixed(2)} €
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
+              {isQuotePending && (
+                <tfoot>
+                  <tr className="bg-[#00A651] text-white">
+                    <td colSpan={5} className="px-4 py-3 border font-bold">Total HT / an</td>
+                    <td className="px-4 py-3 border text-right font-bold text-lg">
+                      {(contract.quote_total || 0).toFixed(2)} €
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
 
           {/* BC Document Link */}
-          {contract.bc_file_url && (
+          {contract.bc_url && (
             <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-200">
               <h4 className="font-bold text-green-800 mb-2">📄 Bon de Commande</h4>
               <a 
-                href={contract.bc_file_url} 
+                href={contract.bc_url} 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="text-green-600 hover:underline"
@@ -7710,6 +7954,8 @@ function ContractsPage({ profile, t, notify, setPage }) {
   }
 
   // Contracts List View
+  const pendingQuotes = contracts.filter(c => c.status === 'quote_sent');
+  
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -7721,6 +7967,19 @@ function ContractsPage({ profile, t, notify, setPage }) {
           + Nouveau Contrat
         </button>
       </div>
+      
+      {/* Pending Quotes Alert */}
+      {pendingQuotes.length > 0 && (
+        <div className="mb-6 p-4 bg-blue-50 border-2 border-blue-300 rounded-xl">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
+            <div>
+              <h3 className="font-bold text-blue-800">{pendingQuotes.length} devis en attente d'approbation</h3>
+              <p className="text-blue-600 text-sm">Cliquez sur un contrat pour voir et approuver le devis</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {contracts.length === 0 ? (
         <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-100 text-center">
@@ -7748,8 +8007,24 @@ function ContractsPage({ profile, t, notify, setPage }) {
               <div 
                 key={contract.id}
                 onClick={() => setSelectedContract(contract)}
-                className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:border-[#3B7AB4] cursor-pointer transition-colors"
+                className={`bg-white rounded-xl p-6 shadow-sm border-2 cursor-pointer transition-colors ${
+                  contract.status === 'quote_sent' 
+                    ? 'border-blue-400 bg-blue-50/50 hover:border-blue-500' 
+                    : 'border-gray-100 hover:border-[#3B7AB4]'
+                }`}
               >
+                {contract.status === 'quote_sent' && (
+                  <div className="mb-3 flex items-center gap-2 text-blue-600">
+                    <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                    <span className="text-sm font-medium">Devis à approuver</span>
+                  </div>
+                )}
+                {contract.status === 'quote_approved' && (
+                  <div className="mb-3 flex items-center gap-2 text-orange-600">
+                    <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
+                    <span className="text-sm font-medium">BC requis</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h3 className="font-bold text-[#1E3A5F] text-lg">{contract.contract_number}</h3>
