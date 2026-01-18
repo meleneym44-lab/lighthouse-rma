@@ -7547,27 +7547,6 @@ function DeviceHistoryPage({ profile, requests, t, setPage }) {
 // ============================================
 // CONTRACTS PAGE (Customer View)
 // ============================================
-            <div className="border-2 border-dashed border-orange-300 rounded-lg p-6 text-center cursor-pointer hover:border-orange-400 hover:bg-orange-50">
-              {uploading ? (
-                <div className="flex items-center justify-center gap-2">
-                  <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-                  <span className="text-orange-600">Téléchargement...</span>
-                </div>
-              ) : (
-                <>
-                  <div className="text-3xl mb-2">📄</div>
-                  <p className="text-orange-600 font-medium">Cliquez pour sélectionner un fichier</p>
-                  <p className="text-xs text-gray-500 mt-1">PDF, DOC, PNG, JPG acceptés</p>
-                </>
-              )}
-            </div>
-          </label>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function ContractsPage({ profile, t, notify, setPage }) {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
