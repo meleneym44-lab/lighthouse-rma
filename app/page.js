@@ -8076,6 +8076,8 @@ function ContractsPage({ profile, t, notify, setPage }) {
     if (!selectedContract) return;
     
     setSubmittingBC(true);
+    console.log('Starting BC submission for contract:', selectedContract.id);
+    
     try {
       let fileUrl = null;
       let signatureUrl = null;
@@ -8086,6 +8088,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
         try {
           const fileExt = bcFile.name.split('.').pop();
           const fileName = `bc_contract_${selectedContract.id}_${Date.now()}.${fileExt}`;
+          console.log('Uploading BC file:', fileName);
           const { error: uploadError } = await supabase.storage
             .from('documents')
             .upload(fileName, bcFile);
@@ -8095,9 +8098,12 @@ function ContractsPage({ profile, t, notify, setPage }) {
               .from('documents')
               .getPublicUrl(fileName);
             fileUrl = publicUrlData?.publicUrl;
+            console.log('BC file uploaded:', fileUrl);
+          } else {
+            console.log('BC file upload error:', uploadError);
           }
         } catch (e) {
-          console.log('File upload skipped - storage not configured');
+          console.log('File upload skipped - storage not configured:', e);
         }
       }
       
@@ -8106,6 +8112,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
         try {
           const signatureBlob = await fetch(signatureData).then(r => r.blob());
           const sigFileName = `signature_contract_${selectedContract.id}_${Date.now()}.png`;
+          console.log('Uploading signature:', sigFileName);
           const { error: sigError } = await supabase.storage
             .from('documents')
             .upload(sigFileName, signatureBlob);
@@ -8115,9 +8122,12 @@ function ContractsPage({ profile, t, notify, setPage }) {
               .from('documents')
               .getPublicUrl(sigFileName);
             signatureUrl = sigUrlData?.publicUrl;
+            console.log('Signature uploaded:', signatureUrl);
+          } else {
+            console.log('Signature upload error:', sigError);
           }
         } catch (e) {
-          console.log('Signature upload skipped - storage not configured');
+          console.log('Signature upload skipped - storage not configured:', e);
         }
       }
       
@@ -8125,6 +8135,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
       let signedQuotePdfUrl = null;
       if (hasSignature) {
         try {
+          console.log('Generating signed PDF...');
           const pdfBlob = await generateContractQuotePDF({
             contract: selectedContract,
             devices: selectedContract.contract_devices || [],
@@ -8138,6 +8149,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
           });
           
           const pdfFileName = `devis_signe_contrat_${selectedContract.contract_number || selectedContract.id}_${Date.now()}.pdf`;
+          console.log('Uploading signed PDF:', pdfFileName);
           const { error: pdfUploadError } = await supabase.storage
             .from('documents')
             .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
@@ -8147,14 +8159,17 @@ function ContractsPage({ profile, t, notify, setPage }) {
               .from('documents')
               .getPublicUrl(pdfFileName);
             signedQuotePdfUrl = pdfUrl?.publicUrl;
-            console.log('Signed contract quote PDF uploaded:', signedQuotePdfUrl);
+            console.log('Signed PDF uploaded:', signedQuotePdfUrl);
+          } else {
+            console.log('PDF upload error:', pdfUploadError);
           }
         } catch (e) {
           console.log('Signed contract PDF generation error:', e);
         }
       }
       
-      // Update contract status and BC info
+      // Update contract status and BC info - try full update first
+      console.log('Updating contract status...');
       const updateData = {
         status: 'bc_pending',
         bc_submitted_at: new Date().toISOString(),
@@ -8165,6 +8180,8 @@ function ContractsPage({ profile, t, notify, setPage }) {
       if (fileUrl) updateData.bc_file_url = fileUrl;
       if (signedQuotePdfUrl) updateData.signed_quote_url = signedQuotePdfUrl;
       
+      console.log('Update data:', updateData);
+      
       const { error } = await supabase.from('contracts').update(updateData).eq('id', selectedContract.id);
       
       if (error) {
@@ -8173,17 +8190,19 @@ function ContractsPage({ profile, t, notify, setPage }) {
         const { error: minError } = await supabase.from('contracts').update({
           status: 'bc_pending'
         }).eq('id', selectedContract.id);
-        if (minError) throw minError;
+        if (minError) {
+          console.error('Minimal update also failed:', minError);
+          throw minError;
+        }
+        console.log('Minimal update succeeded (columns may be missing - run migration!)');
+      } else {
+        console.log('Full update succeeded');
       }
       
       notify('✅ Bon de commande soumis avec succès!', 'success');
-      setShowBCModal(false);
-      setBcFile(null);
-      setLuEtApprouve('');
-      setAcceptTerms(false);
-      clearSignature();
       
       // Force reload to show updated status
+      console.log('Reloading page...');
       window.location.reload();
     } catch (err) {
       console.error('BC submit error:', err);
