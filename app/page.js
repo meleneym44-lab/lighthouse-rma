@@ -7019,10 +7019,10 @@ function HomePage({ t, setPage }) {
                 <h2 className="text-3xl md:text-4xl font-bold text-white mt-2">Comment ca marche</h2>
               </div>
               <div className="grid md:grid-cols-4 gap-8 relative">
-                {/* Connection lines - between circles, not through them */}
-                <div className="hidden md:block absolute top-10 left-[20%] w-[13%] h-0.5 bg-gradient-to-r from-[#00A651] to-[#3B7AB4]"></div>
-                <div className="hidden md:block absolute top-10 left-[45%] w-[10%] h-0.5 bg-[#3B7AB4]"></div>
-                <div className="hidden md:block absolute top-10 right-[20%] w-[13%] h-0.5 bg-gradient-to-r from-[#3B7AB4] to-[#00A651]"></div>
+                {/* Connection lines - positioned between each circle */}
+                <div className="hidden md:block absolute top-10 h-0.5 bg-gradient-to-r from-[#00A651] to-[#3B7AB4]" style={{ left: 'calc(12.5% + 40px)', width: 'calc(25% - 80px)' }}></div>
+                <div className="hidden md:block absolute top-10 h-0.5 bg-[#3B7AB4]" style={{ left: 'calc(37.5% + 40px)', width: 'calc(25% - 80px)' }}></div>
+                <div className="hidden md:block absolute top-10 h-0.5 bg-gradient-to-r from-[#3B7AB4] to-[#00A651]" style={{ left: 'calc(62.5% + 40px)', width: 'calc(25% - 80px)' }}></div>
                 
                 {[
                   { num: '1', title: 'Creer un compte', desc: 'Enregistrez votre societe et vos coordonnees en quelques minutes' },
