@@ -2457,6 +2457,10 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     setDevices(devices.map(d => d.id === id ? { ...d, [field]: value } : d));
   };
 
+  const updateDeviceMultiple = (id, updates) => {
+    setDevices(devices.map(d => d.id === id ? { ...d, ...updates } : d));
+  };
+
   const toggleAccessory = (deviceId, accessory) => {
     setDevices(devices.map(d => {
       if (d.id !== deviceId) return d;
@@ -2606,6 +2610,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
               key={device.id}
               device={device}
               updateDevice={updateDevice}
+              updateDeviceMultiple={updateDeviceMultiple}
               toggleAccessory={toggleAccessory}
               removeDevice={removeDevice}
               canRemove={devices.length > 1}
@@ -3114,7 +3119,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
 // ============================================
 // DEVICE CARD COMPONENT (Updated)
 // ============================================
-function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRemove, savedEquipment, loadFromSaved, addresses, defaultAddressId }) {
+function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessory, removeDevice, canRemove, savedEquipment, loadFromSaved, addresses, defaultAddressId }) {
   const [charCount, setCharCount] = useState(device.notes.length);
   const [showDifferentAddress, setShowDifferentAddress] = useState(!!device.shipping_address_id);
   const maxChars = 500;
@@ -3123,6 +3128,29 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
     const value = e.target.value.slice(0, maxChars);
     updateDevice(device.id, 'notes', value);
     setCharCount(value.length);
+  };
+
+  // Handle serial number change with auto-decode
+  const handleSerialNumberChange = (e) => {
+    const sn = e.target.value;
+    
+    // Always update the serial number first
+    // Then try to decode if it's a valid Lighthouse serial
+    if (device.brand === 'Lighthouse') {
+      const decoded = decodeSerialNumber(sn);
+      if (decoded) {
+        // Update serial, model, and device_type together
+        updateDeviceMultiple(device.id, {
+          serial_number: sn,
+          model: decoded.model,
+          device_type: decoded.category
+        });
+        return;
+      }
+    }
+    
+    // Just update serial number if no decode
+    updateDevice(device.id, 'serial_number', sn);
   };
 
   return (
@@ -3151,12 +3179,15 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
           onChange={e => {
             if (e.target.value === 'manual') {
               // Clear form for manual entry
-              updateDevice(device.id, 'fromSaved', null);
-              updateDevice(device.id, 'brand', 'Lighthouse');
-              updateDevice(device.id, 'brand_other', '');
-              updateDevice(device.id, 'nickname', '');
-              updateDevice(device.id, 'model', '');
-              updateDevice(device.id, 'serial_number', '');
+              updateDeviceMultiple(device.id, {
+                fromSaved: null,
+                brand: 'Lighthouse',
+                brand_other: '',
+                nickname: '',
+                model: '',
+                serial_number: '',
+                device_type: ''
+              });
             } else if (e.target.value) {
               loadFromSaved(device.id, e.target.value);
             }
@@ -3177,17 +3208,23 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
-        {/* Nickname for saving */}
+        
+        {/* SERIAL NUMBER - FIRST */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-bold text-gray-700 mb-1">Surnom de l'appareil (optionnel)</label>
+          <label className="block text-sm font-bold text-gray-700 mb-1">N° de Série *</label>
           <input
             type="text"
-            value={device.nickname || ''}
-            onChange={e => updateDevice(device.id, 'nickname', e.target.value)}
-            placeholder="ex: Compteur Salle Blanche 1, Portable Labo 3..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            value={device.serial_number}
+            onChange={handleSerialNumberChange}
+            placeholder="ex: 2101280015"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-lg font-mono"
+            required
           />
-          <p className="text-xs text-gray-500 mt-1">Pour identifier facilement cet appareil dans vos futures demandes</p>
+          {device.brand === 'Lighthouse' && device.serial_number && decodeSerialNumber(device.serial_number) && (
+            <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+              <span>✓</span> Détecté: {decodeSerialNumber(device.serial_number).model}
+            </p>
+          )}
         </div>
 
         {/* Brand */}
@@ -3195,7 +3232,20 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
           <label className="block text-sm font-bold text-gray-700 mb-1">Marque *</label>
           <select
             value={device.brand}
-            onChange={e => updateDevice(device.id, 'brand', e.target.value)}
+            onChange={e => {
+              updateDevice(device.id, 'brand', e.target.value);
+              // Re-decode if switching to Lighthouse
+              if (e.target.value === 'Lighthouse' && device.serial_number) {
+                const decoded = decodeSerialNumber(device.serial_number);
+                if (decoded) {
+                  updateDeviceMultiple(device.id, {
+                    brand: 'Lighthouse',
+                    model: decoded.model,
+                    device_type: decoded.category
+                  });
+                }
+              }
+            }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
             required
           >
@@ -3219,13 +3269,15 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
           </div>
         )}
 
-        {/* Device Type - NEW */}
+        {/* Device Type */}
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-1">Type d'Appareil *</label>
           <select
             value={device.device_type}
             onChange={e => updateDevice(device.id, 'device_type', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+            className={`w-full px-3 py-2 border rounded-lg bg-white ${
+              device.device_type ? 'border-green-400 bg-green-50' : 'border-gray-300'
+            }`}
             required
           >
             <option value="">Sélectionner le type</option>
@@ -3238,60 +3290,32 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
           </select>
         </div>
 
-        {/* Model - always text input */}
+        {/* Model */}
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-1">Modèle *</label>
           <input
             type="text"
             value={device.model}
             onChange={e => updateDevice(device.id, 'model', e.target.value)}
-            placeholder="ex: Solair 3100, ApexZ, etc."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            placeholder="ex: Solair 3100, ApexZ3, etc."
+            className={`w-full px-3 py-2 border rounded-lg ${
+              device.model ? 'border-green-400 bg-green-50' : 'border-gray-300'
+            }`}
             required
           />
         </div>
 
-        {/* Serial Number - with auto-decode */}
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">N° de Série *</label>
+        {/* Nickname for saving */}
+        <div className="md:col-span-2">
+          <label className="block text-sm font-bold text-gray-700 mb-1">Surnom de l'appareil (optionnel)</label>
           <input
             type="text"
-            value={device.serial_number}
-            onChange={e => {
-              const sn = e.target.value;
-              
-              // Auto-decode serial number for Lighthouse devices (only when 8-10 digits)
-              const decoded = (device.brand === 'Lighthouse' && /^\d{8,10}$/.test(sn)) 
-                ? decodeSerialNumber(sn) 
-                : null;
-              
-              if (decoded) {
-                // Update all fields at once
-                setDevices(devices.map(d => d.id === device.id ? {
-                  ...d,
-                  serial_number: sn,
-                  model: decoded.model,
-                  device_type: decoded.category
-                } : d));
-              } else {
-                // Just update serial number
-                updateDevice(device.id, 'serial_number', sn);
-              }
-            }}
-            placeholder="ex: 2101280015"
+            value={device.nickname || ''}
+            onChange={e => updateDevice(device.id, 'nickname', e.target.value)}
+            placeholder="ex: Compteur Salle Blanche 1, Portable Labo 3..."
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            required
           />
-          {device.brand === 'Lighthouse' && device.serial_number && /^\d{8,10}$/.test(device.serial_number) && decodeSerialNumber(device.serial_number) && (
-            <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-              <span>✓</span> Détecté: {decodeSerialNumber(device.serial_number).model}
-            </p>
-          )}
-          {device.brand === 'Lighthouse' && device.serial_number && /^\d{8,10}$/.test(device.serial_number) && !decodeSerialNumber(device.serial_number) && (
-            <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
-              <span>⚠</span> N° de série non reconnu - veuillez saisir le modèle manuellement
-            </p>
-          )}
+          <p className="text-xs text-gray-500 mt-1">Pour identifier facilement cet appareil dans vos futures demandes</p>
         </div>
 
         {/* Service Type */}
