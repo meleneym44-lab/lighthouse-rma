@@ -6847,102 +6847,98 @@ function DeviceHistoryPage({ profile, requests, t, setPage }) {
 // ============================================
 function HomePage({ t, setPage }) {
   return (
-    <div className="min-h-screen bg-[#1a1a2e]">
-      {/* Hero Section with Background Image */}
-      <div className="relative min-h-screen overflow-hidden">
-        {/* Background Image */}
-        <div className="absolute inset-0">
-          <img 
-            src="/images/products/hero-background.png" 
-            alt="" 
-            className="w-full h-full object-cover"
-            onError={(e) => { e.target.style.display = 'none'; }}
-          />
-          {/* Dark overlay for readability */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[#1a1a2e]/95 via-[#1a1a2e]/80 to-[#1a1a2e]/60"></div>
-          {/* Subtle gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-br from-[#00A651]/10 via-transparent to-[#3B7AB4]/10"></div>
-        </div>
-        
-        {/* Header - Now integrated into hero */}
-        <header className="relative z-20">
+    <div className="min-h-screen">
+      {/* Fixed Background - stays in place while content scrolls */}
+      <div className="fixed inset-0 z-0">
+        <img 
+          src="/images/products/hero-background.png" 
+          alt="" 
+          className="w-full h-full object-cover"
+          onError={(e) => { e.target.style.display = 'none'; }}
+        />
+        {/* Dark overlay */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e]/90 via-[#1a1a2e]/80 to-[#1a1a2e]/70"></div>
+        {/* Subtle color overlay */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#00A651]/5 via-transparent to-[#3B7AB4]/5"></div>
+      </div>
+
+      {/* Scrollable Content */}
+      <div className="relative z-10">
+        {/* Header */}
+        <header className="sticky top-0 z-50 bg-[#1a1a2e]/80 backdrop-blur-md border-b border-white/10">
           <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
-                {/* Logo - inverted for dark background */}
                 <img 
                   src="/images/logos/lighthouse-logo.png" 
                   alt="Lighthouse France" 
-                  className="h-12 w-auto invert brightness-0 invert"
+                  className="h-10 w-auto invert brightness-0 invert"
                   onError={(e) => {
                     e.target.style.display = 'none';
                     e.target.nextSibling.style.display = 'flex';
                   }}
                 />
-                {/* Fallback text */}
                 <div className="items-center gap-2 text-white hidden">
                   <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
                   <span className="font-semibold text-lg text-[#00A651]">FRANCE</span>
                 </div>
               </div>
-              {/* Empty right side - buttons are in main content */}
               <div></div>
             </div>
           </div>
         </header>
         
-        {/* Hero Content */}
-        <div className="relative z-10 max-w-7xl mx-auto px-6 pt-16 pb-24 md:pt-24 md:pb-32">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            {/* Left: Text Content */}
-            <div className="text-white">
-              <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full mb-6 border border-white/10">
-                <span className="w-2 h-2 bg-[#00A651] rounded-full animate-pulse"></span>
-                <span className="text-sm font-medium">Portail Service Lighthouse France</span>
-              </div>
-              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-                Portail de<br/>
-                <span className="text-[#00A651]">Service</span> & Pieces
-              </h1>
-              <p className="text-lg md:text-xl text-white/70 mb-8 max-w-lg leading-relaxed">
-                Gerez vos demandes de calibration et reparation d'equipements de mesure de contamination en temps reel.
-              </p>
-              <div className="flex flex-wrap gap-4">
-                <button onClick={() => setPage('register')} className="px-8 py-4 bg-[#00A651] text-white rounded-xl font-bold text-lg hover:bg-[#008f45] transition-all hover:scale-105 shadow-lg shadow-[#00A651]/25">
-                  Creer un compte
-                </button>
-                <button onClick={() => setPage('login')} className="px-8 py-4 bg-white/10 backdrop-blur-sm border border-white/20 text-white rounded-xl font-bold text-lg hover:bg-white/20 transition-all">
-                  Se connecter
-                </button>
+        {/* Hero Section */}
+        <div className="min-h-[90vh] flex items-center">
+          <div className="max-w-7xl mx-auto px-6 py-12">
+            <div className="grid lg:grid-cols-2 gap-8 items-center">
+              {/* Left: Text Content */}
+              <div className="text-white">
+                <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full mb-6 border border-white/10">
+                  <span className="w-2 h-2 bg-[#00A651] rounded-full animate-pulse"></span>
+                  <span className="text-sm font-medium">Portail Service Lighthouse France</span>
+                </div>
+                <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
+                  Portail de<br/>
+                  <span className="text-[#00A651]">Service</span> & Pieces
+                </h1>
+                <p className="text-lg md:text-xl text-white/70 mb-8 max-w-lg leading-relaxed">
+                  Gerez vos demandes de calibration et reparation d'equipements de mesure de contamination en temps reel.
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  <button onClick={() => setPage('register')} className="px-8 py-4 bg-[#00A651] text-white rounded-xl font-bold text-lg hover:bg-[#008f45] transition-all hover:scale-105 shadow-lg shadow-[#00A651]/25">
+                    Creer un compte
+                  </button>
+                  <button onClick={() => setPage('login')} className="px-8 py-4 bg-white/10 backdrop-blur-sm border border-white/20 text-white rounded-xl font-bold text-lg hover:bg-white/20 transition-all">
+                    Se connecter
+                  </button>
+                </div>
+                
+                {/* Trust indicators */}
+                <div className="flex flex-wrap items-center gap-6 mt-10 pt-8 border-t border-white/10">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-white/70 text-sm">Certifie ISO 9001</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-white/70 text-sm">40+ ans d'expertise</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-white/70 text-sm">Support mondial</span>
+                  </div>
+                </div>
               </div>
               
-              {/* Trust indicators - Fixed */}
-              <div className="flex flex-wrap items-center gap-6 mt-10 pt-8 border-t border-white/10">
-                <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-white/70 text-sm">Certifie ISO 9001</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-white/70 text-sm">40+ ans d'expertise</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-white/70 text-sm">Support mondial</span>
-                </div>
-              </div>
-            </div>
-            
-            {/* Right: Equipment Showcase - Dark glass style */}
-            <div className="relative hidden lg:block">
-              <div className="relative">
-                {/* Main equipment grid */}
+              {/* Right: Equipment Showcase */}
+              <div className="relative hidden lg:block">
                 <div className="bg-white/5 backdrop-blur-md rounded-3xl p-5 border border-white/10">
                   <div className="grid grid-cols-2 gap-3">
                     {/* Airborne Particle Counter */}
@@ -6998,7 +6994,6 @@ function HomePage({ t, setPage }) {
                     </div>
                   </div>
                   
-                  {/* "And more" indicator */}
                   <div className="mt-4 text-center">
                     <span className="text-white/50 text-sm">+ Systemes de monitoring, capteurs de pression, et plus...</span>
                   </div>
@@ -7009,140 +7004,140 @@ function HomePage({ t, setPage }) {
         </div>
         
         {/* Scroll indicator */}
-        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10 hidden md:block">
+        <div className="flex justify-center pb-8">
           <div className="w-6 h-10 border-2 border-white/30 rounded-full flex justify-center">
             <div className="w-1.5 h-3 bg-white/50 rounded-full mt-2 animate-bounce"></div>
           </div>
         </div>
-      </div>
 
-      {/* How It Works - Redesigned */}
-      <div className="py-20 px-6 bg-white">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <span className="text-[#00A651] font-semibold text-sm uppercase tracking-wider">Processus simple</span>
-            <h2 className="text-3xl md:text-4xl font-bold text-[#1E3A5F] mt-2">Comment ca marche</h2>
-          </div>
-          <div className="grid md:grid-cols-4 gap-8 relative">
-            {/* Connection line */}
-            <div className="hidden md:block absolute top-10 left-[12%] right-[12%] h-0.5 bg-gradient-to-r from-[#00A651] via-[#3B7AB4] to-[#00A651]"></div>
-            
-            {[
-              { num: '1', title: 'Creer un compte', desc: 'Enregistrez votre societe et vos coordonnees en quelques minutes' },
-              { num: '2', title: 'Soumettre une demande', desc: 'Detaillez vos equipements et besoins de service' },
-              { num: '3', title: 'Recevoir le devis', desc: 'Obtenez votre devis et numero RMA rapidement' },
-              { num: '4', title: 'Suivre le progres', desc: 'Surveillez l\'etat de vos demandes en temps reel' }
-            ].map((step, i) => (
-              <div key={i} className="text-center relative z-10 group">
-                <div className="w-20 h-20 bg-white border-4 border-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg group-hover:scale-110 transition-transform group-hover:shadow-[#00A651]/30 group-hover:shadow-xl">
-                  <span className="text-2xl font-bold text-[#00A651]">{step.num}</span>
-                </div>
-                <h3 className="font-bold text-[#1E3A5F] text-lg mb-2">{step.title}</h3>
-                <p className="text-gray-600 text-sm leading-relaxed">{step.desc}</p>
+        {/* How It Works - Glassmorphism */}
+        <div className="py-20 px-6">
+          <div className="max-w-6xl mx-auto">
+            <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-10 border border-white/20">
+              <div className="text-center mb-12">
+                <span className="text-[#00A651] font-semibold text-sm uppercase tracking-wider">Processus simple</span>
+                <h2 className="text-3xl md:text-4xl font-bold text-white mt-2">Comment ca marche</h2>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Services Section - Redesigned */}
-      <div className="py-20 px-6 bg-gradient-to-br from-gray-50 to-white">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <span className="text-[#00A651] font-semibold text-sm uppercase tracking-wider">Nos expertises</span>
-            <h2 className="text-3xl md:text-4xl font-bold text-[#1E3A5F] mt-2">Services proposes</h2>
-          </div>
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              { 
-                icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
-                icon2: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z',
-                title: 'Reparation', 
-                desc: 'Reparation experte de compteurs de particules, echantillonneurs microbiens et equipements de monitoring environnemental.',
-                color: '#00A651'
-              },
-              { 
-                icon: 'M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3',
-                title: 'Etalonnage', 
-                desc: 'Calibration selon ISO 21501-4 avec certificats traceables pour garantir precision et conformite reglementaire.',
-                color: '#3B7AB4'
-              },
-              { 
-                icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
-                title: 'Maintenance', 
-                desc: 'Programmes de maintenance preventive pour optimiser la duree de vie et les performances de vos equipements.',
-                color: '#1E3A5F'
-              }
-            ].map((svc, i) => (
-              <div key={i} className="bg-white rounded-2xl p-8 shadow-lg hover:shadow-xl transition-all hover:-translate-y-1 border border-gray-100 group">
-                <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-6 transition-colors" style={{ backgroundColor: `${svc.color}15` }}>
-                  <svg className="w-7 h-7" style={{ color: svc.color }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={svc.icon} />
-                    {svc.icon2 && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={svc.icon2} />}
-                  </svg>
-                </div>
-                <h3 className="font-bold text-[#1E3A5F] text-xl mb-3">{svc.title}</h3>
-                <p className="text-gray-600 leading-relaxed">{svc.desc}</p>
+              <div className="grid md:grid-cols-4 gap-8 relative">
+                {/* Connection line */}
+                <div className="hidden md:block absolute top-10 left-[12%] right-[12%] h-0.5 bg-gradient-to-r from-[#00A651] via-[#3B7AB4] to-[#00A651]"></div>
+                
+                {[
+                  { num: '1', title: 'Creer un compte', desc: 'Enregistrez votre societe et vos coordonnees en quelques minutes' },
+                  { num: '2', title: 'Soumettre une demande', desc: 'Detaillez vos equipements et besoins de service' },
+                  { num: '3', title: 'Recevoir le devis', desc: 'Obtenez votre devis et numero RMA rapidement' },
+                  { num: '4', title: 'Suivre le progres', desc: 'Surveillez l\'etat de vos demandes en temps reel' }
+                ].map((step, i) => (
+                  <div key={i} className="text-center relative z-10 group">
+                    <div className="w-20 h-20 bg-white/10 backdrop-blur-sm border-4 border-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg group-hover:scale-110 transition-transform group-hover:bg-[#00A651]/20">
+                      <span className="text-2xl font-bold text-[#00A651]">{step.num}</span>
+                    </div>
+                    <h3 className="font-bold text-white text-lg mb-2">{step.title}</h3>
+                    <p className="text-white/60 text-sm leading-relaxed">{step.desc}</p>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* CTA Section */}
-      <div className="py-20 px-6 bg-[#1a1a2e] relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10" style={{
-          backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(0,166,81,0.5) 0%, transparent 70%)'
-        }}></div>
-        <div className="max-w-4xl mx-auto text-center relative z-10">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
-            Pret a demarrer ?
-          </h2>
-          <p className="text-xl text-white/70 mb-8 max-w-2xl mx-auto">
-            Rejoignez les entreprises qui font confiance a Lighthouse France pour la maintenance de leurs equipements critiques.
-          </p>
-          <div className="flex flex-wrap gap-4 justify-center">
-            <button onClick={() => setPage('register')} className="px-8 py-4 bg-[#00A651] text-white rounded-lg font-bold text-lg hover:bg-[#008f45] transition-all hover:scale-105 shadow-lg">
-              Creer mon compte gratuitement
-            </button>
-            <button onClick={() => setPage('login')} className="px-8 py-4 bg-white/10 border border-white/30 text-white rounded-lg font-bold text-lg hover:bg-white/20 transition-all">
-              J'ai deja un compte
-            </button>
+        {/* Services Section - Glassmorphism */}
+        <div className="py-20 px-6">
+          <div className="max-w-6xl mx-auto">
+            <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-10 border border-white/20">
+              <div className="text-center mb-12">
+                <span className="text-[#00A651] font-semibold text-sm uppercase tracking-wider">Nos expertises</span>
+                <h2 className="text-3xl md:text-4xl font-bold text-white mt-2">Services proposes</h2>
+              </div>
+              <div className="grid md:grid-cols-3 gap-6">
+                {[
+                  { 
+                    icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
+                    icon2: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z',
+                    title: 'Reparation', 
+                    desc: 'Reparation experte de compteurs de particules, echantillonneurs microbiens et equipements de monitoring environnemental.'
+                  },
+                  { 
+                    icon: 'M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3',
+                    title: 'Etalonnage', 
+                    desc: 'Calibration selon ISO 21501-4 avec certificats traceables pour garantir precision et conformite reglementaire.'
+                  },
+                  { 
+                    icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
+                    title: 'Maintenance', 
+                    desc: 'Programmes de maintenance preventive pour optimiser la duree de vie et les performances de vos equipements.'
+                  }
+                ].map((svc, i) => (
+                  <div key={i} className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-all hover:-translate-y-1 group">
+                    <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-5 bg-[#00A651]/20 group-hover:bg-[#00A651]/30 transition-colors">
+                      <svg className="w-7 h-7 text-[#00A651]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={svc.icon} />
+                        {svc.icon2 && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={svc.icon2} />}
+                      </svg>
+                    </div>
+                    <h3 className="font-bold text-white text-xl mb-3">{svc.title}</h3>
+                    <p className="text-white/60 leading-relaxed text-sm">{svc.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Footer */}
-      <footer className="bg-[#0f0f1a] text-white py-12">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="grid md:grid-cols-3 gap-8 mb-8">
-            <div>
-              <h4 className="font-bold text-lg mb-4">LIGHTHOUSE FRANCE</h4>
-              <p className="text-white/60 text-sm leading-relaxed">
-                Filiale francaise de Lighthouse Worldwide Solutions, leader mondial des solutions de monitoring de contamination.
+        {/* CTA Section - Glassmorphism */}
+        <div className="py-20 px-6">
+          <div className="max-w-4xl mx-auto">
+            <div className="bg-gradient-to-r from-[#00A651]/20 to-[#3B7AB4]/20 backdrop-blur-lg rounded-3xl p-12 border border-white/20 text-center">
+              <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
+                Pret a demarrer ?
+              </h2>
+              <p className="text-xl text-white/70 mb-8 max-w-2xl mx-auto">
+                Rejoignez les entreprises qui font confiance a Lighthouse France pour la maintenance de leurs equipements critiques.
               </p>
-            </div>
-            <div>
-              <h4 className="font-bold text-lg mb-4">Contact</h4>
-              <p className="text-white/60 text-sm">16 Rue Paul Sejourne</p>
-              <p className="text-white/60 text-sm">94000 Creteil, France</p>
-              <p className="text-white/60 text-sm mt-2">Tel: +33 (1) 43 77 28 07</p>
-              <p className="text-white/60 text-sm">France@golighthouse.com</p>
-            </div>
-            <div>
-              <h4 className="font-bold text-lg mb-4">Liens rapides</h4>
-              <div className="space-y-2">
-                <button onClick={() => setPage('login')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Connexion</button>
-                <button onClick={() => setPage('register')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Creer un compte</button>
-                <a href="https://www.golighthouse.com" target="_blank" rel="noopener noreferrer" className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Lighthouse Worldwide</a>
+              <div className="flex flex-wrap gap-4 justify-center">
+                <button onClick={() => setPage('register')} className="px-8 py-4 bg-[#00A651] text-white rounded-xl font-bold text-lg hover:bg-[#008f45] transition-all hover:scale-105 shadow-lg shadow-[#00A651]/25">
+                  Creer mon compte gratuitement
+                </button>
+                <button onClick={() => setPage('login')} className="px-8 py-4 bg-white/10 border border-white/30 text-white rounded-xl font-bold text-lg hover:bg-white/20 transition-all">
+                  J'ai deja un compte
+                </button>
               </div>
             </div>
           </div>
-          <div className="border-t border-white/10 pt-8 text-center">
-            <p className="text-white/40 text-sm">© 2026 Lighthouse France SAS. Tous droits reserves.</p>
-          </div>
         </div>
-      </footer>
+
+        {/* Footer */}
+        <footer className="bg-[#0a0a12]/80 backdrop-blur-lg text-white py-12 border-t border-white/10">
+          <div className="max-w-6xl mx-auto px-6">
+            <div className="grid md:grid-cols-3 gap-8 mb-8">
+              <div>
+                <h4 className="font-bold text-lg mb-4">LIGHTHOUSE FRANCE</h4>
+                <p className="text-white/60 text-sm leading-relaxed">
+                  Filiale francaise de Lighthouse Worldwide Solutions, leader mondial des solutions de monitoring de contamination.
+                </p>
+              </div>
+              <div>
+                <h4 className="font-bold text-lg mb-4">Contact</h4>
+                <p className="text-white/60 text-sm">16 Rue Paul Sejourne</p>
+                <p className="text-white/60 text-sm">94000 Creteil, France</p>
+                <p className="text-white/60 text-sm mt-2">Tel: +33 (1) 43 77 28 07</p>
+                <p className="text-white/60 text-sm">France@golighthouse.com</p>
+              </div>
+              <div>
+                <h4 className="font-bold text-lg mb-4">Liens rapides</h4>
+                <div className="space-y-2">
+                  <button onClick={() => setPage('login')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Connexion</button>
+                  <button onClick={() => setPage('register')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Creer un compte</button>
+                  <a href="https://www.golighthouse.com" target="_blank" rel="noopener noreferrer" className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Lighthouse Worldwide</a>
+                </div>
+              </div>
+            </div>
+            <div className="border-t border-white/10 pt-8 text-center">
+              <p className="text-white/40 text-sm">© 2025 Lighthouse France SAS. Tous droits reserves.</p>
+            </div>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }
