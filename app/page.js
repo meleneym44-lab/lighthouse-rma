@@ -1392,6 +1392,9 @@ export default function CustomerPortal() {
               <button onClick={() => setPage('new-request')} className={`font-medium ${page === 'new-request' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('newRequest')}
               </button>
+              <button onClick={() => setPage('contracts')} className={`font-medium ${page === 'contracts' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+                Contrats
+              </button>
               <button onClick={() => setPage('equipment')} className={`font-medium ${page === 'equipment' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('myEquipment')}
               </button>
@@ -1422,7 +1425,7 @@ export default function CustomerPortal() {
 
           {/* Mobile nav */}
           <nav className="md:hidden flex gap-2 pb-3 overflow-x-auto">
-            {['dashboard', 'new-request', 'equipment', 'settings'].map(p => (
+            {['dashboard', 'new-request', 'contracts', 'equipment', 'settings'].map(p => (
               <button
                 key={p}
                 onClick={() => setPage(p)}
@@ -1430,7 +1433,7 @@ export default function CustomerPortal() {
                   page === p ? 'bg-[#00A651] text-white' : 'bg-white/10 text-white/70'
                 }`}
               >
-                {t(p === 'new-request' ? 'newRequest' : p)}
+                {p === 'new-request' ? t('newRequest') : p === 'contracts' ? 'Contrats' : t(p)}
               </button>
             ))}
           </nav>
@@ -1500,6 +1503,15 @@ export default function CustomerPortal() {
             profile={profile}
             requests={requests}
             t={t}
+            setPage={setPage}
+          />
+        )}
+        
+        {page === 'contracts' && (
+          <ContractsPage 
+            profile={profile}
+            t={t}
+            notify={notify}
             setPage={setPage}
           />
         )}
@@ -2298,7 +2310,7 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
 // NEW REQUEST FORM - Type Selection First
 // ============================================
 function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
-  const [requestType, setRequestType] = useState(null); // 'service' or 'parts'
+  const [requestType, setRequestType] = useState(null); // 'service', 'parts', or 'contract'
   
   // If no type selected, show selection screen
   if (!requestType) {
@@ -2308,7 +2320,7 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
         
         <p className="text-gray-600 mb-8">Quel type de demande souhaitez-vous soumettre?</p>
         
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid md:grid-cols-3 gap-6">
           {/* Service Request */}
           <button
             onClick={() => setRequestType('service')}
@@ -2336,6 +2348,20 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
               Commander des pièces de rechange ou consommables pour vos équipements
             </p>
           </button>
+          
+          {/* Contract Request */}
+          <button
+            onClick={() => setRequestType('contract')}
+            className="bg-white rounded-xl p-8 shadow-sm border-2 border-gray-200 hover:border-[#00A651] transition-colors text-left group"
+          >
+            <div className="text-4xl mb-4">📋</div>
+            <h2 className="text-xl font-bold text-[#1E3A5F] mb-2 group-hover:text-[#00A651]">
+              Contrat d'Étalonnage
+            </h2>
+            <p className="text-gray-600 text-sm">
+              Demander un devis pour un contrat annuel d'étalonnage de votre parc d'appareils
+            </p>
+          </button>
         </div>
         
         <button
@@ -2352,6 +2378,20 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
   if (requestType === 'parts') {
     return (
       <PartsOrderForm 
+        profile={profile}
+        addresses={addresses}
+        t={t}
+        notify={notify}
+        refresh={refresh}
+        setPage={setPage}
+        goBack={() => setRequestType(null)}
+      />
+    );
+  }
+  
+  if (requestType === 'contract') {
+    return (
+      <ContractRequestForm 
         profile={profile}
         addresses={addresses}
         t={t}
@@ -2904,6 +2944,372 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+// ============================================
+// CONTRACT REQUEST FORM
+// ============================================
+function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, goBack }) {
+  const [devices, setDevices] = useState([createContractDevice(1)]);
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [savedEquipment, setSavedEquipment] = useState([]);
+
+  // Load saved equipment on mount
+  useEffect(() => {
+    const loadEquipment = async () => {
+      if (!profile?.company_id) return;
+      const { data } = await supabase
+        .from('equipment')
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      if (data) setSavedEquipment(data);
+    };
+    loadEquipment();
+  }, [profile?.company_id]);
+
+  function createContractDevice(num) {
+    return {
+      id: `contract_device_${Date.now()}_${num}`,
+      num,
+      nickname: '',
+      serial_number: '',
+      model_name: '',
+      device_type: ''
+    };
+  }
+
+  const addDevice = () => {
+    setDevices([...devices, createContractDevice(devices.length + 1)]);
+  };
+
+  const addMultipleDevices = (count) => {
+    const newDevices = [];
+    for (let i = 0; i < count; i++) {
+      newDevices.push(createContractDevice(devices.length + i + 1));
+    }
+    setDevices([...devices, ...newDevices]);
+  };
+
+  const removeDevice = (id) => {
+    if (devices.length === 1) return;
+    setDevices(devices.filter(d => d.id !== id).map((d, i) => ({ ...d, num: i + 1 })));
+  };
+
+  const updateDevice = (id, field, value) => {
+    setDevices(devices.map(d => d.id === id ? { ...d, [field]: value } : d));
+  };
+
+  const updateDeviceMultiple = (id, updates) => {
+    setDevices(devices.map(d => d.id === id ? { ...d, ...updates } : d));
+  };
+
+  // Handle serial number change with auto-decode
+  const handleSerialNumberChange = (deviceId, sn) => {
+    const decoded = decodeSerialNumber(sn);
+    if (decoded) {
+      updateDeviceMultiple(deviceId, {
+        serial_number: sn,
+        model_name: decoded.model,
+        device_type: decoded.category
+      });
+    } else {
+      updateDevice(deviceId, 'serial_number', sn);
+    }
+  };
+
+  // Load from saved equipment
+  const loadFromSaved = (deviceId, equipmentId) => {
+    const equip = savedEquipment.find(e => e.id === equipmentId);
+    if (!equip) return;
+    
+    updateDeviceMultiple(deviceId, {
+      nickname: equip.nickname || '',
+      serial_number: equip.serial_number || '',
+      model_name: equip.model_name || '',
+      device_type: equip.equipment_type || ''
+    });
+  };
+
+  // Load all saved equipment at once
+  const loadAllSavedEquipment = () => {
+    if (!savedEquipment || savedEquipment.length === 0) {
+      notify('Aucun appareil enregistré', 'error');
+      return;
+    }
+    
+    const newDevices = savedEquipment.map((equip, i) => ({
+      id: `contract_device_${Date.now()}_${i + 1}`,
+      num: i + 1,
+      nickname: equip.nickname || '',
+      serial_number: equip.serial_number || '',
+      model_name: equip.model_name || '',
+      device_type: equip.equipment_type || ''
+    }));
+    
+    setDevices(newDevices);
+    notify(`${newDevices.length} appareils chargés`, 'success');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Validate devices
+    for (const d of devices) {
+      if (!d.serial_number || !d.model_name) {
+        notify('Veuillez remplir le numéro de série et le modèle pour chaque appareil', 'error');
+        return;
+      }
+    }
+
+    if (devices.length === 0) {
+      notify('Veuillez ajouter au moins un appareil', 'error');
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      // Generate contract number
+      const { data: contractNum } = await supabase.rpc('generate_contract_number');
+      
+      // Create contract
+      const { data: contract, error: contractError } = await supabase
+        .from('contracts')
+        .insert({
+          contract_number: contractNum,
+          company_id: profile.company_id,
+          status: 'requested',
+          requested_by: profile.id,
+          customer_notes: notes,
+          start_date: new Date().toISOString().split('T')[0], // Will be set by admin
+          end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0] // Default 1 year
+        })
+        .select()
+        .single();
+
+      if (contractError) throw contractError;
+
+      // Add devices to contract
+      const deviceInserts = devices.map(d => ({
+        contract_id: contract.id,
+        serial_number: d.serial_number,
+        model_name: d.model_name,
+        device_type: d.device_type,
+        nickname: d.nickname,
+        tokens_total: 2, // Default, admin will adjust
+        tokens_used: 0
+      }));
+
+      const { error: devicesError } = await supabase
+        .from('contract_devices')
+        .insert(deviceInserts);
+
+      if (devicesError) throw devicesError;
+
+      notify('Demande de contrat envoyée avec succès!', 'success');
+      await refresh();
+      setPage('dashboard');
+    } catch (err) {
+      console.error('Error creating contract request:', err);
+      notify('Erreur lors de la création de la demande', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <button 
+        onClick={goBack}
+        className="mb-4 text-gray-500 hover:text-gray-700 flex items-center gap-2"
+      >
+        ← Retour au choix du type
+      </button>
+
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="flex items-center gap-3 mb-6">
+          <span className="text-3xl">📋</span>
+          <div>
+            <h1 className="text-2xl font-bold text-[#1E3A5F]">Demande de Contrat d'Étalonnage</h1>
+            <p className="text-gray-600">Ajoutez tous les appareils que vous souhaitez inclure dans votre contrat annuel</p>
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="mb-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/20">
+          <h3 className="font-bold text-[#1E3A5F] mb-3">Actions Rapides</h3>
+          <div className="flex flex-wrap gap-3">
+            {savedEquipment && savedEquipment.length > 0 && (
+              <button
+                type="button"
+                onClick={loadAllSavedEquipment}
+                className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg text-sm hover:bg-[#1E3A5F]"
+              >
+                📋 Charger tous mes appareils ({savedEquipment.length})
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => addMultipleDevices(5)}
+              className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+            >
+              + Ajouter 5 lignes
+            </button>
+            <button
+              type="button"
+              onClick={() => addMultipleDevices(10)}
+              className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+            >
+              + Ajouter 10 lignes
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          {/* Device Count Summary */}
+          <div className="mb-4 text-sm text-gray-600">
+            <span className="font-bold text-[#1E3A5F]">{devices.length}</span> appareil{devices.length > 1 ? 's' : ''} dans la demande
+          </div>
+
+          {/* Devices Table */}
+          <div className="overflow-x-auto mb-6">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">#</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">Surnom (optionnel)</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">N° de Série *</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">Modèle *</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">Type</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {devices.map((device, idx) => (
+                  <tr key={device.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-3 py-2 border text-center text-sm text-gray-500">{device.num}</td>
+                    <td className="px-2 py-1 border">
+                      <input
+                        type="text"
+                        value={device.nickname}
+                        onChange={e => updateDevice(device.id, 'nickname', e.target.value)}
+                        placeholder="ex: Salle Blanche 1"
+                        className="w-full px-2 py-1 text-sm border-0 focus:ring-1 focus:ring-[#3B7AB4] rounded"
+                      />
+                    </td>
+                    <td className="px-2 py-1 border">
+                      <input
+                        type="text"
+                        value={device.serial_number}
+                        onChange={e => handleSerialNumberChange(device.id, e.target.value)}
+                        placeholder="ex: 2101280015"
+                        className="w-full px-2 py-1 text-sm border-0 focus:ring-1 focus:ring-[#3B7AB4] rounded font-mono"
+                        required
+                      />
+                    </td>
+                    <td className="px-2 py-1 border">
+                      <input
+                        type="text"
+                        value={device.model_name}
+                        onChange={e => updateDevice(device.id, 'model_name', e.target.value)}
+                        placeholder="ex: ApexZ3"
+                        className={`w-full px-2 py-1 text-sm border-0 focus:ring-1 focus:ring-[#3B7AB4] rounded ${
+                          device.model_name ? 'bg-green-50' : ''
+                        }`}
+                        required
+                      />
+                    </td>
+                    <td className="px-2 py-1 border">
+                      <select
+                        value={device.device_type}
+                        onChange={e => updateDevice(device.id, 'device_type', e.target.value)}
+                        className={`w-full px-2 py-1 text-sm border-0 focus:ring-1 focus:ring-[#3B7AB4] rounded ${
+                          device.device_type ? 'bg-green-50' : ''
+                        }`}
+                      >
+                        <option value="">—</option>
+                        <option value="particle_counter">🔬 Compteur Air</option>
+                        <option value="bio_collector">🧫 Bio Collecteur</option>
+                        <option value="liquid_counter">💧 Compteur Liquide</option>
+                        <option value="temp_humidity">🌡️ Temp/Humidité</option>
+                        <option value="other">📦 Autre</option>
+                      </select>
+                    </td>
+                    <td className="px-2 py-1 border text-center">
+                      {devices.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeDevice(device.id)}
+                          className="text-red-500 hover:text-red-700 text-lg"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Add Device Button */}
+          <button
+            type="button"
+            onClick={addDevice}
+            className="mb-6 px-4 py-2 border-2 border-dashed border-gray-300 text-gray-600 rounded-lg w-full hover:border-[#3B7AB4] hover:text-[#3B7AB4]"
+          >
+            + Ajouter un appareil
+          </button>
+
+          {/* Notes */}
+          <div className="mb-6">
+            <label className="block text-sm font-bold text-gray-700 mb-2">
+              Notes / Commentaires (optionnel)
+            </label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Précisions sur votre demande de contrat (fréquence souhaitée, conditions particulières, etc.)"
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
+          </div>
+
+          {/* Info Box */}
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <h4 className="font-bold text-amber-800 mb-2">ℹ️ Comment ça marche?</h4>
+            <ol className="text-sm text-amber-700 list-decimal list-inside space-y-1">
+              <li>Soumettez votre liste d'appareils</li>
+              <li>Notre équipe prépare un devis personnalisé</li>
+              <li>Vous recevez et validez le devis</li>
+              <li>Signez le bon de commande</li>
+              <li>Votre contrat est activé!</li>
+            </ol>
+          </div>
+
+          {/* Submit Buttons */}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setPage('dashboard')}
+              className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008c44] disabled:opacity-50"
+            >
+              {saving ? 'Envoi en cours...' : `Soumettre la demande (${devices.length} appareil${devices.length > 1 ? 's' : ''})`}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -7128,6 +7534,248 @@ function DeviceHistoryPage({ profile, requests, t, setPage }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ============================================
+// CONTRACTS PAGE (Customer View)
+// ============================================
+function ContractsPage({ profile, t, notify, setPage }) {
+  const [contracts, setContracts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedContract, setSelectedContract] = useState(null);
+
+  // Load contracts
+  useEffect(() => {
+    const loadContracts = async () => {
+      if (!profile?.company_id) return;
+      
+      const { data, error } = await supabase
+        .from('contracts')
+        .select('*, contract_devices(*)')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error loading contracts:', error);
+      } else {
+        setContracts(data || []);
+      }
+      setLoading(false);
+    };
+    loadContracts();
+  }, [profile?.company_id]);
+
+  const getStatusBadge = (status) => {
+    const styles = {
+      requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'En attente de devis' },
+      quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Devis envoyé' },
+      quote_approved: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis approuvé' },
+      bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En attente BC' },
+      active: { bg: 'bg-green-100', text: 'text-green-700', label: 'Actif' },
+      expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Expiré' },
+      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
+    };
+    const style = styles[status] || styles.requested;
+    return (
+      <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+        {style.label}
+      </span>
+    );
+  };
+
+  const getTokensDisplay = (device) => {
+    const remaining = (device.tokens_total || 0) - (device.tokens_used || 0);
+    const total = device.tokens_total || 0;
+    
+    if (remaining <= 0) {
+      return <span className="text-red-600 font-bold">0/{total} ⚠️</span>;
+    } else if (remaining === 1) {
+      return <span className="text-amber-600 font-bold">{remaining}/{total}</span>;
+    }
+    return <span className="text-green-600 font-bold">{remaining}/{total}</span>;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="w-8 h-8 border-4 border-[#00A651] border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  // Contract Detail View
+  if (selectedContract) {
+    const contract = selectedContract;
+    const devices = contract.contract_devices || [];
+    
+    return (
+      <div>
+        <button 
+          onClick={() => setSelectedContract(null)}
+          className="mb-4 text-gray-500 hover:text-gray-700 flex items-center gap-2"
+        >
+          ← Retour aux contrats
+        </button>
+
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          {/* Contract Header */}
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-[#1E3A5F]">
+                Contrat {contract.contract_number}
+              </h1>
+              <p className="text-gray-600">
+                {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
+              </p>
+            </div>
+            {getStatusBadge(contract.status)}
+          </div>
+
+          {/* Contract Stats */}
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="bg-gray-50 rounded-lg p-4 text-center">
+              <div className="text-3xl font-bold text-[#1E3A5F]">{devices.length}</div>
+              <div className="text-sm text-gray-600">Appareils</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4 text-center">
+              <div className="text-3xl font-bold text-green-600">
+                {devices.reduce((sum, d) => sum + ((d.tokens_total || 0) - (d.tokens_used || 0)), 0)}
+              </div>
+              <div className="text-sm text-gray-600">Étalonnages restants</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4 text-center">
+              <div className="text-3xl font-bold text-[#3B7AB4]">
+                {devices.reduce((sum, d) => sum + (d.tokens_used || 0), 0)}
+              </div>
+              <div className="text-sm text-gray-600">Étalonnages utilisés</div>
+            </div>
+          </div>
+
+          {/* Devices Table */}
+          <h3 className="font-bold text-[#1E3A5F] mb-3">Appareils sous contrat</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 border">Surnom</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 border">N° Série</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 border">Modèle</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 border">Type</th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 border">Étalonnages</th>
+                </tr>
+              </thead>
+              <tbody>
+                {devices.map((device, idx) => (
+                  <tr key={device.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-4 py-3 border text-sm">{device.nickname || '—'}</td>
+                    <td className="px-4 py-3 border text-sm font-mono">{device.serial_number}</td>
+                    <td className="px-4 py-3 border text-sm">{device.model_name}</td>
+                    <td className="px-4 py-3 border text-sm">
+                      {device.device_type === 'particle_counter' && '🔬 Compteur Air'}
+                      {device.device_type === 'bio_collector' && '🧫 Bio Collecteur'}
+                      {device.device_type === 'liquid_counter' && '💧 Compteur Liquide'}
+                      {device.device_type === 'temp_humidity' && '🌡️ Temp/Humidité'}
+                      {device.device_type === 'other' && '📦 Autre'}
+                      {!device.device_type && '—'}
+                    </td>
+                    <td className="px-4 py-3 border text-center">
+                      {getTokensDisplay(device)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* BC Document Link */}
+          {contract.bc_file_url && (
+            <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-200">
+              <h4 className="font-bold text-green-800 mb-2">📄 Bon de Commande</h4>
+              <a 
+                href={contract.bc_file_url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-green-600 hover:underline"
+              >
+                Voir le document
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Contracts List View
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-[#1E3A5F]">Mes Contrats</h1>
+        <button 
+          onClick={() => setPage('new-request')}
+          className="px-4 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008c44]"
+        >
+          + Nouveau Contrat
+        </button>
+      </div>
+
+      {contracts.length === 0 ? (
+        <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-100 text-center">
+          <div className="text-4xl mb-4">📋</div>
+          <h2 className="text-xl font-bold text-[#1E3A5F] mb-2">Aucun contrat</h2>
+          <p className="text-gray-600 mb-4">
+            Vous n'avez pas encore de contrat d'étalonnage. Demandez un devis pour bénéficier de tarifs préférentiels.
+          </p>
+          <button 
+            onClick={() => setPage('new-request')}
+            className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008c44]"
+          >
+            Demander un devis contrat
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {contracts.map(contract => {
+            const devices = contract.contract_devices || [];
+            const totalTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
+            const usedTokens = devices.reduce((sum, d) => sum + (d.tokens_used || 0), 0);
+            const remainingTokens = totalTokens - usedTokens;
+            
+            return (
+              <div 
+                key={contract.id}
+                onClick={() => setSelectedContract(contract)}
+                className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:border-[#3B7AB4] cursor-pointer transition-colors"
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="font-bold text-[#1E3A5F] text-lg">{contract.contract_number}</h3>
+                    <p className="text-sm text-gray-600">
+                      {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
+                    </p>
+                  </div>
+                  {getStatusBadge(contract.status)}
+                </div>
+                
+                <div className="flex gap-6 text-sm">
+                  <div>
+                    <span className="text-gray-500">Appareils:</span>{' '}
+                    <span className="font-bold">{devices.length}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Étalonnages restants:</span>{' '}
+                    <span className={`font-bold ${remainingTokens <= 0 ? 'text-red-600' : remainingTokens <= devices.length ? 'text-amber-600' : 'text-green-600'}`}>
+                      {remainingTokens}/{totalTokens}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
