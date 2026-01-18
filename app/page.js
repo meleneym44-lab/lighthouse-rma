@@ -34,6 +34,220 @@ const isOutsideFranceMetropolitan = (postalCode) => {
 };
 
 // ============================================
+// SERIAL NUMBER DECODER - LIGHTHOUSE PRODUCTS
+// ============================================
+// Serial number formats:
+// 9-digit: YYMMCC### (CC = 2-digit product code)
+// 10-digit: YYMMCCC### (CCC = 3-digit product code)
+// 8-digit: CCC##### (CCC = 3-digit product code for accessories)
+
+const PRODUCT_CODES = {
+  // === 9-DIGIT SERIAL NUMBERS (2-digit CC codes) ===
+  // Airborne Particle Counters
+  '01': { model: 'Remote CEMS', category: 'particle_counter' },
+  '02': { model: 'Handheld 3016', category: 'particle_counter' },
+  '03': { model: 'Solair 5100/5100+', category: 'particle_counter' },
+  '04': { model: 'Solair 3100/3100+', category: 'particle_counter' },
+  '05': { model: 'Solair 1100/1100+', category: 'particle_counter' },
+  '06': { model: 'Remote 1100/1104/1100LD/1104LD', category: 'particle_counter' },
+  '07': { model: 'Remote 5100', category: 'particle_counter' },
+  '08': { model: 'Remote 3010/5010', category: 'particle_counter' },
+  '09': { model: 'Mini Manifold 1.0 CFM', category: 'particle_counter' },
+  '10': { model: 'Remote 3014P/5014P', category: 'particle_counter' },
+  '11': { model: 'Manifold Controller', category: 'other' },
+  '12': { model: 'TRH Sensor (0-5V version)', category: 'temp_humidity' },
+  '13': { model: 'AV Probe - Instrument', category: 'other' },
+  '14': { model: 'DP Sensor - Instrument', category: 'other' },
+  '15': { model: 'AMC Sample System', category: 'other' },
+  '16': { model: 'Remote 3014/5014', category: 'particle_counter' },
+  '17': { model: 'Remote 3012/5012', category: 'particle_counter' },
+  '18': { model: 'Remote 5102', category: 'particle_counter' },
+  '19': { model: 'Remote 2010', category: 'particle_counter' },
+  '20': { model: 'Remote 2014P', category: 'particle_counter' },
+  '21': { model: 'Remote 2014', category: 'particle_counter' },
+  '22': { model: 'Handheld 2016', category: 'particle_counter' },
+  '23': { model: 'Solair 3010+', category: 'particle_counter' },
+  '24': { model: 'Remote 3014i/5014i', category: 'particle_counter' },
+  '25': { model: 'Remote 50104', category: 'particle_counter' },
+  '26': { model: 'Solair 1001+', category: 'particle_counter' },
+  '27': { model: 'Handheld 5016', category: 'particle_counter' },
+  '28': { model: 'Remote 5104', category: 'particle_counter' },
+  '29': { model: 'UM-II (or 32 Port Manifold)', category: 'other' },
+  '30': { model: 'Mini Manifold 0.1 CFM', category: 'other' },
+  '31': { model: 'Remote 3102', category: 'particle_counter' },
+  '32': { model: 'Remote 3104', category: 'particle_counter' },
+  '33': { model: 'Boulder Counter', category: 'particle_counter' },
+  '34': { model: 'Remote 5104V', category: 'particle_counter' },
+  '35': { model: 'Remote 2014i', category: 'particle_counter' },
+  '36': { model: 'Remote 3104V', category: 'particle_counter' },
+  '37': { model: 'Remote 2012', category: 'particle_counter' },
+  '38': { model: 'Solair 5200/5200+', category: 'particle_counter' },
+  '39': { model: 'Solair 3200/3200+', category: 'particle_counter' },
+  '40': { model: 'Remote LPC 0.2μm/0.3μm/0.5μm (Modbus)', category: 'liquid_counter' },
+  '41': { model: 'Remote LPC 0.1μm (Modbus)', category: 'liquid_counter' },
+  '42': { model: 'LS-60', category: 'liquid_counter' },
+  '43': { model: 'NanoCount/NC50+/NC65C+/NC25+/NC30+', category: 'liquid_counter' },
+  '44': { model: 'IAQ Handheld', category: 'particle_counter' },
+  '45': { model: 'MiniMultiplexer', category: 'other' },
+  '46': { model: 'Remote LPC 0.2μm/0.3μm/0.5μm (4-20mA)', category: 'liquid_counter' },
+  '47': { model: 'Remote LPC 0.1μm (4-20mA)', category: 'liquid_counter' },
+  '48': { model: 'LS-20', category: 'liquid_counter' },
+  '49': { model: 'Remote LPC 1.5μm (Modbus)', category: 'liquid_counter' },
+  '50': { model: 'Solair 3100Rx', category: 'particle_counter' },
+  '51': { model: 'Solair 5100Rx', category: 'particle_counter' },
+  '52': { model: 'Solair 3200Rx', category: 'particle_counter' },
+  '53': { model: 'Solair 5200Rx', category: 'particle_counter' },
+  '54': { model: 'Remote PN 0.1 CFM (Modbus)', category: 'particle_counter' },
+  '55': { model: 'Remote PN 0.1 CFM (4-20mA)', category: 'particle_counter' },
+  '56': { model: 'Remote PN 1.0 CFM (Modbus)', category: 'particle_counter' },
+  '57': { model: 'Remote PN 1.0 CFM (4-20mA)', category: 'particle_counter' },
+  '58': { model: 'TOC, Neptune', category: 'other' },
+  '60': { model: 'Handheld 3013', category: 'particle_counter' },
+  '61': { model: 'Solair 2010+', category: 'particle_counter' },
+  '62': { model: 'Solair 3350/5350/3350Rx/5350Rx', category: 'particle_counter' },
+  '65': { model: 'Viable, Remote Active Count', category: 'bio_collector' },
+  '70': { model: 'TRH Sensor (SIU)', category: 'temp_humidity' },
+  '71': { model: 'DP Sensor - Analog (SIU)', category: 'other' },
+  '72': { model: 'Freq. DP Sensor (SIU)', category: 'other' },
+  '73': { model: 'Remote 5104P', category: 'particle_counter' },
+  '74': { model: 'Remote 3104P', category: 'particle_counter' },
+  '75': { model: 'Remote 50104V', category: 'particle_counter' },
+  '76': { model: 'Remote 5102V', category: 'particle_counter' },
+  '80': { model: 'SIU Standard', category: 'other' },
+  '81': { model: 'SIU Lite', category: 'other' },
+  '82': { model: 'IDP', category: 'other' },
+  '83': { model: 'IIU Gateway', category: 'other' },
+  '84': { model: 'IIU HSEM', category: 'other' },
+  '85': { model: 'IIU Analog', category: 'other' },
+  '86': { model: 'IIU Alarm Controller', category: 'other' },
+  '87': { model: 'AAU', category: 'other' },
+  '88': { model: '8 Port Alarm Controller', category: 'other' },
+  '89': { model: 'Toggle Switch Controller', category: 'other' },
+  '92': { model: 'LMS Laptop', category: 'other' },
+  '93': { model: 'LMS Computer', category: 'other' },
+  '94': { model: 'LMS DataServer', category: 'other' },
+  '98': { model: 'S1100LD Standard', category: 'particle_counter' },
+  '99': { model: 'Specials', category: 'other' },
+
+  // === 10-DIGIT SERIAL NUMBERS (3-digit CCC codes) ===
+  '100': { model: 'ApexR5', category: 'particle_counter' },
+  '101': { model: 'ApexR3', category: 'particle_counter' },
+  '102': { model: 'ApexR02', category: 'particle_counter' },
+  '103': { model: 'ApexR03', category: 'particle_counter' },
+  '104': { model: 'ApexR05', category: 'particle_counter' },
+  '105': { model: 'ApexP3', category: 'particle_counter' },
+  '106': { model: 'ApexP5', category: 'particle_counter' },
+  '129': { model: 'ActiveCount25H', category: 'bio_collector' },
+  '130': { model: 'ActiveCount100', category: 'bio_collector' },
+  '131': { model: 'ActiveCount100H', category: 'bio_collector' },
+  '140': { model: 'Apex 1100', category: 'particle_counter' },
+  '141': { model: 'ApexZ3', category: 'particle_counter' },
+  '142': { model: 'ApexZ30', category: 'particle_counter' },
+  '143': { model: 'ApexZ5', category: 'particle_counter' },
+  '144': { model: 'ApexZ50', category: 'particle_counter' },
+  '150': { model: 'ApexR02P', category: 'particle_counter' },
+  '151': { model: 'ApexR03P', category: 'particle_counter' },
+  '152': { model: 'ApexR05P', category: 'particle_counter' },
+  '153': { model: 'ApexR3P', category: 'particle_counter' },
+  '154': { model: 'ApexR5P', category: 'particle_counter' },
+  '155': { model: 'ApexBCRp', category: 'bio_collector' },
+  '160': { model: 'FILTR', category: 'other' },
+  '165': { model: 'Manifold III', category: 'other' },
+  '170': { model: 'Vertex50', category: 'liquid_counter' },
+  '171': { model: 'Vertex50C', category: 'liquid_counter' },
+  '172': { model: 'Vertex100', category: 'liquid_counter' },
+  '504': { model: 'Pentagon QIII ST', category: 'other' },
+  '505': { model: 'Pentagon QIII SX', category: 'other' },
+  '506': { model: 'Pentagon QIII SM', category: 'other' },
+
+  // === 8-DIGIT SERIAL NUMBERS (3-digit CCC codes for accessories) ===
+  '100_acc': { model: '0.1 CFM MiniManifold Blower', category: 'other' },
+  '101_acc': { model: 'Handheld Battery', category: 'other' },
+  '102_acc': { model: 'Solair Battery', category: 'other' },
+  '103_acc': { model: 'Engineering Serial Number', category: 'other' },
+  '104_acc': { model: '1.0 CFM MiniManifold Blower', category: 'other' },
+  '110_acc': { model: 'Remote Display - Remote P', category: 'other' },
+  '112_acc': { model: 'Remote Display - NC', category: 'other' },
+  '120_acc': { model: 'TRH Probe (Handhelds, R4-Series, TRH Wands)', category: 'temp_humidity' },
+  '125_acc': { model: 'TRH Digital Probe', category: 'temp_humidity' },
+  '130_acc': { model: 'Current to Frequency Converter', category: 'other' },
+  '140_acc': { model: 'Voltage to Frequency Converter', category: 'other' },
+  '150_acc': { model: 'IFS, ScanAir, ScanAir Pro', category: 'bio_collector' },
+  '160_acc': { model: 'RS485 Gateway', category: 'other' },
+  '170_acc': { model: 'DP Switch', category: 'other' },
+  '180_acc': { model: 'Particle Diluter', category: 'diluter' },
+  '185_acc': { model: 'RA-25 Flow Calibrator', category: 'other' },
+  '190_acc': { model: 'RA-100 Flow Calibrator', category: 'other' },
+  '250_acc': { model: 'High Pressure Diffuser 1.0 cfm', category: 'other' },
+  '260_acc': { model: 'High Pressure Diffuser 0.1 cfm', category: 'other' },
+  '270_acc': { model: 'High Pressure Controller 1100', category: 'other' },
+  '280_acc': { model: 'High Pressure Diffuser 2.0 cfm', category: 'other' },
+  '290_acc': { model: 'High Pressure Diffuser 3.5 cfm, 5-10 PSI', category: 'other' },
+  '291_acc': { model: 'High Pressure Diffuser 3.5 cfm, 30-70 PSI', category: 'other' },
+  '292_acc': { model: 'High Pressure Diffuser 3.5 cfm, 70-150 PSI', category: 'other' },
+  '293_acc': { model: 'High Pressure Diffuser 3.5 cfm, 30-150 PSI', category: 'other' },
+  '330_acc': { model: 'TRH Sensor', category: 'temp_humidity' },
+  '340_acc': { model: 'TRH Wand', category: 'temp_humidity' },
+  '350_acc': { model: 'Data Server HASP Key', category: 'other' },
+  '351_acc': { model: 'Web Server HASP Key', category: 'other' },
+  '352_acc': { model: 'LMS System HASP Key', category: 'other' },
+  '420_acc': { model: 'Liquid Calibration Station 110V', category: 'other' },
+  '421_acc': { model: 'Liquid Calibration Station 220V', category: 'other' },
+  '510_acc': { model: 'Air Calibration Station', category: 'other' },
+  '520_acc': { model: 'System Cabinet', category: 'other' },
+};
+
+// Decode serial number to get model and category
+const decodeSerialNumber = (serialNumber) => {
+  if (!serialNumber) return null;
+  
+  // Clean the serial number (remove spaces, dashes)
+  const sn = serialNumber.toString().replace(/[\s-]/g, '');
+  
+  // Must be all digits
+  if (!/^\d+$/.test(sn)) return null;
+  
+  const length = sn.length;
+  let productCode = null;
+  let format = null;
+  
+  if (length === 9) {
+    // 9-digit: YYMMCC### - extract CC (positions 4-5, 0-indexed)
+    productCode = sn.substring(4, 6);
+    format = '9-digit';
+  } else if (length === 10) {
+    // 10-digit: YYMMCCC### - extract CCC (positions 4-6, 0-indexed)
+    productCode = sn.substring(4, 7);
+    format = '10-digit';
+  } else if (length === 8) {
+    // 8-digit: CCC##### - extract CCC (positions 0-2)
+    productCode = sn.substring(0, 3) + '_acc';
+    format = '8-digit';
+  } else {
+    return null;
+  }
+  
+  // Look up the product code
+  let product = PRODUCT_CODES[productCode];
+  
+  // For 8-digit, also try without _acc suffix (some overlap)
+  if (!product && format === '8-digit') {
+    product = PRODUCT_CODES[sn.substring(0, 3)];
+  }
+  
+  if (product) {
+    return {
+      model: product.model,
+      category: product.category,
+      productCode: productCode.replace('_acc', ''),
+      format
+    };
+  }
+  
+  return null;
+};
+
+// ============================================
 // QUOTE DISPLAY TEMPLATES
 // ============================================
 const CALIBRATION_TEMPLATES = {
@@ -91,6 +305,17 @@ const CALIBRATION_TEMPLATES = {
       "Étalonnage selon les spécifications du fabricant",
       "Tests de fonctionnement",
       "Fourniture d'un rapport de test"
+    ]
+  },
+  diluter: {
+    icon: '🌀',
+    title: "Étalonnage Diluteur de Particules",
+    prestations: [
+      "Vérification des fonctionnalités du diluteur",
+      "Contrôle du taux de dilution",
+      "Vérification de l'étanchéité du système",
+      "Tests de performance",
+      "Fourniture d'un rapport de test et de calibration"
     ]
   }
 };
@@ -3008,6 +3233,7 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
             <option value="bio_collector">🧫 Bio Collecteur</option>
             <option value="liquid_counter">💧 Compteur de Particules (Liquide)</option>
             <option value="temp_humidity">🌡️ Capteur Température/Humidité</option>
+            <option value="diluter">🌀 Diluteur de Particules</option>
             <option value="other">📦 Autre</option>
           </select>
         </div>
@@ -3025,17 +3251,44 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
           />
         </div>
 
-        {/* Serial Number */}
+        {/* Serial Number - with auto-decode */}
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-1">N° de Série *</label>
           <input
             type="text"
             value={device.serial_number}
-            onChange={e => updateDevice(device.id, 'serial_number', e.target.value)}
+            onChange={e => {
+              const sn = e.target.value;
+              updateDevice(device.id, 'serial_number', sn);
+              
+              // Auto-decode serial number for Lighthouse devices
+              if (device.brand === 'Lighthouse' && sn.length >= 8) {
+                const decoded = decodeSerialNumber(sn);
+                if (decoded) {
+                  // Auto-fill model and device type if not already set or if different
+                  if (!device.model || device.model !== decoded.model) {
+                    updateDevice(device.id, 'model', decoded.model);
+                  }
+                  if (!device.device_type || device.device_type !== decoded.category) {
+                    updateDevice(device.id, 'device_type', decoded.category);
+                  }
+                }
+              }
+            }}
             placeholder="ex: 205482857"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             required
           />
+          {device.brand === 'Lighthouse' && device.serial_number && device.serial_number.length >= 8 && decodeSerialNumber(device.serial_number) && (
+            <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+              <span>✓</span> Détecté: {decodeSerialNumber(device.serial_number).model}
+            </p>
+          )}
+          {device.brand === 'Lighthouse' && device.serial_number && device.serial_number.length >= 6 && !decodeSerialNumber(device.serial_number) && (
+            <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+              <span>⚠</span> N° de série non reconnu - veuillez vérifier ou saisir le modèle manuellement
+            </p>
+          )}
         </div>
 
         {/* Service Type */}
