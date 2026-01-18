@@ -2582,6 +2582,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     
     try {
       // No number assigned yet - will get FR-XXXXX after approval
+      // Contract detection happens on admin side when creating quote
       const { data: request, error: reqErr } = await supabase
         .from('service_requests')
         .insert({
@@ -2603,18 +2604,18 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
 
       if (reqErr) throw reqErr;
 
-      // Save devices with full details including per-device shipping address
+      // Save devices with full details
       for (const d of devices) {
         await supabase.from('request_devices').insert({
           request_id: request.id,
           serial_number: d.serial_number,
           model_name: d.model,
-          device_type: d.device_type, // NEW: particle_counter, bio_collector, etc.
+          device_type: d.device_type,
           equipment_type: d.brand === 'other' ? d.brand_other : 'Lighthouse',
           service_type: d.service_type === 'other' ? d.service_other : d.service_type,
           notes: d.notes,
           accessories: d.accessories,
-          shipping_address_id: d.shipping_address_id || null // Per-device shipping address
+          shipping_address_id: d.shipping_address_id || null
         });
 
         // Save to equipment if checkbox is checked and not already from saved
@@ -2625,7 +2626,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
             model_name: d.model,
             nickname: d.nickname || null,
             brand: d.brand === 'other' ? d.brand_other : 'Lighthouse',
-            equipment_type: d.device_type || 'particle_counter', // Use selected device type
+            equipment_type: d.device_type || 'particle_counter',
             added_by: profile.id
           }, { onConflict: 'serial_number' });
         }
