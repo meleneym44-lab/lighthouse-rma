@@ -86,14 +86,15 @@ export default function AdminPortal() {
   const pendingCount = requests.filter(r => r.status === 'submitted' && !r.request_number).length;
   const modificationCount = requests.filter(r => r.status === 'quote_revision_requested').length;
   const totalBadge = pendingCount + modificationCount;
-  const contractRequestCount = contracts.filter(c => c.status === 'requested').length;
+  // Contract badge: new requests OR BC pending review
+  const contractActionCount = contracts.filter(c => c.status === 'requested' || c.status === 'bc_pending').length;
   
   const sheets = [
     { id: 'dashboard', label: 'Tableau de Bord', icon: '📊' },
     { id: 'requests', label: 'Demandes', icon: '📋', badge: totalBadge },
     { id: 'clients', label: 'Clients', icon: '👥' },
     { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
-    { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractRequestCount },
+    { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
     { id: 'settings', label: 'Paramètres', icon: '⚙️' },
     ...(isAdmin ? [{ id: 'admin', label: 'Admin', icon: '🔐' }] : [])
   ];
@@ -150,7 +151,7 @@ export default function AdminPortal() {
         {activeSheet === 'requests' && <RequestsSheet requests={requests} notify={notify} reload={loadData} profile={profile} />}
         {activeSheet === 'clients' && <ClientsSheet clients={clients} requests={requests} equipment={equipment} notify={notify} reload={loadData} isAdmin={isAdmin} />}
         {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} />}
-        {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} />}
+        {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} />}
         {activeSheet === 'settings' && <SettingsSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
         {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
       </main>
@@ -1076,7 +1077,7 @@ function ClientDetailModal({ client, requests, equipment, onClose, notify, reloa
 // ============================================
 // CONTRACTS SHEET - Full Implementation
 // ============================================
-function ContractsSheet({ clients, notify }) {
+function ContractsSheet({ clients, notify, profile }) {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedContract, setSelectedContract] = useState(null);
@@ -1164,6 +1165,7 @@ function ContractsSheet({ clients, notify }) {
     return (
       <ContractQuoteEditor
         contract={quoteContract}
+        profile={profile}
         notify={notify}
         onClose={() => setQuoteContract(null)}
         onSent={() => { setQuoteContract(null); loadContracts(); }}
@@ -1416,11 +1418,14 @@ function ContractsSheet({ clients, notify }) {
 // ============================================
 // CONTRACT QUOTE EDITOR - Like RMA Quote Editor
 // ============================================
-function ContractQuoteEditor({ contract, notify, onClose, onSent }) {
+function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
   const [step, setStep] = useState(1); // 1=Edit, 2=Preview, 3=Confirm
   const [saving, setSaving] = useState(false);
   const [quoteRef, setQuoteRef] = useState('');
   const today = new Date();
+  
+  // Signatory name from profile
+  const signatory = profile?.full_name || 'Lighthouse France';
   
   // Contract dates (editable)
   const [contractDates, setContractDates] = useState({
@@ -1714,41 +1719,32 @@ function ContractQuoteEditor({ contract, notify, onClose, onSent }) {
           </div>
         )}
 
-        {/* Step 2: Preview - Professional Quote */}
+        {/* Step 2: Preview - EXACTLY MATCHES CUSTOMER PORTAL */}
         {step === 2 && (
           <div className="p-6 bg-gray-200 min-h-full">
             <div className="max-w-4xl mx-auto bg-white shadow-xl" style={{ fontFamily: 'Arial, sans-serif' }}>
               
-              {/* Quote Header with Logos */}
+              {/* Quote Header */}
               <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
                 <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-4">
+                  <div>
                     <img 
                       src="/images/logos/lighthouse-logo.png" 
-                      alt="Lighthouse" 
-                      className="h-14 w-auto"
+                      alt="Lighthouse France" 
+                      className="h-14 w-auto mb-1"
                       onError={(e) => {
                         e.target.style.display = 'none';
                         e.target.nextSibling.style.display = 'block';
                       }}
                     />
                     <div className="hidden">
-                      <h1 className="text-3xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h1>
+                      <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
                       <p className="text-gray-500">Worldwide Solutions</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <img 
-                      src="/images/logos/cap-cert-logo.png" 
-                      alt="CAP Certification" 
-                      className="h-12 w-auto"
-                      onError={(e) => { e.target.style.display = 'none'; }}
-                    />
-                    <div className="text-right">
-                      <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
-                      <p className="text-lg font-medium text-gray-700">CONTRAT D'ÉTALONNAGE</p>
-                      <p className="text-gray-500">Ref: {quoteRef}</p>
-                    </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
+                    <p className="text-gray-500">N° {quoteRef}</p>
                   </div>
                 </div>
               </div>
@@ -1760,11 +1756,11 @@ function ContractQuoteEditor({ contract, notify, onClose, onSent }) {
                   <p className="font-medium">{today.toLocaleDateString('fr-FR')}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 uppercase">Période du contrat</p>
+                  <p className="text-xs text-gray-500 uppercase">Période du Contrat</p>
                   <p className="font-medium">{new Date(contractDates.start_date).toLocaleDateString('fr-FR')} - {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 uppercase">Validité devis</p>
+                  <p className="text-xs text-gray-500 uppercase">Validité Devis</p>
                   <p className="font-medium">30 jours</p>
                 </div>
               </div>
@@ -1772,84 +1768,78 @@ function ContractQuoteEditor({ contract, notify, onClose, onSent }) {
               {/* Client Info */}
               <div className="px-8 py-4 border-b">
                 <p className="text-xs text-gray-500 uppercase">Client</p>
-                <p className="text-lg font-bold text-[#1a1a2e]">{contract.companies?.name}</p>
-                {contract.companies?.billing_address && (
-                  <p className="text-sm text-gray-600">{contract.companies.billing_address}</p>
-                )}
-                {contract.companies?.billing_postal_code && (
-                  <p className="text-sm text-gray-600">{contract.companies.billing_postal_code} {contract.companies.billing_city}</p>
-                )}
+                <p className="font-bold text-xl text-[#1a1a2e]">{contract.companies?.name}</p>
+                {contract.companies?.billing_address && <p className="text-gray-600">{contract.companies?.billing_address}</p>}
+                <p className="text-gray-600">{contract.companies?.billing_postal_code} {contract.companies?.billing_city}</p>
               </div>
 
-              {/* Devices & Prestations by Type */}
-              <div className="px-8 py-6 space-y-6">
-                {Object.entries(devicesByType).map(([type, devices]) => {
-                  const prestations = getCalibrationPrestations(type);
-                  const typeTotal = devices.reduce((sum, d) => sum + (d.unit_price || 0), 0);
-                  const typeTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
-                  
-                  return (
-                    <div key={type} className="border rounded-lg overflow-hidden">
-                      {/* Section Header */}
-                      <div className="bg-[#1a1a2e] text-white px-4 py-3">
-                        <h3 className="font-bold text-lg">
-                          {type === 'particle_counter' && '🔬 '}
-                          {type === 'bio_collector' && '🧫 '}
-                          {type === 'liquid_counter' && '💧 '}
-                          {type === 'temp_humidity' && '🌡️ '}
-                          {type === 'other' && '📦 '}
-                          Étalonnage {getDeviceTypeLabel(type)}
-                        </h3>
-                      </div>
-                      
-                      {/* Prestations List */}
-                      <div className="px-4 py-3 bg-gray-50 border-b">
-                        <p className="text-xs text-gray-500 uppercase mb-2">Prestations incluses</p>
-                        <ul className="text-sm text-gray-700 space-y-1">
-                          {prestations.map((p, i) => (
-                            <li key={i} className="flex items-start gap-2">
-                              <span className="text-[#00A651] mt-0.5">✓</span>
-                              <span>{p}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                      
-                      {/* Devices Table */}
-                      <table className="w-full">
-                        <thead className="bg-gray-100">
-                          <tr>
-                            <th className="px-4 py-2 text-left text-xs font-bold text-gray-600">Appareil</th>
-                            <th className="px-4 py-2 text-left text-xs font-bold text-gray-600">N° Série</th>
-                            <th className="px-4 py-2 text-center text-xs font-bold text-gray-600">Étal./an</th>
-                            <th className="px-4 py-2 text-right text-xs font-bold text-gray-600">Prix HT</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {devices.map((d, i) => (
-                            <tr key={d.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-4 py-2 font-medium">{d.model_name || getDeviceTypeLabel(d.device_type)}</td>
-                              <td className="px-4 py-2 font-mono text-sm">{d.serial_number}</td>
-                              <td className="px-4 py-2 text-center">{d.tokens_total}</td>
-                              <td className="px-4 py-2 text-right font-medium">{(d.unit_price || 0).toFixed(2)} €</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="bg-emerald-50">
-                            <td className="px-4 py-2 font-bold" colSpan={2}>Sous-total {getDeviceTypeLabel(type)}</td>
-                            <td className="px-4 py-2 text-center font-medium">{typeTokens} étal.</td>
-                            <td className="px-4 py-2 text-right font-bold text-[#00A651]">{typeTotal.toFixed(2)} €</td>
-                          </tr>
-                        </tfoot>
-                      </table>
+              {/* SERVICE SECTIONS BY DEVICE TYPE - Green Headers like Customer Portal */}
+              {Object.entries(devicesByType).map(([type, typeDevices]) => {
+                const prestations = getCalibrationPrestations(type);
+                const typeTotal = typeDevices.reduce((sum, d) => sum + (d.unit_price || 0), 0);
+                const typeTokens = typeDevices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
+                
+                return (
+                  <div key={type} className="border-b">
+                    {/* Type Header with GREEN background - matching customer */}
+                    <div className="bg-[#00A651] text-white px-8 py-3">
+                      <h3 className="font-bold text-lg flex items-center gap-2">
+                        {type === 'particle_counter' && '🔬 '}
+                        {type === 'bio_collector' && '🧫 '}
+                        {type === 'liquid_counter' && '💧 '}
+                        {type === 'temp_humidity' && '🌡️ '}
+                        {type === 'other' && '📦 '}
+                        Étalonnage {getDeviceTypeLabel(type)}
+                      </h3>
                     </div>
-                  );
-                })}
-              </div>
+                    
+                    {/* Prestations */}
+                    <div className="px-8 py-4 bg-gray-50">
+                      <p className="text-xs text-gray-500 uppercase mb-2">Prestations Incluses</p>
+                      <ul className="text-sm text-gray-700 space-y-1">
+                        {prestations.map((p, i) => (
+                          <li key={i} className="flex items-start gap-2">
+                            <span className="text-[#00A651]">✓</span>
+                            <span>{p}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    
+                    {/* Devices Table */}
+                    <table className="w-full">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="px-8 py-2 text-left text-xs font-bold text-gray-600">Appareil</th>
+                          <th className="px-4 py-2 text-left text-xs font-bold text-gray-600">N° Série</th>
+                          <th className="px-4 py-2 text-center text-xs font-bold text-gray-600">Étal./an</th>
+                          <th className="px-8 py-2 text-right text-xs font-bold text-gray-600">Prix HT</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {typeDevices.map((d, i) => (
+                          <tr key={d.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="px-8 py-2 font-medium">{d.model_name || getDeviceTypeLabel(d.device_type)}</td>
+                            <td className="px-4 py-2 font-mono text-sm">{d.serial_number}</td>
+                            <td className="px-4 py-2 text-center">{d.tokens_total}</td>
+                            <td className="px-8 py-2 text-right font-medium">{(d.unit_price || 0).toFixed(2)} €</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-green-50">
+                          <td className="px-8 py-2 font-bold" colSpan={2}>Sous-total Étalonnage {getDeviceTypeLabel(type)}</td>
+                          <td className="px-4 py-2 text-center font-medium">{typeTokens} étal.</td>
+                          <td className="px-8 py-2 text-right font-bold text-[#00A651]">{typeTotal.toFixed(2)} €</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                );
+              })}
 
               {/* Grand Total */}
-              <div className="mx-8 mb-6 bg-[#00A651] text-white rounded-lg p-4 flex justify-between items-center">
+              <div className="mx-8 my-6 bg-[#00A651] text-white rounded-lg p-4 flex justify-between items-center">
                 <div>
                   <p className="text-lg font-bold">TOTAL CONTRAT ANNUEL HT</p>
                   <p className="text-emerald-100 text-sm">{totalTokens} étalonnage(s) inclus pendant la période du contrat</p>
@@ -1869,11 +1859,33 @@ function ContractQuoteEditor({ contract, notify, onClose, onSent }) {
                 </ul>
               </div>
 
+              {/* Signature Section - MATCHING CUSTOMER PORTAL */}
+              <div className="px-8 py-6 border-t flex justify-between items-end">
+                <div className="flex items-end gap-6">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
+                    <p className="font-bold text-lg">{signatory}</p>
+                    <p className="text-gray-600">Lighthouse France</p>
+                  </div>
+                  <img 
+                    src="/images/logos/capcert-logo.png" 
+                    alt="Capcert Certification" 
+                    className="h-20 w-auto"
+                    onError={(e) => { e.target.style.display = 'none'; }}
+                  />
+                </div>
+                
+                <div className="text-right">
+                  <p className="text-xs text-gray-400 mb-1">Signature client</p>
+                  <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+                  <p className="text-xs text-gray-400 mt-1">Lu et approuvé</p>
+                </div>
+              </div>
+
               {/* Footer */}
               <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
                 <p className="font-medium">Lighthouse France SAS</p>
-                <p className="text-gray-400">16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07</p>
-                <p className="text-gray-500 text-xs mt-1">SIRET: 823 959 853 00015 • N° TVA: FR 21 823959853</p>
+                <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
               </div>
             </div>
           </div>
