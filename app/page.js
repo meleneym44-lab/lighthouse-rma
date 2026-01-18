@@ -7743,19 +7743,10 @@ function ContractsPage({ profile, t, notify, setPage }) {
         }
       }
       
-      // Update contract - using correct column names from migration
-      const updateData = {
-        status: 'bc_pending',
-        bc_signed_by: signatureName,
-        bc_submitted_at: signatureDateISO,
-        quote_approved_at: new Date().toISOString()
-      };
-      
-      // Only add URL fields if we have values
-      if (fileUrl) updateData.bc_url = fileUrl;
-      if (signatureUrl) updateData.bc_signature_url = signatureUrl;
-      
-      const { error } = await supabase.from('contracts').update(updateData).eq('id', selectedContract.id);
+      // Update contract - ONLY status field (other fields may not exist)
+      const { error } = await supabase.from('contracts').update({
+        status: 'bc_pending'
+      }).eq('id', selectedContract.id);
       
       if (error) throw error;
       
@@ -8502,14 +8493,14 @@ function ContractsPage({ profile, t, notify, setPage }) {
                     🖨️ Imprimer
                   </button>
                   <button onClick={() => {
-                    // Same as print but saves to PDF via browser print dialog
+                    // Same as print - user can select "Save as PDF" in print dialog
                     const content = document.getElementById('contract-quote-print-content');
                     const printWindow = window.open('', '_blank');
                     printWindow.document.write(`
                       <!DOCTYPE html>
                       <html>
                       <head>
-                        <title>Devis_Contrat_${contract.contract_number}.pdf</title>
+                        <title>Devis_Contrat_${contract.contract_number}</title>
                         <style>
                           @page { size: A4; margin: 10mm; }
                           * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -8557,12 +8548,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
                           @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
                         </style>
                       </head>
-                      <body>
-                        <p style="text-align:center; padding:20px; background:#f0f0f0; margin-bottom:20px; border-radius:8px;">
-                          <strong>💡 Pour sauvegarder en PDF:</strong> Dans la boîte de dialogue d'impression, sélectionnez "Enregistrer au format PDF" comme destination.
-                        </p>
-                        ${content.innerHTML}
-                      </body>
+                      <body>${content.innerHTML}</body>
                       </html>
                     `);
                     printWindow.document.close();
