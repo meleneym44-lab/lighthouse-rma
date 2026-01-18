@@ -1060,13 +1060,13 @@ async function generateContractQuotePDF(options) {
 
   // ===== SERVICE SECTIONS BY TYPE =====
   const drawServiceBlock = (data, color) => {
-    const lineH = 5;
+    const lineH = 5.5; // Slightly more spacing between lines
     let lines = [];
     data.prestations.forEach(p => {
-      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 12); // More width available
       wrapped.forEach(l => lines.push(l));
     });
-    const blockH = 12 + (lines.length * lineH);
+    const blockH = 14 + (lines.length * lineH); // More padding
     checkPageBreak(blockH);
     
     pdf.setDrawColor(...color);
@@ -1076,14 +1076,14 @@ async function generateContractQuotePDF(options) {
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
-    pdf.text(data.title, margin + 5, y + 6);
-    y += 10;
+    pdf.text(data.title, margin + 5, y + 7);
+    y += 12;
     
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...gray);
     data.prestations.forEach(p => {
-      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 12);
       wrapped.forEach((line, i) => {
         if (i === 0) {
           pdf.text('-', margin + 5, y);
@@ -1092,7 +1092,7 @@ async function generateContractQuotePDF(options) {
         y += lineH;
       });
     });
-    y += 3;
+    y += 4;
   };
 
   // Group devices by type
@@ -1175,18 +1175,18 @@ async function generateContractQuotePDF(options) {
 
   // Total row
   pdf.setFillColor(...green);
-  pdf.rect(margin, y, contentWidth, 11, 'F');
+  pdf.rect(margin, y, contentWidth, 14, 'F'); // Increased height
   pdf.setTextColor(...white);
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('TOTAL CONTRAT ANNUEL HT', margin + 4, y + 7.5);
-  pdf.setFontSize(8);
+  pdf.text('TOTAL CONTRAT ANNUEL HT', margin + 4, y + 6);
+  pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
   pdf.text(totalTokens + ' etalonnage(s) inclus pendant la periode du contrat', margin + 4, y + 11);
   pdf.setFontSize(16);
   pdf.setFont('helvetica', 'bold');
-  pdf.text(totalPrice.toFixed(2) + ' EUR', pageWidth - margin - 4, y + 8, { align: 'right' });
-  y += 15;
+  pdf.text(totalPrice.toFixed(2) + ' EUR', pageWidth - margin - 4, y + 9, { align: 'right' });
+  y += 18;
 
   // ===== SIGNATURE - AT BOTTOM =====
   const sigY = Math.max(y + 5, pageHeight - footerHeight - signatureBlockHeight - 3);
@@ -8726,7 +8726,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
                     <img 
                       src="/images/logos/capcert-logo.png" 
                       alt="Capcert Certification" 
-                      className="h-14 w-auto"
+                      className="h-20 w-auto"
                       onError={(e) => { e.target.style.display = 'none'; }}
                     />
                   </div>
@@ -8762,110 +8762,27 @@ function ContractsPage({ profile, t, notify, setPage }) {
                 </div>
               </div>
 
-              {/* Action Buttons - Working Print Function */}
+              {/* Action Buttons - IDENTICAL TO RMA */}
               <div className="print-hide sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex flex-wrap gap-3 justify-between items-center">
                 <div className="flex gap-2">
-                  <button onClick={() => {
-                    const content = document.getElementById('contract-quote-print-content');
-                    const printWindow = window.open('', '_blank');
-                    printWindow.document.write(`
-                      <!DOCTYPE html>
-                      <html>
-                      <head>
-                        <title>Devis Contrat - ${contract.contract_number}</title>
-                        <style>
-                          @page { size: A4; margin: 10mm; }
-                          * { margin: 0; padding: 0; box-sizing: border-box; }
-                          body { 
-                            font-family: Arial, sans-serif; 
-                            font-size: 11px;
-                            line-height: 1.4;
-                            width: 210mm;
-                            min-height: 297mm;
-                          }
-                          .border-b { border-bottom: 1px solid #e5e7eb; }
-                          .border-b-4 { border-bottom: 4px solid #00A651; }
-                          .border-t { border-top: 1px solid #e5e7eb; }
-                          .border-t-2 { border-top: 2px solid #d1d5db; }
-                          .border-b-2 { border-bottom: 2px solid #d1d5db; }
-                          .bg-gray-50 { background: #f9fafb; }
-                          .bg-gray-100 { background: #f3f4f6; }
-                          .bg-white { background: white; }
-                          .bg-green-50 { background: #f0fdf4; }
-                          [class*="bg-[#1a1a2e]"] { background: #1a1a2e !important; }
-                          [class*="bg-[#1E3A5F]"] { background: #1E3A5F !important; }
-                          [class*="bg-[#00A651]"] { background: #00A651 !important; }
-                          .text-white { color: white !important; }
-                          .text-gray-400 { color: #9ca3af; }
-                          .text-gray-500 { color: #6b7280; }
-                          .text-gray-600 { color: #4b5563; }
-                          .text-gray-700 { color: #374151; }
-                          .text-green-600 { color: #16a34a; }
-                          [class*="text-[#1a1a2e]"] { color: #1a1a2e; }
-                          [class*="text-[#00A651]"] { color: #00A651; }
-                          .text-xs { font-size: 9px; }
-                          .text-sm { font-size: 10px; }
-                          .text-lg { font-size: 14px; }
-                          .text-xl { font-size: 16px; }
-                          .text-2xl { font-size: 18px; }
-                          .text-4xl { font-size: 24px; }
-                          .font-medium { font-weight: 500; }
-                          .font-bold { font-weight: 700; }
-                          .font-mono { font-family: monospace; }
-                          .uppercase { text-transform: uppercase; }
-                          .text-left { text-align: left; }
-                          .text-right { text-align: right; }
-                          .text-center { text-align: center; }
-                          .px-2 { padding-left: 4px; padding-right: 4px; }
-                          .px-4 { padding-left: 8px; padding-right: 8px; }
-                          .px-8 { padding-left: 16px; padding-right: 16px; }
-                          .py-2 { padding-top: 4px; padding-bottom: 4px; }
-                          .py-3 { padding-top: 6px; padding-bottom: 6px; }
-                          .py-4 { padding-top: 8px; padding-bottom: 8px; }
-                          .py-6 { padding-top: 12px; padding-bottom: 12px; }
-                          .pt-8 { padding-top: 16px; }
-                          .pb-4 { padding-bottom: 8px; }
-                          .p-4 { padding: 8px; }
-                          .mb-1 { margin-bottom: 2px; }
-                          .mb-2 { margin-bottom: 4px; }
-                          .mt-2 { margin-top: 4px; }
-                          .gap-2 { gap: 4px; }
-                          .gap-6 { gap: 12px; }
-                          .flex { display: flex; }
-                          .items-start { align-items: flex-start; }
-                          .items-center { align-items: center; }
-                          .items-end { align-items: flex-end; }
-                          .justify-between { justify-content: space-between; }
-                          .space-y-1 > * + * { margin-top: 2px; }
-                          .rounded { border-radius: 2px; }
-                          .rounded-lg { border-radius: 4px; }
-                          .w-48 { width: 80px; }
-                          .h-14 { height: 40px; }
-                          .h-20 { height: 50px; }
-                          .border-2 { border-width: 2px; }
-                          .border-dashed { border-style: dashed; }
-                          .border-gray-300 { border-color: #d1d5db; }
-                          .border-green-200 { border-color: #bbf7d0; }
-                          table { width: 100%; border-collapse: collapse; font-size: 10px; }
-                          th, td { padding: 4px 6px; }
-                          img { max-width: 100%; height: auto; }
-                          img.h-14 { height: 35px !important; width: auto !important; }
-                          .hidden { display: none; }
-                          @media print {
-                            body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-                            [class*="bg-[#1a1a2e]"], [class*="bg-[#1E3A5F]"], [class*="bg-[#00A651]"] { 
-                              print-color-adjust: exact; 
-                              -webkit-print-color-adjust: exact; 
-                            }
-                          }
-                        </style>
-                      </head>
-                      <body>${content.innerHTML}</body>
-                      </html>
-                    `);
-                    printWindow.document.close();
-                    printWindow.focus();
-                    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+                  <button onClick={async () => {
+                    try {
+                      const pdfBlob = await generateContractQuotePDF({
+                        contract,
+                        devices,
+                        totalPrice,
+                        totalTokens,
+                        calibrationTypes: Object.keys(devicesByType),
+                        isSigned: false
+                      });
+                      const url = URL.createObjectURL(pdfBlob);
+                      const printWindow = window.open(url, '_blank');
+                      printWindow.onload = () => {
+                        printWindow.print();
+                      };
+                    } catch (err) {
+                      console.error('Print error:', err);
+                    }
                   }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
                     🖨️ Imprimer
                   </button>
