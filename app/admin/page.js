@@ -87,6 +87,7 @@ export default function AdminPortal() {
     { id: 'dashboard', label: 'Tableau de Bord', icon: '📊' },
     { id: 'requests', label: 'Demandes', icon: '📋', badge: totalBadge },
     { id: 'clients', label: 'Clients', icon: '👥' },
+    { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
     { id: 'contracts', label: 'Contrats', icon: '📄' },
     { id: 'settings', label: 'Paramètres', icon: '⚙️' },
     ...(isAdmin ? [{ id: 'admin', label: 'Admin', icon: '🔐' }] : [])
@@ -143,6 +144,7 @@ export default function AdminPortal() {
         {activeSheet === 'dashboard' && <DashboardSheet requests={requests} notify={notify} reload={loadData} isAdmin={isAdmin} />}
         {activeSheet === 'requests' && <RequestsSheet requests={requests} notify={notify} reload={loadData} profile={profile} />}
         {activeSheet === 'clients' && <ClientsSheet clients={clients} requests={requests} equipment={equipment} notify={notify} reload={loadData} isAdmin={isAdmin} />}
+        {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} />}
         {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} />}
         {activeSheet === 'settings' && <SettingsSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
         {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
@@ -1734,6 +1736,575 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// PRICING SHEET COMPONENT
+// ============================================
+function PricingSheet({ notify, isAdmin }) {
+  const [parts, setParts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [uploading, setUploading] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [editingPart, setEditingPart] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  // Load parts from database
+  const loadParts = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('parts_pricing')
+      .select('*')
+      .order('part_number', { ascending: true });
+    
+    if (error) {
+      console.error('Error loading parts:', error);
+      notify('Erreur de chargement des pièces', 'error');
+    } else {
+      setParts(data || []);
+    }
+    setLoading(false);
+  }, [notify]);
+
+  useEffect(() => {
+    loadParts();
+  }, [loadParts]);
+
+  // Get unique categories for filter
+  const categories = [...new Set(parts.map(p => p.category).filter(Boolean))];
+
+  // Filter parts based on search and category
+  const filteredParts = parts.filter(part => {
+    const matchesSearch = !searchTerm || 
+      part.part_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      part.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      part.description_fr?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesCategory = categoryFilter === 'all' || part.category === categoryFilter;
+    
+    return matchesSearch && matchesCategory;
+  });
+
+  // Handle Excel file upload
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploading(true);
+    
+    try {
+      // Load SheetJS library dynamically
+      if (!window.XLSX) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+      }
+
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const data = new Uint8Array(event.target.result);
+          const workbook = window.XLSX.read(data, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData = window.XLSX.utils.sheet_to_json(worksheet);
+
+          if (jsonData.length === 0) {
+            notify('Le fichier est vide', 'error');
+            setUploading(false);
+            return;
+          }
+
+          // Process each row
+          let created = 0;
+          let updated = 0;
+          let errors = 0;
+
+          for (const row of jsonData) {
+            // Map Excel columns to database fields (flexible column naming)
+            const partNumber = row['Part Number'] || row['part_number'] || row['PartNumber'] || row['Ref'] || row['Reference'] || row['SKU'];
+            const description = row['Description'] || row['description'] || row['Name'] || row['Nom'];
+            const descriptionFr = row['Description FR'] || row['description_fr'] || row['Nom FR'] || row['Description Francais'];
+            const category = row['Category'] || row['category'] || row['Categorie'] || row['Type'];
+            const price = parseFloat(row['Price'] || row['price'] || row['Unit Price'] || row['Prix'] || row['Prix Unitaire'] || 0);
+            const quantity = parseInt(row['Quantity'] || row['quantity'] || row['Stock'] || row['Qty'] || 0);
+            const location = row['Location'] || row['location'] || row['Emplacement'];
+            const supplier = row['Supplier'] || row['supplier'] || row['Fournisseur'];
+
+            if (!partNumber) {
+              errors++;
+              continue;
+            }
+
+            // Check if part exists
+            const { data: existing } = await supabase
+              .from('parts_pricing')
+              .select('id')
+              .eq('part_number', partNumber.toString().trim())
+              .single();
+
+            const partData = {
+              part_number: partNumber.toString().trim(),
+              description: description || null,
+              description_fr: descriptionFr || null,
+              category: category || null,
+              unit_price: isNaN(price) ? null : price,
+              quantity_in_stock: isNaN(quantity) ? 0 : quantity,
+              location: location || null,
+              supplier: supplier || null,
+              last_price_update: new Date().toISOString()
+            };
+
+            if (existing) {
+              // Update existing part
+              const { error } = await supabase
+                .from('parts_pricing')
+                .update(partData)
+                .eq('id', existing.id);
+              
+              if (error) {
+                console.error('Update error:', error);
+                errors++;
+              } else {
+                updated++;
+              }
+            } else {
+              // Create new part
+              const { error } = await supabase
+                .from('parts_pricing')
+                .insert(partData);
+              
+              if (error) {
+                console.error('Insert error:', error);
+                errors++;
+              } else {
+                created++;
+              }
+            }
+          }
+
+          notify(`Import terminé: ${created} créés, ${updated} mis à jour${errors > 0 ? `, ${errors} erreurs` : ''}`, errors > 0 ? 'error' : 'success');
+          loadParts();
+          setShowUploadModal(false);
+        } catch (err) {
+          console.error('Parse error:', err);
+          notify('Erreur lors de la lecture du fichier Excel', 'error');
+        }
+        setUploading(false);
+      };
+      reader.readAsArrayBuffer(file);
+    } catch (err) {
+      console.error('Upload error:', err);
+      notify('Erreur lors du chargement du fichier', 'error');
+      setUploading(false);
+    }
+  };
+
+  // Save part (create or update)
+  const savePart = async (partData) => {
+    try {
+      if (editingPart?.id) {
+        // Update
+        const { error } = await supabase
+          .from('parts_pricing')
+          .update({ ...partData, last_price_update: new Date().toISOString() })
+          .eq('id', editingPart.id);
+        
+        if (error) throw error;
+        notify('Pièce mise à jour');
+      } else {
+        // Create
+        const { error } = await supabase
+          .from('parts_pricing')
+          .insert({ ...partData, last_price_update: new Date().toISOString() });
+        
+        if (error) throw error;
+        notify('Pièce créée');
+      }
+      loadParts();
+      setEditingPart(null);
+      setShowAddModal(false);
+    } catch (err) {
+      console.error('Save error:', err);
+      notify('Erreur lors de la sauvegarde', 'error');
+    }
+  };
+
+  // Delete part
+  const deletePart = async (id) => {
+    if (!confirm('Supprimer cette pièce ?')) return;
+    
+    const { error } = await supabase.from('parts_pricing').delete().eq('id', id);
+    if (error) {
+      notify('Erreur lors de la suppression', 'error');
+    } else {
+      notify('Pièce supprimée');
+      loadParts();
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Tarifs & Pièces</h1>
+          <p className="text-gray-500">{parts.length} pièces au catalogue</p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowUploadModal(true)}
+            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2"
+          >
+            📤 Importer Excel
+          </button>
+          {isAdmin && (
+            <button
+              onClick={() => { setEditingPart(null); setShowAddModal(true); }}
+              className="px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium flex items-center gap-2"
+            >
+              + Ajouter Pièce
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Search & Filters */}
+      <div className="bg-white rounded-xl shadow-sm p-4 flex flex-col md:flex-row gap-4">
+        <div className="flex-1 relative">
+          <input
+            type="text"
+            placeholder="Rechercher par numéro de pièce ou description..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+          />
+          <span className="absolute left-3 top-2.5 text-gray-400">🔍</span>
+        </div>
+        <select
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
+        >
+          <option value="all">Toutes catégories</option>
+          {categories.map(cat => (
+            <option key={cat} value={cat}>{cat}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Parts Table */}
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="p-12 text-center">
+            <div className="w-8 h-8 border-4 border-[#00A651] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-500">Chargement...</p>
+          </div>
+        ) : filteredParts.length === 0 ? (
+          <div className="p-12 text-center">
+            <p className="text-4xl mb-4">📦</p>
+            <p className="text-gray-500">
+              {searchTerm || categoryFilter !== 'all' 
+                ? 'Aucune pièce ne correspond à votre recherche' 
+                : 'Aucune pièce au catalogue. Importez un fichier Excel pour commencer.'}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">N° Pièce</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Description</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Catégorie</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-600">Prix Unit.</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600">Stock</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Emplacement</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredParts.map(part => (
+                  <tr key={part.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-mono text-sm font-medium text-[#1a1a2e]">{part.part_number}</td>
+                    <td className="px-4 py-3">
+                      <p className="text-sm text-gray-800">{part.description || '-'}</p>
+                      {part.description_fr && part.description_fr !== part.description && (
+                        <p className="text-xs text-gray-500">{part.description_fr}</p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {part.category && (
+                        <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">{part.category}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium text-[#00A651]">
+                      {part.unit_price ? `${part.unit_price.toFixed(2)} €` : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        part.quantity_in_stock === 0 ? 'bg-red-100 text-red-700' :
+                        part.quantity_in_stock <= (part.reorder_level || 5) ? 'bg-amber-100 text-amber-700' :
+                        'bg-green-100 text-green-700'
+                      }`}>
+                        {part.quantity_in_stock || 0}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{part.location || '-'}</td>
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex justify-center gap-2">
+                        <button
+                          onClick={() => { setEditingPart(part); setShowAddModal(true); }}
+                          className="p-1 text-blue-500 hover:bg-blue-50 rounded"
+                          title="Modifier"
+                        >
+                          ✏️
+                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => deletePart(part.id)}
+                            className="p-1 text-red-500 hover:bg-red-50 rounded"
+                            title="Supprimer"
+                          >
+                            🗑️
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Upload Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold">Importer un fichier Excel</h2>
+              <button onClick={() => setShowUploadModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center">
+                <p className="text-4xl mb-4">📁</p>
+                <p className="text-gray-600 mb-4">
+                  Glissez-déposez votre fichier Excel ici ou
+                </p>
+                <label className="cursor-pointer inline-block px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                  Sélectionner un fichier
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    disabled={uploading}
+                  />
+                </label>
+              </div>
+              
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm">
+                <p className="font-medium text-blue-800 mb-2">Colonnes attendues :</p>
+                <ul className="text-blue-700 text-xs space-y-1">
+                  <li>• <strong>Part Number</strong> (obligatoire) - Numéro de pièce unique</li>
+                  <li>• <strong>Description</strong> - Description en anglais</li>
+                  <li>• <strong>Description FR</strong> - Description en français</li>
+                  <li>• <strong>Category</strong> - Catégorie (ex: Filtres, Capteurs...)</li>
+                  <li>• <strong>Price</strong> - Prix unitaire HT</li>
+                  <li>• <strong>Quantity</strong> - Quantité en stock</li>
+                  <li>• <strong>Location</strong> - Emplacement de stockage</li>
+                  <li>• <strong>Supplier</strong> - Fournisseur</li>
+                </ul>
+              </div>
+
+              {uploading && (
+                <div className="flex items-center justify-center gap-3 py-4">
+                  <div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-gray-600">Import en cours...</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit Modal */}
+      {showAddModal && (
+        <PartEditModal
+          part={editingPart}
+          onSave={savePart}
+          onClose={() => { setShowAddModal(false); setEditingPart(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// PART EDIT MODAL
+// ============================================
+function PartEditModal({ part, onSave, onClose }) {
+  const [formData, setFormData] = useState({
+    part_number: part?.part_number || '',
+    description: part?.description || '',
+    description_fr: part?.description_fr || '',
+    category: part?.category || '',
+    unit_price: part?.unit_price || '',
+    quantity_in_stock: part?.quantity_in_stock || 0,
+    reorder_level: part?.reorder_level || 5,
+    location: part?.location || '',
+    supplier: part?.supplier || ''
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!formData.part_number.trim()) {
+      alert('Le numéro de pièce est obligatoire');
+      return;
+    }
+    onSave({
+      ...formData,
+      unit_price: formData.unit_price ? parseFloat(formData.unit_price) : null,
+      quantity_in_stock: parseInt(formData.quantity_in_stock) || 0,
+      reorder_level: parseInt(formData.reorder_level) || 5
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white px-6 py-4 border-b flex justify-between items-center">
+          <h2 className="text-xl font-bold">{part ? 'Modifier la pièce' : 'Ajouter une pièce'}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">N° Pièce *</label>
+              <input
+                type="text"
+                value={formData.part_number}
+                onChange={(e) => setFormData({ ...formData, part_number: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
+                required
+                disabled={!!part}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Catégorie</label>
+              <input
+                type="text"
+                value={formData.category}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
+                placeholder="ex: Filtres, Capteurs, Pompes..."
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description (EN)</label>
+            <input
+              type="text"
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description (FR)</label>
+            <input
+              type="text"
+              value={formData.description_fr}
+              onChange={(e) => setFormData({ ...formData, description_fr: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
+            />
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Prix Unitaire (€)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.unit_price}
+                onChange={(e) => setFormData({ ...formData, unit_price: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Stock</label>
+              <input
+                type="number"
+                value={formData.quantity_in_stock}
+                onChange={(e) => setFormData({ ...formData, quantity_in_stock: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Seuil réapprovisionnement</label>
+              <input
+                type="number"
+                value={formData.reorder_level}
+                onChange={(e) => setFormData({ ...formData, reorder_level: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
+              />
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Emplacement</label>
+              <input
+                type="text"
+                value={formData.location}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
+                placeholder="ex: Étagère A3, Tiroir 12..."
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Fournisseur</label>
+              <input
+                type="text"
+                value={formData.supplier}
+                onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              className="flex-1 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium"
+            >
+              {part ? 'Enregistrer' : 'Créer'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
