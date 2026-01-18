@@ -1572,7 +1572,13 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
       try {
         await supabase.from('contracts').update({
           quote_total: totalPrice,
-          quote_data: { devices: devicePricing, totalPrice, totalTokens, createdAt: new Date().toISOString() },
+          quote_data: { 
+            devices: devicePricing, 
+            totalPrice, 
+            totalTokens, 
+            createdBy: signatory,
+            createdAt: new Date().toISOString() 
+          },
           quote_sent_at: new Date().toISOString()
         }).eq('id', contract.id);
       } catch (e) {
