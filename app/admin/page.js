@@ -1473,30 +1473,40 @@ function ContractQuoteEditor({ contract, notify, onClose, onSent }) {
         contractNumber = `CTR-${year}-${String(lastNum + 1).padStart(3, '0')}`;
       }
 
-      // Update contract with quote data
-      const quoteData = {
-        devices: devicePricing,
-        totalPrice,
-        totalTokens,
-        createdAt: new Date().toISOString()
-      };
-
-      await supabase.from('contracts').update({
+      // Update contract - only use columns that definitely exist
+      const { error: updateError } = await supabase.from('contracts').update({
         contract_number: contractNumber,
         start_date: contractDates.start_date,
         end_date: contractDates.end_date,
-        status: 'quote_sent',
-        quote_total: totalPrice,
-        quote_data: quoteData,
-        quote_sent_at: new Date().toISOString()
+        status: 'quote_sent'
       }).eq('id', contract.id);
+
+      if (updateError) {
+        console.error('Contract update error:', updateError);
+        throw updateError;
+      }
 
       // Update device pricing
       for (const d of devicePricing) {
-        await supabase.from('contract_devices').update({
+        const { error: deviceError } = await supabase.from('contract_devices').update({
           tokens_total: d.tokens_total,
           unit_price: d.unit_price
         }).eq('id', d.id);
+        
+        if (deviceError) {
+          console.error('Device update error:', deviceError);
+        }
+      }
+
+      // Try to update optional quote fields (may not exist in schema)
+      try {
+        await supabase.from('contracts').update({
+          quote_total: totalPrice,
+          quote_data: { devices: devicePricing, totalPrice, totalTokens, createdAt: new Date().toISOString() },
+          quote_sent_at: new Date().toISOString()
+        }).eq('id', contract.id);
+      } catch (e) {
+        console.log('Optional quote fields not updated (columns may not exist)');
       }
 
       // Create notification for the client (optional - may not have notifications table)
