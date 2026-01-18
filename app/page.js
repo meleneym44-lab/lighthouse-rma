@@ -7552,10 +7552,10 @@ function ContractsPage({ profile, t, notify, setPage }) {
   const [loading, setLoading] = useState(true);
   const [selectedContract, setSelectedContract] = useState(null);
   
-  // Quote Modal (like RMA)
+  // IDENTICAL to RMA - Quote and BC state
   const [showQuoteModal, setShowQuoteModal] = useState(false);
-  
-  // BC/Signature state (like RMA)
+  const [showRevisionModal, setShowRevisionModal] = useState(false);
+  const [revisionNotes, setRevisionNotes] = useState('');
   const [showBCModal, setShowBCModal] = useState(false);
   const [bcFile, setBcFile] = useState(null);
   const [signatureName, setSignatureName] = useState('');
@@ -7563,10 +7563,16 @@ function ContractsPage({ profile, t, notify, setPage }) {
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [signatureData, setSignatureData] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [submittingBC, setSubmittingBC] = useState(false);
+  const [approvingQuote, setApprovingQuote] = useState(false);
   const canvasRef = useRef(null);
   
   const signatureDateDisplay = new Date().toLocaleDateString('fr-FR');
+  
+  // Validation - IDENTICAL to RMA
+  const hasFile = bcFile !== null;
+  const hasSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
+  const isSubmissionValid = signatureName.trim().length > 0 && acceptTerms && (hasFile || hasSignature);
 
   // Load contracts
   const loadContracts = useCallback(async () => {
@@ -7590,28 +7596,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
     loadContracts();
   }, [loadContracts]);
 
-  const getStatusBadge = (status) => {
-    const styles = {
-      requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'En attente de devis' },
-      quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: '💰 Devis à approuver' },
-      bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: '📄 BC en révision' },
-      active: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Actif' },
-      expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Expiré' },
-      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
-    };
-    const style = styles[status] || styles.requested;
-    return <span className={`px-3 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>;
-  };
-
-  const getTokensDisplay = (device) => {
-    const remaining = (device.tokens_total || 0) - (device.tokens_used || 0);
-    const total = device.tokens_total || 0;
-    if (remaining <= 0) return <span className="text-red-600 font-bold">0/{total} ⚠️</span>;
-    if (remaining === 1) return <span className="text-amber-600 font-bold">{remaining}/{total}</span>;
-    return <span className="text-green-600 font-bold">{remaining}/{total}</span>;
-  };
-
-  // Signature pad functions (same as RMA)
+  // Signature pad functions - IDENTICAL to RMA
   const startDrawing = (e) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -7655,30 +7640,38 @@ function ContractsPage({ profile, t, notify, setPage }) {
     setSignatureData(null);
   };
 
-  // Submit BC (like RMA)
-  const submitBC = async () => {
+  // Request revision - IDENTICAL to RMA
+  const handleRequestRevision = async () => {
+    if (!revisionNotes.trim() || !selectedContract) return;
+    
+    setApprovingQuote(true);
+    const { error } = await supabase.from('contracts').update({
+      status: 'quote_revision_requested',
+      quote_revision_notes: revisionNotes,
+      quote_revision_requested_at: new Date().toISOString()
+    }).eq('id', selectedContract.id);
+    
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('✅ Demande de modification envoyée!', 'success');
+      setShowRevisionModal(false);
+      setShowQuoteModal(false);
+      setRevisionNotes('');
+      loadContracts();
+    }
+    setApprovingQuote(false);
+  };
+
+  // Submit BC - IDENTICAL to RMA
+  const submitBonCommande = async () => {
     if (!selectedContract) return;
     
-    const hasFile = bcFile !== null;
-    const hasSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
-    
-    if (!signatureName.trim()) {
-      notify('Veuillez entrer votre nom', 'error');
-      return;
-    }
-    if (!acceptTerms) {
-      notify('Veuillez accepter les conditions', 'error');
-      return;
-    }
-    if (!hasFile && !hasSignature) {
-      notify('Veuillez télécharger un BC ou signer électroniquement', 'error');
-      return;
-    }
-    
-    setSubmitting(true);
+    setSubmittingBC(true);
     try {
-      let bcFileUrl = null;
+      let fileUrl = null;
       let signatureUrl = null;
+      const signatureDateISO = new Date().toISOString();
       
       // Upload BC file if provided
       if (bcFile) {
@@ -7689,7 +7682,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
           .upload(fileName, bcFile);
         if (uploadError) throw uploadError;
         const { data: { publicUrl } } = supabase.storage.from('bc-documents').getPublicUrl(fileName);
-        bcFileUrl = publicUrl;
+        fileUrl = publicUrl;
       }
       
       // Upload signature if provided
@@ -7704,18 +7697,20 @@ function ContractsPage({ profile, t, notify, setPage }) {
         signatureUrl = publicUrl;
       }
       
-      // Update contract
+      // Update contract - IDENTICAL fields to RMA
       const { error } = await supabase.from('contracts').update({
         status: 'bc_pending',
-        bc_url: bcFileUrl || signatureUrl,
+        bc_file_url: fileUrl,
         bc_signed_by: signatureName,
+        bc_signature_date: signatureDateISO,
         bc_signature_url: signatureUrl,
-        bc_submitted_at: new Date().toISOString()
+        bc_submitted_at: signatureDateISO,
+        quote_approved_at: new Date().toISOString()
       }).eq('id', selectedContract.id);
       
       if (error) throw error;
       
-      notify('✅ Bon de commande soumis! En attente de validation.', 'success');
+      notify('✅ Bon de commande soumis avec succès!', 'success');
       setShowBCModal(false);
       setBcFile(null);
       setSignatureName('');
@@ -7727,7 +7722,22 @@ function ContractsPage({ profile, t, notify, setPage }) {
       console.error('BC submit error:', err);
       notify('Erreur: ' + err.message, 'error');
     }
-    setSubmitting(false);
+    setSubmittingBC(false);
+  };
+
+  const getStatusBadge = (status) => {
+    const styles = {
+      requested: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'En attente de devis' },
+      quote_sent: { bg: 'bg-blue-50', text: 'text-blue-700', label: 'Devis envoyé - Action requise' },
+      quote_revision_requested: { bg: 'bg-orange-50', text: 'text-orange-700', label: 'Modification demandée' },
+      bc_pending: { bg: 'bg-blue-50', text: 'text-blue-700', label: 'BC soumis - En vérification' },
+      bc_rejected: { bg: 'bg-red-50', text: 'text-red-700', label: 'BC rejeté - Action requise' },
+      active: { bg: 'bg-green-100', text: 'text-green-700', label: 'Actif' },
+      expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Expiré' },
+      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
+    };
+    const style = styles[status] || styles.requested;
+    return <span className={`px-3 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>;
   };
 
   if (loading) {
@@ -7738,13 +7748,19 @@ function ContractsPage({ profile, t, notify, setPage }) {
     );
   }
 
-  // Contract Detail View
+  // ========================================
+  // CONTRACT DETAIL VIEW - IDENTICAL TO RMA
+  // ========================================
   if (selectedContract) {
     const contract = selectedContract;
     const devices = contract.contract_devices || [];
-    const needsAction = contract.status === 'quote_sent';
+    const isQuoteSent = contract.status === 'quote_sent';
+    const needsQuoteAction = isQuoteSent && !contract.bc_submitted_at;
     const totalPrice = devices.reduce((sum, d) => sum + (d.unit_price || 0), 0);
     const totalTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
+    
+    // Detect calibration types from devices
+    const calibrationTypes = [...new Set(devices.map(d => d.device_type || 'particle_counter'))];
     
     return (
       <div>
@@ -7754,7 +7770,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           {/* Header */}
-          <div className={`px-6 py-4 ${needsAction ? 'bg-blue-600' : 'bg-[#1E3A5F]'} text-white`}>
+          <div className="px-6 py-4 bg-[#1E3A5F] text-white">
             <div className="flex justify-between items-start">
               <div>
                 <h1 className="text-2xl font-bold">
@@ -7768,78 +7784,130 @@ function ContractsPage({ profile, t, notify, setPage }) {
             </div>
           </div>
           
-          {/* ACTION REQUIRED BANNER - Quote to approve */}
-          {contract.status === 'quote_sent' && (
-            <div className="p-6 bg-blue-50 border-b-2 border-blue-200">
-              <div className="flex items-start gap-4">
-                <div className="w-16 h-16 bg-blue-100 rounded-xl flex items-center justify-center text-4xl">💰</div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-blue-800 text-xl mb-2">Devis de Contrat d'Étalonnage</h3>
-                  <p className="text-blue-700 mb-4">
-                    Lighthouse vous a envoyé un devis pour votre contrat annuel. 
-                    Consultez le devis, puis approuvez et signez pour activer votre contrat.
-                  </p>
-                  
-                  {/* Quote Summary */}
-                  <div className="bg-white rounded-lg p-4 mb-4 border border-blue-200">
-                    <div className="grid grid-cols-3 gap-4 text-center">
-                      <div>
-                        <p className="text-3xl font-bold text-[#1E3A5F]">{devices.length}</p>
-                        <p className="text-sm text-gray-500">Appareil(s)</p>
-                      </div>
-                      <div>
-                        <p className="text-3xl font-bold text-green-600">{totalTokens}</p>
-                        <p className="text-sm text-gray-500">Étalonnage(s)/an</p>
-                      </div>
-                      <div>
-                        <p className="text-3xl font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</p>
-                        <p className="text-sm text-gray-500">Total HT/an</p>
-                      </div>
-                    </div>
+          {/* QUOTE ACTION BANNER - IDENTICAL TO RMA */}
+          {needsQuoteAction && (
+            <div className="bg-blue-50 border-b border-blue-300 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center">
+                    <span className="text-white text-2xl">💰</span>
                   </div>
-                  
+                  <div>
+                    <p className="font-bold text-blue-800 text-lg">Devis reçu - Action requise</p>
+                    <p className="text-sm text-blue-600">
+                      Examinez le devis, puis approuvez et soumettez votre bon de commande
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
                   <button
                     onClick={() => setShowQuoteModal(true)}
-                    className="px-8 py-3 bg-[#00A651] text-white rounded-lg font-bold text-lg hover:bg-[#008c44] flex items-center gap-2"
+                    className="px-4 py-2 bg-white border border-blue-300 text-blue-700 rounded-lg font-medium hover:bg-blue-50 transition-colors"
                   >
-                    📄 Voir le Devis et Approuver
+                    👁️ Voir le Devis
+                  </button>
+                  <button
+                    onClick={() => setShowBCModal(true)}
+                    className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors"
+                  >
+                    ✅ Approuver et soumettre BC
                   </button>
                 </div>
               </div>
             </div>
           )}
           
-          {/* BC Pending - Waiting for admin review */}
-          {contract.status === 'bc_pending' && (
-            <div className="p-6 bg-orange-50 border-b-2 border-orange-200">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center text-2xl">⏳</div>
+          {/* Quote Revision Requested - IDENTICAL TO RMA */}
+          {contract.status === 'quote_revision_requested' && (
+            <div className="bg-orange-50 border-b border-orange-300 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center">
+                  <span className="text-orange-600 text-2xl">✏️</span>
+                </div>
                 <div>
-                  <h3 className="font-bold text-orange-800">BC en cours de vérification</h3>
-                  <p className="text-orange-600 text-sm">Votre bon de commande est en cours de révision par notre équipe.</p>
+                  <p className="font-bold text-orange-800">Modification en cours</p>
+                  <p className="text-sm text-orange-600">
+                    Votre demande de modification a été envoyée. Vous recevrez un nouveau devis sous peu.
+                  </p>
+                  {contract.quote_revision_notes && (
+                    <div className="mt-2 p-2 bg-white rounded border border-orange-200">
+                      <p className="text-xs text-gray-500">Votre demande :</p>
+                      <p className="text-sm text-gray-700">{contract.quote_revision_notes}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           )}
           
-          {/* Contract Stats */}
+          {/* BC Submitted - IDENTICAL TO RMA */}
+          {contract.status === 'bc_pending' && (
+            <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                  <span className="text-blue-600 text-lg">📄</span>
+                </div>
+                <div>
+                  <p className="font-semibold text-blue-800">Bon de commande soumis</p>
+                  <p className="text-sm text-blue-600">
+                    Votre BC est en cours de vérification par notre équipe. Vous serez notifié une fois approuvé.
+                  </p>
+                  {contract.bc_submitted_at && (
+                    <p className="text-xs text-blue-500 mt-1">
+                      Soumis le {new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(contract.bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* BC Rejected - IDENTICAL TO RMA */}
+          {contract.status === 'bc_rejected' && (
+            <div className="bg-red-50 border-b border-red-300 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center">
+                    <span className="text-white text-2xl">❌</span>
+                  </div>
+                  <div>
+                    <p className="font-bold text-red-800 text-lg">Bon de commande rejeté - Action requise</p>
+                    <p className="text-sm text-red-600">
+                      Votre bon de commande a été rejeté. Veuillez corriger et soumettre à nouveau.
+                    </p>
+                    {contract.bc_rejection_reason && (
+                      <div className="mt-2 p-3 bg-white rounded-lg border-2 border-red-300">
+                        <p className="text-xs text-red-600 font-medium uppercase">Raison du rejet :</p>
+                        <p className="text-sm text-red-800 font-medium mt-1">{contract.bc_rejection_reason}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowBCModal(true)}
+                  className="px-6 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors"
+                >
+                  📄 Resoumettre BC
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Contract Details */}
           <div className="p-6">
+            {/* Stats */}
             <div className="grid grid-cols-3 gap-4 mb-6">
               <div className="bg-gray-50 rounded-lg p-4 text-center">
                 <div className="text-3xl font-bold text-[#1E3A5F]">{devices.length}</div>
                 <div className="text-sm text-gray-600">Appareils</div>
               </div>
               <div className="bg-gray-50 rounded-lg p-4 text-center">
-                <div className="text-3xl font-bold text-green-600">
-                  {devices.reduce((sum, d) => sum + ((d.tokens_total || 0) - (d.tokens_used || 0)), 0)}
-                </div>
-                <div className="text-sm text-gray-600">Étalonnages restants</div>
+                <div className="text-3xl font-bold text-green-600">{totalTokens}</div>
+                <div className="text-sm text-gray-600">Étalonnages/an</div>
               </div>
               <div className="bg-gray-50 rounded-lg p-4 text-center">
-                <div className="text-3xl font-bold text-[#3B7AB4]">
-                  {devices.reduce((sum, d) => sum + (d.tokens_used || 0), 0)}
-                </div>
-                <div className="text-sm text-gray-600">Étalonnages utilisés</div>
+                <div className="text-3xl font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</div>
+                <div className="text-sm text-gray-600">Total HT/an</div>
               </div>
             </div>
 
@@ -7849,99 +7917,246 @@ function ContractsPage({ profile, t, notify, setPage }) {
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="bg-[#1E3A5F] text-white">
-                    <th className="px-4 py-3 text-left text-xs font-bold">Surnom</th>
-                    <th className="px-4 py-3 text-left text-xs font-bold">N° Série</th>
                     <th className="px-4 py-3 text-left text-xs font-bold">Modèle</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold">N° Série</th>
                     <th className="px-4 py-3 text-left text-xs font-bold">Type</th>
                     <th className="px-4 py-3 text-center text-xs font-bold">Étal./an</th>
-                    {contract.status === 'quote_sent' && <th className="px-4 py-3 text-right text-xs font-bold">Prix HT</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {devices.map((device, idx) => (
                     <tr key={device.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="px-4 py-3 text-sm">{device.nickname || '—'}</td>
-                      <td className="px-4 py-3 text-sm font-mono">{device.serial_number}</td>
-                      <td className="px-4 py-3 text-sm font-medium">{device.model_name}</td>
+                      <td className="px-4 py-3 font-medium">{device.model_name || '—'}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{device.serial_number}</td>
                       <td className="px-4 py-3 text-sm">
-                        {device.device_type === 'particle_counter' && '🔬 Compteur Air'}
+                        {device.device_type === 'particle_counter' && '🔬 Compteur Particules'}
                         {device.device_type === 'bio_collector' && '🧫 Bio Collecteur'}
                         {device.device_type === 'liquid_counter' && '💧 Compteur Liquide'}
                         {device.device_type === 'temp_humidity' && '🌡️ Temp/Humidité'}
-                        {device.device_type === 'other' && '📦 Autre'}
+                        {(!device.device_type || device.device_type === 'other') && '📦 Autre'}
                       </td>
-                      <td className="px-4 py-3 text-center">{getTokensDisplay(device)}</td>
-                      {contract.status === 'quote_sent' && (
-                        <td className="px-4 py-3 text-right font-medium">{(device.unit_price || 0).toFixed(2)} €</td>
-                      )}
+                      <td className="px-4 py-3 text-center font-bold text-green-600">{device.tokens_total || 1}</td>
                     </tr>
                   ))}
                 </tbody>
-                {contract.status === 'quote_sent' && (
-                  <tfoot>
-                    <tr className="bg-[#00A651] text-white">
-                      <td colSpan={5} className="px-4 py-3 font-bold">Total HT / an</td>
-                      <td className="px-4 py-3 text-right font-bold text-lg">{totalPrice.toFixed(2)} €</td>
-                    </tr>
-                  </tfoot>
-                )}
               </table>
             </div>
-
-            {/* BC Document - Visible after submission */}
-            {(contract.bc_url || contract.bc_signature_url) && (
-              <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-200">
-                <h4 className="font-bold text-green-800 mb-2">📄 Bon de Commande</h4>
-                <div className="flex items-center gap-4">
-                  {contract.bc_url && (
-                    <a href={contract.bc_url} target="_blank" rel="noopener noreferrer" 
-                       className="text-green-600 hover:underline flex items-center gap-1">
-                      📄 Voir le document
-                    </a>
-                  )}
-                  {contract.bc_signature_url && (
-                    <div>
-                      <p className="text-sm text-gray-600">Signé par: {contract.bc_signed_by}</p>
-                      <img src={contract.bc_signature_url} alt="Signature" className="max-h-16 mt-1 border rounded" />
-                    </div>
-                  )}
-                </div>
-                {contract.bc_submitted_at && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    Soumis le {new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR')}
-                  </p>
-                )}
-              </div>
-            )}
           </div>
         </div>
         
-        {/* CONTRACT QUOTE PREVIEW MODAL - Same as RMA */}
-        {showQuoteModal && (() => {
-          const getDeviceTypeLabel = (type) => {
-            const labels = {
-              particle_counter: 'Compteur Particules Aéroportées',
-              bio_collector: 'Bio Collecteur',
-              liquid_counter: 'Compteur Particules Liquide',
-              temp_humidity: 'Capteur Temp/Humidité',
-              other: 'Autre Équipement'
-            };
-            return labels[type] || type || 'Équipement';
-          };
+        {/* ========================================
+            BC SUBMISSION MODAL - IDENTICAL TO RMA
+            ======================================== */}
+        {showBCModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold text-[#1E3A5F]">Soumettre Bon de Commande</h2>
+                  <button onClick={() => setShowBCModal(false)} className="text-gray-400 hover:text-gray-600">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                {/* Reference */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-500">Référence contrat</p>
+                  <p className="font-mono font-bold text-[#1E3A5F]">{contract.contract_number || 'En attente'}</p>
+                </div>
 
+                {/* File Upload */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Télécharger votre Bon de Commande (optionnel)
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#3B7AB4] transition-colors">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      onChange={(e) => setBcFile(e.target.files?.[0] || null)}
+                      className="hidden"
+                      id="contract-bc-file-input"
+                    />
+                    <label htmlFor="contract-bc-file-input" className="cursor-pointer">
+                      {bcFile ? (
+                        <div className="flex items-center justify-center gap-2 text-[#3B7AB4]">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="font-medium">{bcFile.name}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <svg className="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                          <p className="text-sm text-gray-600">Cliquez pour télécharger ou glissez-déposez</p>
+                          <p className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX, JPG, PNG (max 10MB)</p>
+                        </>
+                      )}
+                    </label>
+                  </div>
+                </div>
+
+                {/* OR Divider */}
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 h-px bg-gray-200"></div>
+                  <span className="text-sm text-gray-500">ou</span>
+                  <div className="flex-1 h-px bg-gray-200"></div>
+                </div>
+
+                {/* Electronic Signature */}
+                <div className="bg-[#F5F9FC] rounded-lg p-4 border border-[#3B7AB4]/20">
+                  <h3 className="font-semibold text-[#1E3A5F] mb-4">Signature électronique</h3>
+                  
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Nom complet du signataire *
+                        </label>
+                        <input
+                          type="text"
+                          value={signatureName}
+                          onChange={(e) => setSignatureName(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
+                          placeholder="Prénom et Nom"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Date
+                        </label>
+                        <input
+                          type="text"
+                          value={signatureDateDisplay}
+                          readOnly
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Tapez "Lu et approuvé" *
+                      </label>
+                      <input
+                        type="text"
+                        value={luEtApprouve}
+                        onChange={(e) => setLuEtApprouve(e.target.value)}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent font-medium ${
+                          luEtApprouve.toLowerCase().trim() === 'lu et approuvé' 
+                            ? 'border-green-500 bg-green-50 text-green-800' 
+                            : 'border-gray-300'
+                        }`}
+                        placeholder="Lu et approuvé"
+                      />
+                    </div>
+                    
+                    {/* Signature Pad */}
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Signature manuscrite *
+                        </label>
+                        <button
+                          type="button"
+                          onClick={clearSignature}
+                          className="text-xs text-red-600 hover:text-red-700"
+                        >
+                          Effacer
+                        </button>
+                      </div>
+                      <div className={`border-2 rounded-lg bg-white ${signatureData ? 'border-green-500' : 'border-gray-300 border-dashed'}`}>
+                        <canvas
+                          ref={canvasRef}
+                          width={400}
+                          height={150}
+                          className="w-full cursor-crosshair touch-none"
+                          onMouseDown={startDrawing}
+                          onMouseMove={draw}
+                          onMouseUp={stopDrawing}
+                          onMouseLeave={stopDrawing}
+                          onTouchStart={startDrawing}
+                          onTouchMove={draw}
+                          onTouchEnd={stopDrawing}
+                        />
+                      </div>
+                      {!signatureData && (
+                        <p className="text-xs text-gray-500 mt-1">Dessinez votre signature ci-dessus</p>
+                      )}
+                      {signatureData && (
+                        <p className="text-xs text-green-600 mt-1">✓ Signature enregistrée</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Legal Terms */}
+                <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={acceptTerms}
+                      onChange={(e) => setAcceptTerms(e.target.checked)}
+                      className="mt-1 w-4 h-4 text-[#3B7AB4] border-gray-300 rounded focus:ring-[#3B7AB4]"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Je soussigné(e), <strong>{signatureName || '[Nom]'}</strong>, 
+                      certifie avoir pris connaissance et accepter les conditions générales de vente de Lighthouse France. 
+                      Je m'engage à régler la facture correspondante selon les modalités convenues. 
+                      Cette validation électronique a valeur de signature manuscrite conformément aux articles 1366 et 1367 du Code civil français.
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-6 border-t border-gray-200 bg-gray-50 flex gap-3">
+                <button
+                  onClick={() => setShowBCModal(false)}
+                  className="flex-1 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={submitBonCommande}
+                  disabled={submittingBC || !isSubmissionValid}
+                  className={`flex-1 py-3 rounded-lg font-medium transition-colors ${
+                    isSubmissionValid 
+                      ? 'bg-[#1E3A5F] text-white hover:bg-[#2a4a6f]' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  {submittingBC ? 'Envoi en cours...' : 'Valider et soumettre'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================
+            QUOTE REVIEW MODAL - IDENTICAL TO RMA
+            ======================================== */}
+        {showQuoteModal && (() => {
           return (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
                 <div>
-                  <h2 className="text-xl font-bold">Offre de Prix - Contrat d'Étalonnage</h2>
-                  <p className="text-gray-400">{contract.contract_number || 'Nouveau Contrat'}</p>
+                  <h2 className="text-xl font-bold">Offre de Prix</h2>
+                  <p className="text-gray-400">{contract.contract_number}</p>
                 </div>
                 <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
               </div>
 
-              {/* Quote Document */}
+              {/* Quote Document - This prints */}
               <div id="contract-quote-print-content">
                 {/* Quote Header */}
                 <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
@@ -7963,8 +8178,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
-                      <p className="text-lg font-medium text-gray-700">CONTRAT D'ÉTALONNAGE</p>
-                      <p className="text-gray-500">N° {contract.contract_number || '—'}</p>
+                      <p className="text-gray-500">N° {contract.contract_number}</p>
                     </div>
                   </div>
                 </div>
@@ -7976,49 +8190,46 @@ function ContractsPage({ profile, t, notify, setPage }) {
                     <p className="font-medium">{contract.quote_sent_at ? new Date(contract.quote_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 uppercase">Période du contrat</p>
-                    <p className="font-medium">{new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}</p>
-                  </div>
-                  <div>
                     <p className="text-xs text-gray-500 uppercase">Validité</p>
                     <p className="font-medium">30 jours</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Conditions</p>
+                    <p className="font-medium">À réception de facture</p>
                   </div>
                 </div>
 
                 {/* Client Info */}
                 <div className="px-8 py-4 border-b">
                   <p className="text-xs text-gray-500 uppercase">Client</p>
-                  <p className="font-bold text-xl text-[#1a1a2e]">{contract.companies?.name || profile?.company_name}</p>
+                  <p className="font-bold text-xl text-[#1a1a2e]">{contract.companies?.name}</p>
+                  {contract.companies?.billing_address && <p className="text-gray-600">{contract.companies?.billing_address}</p>}
+                  <p className="text-gray-600">{contract.companies?.billing_postal_code} {contract.companies?.billing_city}</p>
                 </div>
 
-                {/* SERVICE DESCRIPTION */}
-                <div className="px-8 py-6">
-                  <div className="border-l-4 border-blue-500 pl-4 mb-6">
-                    <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
-                      <span>📋</span> Contrat d'Étalonnage Annuel
-                    </h3>
-                    <ul className="space-y-1">
-                      <li className="text-gray-700 flex items-start gap-2">
-                        <span className="text-[#00A651] mt-1">▸</span>
-                        <span>Étalonnage(s) inclus pour chaque appareil selon le forfait</span>
-                      </li>
-                      <li className="text-gray-700 flex items-start gap-2">
-                        <span className="text-[#00A651] mt-1">▸</span>
-                        <span>Vérification complète des fonctionnalités</span>
-                      </li>
-                      <li className="text-gray-700 flex items-start gap-2">
-                        <span className="text-[#00A651] mt-1">▸</span>
-                        <span>Fourniture de rapports de test et certificats d'étalonnage</span>
-                      </li>
-                      <li className="text-gray-700 flex items-start gap-2">
-                        <span className="text-[#00A651] mt-1">▸</span>
-                        <span>Frais de port inclus (France métropolitaine)</span>
-                      </li>
-                    </ul>
-                  </div>
+                {/* SERVICE DESCRIPTION SECTIONS - Uses same templates as RMA */}
+                <div className="px-8 py-6 space-y-6">
+                  {calibrationTypes.map(type => {
+                    const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.particle_counter;
+                    return (
+                      <div key={type} className="border-l-4 border-blue-500 pl-4">
+                        <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
+                          <span>{template.icon}</span> {template.title}
+                        </h3>
+                        <ul className="space-y-1">
+                          {template.prestations.map((p, i) => (
+                            <li key={i} className="text-gray-700 flex items-start gap-2">
+                              <span className="text-[#00A651] mt-1">▸</span>
+                              <span>{p}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })}
                 </div>
 
-                {/* PRICING TABLE */}
+                {/* PRICING BREAKDOWN TABLE */}
                 <div className="px-8 py-6 bg-gray-50">
                   <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
                   
@@ -8027,8 +8238,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
                       <tr className="bg-[#1a1a2e] text-white">
                         <th className="px-4 py-3 text-left">Appareil</th>
                         <th className="px-4 py-3 text-left">N° Série</th>
-                        <th className="px-4 py-3 text-left">Type</th>
-                        <th className="px-4 py-3 text-center">Étal./an</th>
+                        <th className="px-4 py-3 text-left">Service</th>
                         <th className="px-4 py-3 text-right">Prix HT</th>
                       </tr>
                     </thead>
@@ -8037,30 +8247,27 @@ function ContractsPage({ profile, t, notify, setPage }) {
                         <tr key={device.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-100'}>
                           <td className="px-4 py-3 font-medium">{device.model_name || '—'}</td>
                           <td className="px-4 py-3 font-mono text-xs">{device.serial_number || '—'}</td>
-                          <td className="px-4 py-3">{getDeviceTypeLabel(device.device_type)}</td>
-                          <td className="px-4 py-3 text-center">{device.tokens_total || 1}</td>
+                          <td className="px-4 py-3">Étalonnage ({device.tokens_total || 1}x/an)</td>
                           <td className="px-4 py-3 text-right font-medium">{(device.unit_price || 0).toFixed(2)} €</td>
                         </tr>
                       ))}
                     </tbody>
                     <tfoot>
                       <tr className="bg-[#00A651] text-white">
-                        <td className="px-4 py-4 font-bold text-lg" colSpan={4}>TOTAL HT / AN</td>
+                        <td className="px-4 py-4 font-bold text-lg" colSpan={3}>TOTAL HT</td>
                         <td className="px-4 py-4 text-right font-bold text-2xl">{totalPrice.toFixed(2)} €</td>
                       </tr>
                     </tfoot>
                   </table>
                 </div>
 
-                {/* Conditions */}
+                {/* Disclaimers - IDENTICAL TO RMA */}
                 <div className="px-8 py-4 border-t">
-                  <p className="text-xs text-gray-500 uppercase mb-2">Conditions du Contrat</p>
+                  <p className="text-xs text-gray-500 uppercase mb-2">Conditions</p>
                   <ul className="text-xs text-gray-600 space-y-1">
-                    <li>• Validité du contrat: {new Date(contract.start_date).toLocaleDateString('fr-FR')} au {new Date(contract.end_date).toLocaleDateString('fr-FR')}</li>
-                    <li>• {totalTokens} étalonnage(s) inclus à utiliser pendant la période contractuelle</li>
-                    <li>• Étalonnages supplémentaires facturés au tarif standard en vigueur</li>
-                    <li>• Frais de port inclus (France métropolitaine)</li>
-                    <li>• Paiement à 30 jours date de facture</li>
+                    {QUOTE_DISCLAIMERS.map((d, i) => (
+                      <li key={i}>• {d}</li>
+                    ))}
                   </ul>
                 </div>
 
@@ -8070,7 +8277,9 @@ function ContractsPage({ profile, t, notify, setPage }) {
                     <div>
                       <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
                       <p className="font-bold text-lg">Lighthouse France</p>
+                      <p className="text-gray-600">Lighthouse France</p>
                     </div>
+                    {/* Capcert Logo */}
                     <img 
                       src="/images/logos/capcert-logo.png" 
                       alt="Capcert Certification" 
@@ -8079,11 +8288,28 @@ function ContractsPage({ profile, t, notify, setPage }) {
                     />
                   </div>
                   
-                  <div className="text-right">
-                    <p className="text-xs text-gray-400 mb-1">Signature client</p>
-                    <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
-                    <p className="text-xs text-gray-400 mt-1">Lu et approuvé</p>
-                  </div>
+                  {contract.bc_submitted_at ? (
+                    <div className="text-right">
+                      <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+                        <p className="text-xs text-green-600 uppercase mb-1">Approuvé</p>
+                        <p className="font-bold text-green-800">{contract.bc_signed_by || 'Client'}</p>
+                        <p className="text-sm text-green-700">
+                          {contract.bc_signature_date 
+                            ? new Date(contract.bc_signature_date).toLocaleDateString('fr-FR')
+                            : new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR')}
+                        </p>
+                        {contract.bc_signature_url && (
+                          <img src={contract.bc_signature_url} alt="Signature" className="max-h-16 mt-2" />
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-right">
+                      <p className="text-xs text-gray-400 mb-1">Signature client</p>
+                      <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+                      <p className="text-xs text-gray-400 mt-1">Lu et approuvé</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Footer */}
@@ -8093,20 +8319,26 @@ function ContractsPage({ profile, t, notify, setPage }) {
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex flex-wrap gap-3 justify-between items-center">
-                <button onClick={() => {
-                  const content = document.getElementById('contract-quote-print-content');
-                  if (content) window.print();
-                }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
-                  🖨️ Imprimer
-                </button>
+              {/* Action Buttons - IDENTICAL TO RMA */}
+              <div className="print-hide sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex flex-wrap gap-3 justify-between items-center">
+                <div className="flex gap-2">
+                  <button onClick={() => {
+                    window.print();
+                  }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
+                    🖨️ Imprimer
+                  </button>
+                  <button onClick={() => {
+                    // Download as PDF functionality
+                  }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
+                    📥 Télécharger PDF
+                  </button>
+                </div>
                 <div className="flex gap-3">
                   <button 
-                    onClick={() => setShowQuoteModal(false)}
-                    className="px-5 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium"
+                    onClick={() => setShowRevisionModal(true)}
+                    className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium"
                   >
-                    Fermer
+                    ✏️ Demander modification
                   </button>
                   <button 
                     onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
@@ -8116,158 +8348,45 @@ function ContractsPage({ profile, t, notify, setPage }) {
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
-          );
-        })()}
-        
-        {/* BC/Signature Modal (like RMA) */}
-        {showBCModal && (
-          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowBCModal(false)}>
-            <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-              <div className="px-6 py-4 bg-[#00A651] text-white flex justify-between items-center sticky top-0">
-                <h2 className="text-xl font-bold">Approuver le Contrat</h2>
-                <button onClick={() => setShowBCModal(false)} className="text-white/70 hover:text-white text-2xl">&times;</button>
-              </div>
-              
-              <div className="p-6 space-y-6">
-                {/* Summary */}
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h3 className="font-bold text-[#1E3A5F] mb-2">Récapitulatif</h3>
-                  <div className="grid grid-cols-3 gap-4 text-center">
-                    <div>
-                      <p className="text-2xl font-bold">{devices.length}</p>
-                      <p className="text-xs text-gray-500">Appareil(s)</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-green-600">{totalTokens}</p>
-                      <p className="text-xs text-gray-500">Étal./an</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</p>
-                      <p className="text-xs text-gray-500">Total HT/an</p>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Option 1: Upload BC */}
-                <div>
-                  <h3 className="font-bold text-[#1E3A5F] mb-3">Option 1: Télécharger votre Bon de Commande</h3>
-                  <label className="block cursor-pointer">
-                    <input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" 
-                           onChange={e => setBcFile(e.target.files?.[0] || null)} className="hidden" />
-                    <div className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${bcFile ? 'border-green-400 bg-green-50' : 'border-gray-300 hover:border-[#00A651]'}`}>
-                      {bcFile ? (
-                        <div className="flex items-center justify-center gap-2 text-green-600">
-                          <span className="text-2xl">✅</span>
-                          <span className="font-medium">{bcFile.name}</span>
-                          <button onClick={(e) => { e.preventDefault(); setBcFile(null); }} className="text-red-500 ml-2">✕</button>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="text-4xl mb-2">📄</div>
-                          <p className="text-gray-600">Cliquez pour sélectionner un fichier</p>
-                          <p className="text-xs text-gray-400">PDF, DOC, PNG, JPG</p>
-                        </>
-                      )}
-                    </div>
-                  </label>
-                </div>
-                
-                <div className="text-center text-gray-400 font-medium">— OU —</div>
-                
-                {/* Option 2: Electronic Signature */}
-                <div>
-                  <h3 className="font-bold text-[#1E3A5F] mb-3">Option 2: Signature Électronique</h3>
-                  
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Tapez "Lu et approuvé"</label>
-                      <input
-                        type="text"
-                        value={luEtApprouve}
-                        onChange={e => setLuEtApprouve(e.target.value)}
-                        placeholder="Lu et approuvé"
-                        className={`w-full px-4 py-2 border rounded-lg ${luEtApprouve.toLowerCase().trim() === 'lu et approuvé' ? 'border-green-400 bg-green-50' : 'border-gray-300'}`}
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Votre signature</label>
-                      <div className="border-2 border-gray-300 rounded-lg bg-white relative">
-                        <canvas
-                          ref={canvasRef}
-                          width={500}
-                          height={150}
-                          className="w-full touch-none cursor-crosshair"
-                          onMouseDown={startDrawing}
-                          onMouseMove={draw}
-                          onMouseUp={stopDrawing}
-                          onMouseLeave={stopDrawing}
-                          onTouchStart={startDrawing}
-                          onTouchMove={draw}
-                          onTouchEnd={stopDrawing}
-                        />
-                        {!signatureData && (
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-gray-300">
-                            Signez ici
-                          </div>
-                        )}
-                      </div>
-                      <button onClick={clearSignature} className="mt-1 text-sm text-red-500 hover:underline">
-                        Effacer la signature
+
+              {/* Revision Request Sub-Modal - IDENTICAL TO RMA */}
+              {showRevisionModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
+                  <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-xl font-bold text-gray-800 mb-4">Demander une modification</h3>
+                    <p className="text-gray-600 mb-4">Décrivez les modifications que vous souhaitez apporter au devis :</p>
+                    <textarea
+                      value={revisionNotes}
+                      onChange={e => setRevisionNotes(e.target.value)}
+                      className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                      placeholder="Ex: Veuillez ajouter un appareil supplémentaire, modifier le prix, retirer les frais de transport, etc."
+                    />
+                    <div className="mt-4 flex justify-end gap-3">
+                      <button onClick={() => setShowRevisionModal(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+                        Annuler
+                      </button>
+                      <button 
+                        onClick={handleRequestRevision}
+                        disabled={approvingQuote || !revisionNotes.trim()}
+                        className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50"
+                      >
+                        {approvingQuote ? 'Envoi...' : 'Envoyer la demande'}
                       </button>
                     </div>
                   </div>
                 </div>
-                
-                {/* Name and Terms */}
-                <div className="border-t pt-4 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Votre nom complet *</label>
-                    <input
-                      type="text"
-                      value={signatureName}
-                      onChange={e => setSignatureName(e.target.value)}
-                      placeholder="Prénom Nom"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                    />
-                  </div>
-                  
-                  <label className="flex items-start gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={acceptTerms}
-                      onChange={e => setAcceptTerms(e.target.checked)}
-                      className="mt-1 w-5 h-5 rounded border-gray-300"
-                    />
-                    <span className="text-sm text-gray-600">
-                      J'accepte les conditions générales de vente et je confirme mon engagement pour ce contrat d'étalonnage annuel.
-                    </span>
-                  </label>
-                </div>
-              </div>
-              
-              <div className="px-6 py-4 bg-gray-100 border-t flex justify-between sticky bottom-0">
-                <button onClick={() => setShowBCModal(false)} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
-                  Annuler
-                </button>
-                <button
-                  onClick={submitBC}
-                  disabled={submitting || !signatureName.trim() || !acceptTerms || (!bcFile && !(signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé'))}
-                  className="px-8 py-3 bg-[#00A651] text-white rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {submitting ? 'Envoi...' : '✅ Soumettre'}
-                </button>
-              </div>
+              )}
             </div>
           </div>
-        )}
+          );
+        })()}
       </div>
     );
   }
 
-  // Contracts List View
+  // ========================================
+  // CONTRACTS LIST VIEW
+  // ========================================
   const pendingQuotes = contracts.filter(c => c.status === 'quote_sent');
   
   return (
@@ -8282,11 +8401,11 @@ function ContractsPage({ profile, t, notify, setPage }) {
         </button>
       </div>
       
-      {/* Pending Quotes Alert */}
+      {/* Pending Quotes Alert - IDENTICAL styling to RMA */}
       {pendingQuotes.length > 0 && (
         <div className="mb-6 p-4 bg-blue-50 border-2 border-blue-300 rounded-xl">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
+            <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center text-2xl text-white">💰</div>
             <div>
               <h3 className="font-bold text-blue-800">{pendingQuotes.length} devis en attente d'approbation</h3>
               <p className="text-blue-600 text-sm">Cliquez sur un contrat pour voir et approuver le devis</p>
@@ -8316,28 +8435,24 @@ function ContractsPage({ profile, t, notify, setPage }) {
             const totalTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
             const usedTokens = devices.reduce((sum, d) => sum + (d.tokens_used || 0), 0);
             const remainingTokens = totalTokens - usedTokens;
-            const needsAction = contract.status === 'quote_sent';
+            const needsAction = contract.status === 'quote_sent' || contract.status === 'bc_rejected';
             
             return (
               <div 
                 key={contract.id}
                 onClick={() => setSelectedContract(contract)}
-                className={`bg-white rounded-xl p-6 shadow-sm border-2 cursor-pointer transition-all ${
+                className={`bg-white rounded-xl p-6 shadow-sm border-2 cursor-pointer transition-colors ${
                   needsAction 
-                    ? 'border-blue-400 bg-blue-50/30 hover:border-blue-500 hover:shadow-md' 
-                    : 'border-gray-100 hover:border-[#3B7AB4] hover:shadow-md'
+                    ? 'border-blue-400 bg-blue-50/30 hover:border-blue-500' 
+                    : 'border-gray-100 hover:border-[#3B7AB4]'
                 }`}
               >
                 {needsAction && (
                   <div className="mb-3 flex items-center gap-2 text-blue-600">
                     <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-                    <span className="text-sm font-bold">💰 Devis à approuver et signer</span>
-                  </div>
-                )}
-                {contract.status === 'bc_pending' && (
-                  <div className="mb-3 flex items-center gap-2 text-orange-600">
-                    <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
-                    <span className="text-sm font-medium">BC en révision</span>
+                    <span className="text-sm font-bold">
+                      <span className="animate-pulse">⚠</span> Action requise
+                    </span>
                   </div>
                 )}
                 <div className="flex justify-between items-start mb-4">
