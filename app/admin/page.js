@@ -34,6 +34,7 @@ export default function AdminPortal() {
   const [clients, setClients] = useState([]);
   const [staffMembers, setStaffMembers] = useState([]);
   const [equipment, setEquipment] = useState([]);
+  const [contracts, setContracts] = useState([]);
 
   const notify = useCallback((msg, type = 'success') => {
     setToast({ msg, type });
@@ -56,6 +57,9 @@ export default function AdminPortal() {
 
     const { data: staff } = await supabase.from('profiles').select('*').in('role', ['lh_admin', 'lh_employee']).order('full_name');
     if (staff) setStaffMembers(staff);
+
+    const { data: contractsData } = await supabase.from('contracts').select('id, status').order('created_at', { ascending: false });
+    if (contractsData) setContracts(contractsData);
   }, []);
 
   useEffect(() => {
@@ -82,13 +86,14 @@ export default function AdminPortal() {
   const pendingCount = requests.filter(r => r.status === 'submitted' && !r.request_number).length;
   const modificationCount = requests.filter(r => r.status === 'quote_revision_requested').length;
   const totalBadge = pendingCount + modificationCount;
+  const contractRequestCount = contracts.filter(c => c.status === 'requested').length;
   
   const sheets = [
     { id: 'dashboard', label: 'Tableau de Bord', icon: '📊' },
     { id: 'requests', label: 'Demandes', icon: '📋', badge: totalBadge },
     { id: 'clients', label: 'Clients', icon: '👥' },
     { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
-    { id: 'contracts', label: 'Contrats', icon: '📄' },
+    { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractRequestCount },
     { id: 'settings', label: 'Paramètres', icon: '⚙️' },
     ...(isAdmin ? [{ id: 'admin', label: 'Admin', icon: '🔐' }] : [])
   ];
@@ -934,7 +939,637 @@ function ClientDetailModal({ client, requests, equipment, onClose, notify, reloa
   );
 }
 
-function ContractsSheet({ clients, notify }) { return <div className="space-y-6"><h1 className="text-2xl font-bold text-gray-800">Contrats de Calibration</h1><div className="bg-white rounded-xl shadow-sm p-8 text-center text-gray-400"><p className="text-4xl mb-4">📄</p><p className="font-medium">Module Contrats</p><p className="text-sm">Gestion des contrats à venir</p></div></div>; }
+// ============================================
+// CONTRACTS SHEET - Full Implementation
+// ============================================
+function ContractsSheet({ clients, notify }) {
+  const [contracts, setContracts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedContract, setSelectedContract] = useState(null);
+  const [filter, setFilter] = useState('all'); // all, requested, active, expired
+
+  // Load contracts
+  const loadContracts = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('contracts')
+      .select('*, companies(id, name), contract_devices(*)')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error loading contracts:', error);
+      notify('Erreur de chargement des contrats', 'error');
+    } else {
+      setContracts(data || []);
+    }
+    setLoading(false);
+  }, [notify]);
+
+  useEffect(() => {
+    loadContracts();
+  }, [loadContracts]);
+
+  const CONTRACT_STATUS_STYLES = {
+    requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: '🆕 Nouvelle demande' },
+    quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: '📧 Devis envoyé' },
+    quote_approved: { bg: 'bg-purple-100', text: 'text-purple-700', label: '✅ Devis approuvé' },
+    bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: '📄 Attente BC' },
+    active: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Actif' },
+    expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: '⏰ Expiré' },
+    cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ Annulé' }
+  };
+
+  const getStatusBadge = (status) => {
+    const style = CONTRACT_STATUS_STYLES[status] || CONTRACT_STATUS_STYLES.requested;
+    return (
+      <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+        {style.label}
+      </span>
+    );
+  };
+
+  // Filter contracts
+  const filteredContracts = contracts.filter(c => {
+    if (filter === 'all') return true;
+    if (filter === 'requested') return c.status === 'requested';
+    if (filter === 'active') return c.status === 'active';
+    if (filter === 'pending') return ['quote_sent', 'quote_approved', 'bc_pending'].includes(c.status);
+    if (filter === 'expired') return c.status === 'expired';
+    return true;
+  });
+
+  // Stats
+  const stats = {
+    requested: contracts.filter(c => c.status === 'requested').length,
+    pending: contracts.filter(c => ['quote_sent', 'quote_approved', 'bc_pending'].includes(c.status)).length,
+    active: contracts.filter(c => c.status === 'active').length,
+    expired: contracts.filter(c => c.status === 'expired').length
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="w-8 h-8 border-4 border-[#00A651] border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  // Contract Detail/Edit View
+  if (selectedContract) {
+    return (
+      <ContractDetailView 
+        contract={selectedContract}
+        clients={clients}
+        notify={notify}
+        onClose={() => setSelectedContract(null)}
+        onUpdate={loadContracts}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-800">Contrats d'Étalonnage</h1>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-4 gap-4">
+        <div 
+          onClick={() => setFilter('requested')}
+          className={`bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${filter === 'requested' ? 'ring-2 ring-amber-400' : ''}`}
+        >
+          <div className="text-3xl font-bold text-amber-600">{stats.requested}</div>
+          <div className="text-sm text-gray-600">Nouvelles demandes</div>
+        </div>
+        <div 
+          onClick={() => setFilter('pending')}
+          className={`bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${filter === 'pending' ? 'ring-2 ring-blue-400' : ''}`}
+        >
+          <div className="text-3xl font-bold text-blue-600">{stats.pending}</div>
+          <div className="text-sm text-gray-600">En cours</div>
+        </div>
+        <div 
+          onClick={() => setFilter('active')}
+          className={`bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${filter === 'active' ? 'ring-2 ring-green-400' : ''}`}
+        >
+          <div className="text-3xl font-bold text-green-600">{stats.active}</div>
+          <div className="text-sm text-gray-600">Actifs</div>
+        </div>
+        <div 
+          onClick={() => setFilter('all')}
+          className={`bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${filter === 'all' ? 'ring-2 ring-gray-400' : ''}`}
+        >
+          <div className="text-3xl font-bold text-gray-600">{contracts.length}</div>
+          <div className="text-sm text-gray-600">Total</div>
+        </div>
+      </div>
+
+      {/* Contracts Table */}
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b flex justify-between items-center">
+          <h2 className="font-bold text-gray-800">
+            {filter === 'all' ? 'Tous les contrats' : 
+             filter === 'requested' ? 'Nouvelles demandes' :
+             filter === 'pending' ? 'En cours de traitement' :
+             filter === 'active' ? 'Contrats actifs' : 'Contrats expirés'}
+          </h2>
+          {filter !== 'all' && (
+            <button 
+              onClick={() => setFilter('all')}
+              className="text-sm text-gray-500 hover:text-gray-700"
+            >
+              Voir tout
+            </button>
+          )}
+        </div>
+        
+        {filteredContracts.length === 0 ? (
+          <div className="p-8 text-center text-gray-400">
+            <p className="text-4xl mb-2">📄</p>
+            <p>Aucun contrat trouvé</p>
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">N° Contrat</th>
+                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">Client</th>
+                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">Période</th>
+                <th className="px-6 py-3 text-center text-xs font-bold text-gray-600">Appareils</th>
+                <th className="px-6 py-3 text-center text-xs font-bold text-gray-600">Tokens</th>
+                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">Statut</th>
+                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {filteredContracts.map(contract => {
+                const devices = contract.contract_devices || [];
+                const totalTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
+                const usedTokens = devices.reduce((sum, d) => sum + (d.tokens_used || 0), 0);
+                
+                return (
+                  <tr key={contract.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      <span className="font-mono font-bold text-[#1E3A5F]">
+                        {contract.contract_number || '—'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="font-medium">{contract.companies?.name || 'N/A'}</div>
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="font-bold">{devices.length}</span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className={`font-bold ${usedTokens >= totalTokens ? 'text-red-600' : 'text-green-600'}`}>
+                        {totalTokens - usedTokens}/{totalTokens}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {getStatusBadge(contract.status)}
+                    </td>
+                    <td className="px-6 py-4">
+                      <button
+                        onClick={() => setSelectedContract(contract)}
+                        className="px-3 py-1 bg-[#3B7AB4] text-white text-sm rounded hover:bg-[#1E3A5F]"
+                      >
+                        {contract.status === 'requested' ? 'Traiter' : 'Voir'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// CONTRACT DETAIL VIEW
+// ============================================
+function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
+  const [editMode, setEditMode] = useState(contract.status === 'requested');
+  const [saving, setSaving] = useState(false);
+  const [devices, setDevices] = useState(contract.contract_devices || []);
+  const [contractData, setContractData] = useState({
+    start_date: contract.start_date || new Date().toISOString().split('T')[0],
+    end_date: contract.end_date || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+    internal_notes: contract.internal_notes || ''
+  });
+  const [showQuoteModal, setShowQuoteModal] = useState(false);
+
+  // Check for existing active contracts for this client
+  const [existingContracts, setExistingContracts] = useState([]);
+  
+  useEffect(() => {
+    const checkExisting = async () => {
+      if (!contract.company_id) return;
+      const { data } = await supabase
+        .from('contracts')
+        .select('id, contract_number, start_date, end_date, status')
+        .eq('company_id', contract.company_id)
+        .eq('status', 'active')
+        .neq('id', contract.id);
+      setExistingContracts(data || []);
+    };
+    checkExisting();
+  }, [contract.company_id, contract.id]);
+
+  const updateDevice = (deviceId, field, value) => {
+    setDevices(devices.map(d => d.id === deviceId ? { ...d, [field]: value } : d));
+  };
+
+  const saveDeviceChanges = async () => {
+    setSaving(true);
+    try {
+      // Update contract dates and notes
+      const { error: contractError } = await supabase
+        .from('contracts')
+        .update({
+          start_date: contractData.start_date,
+          end_date: contractData.end_date,
+          internal_notes: contractData.internal_notes
+        })
+        .eq('id', contract.id);
+
+      if (contractError) throw contractError;
+
+      // Update each device
+      for (const device of devices) {
+        const { error } = await supabase
+          .from('contract_devices')
+          .update({
+            tokens_total: device.tokens_total,
+            unit_price: device.unit_price
+          })
+          .eq('id', device.id);
+        
+        if (error) throw error;
+      }
+
+      notify('Modifications enregistrées', 'success');
+      setEditMode(false);
+      onUpdate();
+    } catch (err) {
+      console.error('Error saving:', err);
+      notify('Erreur lors de la sauvegarde', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateContractStatus = async (newStatus) => {
+    setSaving(true);
+    try {
+      const updates = { status: newStatus };
+      
+      if (newStatus === 'active') {
+        updates.bc_approved_at = new Date().toISOString();
+      }
+
+      const { error } = await supabase
+        .from('contracts')
+        .update(updates)
+        .eq('id', contract.id);
+
+      if (error) throw error;
+
+      notify(`Statut mis à jour: ${newStatus}`, 'success');
+      onUpdate();
+      onClose();
+    } catch (err) {
+      console.error('Error updating status:', err);
+      notify('Erreur lors de la mise à jour', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const totalPrice = devices.reduce((sum, d) => sum + (parseFloat(d.unit_price) || 0), 0);
+  const totalTokens = devices.reduce((sum, d) => sum + (parseInt(d.tokens_total) || 0), 0);
+
+  const CONTRACT_STATUS_STYLES = {
+    requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: '🆕 Nouvelle demande' },
+    quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: '📧 Devis envoyé' },
+    quote_approved: { bg: 'bg-purple-100', text: 'text-purple-700', label: '✅ Devis approuvé' },
+    bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: '📄 Attente BC' },
+    active: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Actif' },
+    expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: '⏰ Expiré' },
+    cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ Annulé' }
+  };
+
+  const getStatusBadge = (status) => {
+    const style = CONTRACT_STATUS_STYLES[status] || CONTRACT_STATUS_STYLES.requested;
+    return (
+      <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>
+        {style.label}
+      </span>
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      <button 
+        onClick={onClose}
+        className="text-gray-500 hover:text-gray-700 flex items-center gap-2"
+      >
+        ← Retour aux contrats
+      </button>
+
+      {/* Warning for existing active contracts */}
+      {existingContracts.length > 0 && (
+        <div className="bg-amber-50 border-l-4 border-amber-400 p-4 rounded">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">⚠️</span>
+            <div>
+              <h3 className="font-bold text-amber-800">Contrat existant détecté</h3>
+              <p className="text-sm text-amber-700">
+                Ce client a déjà {existingContracts.length} contrat(s) actif(s):
+              </p>
+              <ul className="text-sm text-amber-700 mt-1">
+                {existingContracts.map(c => (
+                  <li key={c.id}>• {c.contract_number} ({new Date(c.start_date).toLocaleDateString('fr-FR')} - {new Date(c.end_date).toLocaleDateString('fr-FR')})</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h1 className="text-2xl font-bold text-[#1E3A5F]">
+              Contrat {contract.contract_number || '(En attente)'}
+            </h1>
+            <p className="text-gray-600">{contract.companies?.name}</p>
+          </div>
+          {getStatusBadge(contract.status)}
+        </div>
+
+        {/* Contract Period */}
+        <div className="grid md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Date de début</label>
+            {editMode ? (
+              <input
+                type="date"
+                value={contractData.start_date}
+                onChange={e => setContractData({...contractData, start_date: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            ) : (
+              <p className="text-gray-900">{new Date(contract.start_date).toLocaleDateString('fr-FR')}</p>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Date de fin</label>
+            {editMode ? (
+              <input
+                type="date"
+                value={contractData.end_date}
+                onChange={e => setContractData({...contractData, end_date: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            ) : (
+              <p className="text-gray-900">{new Date(contract.end_date).toLocaleDateString('fr-FR')}</p>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Durée</label>
+            <p className="text-gray-900">
+              {Math.round((new Date(contractData.end_date) - new Date(contractData.start_date)) / (1000 * 60 * 60 * 24 * 30))} mois
+            </p>
+          </div>
+        </div>
+
+        {/* Customer Notes */}
+        {contract.customer_notes && (
+          <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+            <h4 className="font-bold text-blue-800 text-sm mb-1">Notes du client:</h4>
+            <p className="text-sm text-blue-700">{contract.customer_notes}</p>
+          </div>
+        )}
+
+        {/* Internal Notes */}
+        <div className="mb-4">
+          <label className="block text-sm font-bold text-gray-700 mb-1">Notes internes</label>
+          {editMode ? (
+            <textarea
+              value={contractData.internal_notes}
+              onChange={e => setContractData({...contractData, internal_notes: e.target.value})}
+              rows={2}
+              className="w-full px-3 py-2 border rounded-lg"
+              placeholder="Notes visibles uniquement par l'équipe..."
+            />
+          ) : (
+            <p className="text-gray-600 text-sm">{contract.internal_notes || '—'}</p>
+          )}
+        </div>
+
+        {/* Summary Stats */}
+        <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-[#1E3A5F]">{devices.length}</div>
+            <div className="text-sm text-gray-600">Appareils</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-green-600">{totalTokens}</div>
+            <div className="text-sm text-gray-600">Étalonnages inclus</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-[#3B7AB4]">{totalPrice.toFixed(2)} €</div>
+            <div className="text-sm text-gray-600">Total HT</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Devices Table */}
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b flex justify-between items-center">
+          <h2 className="font-bold text-gray-800">Appareils ({devices.length})</h2>
+          {!editMode && contract.status !== 'active' && (
+            <button
+              onClick={() => setEditMode(true)}
+              className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
+            >
+              ✏️ Modifier
+            </button>
+          )}
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">#</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">Surnom</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">N° Série</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">Modèle</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">Type</th>
+                <th className="px-4 py-3 text-center text-xs font-bold text-gray-600">Tokens</th>
+                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600">Prix unitaire</th>
+                {contract.status === 'active' && (
+                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-600">Utilisés</th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {devices.map((device, idx) => (
+                <tr key={device.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  <td className="px-4 py-3 text-sm text-gray-500">{idx + 1}</td>
+                  <td className="px-4 py-3 text-sm">{device.nickname || '—'}</td>
+                  <td className="px-4 py-3 text-sm font-mono">{device.serial_number}</td>
+                  <td className="px-4 py-3 text-sm font-medium">{device.model_name}</td>
+                  <td className="px-4 py-3 text-sm">
+                    {device.device_type === 'particle_counter' && '🔬 Compteur Air'}
+                    {device.device_type === 'bio_collector' && '🧫 Bio Collecteur'}
+                    {device.device_type === 'liquid_counter' && '💧 Compteur Liquide'}
+                    {device.device_type === 'temp_humidity' && '🌡️ Temp/Humidité'}
+                    {device.device_type === 'other' && '📦 Autre'}
+                    {!device.device_type && '—'}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {editMode ? (
+                      <input
+                        type="number"
+                        min="1"
+                        value={device.tokens_total || 2}
+                        onChange={e => updateDevice(device.id, 'tokens_total', parseInt(e.target.value) || 2)}
+                        className="w-16 px-2 py-1 border rounded text-center"
+                      />
+                    ) : (
+                      <span className="font-bold">{device.tokens_total || 2}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {editMode ? (
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={device.unit_price || ''}
+                        onChange={e => updateDevice(device.id, 'unit_price', e.target.value)}
+                        className="w-24 px-2 py-1 border rounded text-right"
+                        placeholder="0.00"
+                      />
+                    ) : (
+                      <span className="font-medium">{device.unit_price ? `${parseFloat(device.unit_price).toFixed(2)} €` : '—'}</span>
+                    )}
+                  </td>
+                  {contract.status === 'active' && (
+                    <td className="px-4 py-3 text-center">
+                      <span className={`font-bold ${(device.tokens_used || 0) >= (device.tokens_total || 2) ? 'text-red-600' : 'text-green-600'}`}>
+                        {device.tokens_used || 0}/{device.tokens_total || 2}
+                      </span>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="bg-gray-100">
+              <tr>
+                <td colSpan={5} className="px-4 py-3 text-right font-bold">Total:</td>
+                <td className="px-4 py-3 text-center font-bold text-green-600">{totalTokens}</td>
+                <td className="px-4 py-3 text-right font-bold text-[#1E3A5F]">{totalPrice.toFixed(2)} €</td>
+                {contract.status === 'active' && <td></td>}
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <div className="flex flex-wrap gap-3">
+          {editMode && (
+            <>
+              <button
+                onClick={() => setEditMode(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={saveDeviceChanges}
+                disabled={saving}
+                className="px-4 py-2 bg-[#00A651] text-white rounded-lg hover:bg-[#008c44] disabled:opacity-50"
+              >
+                {saving ? 'Enregistrement...' : 'Enregistrer les modifications'}
+              </button>
+            </>
+          )}
+
+          {!editMode && contract.status === 'requested' && (
+            <>
+              <button
+                onClick={() => setEditMode(true)}
+                className="px-4 py-2 border border-[#3B7AB4] text-[#3B7AB4] rounded-lg hover:bg-blue-50"
+              >
+                ✏️ Définir les prix et tokens
+              </button>
+              <button
+                onClick={() => updateContractStatus('quote_sent')}
+                disabled={saving || !devices.every(d => d.unit_price)}
+                className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg hover:bg-[#1E3A5F] disabled:opacity-50"
+              >
+                📧 Envoyer le devis
+              </button>
+            </>
+          )}
+
+          {contract.status === 'quote_sent' && (
+            <button
+              onClick={() => updateContractStatus('quote_approved')}
+              disabled={saving}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+            >
+              ✅ Marquer devis approuvé
+            </button>
+          )}
+
+          {contract.status === 'quote_approved' && (
+            <button
+              onClick={() => updateContractStatus('bc_pending')}
+              disabled={saving}
+              className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50"
+            >
+              📄 En attente du BC
+            </button>
+          )}
+
+          {contract.status === 'bc_pending' && (
+            <button
+              onClick={() => updateContractStatus('active')}
+              disabled={saving}
+              className="px-4 py-2 bg-[#00A651] text-white rounded-lg hover:bg-[#008c44] disabled:opacity-50"
+            >
+              ✅ Activer le contrat
+            </button>
+          )}
+
+          {contract.status !== 'cancelled' && contract.status !== 'active' && (
+            <button
+              onClick={() => updateContractStatus('cancelled')}
+              disabled={saving}
+              className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50"
+            >
+              ❌ Annuler
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function SettingsSheet({ profile, staffMembers, notify, reload }) { return <div className="space-y-6"><h1 className="text-2xl font-bold text-gray-800">Paramètres</h1><div className="bg-white rounded-xl shadow-sm"><div className="px-6 py-4 border-b"><h2 className="font-bold text-gray-800">Équipe Lighthouse</h2></div><div className="p-6 space-y-3">{staffMembers.map(member => <div key={member.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-[#00A651] text-white flex items-center justify-center font-bold">{member.full_name?.charAt(0)?.toUpperCase()}</div><div><p className="font-medium">{member.full_name}</p><p className="text-sm text-gray-500">{member.email}</p></div></div><span className={`px-3 py-1 rounded-full text-sm ${member.role === 'lh_admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>{member.role === 'lh_admin' ? '👑 Admin' : '👤 Employé'}</span></div>)}</div></div></div>; }
 
