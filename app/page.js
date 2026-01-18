@@ -8076,71 +8076,76 @@ function ContractsPage({ profile, t, notify, setPage }) {
     setApprovingQuote(false);
   };
 
-  // Submit BC - IDENTICAL to RMA
+  // Submit BC - COPIED FROM RMA (working version)
   const submitBonCommande = async () => {
+    // Validation first - exactly like RMA
+    if (!acceptTerms) {
+      notify('Veuillez accepter les conditions générales', 'error');
+      return;
+    }
+    if (!signatureName.trim()) {
+      notify('Veuillez entrer votre nom', 'error');
+      return;
+    }
+    
+    // Need either file OR signature
+    const hasValidSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
+    if (!bcFile && !hasValidSignature) {
+      notify('Veuillez télécharger un bon de commande OU signer électroniquement', 'error');
+      return;
+    }
+    
     if (!selectedContract) return;
     
     setSubmittingBC(true);
-    console.log('Starting BC submission for contract:', selectedContract.id);
+    const signatureDateISO = new Date().toISOString();
     
     try {
+      // Try to upload BC file if provided (may fail if storage not configured)
       let fileUrl = null;
-      let signatureUrl = null;
-      const signatureDateISO = new Date().toISOString();
-      
-      // Upload BC file if provided (with try/catch like RMA)
       if (bcFile) {
         try {
-          const fileExt = bcFile.name.split('.').pop();
-          const fileName = `bc_contract_${selectedContract.id}_${Date.now()}.${fileExt}`;
-          console.log('Uploading BC file:', fileName);
+          const fileName = `bc_contract_${selectedContract.id}_${Date.now()}.${bcFile.name.split('.').pop()}`;
           const { error: uploadError } = await supabase.storage
             .from('documents')
             .upload(fileName, bcFile);
           
           if (!uploadError) {
-            const { data: publicUrlData } = supabase.storage
+            const { data: publicUrl } = supabase.storage
               .from('documents')
               .getPublicUrl(fileName);
-            fileUrl = publicUrlData?.publicUrl;
-            console.log('BC file uploaded:', fileUrl);
-          } else {
-            console.log('BC file upload error:', uploadError);
+            fileUrl = publicUrl?.publicUrl;
           }
         } catch (e) {
-          console.log('File upload skipped - storage not configured:', e);
+          console.log('File upload skipped - storage not configured');
         }
       }
       
-      // Upload signature if provided (with try/catch like RMA)
-      if (hasSignature) {
+      // Try to upload signature image (may fail if storage not configured)
+      let signatureUrl = null;
+      if (signatureData) {
         try {
           const signatureBlob = await fetch(signatureData).then(r => r.blob());
-          const sigFileName = `signature_contract_${selectedContract.id}_${Date.now()}.png`;
-          console.log('Uploading signature:', sigFileName);
+          const signatureFileName = `signature_contract_${selectedContract.id}_${Date.now()}.png`;
           const { error: sigError } = await supabase.storage
             .from('documents')
-            .upload(sigFileName, signatureBlob);
+            .upload(signatureFileName, signatureBlob);
           
           if (!sigError) {
-            const { data: sigUrlData } = supabase.storage
+            const { data: sigUrl } = supabase.storage
               .from('documents')
-              .getPublicUrl(sigFileName);
-            signatureUrl = sigUrlData?.publicUrl;
-            console.log('Signature uploaded:', signatureUrl);
-          } else {
-            console.log('Signature upload error:', sigError);
+              .getPublicUrl(signatureFileName);
+            signatureUrl = sigUrl?.publicUrl;
           }
         } catch (e) {
-          console.log('Signature upload skipped - storage not configured:', e);
+          console.log('Signature upload skipped - storage not configured');
         }
       }
       
-      // Generate signed contract quote PDF (like RMA)
+      // Generate signed quote PDF
       let signedQuotePdfUrl = null;
-      if (hasSignature) {
+      if (hasValidSignature) {
         try {
-          console.log('Generating signed PDF...');
           const pdfBlob = await generateContractQuotePDF({
             contract: selectedContract,
             devices: selectedContract.contract_devices || [],
@@ -8149,12 +8154,11 @@ function ContractsPage({ profile, t, notify, setPage }) {
             calibrationTypes: [...new Set((selectedContract.contract_devices || []).map(d => d.device_type || 'particle_counter'))],
             isSigned: true,
             signatureName: signatureName,
-            signatureDate: new Date().toLocaleDateString('fr-FR'),
+            signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
             signatureImage: signatureData
           });
           
-          const pdfFileName = `devis_signe_contrat_${selectedContract.contract_number || selectedContract.id}_${Date.now()}.pdf`;
-          console.log('Uploading signed PDF:', pdfFileName);
+          const pdfFileName = `devis_signe_contrat_${selectedContract.contract_number}_${Date.now()}.pdf`;
           const { error: pdfUploadError } = await supabase.storage
             .from('documents')
             .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
@@ -8164,55 +8168,39 @@ function ContractsPage({ profile, t, notify, setPage }) {
               .from('documents')
               .getPublicUrl(pdfFileName);
             signedQuotePdfUrl = pdfUrl?.publicUrl;
-            console.log('Signed PDF uploaded:', signedQuotePdfUrl);
+            console.log('Signed quote PDF uploaded:', signedQuotePdfUrl);
           } else {
             console.log('PDF upload error:', pdfUploadError);
           }
         } catch (e) {
-          console.log('Signed contract PDF generation error:', e);
+          console.log('Signed quote PDF generation error:', e);
         }
       }
       
-      // Update contract status and BC info - try full update first
-      console.log('Updating contract status...');
-      const updateData = {
-        status: 'bc_pending',
-        bc_submitted_at: new Date().toISOString(),
-        bc_signed_by: signatureName
-      };
+      // Update contract status - exactly like RMA updates service_requests
+      const { error: updateError } = await supabase
+        .from('contracts')
+        .update({ 
+          status: 'bc_pending',
+          bc_submitted_at: new Date().toISOString(),
+          bc_signed_by: signatureName,
+          bc_file_url: fileUrl,
+          signed_quote_url: signedQuotePdfUrl
+        })
+        .eq('id', selectedContract.id);
       
-      // Add URLs if available
-      if (fileUrl) updateData.bc_file_url = fileUrl;
-      if (signedQuotePdfUrl) updateData.signed_quote_url = signedQuotePdfUrl;
+      if (updateError) throw updateError;
       
-      console.log('Update data:', updateData);
+      notify('Bon de commande soumis avec succès!');
+      setShowBCModal(false);
       
-      const { error } = await supabase.from('contracts').update(updateData).eq('id', selectedContract.id);
-      
-      if (error) {
-        // If columns don't exist, try minimal update
-        console.log('Full update failed, trying minimal:', error);
-        const { error: minError } = await supabase.from('contracts').update({
-          status: 'bc_pending'
-        }).eq('id', selectedContract.id);
-        if (minError) {
-          console.error('Minimal update also failed:', minError);
-          throw minError;
-        }
-        console.log('Minimal update succeeded (columns may be missing - run migration!)');
-      } else {
-        console.log('Full update succeeded');
-      }
-      
-      notify('✅ Bon de commande soumis avec succès!', 'success');
-      
-      // Force reload to show updated status
-      console.log('Reloading page...');
+      // Force full page reload to ensure fresh data - exactly like RMA
       window.location.reload();
+      
     } catch (err) {
-      console.error('BC submit error:', err);
-      notify('Erreur: ' + err.message, 'error');
+      notify(`Erreur: ${err.message}`, 'error');
     }
+    
     setSubmittingBC(false);
   };
 
