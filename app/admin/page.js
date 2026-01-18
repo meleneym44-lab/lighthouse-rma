@@ -1829,16 +1829,44 @@ function PricingSheet({ notify, isAdmin }) {
           const partsToUpsert = [];
           let skipped = 0;
 
+          // Helper function to get value from row with flexible column names
+          const getColumnValue = (row, ...possibleNames) => {
+            // First try exact match
+            for (const name of possibleNames) {
+              if (row[name] !== undefined && row[name] !== null && row[name] !== '') {
+                return row[name];
+              }
+            }
+            // Then try case-insensitive match
+            const rowKeys = Object.keys(row);
+            for (const name of possibleNames) {
+              const foundKey = rowKeys.find(k => k.toLowerCase().trim() === name.toLowerCase().trim());
+              if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null && row[foundKey] !== '') {
+                return row[foundKey];
+              }
+            }
+            return null;
+          };
+
+          // Log first row to debug column names
+          if (jsonData.length > 0) {
+            console.log('Excel columns found:', Object.keys(jsonData[0]));
+            console.log('First row data:', jsonData[0]);
+          }
+
           for (const row of jsonData) {
             // Map Excel columns to database fields (flexible column naming)
-            const partNumber = row['Part Number'] || row['part_number'] || row['PartNumber'] || row['Ref'] || row['Reference'] || row['SKU'] || row['Part No'] || row['PN'];
-            const description = row['Description'] || row['description'] || row['Name'] || row['Nom'] || row['Desc'];
-            const descriptionFr = row['Description FR'] || row['description_fr'] || row['Nom FR'] || row['Description Francais'];
-            const category = row['Category'] || row['category'] || row['Categorie'] || row['Type'] || row['Cat'];
-            const price = parseFloat(row['Price'] || row['price'] || row['Unit Price'] || row['Prix'] || row['Prix Unitaire'] || row['Cost'] || 0);
-            const quantity = parseInt(row['Quantity'] || row['quantity'] || row['Stock'] || row['Qty'] || row['QTY'] || 0);
-            const location = row['Location'] || row['location'] || row['Emplacement'] || row['Loc'];
-            const supplier = row['Supplier'] || row['supplier'] || row['Fournisseur'] || row['Vendor'];
+            const partNumber = getColumnValue(row, 'Part Number', 'part_number', 'PartNumber', 'Ref', 'Reference', 'SKU', 'Part No', 'PN', 'Part', 'Numéro', 'N° Pièce', 'No Piece');
+            const description = getColumnValue(row, 'Description', 'description', 'Name', 'Nom', 'Desc', 'Désignation', 'Designation', 'Libellé', 'Libelle');
+            const descriptionFr = getColumnValue(row, 'Description FR', 'description_fr', 'Nom FR', 'Description Francais', 'Description française');
+            const category = getColumnValue(row, 'Category', 'category', 'Categorie', 'Catégorie', 'Type', 'Cat', 'Famille');
+            const rawPrice = getColumnValue(row, 'Price', 'price', 'Unit Price', 'Prix', 'Prix Unitaire', 'Cost', 'Tarif', 'PU', 'Prix HT');
+            const rawQuantity = getColumnValue(row, 'Quantity', 'quantity', 'Stock', 'Qty', 'QTY', 'Qté', 'Quantité');
+            const location = getColumnValue(row, 'Location', 'location', 'Emplacement', 'Loc', 'Lieu');
+            const supplier = getColumnValue(row, 'Supplier', 'supplier', 'Fournisseur', 'Vendor', 'Source');
+
+            const price = parseFloat(rawPrice) || 0;
+            const quantity = parseInt(rawQuantity) || 0;
 
             if (!partNumber) {
               skipped++;
@@ -1847,15 +1875,20 @@ function PricingSheet({ notify, isAdmin }) {
 
             partsToUpsert.push({
               part_number: partNumber.toString().trim(),
-              description: description || null,
-              description_fr: descriptionFr || null,
-              category: category || null,
-              unit_price: isNaN(price) ? null : price,
+              description: description ? description.toString().trim() : null,
+              description_fr: descriptionFr ? descriptionFr.toString().trim() : null,
+              category: category ? category.toString().trim() : null,
+              unit_price: isNaN(price) || price === 0 ? null : price,
               quantity_in_stock: isNaN(quantity) ? 0 : quantity,
-              location: location || null,
-              supplier: supplier || null,
+              location: location ? location.toString().trim() : null,
+              supplier: supplier ? supplier.toString().trim() : null,
               last_price_update: new Date().toISOString()
             });
+          }
+
+          // Log sample of parsed data
+          if (partsToUpsert.length > 0) {
+            console.log('Sample parsed part:', partsToUpsert[0]);
           }
 
           if (partsToUpsert.length === 0) {
@@ -1873,12 +1906,19 @@ function PricingSheet({ notify, isAdmin }) {
           const newCount = partsToUpsert.filter(p => !existingPartNumbers.has(p.part_number)).length;
           const updateCount = partsToUpsert.length - newCount;
 
+          console.log(`Processing ${partsToUpsert.length} parts: ${newCount} new, ${updateCount} updates`);
+
           // Step 3: Bulk upsert in batches of 500 (Supabase limit)
           const batchSize = 500;
           let totalErrors = 0;
+          let lastError = null;
           
           for (let i = 0; i < partsToUpsert.length; i += batchSize) {
             const batch = partsToUpsert.slice(i, i + batchSize);
+            const batchNum = Math.floor(i / batchSize) + 1;
+            const totalBatches = Math.ceil(partsToUpsert.length / batchSize);
+            
+            console.log(`Processing batch ${batchNum}/${totalBatches} (${batch.length} parts)`);
             
             const { error } = await supabase
               .from('parts_pricing')
@@ -1888,9 +1928,14 @@ function PricingSheet({ notify, isAdmin }) {
               });
             
             if (error) {
-              console.error('Batch upsert error:', error);
+              console.error(`Batch ${batchNum} error:`, error);
+              lastError = error;
               totalErrors += batch.length;
             }
+          }
+
+          if (lastError) {
+            console.error('Last error details:', lastError);
           }
 
           const successCount = partsToUpsert.length - totalErrors;
