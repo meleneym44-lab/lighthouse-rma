@@ -3260,36 +3260,36 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
             onChange={e => {
               const sn = e.target.value;
               
-              // Auto-decode serial number for Lighthouse devices
-              if (device.brand === 'Lighthouse' && sn.length >= 8) {
-                const decoded = decodeSerialNumber(sn);
-                if (decoded) {
-                  // Update all fields at once
-                  setDevices(devices.map(d => d.id === device.id ? {
-                    ...d,
-                    serial_number: sn,
-                    model: decoded.model,
-                    device_type: decoded.category
-                  } : d));
-                  return;
-                }
-              }
+              // Auto-decode serial number for Lighthouse devices (only when 8-10 digits)
+              const decoded = (device.brand === 'Lighthouse' && /^\d{8,10}$/.test(sn)) 
+                ? decodeSerialNumber(sn) 
+                : null;
               
-              // If no decode, just update serial number
-              updateDevice(device.id, 'serial_number', sn);
+              if (decoded) {
+                // Update all fields at once
+                setDevices(devices.map(d => d.id === device.id ? {
+                  ...d,
+                  serial_number: sn,
+                  model: decoded.model,
+                  device_type: decoded.category
+                } : d));
+              } else {
+                // Just update serial number
+                updateDevice(device.id, 'serial_number', sn);
+              }
             }}
-            placeholder="ex: 205482857"
+            placeholder="ex: 2101280015"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             required
           />
-          {device.brand === 'Lighthouse' && device.serial_number && device.serial_number.length >= 8 && decodeSerialNumber(device.serial_number) && (
+          {device.brand === 'Lighthouse' && device.serial_number && /^\d{8,10}$/.test(device.serial_number) && decodeSerialNumber(device.serial_number) && (
             <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
               <span>✓</span> Détecté: {decodeSerialNumber(device.serial_number).model}
             </p>
           )}
-          {device.brand === 'Lighthouse' && device.serial_number && device.serial_number.length >= 6 && !decodeSerialNumber(device.serial_number) && (
+          {device.brand === 'Lighthouse' && device.serial_number && /^\d{8,10}$/.test(device.serial_number) && !decodeSerialNumber(device.serial_number) && (
             <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
-              <span>⚠</span> N° de série non reconnu - veuillez vérifier ou saisir le modèle manuellement
+              <span>⚠</span> N° de série non reconnu - veuillez saisir le modèle manuellement
             </p>
           )}
         </div>
