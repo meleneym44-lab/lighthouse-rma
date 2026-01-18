@@ -3259,21 +3259,24 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
             value={device.serial_number}
             onChange={e => {
               const sn = e.target.value;
-              updateDevice(device.id, 'serial_number', sn);
               
               // Auto-decode serial number for Lighthouse devices
               if (device.brand === 'Lighthouse' && sn.length >= 8) {
                 const decoded = decodeSerialNumber(sn);
                 if (decoded) {
-                  // Auto-fill model and device type if not already set or if different
-                  if (!device.model || device.model !== decoded.model) {
-                    updateDevice(device.id, 'model', decoded.model);
-                  }
-                  if (!device.device_type || device.device_type !== decoded.category) {
-                    updateDevice(device.id, 'device_type', decoded.category);
-                  }
+                  // Update all fields at once
+                  setDevices(devices.map(d => d.id === device.id ? {
+                    ...d,
+                    serial_number: sn,
+                    model: decoded.model,
+                    device_type: decoded.category
+                  } : d));
+                  return;
                 }
               }
+              
+              // If no decode, just update serial number
+              updateDevice(device.id, 'serial_number', sn);
             }}
             placeholder="ex: 205482857"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
