@@ -1196,6 +1196,67 @@ function ContractsSheet({ clients, notify }) {
       </div>
       
       {/* ============================================ */}
+      {/* BC À VÉRIFIER - Top Priority */}
+      {/* ============================================ */}
+      {(() => {
+        const bcPendingContracts = contracts.filter(c => c.status === 'bc_pending');
+        if (bcPendingContracts.length === 0) return null;
+        return (
+          <div className="bg-red-50 border-2 border-red-300 rounded-xl shadow-lg">
+            <div className="px-6 py-4 border-b border-red-200 bg-red-100 rounded-t-xl">
+              <h2 className="font-bold text-red-800 text-lg">⚠️ BC Contrats à Vérifier ({bcPendingContracts.length})</h2>
+              <p className="text-sm text-red-600">Vérifiez le BC et activez le contrat</p>
+            </div>
+            <div className="p-4 space-y-3">
+              {bcPendingContracts.map(contract => (
+                <div key={contract.id} className="bg-white rounded-lg p-4 flex items-center justify-between shadow-sm border border-red-100">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
+                    <div>
+                      <span className="font-mono font-bold text-[#00A651]">{contract.contract_number}</span>
+                      <p className="font-medium text-gray-800">{contract.companies?.name || contract.company_name_manual}</p>
+                      <p className="text-sm text-gray-500">
+                        BC soumis le {contract.bc_submitted_at ? new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR') : '—'}
+                        {contract.bc_signed_by && <span className="ml-2">• Signé par: {contract.bc_signed_by}</span>}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    {contract.bc_url && (
+                      <a 
+                        href={contract.bc_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium"
+                      >
+                        📄 Voir BC
+                      </a>
+                    )}
+                    {contract.bc_signature_url && (
+                      <a 
+                        href={contract.bc_signature_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium"
+                      >
+                        ✍️ Signature
+                      </a>
+                    )}
+                    <button
+                      onClick={() => setSelectedContract(contract)}
+                      className="px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium"
+                    >
+                      ✅ Examiner & Activer
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+      
+      {/* ============================================ */}
       {/* NOUVELLES DEMANDES DE CONTRAT - Top Priority */}
       {/* ============================================ */}
       {newRequests.length > 0 && (
