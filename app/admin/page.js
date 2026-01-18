@@ -1824,35 +1824,28 @@ function PricingSheet({ notify, isAdmin }) {
             return;
           }
 
-          // Process each row
-          let created = 0;
-          let updated = 0;
-          let errors = 0;
+          // OPTIMIZED BULK IMPORT
+          // Step 1: Parse all rows into parts array
+          const partsToUpsert = [];
+          let skipped = 0;
 
           for (const row of jsonData) {
             // Map Excel columns to database fields (flexible column naming)
-            const partNumber = row['Part Number'] || row['part_number'] || row['PartNumber'] || row['Ref'] || row['Reference'] || row['SKU'];
-            const description = row['Description'] || row['description'] || row['Name'] || row['Nom'];
+            const partNumber = row['Part Number'] || row['part_number'] || row['PartNumber'] || row['Ref'] || row['Reference'] || row['SKU'] || row['Part No'] || row['PN'];
+            const description = row['Description'] || row['description'] || row['Name'] || row['Nom'] || row['Desc'];
             const descriptionFr = row['Description FR'] || row['description_fr'] || row['Nom FR'] || row['Description Francais'];
-            const category = row['Category'] || row['category'] || row['Categorie'] || row['Type'];
-            const price = parseFloat(row['Price'] || row['price'] || row['Unit Price'] || row['Prix'] || row['Prix Unitaire'] || 0);
-            const quantity = parseInt(row['Quantity'] || row['quantity'] || row['Stock'] || row['Qty'] || 0);
-            const location = row['Location'] || row['location'] || row['Emplacement'];
-            const supplier = row['Supplier'] || row['supplier'] || row['Fournisseur'];
+            const category = row['Category'] || row['category'] || row['Categorie'] || row['Type'] || row['Cat'];
+            const price = parseFloat(row['Price'] || row['price'] || row['Unit Price'] || row['Prix'] || row['Prix Unitaire'] || row['Cost'] || 0);
+            const quantity = parseInt(row['Quantity'] || row['quantity'] || row['Stock'] || row['Qty'] || row['QTY'] || 0);
+            const location = row['Location'] || row['location'] || row['Emplacement'] || row['Loc'];
+            const supplier = row['Supplier'] || row['supplier'] || row['Fournisseur'] || row['Vendor'];
 
             if (!partNumber) {
-              errors++;
+              skipped++;
               continue;
             }
 
-            // Check if part exists
-            const { data: existing } = await supabase
-              .from('parts_pricing')
-              .select('id')
-              .eq('part_number', partNumber.toString().trim())
-              .single();
-
-            const partData = {
+            partsToUpsert.push({
               part_number: partNumber.toString().trim(),
               description: description || null,
               description_fr: descriptionFr || null,
@@ -1862,37 +1855,49 @@ function PricingSheet({ notify, isAdmin }) {
               location: location || null,
               supplier: supplier || null,
               last_price_update: new Date().toISOString()
-            };
+            });
+          }
 
-            if (existing) {
-              // Update existing part
-              const { error } = await supabase
-                .from('parts_pricing')
-                .update(partData)
-                .eq('id', existing.id);
-              
-              if (error) {
-                console.error('Update error:', error);
-                errors++;
-              } else {
-                updated++;
-              }
-            } else {
-              // Create new part
-              const { error } = await supabase
-                .from('parts_pricing')
-                .insert(partData);
-              
-              if (error) {
-                console.error('Insert error:', error);
-                errors++;
-              } else {
-                created++;
-              }
+          if (partsToUpsert.length === 0) {
+            notify('Aucune pièce valide trouvée dans le fichier', 'error');
+            setUploading(false);
+            return;
+          }
+
+          // Step 2: Get existing part numbers to count updates vs creates
+          const { data: existingParts } = await supabase
+            .from('parts_pricing')
+            .select('part_number');
+          
+          const existingPartNumbers = new Set((existingParts || []).map(p => p.part_number));
+          const newCount = partsToUpsert.filter(p => !existingPartNumbers.has(p.part_number)).length;
+          const updateCount = partsToUpsert.length - newCount;
+
+          // Step 3: Bulk upsert in batches of 500 (Supabase limit)
+          const batchSize = 500;
+          let totalErrors = 0;
+          
+          for (let i = 0; i < partsToUpsert.length; i += batchSize) {
+            const batch = partsToUpsert.slice(i, i + batchSize);
+            
+            const { error } = await supabase
+              .from('parts_pricing')
+              .upsert(batch, { 
+                onConflict: 'part_number',
+                ignoreDuplicates: false 
+              });
+            
+            if (error) {
+              console.error('Batch upsert error:', error);
+              totalErrors += batch.length;
             }
           }
 
-          notify(`Import terminé: ${created} créés, ${updated} mis à jour${errors > 0 ? `, ${errors} erreurs` : ''}`, errors > 0 ? 'error' : 'success');
+          const successCount = partsToUpsert.length - totalErrors;
+          notify(
+            `Import terminé: ${newCount} créés, ${updateCount} mis à jour${skipped > 0 ? `, ${skipped} ignorés (pas de n° pièce)` : ''}${totalErrors > 0 ? `, ${totalErrors} erreurs` : ''}`, 
+            totalErrors > 0 ? 'error' : 'success'
+          );
           loadParts();
           setShowUploadModal(false);
         } catch (err) {
@@ -2130,9 +2135,14 @@ function PricingSheet({ notify, isAdmin }) {
               </div>
 
               {uploading && (
-                <div className="flex items-center justify-center gap-3 py-4">
-                  <div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                  <span className="text-gray-600">Import en cours...</span>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-6 h-6 border-4 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+                    <span className="text-green-800 font-medium">Import en cours...</span>
+                  </div>
+                  <p className="text-green-700 text-sm">
+                    Traitement par lots de 500 pièces. Pour 3000 pièces, comptez environ 30 secondes à 2 minutes.
+                  </p>
                 </div>
               )}
             </div>
