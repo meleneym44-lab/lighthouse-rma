@@ -2,6 +2,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
+// Expose supabase to window for debugging
+if (typeof window !== 'undefined') {
+  window.supabase = supabase;
+}
+
 // France Metropolitan postal code check
 // Valid France Metropolitan: 5 digits, starting with 01-95 (includes Corsica 20)
 // INVALID (show warning): DOM-TOM (97xxx, 98xxx), foreign addresses, or non-French codes
@@ -8272,7 +8277,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
             </div>
           </div>
           
-          {/* QUOTE ACTION BANNER - IDENTICAL TO RMA */}
+          {/* QUOTE ACTION BANNER - Single button to review and approve */}
           {needsQuoteAction && (
             <div className="bg-blue-50 border-b border-blue-300 px-6 py-4">
               <div className="flex items-center justify-between">
@@ -8283,24 +8288,16 @@ function ContractsPage({ profile, t, notify, setPage }) {
                   <div>
                     <p className="font-bold text-blue-800 text-lg">Devis reçu - Action requise</p>
                     <p className="text-sm text-blue-600">
-                      Examinez le devis, puis approuvez et soumettez votre bon de commande
+                      Consultez le devis et approuvez pour soumettre votre bon de commande
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setShowQuoteModal(true)}
-                    className="px-4 py-2 bg-white border border-blue-300 text-blue-700 rounded-lg font-medium hover:bg-blue-50 transition-colors"
-                  >
-                    👁️ Voir le Devis
-                  </button>
-                  <button
-                    onClick={() => setShowBCModal(true)}
-                    className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors"
-                  >
-                    ✅ Approuver et soumettre BC
-                  </button>
-                </div>
+                <button
+                  onClick={() => setShowQuoteModal(true)}
+                  className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors"
+                >
+                  📋 Consulter et Approuver le Devis
+                </button>
               </div>
             </div>
           )}
