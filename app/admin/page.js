@@ -608,11 +608,60 @@ function RMADetailModal({ rma, onClose, notify, reload }) {
   const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
   const devices = rma.request_devices || [];
   const workflowStatuses = ['approved', 'waiting_bc', 'bc_review', 'waiting_device', 'received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'quote_sent', 'quote_approved', 'final_qc', 'ready_to_ship', 'shipped', 'completed'];
+  const isContractRMA = rma.is_contract_rma || rma.contract_id;
 
   const updateStatus = async (newStatus) => {
     setSaving(true);
-    const { error } = await supabase.from('service_requests').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', rma.id);
-    if (error) notify('Erreur: ' + error.message, 'error'); else { notify('Statut mis à jour!'); reload(); }
+    
+    try {
+      // Update the main request status
+      const { error } = await supabase.from('service_requests').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', rma.id);
+      if (error) throw error;
+      
+      // If completing/shipping a contract RMA, deduct tokens for contract-covered devices
+      if ((newStatus === 'shipped' || newStatus === 'completed') && isContractRMA) {
+        const contractDevices = devices.filter(d => d.contract_covered && d.contract_device_id);
+        
+        for (const device of contractDevices) {
+          // Increment tokens_used in contract_devices
+          const { data: cd } = await supabase
+            .from('contract_devices')
+            .select('tokens_used, tokens_total')
+            .eq('id', device.contract_device_id)
+            .single();
+          
+          if (cd && (cd.tokens_used || 0) < (cd.tokens_total || 0)) {
+            await supabase
+              .from('contract_devices')
+              .update({ tokens_used: (cd.tokens_used || 0) + 1 })
+              .eq('id', device.contract_device_id);
+            
+            // Log token usage
+            await supabase
+              .from('token_usage')
+              .insert({
+                contract_device_id: device.contract_device_id,
+                request_id: rma.id,
+                request_device_id: device.id,
+                used_at: new Date().toISOString()
+              });
+          }
+        }
+        
+        if (contractDevices.length > 0) {
+          notify(`Statut mis à jour! ${contractDevices.length} token(s) déduit(s) du contrat.`);
+        } else {
+          notify('Statut mis à jour!');
+        }
+      } else {
+        notify('Statut mis à jour!');
+      }
+      
+      reload();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    
     setSaving(false);
   };
 
@@ -651,9 +700,41 @@ function RMADetailModal({ rma, onClose, notify, reload }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
       <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="px-6 py-4 border-b sticky top-0 bg-white flex justify-between items-center z-10">
-          <div><h2 className="text-xl font-bold text-gray-800">{rma.request_number}</h2><p className="text-sm text-gray-500">{rma.companies?.name}</p></div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-gray-800">{rma.request_number}</h2>
+              {isContractRMA && (
+                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">
+                  📋 CONTRAT
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-gray-500">{rma.companies?.name}</p>
+          </div>
           <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>{style.label}</span>
         </div>
+        
+        {/* Contract Info Banner */}
+        {isContractRMA && (
+          <div className="mx-6 mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">📋</span>
+              <div>
+                <p className="font-bold text-emerald-800">RMA sous contrat</p>
+                <p className="text-sm text-emerald-600">
+                  {devices.filter(d => d.contract_covered).length} appareil(s) couvert(s) 
+                  {rma.bc_url && ' • BC contrat attaché'}
+                </p>
+                {rma.bc_url && (
+                  <a href={rma.bc_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                    📄 Voir le BC du contrat
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+        
         <div className="p-6 space-y-6">
           <div className="grid md:grid-cols-3 gap-4">
             <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Client</h3><p className="font-medium">{rma.companies?.name}</p></div>
@@ -676,10 +757,18 @@ function RMADetailModal({ rma, onClose, notify, reload }) {
                   const deviceStatus = d.status || rma.status;
                   const deviceStyle = STATUS_STYLES[deviceStatus] || STATUS_STYLES.submitted;
                   return (
-                    <div key={d.id || i} className="bg-gray-50 rounded-lg p-4 border">
+                    <div key={d.id || i} className={`rounded-lg p-4 border ${d.contract_covered ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50'}`}>
                       <div className="flex justify-between items-start mb-3">
                         <div>
-                          <p className="font-medium text-gray-800">{d.model_name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-gray-800">{d.model_name}</p>
+                            {d.contract_covered && (
+                              <span className="px-1.5 py-0.5 bg-emerald-200 text-emerald-700 rounded text-xs font-medium">Contrat</span>
+                            )}
+                            {d.tokens_exhausted && (
+                              <span className="px-1.5 py-0.5 bg-amber-200 text-amber-700 rounded text-xs font-medium">Tokens épuisés</span>
+                            )}
+                          </div>
                           <p className="text-sm text-gray-500">SN: {d.serial_number}</p>
                           <p className="text-xs text-gray-400 mt-1">
                             {d.service_type === 'calibration' ? '🔬 Étalonnage' : 
@@ -828,15 +917,23 @@ function RequestsSheet({ requests, notify, reload, profile }) {
               const devices = req.request_devices || [];
               const isPending = req.status === 'submitted' && !req.request_number;
               const needsRevision = req.status === 'quote_revision_requested';
+              const isContractRMA = req.is_contract_rma || req.contract_id;
               
               return (
                 <tr key={req.id} className={`hover:bg-gray-50 ${needsRevision ? 'bg-red-50' : isPending ? 'bg-amber-50/50' : ''}`}>
                   <td className="px-4 py-3">
-                    {req.request_number ? (
-                      <span className="font-mono font-bold text-[#00A651]">{req.request_number}</span>
-                    ) : (
-                      <span className="text-amber-600 font-medium">Nouvelle</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {req.request_number ? (
+                        <span className="font-mono font-bold text-[#00A651]">{req.request_number}</span>
+                      ) : (
+                        <span className="text-amber-600 font-medium">Nouvelle</span>
+                      )}
+                      {isContractRMA && (
+                        <span className="px-1.5 py-0.5 text-xs font-bold rounded bg-emerald-100 text-emerald-700">
+                          📋
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3"><p className="font-medium text-gray-800">{req.companies?.name || '—'}</p></td>
                   <td className="px-4 py-3"><span className="text-sm">{req.request_type === 'service' ? '🔧 Service' : '📦 Pièces'}</span></td>
@@ -869,19 +966,56 @@ function RequestDetailModal({ request, onClose, onCreateQuote }) {
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
   const devices = request.request_devices || [];
   const isPending = request.status === 'submitted' && !request.request_number;
+  
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
       <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b sticky top-0 bg-white flex justify-between items-center"><div><h2 className="text-xl font-bold text-gray-800">{request.request_number || 'Nouvelle Demande'}</h2><p className="text-sm text-gray-500">{request.companies?.name}</p></div><span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>{style.label}</span></div>
+        <div className="px-6 py-4 border-b sticky top-0 bg-white flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">{request.request_number || 'Nouvelle Demande'}</h2>
+            <p className="text-sm text-gray-500">{request.companies?.name}</p>
+          </div>
+          <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+        </div>
+        
         <div className="p-6 space-y-6">
           <div className="grid md:grid-cols-2 gap-4">
             <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Client</h3><p className="font-medium">{request.companies?.name}</p></div>
             <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Service</h3><p className="font-medium">{request.requested_service}</p><p className="text-sm text-gray-500">Soumis le {new Date(request.created_at).toLocaleDateString('fr-FR')}</p></div>
           </div>
-          <div><h3 className="font-bold text-gray-700 mb-3">Appareils ({devices.length || 1})</h3>{devices.length > 0 ? <div className="space-y-2">{devices.map((d, i) => <div key={i} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center"><div><p className="font-medium">{d.model_name}</p><p className="text-sm text-gray-500">SN: {d.serial_number}</p></div><span className="text-sm text-gray-400">{d.equipment_type}</span></div>)}</div> : <div className="bg-gray-50 rounded-lg p-3"><p className="font-medium">{request.serial_number}</p></div>}</div>
+          
+          {/* Devices */}
+          <div>
+            <h3 className="font-bold text-gray-700 mb-3">Appareils ({devices.length || 1})</h3>
+            {devices.length > 0 ? (
+              <div className="space-y-2">
+                {devices.map((d, i) => (
+                  <div key={i} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
+                    <div>
+                      <p className="font-medium">{d.model_name}</p>
+                      <p className="text-sm text-gray-500">SN: {d.serial_number}</p>
+                      {d.service_type && <p className="text-xs text-gray-400">{d.service_type}</p>}
+                    </div>
+                    <span className="text-sm text-gray-400">{d.equipment_type}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-gray-50 rounded-lg p-3"><p className="font-medium">{request.serial_number}</p></div>
+            )}
+          </div>
+          
           {request.problem_description && <div><h3 className="font-bold text-gray-700 mb-2">Notes du client</h3><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm whitespace-pre-wrap">{request.problem_description}</p></div></div>}
         </div>
-        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between"><button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Fermer</button>{isPending && <button onClick={onCreateQuote} className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium">💰 Créer Devis</button>}</div>
+        
+        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between">
+          <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Fermer</button>
+          {isPending && (
+            <button onClick={onCreateQuote} className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium">
+              💰 Créer Devis
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1685,18 +1819,74 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   const [devicePricing, setDevicePricing] = useState([]);
   const [saving, setSaving] = useState(false);
   const [quoteRef, setQuoteRef] = useState('');
+  const [contractInfo, setContractInfo] = useState(null); // Active contract data
+  const [loadingContract, setLoadingContract] = useState(true);
 
   const devices = request?.request_devices || [];
   const signatory = profile?.full_name || 'Lighthouse France';
   const today = new Date();
   
   // Check if client is in France Metropolitan for shipping
-  // Check company billing postal code - this should be the main address
   const clientPostalCode = request?.companies?.billing_postal_code || 
                            request?.companies?.postal_code || 
                            '';
-  const isMetro = clientPostalCode ? isFranceMetropolitan(clientPostalCode) : true; // Default to France if no postal code
+  const isMetro = clientPostalCode ? isFranceMetropolitan(clientPostalCode) : true;
   const defaultShipping = isMetro ? 45 : 0;
+
+  // ============================================
+  // CONTRACT DETECTION
+  // ============================================
+  useEffect(() => {
+    const checkContract = async () => {
+      if (!request?.company_id) {
+        setLoadingContract(false);
+        return;
+      }
+      
+      const todayStr = new Date().toISOString().split('T')[0];
+      
+      // Get active contracts for this company
+      const { data: contracts } = await supabase
+        .from('contracts')
+        .select('id, contract_number, bc_url, start_date, end_date, contract_devices(*)')
+        .eq('company_id', request.company_id)
+        .eq('status', 'active')
+        .lte('start_date', todayStr)
+        .gte('end_date', todayStr);
+      
+      if (contracts && contracts.length > 0) {
+        // Build map of serial numbers to contract devices
+        const deviceMap = {};
+        let primaryContract = null;
+        
+        for (const contract of contracts) {
+          if (!primaryContract) primaryContract = contract;
+          for (const cd of (contract.contract_devices || [])) {
+            const tokensRemaining = (cd.tokens_total || 0) - (cd.tokens_used || 0);
+            deviceMap[cd.serial_number] = {
+              contract_id: contract.id,
+              contract_number: contract.contract_number,
+              contract_device_id: cd.id,
+              bc_url: contract.bc_url,
+              tokens_remaining: tokensRemaining,
+              tokens_total: cd.tokens_total || 0,
+              unit_price: cd.unit_price || 0
+            };
+          }
+        }
+        
+        setContractInfo({
+          contracts,
+          primaryContract,
+          deviceMap
+        });
+      }
+      
+      setLoadingContract(false);
+    };
+    
+    checkContract();
+  }, [request?.company_id]);
 
   // Determine which service sections are needed based on devices
   const getRequiredSections = () => {
@@ -1723,6 +1913,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   const requiredSections = getRequiredSections();
 
   useEffect(() => {
+    if (loadingContract) return; // Wait for contract check
+    
     // Generate quote reference
     const year = today.getFullYear().toString().slice(-2);
     const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -1738,6 +1930,11 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         
         const calTemplate = CALIBRATION_TEMPLATES[deviceType] || CALIBRATION_TEMPLATES.particle_counter;
         
+        // Check contract coverage
+        const contractDevice = contractInfo?.deviceMap?.[d.serial_number];
+        const isContractCovered = needsCal && contractDevice && contractDevice.tokens_remaining > 0;
+        const tokensExhausted = needsCal && contractDevice && contractDevice.tokens_remaining <= 0;
+        
         return {
           id: d.id || `device-${i}`,
           model: d.model_name || '',
@@ -1747,14 +1944,21 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           needsCalibration: needsCal,
           needsRepair: needsRepair,
           customerNotes: d.notes || d.problem_description || '',
-          calibrationPrice: needsCal ? calTemplate.defaultPrice : 0,
+          // Contract coverage
+          isContractCovered: isContractCovered,
+          tokensExhausted: tokensExhausted,
+          contractDeviceId: contractDevice?.contract_device_id || null,
+          contractId: contractDevice?.contract_id || null,
+          tokensRemaining: contractDevice?.tokens_remaining || 0,
+          // Pricing - 0 for contract-covered calibrations
+          calibrationPrice: isContractCovered ? 0 : (needsCal ? calTemplate.defaultPrice : 0),
           repairPrice: needsRepair ? REPAIR_TEMPLATE.defaultPrice : 0,
-          additionalParts: [], // For extra parts/labor
+          additionalParts: [],
           shipping: defaultShipping
         };
       }));
     }
-  }, []);
+  }, [loadingContract, contractInfo]);
 
   // Update device pricing
   const updateDevice = (deviceId, field, value) => {
@@ -1819,7 +2023,17 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
     return labels[type] || type;
   };
 
-  // Send quote
+  // Check if fully covered by contract (all calibrations covered, no repairs)
+  const isFullyContractCovered = devicePricing.every(d => {
+    if (d.needsCalibration && !d.isContractCovered) return false;
+    if (d.needsRepair) return false; // Repairs are not covered
+    return true;
+  }) && devicePricing.some(d => d.isContractCovered);
+  
+  // Check if any device is contract covered
+  const hasContractCoveredDevices = devicePricing.some(d => d.isContractCovered);
+
+  // Send quote (or auto-approve for contract)
   const sendQuote = async () => {
     setSaving(true);
     
@@ -1843,30 +2057,80 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         repairPrice: d.repairPrice,
         additionalParts: d.additionalParts,
         shipping: d.shipping,
-        serviceTotal: getDeviceServiceTotal(d)
+        serviceTotal: getDeviceServiceTotal(d),
+        // Contract info
+        isContractCovered: d.isContractCovered,
+        contractDeviceId: d.contractDeviceId
       })),
       requiredSections,
       servicesSubtotal,
       shippingTotal,
       grandTotal,
       isMetro,
+      isContractRMA: hasContractCoveredDevices,
       createdBy: signatory,
       createdAt: new Date().toISOString()
     };
 
-    const { error } = await supabase.from('service_requests').update({
-      request_number: rmaNumber,
-      status: 'quote_sent',
-      quoted_at: new Date().toISOString(),
-      quote_total: grandTotal,
-      quote_subtotal: servicesSubtotal,
-      quote_shipping: shippingTotal,
-      quote_data: quoteData,
-      quote_revision_notes: null
-    }).eq('id', request.id);
+    try {
+      // Determine status and whether to auto-approve
+      let newStatus = 'quote_sent';
+      let bcUrl = null;
+      
+      // If fully contract covered (calibration only, all covered), auto-approve
+      if (isFullyContractCovered) {
+        newStatus = 'waiting_device'; // Skip quote approval, go straight to waiting
+        bcUrl = contractInfo?.primaryContract?.bc_url; // Copy BC from contract
+      }
 
-    if (error) { notify('Erreur: ' + error.message, 'error'); }
-    else { notify('✅ Devis envoyé! RMA: ' + rmaNumber); reload(); onClose(); }
+      const updateData = {
+        request_number: rmaNumber,
+        status: newStatus,
+        quoted_at: new Date().toISOString(),
+        quote_total: grandTotal,
+        quote_subtotal: servicesSubtotal,
+        quote_shipping: shippingTotal,
+        quote_data: quoteData,
+        quote_revision_notes: null,
+        // Contract fields
+        is_contract_rma: hasContractCoveredDevices,
+        contract_id: hasContractCoveredDevices ? contractInfo?.primaryContract?.id : null
+      };
+      
+      // Add BC URL if contract-covered
+      if (bcUrl) {
+        updateData.bc_url = bcUrl;
+        updateData.bc_approved_at = new Date().toISOString();
+      }
+
+      const { error } = await supabase.from('service_requests').update(updateData).eq('id', request.id);
+
+      if (error) throw error;
+
+      // Update request_devices with contract info
+      for (const d of devicePricing) {
+        if (d.id && d.isContractCovered) {
+          await supabase.from('request_devices').update({
+            contract_device_id: d.contractDeviceId,
+            contract_covered: true
+          }).eq('id', d.id);
+        }
+      }
+
+      if (isFullyContractCovered) {
+        notify(`✅ Contrat! RMA ${rmaNumber} créé - En attente de réception (BC contrat copié)`);
+      } else if (hasContractCoveredDevices) {
+        notify(`✅ Devis envoyé! RMA: ${rmaNumber} (certains appareils sous contrat)`);
+      } else {
+        notify('✅ Devis envoyé! RMA: ' + rmaNumber);
+      }
+      
+      reload(); 
+      onClose();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    
     setSaving(false);
   };
 
@@ -1875,26 +2139,30 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       <div className="bg-white w-full h-full md:w-[98%] md:h-[98%] md:m-auto md:rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
         
         {/* Header */}
-        <div className="px-6 py-4 bg-[#1a1a2e] text-white flex justify-between items-center shrink-0">
+        <div className={`px-6 py-4 text-white flex justify-between items-center shrink-0 ${isFullyContractCovered ? 'bg-emerald-600' : 'bg-[#1a1a2e]'}`}>
           <div className="flex items-center gap-6">
             <div>
-              <h2 className="text-xl font-bold">
-                {step === 1 && 'Créer le Devis'}
+              <h2 className="text-xl font-bold flex items-center gap-2">
+                {step === 1 && (isFullyContractCovered ? '📋 RMA Contrat' : 'Créer le Devis')}
                 {step === 2 && 'Aperçu du Devis'}
-                {step === 3 && 'Confirmer l\'envoi'}
+                {step === 3 && (isFullyContractCovered ? 'Confirmer RMA Contrat' : 'Confirmer l\'envoi')}
               </h2>
-              <p className="text-gray-400">{request.companies?.name} • {devicePricing.length} appareil(s)</p>
+              <p className="text-gray-300">{request.companies?.name} • {devicePricing.length} appareil(s)</p>
             </div>
             <div className="flex gap-1">
               {[1,2,3].map(s => (
-                <div key={s} className={`w-8 h-2 rounded-full ${step >= s ? 'bg-[#00A651]' : 'bg-gray-600'}`} />
+                <div key={s} className={`w-8 h-2 rounded-full ${step >= s ? (isFullyContractCovered ? 'bg-white' : 'bg-[#00A651]') : 'bg-gray-600'}`} />
               ))}
             </div>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <p className="text-xs text-gray-400">Total HT</p>
-              <p className="text-2xl font-bold text-[#00A651]">{grandTotal.toFixed(2)} €</p>
+              <p className="text-xs text-gray-300">Total HT</p>
+              {isFullyContractCovered ? (
+                <p className="text-2xl font-bold text-white">CONTRAT</p>
+              ) : (
+                <p className="text-2xl font-bold text-[#00A651]">{grandTotal.toFixed(2)} €</p>
+              )}
             </div>
             <button onClick={onClose} className="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
           </div>
@@ -1903,11 +2171,47 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
           
+          {/* Loading Contract Check */}
+          {loadingContract && (
+            <div className="flex items-center justify-center py-12">
+              <div className="flex items-center gap-3">
+                <div className="w-6 h-6 border-2 border-[#00A651] border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-gray-600">Vérification contrat en cours...</span>
+              </div>
+            </div>
+          )}
+          
           {/* ==================== STEP 1: PRICING EDITOR ==================== */}
-          {step === 1 && (
+          {step === 1 && !loadingContract && (
             <div className="flex h-full">
               {/* LEFT SIDE - Customer Info & Devices */}
               <div className="flex-1 p-6 overflow-y-auto">
+                
+                {/* CONTRACT CUSTOMER BANNER */}
+                {hasContractCoveredDevices && (
+                  <div className={`mb-6 p-4 rounded-xl border-2 ${isFullyContractCovered ? 'bg-emerald-50 border-emerald-300' : 'bg-emerald-50 border-emerald-300'}`}>
+                    <div className="flex items-start gap-3">
+                      <span className="text-3xl">📋</span>
+                      <div className="flex-1">
+                        <p className="font-bold text-emerald-800">
+                          {isFullyContractCovered ? '✅ Client sous contrat - Étalonnage(s) 100% couvert(s)' : '📋 Client sous contrat - Couverture partielle'}
+                        </p>
+                        <p className="text-emerald-700 text-sm mt-1">
+                          {isFullyContractCovered 
+                            ? 'Toutes les étalonnages sont couverts. Le devis sera à 0€ et le RMA sera créé directement en "Attente Appareil" avec le BC du contrat.'
+                            : `${devicePricing.filter(d => d.isContractCovered).length} appareil(s) couvert(s) par contrat. Les réparations ou appareils non couverts seront facturés.`
+                          }
+                        </p>
+                        {contractInfo?.primaryContract && (
+                          <p className="text-xs text-emerald-600 mt-2">
+                            Contrat: {contractInfo.primaryContract.contract_number} • 
+                            Valide jusqu'au {new Date(contractInfo.primaryContract.end_date).toLocaleDateString('fr-FR')}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
                 {/* Revision Request Alert */}
                 {request.status === 'quote_revision_requested' && (
@@ -1958,10 +2262,27 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                   {devicePricing.map((device, index) => {
                     const calTemplate = CALIBRATION_TEMPLATES[device.deviceType] || CALIBRATION_TEMPLATES.particle_counter;
                     return (
-                      <div key={device.id} className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden">
+                      <div key={device.id} className={`border-2 rounded-xl overflow-hidden ${device.isContractCovered ? 'bg-emerald-50 border-emerald-300' : 'bg-white border-gray-200'}`}>
                         {/* Device Header */}
-                        <div className="bg-[#1a1a2e] text-white px-4 py-3 flex items-center justify-between">
+                        <div className={`px-4 py-3 flex items-center justify-between ${device.isContractCovered ? 'bg-emerald-600' : 'bg-[#1a1a2e]'} text-white`}>
                           <div className="flex items-center gap-3">
+                            <span className="bg-white/20 px-2 py-1 rounded text-sm font-bold">#{index + 1}</span>
+                            <div>
+                              <p className="font-bold">{device.model || 'Appareil'}</p>
+                              <p className="text-sm text-gray-300">SN: {device.serial} • {getDeviceTypeLabel(device.deviceType)}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {device.isContractCovered && (
+                              <span className="bg-white text-emerald-600 px-2 py-1 rounded text-xs font-bold">📋 CONTRAT</span>
+                            )}
+                            {device.tokensExhausted && (
+                              <span className="bg-amber-500 px-2 py-1 rounded text-xs font-bold">⚠️ Tokens épuisés</span>
+                            )}
+                            {device.needsCalibration && !device.isContractCovered && <span className="bg-blue-500 px-2 py-1 rounded text-xs">🔬 Cal</span>}
+                            {device.needsRepair && <span className="bg-orange-500 px-2 py-1 rounded text-xs">🔧 Rép</span>}
+                          </div>
+                        </div>
                             <span className="bg-white/20 px-2 py-1 rounded text-sm font-bold">#{index + 1}</span>
                             <div>
                               <p className="font-bold">{device.model || 'Appareil'}</p>
@@ -1981,24 +2302,50 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                             <p className="text-sm text-yellow-800">{device.customerNotes}</p>
                           </div>
                         )}
+                        
+                        {/* Contract Coverage Info */}
+                        {device.isContractCovered && (
+                          <div className="bg-emerald-100 px-4 py-2 border-b border-emerald-200">
+                            <p className="text-sm text-emerald-800">
+                              <span className="font-bold">📋 Couvert par contrat</span> 
+                              <span className="ml-2">• Tokens restants: {device.tokensRemaining}</span>
+                            </p>
+                          </div>
+                        )}
+                        {device.tokensExhausted && (
+                          <div className="bg-amber-100 px-4 py-2 border-b border-amber-200">
+                            <p className="text-sm text-amber-800">
+                              <span className="font-bold">⚠️ Tokens épuisés</span> - Facturation au tarif normal
+                            </p>
+                          </div>
+                        )}
 
                         {/* Pricing Inputs */}
                         <div className="p-4 space-y-3">
                           {device.needsCalibration && (
-                            <div className="flex items-center justify-between bg-blue-50 p-3 rounded-lg">
+                            <div className={`flex items-center justify-between p-3 rounded-lg ${device.isContractCovered ? 'bg-emerald-100' : 'bg-blue-50'}`}>
                               <div>
-                                <span className="font-medium text-blue-800">Main d'œuvre étalonnage</span>
-                                <span className="text-xs text-blue-600 ml-2">({calTemplate.icon} {getDeviceTypeLabel(device.deviceType)})</span>
+                                <span className={`font-medium ${device.isContractCovered ? 'text-emerald-800' : 'text-blue-800'}`}>Main d'œuvre étalonnage</span>
+                                <span className={`text-xs ml-2 ${device.isContractCovered ? 'text-emerald-600' : 'text-blue-600'}`}>({calTemplate.icon} {getDeviceTypeLabel(device.deviceType)})</span>
                               </div>
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  value={device.calibrationPrice}
-                                  onChange={e => updateDevice(device.id, 'calibrationPrice', parseFloat(e.target.value) || 0)}
-                                  className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
-                                />
-                                <span className="text-gray-500 font-medium">€</span>
-                              </div>
+                              {device.isContractCovered ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg">
+                                    CONTRAT
+                                  </span>
+                                  <span className="text-emerald-600 font-medium">0,00 €</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    value={device.calibrationPrice}
+                                    onChange={e => updateDevice(device.id, 'calibrationPrice', parseFloat(e.target.value) || 0)}
+                                    className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
+                                  />
+                                  <span className="text-gray-500 font-medium">€</span>
+                                </div>
+                              )}
                             </div>
                           )}
                           
@@ -2318,36 +2665,60 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           {step === 3 && (
             <div className="flex items-center justify-center min-h-full p-8">
               <div className="text-center max-w-lg">
-                <div className="w-24 h-24 bg-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6">
-                  <span className="text-5xl text-white">📧</span>
+                <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 ${isFullyContractCovered ? 'bg-emerald-500' : 'bg-[#00A651]'}`}>
+                  <span className="text-5xl text-white">{isFullyContractCovered ? '📋' : '📧'}</span>
                 </div>
-                <h3 className="text-2xl font-bold text-gray-800 mb-2">Confirmer l'envoi du devis</h3>
-                <p className="text-gray-600 mb-6">Le devis sera envoyé au client et disponible sur son portail.</p>
+                <h3 className="text-2xl font-bold text-gray-800 mb-2">
+                  {isFullyContractCovered ? 'Créer le RMA (Contrat)' : 'Confirmer l\'envoi du devis'}
+                </h3>
+                <p className="text-gray-600 mb-6">
+                  {isFullyContractCovered 
+                    ? 'Le RMA sera créé directement en "Attente Appareil" avec le BC du contrat.'
+                    : 'Le devis sera envoyé au client et disponible sur son portail.'
+                  }
+                </p>
                 
-                <div className="bg-gray-50 rounded-xl p-6 mb-6 text-left">
+                <div className={`rounded-xl p-6 mb-6 text-left ${isFullyContractCovered ? 'bg-emerald-50 border border-emerald-200' : 'bg-gray-50'}`}>
                   <p className="text-lg font-bold text-gray-800 mb-1">{request.companies?.name}</p>
                   <p className="text-sm text-gray-500 mb-4">{devicePricing.length} appareil(s)</p>
                   
                   <div className="space-y-2 text-sm border-t pt-3">
                     {devicePricing.map(d => (
-                      <div key={d.id} className="flex justify-between">
-                        <span>{d.model} <span className="text-gray-400">({d.serial})</span></span>
-                        <span className="font-medium">{(getDeviceServiceTotal(d) + d.shipping).toFixed(2)} €</span>
+                      <div key={d.id} className="flex justify-between items-center">
+                        <span>
+                          {d.model} <span className="text-gray-400">({d.serial})</span>
+                          {d.isContractCovered && <span className="ml-2 px-2 py-0.5 bg-emerald-200 text-emerald-700 rounded text-xs font-bold">CONTRAT</span>}
+                        </span>
+                        <span className="font-medium">
+                          {d.isContractCovered ? '0,00 €' : `${(getDeviceServiceTotal(d) + d.shipping).toFixed(2)} €`}
+                        </span>
                       </div>
                     ))}
                     <div className="border-t pt-2 mt-2 flex justify-between font-bold text-lg">
                       <span>Total HT</span>
-                      <span className="text-[#00A651]">{grandTotal.toFixed(2)} €</span>
+                      <span className={isFullyContractCovered ? 'text-emerald-600' : 'text-[#00A651]'}>
+                        {isFullyContractCovered ? '0,00 € (Contrat)' : `${grandTotal.toFixed(2)} €`}
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 text-left">
-                  <p className="font-medium mb-2">Après envoi :</p>
-                  <p className="mb-1">✓ Un numéro RMA sera attribué automatiquement</p>
-                  <p className="mb-1">✓ Le client recevra une notification</p>
-                  <p>✓ Le devis sera disponible sur son portail</p>
-                </div>
+                {isFullyContractCovered ? (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-800 text-left">
+                    <p className="font-medium mb-2">🎯 Workflow contrat :</p>
+                    <p className="mb-1">✓ Un numéro RMA sera attribué automatiquement</p>
+                    <p className="mb-1">✓ Le BC du contrat sera copié dans le RMA</p>
+                    <p className="mb-1">✓ Statut directement "Attente Appareil"</p>
+                    <p>✓ Pas d'approbation client nécessaire</p>
+                  </div>
+                ) : (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 text-left">
+                    <p className="font-medium mb-2">Après envoi :</p>
+                    <p className="mb-1">✓ Un numéro RMA sera attribué automatiquement</p>
+                    <p className="mb-1">✓ Le client recevra une notification</p>
+                    <p>✓ Le devis sera disponible sur son portail</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2365,8 +2736,12 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
               </button>
             )}
             {step === 3 && (
-              <button onClick={sendQuote} disabled={saving} className="px-10 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold text-lg disabled:opacity-50">
-                {saving ? 'Envoi en cours...' : '✅ Confirmer et Envoyer'}
+              <button 
+                onClick={sendQuote} 
+                disabled={saving} 
+                className={`px-10 py-3 text-white rounded-lg font-bold text-lg disabled:opacity-50 ${isFullyContractCovered ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}
+              >
+                {saving ? 'Envoi en cours...' : isFullyContractCovered ? '📋 Créer RMA Contrat' : '✅ Confirmer et Envoyer'}
               </button>
             )}
           </div>
