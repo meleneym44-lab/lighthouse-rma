@@ -8121,12 +8121,60 @@ function ContractsPage({ profile, t, notify, setPage }) {
         }
       }
       
-      // Update contract - ONLY status field (other fields may not exist)
-      const { error } = await supabase.from('contracts').update({
-        status: 'bc_pending'
-      }).eq('id', selectedContract.id);
+      // Generate signed contract quote PDF (like RMA)
+      let signedQuotePdfUrl = null;
+      if (hasSignature) {
+        try {
+          const pdfBlob = await generateContractQuotePDF({
+            contract: selectedContract,
+            devices: selectedContract.contract_devices || [],
+            totalPrice: (selectedContract.contract_devices || []).reduce((sum, d) => sum + (d.unit_price || 0), 0),
+            totalTokens: (selectedContract.contract_devices || []).reduce((sum, d) => sum + (d.tokens_total || 0), 0),
+            calibrationTypes: [...new Set((selectedContract.contract_devices || []).map(d => d.device_type || 'particle_counter'))],
+            isSigned: true,
+            signatureName: signatureName,
+            signatureDate: new Date().toLocaleDateString('fr-FR'),
+            signatureImage: signatureData
+          });
+          
+          const pdfFileName = `devis_signe_contrat_${selectedContract.contract_number || selectedContract.id}_${Date.now()}.pdf`;
+          const { error: pdfUploadError } = await supabase.storage
+            .from('documents')
+            .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
+          
+          if (!pdfUploadError) {
+            const { data: pdfUrl } = supabase.storage
+              .from('documents')
+              .getPublicUrl(pdfFileName);
+            signedQuotePdfUrl = pdfUrl?.publicUrl;
+            console.log('Signed contract quote PDF uploaded:', signedQuotePdfUrl);
+          }
+        } catch (e) {
+          console.log('Signed contract PDF generation error:', e);
+        }
+      }
       
-      if (error) throw error;
+      // Update contract status and BC info
+      const updateData = {
+        status: 'bc_pending',
+        bc_submitted_at: new Date().toISOString(),
+        bc_signed_by: signatureName
+      };
+      
+      // Add URLs if available
+      if (fileUrl) updateData.bc_file_url = fileUrl;
+      if (signedQuotePdfUrl) updateData.signed_quote_url = signedQuotePdfUrl;
+      
+      const { error } = await supabase.from('contracts').update(updateData).eq('id', selectedContract.id);
+      
+      if (error) {
+        // If columns don't exist, try minimal update
+        console.log('Full update failed, trying minimal:', error);
+        const { error: minError } = await supabase.from('contracts').update({
+          status: 'bc_pending'
+        }).eq('id', selectedContract.id);
+        if (minError) throw minError;
+      }
       
       notify('✅ Bon de commande soumis avec succès!', 'success');
       setShowBCModal(false);
@@ -8134,7 +8182,9 @@ function ContractsPage({ profile, t, notify, setPage }) {
       setLuEtApprouve('');
       setAcceptTerms(false);
       clearSignature();
-      loadContracts();
+      
+      // Force reload to show updated status
+      window.location.reload();
     } catch (err) {
       console.error('BC submit error:', err);
       notify('Erreur: ' + err.message, 'error');
@@ -8485,7 +8535,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
               <>
                 <h3 className="font-bold text-[#1E3A5F] mb-3">Documents</h3>
                 <div className="space-y-3">
-                  {/* Quote */}
+                  {/* Original Quote - viewable */}
                   {contract.quote_sent_at && (
                     <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border">
                       <div className="flex items-center gap-3">
@@ -8508,31 +8558,54 @@ function ContractsPage({ profile, t, notify, setPage }) {
                     </div>
                   )}
                   
-                  {/* Signed BC/Quote */}
-                  {contract.bc_submitted_at && (
+                  {/* Signed Quote PDF */}
+                  {contract.signed_quote_url && (
                     <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
                           <span className="text-green-600">✅</span>
                         </div>
                         <div>
-                          <p className="font-medium text-green-800">Devis Signé / Bon de Commande</p>
+                          <p className="font-medium text-green-800">Devis Signé</p>
                           <p className="text-xs text-green-600">
-                            Soumis le {new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR')}
+                            Signé le {contract.bc_submitted_at ? new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR') : '—'}
                             {contract.bc_signed_by && ` par ${contract.bc_signed_by}`}
                           </p>
                         </div>
                       </div>
-                      {contract.bc_url && (
-                        <a
-                          href={contract.bc_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
-                        >
-                          📥 Télécharger
-                        </a>
-                      )}
+                      <a
+                        href={contract.signed_quote_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
+                      >
+                        📥 Télécharger PDF
+                      </a>
+                    </div>
+                  )}
+                  
+                  {/* BC File (uploaded purchase order) */}
+                  {contract.bc_file_url && (
+                    <div className="flex items-center justify-between p-4 bg-purple-50 rounded-lg border border-purple-200">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                          <span className="text-purple-600">📋</span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-purple-800">Bon de Commande</p>
+                          <p className="text-xs text-purple-600">
+                            Document client uploadé
+                          </p>
+                        </div>
+                      </div>
+                      <a
+                        href={contract.bc_file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700"
+                      >
+                        📥 Télécharger
+                      </a>
                     </div>
                   )}
                   
