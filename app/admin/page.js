@@ -1760,13 +1760,15 @@ function PricingSheet({ notify, isAdmin }) {
     const { data, error } = await supabase
       .from('parts_pricing')
       .select('*')
-      .order('part_number', { ascending: true });
+      .order('part_number', { ascending: true })
+      .limit(10000); // Load up to 10,000 parts
     
     if (error) {
       console.error('Error loading parts:', error);
       notify('Erreur de chargement des pièces', 'error');
     } else {
       setParts(data || []);
+      console.log(`Loaded ${data?.length || 0} parts`);
     }
     setLoading(false);
   }, [notify]);
