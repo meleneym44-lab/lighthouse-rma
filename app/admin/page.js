@@ -2189,17 +2189,17 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                 
                 {/* CONTRACT CUSTOMER BANNER */}
                 {hasContractCoveredDevices && (
-                  <div className={`mb-6 p-4 rounded-xl border-2 ${isFullyContractCovered ? 'bg-emerald-50 border-emerald-300' : 'bg-emerald-50 border-emerald-300'}`}>
+                  <div className="mb-6 p-4 rounded-xl border-2 bg-emerald-50 border-emerald-300">
                     <div className="flex items-start gap-3">
                       <span className="text-3xl">📋</span>
                       <div className="flex-1">
                         <p className="font-bold text-emerald-800">
-                          {isFullyContractCovered ? '✅ Client sous contrat - Étalonnage(s) 100% couvert(s)' : '📋 Client sous contrat - Couverture partielle'}
+                          Contrat détecté
                         </p>
                         <p className="text-emerald-700 text-sm mt-1">
                           {isFullyContractCovered 
-                            ? 'Toutes les étalonnages sont couverts. Le devis sera à 0€ et le RMA sera créé directement en "Attente Appareil" avec le BC du contrat.'
-                            : `${devicePricing.filter(d => d.isContractCovered).length} appareil(s) couvert(s) par contrat. Les réparations ou appareils non couverts seront facturés.`
+                            ? 'Étalonnage(s) couvert(s) par contrat. Le RMA sera créé directement en "Attente Appareil" avec le BC du contrat.'
+                            : `${devicePricing.filter(d => d.isContractCovered).length} appareil(s) couvert(s) par contrat. Les réparations ou appareils non couverts seront facturés normalement.`
                           }
                         </p>
                         {contractInfo?.primaryContract && (
@@ -2280,17 +2280,6 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                               <span className="bg-amber-500 px-2 py-1 rounded text-xs font-bold">⚠️ Tokens épuisés</span>
                             )}
                             {device.needsCalibration && !device.isContractCovered && <span className="bg-blue-500 px-2 py-1 rounded text-xs">🔬 Cal</span>}
-                            {device.needsRepair && <span className="bg-orange-500 px-2 py-1 rounded text-xs">🔧 Rép</span>}
-                          </div>
-                        </div>
-                            <span className="bg-white/20 px-2 py-1 rounded text-sm font-bold">#{index + 1}</span>
-                            <div>
-                              <p className="font-bold">{device.model || 'Appareil'}</p>
-                              <p className="text-sm text-gray-300">SN: {device.serial} • {getDeviceTypeLabel(device.deviceType)}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {device.needsCalibration && <span className="bg-blue-500 px-2 py-1 rounded text-xs">🔬 Cal</span>}
                             {device.needsRepair && <span className="bg-orange-500 px-2 py-1 rounded text-xs">🔧 Rép</span>}
                           </div>
                         </div>
@@ -2697,7 +2686,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                     <div className="border-t pt-2 mt-2 flex justify-between font-bold text-lg">
                       <span>Total HT</span>
                       <span className={isFullyContractCovered ? 'text-emerald-600' : 'text-[#00A651]'}>
-                        {isFullyContractCovered ? '0,00 € (Contrat)' : `${grandTotal.toFixed(2)} €`}
+                        {grandTotal.toFixed(2)} €
                       </span>
                     </div>
                   </div>
