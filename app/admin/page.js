@@ -1825,70 +1825,102 @@ function PricingSheet({ notify, isAdmin }) {
           }
 
           // OPTIMIZED BULK IMPORT
-          // Step 1: Parse all rows into parts array
           const partsToUpsert = [];
           let skipped = 0;
 
-          // Helper function to get value from row with flexible column names
-          const getColumnValue = (row, ...possibleNames) => {
-            // First try exact match
-            for (const name of possibleNames) {
-              if (row[name] !== undefined && row[name] !== null && row[name] !== '') {
-                return row[name];
+          // Get all column names from first row and normalize them
+          const originalColumns = Object.keys(jsonData[0]);
+          console.log('=== EXCEL COLUMN DEBUG ===');
+          console.log('Raw columns:', originalColumns);
+          originalColumns.forEach((col, i) => {
+            console.log(`Column ${i}: "${col}" (length: ${col.length}, chars: ${[...col].map(c => c.charCodeAt(0)).join(',')})`);
+          });
+          console.log('First row values:', jsonData[0]);
+
+          // Create a normalized column map (strip all whitespace, lowercase, remove accents)
+          const normalizeKey = (str) => {
+            return str.toString()
+              .toLowerCase()
+              .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove accents
+              .replace(/[^a-z0-9]/g, ''); // Remove all non-alphanumeric
+          };
+
+          const columnMap = {};
+          originalColumns.forEach(col => {
+            columnMap[normalizeKey(col)] = col;
+          });
+          console.log('Normalized column map:', columnMap);
+
+          // Smart column finder - finds best match
+          const findColumn = (row, ...searchTerms) => {
+            // First: try direct match on original columns
+            for (const term of searchTerms) {
+              if (row[term] !== undefined && row[term] !== null && row[term] !== '') {
+                return row[term];
               }
             }
-            // Then try case-insensitive match
+            // Second: try normalized match
+            for (const term of searchTerms) {
+              const normalizedTerm = normalizeKey(term);
+              const matchedOriginal = columnMap[normalizedTerm];
+              if (matchedOriginal && row[matchedOriginal] !== undefined && row[matchedOriginal] !== null && row[matchedOriginal] !== '') {
+                return row[matchedOriginal];
+              }
+            }
+            // Third: try partial match (column contains search term)
             const rowKeys = Object.keys(row);
-            for (const name of possibleNames) {
-              const foundKey = rowKeys.find(k => k.toLowerCase().trim() === name.toLowerCase().trim());
-              if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null && row[foundKey] !== '') {
-                return row[foundKey];
+            for (const term of searchTerms) {
+              const normalizedTerm = normalizeKey(term);
+              for (const key of rowKeys) {
+                if (normalizeKey(key).includes(normalizedTerm) || normalizedTerm.includes(normalizeKey(key))) {
+                  if (row[key] !== undefined && row[key] !== null && row[key] !== '') {
+                    return row[key];
+                  }
+                }
               }
             }
             return null;
           };
 
-          // Log first row to debug column names
-          if (jsonData.length > 0) {
-            console.log('Excel columns found:', Object.keys(jsonData[0]));
-            console.log('First row data:', jsonData[0]);
-          }
-
+          // Parse each row
           for (const row of jsonData) {
-            // Map Excel columns to database fields (flexible column naming)
-            const partNumber = getColumnValue(row, 'Part Number', 'part_number', 'PartNumber', 'Ref', 'Reference', 'SKU', 'Part No', 'PN', 'Part', 'Numéro', 'N° Pièce', 'No Piece');
-            const description = getColumnValue(row, 'Description', 'description', 'Name', 'Nom', 'Desc', 'Désignation', 'Designation', 'Libellé', 'Libelle');
-            const descriptionFr = getColumnValue(row, 'Description FR', 'description_fr', 'Nom FR', 'Description Francais', 'Description française');
-            const category = getColumnValue(row, 'Category', 'category', 'Categorie', 'Catégorie', 'Type', 'Cat', 'Famille');
-            const rawPrice = getColumnValue(row, 'Price', 'price', 'Unit Price', 'Prix', 'Prix Unitaire', 'Cost', 'Tarif', 'PU', 'Prix HT');
-            const rawQuantity = getColumnValue(row, 'Quantity', 'quantity', 'Stock', 'Qty', 'QTY', 'Qté', 'Quantité');
-            const location = getColumnValue(row, 'Location', 'location', 'Emplacement', 'Loc', 'Lieu');
-            const supplier = getColumnValue(row, 'Supplier', 'supplier', 'Fournisseur', 'Vendor', 'Source');
-
-            const price = parseFloat(rawPrice) || 0;
-            const quantity = parseInt(rawQuantity) || 0;
+            const partNumber = findColumn(row, 'Part Number', 'PartNumber', 'part_number', 'Ref', 'Reference', 'SKU', 'PN', 'Part No', 'Numéro', 'N° Pièce');
+            const description = findColumn(row, 'Description', 'Desc', 'Name', 'Nom', 'Désignation', 'Designation', 'Libellé', 'Libelle', 'Label');
+            const descriptionFr = findColumn(row, 'Description FR', 'description_fr', 'Nom FR');
+            const category = findColumn(row, 'Category', 'Categorie', 'Catégorie', 'Type', 'Cat', 'Famille');
+            const rawPrice = findColumn(row, 'Price', 'Prix', 'Unit Price', 'Prix Unitaire', 'Cost', 'Tarif', 'PU', 'Prix HT', 'Montant');
+            const rawQuantity = findColumn(row, 'Quantity', 'Stock', 'Qty', 'QTY', 'Qté', 'Quantité');
+            const location = findColumn(row, 'Location', 'Emplacement', 'Loc', 'Lieu');
+            const supplier = findColumn(row, 'Supplier', 'Fournisseur', 'Vendor', 'Source');
 
             if (!partNumber) {
               skipped++;
               continue;
             }
 
+            const price = parseFloat(rawPrice) || null;
+            const quantity = parseInt(rawQuantity) || 0;
+
             partsToUpsert.push({
               part_number: partNumber.toString().trim(),
               description: description ? description.toString().trim() : null,
               description_fr: descriptionFr ? descriptionFr.toString().trim() : null,
               category: category ? category.toString().trim() : null,
-              unit_price: isNaN(price) || price === 0 ? null : price,
-              quantity_in_stock: isNaN(quantity) ? 0 : quantity,
+              unit_price: price,
+              quantity_in_stock: quantity,
               location: location ? location.toString().trim() : null,
               supplier: supplier ? supplier.toString().trim() : null,
               last_price_update: new Date().toISOString()
             });
           }
 
-          // Log sample of parsed data
+          // Log sample
           if (partsToUpsert.length > 0) {
-            console.log('Sample parsed part:', partsToUpsert[0]);
+            console.log('=== PARSED DATA SAMPLE ===');
+            console.log('First part:', partsToUpsert[0]);
+            console.log('Second part:', partsToUpsert[1]);
+            const withDesc = partsToUpsert.filter(p => p.description);
+            console.log(`Parts with description: ${withDesc.length}/${partsToUpsert.length}`);
           }
 
           if (partsToUpsert.length === 0) {
@@ -1897,52 +1929,84 @@ function PricingSheet({ notify, isAdmin }) {
             return;
           }
 
-          // Step 2: Get existing part numbers to count updates vs creates
-          const { data: existingParts } = await supabase
+          // Step 2: Get ALL existing part numbers
+          const { data: existingParts, error: fetchError } = await supabase
             .from('parts_pricing')
             .select('part_number');
           
-          const existingPartNumbers = new Set((existingParts || []).map(p => p.part_number));
-          const newCount = partsToUpsert.filter(p => !existingPartNumbers.has(p.part_number)).length;
-          const updateCount = partsToUpsert.length - newCount;
-
-          console.log(`Processing ${partsToUpsert.length} parts: ${newCount} new, ${updateCount} updates`);
-
-          // Step 3: Bulk upsert in batches of 500 (Supabase limit)
-          const batchSize = 500;
-          let totalErrors = 0;
-          let lastError = null;
+          if (fetchError) {
+            console.error('Error fetching existing parts:', fetchError);
+          }
           
-          for (let i = 0; i < partsToUpsert.length; i += batchSize) {
-            const batch = partsToUpsert.slice(i, i + batchSize);
+          const existingPartNumbers = new Set((existingParts || []).map(p => p.part_number));
+          
+          // Separate into inserts and updates
+          const toInsert = partsToUpsert.filter(p => !existingPartNumbers.has(p.part_number));
+          const toUpdate = partsToUpsert.filter(p => existingPartNumbers.has(p.part_number));
+
+          console.log(`=== IMPORT PLAN ===`);
+          console.log(`Total parts: ${partsToUpsert.length}`);
+          console.log(`New (INSERT): ${toInsert.length}`);
+          console.log(`Existing (UPDATE): ${toUpdate.length}`);
+          console.log(`Skipped (no part number): ${skipped}`);
+
+          // Step 3: Process inserts in batches
+          const batchSize = 200; // Smaller batches for reliability
+          let insertErrors = 0;
+          let updateErrors = 0;
+          
+          // INSERT new parts
+          for (let i = 0; i < toInsert.length; i += batchSize) {
+            const batch = toInsert.slice(i, i + batchSize);
             const batchNum = Math.floor(i / batchSize) + 1;
-            const totalBatches = Math.ceil(partsToUpsert.length / batchSize);
+            const totalBatches = Math.ceil(toInsert.length / batchSize);
             
-            console.log(`Processing batch ${batchNum}/${totalBatches} (${batch.length} parts)`);
+            console.log(`INSERT batch ${batchNum}/${totalBatches} (${batch.length} parts)`);
             
             const { error } = await supabase
               .from('parts_pricing')
-              .upsert(batch, { 
-                onConflict: 'part_number',
-                ignoreDuplicates: false 
-              });
+              .insert(batch);
             
             if (error) {
-              console.error(`Batch ${batchNum} error:`, error);
-              lastError = error;
-              totalErrors += batch.length;
+              console.error(`INSERT batch ${batchNum} error:`, error);
+              insertErrors += batch.length;
             }
           }
 
-          if (lastError) {
-            console.error('Last error details:', lastError);
+          // UPDATE existing parts (one by one to avoid conflicts)
+          let updateCount = 0;
+          for (const part of toUpdate) {
+            const { error } = await supabase
+              .from('parts_pricing')
+              .update({
+                description: part.description,
+                description_fr: part.description_fr,
+                category: part.category,
+                unit_price: part.unit_price,
+                quantity_in_stock: part.quantity_in_stock,
+                location: part.location,
+                supplier: part.supplier,
+                last_price_update: part.last_price_update
+              })
+              .eq('part_number', part.part_number);
+            
+            if (error) {
+              updateErrors++;
+              if (updateErrors <= 3) console.error(`UPDATE error for ${part.part_number}:`, error);
+            } else {
+              updateCount++;
+            }
+            
+            // Progress log every 100
+            if (updateCount % 100 === 0) {
+              console.log(`Updated ${updateCount}/${toUpdate.length}...`);
+            }
           }
 
-          const successCount = partsToUpsert.length - totalErrors;
-          notify(
-            `Import terminé: ${newCount} créés, ${updateCount} mis à jour${skipped > 0 ? `, ${skipped} ignorés (pas de n° pièce)` : ''}${totalErrors > 0 ? `, ${totalErrors} erreurs` : ''}`, 
-            totalErrors > 0 ? 'error' : 'success'
-          );
+          const totalErrors = insertErrors + updateErrors;
+          const message = `Import terminé: ${toInsert.length - insertErrors} créés, ${toUpdate.length - updateErrors} mis à jour${skipped > 0 ? `, ${skipped} ignorés` : ''}${totalErrors > 0 ? `, ${totalErrors} erreurs` : ''}`;
+          
+          notify(message, totalErrors > 0 ? 'error' : 'success');
           loadParts();
           setShowUploadModal(false);
         } catch (err) {
