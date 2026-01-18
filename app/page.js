@@ -877,6 +877,383 @@ async function generateQuotePDF(options) {
   return pdf.output('blob');
 }
 
+// Contract Quote PDF Generator - IDENTICAL structure to RMA
+async function generateContractQuotePDF(options) {
+  const {
+    contract, devices = [], totalPrice = 0, totalTokens = 0,
+    calibrationTypes = ['particle_counter'], isSigned = false,
+    signatureName = '', signatureDate = '', signatureImage = null
+  } = options;
+
+  await new Promise((resolve, reject) => {
+    if (window.jspdf) { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  
+  const pageWidth = 210, pageHeight = 297, margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  const footerHeight = 16;
+  const signatureBlockHeight = 42;
+  
+  const green = [0, 166, 81];
+  const darkBlue = [26, 26, 46];
+  const gray = [80, 80, 80];
+  const lightGray = [130, 130, 130];
+  const white = [255, 255, 255];
+  
+  let y = margin;
+  
+  // === LOGO LOADING (identical to RMA) ===
+  const loadImageAsBase64 = async (url) => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+      });
+    }
+  };
+  
+  let lighthouseLogo = null;
+  let capcertLogo = null;
+  try {
+    const results = await Promise.all([
+      loadImageAsBase64('/images/logos/lighthouse-logo.png'),
+      loadImageAsBase64('/images/logos/capcert-logo.png')
+    ]);
+    lighthouseLogo = results[0];
+    capcertLogo = results[1];
+  } catch (e) {}
+  
+  const addFooter = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+    pdf.setTextColor(...white);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(180, 180, 180);
+    pdf.setFontSize(8);
+    pdf.text('16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07', pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+  };
+  
+  const getUsableHeight = () => pageHeight - footerHeight - margin;
+  
+  const checkPageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) {
+      addFooter();
+      pdf.addPage();
+      y = margin;
+      return true;
+    }
+    return false;
+  };
+
+  // ===== HEADER =====
+  let logoAdded = false;
+  if (lighthouseLogo) {
+    try {
+      const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+      logoAdded = true;
+    } catch (e) {
+      logoAdded = false;
+    }
+  }
+  
+  if (!logoAdded) {
+    pdf.setFontSize(26);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('LIGHTHOUSE', margin, y + 8);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Worldwide Solutions', margin, y + 14);
+  }
+  
+  pdf.setFontSize(18);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...green);
+  pdf.text('OFFRE DE PRIX', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('N° ' + (contract.contract_number || 'CTR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
+  
+  y += 18;
+  pdf.setDrawColor(...green);
+  pdf.setLineWidth(1);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 7;
+
+  // ===== INFO BAR =====
+  pdf.setFillColor(245, 245, 245);
+  pdf.rect(margin, y, contentWidth, 16, 'F');
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('DATE', margin + 5, y + 5);
+  pdf.text('PERIODE DU CONTRAT', margin + 50, y + 5);
+  pdf.text('VALIDITE DEVIS', margin + 140, y + 5);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  const qDate = contract.quote_sent_at ? new Date(contract.quote_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
+  pdf.text(qDate, margin + 5, y + 12);
+  const startDate = new Date(contract.start_date).toLocaleDateString('fr-FR');
+  const endDate = new Date(contract.end_date).toLocaleDateString('fr-FR');
+  pdf.text(startDate + ' - ' + endDate, margin + 50, y + 12);
+  pdf.text('30 jours', margin + 140, y + 12);
+  y += 20;
+
+  // ===== CLIENT =====
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CLIENT', margin, y);
+  y += 5;
+  pdf.setFontSize(14);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(contract.companies?.name || 'Client', margin, y);
+  y += 6;
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  if (contract.companies?.billing_address) {
+    pdf.text(contract.companies.billing_address, margin, y);
+    y += 5;
+  }
+  const city = [contract.companies?.billing_postal_code, contract.companies?.billing_city].filter(Boolean).join(' ');
+  if (city) {
+    pdf.text(city, margin, y);
+    y += 5;
+  }
+  y += 3;
+
+  // ===== SERVICE SECTIONS BY TYPE =====
+  const drawServiceBlock = (data, color) => {
+    const lineH = 5;
+    let lines = [];
+    data.prestations.forEach(p => {
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
+      wrapped.forEach(l => lines.push(l));
+    });
+    const blockH = 12 + (lines.length * lineH);
+    checkPageBreak(blockH);
+    
+    pdf.setDrawColor(...color);
+    pdf.setLineWidth(1);
+    pdf.line(margin, y, margin, y + blockH - 3);
+    
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(data.title, margin + 5, y + 6);
+    y += 10;
+    
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    data.prestations.forEach(p => {
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
+      wrapped.forEach((line, i) => {
+        if (i === 0) {
+          pdf.text('-', margin + 5, y);
+        }
+        pdf.text(line, margin + 9, y);
+        y += lineH;
+      });
+    });
+    y += 3;
+  };
+
+  // Group devices by type
+  const devicesByType = {};
+  devices.forEach(d => {
+    const type = d.device_type || 'particle_counter';
+    if (!devicesByType[type]) devicesByType[type] = [];
+    devicesByType[type].push(d);
+  });
+
+  // Draw service block for each type
+  Object.keys(devicesByType).forEach(type => {
+    const data = PDF_CALIBRATION_DATA[type] || PDF_CALIBRATION_DATA.particle_counter;
+    drawServiceBlock(data, [59, 130, 246]);
+  });
+
+  // ===== CONDITIONS =====
+  const conditionsHeight = 28;
+  checkPageBreak(conditionsHeight);
+  
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS DU CONTRAT', margin, y);
+  y += 4;
+  pdf.setFontSize(8);
+  pdf.setTextColor(...gray);
+  const contractConditions = [
+    'Validite du contrat: ' + startDate + ' au ' + endDate,
+    totalTokens + ' etalonnage(s) inclus a utiliser pendant la periode contractuelle',
+    'Etalonnages supplementaires factures au tarif standard en vigueur',
+    'Frais de port inclus (France metropolitaine)',
+    'Paiement a 30 jours date de facture'
+  ];
+  contractConditions.forEach(d => {
+    pdf.text('- ' + d, margin, y);
+    y += 4;
+  });
+  y += 5;
+
+  // ===== PRICING TABLE =====
+  const rowH = 8;
+  const tableH = 12 + (devices.length * rowH) + 20;
+  checkPageBreak(tableH);
+
+  pdf.setFontSize(13);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Recapitulatif des Prix', margin, y);
+  y += 7;
+
+  // Header row
+  pdf.setFillColor(...darkBlue);
+  pdf.rect(margin, y, contentWidth, 9, 'F');
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...white);
+  pdf.text('Appareil', margin + 3, y + 6);
+  pdf.text('N° Serie', margin + 55, y + 6);
+  pdf.text('Etal./an', margin + 120, y + 6);
+  pdf.text('Prix HT', pageWidth - margin - 3, y + 6, { align: 'right' });
+  y += 9;
+
+  // Device rows
+  devices.forEach((device, idx) => {
+    pdf.setFillColor(idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(device.model_name || '-', margin + 3, y + 5.5);
+    pdf.setFont('courier', 'normal');
+    pdf.text(device.serial_number || '-', margin + 55, y + 5.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(String(device.tokens_total || 1), margin + 125, y + 5.5);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text((device.unit_price || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+    y += rowH;
+  });
+
+  // Total row
+  pdf.setFillColor(...green);
+  pdf.rect(margin, y, contentWidth, 11, 'F');
+  pdf.setTextColor(...white);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('TOTAL CONTRAT ANNUEL HT', margin + 4, y + 7.5);
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(totalTokens + ' etalonnage(s) inclus pendant la periode du contrat', margin + 4, y + 11);
+  pdf.setFontSize(16);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(totalPrice.toFixed(2) + ' EUR', pageWidth - margin - 4, y + 8, { align: 'right' });
+  y += 15;
+
+  // ===== SIGNATURE - AT BOTTOM =====
+  const sigY = Math.max(y + 5, pageHeight - footerHeight - signatureBlockHeight - 3);
+  
+  pdf.setDrawColor(200, 200, 200);
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, sigY, pageWidth - margin, sigY);
+  
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('ETABLI PAR', margin, sigY + 7);
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Lighthouse France', margin, sigY + 14);
+
+  // Capcert logo
+  if (capcertLogo) {
+    try {
+      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
+    } catch (e) {}
+  }
+
+  const sigBoxX = pageWidth - margin - 62;
+  
+  if (isSigned && signatureName) {
+    pdf.setFillColor(245, 255, 250);
+    pdf.setDrawColor(...green);
+    pdf.setLineWidth(0.5);
+    pdf.roundedRect(sigBoxX, sigY + 3, 62, 36, 2, 2, 'FD');
+    
+    pdf.setFontSize(8);
+    pdf.setTextColor(...green);
+    pdf.text('APPROUVE PAR', sigBoxX + 4, sigY + 10);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(signatureName, sigBoxX + 4, sigY + 17);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Date: ' + signatureDate, sigBoxX + 4, sigY + 24);
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(...green);
+    pdf.text('Lu et approuve', sigBoxX + 4, sigY + 30);
+    
+    if (signatureImage) {
+      try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 40, sigY + 9, 18, 16); } catch(e) {}
+    }
+  } else {
+    pdf.setFontSize(8);
+    pdf.setTextColor(...lightGray);
+    pdf.text('Signature client', sigBoxX + 16, sigY + 7);
+    pdf.setDrawColor(180, 180, 180);
+    pdf.setLineWidth(0.3);
+    pdf.setLineDashPattern([2, 2], 0);
+    pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 22, 2, 2, 'D');
+    pdf.setLineDashPattern([], 0);
+    pdf.text('Lu et approuve', sigBoxX + 18, sigY + 37);
+  }
+
+  addFooter();
+  return pdf.output('blob');
+}
+
 
 // Translations
 const T = {
@@ -8492,68 +8869,27 @@ function ContractsPage({ profile, t, notify, setPage }) {
                   }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
                     🖨️ Imprimer
                   </button>
-                  <button onClick={() => {
-                    // Same as print - user can select "Save as PDF" in print dialog
-                    const content = document.getElementById('contract-quote-print-content');
-                    const printWindow = window.open('', '_blank');
-                    printWindow.document.write(`
-                      <!DOCTYPE html>
-                      <html>
-                      <head>
-                        <title>Devis_Contrat_${contract.contract_number}</title>
-                        <style>
-                          @page { size: A4; margin: 10mm; }
-                          * { margin: 0; padding: 0; box-sizing: border-box; }
-                          body { 
-                            font-family: Arial, sans-serif; 
-                            font-size: 11px;
-                            line-height: 1.4;
-                          }
-                          .border-b { border-bottom: 1px solid #e5e7eb; }
-                          .border-b-4 { border-bottom: 4px solid #00A651; }
-                          .border-t { border-top: 1px solid #e5e7eb; }
-                          [class*="bg-[#1a1a2e]"] { background: #1a1a2e !important; }
-                          [class*="bg-[#1E3A5F]"] { background: #1E3A5F !important; }
-                          [class*="bg-[#00A651]"] { background: #00A651 !important; }
-                          .bg-gray-50 { background: #f9fafb; }
-                          .bg-gray-100 { background: #f3f4f6; }
-                          .text-white { color: white !important; }
-                          .text-gray-400 { color: #9ca3af; }
-                          .text-gray-500 { color: #6b7280; }
-                          .text-gray-600 { color: #4b5563; }
-                          .text-gray-700 { color: #374151; }
-                          .text-green-600 { color: #16a34a; }
-                          [class*="text-[#00A651]"] { color: #00A651; }
-                          .text-xs { font-size: 9px; }
-                          .text-sm { font-size: 10px; }
-                          .text-lg { font-size: 14px; }
-                          .text-xl { font-size: 16px; }
-                          .text-2xl { font-size: 18px; }
-                          .text-4xl { font-size: 24px; }
-                          .font-bold { font-weight: 700; }
-                          .font-mono { font-family: monospace; }
-                          .uppercase { text-transform: uppercase; }
-                          .px-2, .px-4 { padding-left: 6px; padding-right: 6px; }
-                          .px-8 { padding-left: 16px; padding-right: 16px; }
-                          .py-2, .py-3 { padding-top: 4px; padding-bottom: 4px; }
-                          .py-4, .py-6 { padding-top: 8px; padding-bottom: 8px; }
-                          .flex { display: flex; }
-                          .items-center, .items-end { align-items: center; }
-                          .justify-between { justify-content: space-between; }
-                          table { width: 100%; border-collapse: collapse; font-size: 10px; }
-                          th, td { padding: 4px 6px; }
-                          img { max-width: 100%; height: auto; }
-                          img.h-14 { height: 35px !important; }
-                          .hidden { display: none; }
-                          @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
-                        </style>
-                      </head>
-                      <body>${content.innerHTML}</body>
-                      </html>
-                    `);
-                    printWindow.document.close();
-                    printWindow.focus();
-                    setTimeout(() => { printWindow.print(); }, 300);
+                  <button onClick={async () => {
+                    try {
+                      const pdfBlob = await generateContractQuotePDF({
+                        contract,
+                        devices,
+                        totalPrice,
+                        totalTokens,
+                        calibrationTypes: Object.keys(devicesByType),
+                        isSigned: false
+                      });
+                      const url = URL.createObjectURL(pdfBlob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `Devis_Contrat_${contract.contract_number}.pdf`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    } catch (err) {
+                      console.error('PDF error:', err);
+                    }
                   }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
                     📥 Télécharger PDF
                   </button>
