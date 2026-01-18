@@ -1499,15 +1499,19 @@ function ContractQuoteEditor({ contract, notify, onClose, onSent }) {
         }).eq('id', d.id);
       }
 
-      // Create notification for the client
-      await supabase.from('notifications').insert({
-        company_id: contract.company_id,
-        type: 'contract_quote',
-        title: 'Nouveau Devis Contrat',
-        message: `Votre devis de contrat d'étalonnage ${contractNumber} est disponible. ${devicePricing.length} appareil(s) - ${totalPrice.toFixed(2)} € HT/an. Consultez votre portail pour approuver.`,
-        data: { contract_id: contract.id, contract_number: contractNumber },
-        read: false
-      });
+      // Create notification for the client (optional - may not have notifications table)
+      try {
+        await supabase.from('notifications').insert({
+          company_id: contract.company_id,
+          type: 'contract_quote',
+          title: 'Nouveau Devis Contrat',
+          message: `Votre devis de contrat d'étalonnage ${contractNumber} est disponible. ${devicePricing.length} appareil(s) - ${totalPrice.toFixed(2)} € HT/an. Consultez votre portail pour approuver.`,
+          data: { contract_id: contract.id, contract_number: contractNumber },
+          read: false
+        });
+      } catch (notifErr) {
+        console.log('Notification not created (table may not exist):', notifErr);
+      }
 
       notify(`✅ Devis contrat envoyé! N° ${contractNumber}`);
       onSent();
@@ -2297,6 +2301,127 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
 // ============================================
 // CREATE CONTRACT MODAL - Manual Contract Creation
 // ============================================
+// ============================================
+// BC FILE UPLOADER (Admin side)
+// ============================================
+function BCFileUploader({ onUploaded, currentUrl }) {
+  const [uploading, setUploading] = useState(false);
+  const [urlMode, setUrlMode] = useState(false);
+  const [urlInput, setUrlInput] = useState(currentUrl || '');
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `bc_manual_${Date.now()}.${fileExt}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('bc-documents')
+        .upload(fileName, file);
+      
+      if (uploadError) throw uploadError;
+      
+      const { data: { publicUrl } } = supabase.storage
+        .from('bc-documents')
+        .getPublicUrl(fileName);
+      
+      onUploaded(publicUrl);
+    } catch (err) {
+      console.error('Upload error:', err);
+      alert('Erreur upload: ' + err.message);
+    }
+    setUploading(false);
+  };
+
+  const handleUrlSubmit = () => {
+    if (urlInput.trim()) {
+      onUploaded(urlInput.trim());
+    }
+  };
+
+  if (currentUrl) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-green-600 text-sm">✅ BC ajouté</span>
+        <a href={currentUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 text-sm hover:underline">Voir</a>
+        <button 
+          onClick={() => onUploaded('')} 
+          className="text-red-500 text-sm hover:underline"
+        >
+          Supprimer
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setUrlMode(false)}
+          className={`px-3 py-1 text-xs rounded ${!urlMode ? 'bg-[#00A651] text-white' : 'bg-gray-200 text-gray-700'}`}
+        >
+          📄 Fichier
+        </button>
+        <button
+          type="button"
+          onClick={() => setUrlMode(true)}
+          className={`px-3 py-1 text-xs rounded ${urlMode ? 'bg-[#00A651] text-white' : 'bg-gray-200 text-gray-700'}`}
+        >
+          🔗 Lien
+        </button>
+      </div>
+      
+      {urlMode ? (
+        <div className="flex gap-2">
+          <input
+            type="url"
+            value={urlInput}
+            onChange={e => setUrlInput(e.target.value)}
+            placeholder="https://drive.google.com/..."
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          />
+          <button
+            type="button"
+            onClick={handleUrlSubmit}
+            className="px-3 py-2 bg-[#00A651] text-white rounded-lg text-sm"
+          >
+            OK
+          </button>
+        </div>
+      ) : (
+        <label className="block cursor-pointer">
+          <input
+            type="file"
+            accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+            onChange={handleFileUpload}
+            disabled={uploading}
+            className="hidden"
+          />
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-[#00A651] hover:bg-green-50 transition-colors">
+            {uploading ? (
+              <div className="flex items-center justify-center gap-2">
+                <div className="w-4 h-4 border-2 border-[#00A651] border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-sm text-gray-600">Upload...</span>
+              </div>
+            ) : (
+              <>
+                <div className="text-2xl mb-1">📄</div>
+                <p className="text-xs text-gray-600">Cliquez pour sélectionner</p>
+                <p className="text-xs text-gray-400">PDF, DOC, Image</p>
+              </>
+            )}
+          </div>
+        </label>
+      )}
+    </div>
+  );
+}
+
 function CreateContractModal({ clients, notify, onClose, onCreated }) {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -2494,13 +2619,10 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Lien BC (optionnel)</label>
-              <input
-                type="url"
-                value={contractData.bc_url}
-                onChange={e => setContractData({ ...contractData, bc_url: e.target.value })}
-                placeholder="https://..."
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              <label className="block text-sm font-medium text-gray-700 mb-2">Bon de Commande (optionnel)</label>
+              <BCFileUploader 
+                onUploaded={(url) => setContractData({ ...contractData, bc_url: url })}
+                currentUrl={contractData.bc_url}
               />
             </div>
           </div>
