@@ -3074,25 +3074,27 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
     setSaving(true);
 
     try {
-      // Generate contract number
-      const { data: contractNum } = await supabase.rpc('generate_contract_number');
+      // Generate contract number manually (no RPC needed)
+      const year = new Date().getFullYear();
+      const timestamp = Date.now().toString().slice(-4);
+      const contractNum = `CTR-${year}-${timestamp}`;
       
-      // Create contract
+      // Create contract with only columns that exist
       const { data: contract, error: contractError } = await supabase
         .from('contracts')
         .insert({
-          contract_number: contractNum,
           company_id: profile.company_id,
           status: 'requested',
-          requested_by: profile.id,
-          customer_notes: notes,
-          start_date: new Date().toISOString().split('T')[0], // Will be set by admin
-          end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0] // Default 1 year
+          start_date: new Date().toISOString().split('T')[0],
+          end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0]
         })
         .select()
         .single();
 
-      if (contractError) throw contractError;
+      if (contractError) {
+        console.error('Contract insert error:', contractError);
+        throw contractError;
+      }
 
       // Add devices to contract
       const deviceInserts = devices.map(d => ({
@@ -3100,8 +3102,8 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
         serial_number: d.serial_number,
         model_name: d.model_name,
         device_type: d.device_type,
-        nickname: d.nickname,
-        tokens_total: 2, // Default, admin will adjust
+        nickname: d.nickname || null,
+        tokens_total: 1,
         tokens_used: 0
       }));
 
@@ -3109,14 +3111,17 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
         .from('contract_devices')
         .insert(deviceInserts);
 
-      if (devicesError) throw devicesError;
+      if (devicesError) {
+        console.error('Devices insert error:', devicesError);
+        throw devicesError;
+      }
 
       notify('Demande de contrat envoyée avec succès!', 'success');
       await refresh();
       setPage('dashboard');
     } catch (err) {
       console.error('Error creating contract request:', err);
-      notify('Erreur lors de la création de la demande', 'error');
+      notify('Erreur lors de la création de la demande: ' + (err.message || 'Erreur inconnue'), 'error');
     } finally {
       setSaving(false);
     }
