@@ -7547,113 +7547,6 @@ function DeviceHistoryPage({ profile, requests, t, setPage }) {
 // ============================================
 // CONTRACTS PAGE (Customer View)
 // ============================================
-// ============================================
-// BC UPLOADER COMPONENT (for Contracts)
-// ============================================
-function BCUploader({ contractId, notify, onUploaded }) {
-  const [uploading, setUploading] = useState(false);
-  const [bcUrl, setBcUrl] = useState('');
-  const [uploadMethod, setUploadMethod] = useState('url'); // 'url' or 'file'
-  
-  const handleFileUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    setUploading(true);
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `contract_bc_${contractId}_${Date.now()}.${fileExt}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('bc-documents')
-        .upload(fileName, file);
-      
-      if (uploadError) throw uploadError;
-      
-      const { data: { publicUrl } } = supabase.storage
-        .from('bc-documents')
-        .getPublicUrl(fileName);
-      
-      await supabase.from('contracts').update({
-        bc_url: publicUrl,
-        status: 'bc_pending',
-        bc_submitted_at: new Date().toISOString()
-      }).eq('id', contractId);
-      
-      notify('✅ Bon de commande soumis!');
-      onUploaded();
-    } catch (err) {
-      notify('Erreur: ' + err.message, 'error');
-    }
-    setUploading(false);
-  };
-  
-  const handleUrlSubmit = async () => {
-    if (!bcUrl.trim()) {
-      notify('Veuillez entrer une URL', 'error');
-      return;
-    }
-    
-    setUploading(true);
-    try {
-      await supabase.from('contracts').update({
-        bc_url: bcUrl,
-        status: 'bc_pending',
-        bc_submitted_at: new Date().toISOString()
-      }).eq('id', contractId);
-      
-      notify('✅ Bon de commande soumis!');
-      onUploaded();
-    } catch (err) {
-      notify('Erreur: ' + err.message, 'error');
-    }
-    setUploading(false);
-  };
-  
-  return (
-    <div className="space-y-4">
-      <div className="flex gap-2">
-        <button
-          onClick={() => setUploadMethod('url')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium ${uploadMethod === 'url' ? 'bg-orange-500 text-white' : 'bg-orange-100 text-orange-700'}`}
-        >
-          🔗 Lien URL
-        </button>
-        <button
-          onClick={() => setUploadMethod('file')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium ${uploadMethod === 'file' ? 'bg-orange-500 text-white' : 'bg-orange-100 text-orange-700'}`}
-        >
-          📄 Fichier PDF
-        </button>
-      </div>
-      
-      {uploadMethod === 'url' ? (
-        <div className="flex gap-2">
-          <input
-            type="url"
-            value={bcUrl}
-            onChange={e => setBcUrl(e.target.value)}
-            placeholder="https://drive.google.com/... ou autre lien"
-            className="flex-1 px-4 py-2 border border-orange-200 rounded-lg focus:ring-2 focus:ring-orange-300"
-          />
-          <button
-            onClick={handleUrlSubmit}
-            disabled={uploading}
-            className="px-6 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 disabled:opacity-50"
-          >
-            {uploading ? '...' : 'Soumettre'}
-          </button>
-        </div>
-      ) : (
-        <div>
-          <label className="block">
-            <input
-              type="file"
-              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-              onChange={handleFileUpload}
-              disabled={uploading}
-              className="hidden"
-            />
             <div className="border-2 border-dashed border-orange-300 rounded-lg p-6 text-center cursor-pointer hover:border-orange-400 hover:bg-orange-50">
               {uploading ? (
                 <div className="flex items-center justify-center gap-2">
@@ -7679,56 +7572,179 @@ function ContractsPage({ profile, t, notify, setPage }) {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedContract, setSelectedContract] = useState(null);
+  
+  // BC/Signature state (like RMA)
+  const [showBCModal, setShowBCModal] = useState(false);
+  const [bcFile, setBcFile] = useState(null);
+  const [signatureName, setSignatureName] = useState('');
+  const [luEtApprouve, setLuEtApprouve] = useState('');
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [signatureData, setSignatureData] = useState(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const canvasRef = useRef(null);
 
   // Load contracts
-  useEffect(() => {
-    const loadContracts = async () => {
-      if (!profile?.company_id) return;
-      
-      const { data, error } = await supabase
-        .from('contracts')
-        .select('*, contract_devices(*)')
-        .eq('company_id', profile.company_id)
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('Error loading contracts:', error);
-      } else {
-        setContracts(data || []);
-      }
-      setLoading(false);
-    };
-    loadContracts();
+  const loadContracts = useCallback(async () => {
+    if (!profile?.company_id) return;
+    
+    const { data, error } = await supabase
+      .from('contracts')
+      .select('*, contract_devices(*)')
+      .eq('company_id', profile.company_id)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error loading contracts:', error);
+    } else {
+      setContracts(data || []);
+    }
+    setLoading(false);
   }, [profile?.company_id]);
+
+  useEffect(() => {
+    loadContracts();
+  }, [loadContracts]);
 
   const getStatusBadge = (status) => {
     const styles = {
       requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'En attente de devis' },
-      quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Devis envoyé' },
+      quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: '💰 Devis à approuver' },
       quote_approved: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis approuvé' },
-      bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En attente BC' },
-      active: { bg: 'bg-green-100', text: 'text-green-700', label: 'Actif' },
+      bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: '📄 BC en révision' },
+      active: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Actif' },
       expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Expiré' },
       cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
     };
     const style = styles[status] || styles.requested;
-    return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
-        {style.label}
-      </span>
-    );
+    return <span className={`px-3 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>;
   };
 
   const getTokensDisplay = (device) => {
     const remaining = (device.tokens_total || 0) - (device.tokens_used || 0);
     const total = device.tokens_total || 0;
-    
-    if (remaining <= 0) {
-      return <span className="text-red-600 font-bold">0/{total} ⚠️</span>;
-    } else if (remaining === 1) {
-      return <span className="text-amber-600 font-bold">{remaining}/{total}</span>;
-    }
+    if (remaining <= 0) return <span className="text-red-600 font-bold">0/{total} ⚠️</span>;
+    if (remaining === 1) return <span className="text-amber-600 font-bold">{remaining}/{total}</span>;
     return <span className="text-green-600 font-bold">{remaining}/{total}</span>;
+  };
+
+  // Signature pad functions (same as RMA)
+  const startDrawing = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setIsDrawing(true);
+  };
+
+  const draw = (e) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#1E3A5F';
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    if (isDrawing && canvasRef.current) {
+      setSignatureData(canvasRef.current.toDataURL());
+    }
+    setIsDrawing(false);
+  };
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    setSignatureData(null);
+  };
+
+  // Submit BC (like RMA)
+  const submitBC = async () => {
+    if (!selectedContract) return;
+    
+    const hasFile = bcFile !== null;
+    const hasSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
+    
+    if (!signatureName.trim()) {
+      notify('Veuillez entrer votre nom', 'error');
+      return;
+    }
+    if (!acceptTerms) {
+      notify('Veuillez accepter les conditions', 'error');
+      return;
+    }
+    if (!hasFile && !hasSignature) {
+      notify('Veuillez télécharger un BC ou signer électroniquement', 'error');
+      return;
+    }
+    
+    setSubmitting(true);
+    try {
+      let bcFileUrl = null;
+      let signatureUrl = null;
+      
+      // Upload BC file if provided
+      if (bcFile) {
+        const fileExt = bcFile.name.split('.').pop();
+        const fileName = `contract_bc_${selectedContract.id}_${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from('bc-documents')
+          .upload(fileName, bcFile);
+        if (uploadError) throw uploadError;
+        const { data: { publicUrl } } = supabase.storage.from('bc-documents').getPublicUrl(fileName);
+        bcFileUrl = publicUrl;
+      }
+      
+      // Upload signature if provided
+      if (hasSignature) {
+        const signatureBlob = await (await fetch(signatureData)).blob();
+        const sigFileName = `contract_sig_${selectedContract.id}_${Date.now()}.png`;
+        const { error: sigError } = await supabase.storage
+          .from('bc-documents')
+          .upload(sigFileName, signatureBlob);
+        if (sigError) throw sigError;
+        const { data: { publicUrl } } = supabase.storage.from('bc-documents').getPublicUrl(sigFileName);
+        signatureUrl = publicUrl;
+      }
+      
+      // Update contract
+      const { error } = await supabase.from('contracts').update({
+        status: 'bc_pending',
+        bc_url: bcFileUrl || signatureUrl,
+        bc_signed_by: signatureName,
+        bc_signature_url: signatureUrl,
+        bc_submitted_at: new Date().toISOString()
+      }).eq('id', selectedContract.id);
+      
+      if (error) throw error;
+      
+      notify('✅ Bon de commande soumis! En attente de validation.', 'success');
+      setShowBCModal(false);
+      setBcFile(null);
+      setSignatureName('');
+      setLuEtApprouve('');
+      setAcceptTerms(false);
+      clearSignature();
+      loadContracts();
+    } catch (err) {
+      console.error('BC submit error:', err);
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSubmitting(false);
   };
 
   if (loading) {
@@ -7743,217 +7759,322 @@ function ContractsPage({ profile, t, notify, setPage }) {
   if (selectedContract) {
     const contract = selectedContract;
     const devices = contract.contract_devices || [];
-    const quoteData = contract.quote_data || {};
-    const isQuotePending = contract.status === 'quote_sent';
-    
-    // Approve quote handler
-    const approveQuote = async () => {
-      try {
-        await supabase.from('contracts').update({
-          status: 'quote_approved',
-          quote_approved_at: new Date().toISOString()
-        }).eq('id', contract.id);
-        
-        // Reload contracts
-        const { data } = await supabase
-          .from('contracts')
-          .select('*, contract_devices(*)')
-          .eq('company_id', profile.company_id)
-          .order('created_at', { ascending: false });
-        
-        if (data) setContracts(data);
-        setSelectedContract(data?.find(c => c.id === contract.id) || null);
-        notify('✅ Devis approuvé! Vous pouvez maintenant soumettre votre bon de commande.');
-      } catch (err) {
-        notify('Erreur: ' + err.message, 'error');
-      }
-    };
+    const needsAction = contract.status === 'quote_sent';
+    const totalPrice = devices.reduce((sum, d) => sum + (d.unit_price || 0), 0);
+    const totalTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
     
     return (
       <div>
-        <button 
-          onClick={() => setSelectedContract(null)}
-          className="mb-4 text-gray-500 hover:text-gray-700 flex items-center gap-2"
-        >
+        <button onClick={() => setSelectedContract(null)} className="mb-4 text-gray-500 hover:text-gray-700 flex items-center gap-2">
           ← Retour aux contrats
         </button>
 
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-          {/* Contract Header */}
-          <div className="flex justify-between items-start mb-6">
-            <div>
-              <h1 className="text-2xl font-bold text-[#1E3A5F]">
-                {contract.contract_number ? `Contrat ${contract.contract_number}` : 'Demande de Contrat'}
-              </h1>
-              <p className="text-gray-600">
-                {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
-              </p>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          {/* Header */}
+          <div className={`px-6 py-4 ${needsAction ? 'bg-blue-600' : 'bg-[#1E3A5F]'} text-white`}>
+            <div className="flex justify-between items-start">
+              <div>
+                <h1 className="text-2xl font-bold">
+                  {contract.contract_number ? `Contrat ${contract.contract_number}` : 'Demande de Contrat'}
+                </h1>
+                <p className="text-white/70">
+                  Période: {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
+                </p>
+              </div>
+              {getStatusBadge(contract.status)}
             </div>
-            {getStatusBadge(contract.status)}
           </div>
           
-          {/* QUOTE APPROVAL BANNER */}
-          {isQuotePending && (
-            <div className="mb-6 p-6 bg-blue-50 border-2 border-blue-300 rounded-xl">
+          {/* ACTION REQUIRED BANNER - Quote to approve */}
+          {contract.status === 'quote_sent' && (
+            <div className="p-6 bg-blue-50 border-b-2 border-blue-200">
               <div className="flex items-start gap-4">
-                <div className="w-14 h-14 bg-blue-100 rounded-lg flex items-center justify-center text-3xl">💰</div>
+                <div className="w-16 h-16 bg-blue-100 rounded-xl flex items-center justify-center text-4xl">💰</div>
                 <div className="flex-1">
-                  <h3 className="font-bold text-blue-800 text-lg mb-1">Devis de Contrat à Approuver</h3>
-                  <p className="text-blue-700 text-sm mb-3">
-                    Lighthouse vous a envoyé un devis pour votre contrat d'étalonnage. 
-                    Vérifiez les détails ci-dessous et approuvez pour continuer.
+                  <h3 className="font-bold text-blue-800 text-xl mb-2">Devis de Contrat d'Étalonnage</h3>
+                  <p className="text-blue-700 mb-4">
+                    Lighthouse vous a envoyé un devis pour votre contrat annuel. 
+                    Consultez les détails ci-dessous, puis approuvez et signez pour activer votre contrat.
                   </p>
                   
+                  {/* Quote Summary */}
                   <div className="bg-white rounded-lg p-4 mb-4 border border-blue-200">
                     <div className="grid grid-cols-3 gap-4 text-center">
                       <div>
-                        <p className="text-2xl font-bold text-[#1E3A5F]">{devices.length}</p>
-                        <p className="text-xs text-gray-500">Appareil(s)</p>
+                        <p className="text-3xl font-bold text-[#1E3A5F]">{devices.length}</p>
+                        <p className="text-sm text-gray-500">Appareil(s)</p>
                       </div>
                       <div>
-                        <p className="text-2xl font-bold text-green-600">
-                          {devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0)}
-                        </p>
-                        <p className="text-xs text-gray-500">Étalonnage(s)/an</p>
+                        <p className="text-3xl font-bold text-green-600">{totalTokens}</p>
+                        <p className="text-sm text-gray-500">Étalonnage(s)/an</p>
                       </div>
                       <div>
-                        <p className="text-2xl font-bold text-[#00A651]">
-                          {(contract.quote_total || 0).toFixed(2)} €
-                        </p>
-                        <p className="text-xs text-gray-500">Total HT/an</p>
+                        <p className="text-3xl font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</p>
+                        <p className="text-sm text-gray-500">Total HT/an</p>
                       </div>
                     </div>
                   </div>
                   
                   <button
-                    onClick={approveQuote}
-                    className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008c44] flex items-center gap-2"
+                    onClick={() => setShowBCModal(true)}
+                    className="px-8 py-3 bg-[#00A651] text-white rounded-lg font-bold text-lg hover:bg-[#008c44] flex items-center gap-2"
                   >
-                    ✅ Approuver le Devis
+                    ✅ Approuver et Signer
                   </button>
-                  <p className="text-xs text-blue-600 mt-2">
-                    Après approbation, vous pourrez soumettre votre bon de commande.
-                  </p>
                 </div>
               </div>
             </div>
           )}
           
-          {/* BC Upload Banner - After quote approval */}
-          {contract.status === 'quote_approved' && (
-            <div className="mb-6 p-6 bg-orange-50 border-2 border-orange-300 rounded-xl">
-              <div className="flex items-start gap-4">
-                <div className="w-14 h-14 bg-orange-100 rounded-lg flex items-center justify-center text-3xl">📄</div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-orange-800 text-lg mb-1">Bon de Commande Requis</h3>
-                  <p className="text-orange-700 text-sm mb-3">
-                    Devis approuvé! Veuillez soumettre votre bon de commande pour activer le contrat.
-                  </p>
-                  <BCUploader 
-                    contractId={contract.id}
-                    notify={notify}
-                    onUploaded={async () => {
-                      const { data } = await supabase
-                        .from('contracts')
-                        .select('*, contract_devices(*)')
-                        .eq('company_id', profile.company_id)
-                        .order('created_at', { ascending: false });
-                      if (data) setContracts(data);
-                      setSelectedContract(data?.find(c => c.id === contract.id) || null);
-                    }}
-                  />
+          {/* BC Pending - Waiting for admin review */}
+          {contract.status === 'bc_pending' && (
+            <div className="p-6 bg-orange-50 border-b-2 border-orange-200">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center text-2xl">⏳</div>
+                <div>
+                  <h3 className="font-bold text-orange-800">BC en cours de vérification</h3>
+                  <p className="text-orange-600 text-sm">Votre bon de commande est en cours de révision par notre équipe.</p>
                 </div>
               </div>
             </div>
           )}
-
+          
           {/* Contract Stats */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="bg-gray-50 rounded-lg p-4 text-center">
-              <div className="text-3xl font-bold text-[#1E3A5F]">{devices.length}</div>
-              <div className="text-sm text-gray-600">Appareils</div>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4 text-center">
-              <div className="text-3xl font-bold text-green-600">
-                {devices.reduce((sum, d) => sum + ((d.tokens_total || 0) - (d.tokens_used || 0)), 0)}
+          <div className="p-6">
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="bg-gray-50 rounded-lg p-4 text-center">
+                <div className="text-3xl font-bold text-[#1E3A5F]">{devices.length}</div>
+                <div className="text-sm text-gray-600">Appareils</div>
               </div>
-              <div className="text-sm text-gray-600">Étalonnages restants</div>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4 text-center">
-              <div className="text-3xl font-bold text-[#3B7AB4]">
-                {devices.reduce((sum, d) => sum + (d.tokens_used || 0), 0)}
+              <div className="bg-gray-50 rounded-lg p-4 text-center">
+                <div className="text-3xl font-bold text-green-600">
+                  {devices.reduce((sum, d) => sum + ((d.tokens_total || 0) - (d.tokens_used || 0)), 0)}
+                </div>
+                <div className="text-sm text-gray-600">Étalonnages restants</div>
               </div>
-              <div className="text-sm text-gray-600">Étalonnages utilisés</div>
+              <div className="bg-gray-50 rounded-lg p-4 text-center">
+                <div className="text-3xl font-bold text-[#3B7AB4]">
+                  {devices.reduce((sum, d) => sum + (d.tokens_used || 0), 0)}
+                </div>
+                <div className="text-sm text-gray-600">Étalonnages utilisés</div>
+              </div>
             </div>
-          </div>
 
-          {/* Devices Table */}
-          <h3 className="font-bold text-[#1E3A5F] mb-3">Appareils sous contrat</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-gray-50">
-                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 border">Surnom</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 border">N° Série</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 border">Modèle</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 border">Type</th>
-                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 border">Étalonnages</th>
-                  {isQuotePending && <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 border">Prix HT</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {devices.map((device, idx) => (
-                  <tr key={device.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-4 py-3 border text-sm">{device.nickname || '—'}</td>
-                    <td className="px-4 py-3 border text-sm font-mono">{device.serial_number}</td>
-                    <td className="px-4 py-3 border text-sm">{device.model_name}</td>
-                    <td className="px-4 py-3 border text-sm">
-                      {device.device_type === 'particle_counter' && '🔬 Compteur Air'}
-                      {device.device_type === 'bio_collector' && '🧫 Bio Collecteur'}
-                      {device.device_type === 'liquid_counter' && '💧 Compteur Liquide'}
-                      {device.device_type === 'temp_humidity' && '🌡️ Temp/Humidité'}
-                      {device.device_type === 'other' && '📦 Autre'}
-                      {!device.device_type && '—'}
-                    </td>
-                    <td className="px-4 py-3 border text-center">
-                      {getTokensDisplay(device)}
-                    </td>
-                    {isQuotePending && (
-                      <td className="px-4 py-3 border text-right font-medium">
-                        {(device.unit_price || 0).toFixed(2)} €
+            {/* Devices Table */}
+            <h3 className="font-bold text-[#1E3A5F] mb-3">Appareils sous contrat</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-[#1E3A5F] text-white">
+                    <th className="px-4 py-3 text-left text-xs font-bold">Surnom</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold">N° Série</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold">Modèle</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold">Type</th>
+                    <th className="px-4 py-3 text-center text-xs font-bold">Étal./an</th>
+                    {contract.status === 'quote_sent' && <th className="px-4 py-3 text-right text-xs font-bold">Prix HT</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {devices.map((device, idx) => (
+                    <tr key={device.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-4 py-3 text-sm">{device.nickname || '—'}</td>
+                      <td className="px-4 py-3 text-sm font-mono">{device.serial_number}</td>
+                      <td className="px-4 py-3 text-sm font-medium">{device.model_name}</td>
+                      <td className="px-4 py-3 text-sm">
+                        {device.device_type === 'particle_counter' && '🔬 Compteur Air'}
+                        {device.device_type === 'bio_collector' && '🧫 Bio Collecteur'}
+                        {device.device_type === 'liquid_counter' && '💧 Compteur Liquide'}
+                        {device.device_type === 'temp_humidity' && '🌡️ Temp/Humidité'}
+                        {device.device_type === 'other' && '📦 Autre'}
                       </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-              {isQuotePending && (
-                <tfoot>
-                  <tr className="bg-[#00A651] text-white">
-                    <td colSpan={5} className="px-4 py-3 border font-bold">Total HT / an</td>
-                    <td className="px-4 py-3 border text-right font-bold text-lg">
-                      {(contract.quote_total || 0).toFixed(2)} €
-                    </td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-          </div>
-
-          {/* BC Document Link */}
-          {contract.bc_url && (
-            <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-200">
-              <h4 className="font-bold text-green-800 mb-2">📄 Bon de Commande</h4>
-              <a 
-                href={contract.bc_url} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-green-600 hover:underline"
-              >
-                Voir le document
-              </a>
+                      <td className="px-4 py-3 text-center">{getTokensDisplay(device)}</td>
+                      {contract.status === 'quote_sent' && (
+                        <td className="px-4 py-3 text-right font-medium">{(device.unit_price || 0).toFixed(2)} €</td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+                {contract.status === 'quote_sent' && (
+                  <tfoot>
+                    <tr className="bg-[#00A651] text-white">
+                      <td colSpan={5} className="px-4 py-3 font-bold">Total HT / an</td>
+                      <td className="px-4 py-3 text-right font-bold text-lg">{totalPrice.toFixed(2)} €</td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
             </div>
-          )}
+
+            {/* BC Document - Visible after submission */}
+            {(contract.bc_url || contract.bc_signature_url) && (
+              <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-200">
+                <h4 className="font-bold text-green-800 mb-2">📄 Bon de Commande</h4>
+                <div className="flex items-center gap-4">
+                  {contract.bc_url && (
+                    <a href={contract.bc_url} target="_blank" rel="noopener noreferrer" 
+                       className="text-green-600 hover:underline flex items-center gap-1">
+                      📄 Voir le document
+                    </a>
+                  )}
+                  {contract.bc_signature_url && (
+                    <div>
+                      <p className="text-sm text-gray-600">Signé par: {contract.bc_signed_by}</p>
+                      <img src={contract.bc_signature_url} alt="Signature" className="max-h-16 mt-1 border rounded" />
+                    </div>
+                  )}
+                </div>
+                {contract.bc_submitted_at && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    Soumis le {new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR')}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
+        
+        {/* BC/Signature Modal (like RMA) */}
+        {showBCModal && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowBCModal(false)}>
+            <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="px-6 py-4 bg-[#00A651] text-white flex justify-between items-center sticky top-0">
+                <h2 className="text-xl font-bold">Approuver le Contrat</h2>
+                <button onClick={() => setShowBCModal(false)} className="text-white/70 hover:text-white text-2xl">&times;</button>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                {/* Summary */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="font-bold text-[#1E3A5F] mb-2">Récapitulatif</h3>
+                  <div className="grid grid-cols-3 gap-4 text-center">
+                    <div>
+                      <p className="text-2xl font-bold">{devices.length}</p>
+                      <p className="text-xs text-gray-500">Appareil(s)</p>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-green-600">{totalTokens}</p>
+                      <p className="text-xs text-gray-500">Étal./an</p>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</p>
+                      <p className="text-xs text-gray-500">Total HT/an</p>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Option 1: Upload BC */}
+                <div>
+                  <h3 className="font-bold text-[#1E3A5F] mb-3">Option 1: Télécharger votre Bon de Commande</h3>
+                  <label className="block cursor-pointer">
+                    <input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" 
+                           onChange={e => setBcFile(e.target.files?.[0] || null)} className="hidden" />
+                    <div className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${bcFile ? 'border-green-400 bg-green-50' : 'border-gray-300 hover:border-[#00A651]'}`}>
+                      {bcFile ? (
+                        <div className="flex items-center justify-center gap-2 text-green-600">
+                          <span className="text-2xl">✅</span>
+                          <span className="font-medium">{bcFile.name}</span>
+                          <button onClick={(e) => { e.preventDefault(); setBcFile(null); }} className="text-red-500 ml-2">✕</button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="text-4xl mb-2">📄</div>
+                          <p className="text-gray-600">Cliquez pour sélectionner un fichier</p>
+                          <p className="text-xs text-gray-400">PDF, DOC, PNG, JPG</p>
+                        </>
+                      )}
+                    </div>
+                  </label>
+                </div>
+                
+                <div className="text-center text-gray-400 font-medium">— OU —</div>
+                
+                {/* Option 2: Electronic Signature */}
+                <div>
+                  <h3 className="font-bold text-[#1E3A5F] mb-3">Option 2: Signature Électronique</h3>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Tapez "Lu et approuvé"</label>
+                      <input
+                        type="text"
+                        value={luEtApprouve}
+                        onChange={e => setLuEtApprouve(e.target.value)}
+                        placeholder="Lu et approuvé"
+                        className={`w-full px-4 py-2 border rounded-lg ${luEtApprouve.toLowerCase().trim() === 'lu et approuvé' ? 'border-green-400 bg-green-50' : 'border-gray-300'}`}
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Votre signature</label>
+                      <div className="border-2 border-gray-300 rounded-lg bg-white relative">
+                        <canvas
+                          ref={canvasRef}
+                          width={500}
+                          height={150}
+                          className="w-full touch-none cursor-crosshair"
+                          onMouseDown={startDrawing}
+                          onMouseMove={draw}
+                          onMouseUp={stopDrawing}
+                          onMouseLeave={stopDrawing}
+                          onTouchStart={startDrawing}
+                          onTouchMove={draw}
+                          onTouchEnd={stopDrawing}
+                        />
+                        {!signatureData && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-gray-300">
+                            Signez ici
+                          </div>
+                        )}
+                      </div>
+                      <button onClick={clearSignature} className="mt-1 text-sm text-red-500 hover:underline">
+                        Effacer la signature
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Name and Terms */}
+                <div className="border-t pt-4 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Votre nom complet *</label>
+                    <input
+                      type="text"
+                      value={signatureName}
+                      onChange={e => setSignatureName(e.target.value)}
+                      placeholder="Prénom Nom"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                  
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={acceptTerms}
+                      onChange={e => setAcceptTerms(e.target.checked)}
+                      className="mt-1 w-5 h-5 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-600">
+                      J'accepte les conditions générales de vente et je confirme mon engagement pour ce contrat d'étalonnage annuel.
+                    </span>
+                  </label>
+                </div>
+              </div>
+              
+              <div className="px-6 py-4 bg-gray-100 border-t flex justify-between sticky bottom-0">
+                <button onClick={() => setShowBCModal(false)} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
+                  Annuler
+                </button>
+                <button
+                  onClick={submitBC}
+                  disabled={submitting || !signatureName.trim() || !acceptTerms || (!bcFile && !(signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé'))}
+                  className="px-8 py-3 bg-[#00A651] text-white rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? 'Envoi...' : '✅ Soumettre'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -8007,32 +8128,33 @@ function ContractsPage({ profile, t, notify, setPage }) {
             const totalTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
             const usedTokens = devices.reduce((sum, d) => sum + (d.tokens_used || 0), 0);
             const remainingTokens = totalTokens - usedTokens;
+            const needsAction = contract.status === 'quote_sent';
             
             return (
               <div 
                 key={contract.id}
                 onClick={() => setSelectedContract(contract)}
-                className={`bg-white rounded-xl p-6 shadow-sm border-2 cursor-pointer transition-colors ${
-                  contract.status === 'quote_sent' 
-                    ? 'border-blue-400 bg-blue-50/50 hover:border-blue-500' 
-                    : 'border-gray-100 hover:border-[#3B7AB4]'
+                className={`bg-white rounded-xl p-6 shadow-sm border-2 cursor-pointer transition-all ${
+                  needsAction 
+                    ? 'border-blue-400 bg-blue-50/30 hover:border-blue-500 hover:shadow-md' 
+                    : 'border-gray-100 hover:border-[#3B7AB4] hover:shadow-md'
                 }`}
               >
-                {contract.status === 'quote_sent' && (
+                {needsAction && (
                   <div className="mb-3 flex items-center gap-2 text-blue-600">
                     <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-                    <span className="text-sm font-medium">Devis à approuver</span>
+                    <span className="text-sm font-bold">💰 Devis à approuver et signer</span>
                   </div>
                 )}
-                {contract.status === 'quote_approved' && (
+                {contract.status === 'bc_pending' && (
                   <div className="mb-3 flex items-center gap-2 text-orange-600">
                     <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
-                    <span className="text-sm font-medium">BC requis</span>
+                    <span className="text-sm font-medium">BC en révision</span>
                   </div>
                 )}
                 <div className="flex justify-between items-start mb-4">
                   <div>
-                    <h3 className="font-bold text-[#1E3A5F] text-lg">{contract.contract_number}</h3>
+                    <h3 className="font-bold text-[#1E3A5F] text-lg">{contract.contract_number || 'Demande en cours'}</h3>
                     <p className="text-sm text-gray-600">
                       {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
                     </p>
@@ -8046,7 +8168,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
                     <span className="font-bold">{devices.length}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Étalonnages restants:</span>{' '}
+                    <span className="text-gray-500">Étalonnages:</span>{' '}
                     <span className={`font-bold ${remainingTokens <= 0 ? 'text-red-600' : remainingTokens <= devices.length ? 'text-amber-600' : 'text-green-600'}`}>
                       {remainingTokens}/{totalTokens}
                     </span>
