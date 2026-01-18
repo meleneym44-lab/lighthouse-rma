@@ -1700,14 +1700,16 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
       {/* Overview Tab */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* ACTION REQUIRED - Show at top */}
-          {serviceRequests.filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at).length > 0 && (
+          {/* ACTION REQUIRED - Combined RMA and Contracts */}
+          {(serviceRequests.filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at).length > 0 || 
+            (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0)) && (
             <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4">
               <h3 className="font-bold text-red-800 mb-2 flex items-center gap-2">
                 <span className="animate-pulse">⚠</span> Action requise
               </h3>
               <p className="text-sm text-red-600 mb-3">Les demandes suivantes nécessitent votre attention</p>
               <div className="space-y-2">
+                {/* RMA Requests */}
                 {serviceRequests
                   .filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at)
                   .map(req => (
@@ -1731,33 +1733,23 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                     </span>
                   </div>
                 ))}
-              </div>
-            </div>
-          )}
-
-          {/* CONTRACT QUOTES REQUIRING ACTION */}
-          {contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0 && (
-            <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-4">
-              <h3 className="font-bold text-blue-800 mb-2 flex items-center gap-2">
-                <span className="animate-pulse">💰</span> Devis Contrat - Action requise
-              </h3>
-              <p className="text-sm text-blue-600 mb-3">Les contrats suivants nécessitent votre attention</p>
-              <div className="space-y-2">
-                {contracts
+                {/* Contract Quotes */}
+                {contracts && contracts
                   .filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected')
                   .map(contract => (
                   <div 
                     key={contract.id}
                     onClick={() => setPage('contracts')}
-                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-blue-100 border border-blue-200"
+                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-100 border border-red-200"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="font-mono font-bold text-blue-700">{contract.contract_number || 'Nouveau'}</span>
-                      <span className="text-sm text-blue-600">
-                        {contract.status === 'quote_sent' ? 'Approuver le devis' : 'Resoumettre BC'}
+                      <span className="text-blue-500">📋</span>
+                      <span className="font-mono font-bold text-red-700">{contract.contract_number || 'Nouveau Contrat'}</span>
+                      <span className="text-sm text-red-600">
+                        {contract.status === 'quote_sent' ? 'Approuver le devis contrat' : 'Resoumettre BC contrat'}
                       </span>
                     </div>
-                    <span className="px-3 py-1 bg-blue-500 text-white text-xs font-bold rounded-full">
+                    <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
                       Agir →
                     </span>
                   </div>
@@ -7605,12 +7597,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
   const [approvingQuote, setApprovingQuote] = useState(false);
   const canvasRef = useRef(null);
   
-  // Auto-fill signer name from profile
-  useEffect(() => {
-    if (profile?.first_name || profile?.last_name) {
-      setSignatureName(`${profile.first_name || ''} ${profile.last_name || ''}`.trim());
-    }
-  }, [profile]);
+  const [signatureName, setSignatureName] = useState(profile?.full_name || `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || '');
   
   const signatureDateDisplay = new Date().toLocaleDateString('fr-FR');
   
@@ -7758,16 +7745,19 @@ function ContractsPage({ profile, t, notify, setPage }) {
         }
       }
       
-      // Update contract - IDENTICAL fields to RMA
-      const { error } = await supabase.from('contracts').update({
+      // Update contract - using correct column names from migration
+      const updateData = {
         status: 'bc_pending',
-        bc_file_url: fileUrl,
         bc_signed_by: signatureName,
-        bc_signature_date: signatureDateISO,
-        bc_signature_url: signatureUrl,
         bc_submitted_at: signatureDateISO,
         quote_approved_at: new Date().toISOString()
-      }).eq('id', selectedContract.id);
+      };
+      
+      // Only add URL fields if we have values
+      if (fileUrl) updateData.bc_url = fileUrl;
+      if (signatureUrl) updateData.bc_signature_url = signatureUrl;
+      
+      const { error } = await supabase.from('contracts').update(updateData).eq('id', selectedContract.id);
       
       if (error) throw error;
       
@@ -8418,37 +8408,41 @@ function ContractsPage({ profile, t, notify, setPage }) {
                       <head>
                         <title>Devis Contrat - ${contract.contract_number}</title>
                         <style>
+                          @page { size: A4; margin: 10mm; }
                           * { margin: 0; padding: 0; box-sizing: border-box; }
-                          body { font-family: Arial, sans-serif; }
+                          body { 
+                            font-family: Arial, sans-serif; 
+                            font-size: 11px;
+                            line-height: 1.4;
+                            width: 210mm;
+                            min-height: 297mm;
+                          }
                           .border-b { border-bottom: 1px solid #e5e7eb; }
-                          .border-b-4 { border-bottom: 4px solid; }
+                          .border-b-4 { border-bottom: 4px solid #00A651; }
                           .border-t { border-top: 1px solid #e5e7eb; }
                           .border-t-2 { border-top: 2px solid #d1d5db; }
                           .border-b-2 { border-bottom: 2px solid #d1d5db; }
-                          .border-\\[\\#00A651\\] { border-color: #00A651; }
                           .bg-gray-50 { background: #f9fafb; }
                           .bg-gray-100 { background: #f3f4f6; }
                           .bg-white { background: white; }
                           .bg-green-50 { background: #f0fdf4; }
-                          .bg-\\[\\#1a1a2e\\] { background: #1a1a2e; }
-                          .bg-\\[\\#1E3A5F\\] { background: #1E3A5F; }
-                          .bg-\\[\\#00A651\\] { background: #00A651; }
-                          .text-white { color: white; }
+                          [class*="bg-[#1a1a2e]"] { background: #1a1a2e !important; }
+                          [class*="bg-[#1E3A5F]"] { background: #1E3A5F !important; }
+                          [class*="bg-[#00A651]"] { background: #00A651 !important; }
+                          .text-white { color: white !important; }
                           .text-gray-400 { color: #9ca3af; }
                           .text-gray-500 { color: #6b7280; }
                           .text-gray-600 { color: #4b5563; }
                           .text-gray-700 { color: #374151; }
                           .text-green-600 { color: #16a34a; }
-                          .text-green-700 { color: #15803d; }
-                          .text-green-800 { color: #166534; }
-                          .text-\\[\\#1a1a2e\\] { color: #1a1a2e; }
-                          .text-\\[\\#00A651\\] { color: #00A651; }
-                          .text-xs { font-size: 0.75rem; }
-                          .text-sm { font-size: 0.875rem; }
-                          .text-lg { font-size: 1.125rem; }
-                          .text-xl { font-size: 1.25rem; }
-                          .text-2xl { font-size: 1.5rem; }
-                          .text-4xl { font-size: 2.25rem; }
+                          [class*="text-[#1a1a2e]"] { color: #1a1a2e; }
+                          [class*="text-[#00A651]"] { color: #00A651; }
+                          .text-xs { font-size: 9px; }
+                          .text-sm { font-size: 10px; }
+                          .text-lg { font-size: 14px; }
+                          .text-xl { font-size: 16px; }
+                          .text-2xl { font-size: 18px; }
+                          .text-4xl { font-size: 24px; }
                           .font-medium { font-weight: 500; }
                           .font-bold { font-weight: 700; }
                           .font-mono { font-family: monospace; }
@@ -8456,45 +8450,47 @@ function ContractsPage({ profile, t, notify, setPage }) {
                           .text-left { text-align: left; }
                           .text-right { text-align: right; }
                           .text-center { text-align: center; }
-                          .px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
-                          .px-4 { padding-left: 1rem; padding-right: 1rem; }
-                          .px-8 { padding-left: 2rem; padding-right: 2rem; }
-                          .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
-                          .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
-                          .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
-                          .py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
-                          .pt-8 { padding-top: 2rem; }
-                          .pb-4 { padding-bottom: 1rem; }
-                          .p-4 { padding: 1rem; }
-                          .mb-1 { margin-bottom: 0.25rem; }
-                          .mb-2 { margin-bottom: 0.5rem; }
-                          .mt-0\\.5 { margin-top: 0.125rem; }
-                          .mt-2 { margin-top: 0.5rem; }
-                          .gap-2 { gap: 0.5rem; }
-                          .gap-6 { gap: 1.5rem; }
+                          .px-2 { padding-left: 4px; padding-right: 4px; }
+                          .px-4 { padding-left: 8px; padding-right: 8px; }
+                          .px-8 { padding-left: 16px; padding-right: 16px; }
+                          .py-2 { padding-top: 4px; padding-bottom: 4px; }
+                          .py-3 { padding-top: 6px; padding-bottom: 6px; }
+                          .py-4 { padding-top: 8px; padding-bottom: 8px; }
+                          .py-6 { padding-top: 12px; padding-bottom: 12px; }
+                          .pt-8 { padding-top: 16px; }
+                          .pb-4 { padding-bottom: 8px; }
+                          .p-4 { padding: 8px; }
+                          .mb-1 { margin-bottom: 2px; }
+                          .mb-2 { margin-bottom: 4px; }
+                          .mt-2 { margin-top: 4px; }
+                          .gap-2 { gap: 4px; }
+                          .gap-6 { gap: 12px; }
                           .flex { display: flex; }
                           .items-start { align-items: flex-start; }
                           .items-center { align-items: center; }
                           .items-end { align-items: flex-end; }
                           .justify-between { justify-content: space-between; }
-                          .space-y-1 > * + * { margin-top: 0.25rem; }
-                          .rounded { border-radius: 0.25rem; }
-                          .rounded-lg { border-radius: 0.5rem; }
-                          .w-48 { width: 12rem; }
-                          .h-14 { height: 3.5rem; }
-                          .h-20 { height: 5rem; }
-                          .max-h-16 { max-height: 4rem; }
+                          .space-y-1 > * + * { margin-top: 2px; }
+                          .rounded { border-radius: 2px; }
+                          .rounded-lg { border-radius: 4px; }
+                          .w-48 { width: 80px; }
+                          .h-14 { height: 40px; }
+                          .h-20 { height: 50px; }
                           .border-2 { border-width: 2px; }
                           .border-dashed { border-style: dashed; }
-                          .border-gray-100 { border-color: #f3f4f6; }
                           .border-gray-300 { border-color: #d1d5db; }
                           .border-green-200 { border-color: #bbf7d0; }
-                          table { width: 100%; border-collapse: collapse; }
-                          th, td { padding: 0.5rem; }
+                          table { width: 100%; border-collapse: collapse; font-size: 10px; }
+                          th, td { padding: 4px 6px; }
                           img { max-width: 100%; height: auto; }
+                          img.h-14 { height: 35px !important; width: auto !important; }
                           .hidden { display: none; }
                           @media print {
                             body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+                            [class*="bg-[#1a1a2e]"], [class*="bg-[#1E3A5F]"], [class*="bg-[#00A651]"] { 
+                              print-color-adjust: exact; 
+                              -webkit-print-color-adjust: exact; 
+                            }
                           }
                         </style>
                       </head>
@@ -8508,25 +8504,72 @@ function ContractsPage({ profile, t, notify, setPage }) {
                     🖨️ Imprimer
                   </button>
                   <button onClick={() => {
+                    // Same as print but saves to PDF via browser print dialog
                     const content = document.getElementById('contract-quote-print-content');
                     const printWindow = window.open('', '_blank');
                     printWindow.document.write(`
                       <!DOCTYPE html>
                       <html>
                       <head>
-                        <title>Devis Contrat - ${contract.contract_number}</title>
+                        <title>Devis_Contrat_${contract.contract_number}.pdf</title>
                         <style>
+                          @page { size: A4; margin: 10mm; }
                           * { margin: 0; padding: 0; box-sizing: border-box; }
-                          body { font-family: Arial, sans-serif; }
-                          /* Same styles as print */
+                          body { 
+                            font-family: Arial, sans-serif; 
+                            font-size: 11px;
+                            line-height: 1.4;
+                          }
+                          .border-b { border-bottom: 1px solid #e5e7eb; }
+                          .border-b-4 { border-bottom: 4px solid #00A651; }
+                          .border-t { border-top: 1px solid #e5e7eb; }
+                          [class*="bg-[#1a1a2e]"] { background: #1a1a2e !important; }
+                          [class*="bg-[#1E3A5F]"] { background: #1E3A5F !important; }
+                          [class*="bg-[#00A651]"] { background: #00A651 !important; }
+                          .bg-gray-50 { background: #f9fafb; }
+                          .bg-gray-100 { background: #f3f4f6; }
+                          .text-white { color: white !important; }
+                          .text-gray-400 { color: #9ca3af; }
+                          .text-gray-500 { color: #6b7280; }
+                          .text-gray-600 { color: #4b5563; }
+                          .text-gray-700 { color: #374151; }
+                          .text-green-600 { color: #16a34a; }
+                          [class*="text-[#00A651]"] { color: #00A651; }
+                          .text-xs { font-size: 9px; }
+                          .text-sm { font-size: 10px; }
+                          .text-lg { font-size: 14px; }
+                          .text-xl { font-size: 16px; }
+                          .text-2xl { font-size: 18px; }
+                          .text-4xl { font-size: 24px; }
+                          .font-bold { font-weight: 700; }
+                          .font-mono { font-family: monospace; }
+                          .uppercase { text-transform: uppercase; }
+                          .px-2, .px-4 { padding-left: 6px; padding-right: 6px; }
+                          .px-8 { padding-left: 16px; padding-right: 16px; }
+                          .py-2, .py-3 { padding-top: 4px; padding-bottom: 4px; }
+                          .py-4, .py-6 { padding-top: 8px; padding-bottom: 8px; }
+                          .flex { display: flex; }
+                          .items-center, .items-end { align-items: center; }
+                          .justify-between { justify-content: space-between; }
+                          table { width: 100%; border-collapse: collapse; font-size: 10px; }
+                          th, td { padding: 4px 6px; }
+                          img { max-width: 100%; height: auto; }
+                          img.h-14 { height: 35px !important; }
+                          .hidden { display: none; }
+                          @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
                         </style>
                       </head>
-                      <body>${content.innerHTML}</body>
+                      <body>
+                        <p style="text-align:center; padding:20px; background:#f0f0f0; margin-bottom:20px; border-radius:8px;">
+                          <strong>💡 Pour sauvegarder en PDF:</strong> Dans la boîte de dialogue d'impression, sélectionnez "Enregistrer au format PDF" comme destination.
+                        </p>
+                        ${content.innerHTML}
+                      </body>
                       </html>
                     `);
                     printWindow.document.close();
                     printWindow.focus();
-                    setTimeout(() => { printWindow.print(); }, 250);
+                    setTimeout(() => { printWindow.print(); }, 300);
                   }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
                     📥 Télécharger PDF
                   </button>
