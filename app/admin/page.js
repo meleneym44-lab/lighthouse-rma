@@ -2116,6 +2116,115 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
         </div>
       )}
 
+      {/* BC REVIEW SECTION - Shows when client has submitted BC */}
+      {contract.status === 'bc_pending' && (
+        <div className="bg-orange-50 border-2 border-orange-300 rounded-xl p-6">
+          <div className="flex items-start gap-4 mb-4">
+            <div className="w-14 h-14 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0">
+              <span className="text-white text-2xl">📄</span>
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-orange-800">Bon de Commande à Vérifier</h2>
+              <p className="text-orange-700">
+                Le client a soumis son bon de commande. Vérifiez les documents et activez le contrat.
+              </p>
+              {contract.bc_submitted_at && (
+                <p className="text-sm text-orange-600 mt-1">
+                  Soumis le {new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(contract.bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                  {contract.bc_signed_by && ` par ${contract.bc_signed_by}`}
+                </p>
+              )}
+            </div>
+          </div>
+          
+          {/* Documents */}
+          <div className="grid md:grid-cols-2 gap-4 mb-4">
+            {/* Signed Quote PDF */}
+            {contract.signed_quote_url && (
+              <div className="bg-white rounded-lg p-4 border border-green-200">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                    <span className="text-green-600">✅</span>
+                  </div>
+                  <div>
+                    <p className="font-bold text-green-800">Devis Signé</p>
+                    <p className="text-xs text-green-600">PDF avec signature client</p>
+                  </div>
+                </div>
+                <a
+                  href={contract.signed_quote_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block w-full px-4 py-2 bg-green-600 text-white rounded-lg text-center font-medium hover:bg-green-700"
+                >
+                  📥 Voir le Devis Signé
+                </a>
+              </div>
+            )}
+            
+            {/* BC File */}
+            {contract.bc_file_url && (
+              <div className="bg-white rounded-lg p-4 border border-purple-200">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                    <span className="text-purple-600">📋</span>
+                  </div>
+                  <div>
+                    <p className="font-bold text-purple-800">Bon de Commande</p>
+                    <p className="text-xs text-purple-600">Document uploadé par le client</p>
+                  </div>
+                </div>
+                <a
+                  href={contract.bc_file_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block w-full px-4 py-2 bg-purple-600 text-white rounded-lg text-center font-medium hover:bg-purple-700"
+                >
+                  📥 Voir le BC
+                </a>
+              </div>
+            )}
+            
+            {/* No documents */}
+            {!contract.signed_quote_url && !contract.bc_file_url && (
+              <div className="col-span-2 bg-white rounded-lg p-4 border border-gray-200 text-center text-gray-500">
+                <p>Aucun document attaché (signature électronique uniquement)</p>
+              </div>
+            )}
+          </div>
+          
+          {/* Action Buttons */}
+          <div className="flex gap-3">
+            <button
+              onClick={() => updateContractStatus('active')}
+              disabled={saving}
+              className="flex-1 px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008c44] disabled:opacity-50"
+            >
+              ✅ Approuver et Activer le Contrat
+            </button>
+            <button
+              onClick={() => {
+                const reason = window.prompt('Raison du rejet:');
+                if (reason) {
+                  // Update with rejection
+                  supabase.from('contracts').update({
+                    status: 'bc_rejected',
+                    bc_rejection_reason: reason
+                  }).eq('id', contract.id).then(() => {
+                    notify('BC rejeté', 'success');
+                    onUpdate();
+                  });
+                }
+              }}
+              disabled={saving}
+              className="px-6 py-3 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 disabled:opacity-50"
+            >
+              ❌ Rejeter
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white rounded-xl shadow-sm p-6">
         <div className="flex justify-between items-start mb-4">
