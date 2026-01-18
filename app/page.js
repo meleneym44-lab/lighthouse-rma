@@ -2506,8 +2506,14 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     
     // Validate devices
     for (const d of devices) {
-      if (!d.device_type || !d.model || !d.serial_number || !d.service_type || !d.notes) {
-        notify('Veuillez remplir tous les champs obligatoires pour chaque appareil (type, modèle, n° série, service, notes)', 'error');
+      if (!d.device_type || !d.model || !d.serial_number || !d.service_type) {
+        notify('Veuillez remplir tous les champs obligatoires pour chaque appareil (type, modèle, n° série, service)', 'error');
+        return;
+      }
+      // Notes required only for repair, calibration_repair, or other services
+      const needsNotes = d.service_type === 'repair' || d.service_type === 'calibration_repair' || d.service_type === 'other';
+      if (needsNotes && !d.notes) {
+        notify('Veuillez décrire le problème ou la demande dans les notes pour les réparations', 'error');
         return;
       }
       if (d.brand === 'other' && !d.brand_other) {
@@ -3209,7 +3215,20 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
 
       <div className="grid md:grid-cols-2 gap-4">
         
-        {/* SERIAL NUMBER - FIRST */}
+        {/* NICKNAME - FIRST */}
+        <div className="md:col-span-2">
+          <label className="block text-sm font-bold text-gray-700 mb-1">Surnom de l'appareil (optionnel)</label>
+          <input
+            type="text"
+            value={device.nickname || ''}
+            onChange={e => updateDevice(device.id, 'nickname', e.target.value)}
+            placeholder="ex: Compteur Salle Blanche 1, Portable Labo 3..."
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          />
+          <p className="text-xs text-gray-500 mt-1">Pour identifier facilement cet appareil dans vos futures demandes</p>
+        </div>
+
+        {/* SERIAL NUMBER - SECOND */}
         <div className="md:col-span-2">
           <label className="block text-sm font-bold text-gray-700 mb-1">N° de Série *</label>
           <input
@@ -3305,19 +3324,6 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
           />
         </div>
 
-        {/* Nickname for saving */}
-        <div className="md:col-span-2">
-          <label className="block text-sm font-bold text-gray-700 mb-1">Surnom de l'appareil (optionnel)</label>
-          <input
-            type="text"
-            value={device.nickname || ''}
-            onChange={e => updateDevice(device.id, 'nickname', e.target.value)}
-            placeholder="ex: Compteur Salle Blanche 1, Portable Labo 3..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          />
-          <p className="text-xs text-gray-500 mt-1">Pour identifier facilement cet appareil dans vos futures demandes</p>
-        </div>
-
         {/* Service Type */}
         <div className={device.service_type === 'other' ? '' : 'md:col-span-2'}>
           <label className="block text-sm font-bold text-gray-700 mb-1">Type de Service *</label>
@@ -3350,16 +3356,20 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
           </div>
         )}
 
-        {/* Notes for Technician */}
+        {/* Notes - required only for repair */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-bold text-gray-700 mb-1">Notes pour le Technicien *</label>
+          <label className="block text-sm font-bold text-gray-700 mb-1">
+            Notes / Commentaires {(device.service_type === 'repair' || device.service_type === 'calibration_repair' || device.service_type === 'other') ? '*' : '(optionnel)'}
+          </label>
           <textarea
             value={device.notes}
             onChange={handleNotesChange}
-            placeholder="Décrivez le problème ou le service demandé pour cet appareil..."
+            placeholder={device.service_type === 'repair' || device.service_type === 'calibration_repair' 
+              ? "Décrivez le problème rencontré avec cet appareil..." 
+              : "Informations complémentaires (optionnel)..."}
             rows={4}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
-            required
+            required={device.service_type === 'repair' || device.service_type === 'calibration_repair' || device.service_type === 'other'}
           />
           <p className="text-sm text-gray-500 mt-1">
             {charCount}/{maxChars} caractères
