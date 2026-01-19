@@ -8395,26 +8395,6 @@ function ContractsPage({ profile, t, notify, setPage }) {
             {/* DETAILS TAB */}
             {contractTab === 'details' && (
               <>
-                {/* Contract Duration & Stats */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                  <div className="bg-[#1E3A5F] rounded-lg p-4 text-center text-white">
-                    <div className="text-3xl font-bold">{devices.length}</div>
-                    <div className="text-sm text-white/80">Appareils sous contrat</div>
-                  </div>
-                  <div className="bg-green-500 rounded-lg p-4 text-center text-white">
-                    <div className="text-3xl font-bold">{usedTokens}</div>
-                    <div className="text-sm text-white/80">Étalonnages effectués</div>
-                  </div>
-                  <div className="bg-blue-500 rounded-lg p-4 text-center text-white">
-                    <div className="text-3xl font-bold">{totalTokens - usedTokens}</div>
-                    <div className="text-sm text-white/80">Étalonnages restants</div>
-                  </div>
-                  <div className="bg-gray-100 rounded-lg p-4 text-center">
-                    <div className="text-3xl font-bold text-gray-800">{totalTokens}</div>
-                    <div className="text-sm text-gray-600">Total inclus/an</div>
-                  </div>
-                </div>
-
                 {/* Contract Info Card */}
                 <div className="bg-white border rounded-xl p-6 mb-6">
                   <h3 className="font-bold text-[#1E3A5F] mb-4 text-lg">📋 Informations du Contrat</h3>
@@ -8449,71 +8429,75 @@ function ContractsPage({ profile, t, notify, setPage }) {
                         <span className={`px-3 py-1 rounded-full text-sm font-medium ${
                           contract.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
                         }`}>
-                          {contract.status === 'active' ? '✅ Actif' : contract.status}
+                          {contract.status === 'active' ? '✅ Actif' : contract.status === 'quote_sent' ? '📋 Devis envoyé' : contract.status}
                         </span>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Calibration Progress */}
+                {/* Devices with their calibration status */}
                 <div className="bg-white border rounded-xl p-6 mb-6">
-                  <h3 className="font-bold text-[#1E3A5F] mb-4 text-lg">📊 Avancement des Étalonnages</h3>
-                  <div className="mb-4">
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="text-gray-600">
-                        {usedTokens} étalonnage{usedTokens !== 1 ? 's' : ''} effectué{usedTokens !== 1 ? 's' : ''} sur {totalTokens} inclus
-                      </span>
-                      <span className="font-bold text-[#1E3A5F]">
-                        {totalTokens > 0 ? Math.round((usedTokens / totalTokens) * 100) : 0}%
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-4">
-                      <div 
-                        className={`h-4 rounded-full transition-all ${
-                          usedTokens >= totalTokens ? 'bg-green-500' : 'bg-[#00A651]'
-                        }`}
-                        style={{ width: `${Math.min((usedTokens / totalTokens) * 100, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                  {usedTokens >= totalTokens ? (
-                    <p className="text-sm text-green-600 font-medium">
-                      ✅ Tous les étalonnages inclus ont été effectués pour cette période
-                    </p>
-                  ) : (
-                    <p className="text-sm text-gray-600">
-                      Il vous reste <strong className="text-blue-600">{totalTokens - usedTokens}</strong> étalonnage{(totalTokens - usedTokens) !== 1 ? 's' : ''} inclus dans votre contrat
-                    </p>
-                  )}
-                </div>
-
-                {/* Devices Summary */}
-                <div className="bg-white border rounded-xl p-6 mb-6">
-                  <h3 className="font-bold text-[#1E3A5F] mb-4 text-lg">🔬 Appareils sous contrat</h3>
-                  <div className="space-y-3">
+                  <h3 className="font-bold text-[#1E3A5F] mb-4 text-lg">🔬 Appareils sous contrat ({devices.length})</h3>
+                  <div className="space-y-4">
                     {devices.map((device, idx) => {
                       const deviceUsed = device.tokens_used || 0;
                       const deviceTotal = device.tokens_total || 1;
-                      const isCalibrated = deviceUsed >= deviceTotal;
+                      const deviceRemaining = deviceTotal - deviceUsed;
+                      const isComplete = deviceUsed >= deviceTotal;
+                      const progressPercent = (deviceUsed / deviceTotal) * 100;
                       
                       return (
-                        <div key={device.id} className={`flex items-center justify-between p-3 rounded-lg ${isCalibrated ? 'bg-green-50 border border-green-200' : 'bg-gray-50'}`}>
-                          <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isCalibrated ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600'}`}>
-                              {isCalibrated ? '✓' : idx + 1}
+                        <div key={device.id} className={`p-4 rounded-xl border-2 ${isComplete ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-white'}`}>
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl ${
+                                isComplete ? 'bg-green-500 text-white' : 'bg-[#1E3A5F] text-white'
+                              }`}>
+                                {device.device_type === 'particle_counter' && '🔬'}
+                                {device.device_type === 'bio_collector' && '🧫'}
+                                {device.device_type === 'liquid_counter' && '💧'}
+                                {device.device_type === 'temp_humidity' && '🌡️'}
+                                {(!device.device_type || device.device_type === 'other') && '📦'}
+                              </div>
+                              <div>
+                                <p className="font-bold text-[#1E3A5F]">{device.model_name || 'Appareil'}</p>
+                                <p className="text-sm text-gray-500">N° Série: {device.serial_number}</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="font-medium">{device.model_name || 'Appareil'}</p>
-                              <p className="text-xs text-gray-500">SN: {device.serial_number}</p>
+                            <div className="text-right">
+                              {isComplete ? (
+                                <span className="px-3 py-1 bg-green-500 text-white rounded-full text-sm font-medium">
+                                  ✅ Étalonnages complets
+                                </span>
+                              ) : (
+                                <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                                  {deviceRemaining} étalonnage{deviceRemaining > 1 ? 's' : ''} restant{deviceRemaining > 1 ? 's' : ''}
+                                </span>
+                              )}
                             </div>
                           </div>
-                          <div className="text-right">
-                            {isCalibrated ? (
-                              <span className="text-green-600 font-medium">✅ Étalonné ({deviceUsed}/{deviceTotal})</span>
-                            ) : (
-                              <span className="text-amber-600 font-medium">⏳ {deviceUsed}/{deviceTotal} effectué</span>
-                            )}
+                          
+                          {/* Progress bar for this device */}
+                          <div className="mt-3">
+                            <div className="flex justify-between text-sm mb-1">
+                              <span className="text-gray-600">
+                                {deviceUsed} / {deviceTotal} étalonnage{deviceTotal > 1 ? 's' : ''} effectué{deviceUsed > 1 ? 's' : ''}
+                              </span>
+                              <span className="font-medium">{Math.round(progressPercent)}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div 
+                                className={`h-2 rounded-full transition-all ${isComplete ? 'bg-green-500' : 'bg-[#00A651]'}`}
+                                style={{ width: `${Math.min(progressPercent, 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                          
+                          {/* Price info */}
+                          <div className="mt-3 pt-3 border-t border-gray-200 flex justify-between text-sm">
+                            <span className="text-gray-500">Prix annuel pour cet appareil</span>
+                            <span className="font-bold text-[#00A651]">{(device.unit_price || 0).toFixed(2)} € HT</span>
                           </div>
                         </div>
                       );
@@ -8522,7 +8506,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
                 </div>
                 
                 {/* Actions */}
-                {isActive && (totalTokens - usedTokens) > 0 && (
+                {isActive && (
                   <div className="flex justify-center">
                     <button
                       onClick={() => setPage('request')}
@@ -8530,17 +8514,6 @@ function ContractsPage({ profile, t, notify, setPage }) {
                     >
                       🔬 Créer une demande d'étalonnage
                     </button>
-                  </div>
-                )}
-                
-                {isActive && (totalTokens - usedTokens) === 0 && (
-                  <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
-                    <p className="text-green-700 font-medium">
-                      🎉 Tous vos étalonnages pour cette période ont été effectués !
-                    </p>
-                    <p className="text-sm text-green-600 mt-1">
-                      Votre contrat sera renouvelé le {new Date(contract.end_date).toLocaleDateString('fr-FR')}
-                    </p>
                   </div>
                 )}
               </>
