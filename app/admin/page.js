@@ -3492,6 +3492,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   useEffect(() => {
     if (loadingContract) return; // Wait for contract check
     
+    console.log('📊 Initializing device pricing, contractInfo:', contractInfo);
+    
     // Generate quote reference
     const year = today.getFullYear().toString().slice(-2);
     const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -3507,15 +3509,18 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         
         const calTemplate = CALIBRATION_TEMPLATES[deviceType] || CALIBRATION_TEMPLATES.particle_counter;
         
-        // Check contract coverage
-        const contractDevice = contractInfo?.deviceMap?.[d.serial_number];
+        // Check contract coverage - trim serial number for matching
+        const serialTrimmed = (d.serial_number || '').trim();
+        const contractDevice = contractInfo?.deviceMap?.[serialTrimmed];
         const isContractCovered = needsCal && contractDevice && contractDevice.tokens_remaining > 0;
         const tokensExhausted = needsCal && contractDevice && contractDevice.tokens_remaining <= 0;
+        
+        console.log(`📊 Device ${serialTrimmed}: contractDevice=`, contractDevice, 'isContractCovered=', isContractCovered);
         
         return {
           id: d.id || `device-${i}`,
           model: d.model_name || '',
-          serial: d.serial_number || '',
+          serial: serialTrimmed,
           deviceType: deviceType,
           serviceType: serviceType,
           needsCalibration: needsCal,
