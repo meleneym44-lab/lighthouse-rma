@@ -1099,29 +1099,6 @@ function RequestsSheet({ requests, notify, reload, profile }) {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [quoteRequest, setQuoteRequest] = useState(null);
   const [filter, setFilter] = useState('pending');
-  const [companiesWithContracts, setCompaniesWithContracts] = useState({});
-  
-  // Load active contracts to show which companies have them
-  useEffect(() => {
-    const loadContracts = async () => {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const { data } = await supabase
-        .from('contracts')
-        .select('id, company_id, contract_number')
-        .eq('status', 'active')
-        .lte('start_date', todayStr)
-        .gte('end_date', todayStr);
-      
-      if (data) {
-        const map = {};
-        data.forEach(c => {
-          map[c.company_id] = c.contract_number;
-        });
-        setCompaniesWithContracts(map);
-      }
-    };
-    loadContracts();
-  }, []);
   
   const pendingRequests = requests.filter(r => r.status === 'submitted' && !r.request_number);
   const modificationRequests = requests.filter(r => r.status === 'quote_revision_requested');
@@ -1198,11 +1175,6 @@ function RequestsSheet({ requests, notify, reload, profile }) {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-gray-800">{req.companies?.name || '—'}</p>
-                      {companiesWithContracts[req.company_id] && !isContractRMA && (
-                        <span className="px-1.5 py-0.5 text-xs font-bold rounded bg-blue-100 text-blue-700" title={`Contrat actif: ${companiesWithContracts[req.company_id]}`}>
-                          📋 Contrat
-                        </span>
-                      )}
                     </div>
                   </td>
                   <td className="px-4 py-3"><span className="text-sm">{req.request_type === 'service' ? '🔧 Service' : '📦 Pièces'}</span></td>
