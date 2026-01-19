@@ -3536,7 +3536,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           calibrationPrice: isContractCovered ? 0 : (needsCal ? calTemplate.defaultPrice : 0),
           repairPrice: needsRepair ? REPAIR_TEMPLATE.defaultPrice : 0,
           additionalParts: [],
-          shipping: defaultShipping
+          shipping: isContractCovered ? 0 : defaultShipping
         };
       }));
     }
@@ -3962,19 +3962,28 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                           </button>
 
                           {/* Shipping */}
-                          <div className="flex items-center justify-between bg-gray-100 p-3 rounded-lg border-t mt-3">
-                            <span className="font-medium text-gray-700">
-                              {isMetro ? 'Frais de port' : 'Transport (géré par client)'}
+                          <div className={`flex items-center justify-between p-3 rounded-lg border-t mt-3 ${device.isContractCovered ? 'bg-emerald-100' : 'bg-gray-100'}`}>
+                            <span className={`font-medium ${device.isContractCovered ? 'text-emerald-700' : 'text-gray-700'}`}>
+                              {device.isContractCovered ? 'Frais de port (inclus contrat)' : isMetro ? 'Frais de port' : 'Transport (géré par client)'}
                             </span>
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="number"
-                                value={device.shipping}
-                                onChange={e => updateDevice(device.id, 'shipping', parseFloat(e.target.value) || 0)}
-                                className="w-20 px-3 py-2 border rounded-lg text-right"
-                              />
-                              <span className="text-gray-500">€</span>
-                            </div>
+                            {device.isContractCovered ? (
+                              <div className="flex items-center gap-2">
+                                <span className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg">
+                                  CONTRAT
+                                </span>
+                                <span className="text-emerald-600 font-medium">0,00 €</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  value={device.shipping}
+                                  onChange={e => updateDevice(device.id, 'shipping', parseFloat(e.target.value) || 0)}
+                                  className="w-20 px-3 py-2 border rounded-lg text-right"
+                                />
+                                <span className="text-gray-500">€</span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -3990,15 +3999,24 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                 {/* Per-device totals */}
                 <div className="space-y-3 mb-6">
                   {devicePricing.map((device, i) => (
-                    <div key={device.id} className="bg-white rounded-lg p-3 border">
+                    <div key={device.id} className={`rounded-lg p-3 border ${device.isContractCovered ? 'bg-emerald-50 border-emerald-200' : 'bg-white'}`}>
                       <div className="flex justify-between items-start">
                         <div>
                           <p className="font-medium text-sm">{device.model}</p>
                           <p className="text-xs text-gray-500">SN: {device.serial}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-bold text-[#00A651]">{(getDeviceServiceTotal(device) + device.shipping).toFixed(2)} €</p>
-                          <p className="text-xs text-gray-400">dont port: {device.shipping}€</p>
+                          {device.isContractCovered ? (
+                            <>
+                              <p className="font-bold text-emerald-600">CONTRAT</p>
+                              <p className="text-xs text-emerald-500">Inclus dans le contrat</p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="font-bold text-[#00A651]">{(getDeviceServiceTotal(device) + device.shipping).toFixed(2)} €</p>
+                              <p className="text-xs text-gray-400">dont port: {device.shipping}€</p>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
