@@ -1390,29 +1390,32 @@ const STATUS_STYLES = {
 // Step Progress Tracker Component (Chevron Style)
 const StepProgress = ({ status, serviceType }) => {
   // Define steps based on service type
+  // CALIBRATION: 10 steps
   const calibrationSteps = [
     { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
-    { id: 'rma_created', label: 'RMA Créé', shortLabel: 'RMA Créé' },
-    { id: 'bc_submitted', label: 'BC Soumis', shortLabel: 'BC Soumis' },
-    { id: 'bc_approved', label: 'BC Approuvé', shortLabel: 'BC Approuvé' },
+    { id: 'rma_created', label: 'RMA/Devis Créé', shortLabel: 'Devis' },
+    { id: 'approved', label: 'Devis Approuvé', shortLabel: 'Approuvé' },
+    { id: 'waiting', label: 'En attente réception', shortLabel: 'Attente' },
     { id: 'received', label: 'Reçu', shortLabel: 'Reçu' },
     { id: 'queue', label: 'File d\'attente', shortLabel: 'File' },
-    { id: 'calibration', label: 'Étalonnage', shortLabel: 'Étalonnage' },
-    { id: 'final_qc', label: 'Contrôle QC', shortLabel: 'QC' },
-    { id: 'ready_to_ship', label: 'Prêt', shortLabel: 'Prêt' },
+    { id: 'calibration', label: 'Étalonnage', shortLabel: 'Étal.' },
+    { id: 'qc', label: 'Contrôle QC', shortLabel: 'QC' },
+    { id: 'ready', label: 'Prêt', shortLabel: 'Prêt' },
     { id: 'shipped', label: 'Expédié', shortLabel: 'Expédié' }
   ];
 
+  // REPAIR: 11 steps
   const repairSteps = [
     { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
-    { id: 'rma_created', label: 'RMA Créé', shortLabel: 'RMA Créé' },
-    { id: 'bc_submitted', label: 'BC Soumis', shortLabel: 'BC Soumis' },
-    { id: 'bc_approved', label: 'BC Approuvé', shortLabel: 'BC Approuvé' },
+    { id: 'rma_created', label: 'RMA/Devis Créé', shortLabel: 'Devis' },
+    { id: 'approved', label: 'Devis Approuvé', shortLabel: 'Approuvé' },
+    { id: 'waiting', label: 'En attente réception', shortLabel: 'Attente' },
     { id: 'received', label: 'Reçu', shortLabel: 'Reçu' },
     { id: 'inspection', label: 'Inspection', shortLabel: 'Insp.' },
+    { id: 'approval', label: 'Approbation', shortLabel: 'Appr.' },
     { id: 'repair', label: 'Réparation', shortLabel: 'Rép.' },
-    { id: 'final_qc', label: 'Contrôle QC', shortLabel: 'QC' },
-    { id: 'ready_to_ship', label: 'Prêt', shortLabel: 'Prêt' },
+    { id: 'qc', label: 'Contrôle QC', shortLabel: 'QC' },
+    { id: 'ready', label: 'Prêt', shortLabel: 'Prêt' },
     { id: 'shipped', label: 'Expédié', shortLabel: 'Expédié' }
   ];
 
@@ -1426,18 +1429,19 @@ const StepProgress = ({ status, serviceType }) => {
     console.log('🔍 StepProgress - status:', currentStatus, 'isRepair:', isRepair);
     
     if (isRepair) {
-      // Repair flow mapping (10 steps: 0-9)
+      // Repair flow mapping (11 steps: 0-10)
       const repairMap = {
         'submitted': 0, 'pending': 0,
-        'quote_sent': 1, 'quote_revision_requested': 1, // RMA Created, quote sent
-        'bc_pending': 2, 'bc_review': 2, 'waiting_bc': 2, // BC submitted, waiting admin approval
-        'waiting_device': 3, // BC approved, waiting for device
-        'received': 4, 'received_repair': 4, 
+        'quote_sent': 1, 'quote_revision_requested': 1,
+        'bc_pending': 2, 'bc_review': 2, 'waiting_bc': 2,
+        'waiting_device': 3,
+        'received': 4, 'received_repair': 4,
         'inspection': 5, 'inspection_complete': 5,
-        'repair_in_progress': 6, 'in_progress': 6, 'waiting_parts': 6,
-        'final_qc': 7, 'quality_check': 7,
-        'ready_to_ship': 8,
-        'shipped': 9, 'delivered': 9, 'completed': 9
+        'customer_approval': 6, 'waiting_approval': 6,
+        'repair_in_progress': 7, 'in_progress': 7, 'waiting_parts': 7,
+        'final_qc': 8, 'quality_check': 8,
+        'ready_to_ship': 9,
+        'shipped': 10, 'delivered': 10, 'completed': 10
       };
       const index = repairMap[currentStatus] ?? 0;
       console.log('🔍 Repair step index:', index);
@@ -1446,11 +1450,11 @@ const StepProgress = ({ status, serviceType }) => {
       // Calibration flow mapping (10 steps: 0-9)
       const calibrationMap = {
         'submitted': 0, 'pending': 0,
-        'quote_sent': 1, 'quote_revision_requested': 1, // RMA Created, quote sent
-        'bc_pending': 2, 'bc_review': 2, 'waiting_bc': 2, // BC submitted, waiting admin approval
-        'waiting_device': 3, // BC approved, waiting to receive device
+        'quote_sent': 1, 'quote_revision_requested': 1,
+        'bc_pending': 2, 'bc_review': 2, 'waiting_bc': 2,
+        'waiting_device': 3,
         'received': 4, 'received_calibration': 4,
-        'in_queue': 5, 'queued': 5, // In calibration queue
+        'in_queue': 5, 'queued': 5,
         'in_progress': 6, 'calibration_in_progress': 6,
         'final_qc': 7, 'quality_check': 7,
         'ready_to_ship': 8,
