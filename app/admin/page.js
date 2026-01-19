@@ -3363,62 +3363,88 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       const todayStr = new Date().toISOString().split('T')[0];
       console.log('📅 Today:', todayStr);
       
-      // Get ALL active contracts with their devices
-      const { data: activeContracts, error } = await supabase
-        .from('contracts')
-        .select('id, contract_number, bc_url, start_date, end_date, company_id, companies(name), contract_devices(*)')
-        .eq('status', 'active')
-        .lte('start_date', todayStr)
-        .gte('end_date', todayStr);
-      
-      console.log('📋 All active contracts:', activeContracts);
-      
-      if (error) {
-        console.error('Contract query error:', error);
-        setLoadingContract(false);
-        return;
-      }
-      
-      if (activeContracts && activeContracts.length > 0) {
-        // Build map of serial numbers to contract devices from ALL active contracts
+      try {
+        // First, get all active contracts (simplified query)
+        const { data: activeContracts, error: contractError } = await supabase
+          .from('contracts')
+          .select('id, contract_number, bc_url, start_date, end_date, company_id')
+          .eq('status', 'active')
+          .lte('start_date', todayStr)
+          .gte('end_date', todayStr);
+        
+        console.log('📋 Active contracts:', activeContracts, 'Error:', contractError);
+        
+        if (contractError) {
+          console.error('Contract query error:', contractError);
+          setLoadingContract(false);
+          return;
+        }
+        
+        if (!activeContracts || activeContracts.length === 0) {
+          console.log('❌ No active contracts found');
+          setLoadingContract(false);
+          return;
+        }
+        
+        // Get contract IDs
+        const contractIds = activeContracts.map(c => c.id);
+        console.log('📋 Contract IDs:', contractIds);
+        
+        // Now get contract devices separately
+        const { data: contractDevicesData, error: devicesError } = await supabase
+          .from('contract_devices')
+          .select('*')
+          .in('contract_id', contractIds);
+        
+        console.log('📋 Contract devices:', contractDevicesData, 'Error:', devicesError);
+        
+        if (devicesError) {
+          console.error('Contract devices query error:', devicesError);
+          setLoadingContract(false);
+          return;
+        }
+        
+        // Build map of serial numbers to contract devices
         const deviceMap = {};
         let matchedContract = null;
         
-        for (const contract of activeContracts) {
-          for (const cd of (contract.contract_devices || [])) {
-            const tokensRemaining = (cd.tokens_total || 0) - (cd.tokens_used || 0);
-            
-            // Check if this contract device matches any RMA device
-            if (deviceSerials.includes(cd.serial_number)) {
-              console.log(`✅ MATCH! Serial "${cd.serial_number}" found in contract ${contract.contract_number}`);
-              matchedContract = contract;
-            }
-            
-            deviceMap[cd.serial_number] = {
-              contract_id: contract.id,
-              contract_number: contract.contract_number,
-              contract_device_id: cd.id,
-              bc_url: contract.bc_url,
-              tokens_remaining: tokensRemaining,
-              tokens_total: cd.tokens_total || 0,
-              unit_price: cd.unit_price || 0
-            };
+        for (const cd of (contractDevicesData || [])) {
+          const contract = activeContracts.find(c => c.id === cd.contract_id);
+          if (!contract) continue;
+          
+          const tokensRemaining = (cd.tokens_total || 0) - (cd.tokens_used || 0);
+          
+          // Check if this contract device matches any RMA device
+          if (deviceSerials.includes(cd.serial_number)) {
+            console.log(`✅ MATCH! Serial "${cd.serial_number}" found in contract ${contract.contract_number}`);
+            matchedContract = contract;
           }
+          
+          deviceMap[cd.serial_number] = {
+            contract_id: contract.id,
+            contract_number: contract.contract_number,
+            contract_device_id: cd.id,
+            bc_url: contract.bc_url,
+            tokens_remaining: tokensRemaining,
+            tokens_total: cd.tokens_total || 0,
+            unit_price: cd.unit_price || 0
+          };
         }
         
-        console.log('📋 Device map (all contract devices):', deviceMap);
-        console.log('📋 RMA device serial numbers:', deviceSerials);
+        console.log('📋 Device map:', deviceMap);
         
         // Check which RMA devices are in the map
+        let hasMatch = false;
         deviceSerials.forEach(sn => {
           if (deviceMap[sn]) {
             console.log(`✅ RMA device "${sn}" is covered by contract ${deviceMap[sn].contract_number}, tokens remaining: ${deviceMap[sn].tokens_remaining}`);
+            hasMatch = true;
           } else {
             console.log(`❌ RMA device "${sn}" is NOT in any contract`);
           }
         });
         
-        if (matchedContract || Object.keys(deviceMap).some(sn => deviceSerials.includes(sn))) {
+        if (hasMatch) {
           setContractInfo({
             contracts: activeContracts,
             primaryContract: matchedContract || activeContracts[0],
@@ -3428,8 +3454,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         } else {
           console.log('❌ No matching serial numbers found in contracts');
         }
-      } else {
-        console.log('❌ No active contracts found');
+      } catch (err) {
+        console.error('Contract check error:', err);
       }
       
       setLoadingContract(false);
