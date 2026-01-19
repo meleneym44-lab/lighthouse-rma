@@ -3351,7 +3351,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   // ============================================
   useEffect(() => {
     const checkContract = async () => {
-      const deviceSerials = devices.map(d => d.serial_number).filter(Boolean);
+      // Trim whitespace from serial numbers
+      const deviceSerials = devices.map(d => (d.serial_number || '').trim()).filter(Boolean);
       console.log('🔍 Checking contracts for serial numbers:', deviceSerials);
       
       if (deviceSerials.length === 0) {
@@ -3413,14 +3414,15 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           if (!contract) continue;
           
           const tokensRemaining = (cd.tokens_total || 0) - (cd.tokens_used || 0);
+          const serialTrimmed = (cd.serial_number || '').trim();
           
           // Check if this contract device matches any RMA device
-          if (deviceSerials.includes(cd.serial_number)) {
-            console.log(`✅ MATCH! Serial "${cd.serial_number}" found in contract ${contract.contract_number}`);
+          if (deviceSerials.includes(serialTrimmed)) {
+            console.log(`✅ MATCH! Serial "${serialTrimmed}" found in contract ${contract.contract_number}`);
             matchedContract = contract;
           }
           
-          deviceMap[cd.serial_number] = {
+          deviceMap[serialTrimmed] = {
             contract_id: contract.id,
             contract_number: contract.contract_number,
             contract_device_id: cd.id,
