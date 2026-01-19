@@ -1393,8 +1393,8 @@ const StepProgress = ({ status, serviceType }) => {
   const calibrationSteps = [
     { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
     { id: 'rma_created', label: 'RMA Créé', shortLabel: 'RMA Créé' },
+    { id: 'bc_submitted', label: 'BC Soumis', shortLabel: 'BC Soumis' },
     { id: 'bc_approved', label: 'BC Approuvé', shortLabel: 'BC Approuvé' },
-    { id: 'waiting', label: 'En attente réception', shortLabel: 'En attente' },
     { id: 'received', label: 'Reçu', shortLabel: 'Reçu' },
     { id: 'queue', label: 'File d\'attente', shortLabel: 'File' },
     { id: 'calibration', label: 'Étalonnage', shortLabel: 'Étalonnage' },
@@ -1406,8 +1406,8 @@ const StepProgress = ({ status, serviceType }) => {
   const repairSteps = [
     { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
     { id: 'rma_created', label: 'RMA Créé', shortLabel: 'RMA Créé' },
+    { id: 'bc_submitted', label: 'BC Soumis', shortLabel: 'BC Soumis' },
     { id: 'bc_approved', label: 'BC Approuvé', shortLabel: 'BC Approuvé' },
-    { id: 'waiting', label: 'En attente réception', shortLabel: 'En attente' },
     { id: 'received', label: 'Reçu', shortLabel: 'Reçu' },
     { id: 'inspection', label: 'Inspection', shortLabel: 'Insp.' },
     { id: 'repair', label: 'Réparation', shortLabel: 'Rép.' },
@@ -1423,12 +1423,14 @@ const StepProgress = ({ status, serviceType }) => {
   const getStepIndex = (currentStatus) => {
     if (!currentStatus) return 0;
     
+    console.log('🔍 StepProgress - status:', currentStatus, 'isRepair:', isRepair);
+    
     if (isRepair) {
       // Repair flow mapping (10 steps: 0-9)
       const repairMap = {
         'submitted': 0, 'pending': 0,
         'quote_sent': 1, 'quote_revision_requested': 1, // RMA Created, quote sent
-        'bc_pending': 2, 'waiting_bc': 2, 'waiting_po': 2, 'waiting_customer': 2, // BC submitted, waiting approval
+        'bc_pending': 2, 'waiting_bc': 2, // BC submitted, waiting admin approval
         'waiting_device': 3, // BC approved, waiting for device
         'received': 4, 'received_repair': 4, 
         'inspection': 5, 'inspection_complete': 5,
@@ -1437,13 +1439,15 @@ const StepProgress = ({ status, serviceType }) => {
         'ready_to_ship': 8,
         'shipped': 9, 'delivered': 9, 'completed': 9
       };
-      return repairMap[currentStatus] ?? 0;
+      const index = repairMap[currentStatus] ?? 0;
+      console.log('🔍 Repair step index:', index);
+      return index;
     } else {
       // Calibration flow mapping (10 steps: 0-9)
       const calibrationMap = {
         'submitted': 0, 'pending': 0,
         'quote_sent': 1, 'quote_revision_requested': 1, // RMA Created, quote sent
-        'bc_pending': 2, 'waiting_bc': 2, 'waiting_po': 2, 'waiting_customer': 2, // BC submitted, waiting approval
+        'bc_pending': 2, 'waiting_bc': 2, // BC submitted, waiting admin approval
         'waiting_device': 3, // BC approved, waiting to receive device
         'received': 4, 'received_calibration': 4,
         'in_queue': 5, 'queued': 5, // In calibration queue
@@ -1452,7 +1456,9 @@ const StepProgress = ({ status, serviceType }) => {
         'ready_to_ship': 8,
         'shipped': 9, 'delivered': 9, 'completed': 9
       };
-      return calibrationMap[currentStatus] ?? 0;
+      const index = calibrationMap[currentStatus] ?? 0;
+      console.log('🔍 Calibration step index:', index);
+      return index;
     }
   };
 
