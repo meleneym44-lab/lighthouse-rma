@@ -4164,11 +4164,20 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                         const deviceTotal = getDeviceServiceTotal(device);
                         
                         const rows = [
-                          <tr key={`${device.id}-main`} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-100'}>
-                            <td className="px-4 py-3 font-medium">{device.model}</td>
+                          <tr key={`${device.id}-main`} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-100'} ${device.isContractCovered ? 'bg-emerald-50' : ''}`}>
+                            <td className="px-4 py-3 font-medium">
+                              {device.model}
+                              {device.isContractCovered && <span className="ml-2 px-2 py-0.5 bg-emerald-500 text-white text-xs rounded">CONTRAT</span>}
+                            </td>
                             <td className="px-4 py-3 font-mono text-xs">{device.serial}</td>
                             <td className="px-4 py-3">{services.join(' + ')}</td>
-                            <td className="px-4 py-3 text-right font-medium">{deviceTotal.toFixed(2)} €</td>
+                            <td className="px-4 py-3 text-right font-medium">
+                              {device.isContractCovered ? (
+                                <span className="text-emerald-600 font-bold">Contrat</span>
+                              ) : (
+                                `${deviceTotal.toFixed(2)} €`
+                              )}
+                            </td>
                           </tr>
                         ];
                         
@@ -4182,9 +4191,15 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                         });
                         
                         rows.push(
-                          <tr key={`${device.id}-shipping`} className="bg-gray-200 text-gray-600">
+                          <tr key={`${device.id}-shipping`} className={`${device.isContractCovered ? 'bg-emerald-100' : 'bg-gray-200'} text-gray-600`}>
                             <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ Frais de port</td>
-                            <td className="px-4 py-2 text-right text-sm">{device.shipping.toFixed(2)} €</td>
+                            <td className="px-4 py-2 text-right text-sm">
+                              {device.isContractCovered ? (
+                                <span className="text-emerald-600 font-medium">Contrat</span>
+                              ) : (
+                                `${device.shipping.toFixed(2)} €`
+                              )}
+                            </td>
                           </tr>
                         );
                         
@@ -4194,15 +4209,21 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                     <tfoot>
                       <tr className="border-t-2 border-gray-300">
                         <td className="px-4 py-3 font-medium" colSpan={3}>Sous-total services</td>
-                        <td className="px-4 py-3 text-right font-medium">{servicesSubtotal.toFixed(2)} €</td>
+                        <td className="px-4 py-3 text-right font-medium">
+                          {isFullyContractCovered ? <span className="text-emerald-600 font-bold">Contrat</span> : `${servicesSubtotal.toFixed(2)} €`}
+                        </td>
                       </tr>
                       <tr>
                         <td className="px-4 py-3 font-medium" colSpan={3}>Total frais de port</td>
-                        <td className="px-4 py-3 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
+                        <td className="px-4 py-3 text-right font-medium">
+                          {isFullyContractCovered ? <span className="text-emerald-600 font-bold">Contrat</span> : `${shippingTotal.toFixed(2)} €`}
+                        </td>
                       </tr>
-                      <tr className="bg-[#00A651] text-white">
+                      <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#00A651] text-white"}>
                         <td className="px-4 py-4 font-bold text-lg" colSpan={3}>TOTAL HT</td>
-                        <td className="px-4 py-4 text-right font-bold text-2xl">{grandTotal.toFixed(2)} €</td>
+                        <td className="px-4 py-4 text-right font-bold text-2xl">
+                          {isFullyContractCovered ? 'Contrat' : `${grandTotal.toFixed(2)} €`}
+                        </td>
                       </tr>
                     </tfoot>
                   </table>
