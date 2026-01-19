@@ -1430,7 +1430,7 @@ const StepProgress = ({ status, serviceType }) => {
       const repairMap = {
         'submitted': 0, 'pending': 0,
         'quote_sent': 1, 'quote_revision_requested': 1, // RMA Created, quote sent
-        'bc_pending': 2, 'waiting_bc': 2, // BC submitted, waiting admin approval
+        'bc_pending': 2, 'bc_review': 2, 'waiting_bc': 2, // BC submitted, waiting admin approval
         'waiting_device': 3, // BC approved, waiting for device
         'received': 4, 'received_repair': 4, 
         'inspection': 5, 'inspection_complete': 5,
@@ -1447,7 +1447,7 @@ const StepProgress = ({ status, serviceType }) => {
       const calibrationMap = {
         'submitted': 0, 'pending': 0,
         'quote_sent': 1, 'quote_revision_requested': 1, // RMA Created, quote sent
-        'bc_pending': 2, 'waiting_bc': 2, // BC submitted, waiting admin approval
+        'bc_pending': 2, 'bc_review': 2, 'waiting_bc': 2, // BC submitted, waiting admin approval
         'waiting_device': 3, // BC approved, waiting to receive device
         'received': 4, 'received_calibration': 4,
         'in_queue': 5, 'queued': 5, // In calibration queue
@@ -6526,7 +6526,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 // For early steps (before received), use RMA status
                 // For later steps (received onwards), use device status independently
                 const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 
-                                       'bc_pending', 'waiting_bc', 'waiting_device'];
+                                       'bc_pending', 'bc_review', 'waiting_bc', 'waiting_device'];
                 const rmaIsEarly = earlyStatuses.includes(request.status);
                 
                 // If RMA is still in early stages, all devices show RMA status
