@@ -8509,7 +8509,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
                 {isActive && (
                   <div className="flex justify-center">
                     <button
-                      onClick={() => setPage('request')}
+                      onClick={() => setPage('new-request')}
                       className="px-8 py-4 bg-[#00A651] text-white rounded-xl font-bold hover:bg-[#008f45] text-lg shadow-lg hover:shadow-xl transition-all"
                     >
                       🔬 Créer une demande d'étalonnage
