@@ -2,6 +2,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 
+// Expose supabase to window for debugging
+if (typeof window !== 'undefined') {
+  window.supabase = supabase;
+}
+
 const STATUS_STYLES = {
   submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Nouvelle demande' },
   approved: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'RMA Créé' },
@@ -3346,21 +3351,34 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   // ============================================
   useEffect(() => {
     const checkContract = async () => {
+      console.log('🔍 Checking contract for company_id:', request?.company_id);
+      
       if (!request?.company_id) {
+        console.log('❌ No company_id, skipping contract check');
         setLoadingContract(false);
         return;
       }
       
       const todayStr = new Date().toISOString().split('T')[0];
+      console.log('📅 Today:', todayStr);
       
       // Get active contracts for this company
-      const { data: contracts } = await supabase
+      const { data: contracts, error } = await supabase
         .from('contracts')
-        .select('id, contract_number, bc_url, start_date, end_date, contract_devices(*)')
+        .select('id, contract_number, bc_url, start_date, end_date, status, company_id, contract_devices(*)')
         .eq('company_id', request.company_id)
         .eq('status', 'active')
         .lte('start_date', todayStr)
         .gte('end_date', todayStr);
+      
+      console.log('📋 Contract query result:', { contracts, error });
+      
+      // Also check what contracts exist for this company (any status)
+      const { data: allContracts } = await supabase
+        .from('contracts')
+        .select('id, contract_number, status, start_date, end_date, company_id')
+        .eq('company_id', request.company_id);
+      console.log('📋 All contracts for this company:', allContracts);
       
       if (contracts && contracts.length > 0) {
         // Build map of serial numbers to contract devices
@@ -3368,9 +3386,13 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         let primaryContract = null;
         
         for (const contract of contracts) {
+          console.log('📋 Processing contract:', contract.contract_number);
+          console.log('📋 Contract devices:', contract.contract_devices);
+          
           if (!primaryContract) primaryContract = contract;
           for (const cd of (contract.contract_devices || [])) {
             const tokensRemaining = (cd.tokens_total || 0) - (cd.tokens_used || 0);
+            console.log(`  Device SN: "${cd.serial_number}" -> tokens remaining: ${tokensRemaining}`);
             deviceMap[cd.serial_number] = {
               contract_id: contract.id,
               contract_number: contract.contract_number,
@@ -3383,11 +3405,16 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           }
         }
         
+        console.log('📋 Device map:', deviceMap);
+        console.log('📋 RMA device serial numbers:', devices.map(d => `"${d.serial_number}"`));
+        
         setContractInfo({
           contracts,
           primaryContract,
           deviceMap
         });
+      } else {
+        console.log('❌ No active contracts found');
       }
       
       setLoadingContract(false);
