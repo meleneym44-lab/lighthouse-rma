@@ -6515,8 +6515,18 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             <div className="mt-4 space-y-3">
               <p className="text-xs text-gray-500 uppercase font-medium">Suivi par appareil</p>
               {(request.request_devices || []).map((device, idx) => {
-                // Use RMA status for the stepper (device status is for later granular tracking)
                 const deviceServiceType = device.service_type || request.requested_service;
+                
+                // For early steps (before received), use RMA status
+                // For later steps (received onwards), use device status independently
+                const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 
+                                       'bc_pending', 'waiting_bc', 'waiting_device'];
+                const rmaIsEarly = earlyStatuses.includes(request.status);
+                
+                // If RMA is still in early stages, all devices show RMA status
+                // Once RMA moves past waiting_device, each device tracks independently
+                const effectiveStatus = rmaIsEarly ? request.status : (device.status || request.status);
+                
                 return (
                   <div key={device.id || idx} className="bg-gray-50 rounded-lg p-3">
                     <div className="flex items-center justify-between mb-2">
@@ -6531,7 +6541,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                          deviceServiceType}
                       </span>
                     </div>
-                    <StepProgress status={request.status} serviceType={deviceServiceType} />
+                    <StepProgress status={effectiveStatus} serviceType={deviceServiceType} />
                   </div>
                 );
               })}
