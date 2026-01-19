@@ -1392,11 +1392,12 @@ const StepProgress = ({ status, serviceType }) => {
   // Define steps based on service type
   const calibrationSteps = [
     { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
-    { id: 'rma_created', label: 'RMA Créé', shortLabel: 'RMA' },
-    { id: 'bc_approved', label: 'BC Approuvé', shortLabel: 'BC' },
+    { id: 'rma_created', label: 'RMA Créé', shortLabel: 'RMA Créé' },
+    { id: 'bc_approved', label: 'BC Approuvé', shortLabel: 'BC Approuvé' },
+    { id: 'waiting', label: 'En attente réception', shortLabel: 'En attente' },
     { id: 'received', label: 'Reçu', shortLabel: 'Reçu' },
     { id: 'queue', label: 'File d\'attente', shortLabel: 'File' },
-    { id: 'calibration', label: 'Étalonnage', shortLabel: 'Étal.' },
+    { id: 'calibration', label: 'Étalonnage', shortLabel: 'Étalonnage' },
     { id: 'final_qc', label: 'Contrôle QC', shortLabel: 'QC' },
     { id: 'ready_to_ship', label: 'Prêt', shortLabel: 'Prêt' },
     { id: 'shipped', label: 'Expédié', shortLabel: 'Expédié' }
@@ -1404,11 +1405,11 @@ const StepProgress = ({ status, serviceType }) => {
 
   const repairSteps = [
     { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
-    { id: 'rma_created', label: 'RMA Créé', shortLabel: 'RMA' },
-    { id: 'bc_approved', label: 'BC Approuvé', shortLabel: 'BC' },
+    { id: 'rma_created', label: 'RMA Créé', shortLabel: 'RMA Créé' },
+    { id: 'bc_approved', label: 'BC Approuvé', shortLabel: 'BC Approuvé' },
+    { id: 'waiting', label: 'En attente réception', shortLabel: 'En attente' },
     { id: 'received', label: 'Reçu', shortLabel: 'Reçu' },
     { id: 'inspection', label: 'Inspection', shortLabel: 'Insp.' },
-    { id: 'customer_approval', label: 'Approbation', shortLabel: 'Appr.' },
     { id: 'repair', label: 'Réparation', shortLabel: 'Rép.' },
     { id: 'final_qc', label: 'Contrôle QC', shortLabel: 'QC' },
     { id: 'ready_to_ship', label: 'Prêt', shortLabel: 'Prêt' },
@@ -1420,35 +1421,36 @@ const StepProgress = ({ status, serviceType }) => {
 
   // Map current status to step index
   const getStepIndex = (currentStatus) => {
+    if (!currentStatus) return 0;
+    
     if (isRepair) {
-      // Repair flow mapping
+      // Repair flow mapping (10 steps: 0-9)
       const repairMap = {
-        'submitted': 0, 'pending': 0, 'waiting_approval': 0,
-        'approved': 1, // RMA Created by Lighthouse
-        'waiting_bc': 2, 'waiting_po': 2, 'waiting_customer': 2, // Waiting for BC from customer
+        'submitted': 0, 'pending': 0,
+        'quote_sent': 1, 'quote_revision_requested': 1, // RMA Created, quote sent
+        'bc_pending': 2, 'waiting_bc': 2, 'waiting_po': 2, 'waiting_customer': 2, // BC submitted, waiting approval
         'waiting_device': 3, // BC approved, waiting for device
-        'received': 3, 'received_repair': 3, 
-        'inspection_complete': 4, // Inspection done
-        'quote_sent': 5, // Waiting customer approval for repair
-        'order_received': 6, 'waiting_parts': 6, 'repair_in_progress': 6,
-        'repair_complete': 7, 'final_qc': 7, 'quality_check': 7,
+        'received': 4, 'received_repair': 4, 
+        'inspection': 5, 'inspection_complete': 5,
+        'repair_in_progress': 6, 'in_progress': 6, 'waiting_parts': 6,
+        'final_qc': 7, 'quality_check': 7,
         'ready_to_ship': 8,
         'shipped': 9, 'delivered': 9, 'completed': 9
       };
       return repairMap[currentStatus] ?? 0;
     } else {
-      // Calibration flow mapping
+      // Calibration flow mapping (10 steps: 0-9)
       const calibrationMap = {
-        'submitted': 0, 'pending': 0, 'waiting_approval': 0,
-        'approved': 1, // RMA Created by Lighthouse
-        'waiting_bc': 2, 'waiting_po': 2, 'waiting_customer': 2, // Waiting for BC from customer
+        'submitted': 0, 'pending': 0,
+        'quote_sent': 1, 'quote_revision_requested': 1, // RMA Created, quote sent
+        'bc_pending': 2, 'waiting_bc': 2, 'waiting_po': 2, 'waiting_customer': 2, // BC submitted, waiting approval
         'waiting_device': 3, // BC approved, waiting to receive device
-        'received': 3, 'received_calibration': 3,
-        'in_queue': 4, 'queued': 4, // In calibration queue
-        'in_progress': 5, 'calibration_in_progress': 5,
-        'final_qc': 6, 'quality_check': 6,
-        'ready_to_ship': 7,
-        'shipped': 8, 'delivered': 8, 'completed': 8
+        'received': 4, 'received_calibration': 4,
+        'in_queue': 5, 'queued': 5, // In calibration queue
+        'in_progress': 6, 'calibration_in_progress': 6,
+        'final_qc': 7, 'quality_check': 7,
+        'ready_to_ship': 8,
+        'shipped': 9, 'delivered': 9, 'completed': 9
       };
       return calibrationMap[currentStatus] ?? 0;
     }
