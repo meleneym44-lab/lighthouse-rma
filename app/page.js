@@ -8395,81 +8395,152 @@ function ContractsPage({ profile, t, notify, setPage }) {
             {/* DETAILS TAB */}
             {contractTab === 'details' && (
               <>
-                {/* Stats */}
-                <div className="grid grid-cols-4 gap-4 mb-6">
-                  <div className="bg-gray-50 rounded-lg p-4 text-center">
-                    <div className="text-3xl font-bold text-[#1E3A5F]">{devices.length}</div>
-                    <div className="text-sm text-gray-600">Appareils</div>
+                {/* Contract Duration & Stats */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                  <div className="bg-[#1E3A5F] rounded-lg p-4 text-center text-white">
+                    <div className="text-3xl font-bold">{devices.length}</div>
+                    <div className="text-sm text-white/80">Appareils sous contrat</div>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4 text-center">
-                    <div className="text-3xl font-bold text-green-600">{totalTokens}</div>
-                    <div className="text-sm text-gray-600">Étalonnages inclus</div>
+                  <div className="bg-green-500 rounded-lg p-4 text-center text-white">
+                    <div className="text-3xl font-bold">{usedTokens}</div>
+                    <div className="text-sm text-white/80">Étalonnages effectués</div>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4 text-center">
-                    <div className={`text-3xl font-bold ${usedTokens >= totalTokens ? 'text-red-600' : 'text-blue-600'}`}>
-                      {totalTokens - usedTokens}
-                    </div>
-                    <div className="text-sm text-gray-600">Restants</div>
+                  <div className="bg-blue-500 rounded-lg p-4 text-center text-white">
+                    <div className="text-3xl font-bold">{totalTokens - usedTokens}</div>
+                    <div className="text-sm text-white/80">Étalonnages restants</div>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4 text-center">
-                    <div className="text-3xl font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</div>
-                    <div className="text-sm text-gray-600">Total HT/an</div>
+                  <div className="bg-gray-100 rounded-lg p-4 text-center">
+                    <div className="text-3xl font-bold text-gray-800">{totalTokens}</div>
+                    <div className="text-sm text-gray-600">Total inclus/an</div>
                   </div>
                 </div>
 
-                {/* Contract Info */}
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <h3 className="font-bold text-gray-700 mb-3">Informations Contrat</h3>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Numéro</span>
-                        <span className="font-mono font-bold">{contract.contract_number || '—'}</span>
+                {/* Contract Info Card */}
+                <div className="bg-white border rounded-xl p-6 mb-6">
+                  <h3 className="font-bold text-[#1E3A5F] mb-4 text-lg">📋 Informations du Contrat</h3>
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Numéro de contrat</span>
+                        <span className="font-mono font-bold text-[#00A651]">{contract.contract_number || '—'}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Début</span>
-                        <span>{new Date(contract.start_date).toLocaleDateString('fr-FR')}</span>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Date de début</span>
+                        <span className="font-medium">{new Date(contract.start_date).toLocaleDateString('fr-FR')}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Fin</span>
-                        <span>{new Date(contract.end_date).toLocaleDateString('fr-FR')}</span>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Date de fin</span>
+                        <span className="font-medium">{new Date(contract.end_date).toLocaleDateString('fr-FR')}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Créé le</span>
-                        <span>{new Date(contract.created_at).toLocaleDateString('fr-FR')}</span>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Durée</span>
+                        <span className="font-medium">
+                          {Math.round((new Date(contract.end_date) - new Date(contract.start_date)) / (1000 * 60 * 60 * 24 * 30))} mois
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Prix annuel HT</span>
+                        <span className="font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Statut</span>
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                          contract.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {contract.status === 'active' ? '✅ Actif' : contract.status}
+                        </span>
                       </div>
                     </div>
                   </div>
-                  
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <h3 className="font-bold text-gray-700 mb-3">Utilisation des Tokens</h3>
-                    <div className="mb-3">
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="text-gray-600">Utilisés: {usedTokens} / {totalTokens}</span>
-                        <span className="font-bold">{totalTokens > 0 ? Math.round((usedTokens / totalTokens) * 100) : 0}%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-3">
-                        <div 
-                          className={`h-3 rounded-full ${usedTokens >= totalTokens ? 'bg-red-500' : 'bg-green-500'}`}
-                          style={{ width: `${Math.min((usedTokens / totalTokens) * 100, 100)}%` }}
-                        />
-                      </div>
+                </div>
+
+                {/* Calibration Progress */}
+                <div className="bg-white border rounded-xl p-6 mb-6">
+                  <h3 className="font-bold text-[#1E3A5F] mb-4 text-lg">📊 Avancement des Étalonnages</h3>
+                  <div className="mb-4">
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-gray-600">
+                        {usedTokens} étalonnage{usedTokens !== 1 ? 's' : ''} effectué{usedTokens !== 1 ? 's' : ''} sur {totalTokens} inclus
+                      </span>
+                      <span className="font-bold text-[#1E3A5F]">
+                        {totalTokens > 0 ? Math.round((usedTokens / totalTokens) * 100) : 0}%
+                      </span>
                     </div>
-                    {usedTokens >= totalTokens && (
-                      <p className="text-xs text-red-600">⚠️ Tous les tokens ont été utilisés</p>
-                    )}
+                    <div className="w-full bg-gray-200 rounded-full h-4">
+                      <div 
+                        className={`h-4 rounded-full transition-all ${
+                          usedTokens >= totalTokens ? 'bg-green-500' : 'bg-[#00A651]'
+                        }`}
+                        style={{ width: `${Math.min((usedTokens / totalTokens) * 100, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                  {usedTokens >= totalTokens ? (
+                    <p className="text-sm text-green-600 font-medium">
+                      ✅ Tous les étalonnages inclus ont été effectués pour cette période
+                    </p>
+                  ) : (
+                    <p className="text-sm text-gray-600">
+                      Il vous reste <strong className="text-blue-600">{totalTokens - usedTokens}</strong> étalonnage{(totalTokens - usedTokens) !== 1 ? 's' : ''} inclus dans votre contrat
+                    </p>
+                  )}
+                </div>
+
+                {/* Devices Summary */}
+                <div className="bg-white border rounded-xl p-6 mb-6">
+                  <h3 className="font-bold text-[#1E3A5F] mb-4 text-lg">🔬 Appareils sous contrat</h3>
+                  <div className="space-y-3">
+                    {devices.map((device, idx) => {
+                      const deviceUsed = device.tokens_used || 0;
+                      const deviceTotal = device.tokens_total || 1;
+                      const isCalibrated = deviceUsed >= deviceTotal;
+                      
+                      return (
+                        <div key={device.id} className={`flex items-center justify-between p-3 rounded-lg ${isCalibrated ? 'bg-green-50 border border-green-200' : 'bg-gray-50'}`}>
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isCalibrated ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                              {isCalibrated ? '✓' : idx + 1}
+                            </div>
+                            <div>
+                              <p className="font-medium">{device.model_name || 'Appareil'}</p>
+                              <p className="text-xs text-gray-500">SN: {device.serial_number}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            {isCalibrated ? (
+                              <span className="text-green-600 font-medium">✅ Étalonné ({deviceUsed}/{deviceTotal})</span>
+                            ) : (
+                              <span className="text-amber-600 font-medium">⏳ {deviceUsed}/{deviceTotal} effectué</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
                 
                 {/* Actions */}
-                {isActive && (
-                  <div className="mt-6 flex justify-end">
+                {isActive && (totalTokens - usedTokens) > 0 && (
+                  <div className="flex justify-center">
                     <button
-                      onClick={() => window.location.href = '/request?contract=' + contract.id}
-                      className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45]"
+                      onClick={() => setPage('request')}
+                      className="px-8 py-4 bg-[#00A651] text-white rounded-xl font-bold hover:bg-[#008f45] text-lg shadow-lg hover:shadow-xl transition-all"
                     >
                       🔬 Créer une demande d'étalonnage
                     </button>
+                  </div>
+                )}
+                
+                {isActive && (totalTokens - usedTokens) === 0 && (
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
+                    <p className="text-green-700 font-medium">
+                      🎉 Tous vos étalonnages pour cette période ont été effectués !
+                    </p>
+                    <p className="text-sm text-green-600 mt-1">
+                      Votre contrat sera renouvelé le {new Date(contract.end_date).toLocaleDateString('fr-FR')}
+                    </p>
                   </div>
                 )}
               </>
@@ -8486,8 +8557,9 @@ function ContractsPage({ profile, t, notify, setPage }) {
                         <th className="px-4 py-3 text-left text-xs font-bold">Modèle</th>
                         <th className="px-4 py-3 text-left text-xs font-bold">N° Série</th>
                         <th className="px-4 py-3 text-left text-xs font-bold">Type</th>
-                        <th className="px-4 py-3 text-center text-xs font-bold">Étal./an</th>
-                        <th className="px-4 py-3 text-center text-xs font-bold">Utilisés</th>
+                        <th className="px-4 py-3 text-center text-xs font-bold">Étal. inclus/an</th>
+                        <th className="px-4 py-3 text-center text-xs font-bold">Effectués</th>
+                        <th className="px-4 py-3 text-center text-xs font-bold">Restants</th>
                         <th className="px-4 py-3 text-center text-xs font-bold">Statut</th>
                       </tr>
                     </thead>
@@ -8495,7 +8567,8 @@ function ContractsPage({ profile, t, notify, setPage }) {
                       {devices.map((device, idx) => {
                         const deviceUsed = device.tokens_used || 0;
                         const deviceTotal = device.tokens_total || 1;
-                        const needsCalibration = deviceUsed < deviceTotal;
+                        const deviceRemaining = deviceTotal - deviceUsed;
+                        const isComplete = deviceUsed >= deviceTotal;
                         
                         return (
                           <tr key={device.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
@@ -8510,18 +8583,21 @@ function ContractsPage({ profile, t, notify, setPage }) {
                             </td>
                             <td className="px-4 py-3 text-center font-bold">{deviceTotal}</td>
                             <td className="px-4 py-3 text-center">
-                              <span className={deviceUsed >= deviceTotal ? 'text-green-600 font-bold' : 'text-gray-600'}>
-                                {deviceUsed}
+                              <span className="text-green-600 font-bold">{deviceUsed}</span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={`font-bold ${deviceRemaining > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                                {deviceRemaining}
                               </span>
                             </td>
                             <td className="px-4 py-3 text-center">
-                              {deviceUsed >= deviceTotal ? (
+                              {isComplete ? (
                                 <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                                  ✅ Étalonné
+                                  ✅ Complet
                                 </span>
                               ) : (
                                 <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">
-                                  ⏳ En attente
+                                  ⏳ En cours
                                 </span>
                               )}
                             </td>
@@ -8530,6 +8606,16 @@ function ContractsPage({ profile, t, notify, setPage }) {
                       })}
                     </tbody>
                   </table>
+                </div>
+                
+                {/* Summary */}
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg flex justify-between items-center">
+                  <span className="text-gray-600">Total pour cette période:</span>
+                  <div className="flex gap-6">
+                    <span><strong className="text-green-600">{usedTokens}</strong> effectués</span>
+                    <span><strong className="text-blue-600">{totalTokens - usedTokens}</strong> restants</span>
+                    <span><strong className="text-gray-800">{totalTokens}</strong> inclus</span>
+                  </div>
                 </div>
               </>
             )}
