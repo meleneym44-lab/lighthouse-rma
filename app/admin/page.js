@@ -4163,6 +4163,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                         if (device.needsRepair) services.push('Réparation');
                         const deviceTotal = getDeviceServiceTotal(device);
                         
+                        console.log('📄 Preview device:', device.serial, 'isContractCovered:', device.isContractCovered, 'shipping:', device.shipping);
+                        
                         const rows = [
                           <tr key={`${device.id}-main`} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-100'} ${device.isContractCovered ? 'bg-emerald-50' : ''}`}>
                             <td className="px-4 py-3 font-medium">
