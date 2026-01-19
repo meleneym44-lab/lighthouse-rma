@@ -8564,53 +8564,51 @@ function ContractsPage({ profile, t, notify, setPage }) {
                   
                   {/* Signed Quote PDF */}
                   {contract.signed_quote_url && (
-                    <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                          <span className="text-green-600">✅</span>
-                        </div>
-                        <div>
-                          <p className="font-medium text-green-800">Devis Signé</p>
-                          <p className="text-xs text-green-600">
-                            Signé le {contract.bc_submitted_at ? new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR') : '—'}
-                            {contract.bc_signed_by && ` par ${contract.bc_signed_by}`}
-                          </p>
-                        </div>
+                    <a 
+                      href={contract.signed_quote_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors border border-green-200"
+                    >
+                      <div className="w-12 h-12 bg-green-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                        PDF
                       </div>
-                      <a
-                        href={contract.signed_quote_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
-                      >
-                        📥 Télécharger PDF
-                      </a>
-                    </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-green-800">Devis Signé</p>
+                        <p className="text-xs text-green-600">
+                          Signé le {contract.bc_submitted_at ? new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR') : '—'}
+                          {contract.bc_signed_by && ` par ${contract.bc_signed_by}`}
+                        </p>
+                      </div>
+                      <div className="text-green-500">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </div>
+                    </a>
                   )}
                   
                   {/* BC File (uploaded purchase order) */}
                   {contract.bc_file_url && (
-                    <div className="flex items-center justify-between p-4 bg-purple-50 rounded-lg border border-purple-200">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                          <span className="text-purple-600">📋</span>
-                        </div>
-                        <div>
-                          <p className="font-medium text-purple-800">Bon de Commande</p>
-                          <p className="text-xs text-purple-600">
-                            Document client uploadé
-                          </p>
-                        </div>
+                    <a 
+                      href={contract.bc_file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors border border-purple-200"
+                    >
+                      <div className="w-12 h-12 bg-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                        BC
                       </div>
-                      <a
-                        href={contract.bc_file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700"
-                      >
-                        📥 Télécharger
-                      </a>
-                    </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-purple-800">Bon de Commande</p>
+                        <p className="text-xs text-purple-600">Document uploadé</p>
+                      </div>
+                      <div className="text-purple-500">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </div>
+                    </a>
                   )}
                   
                   {/* No documents message */}
