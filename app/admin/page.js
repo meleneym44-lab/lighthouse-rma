@@ -3367,7 +3367,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         // First, get all active contracts (simplified query)
         const { data: activeContracts, error: contractError } = await supabase
           .from('contracts')
-          .select('id, contract_number, bc_url, start_date, end_date, company_id')
+          .select('id, contract_number, start_date, end_date, company_id')
           .eq('status', 'active')
           .lte('start_date', todayStr)
           .gte('end_date', todayStr);
@@ -3424,7 +3424,6 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
             contract_id: contract.id,
             contract_number: contract.contract_number,
             contract_device_id: cd.id,
-            bc_url: contract.bc_url,
             tokens_remaining: tokensRemaining,
             tokens_total: cd.tokens_total || 0,
             unit_price: cd.unit_price || 0
