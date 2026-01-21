@@ -1400,8 +1400,10 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
   );
 }
 
-// Report Preview Modal - Matches Quote/Devis style but WITHOUT pricing
+// Report Preview Modal - Exact replica of official Lighthouse France Rapport PDF
 function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving }) {
+  const today = new Date().toLocaleDateString('fr-FR');
+  
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -1418,136 +1420,146 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
         </div>
       </div>
 
-      {/* Report Document - Matches Quote Style */}
-      <div className="bg-gray-200 p-6 min-h-full">
-        <div className="max-w-4xl mx-auto bg-white shadow-xl" style={{ fontFamily: 'Arial, sans-serif' }}>
+      {/* Report Document - Exact replica of PDF */}
+      <div className="bg-gray-300 p-8 min-h-full">
+        <div className="max-w-4xl mx-auto bg-white shadow-2xl" style={{ fontFamily: 'Arial, sans-serif', minHeight: '297mm' }}>
           
-          {/* Header - Same as Quote */}
-          <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
-            <div className="flex justify-between items-start">
+          {/* Logo Header */}
+          <div className="p-8 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-1">
+                <div className="w-16 h-3 bg-[#FFD200]"></div>
+                <div className="w-16 h-3 bg-[#003366]"></div>
+              </div>
               <div>
-                <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
-                <p className="text-gray-500">Worldwide Solutions</p>
-              </div>
-              <div className="text-right">
-                <p className="text-2xl font-bold text-[#00A651]">RAPPORT DE SERVICE</p>
-                <p className="text-gray-500">RMA: {rma.request_number}</p>
+                <span className="text-3xl font-bold tracking-wider" style={{ color: '#003366' }}>LIGHTHOUSE</span>
+                <p className="text-sm tracking-[0.3em] text-gray-500" style={{ marginTop: '-2px' }}>WORLDWIDE SOLUTIONS</p>
               </div>
             </div>
           </div>
 
-          {/* Info Bar */}
-          <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
-            <div>
-              <p className="text-xs text-gray-500 uppercase">Date</p>
-              <p className="font-medium">{new Date().toLocaleDateString('fr-FR')}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase">Technicien</p>
-              <p className="font-medium">Lighthouse France</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase">Service</p>
-              <p className="font-medium">{device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation'}</p>
-            </div>
-          </div>
-
-          {/* Client Info */}
-          <div className="px-8 py-4 border-b">
-            <p className="text-xs text-gray-500 uppercase">Client</p>
-            <p className="font-bold text-xl text-[#1a1a2e]">{rma.companies?.name}</p>
-            {rma.companies?.billing_address && <p className="text-gray-600">{rma.companies.billing_address}</p>}
-            <p className="text-gray-600">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</p>
-          </div>
-
-          {/* Device Info */}
-          <div className="px-8 py-4 border-b bg-gray-50">
-            <p className="text-xs text-gray-500 uppercase mb-2">Appareil</p>
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="font-bold text-lg text-[#1a1a2e]">{device.model_name}</p>
-                <p className="text-gray-600">N° de série: {device.serial_number}</p>
+          {/* Main Content */}
+          <div className="px-8 pb-8">
+            
+            {/* Info Grid */}
+            <div className="mb-8">
+              {/* Row 1: Date + RMA */}
+              <div className="flex justify-between py-2 border-b border-gray-200">
+                <div className="flex gap-8">
+                  <span className="font-bold text-gray-700 w-40">Date d'achèvement</span>
+                  <span className="text-gray-800">{today}</span>
+                </div>
+                <div>
+                  <span className="font-bold text-gray-700">RMA # </span>
+                  <span className="text-gray-800">{rma.request_number}</span>
+                </div>
               </div>
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${device.service_type === 'calibration' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
-                {device.service_type === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}
-              </span>
-            </div>
-          </div>
-
-          {/* CONSTATATIONS Section */}
-          <div className="px-8 py-6 border-b">
-            <div className="border-l-4 border-blue-500 pl-4">
-              <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
-                <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm">1</span>
-                CONSTATATIONS
-              </h3>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-gray-700 whitespace-pre-wrap">{findings}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* TRAVAUX SUPPLÉMENTAIRES Section (if any) - Description only, NO PRICES */}
-          {additionalWorkNeeded && workItems?.length > 0 && (
-            <div className="px-8 py-6 border-b bg-amber-50">
-              <div className="border-l-4 border-amber-500 pl-4">
-                <h3 className="font-bold text-lg text-amber-800 mb-3 flex items-center gap-2">
-                  <span className="w-6 h-6 bg-amber-500 text-white rounded-full flex items-center justify-center text-sm">2</span>
-                  TRAVAUX SUPPLÉMENTAIRES EFFECTUÉS
-                </h3>
-                <ul className="space-y-2">
-                  {workItems.map((item, idx) => (
-                    <li key={idx} className="flex items-start gap-2 text-amber-900">
-                      <span className="text-amber-500 mt-1">▸</span>
-                      <span>{item.description} {item.quantity > 1 ? `(×${item.quantity})` : ''}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          )}
-
-          {/* TRAVAUX RÉALISÉS Section */}
-          <div className="px-8 py-6 border-b">
-            <div className="border-l-4 border-green-500 pl-4">
-              <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
-                <span className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm">{additionalWorkNeeded && workItems?.length > 0 ? '3' : '2'}</span>
-                TRAVAUX RÉALISÉS
-              </h3>
               
-              {/* Checklist */}
-              <div className="bg-green-50 rounded-lg p-4 mb-4">
-                <p className="text-xs text-green-700 uppercase font-medium mb-2">Checklist de Service</p>
-                <div className="grid md:grid-cols-2 gap-2">
-                  {checklist.map(item => (
+              {/* Row 2: Client */}
+              <div className="flex py-2 border-b border-gray-200">
+                <span className="font-bold text-gray-700 w-40">Client</span>
+                <span className="text-gray-800">{rma.companies?.name}</span>
+              </div>
+              
+              {/* Row 3: Adresse */}
+              <div className="flex py-2 border-b border-gray-200">
+                <span className="font-bold text-gray-700 w-40">Adresse</span>
+                <span className="text-gray-800">{rma.companies?.billing_address || '—'}</span>
+              </div>
+              
+              {/* Row 4: Code postal + Contact */}
+              <div className="flex justify-between py-2 border-b border-gray-200">
+                <div className="flex gap-8">
+                  <span className="font-bold text-gray-700 w-40">Code postal / Ville</span>
+                  <span className="text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</span>
+                </div>
+                <div>
+                  <span className="font-bold text-gray-700">Contact </span>
+                  <span className="text-gray-800">{rma.companies?.contact_name || '—'}</span>
+                </div>
+              </div>
+              
+              {/* Row 5: Téléphone + Technicien */}
+              <div className="flex justify-between py-2 border-b border-gray-200">
+                <div className="flex gap-8">
+                  <span className="font-bold text-gray-700 w-40">Téléphone</span>
+                  <span className="text-gray-800">{rma.companies?.phone || '—'}</span>
+                </div>
+                <div>
+                  <span className="font-bold text-gray-700">Technicien(ne) de service </span>
+                  <span className="text-gray-800">Lighthouse France</span>
+                </div>
+              </div>
+              
+              {/* Row 6: Modèle */}
+              <div className="flex py-2 border-b border-gray-200">
+                <span className="font-bold text-gray-700 w-40">Modèle#</span>
+                <span className="text-gray-800">{device.model_name}</span>
+              </div>
+              
+              {/* Row 7: Numéro de série */}
+              <div className="flex py-2 border-b border-gray-200">
+                <span className="font-bold text-gray-700 w-40">Numéro de série</span>
+                <span className="text-gray-800">{device.serial_number}</span>
+              </div>
+            </div>
+
+            {/* Content Sections */}
+            <div className="space-y-6">
+              
+              {/* Motif de retour */}
+              <div className="flex">
+                <span className="font-bold text-gray-700 w-40 flex-shrink-0">Motif de retour</span>
+                <span className="text-gray-800">{device.service_type === 'calibration' ? 'Étalonnage annuel' : 'Réparation'}</span>
+              </div>
+              
+              {/* Étalonnage effectué */}
+              {device.service_type === 'calibration' && (
+                <div className="flex">
+                  <span className="font-bold text-gray-700 w-40 flex-shrink-0">Étalonnage effectué</span>
+                  <span className="text-gray-800">ISO 21501-4 Calibration</span>
+                </div>
+              )}
+              
+              {/* Résultats à la réception */}
+              <div className="flex">
+                <span className="font-bold text-gray-700 w-40 flex-shrink-0">Résultats à la réception</span>
+                <span className="text-gray-800">Conforme</span>
+              </div>
+              
+              {/* Notes (Constatations) */}
+              <div className="flex">
+                <span className="font-bold text-gray-700 w-40 flex-shrink-0">Notes</span>
+                <span className="text-gray-800 whitespace-pre-wrap">{findings || '—'}</span>
+              </div>
+              
+              {/* Actions effectuées (Travaux description) */}
+              <div className="flex">
+                <span className="font-bold text-gray-700 w-40 flex-shrink-0">Actions effectuées</span>
+                <span className="text-gray-800 whitespace-pre-wrap">{workCompleted || '—'}</span>
+              </div>
+              
+              {/* Travaux réalisés (Checklist) */}
+              <div className="flex">
+                <span className="font-bold text-gray-700 w-40 flex-shrink-0">Travaux réalisés</span>
+                <div className="space-y-1">
+                  {checklist.filter(item => item.checked).map(item => (
                     <div key={item.id} className="flex items-center gap-2">
-                      <span className={item.checked ? 'text-green-600' : 'text-gray-400'}>{item.checked ? '✓' : '○'}</span>
-                      <span className={item.checked ? 'text-green-700' : 'text-gray-500'}>{item.label}</span>
+                      <span className="text-green-600">☑</span>
+                      <span className="text-gray-800">{item.label}</span>
                     </div>
                   ))}
                 </div>
               </div>
               
-              {/* Work Description */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-xs text-gray-500 uppercase font-medium mb-2">Description des travaux</p>
-                <p className="text-gray-700 whitespace-pre-wrap">{workCompleted}</p>
-              </div>
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="px-8 py-6 bg-[#1a1a2e] text-white">
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="font-bold">LIGHTHOUSE FRANCE</p>
-                <p className="text-gray-400 text-sm">Service Métrologie & Calibration</p>
-              </div>
-              <div className="text-right text-sm text-gray-400">
-                <p>16 Rue Paul Séjourné</p>
-                <p>94000 Créteil, France</p>
-              </div>
-            </div>
+          {/* Footer - Fixed at bottom */}
+          <div className="px-8 py-6 mt-auto border-t border-gray-200 text-center text-sm text-gray-600">
+            <p className="font-bold">Lighthouse Worldwide Solutions</p>
+            <p>16 Rue Paul Séjourné 94000 Créteil France</p>
+            <p>01 43 77 28 07</p>
           </div>
         </div>
       </div>
