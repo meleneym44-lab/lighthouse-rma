@@ -1555,6 +1555,214 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
   );
 }
 
+// Avenant Preview Modal - Shows additional work quote to send to client
+function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySent }) {
+  const [sending, setSending] = useState(false);
+  const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
+  const devicesRAS = devices.filter(d => !d.additional_work_needed || !d.additional_work_items?.length);
+  
+  const totalAvenant = devicesWithWork.reduce((sum, device) => {
+    const deviceTotal = (device.additional_work_items || []).reduce((dSum, item) => 
+      dSum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
+    );
+    return sum + deviceTotal;
+  }, 0);
+  
+  const sendAvenant = async () => {
+    setSending(true);
+    try {
+      const { error } = await supabase
+        .from('service_requests')
+        .update({
+          status: 'quote_sent',
+          avenant_total: totalAvenant,
+          avenant_sent_at: new Date().toISOString()
+        })
+        .eq('id', rma.id);
+      
+      if (error) throw error;
+      notify('✓ Avenant envoyé au client!');
+      reload();
+      onClose();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSending(false);
+  };
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 border-b sticky top-0 bg-white z-10 flex justify-between items-center">
+          <div>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-bold text-gray-800">📄 Avenant au Devis</h2>
+              {alreadySent && (
+                <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
+                  ✓ Envoyé le {new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR')}
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-gray-500">Travaux supplémentaires découverts lors du service</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500">✕</button>
+        </div>
+        
+        <div className="p-6">
+          {/* Quote Header - Like official document */}
+          <div className="border-2 border-gray-300 rounded-xl overflow-hidden mb-6">
+            {/* Company Header */}
+            <div className="bg-[#1a1a2e] text-white p-6">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-2xl font-bold">LIGHTHOUSE FRANCE</h3>
+                  <p className="text-gray-300 text-sm mt-1">Service Métrologie & Calibration</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xl font-bold text-[#00A651]">AVENANT</p>
+                  <p className="text-gray-300">RMA: {rma.request_number}</p>
+                  <p className="text-gray-400 text-sm">{alreadySent ? new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Client Info */}
+            <div className="bg-gray-50 px-6 py-4 border-b">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-medium">Client</p>
+                  <p className="font-bold text-gray-800">{rma.companies?.name}</p>
+                  {rma.companies?.billing_address && <p className="text-sm text-gray-600">{rma.companies.billing_address}</p>}
+                  {rma.companies?.billing_postal_code && <p className="text-sm text-gray-600">{rma.companies.billing_postal_code} {rma.companies.billing_city}</p>}
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-gray-500 uppercase font-medium">Référence</p>
+                  <p className="font-bold text-gray-800">{rma.request_number}</p>
+                  <p className="text-sm text-gray-600">Devis initial: {rma.quote_total ? `€${rma.quote_total.toFixed(2)}` : '—'}</p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Introduction */}
+            <div className="px-6 py-4 bg-amber-50 border-b">
+              <p className="text-sm text-amber-800">
+                <strong>Objet:</strong> Suite à l'inspection de vos appareils, nous avons constaté des travaux supplémentaires nécessaires. 
+                Veuillez trouver ci-dessous le détail des interventions recommandées.
+              </p>
+            </div>
+            
+            {/* Devices with additional work */}
+            <div className="divide-y">
+              {devicesWithWork.map((device, idx) => {
+                const deviceTotal = (device.additional_work_items || []).reduce((sum, item) => 
+                  sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
+                );
+                
+                return (
+                  <div key={device.id} className="p-6">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <p className="font-bold text-gray-800 text-lg">{device.model_name}</p>
+                        <p className="text-sm text-gray-500">N° de série: {device.serial_number}</p>
+                        <p className="text-xs text-gray-400">Service: {device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation'}</p>
+                      </div>
+                      <span className="text-xl font-bold text-gray-800">€{deviceTotal.toFixed(2)}</span>
+                    </div>
+                    
+                    {/* Findings */}
+                    {device.service_findings && (
+                      <div className="bg-gray-100 rounded-lg p-4 mb-4">
+                        <p className="text-xs text-gray-500 uppercase font-medium mb-1">Constatations du technicien</p>
+                        <p className="text-gray-700">{device.service_findings}</p>
+                      </div>
+                    )}
+                    
+                    {/* Work Items Table */}
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2 text-gray-600">Description</th>
+                          <th className="text-center py-2 text-gray-600 w-20">Qté</th>
+                          <th className="text-right py-2 text-gray-600 w-24">Prix Unit.</th>
+                          <th className="text-right py-2 text-gray-600 w-24">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(device.additional_work_items || []).map((item, itemIdx) => (
+                          <tr key={itemIdx} className="border-b border-gray-100">
+                            <td className="py-2">{item.description}</td>
+                            <td className="py-2 text-center">{item.quantity}</td>
+                            <td className="py-2 text-right">€{(parseFloat(item.price) || 0).toFixed(2)}</td>
+                            <td className="py-2 text-right font-medium">€{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
+            </div>
+            
+            {/* Devices without additional work (RAS) */}
+            {devicesRAS.length > 0 && (
+              <div className="px-6 py-4 bg-green-50 border-t">
+                <p className="text-sm text-green-800 font-medium mb-2">Appareils sans travaux supplémentaires:</p>
+                <div className="space-y-1">
+                  {devicesRAS.map(device => (
+                    <p key={device.id} className="text-sm text-green-700">
+                      ✓ {device.model_name} (SN: {device.serial_number}) - {device.service_findings || 'RAS'}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Total */}
+            <div className="px-6 py-4 flex justify-between items-center bg-[#00A651] text-white">
+              <span className="text-lg font-bold">TOTAL AVENANT</span>
+              <span className="text-2xl font-bold">€{totalAvenant.toFixed(2)}</span>
+            </div>
+          </div>
+          
+          {/* Terms */}
+          <div className="text-xs text-gray-500 space-y-1">
+            <p>• Ce devis est valable 30 jours à compter de sa date d'émission.</p>
+            <p>• Les travaux seront effectués après réception de votre accord écrit.</p>
+            <p>• Conditions de règlement: 30 jours fin de mois.</p>
+          </div>
+        </div>
+        
+        {/* Actions */}
+        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between items-center sticky bottom-0">
+          <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+            ← Fermer
+          </button>
+          <div className="flex gap-3">
+            <button className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+              📥 Télécharger PDF
+            </button>
+            {!alreadySent && (
+              <button 
+                onClick={sendAvenant}
+                disabled={sending}
+                className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                {sending ? 'Envoi...' : '📧 Envoyer au Client'}
+              </button>
+            )}
+            {alreadySent && (
+              <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">
+                ✓ Envoyé le {new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR')}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RequestsSheet({ requests, notify, reload, profile }) {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [quoteRequest, setQuoteRequest] = useState(null);
