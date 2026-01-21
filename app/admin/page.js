@@ -1465,32 +1465,37 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
           </div>
 
           {/* Info Table - Client/Device info */}
-          <table className="w-full text-sm mb-6" style={{ borderCollapse: 'collapse' }}>
+          <table className="w-full text-sm mb-6" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '140px' }} />
+              <col />
+              <col style={{ width: '220px' }} />
+            </colgroup>
             <tbody>
               {/* Row 1: Date + RMA */}
               <tr>
-                <td className="py-1 font-bold text-[#003366] w-36 align-top">Date d'achèvement</td>
+                <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Date d'achèvement</td>
                 <td className="py-1 text-gray-800">{today}</td>
-                <td className="py-1 text-gray-800 w-56 pl-8">
+                <td className="py-1 text-gray-800 pl-8">
                   <span className="font-bold text-[#003366]">RMA # </span>{rma.request_number}
                 </td>
               </tr>
               
               {/* Row 2: Client */}
               <tr>
-                <td className="py-1 font-bold text-[#003366] align-top">Client</td>
+                <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Client</td>
                 <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.name}</td>
               </tr>
               
               {/* Row 3: Adresse */}
               <tr>
-                <td className="py-1 font-bold text-[#003366] align-top">Adresse</td>
+                <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Adresse</td>
                 <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.billing_address || '—'}</td>
               </tr>
               
               {/* Row 4: Code postal + Contact */}
               <tr>
-                <td className="py-1 font-bold text-[#003366] align-top">Code postal / Ville</td>
+                <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Code postal / Ville</td>
                 <td className="py-1 text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
                 <td className="py-1 text-gray-800 pl-8">
                   <span className="font-bold text-[#003366]">Contact </span>{rma.companies?.contact_name || '—'}
@@ -1499,66 +1504,70 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
               
               {/* Row 5: Téléphone + Technicien */}
               <tr>
-                <td className="py-1 font-bold text-[#003366] align-top">Téléphone</td>
+                <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Téléphone</td>
                 <td className="py-1 text-gray-800">{rma.companies?.phone || '—'}</td>
-                <td className="py-1 text-gray-800 pl-8 align-top" rowSpan="1">
-                  <span className="font-bold text-[#003366]">Technicien(ne) de service</span><br/>
-                  <span>{technicianName || 'Lighthouse France'}</span>
+                <td className="py-1 text-gray-800 pl-8 align-top">
+                  <span className="font-bold text-[#003366]">Technicien(ne) de service </span>
+                  {technicianName || 'Lighthouse France'}
                 </td>
               </tr>
               
               {/* Row 6: Modèle */}
               <tr>
-                <td className="py-1 font-bold text-[#003366] align-top">Modèle#</td>
+                <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Modèle#</td>
                 <td className="py-1 text-gray-800" colSpan="2">{device.model_name}</td>
               </tr>
               
               {/* Row 7: Numéro de série */}
               <tr>
-                <td className="py-1 font-bold text-[#003366] align-top">Numéro de série</td>
+                <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Numéro de série</td>
                 <td className="py-1 text-gray-800" colSpan="2">{device.serial_number}</td>
               </tr>
             </tbody>
           </table>
 
           {/* Content Sections */}
-          <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+          <table className="w-full text-sm" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '140px' }} />
+              <col />
+            </colgroup>
             <tbody>
               {/* Motif de retour = Service type + Customer notes */}
               <tr>
-                <td className="pt-6 pb-2 font-bold text-[#003366] w-36 align-top">Motif de retour</td>
-                <td className="pt-6 pb-2 text-gray-800 whitespace-pre-wrap">{motifText}</td>
+                <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Motif de retour</td>
+                <td className="pt-6 pb-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word' }}>{motifText}</td>
               </tr>
               
               {/* Étalonnage effectué - only for calibration */}
               {device.service_type === 'calibration' && (
                 <tr>
-                  <td className="py-2 font-bold text-[#003366] align-top">Étalonnage effectué</td>
+                  <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Étalonnage effectué</td>
                   <td className="py-2 text-gray-800">ISO 21501-4 Calibration</td>
                 </tr>
               )}
               
               {/* Résultats à la réception - tight with above */}
               <tr>
-                <td className="py-2 font-bold text-[#003366] align-top">Résultats à la réception</td>
+                <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Résultats à la réception</td>
                 <td className="py-2 text-gray-800">Conforme</td>
               </tr>
               
               {/* Constatations (Tech findings) */}
               <tr>
-                <td className="pt-4 pb-2 font-bold text-[#003366] align-top">Constatations</td>
-                <td className="pt-4 pb-2 text-gray-800 whitespace-pre-wrap">{findings || '—'}</td>
+                <td className="pt-4 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Constatations</td>
+                <td className="pt-4 pb-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{findings || '—'}</td>
               </tr>
               
               {/* Actions effectuées (Work description) */}
               <tr>
-                <td className="py-2 font-bold text-[#003366] align-top">Actions effectuées</td>
-                <td className="py-2 text-gray-800 whitespace-pre-wrap">{workCompleted || '—'}</td>
+                <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Actions effectuées</td>
+                <td className="py-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{workCompleted || '—'}</td>
               </tr>
               
               {/* Travaux réalisés (Checklist) - more space above */}
               <tr>
-                <td className="pt-6 pb-2 font-bold text-[#003366] align-top">Travaux réalisés</td>
+                <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Travaux réalisés</td>
                 <td className="pt-6 pb-2">
                   <div className="space-y-1">
                     {checklist.filter(item => item.checked).map(item => (
