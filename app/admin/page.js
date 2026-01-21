@@ -913,6 +913,9 @@ function RMAFullPage({ rma, onBack, notify, reload }) {
     );
   }
 
+  // Check if avenant was already sent
+  const avenantSent = rma.avenant_sent_at;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -920,9 +923,9 @@ function RMAFullPage({ rma, onBack, notify, reload }) {
         <div className="flex items-center gap-4">
           <button 
             onClick={onBack} 
-            className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-gray-700 font-medium"
           >
-            ← Retour
+            ← Tableau de Bord
           </button>
           <div>
             <div className="flex items-center gap-3">
@@ -935,17 +938,32 @@ function RMAFullPage({ rma, onBack, notify, reload }) {
                   📋 CONTRAT
                 </span>
               )}
+              {avenantSent && (
+                <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-bold">
+                  📄 Avenant envoyé
+                </span>
+              )}
             </div>
             <p className="text-gray-500">Créé le {new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {allInspectionsDone && devicesWithAdditionalWork.length > 0 && (
+          {/* Show avenant button only if not already sent */}
+          {allInspectionsDone && devicesWithAdditionalWork.length > 0 && !avenantSent && (
             <button 
               onClick={() => setShowAvenantPreview(true)}
               className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
             >
               📄 Créer Avenant (€{totalAdditionalWork.toFixed(2)})
+            </button>
+          )}
+          {/* Show view avenant if already sent */}
+          {avenantSent && (
+            <button 
+              onClick={() => setShowAvenantPreview(true)}
+              className="px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg font-medium"
+            >
+              📄 Voir Avenant (€{rma.avenant_total?.toFixed(2) || totalAdditionalWork.toFixed(2)})
             </button>
           )}
           {allInspectionsDone && devicesWithAdditionalWork.length === 0 && (
@@ -1120,27 +1138,6 @@ function RMAFullPage({ rma, onBack, notify, reload }) {
         </div>
       </div>
 
-      {/* Quick Status Buttons */}
-      <div className="bg-white rounded-xl shadow-sm border p-4">
-        <h3 className="font-bold text-gray-700 mb-3">Statut Global RMA</h3>
-        <div className="flex flex-wrap gap-2">
-          {['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped', 'completed'].map(key => {
-            const val = STATUS_STYLES[key];
-            if (!val) return null;
-            return (
-              <button 
-                key={key} 
-                onClick={() => updateStatus(key)}
-                disabled={saving || key === rma.status}
-                className={`px-3 py-1.5 rounded text-sm font-medium ${val.bg} ${val.text} ${key === rma.status ? 'ring-2 ring-offset-1 ring-gray-400' : 'hover:opacity-80'} disabled:opacity-50`}
-              >
-                {val.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       {/* Avenant Preview Modal */}
       {showAvenantPreview && (
         <AvenantPreviewModal
@@ -1149,6 +1146,7 @@ function RMAFullPage({ rma, onBack, notify, reload }) {
           onClose={() => setShowAvenantPreview(false)}
           notify={notify}
           reload={reload}
+          alreadySent={avenantSent}
         />
       )}
     </div>
@@ -1461,7 +1459,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
 
 
 // Avenant Preview Modal
-function AvenantPreviewModal({ rma, devices, onClose, notify, reload }) {
+function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySent }) {
   const [sending, setSending] = useState(false);
   const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
   const devicesRAS = devices.filter(d => !d.additional_work_needed || !d.additional_work_items?.length);
@@ -1472,10 +1470,6 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload }) {
     );
     return sum + deviceTotal;
   }, 0);
-  
-  // Calculate TVA (20%)
-  const tva = totalAvenant * 0.20;
-  const totalTTC = totalAvenant + tva;
   
   const sendAvenant = async () => {
     setSending(true);
@@ -1505,7 +1499,14 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload }) {
         {/* Header */}
         <div className="px-6 py-4 border-b sticky top-0 bg-white z-10 flex justify-between items-center">
           <div>
-            <h2 className="text-xl font-bold text-gray-800">📄 Avenant au Devis</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-bold text-gray-800">📄 Avenant au Devis</h2>
+              {alreadySent && (
+                <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
+                  ✓ Envoyé le {new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR')}
+                </span>
+              )}
+            </div>
             <p className="text-sm text-gray-500">Travaux supplémentaires découverts lors du service</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500">✕</button>
@@ -1524,7 +1525,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload }) {
                 <div className="text-right">
                   <p className="text-xl font-bold text-[#00A651]">AVENANT</p>
                   <p className="text-gray-300">RMA: {rma.request_number}</p>
-                  <p className="text-gray-400 text-sm">{new Date().toLocaleDateString('fr-FR')}</p>
+                  <p className="text-gray-400 text-sm">{alreadySent ? new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
                 </div>
               </div>
             </div>
@@ -1569,7 +1570,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload }) {
                         <p className="text-sm text-gray-500">N° de série: {device.serial_number}</p>
                         <p className="text-xs text-gray-400">Service: {device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation'}</p>
                       </div>
-                      <span className="text-xl font-bold text-gray-800">€{deviceTotal.toFixed(2)} HT</span>
+                      <span className="text-xl font-bold text-gray-800">€{deviceTotal.toFixed(2)}</span>
                     </div>
                     
                     {/* Findings */}
@@ -1586,8 +1587,8 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload }) {
                         <tr className="border-b">
                           <th className="text-left py-2 text-gray-600">Description</th>
                           <th className="text-center py-2 text-gray-600 w-20">Qté</th>
-                          <th className="text-right py-2 text-gray-600 w-24">P.U. HT</th>
-                          <th className="text-right py-2 text-gray-600 w-24">Total HT</th>
+                          <th className="text-right py-2 text-gray-600 w-24">Prix Unit.</th>
+                          <th className="text-right py-2 text-gray-600 w-24">Total</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1620,20 +1621,10 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload }) {
               </div>
             )}
             
-            {/* Totals */}
-            <div className="border-t-2">
-              <div className="px-6 py-3 flex justify-between items-center bg-gray-50">
-                <span className="text-gray-600">Sous-total HT</span>
-                <span className="font-bold text-gray-800">€{totalAvenant.toFixed(2)}</span>
-              </div>
-              <div className="px-6 py-3 flex justify-between items-center bg-gray-50 border-t">
-                <span className="text-gray-600">TVA (20%)</span>
-                <span className="font-medium text-gray-800">€{tva.toFixed(2)}</span>
-              </div>
-              <div className="px-6 py-4 flex justify-between items-center bg-[#00A651] text-white">
-                <span className="text-lg font-bold">TOTAL TTC</span>
-                <span className="text-2xl font-bold">€{totalTTC.toFixed(2)}</span>
-              </div>
+            {/* Total */}
+            <div className="px-6 py-4 flex justify-between items-center bg-[#00A651] text-white">
+              <span className="text-lg font-bold">TOTAL AVENANT</span>
+              <span className="text-2xl font-bold">€{totalAvenant.toFixed(2)}</span>
             </div>
           </div>
           
@@ -1648,19 +1639,26 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload }) {
         {/* Actions */}
         <div className="px-6 py-4 border-t bg-gray-50 flex justify-between items-center sticky bottom-0">
           <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
-            ← Retour
+            ← Fermer
           </button>
           <div className="flex gap-3">
             <button className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
               📥 Télécharger PDF
             </button>
-            <button 
-              onClick={sendAvenant}
-              disabled={sending}
-              className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium disabled:opacity-50"
-            >
-              {sending ? 'Envoi...' : '📧 Envoyer au Client'}
-            </button>
+            {!alreadySent && (
+              <button 
+                onClick={sendAvenant}
+                disabled={sending}
+                className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                {sending ? 'Envoi...' : '📧 Envoyer au Client'}
+              </button>
+            )}
+            {alreadySent && (
+              <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">
+                ✓ Envoyé le {new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR')}
+              </span>
+            )}
           </div>
         </div>
       </div>
