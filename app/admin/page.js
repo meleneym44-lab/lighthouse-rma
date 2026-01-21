@@ -1158,6 +1158,8 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
   const [findings, setFindings] = useState(device.service_findings || '');
   const [additionalWorkNeeded, setAdditionalWorkNeeded] = useState(device.additional_work_needed || false);
   const [workItems, setWorkItems] = useState(device.additional_work_items || []);
+  const [workCompleted, setWorkCompleted] = useState(device.work_completed || '');
+  const [workChecklist, setWorkChecklist] = useState(device.work_checklist || {});
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(!device.inspection_complete);
   
@@ -1165,6 +1167,44 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
   const avenantSent = rma.avenant_sent_at;
   const isLocked = avenantSent;
   const isComplete = device.inspection_complete;
+  
+  // Default checklist items based on service type
+  const getDefaultChecklist = () => {
+    if (device.service_type === 'calibration') {
+      return [
+        { id: 'visual_inspection', label: 'Inspection visuelle effectuée', checked: false },
+        { id: 'cleaning', label: 'Nettoyage effectué', checked: false },
+        { id: 'calibration_performed', label: 'Étalonnage réalisé selon procédure', checked: false },
+        { id: 'results_within_spec', label: 'Résultats dans les spécifications', checked: false },
+        { id: 'certificate_generated', label: 'Certificat d\'étalonnage généré', checked: false },
+      ];
+    } else {
+      return [
+        { id: 'visual_inspection', label: 'Inspection visuelle effectuée', checked: false },
+        { id: 'diagnostic', label: 'Diagnostic complet réalisé', checked: false },
+        { id: 'repair_performed', label: 'Réparation effectuée', checked: false },
+        { id: 'parts_replaced', label: 'Pièces remplacées (si applicable)', checked: false },
+        { id: 'functional_test', label: 'Test fonctionnel OK', checked: false },
+      ];
+    }
+  };
+  
+  const [checklist, setChecklist] = useState(() => {
+    const saved = device.work_checklist;
+    if (saved && Object.keys(saved).length > 0) {
+      return getDefaultChecklist().map(item => ({
+        ...item,
+        checked: saved[item.id] || false
+      }));
+    }
+    return getDefaultChecklist();
+  });
+  
+  const toggleChecklistItem = (id) => {
+    setChecklist(checklist.map(item => 
+      item.id === id ? { ...item, checked: !item.checked } : item
+    ));
+  };
   
   const addWorkItem = () => {
     setWorkItems([...workItems, { id: Date.now(), description: '', quantity: 1, price: 0 }]);
@@ -1195,11 +1235,17 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
       return;
     }
     
+    // Convert checklist array to object for storage
+    const checklistObj = {};
+    checklist.forEach(item => { checklistObj[item.id] = item.checked; });
+    
     try {
       const updateData = {
         service_findings: findings,
         additional_work_needed: additionalWorkNeeded,
         additional_work_items: additionalWorkNeeded ? workItems : [],
+        work_completed: workCompleted,
+        work_checklist: checklistObj,
         inspection_complete: true,
         inspection_completed_at: new Date().toISOString(),
         status: 'inspection'
@@ -1249,10 +1295,16 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
     }
     
     try {
+      // Convert checklist array to object for storage
+      const checklistObj = {};
+      checklist.forEach(item => { checklistObj[item.id] = item.checked; });
+      
       const updateData = {
         service_findings: findings,
         additional_work_needed: additionalWorkNeeded,
-        additional_work_items: additionalWorkNeeded ? workItems : []
+        additional_work_items: additionalWorkNeeded ? workItems : [],
+        work_completed: workCompleted,
+        work_checklist: checklistObj
       };
       console.log('Update data:', updateData);
       console.log('Device ID:', device.id);
@@ -1357,6 +1409,34 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
                 <p className="text-green-800 font-medium">✓ Aucun travail supplémentaire nécessaire (RAS)</p>
               </div>
             )}
+
+            {/* Travaux Réalisés - Read Only */}
+            {(device.work_completed || device.work_checklist) && (
+              <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-4">
+                <h3 className="font-bold text-blue-800 mb-3">TRAVAUX RÉALISÉS</h3>
+                
+                {device.work_checklist && Object.keys(device.work_checklist).length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs text-blue-600 uppercase font-medium mb-2">Checklist</p>
+                    <div className="space-y-1">
+                      {Object.entries(device.work_checklist).map(([key, checked]) => (
+                        <div key={key} className="flex items-center gap-2 text-sm">
+                          <span className={checked ? 'text-green-600' : 'text-gray-400'}>{checked ? '✓' : '○'}</span>
+                          <span className={checked ? 'text-green-700' : 'text-gray-500'}>{key.replace(/_/g, ' ')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {device.work_completed && (
+                  <div>
+                    <p className="text-xs text-blue-600 uppercase font-medium mb-2">Description</p>
+                    <p className="text-blue-900 whitespace-pre-wrap">{device.work_completed}</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1450,6 +1530,43 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
                 )}
               </div>
             )}
+          </div>
+
+          {/* TRAVAUX RÉALISÉS Section */}
+          <div className="bg-white rounded-xl shadow-sm border p-4">
+            <h3 className="font-bold text-gray-700 mb-2">TRAVAUX RÉALISÉS</h3>
+            <p className="text-sm text-gray-500 mb-4">Cochez les étapes effectuées et décrivez le travail réalisé. Cette section peut être remplie avant ou après l'approbation du client.</p>
+            
+            {/* Checklist */}
+            <div className="bg-gray-50 rounded-lg p-4 mb-4">
+              <p className="text-xs text-gray-500 uppercase font-medium mb-3">Checklist {device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation'}</p>
+              <div className="space-y-2">
+                {checklist.map(item => (
+                  <label key={item.id} className="flex items-center gap-3 cursor-pointer hover:bg-gray-100 p-2 rounded-lg">
+                    <input 
+                      type="checkbox" 
+                      checked={item.checked} 
+                      onChange={() => toggleChecklistItem(item.id)}
+                      className="w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                    />
+                    <span className={item.checked ? 'text-green-700' : 'text-gray-700'}>{item.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            
+            {/* Work Description */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Description des travaux effectués
+              </label>
+              <textarea 
+                value={workCompleted} 
+                onChange={e => setWorkCompleted(e.target.value)} 
+                placeholder="Décrivez en détail les travaux réalisés: pièces remplacées, ajustements effectués, résultats des tests..."
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl h-32 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
           </div>
         </div>
       </div>
