@@ -41,6 +41,7 @@ export default function AdminPortal() {
   const [staffMembers, setStaffMembers] = useState([]);
   const [equipment, setEquipment] = useState([]);
   const [contracts, setContracts] = useState([]);
+  const [selectedRMA, setSelectedRMA] = useState(null); // Full-page RMA view
 
   const notify = useCallback((msg, type = 'success') => {
     setToast({ msg, type });
@@ -49,7 +50,7 @@ export default function AdminPortal() {
 
   const loadData = useCallback(async () => {
     const { data: reqs } = await supabase.from('service_requests')
-      .select('*, companies(id, name, billing_city), request_devices(*)')
+      .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
       .order('created_at', { ascending: false });
     if (reqs) setRequests(reqs);
 
@@ -66,7 +67,17 @@ export default function AdminPortal() {
 
     const { data: contractsData } = await supabase.from('contracts').select('id, status').order('created_at', { ascending: false });
     if (contractsData) setContracts(contractsData);
-  }, []);
+    
+    // If we have a selected RMA, refresh its data
+    if (selectedRMA) {
+      const { data: updatedRMA } = await supabase
+        .from('service_requests')
+        .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
+        .eq('id', selectedRMA.id)
+        .single();
+      if (updatedRMA) setSelectedRMA(updatedRMA);
+    }
+  }, [selectedRMA]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -157,13 +168,25 @@ export default function AdminPortal() {
         </div>
       </nav>
       <main className="max-w-full mx-auto p-6">
-        {activeSheet === 'dashboard' && <DashboardSheet requests={requests} notify={notify} reload={loadData} isAdmin={isAdmin} />}
-        {activeSheet === 'requests' && <RequestsSheet requests={requests} notify={notify} reload={loadData} profile={profile} />}
-        {activeSheet === 'clients' && <ClientsSheet clients={clients} requests={requests} equipment={equipment} notify={notify} reload={loadData} isAdmin={isAdmin} />}
-        {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} />}
-        {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} reloadMain={loadData} />}
-        {activeSheet === 'settings' && <SettingsSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
-        {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
+        {/* Full-page RMA View */}
+        {selectedRMA ? (
+          <RMAFullPage 
+            rma={selectedRMA} 
+            onBack={() => setSelectedRMA(null)} 
+            notify={notify} 
+            reload={loadData}
+          />
+        ) : (
+          <>
+            {activeSheet === 'dashboard' && <DashboardSheet requests={requests} notify={notify} reload={loadData} isAdmin={isAdmin} onSelectRMA={setSelectedRMA} />}
+            {activeSheet === 'requests' && <RequestsSheet requests={requests} notify={notify} reload={loadData} profile={profile} />}
+            {activeSheet === 'clients' && <ClientsSheet clients={clients} requests={requests} equipment={equipment} notify={notify} reload={loadData} isAdmin={isAdmin} />}
+            {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} />}
+            {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} reloadMain={loadData} />}
+            {activeSheet === 'settings' && <SettingsSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
+            {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
+          </>
+        )}
       </main>
     </div>
   );
@@ -227,8 +250,7 @@ function LoginPage() {
   );
 }
 
-function DashboardSheet({ requests, notify, reload, isAdmin }) {
-  const [selectedRMA, setSelectedRMA] = useState(null);
+function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA }) {
   const [reviewingBC, setReviewingBC] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   
@@ -282,7 +304,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin }) {
           </div>
           <div className="p-4 space-y-2 max-h-64 overflow-y-auto">
             {archivedRMAs.map(rma => (
-              <div key={rma.id} onClick={() => setSelectedRMA(rma)} className="bg-white rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-slate-100 border border-slate-200">
+              <div key={rma.id} onClick={() => onSelectRMA(rma)} className="bg-white rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-slate-100 border border-slate-200">
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-sm text-slate-500">{rma.request_number}</span>
                   <span className="text-sm text-slate-600">{rma.companies?.name}</span>
@@ -365,7 +387,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin }) {
                 const devices = rma.request_devices || [];
                 const hasBCToReview = needsReview.find(n => n.id === rma.id);
                 return (
-                  <tr key={rma.id} className={`hover:bg-gray-50 ${hasBCToReview ? 'bg-red-50' : ''}`}>
+                  <tr key={rma.id} className={`hover:bg-gray-50 cursor-pointer ${hasBCToReview ? 'bg-red-50' : ''}`} onClick={() => !hasBCToReview && onSelectRMA(rma)}>
                     <td className="px-4 py-3"><span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span></td>
                     <td className="px-4 py-3"><p className="font-medium text-gray-800">{rma.companies?.name || '—'}</p></td>
                     <td className="px-4 py-3">
@@ -376,9 +398,9 @@ function DashboardSheet({ requests, notify, reload, isAdmin }) {
                     <td className="px-4 py-3 text-sm text-gray-500">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</td>
                     <td className="px-4 py-3">
                       {hasBCToReview ? (
-                        <button onClick={() => setReviewingBC(rma)} className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded">🔍 Examiner BC</button>
+                        <button onClick={(e) => { e.stopPropagation(); setReviewingBC(rma); }} className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded">🔍 Examiner BC</button>
                       ) : (
-                        <button onClick={() => setSelectedRMA(rma)} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button>
+                        <button onClick={(e) => { e.stopPropagation(); onSelectRMA(rma); }} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button>
                       )}
                     </td>
                   </tr>
@@ -388,9 +410,6 @@ function DashboardSheet({ requests, notify, reload, isAdmin }) {
           </table>
         </div>
       </div>
-      
-      {/* RMA Detail Modal */}
-      {selectedRMA && <RMADetailModal rma={selectedRMA} onClose={() => setSelectedRMA(null)} notify={notify} reload={reload} />}
       
       {/* BC Review Modal */}
       {reviewingBC && <BCReviewModal rma={reviewingBC} onClose={() => setReviewingBC(null)} notify={notify} reload={reload} />}
@@ -839,20 +858,17 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
   );
 }
 
-function RMADetailModal({ rma, onClose, notify, reload }) {
+// ============================================
+// RMA FULL PAGE VIEW - Main service interface
+// ============================================
+function RMAFullPage({ rma, onBack, notify, reload }) {
+  const [selectedDevice, setSelectedDevice] = useState(null);
+  const [showAvenantPreview, setShowAvenantPreview] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [internalNotes, setInternalNotes] = useState(rma.internal_notes || '');
-  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
-  const [serviceMode, setServiceMode] = useState(false); // NEW: Toggle service workflow
-  const [selectedDevice, setSelectedDevice] = useState(null); // NEW: Device being serviced
-  const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
-  const devices = rma.request_devices || [];
-  const workflowStatuses = ['approved', 'waiting_bc', 'bc_review', 'waiting_device', 'received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'quote_sent', 'quote_approved', 'final_qc', 'ready_to_ship', 'shipped', 'completed'];
-  const isContractRMA = rma.is_contract_rma || rma.contract_id;
   
-  // Check if RMA is ready for service (received status or later)
-  const canStartService = ['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'inspection', 'final_qc'].includes(rma.status) ||
-    devices.some(d => ['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'inspection', 'final_qc'].includes(d.status));
+  const devices = rma.request_devices || [];
+  const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
+  const isContractRMA = rma.is_contract_rma || rma.contract_id;
   
   // Count inspections done
   const inspectionsDone = devices.filter(d => d.inspection_complete || d.service_findings).length;
@@ -860,476 +876,280 @@ function RMADetailModal({ rma, onClose, notify, reload }) {
   
   // Check if any device has additional work
   const devicesWithAdditionalWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
+  const totalAdditionalWork = devicesWithAdditionalWork.reduce((sum, device) => {
+    const deviceTotal = (device.additional_work_items || []).reduce((dSum, item) => 
+      dSum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
+    );
+    return sum + deviceTotal;
+  }, 0);
 
+  // Update RMA status
   const updateStatus = async (newStatus) => {
     setSaving(true);
-    
     try {
-      // Update the main request status
-      const { error } = await supabase.from('service_requests').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', rma.id);
+      const { error } = await supabase
+        .from('service_requests')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', rma.id);
       if (error) throw error;
-      
-      // If completing/shipping a contract RMA, deduct tokens for contract-covered devices
-      if ((newStatus === 'shipped' || newStatus === 'completed') && isContractRMA) {
-        const contractDevices = devices.filter(d => d.contract_covered && d.contract_device_id);
-        
-        for (const device of contractDevices) {
-          // Increment tokens_used in contract_devices
-          const { data: cd } = await supabase
-            .from('contract_devices')
-            .select('tokens_used, tokens_total')
-            .eq('id', device.contract_device_id)
-            .single();
-          
-          if (cd && (cd.tokens_used || 0) < (cd.tokens_total || 0)) {
-            await supabase
-              .from('contract_devices')
-              .update({ tokens_used: (cd.tokens_used || 0) + 1 })
-              .eq('id', device.contract_device_id);
-            
-            // Log token usage
-            await supabase
-              .from('token_usage')
-              .insert({
-                contract_device_id: device.contract_device_id,
-                request_id: rma.id,
-                request_device_id: device.id,
-                used_at: new Date().toISOString()
-              });
-          }
-        }
-        
-        if (contractDevices.length > 0) {
-          notify(`Statut mis à jour! ${contractDevices.length} token(s) déduit(s) du contrat.`);
-        } else {
-          notify('Statut mis à jour!');
-        }
-      } else {
-        notify('Statut mis à jour!');
-      }
-      
+      notify('Statut mis à jour!');
       reload();
     } catch (err) {
       notify('Erreur: ' + err.message, 'error');
     }
-    
     setSaving(false);
   };
 
-  const saveNotes = async () => {
-    setSaving(true);
-    const { error } = await supabase.from('service_requests').update({ internal_notes: internalNotes }).eq('id', rma.id);
-    if (error) notify('Erreur: ' + error.message, 'error'); else notify('Notes enregistrées!');
-    setSaving(false);
-  };
-
-  const archiveRMA = async () => {
-    setSaving(true);
-    const { error } = await supabase.from('service_requests').update({ 
-      status: 'archived', 
-      archived_at: new Date().toISOString(),
-      updated_at: new Date().toISOString() 
-    }).eq('id', rma.id);
-    if (error) notify('Erreur: ' + error.message, 'error'); 
-    else { notify('📦 RMA archivé!'); reload(); onClose(); }
-    setSaving(false);
-  };
-
-  const unarchiveRMA = async () => {
-    setSaving(true);
-    const { error } = await supabase.from('service_requests').update({ 
-      status: 'completed', // Set back to completed when unarchiving
-      archived_at: null,
-      updated_at: new Date().toISOString() 
-    }).eq('id', rma.id);
-    if (error) notify('Erreur: ' + error.message, 'error'); 
-    else { notify('RMA restauré!'); reload(); }
-    setSaving(false);
-  };
-
-  // If in service mode, show device service screen
+  // If viewing device service screen
   if (selectedDevice) {
     return (
-      <DeviceServiceScreen 
+      <DeviceServiceModal
         device={selectedDevice}
         rma={rma}
         onBack={() => { setSelectedDevice(null); reload(); }}
-        onClose={onClose}
         notify={notify}
         reload={reload}
-      />
-    );
-  }
-
-  // If in service mode, show RMA service overview
-  if (serviceMode) {
-    return (
-      <RMAServiceOverview
-        rma={rma}
-        devices={devices}
-        onSelectDevice={setSelectedDevice}
-        onBack={() => setServiceMode(false)}
-        onClose={onClose}
-        notify={notify}
-        reload={reload}
-        inspectionsDone={inspectionsDone}
-        allInspectionsDone={allInspectionsDone}
-        devicesWithAdditionalWork={devicesWithAdditionalWork}
       />
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b sticky top-0 bg-white flex justify-between items-center z-10">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={onBack} 
+            className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"
+          >
+            ← Retour
+          </button>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold text-gray-800">{rma.request_number}</h2>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold text-gray-800">{rma.request_number}</h1>
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>
+                {style.label}
+              </span>
               {isContractRMA && (
-                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">
+                <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">
                   📋 CONTRAT
                 </span>
               )}
             </div>
-            <p className="text-sm text-gray-500">{rma.companies?.name}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>{style.label}</span>
-            {canStartService && (
-              <button 
-                onClick={() => setServiceMode(true)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center gap-2"
-              >
-                🔧 Service
-              </button>
-            )}
+            <p className="text-gray-500">Créé le {new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
           </div>
         </div>
-        
-        {/* Contract Info Banner */}
-        {isContractRMA && (
-          <div className="mx-6 mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">📋</span>
-              <div>
-                <p className="font-bold text-emerald-800">RMA sous contrat</p>
-                <p className="text-sm text-emerald-600">
-                  {devices.filter(d => d.contract_covered).length} appareil(s) couvert(s) 
-                  {rma.bc_url && ' • BC contrat attaché'}
-                </p>
-                {rma.bc_url && (
-                  <a href={rma.bc_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
-                    📄 Voir le BC du contrat
-                  </a>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-        
-        <div className="p-6 space-y-6">
-          <div className="grid md:grid-cols-3 gap-4">
-            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Client</h3><p className="font-medium">{rma.companies?.name}</p></div>
-            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Service</h3><p className="font-medium">{rma.requested_service}</p><p className="text-sm text-gray-500">Créé le {new Date(rma.created_at).toLocaleDateString('fr-FR')}</p></div>
-            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Documents</h3>
-              {rma.bc_file_url && <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">📄 BC Fichier</a>}
-              {rma.bc_signature_url && <a href={rma.bc_signature_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">✍️ Signature</a>}
-              {rma.signed_quote_url && <a href={rma.signed_quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">📝 Devis Signé</a>}
-              {rma.quote_url && <a href={rma.quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">💰 Devis</a>}
-              {!rma.bc_file_url && !rma.bc_signature_url && !rma.quote_url && !rma.signed_quote_url && <p className="text-sm text-gray-400">Aucun document</p>}
-            </div>
-          </div>
-          
-          {/* Per-Device Status Management */}
-          <div>
-            <h3 className="font-bold text-gray-700 mb-3">Appareils ({devices.length || 1}) - Statut par appareil</h3>
-            {devices.length > 0 ? (
-              <div className="space-y-3">
-                {devices.map((d, i) => {
-                  const deviceStatus = d.status || rma.status;
-                  const deviceStyle = STATUS_STYLES[deviceStatus] || STATUS_STYLES.submitted;
-                  return (
-                    <div key={d.id || i} className={`rounded-lg p-4 border ${d.contract_covered ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50'}`}>
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium text-gray-800">{d.model_name}</p>
-                            {d.contract_covered && (
-                              <span className="px-1.5 py-0.5 bg-emerald-200 text-emerald-700 rounded text-xs font-medium">Contrat</span>
-                            )}
-                            {d.tokens_exhausted && (
-                              <span className="px-1.5 py-0.5 bg-amber-200 text-amber-700 rounded text-xs font-medium">Tokens épuisés</span>
-                            )}
-                            {d.inspection_complete && (
-                              <span className="px-1.5 py-0.5 bg-green-200 text-green-700 rounded text-xs font-medium">✓ Inspecté</span>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-500">SN: {d.serial_number}</p>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {d.service_type === 'calibration' ? '🔬 Étalonnage' : 
-                             d.service_type === 'repair' ? '🔧 Réparation' : 
-                             d.service_type === 'calibration_repair' || d.service_type === 'cal_repair' ? '🔬+🔧' : d.service_type}
-                          </p>
-                          {d.notes && <p className="text-sm text-blue-600 mt-1 italic">📝 "{d.notes}"</p>}
-                        </div>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${deviceStyle.bg} ${deviceStyle.text}`}>
-                          {deviceStyle.label}
-                        </span>
-                      </div>
-                      {rma.status !== 'archived' && (
-                        <div className="flex flex-wrap gap-1">
-                          {['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped', 'completed'].map(key => {
-                            const val = STATUS_STYLES[key];
-                            if (!val) return null;
-                            return (
-                              <button 
-                                key={key} 
-                                onClick={async () => {
-                                  setSaving(true);
-                                  const { error } = await supabase.from('request_devices').update({ status: key, status_updated_at: new Date().toISOString() }).eq('id', d.id);
-                                  if (error) notify('Erreur: ' + error.message, 'error'); 
-                                  else { notify(`Appareil mis à jour: ${val.label}`); reload(); }
-                                  setSaving(false);
-                                }} 
-                                disabled={saving || key === deviceStatus} 
-                                className={`px-2 py-1 rounded text-xs font-medium ${val.bg} ${val.text} ${key === deviceStatus ? 'ring-2 ring-offset-1 ring-gray-400' : 'hover:opacity-80'} disabled:opacity-50`}
-                              >
-                                {val.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="bg-gray-50 rounded-lg p-3"><p className="font-medium">{rma.serial_number}</p></div>
-            )}
-          </div>
-          
-          {rma.problem_description && <div><h3 className="font-bold text-gray-700 mb-2">Notes du client</h3><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm whitespace-pre-wrap">{rma.problem_description}</p></div></div>}
-          <div><h3 className="font-bold text-gray-700 mb-2">Notes internes</h3><textarea value={internalNotes} onChange={e => setInternalNotes(e.target.value)} placeholder="Ajouter des notes internes..." className="w-full px-4 py-3 border border-gray-300 rounded-lg h-24 resize-none" /><button onClick={saveNotes} disabled={saving} className="mt-2 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">{saving ? 'Enregistrement...' : 'Enregistrer les notes'}</button></div>
-          
-          {rma.status !== 'archived' && (
-            <div><h3 className="font-bold text-gray-700 mb-2">Statut global RMA</h3><p className="text-xs text-gray-500 mb-2">Change le statut de tous les appareils en même temps</p><div className="flex flex-wrap gap-2">{workflowStatuses.map(key => { const val = STATUS_STYLES[key]; if (!val) return null; return <button key={key} onClick={() => updateStatus(key)} disabled={saving || key === rma.status} className={`px-3 py-1.5 rounded text-sm font-medium ${val.bg} ${val.text} ${key === rma.status ? 'ring-2 ring-offset-2 ring-gray-400' : 'hover:opacity-80'} disabled:opacity-50`}>{val.label}</button>; })}</div></div>
+        <div className="flex items-center gap-3">
+          {allInspectionsDone && devicesWithAdditionalWork.length > 0 && (
+            <button 
+              onClick={() => setShowAvenantPreview(true)}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
+            >
+              📄 Créer Avenant (€{totalAdditionalWork.toFixed(2)})
+            </button>
           )}
-          
-          {/* Archive/Unarchive Section */}
-          <div className="border-t pt-4">
-            <h3 className="font-bold text-gray-700 mb-2">Actions</h3>
-            {rma.status === 'archived' ? (
-              <button onClick={unarchiveRMA} disabled={saving} className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-sm font-medium">
-                📤 Restaurer ce RMA
-              </button>
-            ) : (
-              <>
-                {!showArchiveConfirm ? (
-                  <button onClick={() => setShowArchiveConfirm(true)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium">
-                    📦 Archiver ce RMA
-                  </button>
-                ) : (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                    <p className="text-amber-800 font-medium mb-2">⚠️ Confirmer l'archivage ?</p>
-                    <p className="text-sm text-amber-700 mb-3">Ce RMA sera masqué de la vue principale mais restera accessible dans les archives.</p>
-                    <div className="flex gap-2">
-                      <button onClick={archiveRMA} disabled={saving} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium">
-                        {saving ? 'Archivage...' : 'Oui, archiver'}
-                      </button>
-                      <button onClick={() => setShowArchiveConfirm(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">
-                        Annuler
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+          {allInspectionsDone && devicesWithAdditionalWork.length === 0 && (
+            <button 
+              onClick={() => updateStatus('final_qc')}
+              disabled={saving}
+              className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
+            >
+              ✓ Envoyer au QC
+            </button>
+          )}
         </div>
-        <div className="px-6 py-4 border-t bg-gray-50 sticky bottom-0"><button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Fermer</button></div>
       </div>
-    </div>
-  );
-}
 
-// ============================================
-// SERVICE WORKFLOW COMPONENTS
-// ============================================
-
-// RMA Service Overview - Shows all devices, click to service each
-function RMAServiceOverview({ rma, devices, onSelectDevice, onBack, onClose, notify, reload, inspectionsDone, allInspectionsDone, devicesWithAdditionalWork }) {
-  const [showAvenantPreview, setShowAvenantPreview] = useState(false);
-  
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div className="bg-white rounded-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="px-6 py-4 border-b sticky top-0 bg-white z-10">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
-                ← Retour
-              </button>
-              <div>
-                <h2 className="text-xl font-bold text-gray-800">SERVICE - {rma.request_number}</h2>
-                <p className="text-sm text-gray-500">{rma.companies?.name}</p>
+      {/* Client Info Card */}
+      <div className="bg-white rounded-xl shadow-sm border">
+        <div className="px-6 py-4 border-b bg-gray-50">
+          <h2 className="font-bold text-gray-800">INFORMATIONS CLIENT</h2>
+        </div>
+        <div className="p-6">
+          <div className="grid md:grid-cols-4 gap-6">
+            <div>
+              <p className="text-xs text-gray-500 uppercase font-medium mb-1">Client</p>
+              <p className="font-bold text-gray-800 text-lg">{rma.companies?.name}</p>
+              {rma.companies?.billing_address && (
+                <p className="text-sm text-gray-500">{rma.companies.billing_address}</p>
+              )}
+              {rma.companies?.billing_postal_code && rma.companies?.billing_city && (
+                <p className="text-sm text-gray-500">{rma.companies.billing_postal_code} {rma.companies.billing_city}</p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase font-medium mb-1">Service Demandé</p>
+              <p className="font-medium text-gray-800">
+                {rma.requested_service === 'calibration' ? '🔬 Étalonnage' : 
+                 rma.requested_service === 'repair' ? '🔧 Réparation' : rma.requested_service}
+              </p>
+              <p className="text-sm text-gray-500 mt-1">{devices.length} appareil(s)</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase font-medium mb-1">BC Original</p>
+              <p className="font-bold text-gray-800">{rma.quote_total ? `€${rma.quote_total.toFixed(2)}` : '—'}</p>
+              {rma.bc_submitted_at && (
+                <p className="text-sm text-green-600">✓ Approuvé {new Date(rma.bc_submitted_at).toLocaleDateString('fr-FR')}</p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase font-medium mb-1">Documents</p>
+              <div className="space-y-1">
+                {rma.quote_url && <a href={rma.quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">📄 Devis</a>}
+                {rma.bc_file_url && <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">📋 BC</a>}
+                {rma.signed_quote_url && <a href={rma.signed_quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">✍️ Devis Signé</a>}
+                {!rma.quote_url && !rma.bc_file_url && !rma.signed_quote_url && <span className="text-gray-400 text-sm">Aucun</span>}
               </div>
             </div>
-            <div className="text-right">
-              <p className="text-sm text-gray-500">Inspections: {inspectionsDone}/{devices.length}</p>
-              {allInspectionsDone && (
-                <span className="text-green-600 font-medium">✓ Toutes terminées</span>
-              )}
-            </div>
           </div>
         </div>
-        
-        {/* Client Info */}
-        <div className="px-6 py-4 bg-gray-50 border-b">
-          <div className="grid md:grid-cols-4 gap-4">
-            <div>
-              <p className="text-xs text-gray-500 uppercase">Client</p>
-              <p className="font-medium">{rma.companies?.name}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase">Service demandé</p>
-              <p className="font-medium">{rma.requested_service === 'calibration' ? 'Étalonnage' : rma.requested_service === 'repair' ? 'Réparation' : rma.requested_service}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase">BC Original</p>
-              <p className="font-medium">{rma.quote_total ? `€${rma.quote_total.toFixed(2)}` : '—'}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase">Date réception</p>
-              <p className="font-medium">{rma.received_at ? new Date(rma.received_at).toLocaleDateString('fr-FR') : '—'}</p>
-            </div>
-          </div>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium text-gray-600">Progression des inspections</span>
+          <span className="text-sm font-bold text-gray-800">{inspectionsDone}/{devices.length}</span>
         </div>
-        
-        {/* Devices List */}
-        <div className="p-6">
-          <h3 className="font-bold text-gray-700 mb-4">APPAREILS ({devices.length})</h3>
-          
-          <div className="space-y-3">
-            {devices.map((device, idx) => {
-              const hasFindings = device.service_findings || device.inspection_complete;
-              const hasAdditionalWork = device.additional_work_needed && device.additional_work_items?.length > 0;
-              const additionalTotal = hasAdditionalWork 
-                ? device.additional_work_items.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0)
-                : 0;
-              
-              return (
-                <div 
-                  key={device.id || idx}
-                  onClick={() => onSelectDevice(device)}
-                  className={`rounded-xl p-4 border-2 cursor-pointer transition-all hover:shadow-md ${
-                    hasFindings 
-                      ? hasAdditionalWork 
-                        ? 'bg-amber-50 border-amber-300' 
-                        : 'bg-green-50 border-green-300'
-                      : 'bg-white border-gray-200 hover:border-blue-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg ${
-                        hasFindings 
-                          ? hasAdditionalWork ? 'bg-amber-200' : 'bg-green-200'
-                          : 'bg-gray-200'
-                      }`}>
-                        {hasFindings ? (hasAdditionalWork ? '⚠️' : '✓') : (idx + 1)}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-bold text-gray-800">{device.model_name}</p>
-                          <span className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600">
-                            {device.service_type === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
-                        {device.notes && (
-                          <p className="text-sm text-blue-600 mt-1">📝 "{device.notes}"</p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      {hasFindings ? (
-                        <>
-                          <p className={`font-medium ${hasAdditionalWork ? 'text-amber-700' : 'text-green-700'}`}>
-                            {hasAdditionalWork ? `Travaux supp: €${additionalTotal.toFixed(2)}` : 'RAS'}
-                          </p>
-                          <p className="text-xs text-gray-500">✓ Inspection terminée</p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-gray-500">En attente</p>
-                          <p className="text-xs text-blue-600">Cliquez pour commencer →</p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        
-        {/* Summary & Actions */}
-        <div className="px-6 py-4 border-t bg-gray-50">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">
-                {inspectionsDone}/{devices.length} inspections terminées
-                {devicesWithAdditionalWork.length > 0 && (
-                  <span className="ml-2 text-amber-600">
-                    • {devicesWithAdditionalWork.length} appareil(s) avec travaux supplémentaires
-                  </span>
-                )}
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={onBack} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
-                Retour
-              </button>
-              {allInspectionsDone && devicesWithAdditionalWork.length > 0 && (
-                <button 
-                  onClick={() => setShowAvenantPreview(true)}
-                  className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
-                >
-                  📄 Créer Avenant ({devicesWithAdditionalWork.length} appareil(s))
-                </button>
-              )}
-              {allInspectionsDone && devicesWithAdditionalWork.length === 0 && (
-                <button 
-                  onClick={() => notify('Toutes les inspections sont terminées sans travaux supplémentaires!')}
-                  className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
-                >
-                  ✓ Finaliser Service
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-        
-        {/* Avenant Preview Modal */}
-        {showAvenantPreview && (
-          <AvenantPreview 
-            rma={rma}
-            devices={devices}
-            onClose={() => setShowAvenantPreview(false)}
-            notify={notify}
-            reload={reload}
+        <div className="w-full bg-gray-200 rounded-full h-3">
+          <div 
+            className={`h-3 rounded-full transition-all ${allInspectionsDone ? 'bg-green-500' : 'bg-blue-500'}`}
+            style={{ width: `${devices.length > 0 ? (inspectionsDone / devices.length) * 100 : 0}%` }}
           />
+        </div>
+        {allInspectionsDone && (
+          <p className="text-green-600 text-sm mt-2 font-medium">
+            ✓ Toutes les inspections sont terminées
+            {devicesWithAdditionalWork.length > 0 && ` • ${devicesWithAdditionalWork.length} appareil(s) avec travaux supplémentaires`}
+          </p>
         )}
       </div>
+
+      {/* Devices Grid */}
+      <div>
+        <h2 className="font-bold text-gray-800 mb-4">APPAREILS ({devices.length})</h2>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {devices.map((device, idx) => {
+            const hasFindings = device.service_findings || device.inspection_complete;
+            const hasAdditionalWork = device.additional_work_needed && device.additional_work_items?.length > 0;
+            const additionalTotal = hasAdditionalWork 
+              ? device.additional_work_items.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0)
+              : 0;
+            const deviceStatus = device.status || rma.status;
+            const deviceStyle = STATUS_STYLES[deviceStatus] || STATUS_STYLES.submitted;
+
+            return (
+              <div 
+                key={device.id || idx}
+                onClick={() => setSelectedDevice(device)}
+                className={`bg-white rounded-xl border-2 cursor-pointer transition-all hover:shadow-lg ${
+                  hasFindings 
+                    ? hasAdditionalWork 
+                      ? 'border-amber-400 bg-amber-50' 
+                      : 'border-green-400 bg-green-50'
+                    : 'border-gray-200 hover:border-blue-400'
+                }`}
+              >
+                {/* Device Header */}
+                <div className="px-4 py-3 border-b flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold ${
+                      hasFindings 
+                        ? hasAdditionalWork ? 'bg-amber-200 text-amber-700' : 'bg-green-200 text-green-700'
+                        : 'bg-gray-200 text-gray-600'
+                    }`}>
+                      {hasFindings ? (hasAdditionalWork ? '⚠' : '✓') : (idx + 1)}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${deviceStyle.bg} ${deviceStyle.text}`}>
+                      {deviceStyle.label}
+                    </span>
+                  </div>
+                  <span className="text-xs text-gray-400">
+                    {device.service_type === 'calibration' ? '🔬' : '🔧'}
+                  </span>
+                </div>
+
+                {/* Device Info */}
+                <div className="p-4">
+                  <h3 className="font-bold text-gray-800">{device.model_name}</h3>
+                  <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
+                  
+                  {/* Customer Notes */}
+                  {device.notes && (
+                    <div className="mt-3 p-2 bg-blue-50 rounded-lg border border-blue-200">
+                      <p className="text-xs text-blue-600 font-medium">📝 Notes client:</p>
+                      <p className="text-sm text-blue-800 line-clamp-2">"{device.notes}"</p>
+                    </div>
+                  )}
+
+                  {/* Findings Preview */}
+                  {hasFindings && device.service_findings && (
+                    <div className="mt-3 p-2 bg-gray-100 rounded-lg">
+                      <p className="text-xs text-gray-500 font-medium">Constatations:</p>
+                      <p className="text-sm text-gray-700 line-clamp-2">{device.service_findings}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className={`px-4 py-3 border-t ${hasFindings ? hasAdditionalWork ? 'bg-amber-100' : 'bg-green-100' : 'bg-gray-50'}`}>
+                  {hasFindings ? (
+                    <div className="flex items-center justify-between">
+                      <span className={`text-sm font-medium ${hasAdditionalWork ? 'text-amber-700' : 'text-green-700'}`}>
+                        {hasAdditionalWork ? `Travaux: €${additionalTotal.toFixed(2)}` : 'RAS'}
+                      </span>
+                      <span className="text-xs text-gray-500">✓ Inspecté</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-500">En attente</span>
+                      <span className="text-xs text-blue-600 font-medium">Cliquer pour inspecter →</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Quick Status Buttons */}
+      <div className="bg-white rounded-xl shadow-sm border p-4">
+        <h3 className="font-bold text-gray-700 mb-3">Statut Global RMA</h3>
+        <div className="flex flex-wrap gap-2">
+          {['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped', 'completed'].map(key => {
+            const val = STATUS_STYLES[key];
+            if (!val) return null;
+            return (
+              <button 
+                key={key} 
+                onClick={() => updateStatus(key)}
+                disabled={saving || key === rma.status}
+                className={`px-3 py-1.5 rounded text-sm font-medium ${val.bg} ${val.text} ${key === rma.status ? 'ring-2 ring-offset-1 ring-gray-400' : 'hover:opacity-80'} disabled:opacity-50`}
+              >
+                {val.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Avenant Preview Modal */}
+      {showAvenantPreview && (
+        <AvenantPreviewModal
+          rma={rma}
+          devices={devices}
+          onClose={() => setShowAvenantPreview(false)}
+          notify={notify}
+          reload={reload}
+        />
+      )}
     </div>
   );
 }
 
-// Device Service Screen - Fill findings for single device
-function DeviceServiceScreen({ device, rma, onBack, onClose, notify, reload }) {
+// Device Service Modal - For filling inspection/findings
+function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
   const [findings, setFindings] = useState(device.service_findings || '');
   const [additionalWorkNeeded, setAdditionalWorkNeeded] = useState(device.additional_work_needed || false);
   const [workItems, setWorkItems] = useState(device.additional_work_items || []);
@@ -1391,6 +1211,7 @@ function DeviceServiceScreen({ device, rma, onBack, onClose, notify, reload }) {
       
       if (error) throw error;
       notify('Progression enregistrée');
+      reload();
     } catch (err) {
       notify('Erreur: ' + err.message, 'error');
     }
@@ -1398,178 +1219,173 @@ function DeviceServiceScreen({ device, rma, onBack, onClose, notify, reload }) {
   };
   
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="px-6 py-4 border-b sticky top-0 bg-white z-10">
-          <div className="flex items-center gap-4">
-            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
-              ← Retour
-            </button>
-            <div>
-              <h2 className="text-xl font-bold text-gray-800">SERVICE - {device.model_name}</h2>
-              <p className="text-sm text-gray-500">SN: {device.serial_number} • RMA: {rma.request_number}</p>
-            </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">
+            ← Retour
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">SERVICE - {device.model_name}</h1>
+            <p className="text-gray-500">SN: {device.serial_number} • RMA: {rma.request_number}</p>
           </div>
         </div>
-        
-        <div className="p-6 space-y-6">
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={saveProgress}
+            disabled={saving}
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
+          >
+            Enregistrer
+          </button>
+          <button 
+            onClick={saveAndComplete}
+            disabled={saving || !findings.trim()}
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50"
+          >
+            {saving ? 'Enregistrement...' : 'Inspection Terminée →'}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-6">
+        {/* Left Column - Device Info & Customer Notes */}
+        <div className="space-y-4">
           {/* Device Info */}
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-            <div className="grid md:grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl shadow-sm border p-4">
+            <h3 className="font-bold text-gray-700 mb-3">Appareil</h3>
+            <div className="space-y-2">
               <div>
-                <p className="text-xs text-blue-600 uppercase font-medium">Appareil</p>
-                <p className="font-bold text-blue-900">{device.model_name}</p>
-                <p className="text-sm text-blue-700">SN: {device.serial_number}</p>
+                <p className="text-xs text-gray-500">Modèle</p>
+                <p className="font-bold text-gray-800">{device.model_name}</p>
               </div>
               <div>
-                <p className="text-xs text-blue-600 uppercase font-medium">Service</p>
-                <p className="font-medium text-blue-900">
+                <p className="text-xs text-gray-500">Numéro de série</p>
+                <p className="font-medium text-gray-800">{device.serial_number}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Service</p>
+                <p className="font-medium text-gray-800">
                   {device.service_type === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}
                 </p>
               </div>
-              <div>
-                <p className="text-xs text-blue-600 uppercase font-medium">Client</p>
-                <p className="font-medium text-blue-900">{rma.companies?.name}</p>
-              </div>
             </div>
           </div>
-          
+
           {/* Customer Notes */}
           {device.notes && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-              <p className="text-xs text-amber-600 uppercase font-medium mb-2">📝 Notes du client pour cet appareil</p>
-              <p className="text-amber-900 font-medium">"{device.notes}"</p>
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+              <h3 className="font-bold text-amber-800 mb-2">📝 Notes du Client</h3>
+              <p className="text-amber-900">"{device.notes}"</p>
             </div>
           )}
-          
+
+          {/* Client Info */}
+          <div className="bg-gray-50 rounded-xl border p-4">
+            <h3 className="font-bold text-gray-700 mb-2">Client</h3>
+            <p className="font-medium text-gray-800">{rma.companies?.name}</p>
+          </div>
+        </div>
+
+        {/* Middle Column - Findings */}
+        <div className="lg:col-span-2 space-y-4">
           {/* Findings */}
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              CONSTATATIONS (Findings)
-            </label>
-            <p className="text-xs text-gray-500 mb-2">
-              Décrivez ce que vous avez observé lors de l'inspection
+          <div className="bg-white rounded-xl shadow-sm border p-4">
+            <h3 className="font-bold text-gray-700 mb-2">CONSTATATIONS (Findings)</h3>
+            <p className="text-sm text-gray-500 mb-3">
+              Décrivez ce que vous avez observé lors de l'inspection. Cette description apparaîtra sur le rapport et l'avenant.
             </p>
             <textarea
               value={findings}
               onChange={e => setFindings(e.target.value)}
-              placeholder="Ex: Le laser montre des signes de faiblesse. Ventilateur bruyant..."
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl h-32 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Ex: Le laser montre des signes de faiblesse. Ventilateur bruyant. Calibration effectuée selon les spécifications..."
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl h-40 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
-          
+
           {/* Additional Work Toggle */}
-          <div className="bg-gray-50 rounded-xl p-4">
-            <div className="flex items-center justify-between">
+          <div className="bg-white rounded-xl shadow-sm border p-4">
+            <div className="flex items-center justify-between mb-4">
               <div>
-                <p className="font-bold text-gray-800">Travaux supplémentaires nécessaires ?</p>
-                <p className="text-sm text-gray-500">Des pièces ou main d'œuvre en plus du service original</p>
+                <h3 className="font-bold text-gray-800">Travaux supplémentaires nécessaires ?</h3>
+                <p className="text-sm text-gray-500">Pièces ou main d'œuvre en plus du service original</p>
               </div>
-              <div className="flex gap-4">
-                <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer ${!additionalWorkNeeded ? 'bg-green-100 text-green-700 ring-2 ring-green-500' : 'bg-gray-200'}`}>
-                  <input 
-                    type="radio" 
-                    checked={!additionalWorkNeeded}
-                    onChange={() => setAdditionalWorkNeeded(false)}
-                    className="sr-only"
-                  />
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setAdditionalWorkNeeded(false)}
+                  className={`px-4 py-2 rounded-lg font-medium ${!additionalWorkNeeded ? 'bg-green-500 text-white' : 'bg-gray-200'}`}
+                >
                   Non (RAS)
-                </label>
-                <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer ${additionalWorkNeeded ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-500' : 'bg-gray-200'}`}>
-                  <input 
-                    type="radio" 
-                    checked={additionalWorkNeeded}
-                    onChange={() => setAdditionalWorkNeeded(true)}
-                    className="sr-only"
-                  />
+                </button>
+                <button 
+                  onClick={() => setAdditionalWorkNeeded(true)}
+                  className={`px-4 py-2 rounded-lg font-medium ${additionalWorkNeeded ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}
+                >
                   Oui
-                </label>
+                </button>
               </div>
             </div>
-          </div>
           
-          {/* Additional Work Items */}
-          {additionalWorkNeeded && (
-            <div className="border-2 border-amber-200 rounded-xl p-4 bg-amber-50">
-              <h3 className="font-bold text-amber-800 mb-4">PIÈCES ET MAIN D'ŒUVRE SUPPLÉMENTAIRES</h3>
-              
-              <div className="space-y-3">
-                {workItems.map((item, idx) => (
-                  <div key={item.id} className="bg-white rounded-lg p-3 flex items-center gap-3">
-                    <span className="text-gray-400 font-medium">{idx + 1}.</span>
-                    <input
-                      type="text"
-                      value={item.description}
-                      onChange={e => updateWorkItem(item.id, 'description', e.target.value)}
-                      placeholder="Description (ex: Remplacement laser)"
-                      className="flex-1 px-3 py-2 border rounded-lg"
-                    />
-                    <input
-                      type="number"
-                      value={item.quantity}
-                      onChange={e => updateWorkItem(item.id, 'quantity', e.target.value)}
-                      className="w-16 px-3 py-2 border rounded-lg text-center"
-                      min="1"
-                    />
-                    <div className="flex items-center gap-1">
-                      <span className="text-gray-500">€</span>
+            {/* Additional Work Items */}
+            {additionalWorkNeeded && (
+              <div className="border-t pt-4">
+                <h4 className="font-medium text-gray-700 mb-3">PIÈCES ET MAIN D'ŒUVRE</h4>
+                
+                <div className="space-y-2">
+                  {workItems.map((item, idx) => (
+                    <div key={item.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                      <span className="text-gray-400 w-6">{idx + 1}.</span>
+                      <input
+                        type="text"
+                        value={item.description}
+                        onChange={e => updateWorkItem(item.id, 'description', e.target.value)}
+                        placeholder="Description"
+                        className="flex-1 px-3 py-2 border rounded-lg"
+                      />
                       <input
                         type="number"
-                        value={item.price}
-                        onChange={e => updateWorkItem(item.id, 'price', e.target.value)}
-                        placeholder="Prix"
-                        className="w-24 px-3 py-2 border rounded-lg text-right"
-                        step="0.01"
+                        value={item.quantity}
+                        onChange={e => updateWorkItem(item.id, 'quantity', e.target.value)}
+                        className="w-16 px-3 py-2 border rounded-lg text-center"
+                        min="1"
                       />
+                      <div className="flex items-center gap-1">
+                        <span className="text-gray-400">€</span>
+                        <input
+                          type="number"
+                          value={item.price}
+                          onChange={e => updateWorkItem(item.id, 'price', e.target.value)}
+                          placeholder="Prix"
+                          className="w-24 px-3 py-2 border rounded-lg text-right"
+                          step="0.01"
+                        />
+                      </div>
+                      <button 
+                        onClick={() => removeWorkItem(item.id)}
+                        className="p-2 text-red-500 hover:bg-red-100 rounded"
+                      >
+                        ✕
+                      </button>
                     </div>
-                    <button 
-                      onClick={() => removeWorkItem(item.id)}
-                      className="p-2 text-red-500 hover:bg-red-100 rounded"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
-              
-              <button
-                onClick={addWorkItem}
-                className="mt-3 px-4 py-2 bg-amber-200 hover:bg-amber-300 text-amber-800 rounded-lg text-sm font-medium"
-              >
-                + Ajouter ligne
-              </button>
-              
-              {workItems.length > 0 && (
-                <div className="mt-4 pt-4 border-t border-amber-200 flex justify-between items-center">
-                  <span className="font-medium text-amber-800">Sous-total travaux supplémentaires:</span>
-                  <span className="text-xl font-bold text-amber-900">€{totalAdditional.toFixed(2)}</span>
+                  ))}
                 </div>
-              )}
-            </div>
-          )}
-        </div>
-        
-        {/* Footer Actions */}
-        <div className="px-6 py-4 border-t bg-gray-50 sticky bottom-0 flex justify-between">
-          <button onClick={onBack} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
-            ← Retour
-          </button>
-          <div className="flex gap-3">
-            <button 
-              onClick={saveProgress}
-              disabled={saving}
-              className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
-            >
-              Enregistrer
-            </button>
-            <button 
-              onClick={saveAndComplete}
-              disabled={saving || !findings.trim()}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50"
-            >
-              {saving ? 'Enregistrement...' : 'Inspection Terminée →'}
-            </button>
+                
+                <button
+                  onClick={addWorkItem}
+                  className="mt-3 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium"
+                >
+                  + Ajouter ligne
+                </button>
+                
+                {workItems.length > 0 && (
+                  <div className="mt-4 pt-4 border-t flex justify-between items-center">
+                    <span className="font-medium text-gray-700">Sous-total:</span>
+                    <span className="text-xl font-bold text-amber-700">€{totalAdditional.toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1577,13 +1393,13 @@ function DeviceServiceScreen({ device, rma, onBack, onClose, notify, reload }) {
   );
 }
 
-// Avenant Preview - Review and send amendment quote
-function AvenantPreview({ rma, devices, onClose, notify, reload }) {
+// Avenant Preview Modal
+function AvenantPreviewModal({ rma, devices, onClose, notify, reload }) {
   const [sending, setSending] = useState(false);
   const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
   
   const totalAvenant = devicesWithWork.reduce((sum, device) => {
-    const deviceTotal = device.additional_work_items.reduce((dSum, item) => 
+    const deviceTotal = (device.additional_work_items || []).reduce((dSum, item) => 
       dSum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
     );
     return sum + deviceTotal;
@@ -1592,8 +1408,6 @@ function AvenantPreview({ rma, devices, onClose, notify, reload }) {
   const sendAvenant = async () => {
     setSending(true);
     try {
-      // TODO: Generate PDF, upload, update RMA status, send notification
-      // For now, just update the status
       await supabase
         .from('service_requests')
         .update({
@@ -1613,26 +1427,23 @@ function AvenantPreview({ rma, devices, onClose, notify, reload }) {
   };
   
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70">
-      <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="px-6 py-4 border-b sticky top-0 bg-white z-10">
           <h2 className="text-xl font-bold text-gray-800">📄 Aperçu Avenant</h2>
           <p className="text-sm text-gray-500">RMA: {rma.request_number} • {rma.companies?.name}</p>
         </div>
         
         <div className="p-6">
-          {/* Avenant Content */}
           <div className="border-2 border-gray-200 rounded-xl overflow-hidden">
-            {/* Header */}
             <div className="bg-[#1a1a2e] text-white px-6 py-4">
               <h3 className="text-lg font-bold">AVENANT - {rma.request_number}</h3>
               <p className="text-gray-300">{rma.companies?.name}</p>
             </div>
             
-            {/* Devices */}
             <div className="divide-y">
               {devicesWithWork.map((device, idx) => {
-                const deviceTotal = device.additional_work_items.reduce((sum, item) => 
+                const deviceTotal = (device.additional_work_items || []).reduce((sum, item) => 
                   sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
                 );
                 
@@ -1640,27 +1451,22 @@ function AvenantPreview({ rma, devices, onClose, notify, reload }) {
                   <div key={device.id} className="p-4">
                     <div className="flex justify-between items-start mb-3">
                       <div>
-                        <p className="font-bold text-gray-800">
-                          APPAREIL {idx + 1}: {device.model_name}
-                        </p>
+                        <p className="font-bold text-gray-800">APPAREIL {idx + 1}: {device.model_name}</p>
                         <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
-                        <p className="text-xs text-gray-400">
-                          Service original: {device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation'}
-                        </p>
                       </div>
                       <span className="font-bold text-lg">€{deviceTotal.toFixed(2)}</span>
                     </div>
                     
                     {device.service_findings && (
                       <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                        <p className="text-xs text-gray-500 uppercase mb-1">Constatations du technicien:</p>
+                        <p className="text-xs text-gray-500 uppercase mb-1">Constatations:</p>
                         <p className="text-sm text-gray-700 italic">"{device.service_findings}"</p>
                       </div>
                     )}
                     
                     <div className="space-y-1">
                       <p className="text-xs text-gray-500 uppercase">Travaux recommandés:</p>
-                      {device.additional_work_items.map((item, itemIdx) => (
+                      {(device.additional_work_items || []).map((item, itemIdx) => (
                         <div key={itemIdx} className="flex justify-between text-sm">
                           <span>• {item.description} {item.quantity > 1 ? `(×${item.quantity})` : ''}</span>
                           <span className="font-medium">€{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)}</span>
@@ -1672,21 +1478,6 @@ function AvenantPreview({ rma, devices, onClose, notify, reload }) {
               })}
             </div>
             
-            {/* Devices without additional work */}
-            {devices.filter(d => !d.additional_work_needed || !d.additional_work_items?.length).length > 0 && (
-              <div className="p-4 bg-green-50 border-t">
-                <p className="text-sm text-green-800 font-medium">Appareils sans travaux supplémentaires (RAS):</p>
-                <div className="mt-2 space-y-1">
-                  {devices.filter(d => !d.additional_work_needed || !d.additional_work_items?.length).map(device => (
-                    <p key={device.id} className="text-sm text-green-700">
-                      • {device.model_name} (SN: {device.serial_number})
-                    </p>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            {/* Total */}
             <div className="bg-[#00A651] text-white px-6 py-4 flex justify-between items-center">
               <span className="text-lg font-bold">TOTAL AVENANT</span>
               <span className="text-2xl font-bold">€{totalAvenant.toFixed(2)}</span>
@@ -1694,7 +1485,6 @@ function AvenantPreview({ rma, devices, onClose, notify, reload }) {
           </div>
         </div>
         
-        {/* Actions */}
         <div className="px-6 py-4 border-t bg-gray-50 flex justify-between">
           <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
             ← Modifier
