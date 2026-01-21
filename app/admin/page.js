@@ -1421,143 +1421,143 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
       </div>
 
       {/* Report Document - Exact replica of PDF */}
-      <div className="bg-gray-300 p-8 min-h-full">
-        <div className="max-w-4xl mx-auto bg-white shadow-2xl" style={{ fontFamily: 'Arial, sans-serif', minHeight: '297mm' }}>
+      <div className="bg-gray-400 p-8 min-h-full flex justify-center">
+        <div className="bg-white shadow-2xl w-full max-w-3xl" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '1000px' }}>
           
-          {/* Logo Header */}
-          <div className="p-8 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex flex-col gap-1">
-                <div className="w-16 h-3 bg-[#FFD200]"></div>
-                <div className="w-16 h-3 bg-[#003366]"></div>
+          {/* Logo Header - Using actual logo image */}
+          <div className="mb-10">
+            <img 
+              src="/images/logos/lighthouse-logo.png" 
+              alt="Lighthouse Worldwide Solutions" 
+              className="h-12 w-auto"
+              onError={(e) => {
+                e.target.style.display = 'none';
+                e.target.nextSibling.style.display = 'flex';
+              }}
+            />
+            <div className="items-center gap-2 hidden">
+              <div className="flex flex-col gap-0.5 mr-2">
+                <div className="w-12 h-2 bg-[#FFD200]"></div>
+                <div className="w-12 h-2 bg-[#003366]"></div>
               </div>
               <div>
-                <span className="text-3xl font-bold tracking-wider" style={{ color: '#003366' }}>LIGHTHOUSE</span>
-                <p className="text-sm tracking-[0.3em] text-gray-500" style={{ marginTop: '-2px' }}>WORLDWIDE SOLUTIONS</p>
+                <span className="text-2xl font-bold tracking-wide" style={{ color: '#003366' }}>LIGHTHOUSE</span>
+                <p className="text-xs tracking-widest text-gray-500 -mt-1">WORLDWIDE SOLUTIONS</p>
               </div>
             </div>
           </div>
 
-          {/* Main Content */}
-          <div className="px-8 pb-8">
-            
-            {/* Info Grid */}
-            <div className="mb-8">
+          {/* Info Table */}
+          <table className="w-full text-sm mb-10" style={{ borderCollapse: 'collapse' }}>
+            <tbody>
               {/* Row 1: Date + RMA */}
-              <div className="flex justify-between py-2 border-b border-gray-200">
-                <div className="flex gap-8">
-                  <span className="font-bold text-gray-700 w-40">Date d'achèvement</span>
-                  <span className="text-gray-800">{today}</span>
-                </div>
-                <div>
-                  <span className="font-bold text-gray-700">RMA # </span>
-                  <span className="text-gray-800">{rma.request_number}</span>
-                </div>
-              </div>
+              <tr>
+                <td className="py-2 font-bold text-[#003366] w-36 align-top">Date d'achèvement</td>
+                <td className="py-2 text-gray-800 border-b border-gray-200">{today}</td>
+                <td className="py-2 text-right text-gray-800 border-b border-gray-200">
+                  <span className="font-bold text-[#003366]">RMA # </span>{rma.request_number}
+                </td>
+              </tr>
               
               {/* Row 2: Client */}
-              <div className="flex py-2 border-b border-gray-200">
-                <span className="font-bold text-gray-700 w-40">Client</span>
-                <span className="text-gray-800">{rma.companies?.name}</span>
-              </div>
+              <tr>
+                <td className="py-2 font-bold text-[#003366] align-top">Client</td>
+                <td className="py-2 text-gray-800 border-b border-gray-200" colSpan="2">{rma.companies?.name}</td>
+              </tr>
               
               {/* Row 3: Adresse */}
-              <div className="flex py-2 border-b border-gray-200">
-                <span className="font-bold text-gray-700 w-40">Adresse</span>
-                <span className="text-gray-800">{rma.companies?.billing_address || '—'}</span>
-              </div>
+              <tr>
+                <td className="py-2 font-bold text-[#003366] align-top">Adresse</td>
+                <td className="py-2 text-gray-800 border-b border-gray-200" colSpan="2">{rma.companies?.billing_address || '—'}</td>
+              </tr>
               
               {/* Row 4: Code postal + Contact */}
-              <div className="flex justify-between py-2 border-b border-gray-200">
-                <div className="flex gap-8">
-                  <span className="font-bold text-gray-700 w-40">Code postal / Ville</span>
-                  <span className="text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</span>
-                </div>
-                <div>
-                  <span className="font-bold text-gray-700">Contact </span>
-                  <span className="text-gray-800">{rma.companies?.contact_name || '—'}</span>
-                </div>
-              </div>
+              <tr>
+                <td className="py-2 font-bold text-[#003366] align-top">Code postal / Ville</td>
+                <td className="py-2 text-gray-800 border-b border-gray-200">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
+                <td className="py-2 text-right text-gray-800 border-b border-gray-200">
+                  <span className="font-bold text-[#003366]">Contact </span>{rma.companies?.contact_name || '—'}
+                </td>
+              </tr>
               
               {/* Row 5: Téléphone + Technicien */}
-              <div className="flex justify-between py-2 border-b border-gray-200">
-                <div className="flex gap-8">
-                  <span className="font-bold text-gray-700 w-40">Téléphone</span>
-                  <span className="text-gray-800">{rma.companies?.phone || '—'}</span>
-                </div>
-                <div>
-                  <span className="font-bold text-gray-700">Technicien(ne) de service </span>
-                  <span className="text-gray-800">Lighthouse France</span>
-                </div>
-              </div>
+              <tr>
+                <td className="py-2 font-bold text-[#003366] align-top">Téléphone</td>
+                <td className="py-2 text-gray-800 border-b border-gray-200">{rma.companies?.phone || '—'}</td>
+                <td className="py-2 text-right text-gray-800 border-b border-gray-200">
+                  <span className="font-bold text-[#003366]">Technicien(ne) de service </span>Lighthouse France
+                </td>
+              </tr>
               
               {/* Row 6: Modèle */}
-              <div className="flex py-2 border-b border-gray-200">
-                <span className="font-bold text-gray-700 w-40">Modèle#</span>
-                <span className="text-gray-800">{device.model_name}</span>
-              </div>
+              <tr>
+                <td className="py-2 font-bold text-[#003366] align-top">Modèle#</td>
+                <td className="py-2 text-gray-800 border-b border-gray-200" colSpan="2">{device.model_name}</td>
+              </tr>
               
               {/* Row 7: Numéro de série */}
-              <div className="flex py-2 border-b border-gray-200">
-                <span className="font-bold text-gray-700 w-40">Numéro de série</span>
-                <span className="text-gray-800">{device.serial_number}</span>
-              </div>
-            </div>
+              <tr>
+                <td className="py-2 font-bold text-[#003366] align-top">Numéro de série</td>
+                <td className="py-2 text-gray-800 border-b border-gray-200" colSpan="2">{device.serial_number}</td>
+              </tr>
+            </tbody>
+          </table>
 
-            {/* Content Sections */}
-            <div className="space-y-6">
-              
+          {/* Content Sections */}
+          <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+            <tbody>
               {/* Motif de retour */}
-              <div className="flex">
-                <span className="font-bold text-gray-700 w-40 flex-shrink-0">Motif de retour</span>
-                <span className="text-gray-800">{device.service_type === 'calibration' ? 'Étalonnage annuel' : 'Réparation'}</span>
-              </div>
+              <tr>
+                <td className="py-3 font-bold text-[#003366] w-36 align-top">Motif de retour</td>
+                <td className="py-3 text-gray-800">{device.service_type === 'calibration' ? 'Étalonnage annuel' : 'Réparation'}</td>
+              </tr>
               
               {/* Étalonnage effectué */}
               {device.service_type === 'calibration' && (
-                <div className="flex">
-                  <span className="font-bold text-gray-700 w-40 flex-shrink-0">Étalonnage effectué</span>
-                  <span className="text-gray-800">ISO 21501-4 Calibration</span>
-                </div>
+                <tr>
+                  <td className="py-3 font-bold text-[#003366] align-top">Étalonnage effectué</td>
+                  <td className="py-3 text-gray-800">ISO 21501-4 Calibration</td>
+                </tr>
               )}
               
               {/* Résultats à la réception */}
-              <div className="flex">
-                <span className="font-bold text-gray-700 w-40 flex-shrink-0">Résultats à la réception</span>
-                <span className="text-gray-800">Conforme</span>
-              </div>
+              <tr>
+                <td className="py-3 font-bold text-[#003366] align-top">Résultats à la réception</td>
+                <td className="py-3 text-gray-800">Conforme</td>
+              </tr>
               
               {/* Notes (Constatations) */}
-              <div className="flex">
-                <span className="font-bold text-gray-700 w-40 flex-shrink-0">Notes</span>
-                <span className="text-gray-800 whitespace-pre-wrap">{findings || '—'}</span>
-              </div>
+              <tr>
+                <td className="py-3 font-bold text-[#003366] align-top">Notes</td>
+                <td className="py-3 text-gray-800 whitespace-pre-wrap">{findings || '—'}</td>
+              </tr>
               
               {/* Actions effectuées (Travaux description) */}
-              <div className="flex">
-                <span className="font-bold text-gray-700 w-40 flex-shrink-0">Actions effectuées</span>
-                <span className="text-gray-800 whitespace-pre-wrap">{workCompleted || '—'}</span>
-              </div>
+              <tr>
+                <td className="py-3 font-bold text-[#003366] align-top">Actions effectuées</td>
+                <td className="py-3 text-gray-800 whitespace-pre-wrap">{workCompleted || '—'}</td>
+              </tr>
               
               {/* Travaux réalisés (Checklist) */}
-              <div className="flex">
-                <span className="font-bold text-gray-700 w-40 flex-shrink-0">Travaux réalisés</span>
-                <div className="space-y-1">
-                  {checklist.filter(item => item.checked).map(item => (
-                    <div key={item.id} className="flex items-center gap-2">
-                      <span className="text-green-600">☑</span>
-                      <span className="text-gray-800">{item.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-            </div>
-          </div>
+              <tr>
+                <td className="py-3 font-bold text-[#003366] align-top">Travaux réalisés</td>
+                <td className="py-3">
+                  <div className="space-y-1">
+                    {checklist.filter(item => item.checked).map(item => (
+                      <div key={item.id} className="flex items-center gap-2">
+                        <span className="text-[#003366]">☑</span>
+                        <span className="text-gray-800">{item.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
 
-          {/* Footer - Fixed at bottom */}
-          <div className="px-8 py-6 mt-auto border-t border-gray-200 text-center text-sm text-gray-600">
-            <p className="font-bold">Lighthouse Worldwide Solutions</p>
+          {/* Footer - At bottom */}
+          <div className="mt-auto pt-20 text-center text-sm text-gray-600 border-t border-gray-200" style={{ marginTop: '80px', paddingTop: '20px' }}>
+            <p className="font-bold text-[#003366]">Lighthouse Worldwide Solutions</p>
             <p>16 Rue Paul Séjourné 94000 Créteil France</p>
             <p>01 43 77 28 07</p>
           </div>
