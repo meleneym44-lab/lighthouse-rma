@@ -48,7 +48,7 @@ export default function AdminPortal() {
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (refreshSelectedRMA = false) => {
     const { data: reqs } = await supabase.from('service_requests')
       .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
       .order('created_at', { ascending: false });
@@ -68,8 +68,8 @@ export default function AdminPortal() {
     const { data: contractsData } = await supabase.from('contracts').select('id, status').order('created_at', { ascending: false });
     if (contractsData) setContracts(contractsData);
     
-    // If we have a selected RMA, refresh its data
-    if (selectedRMA) {
+    // Only refresh selected RMA if explicitly requested AND we have one selected
+    if (refreshSelectedRMA && selectedRMA) {
       const { data: updatedRMA } = await supabase
         .from('service_requests')
         .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
@@ -174,7 +174,7 @@ export default function AdminPortal() {
             rma={selectedRMA} 
             onBack={() => setSelectedRMA(null)} 
             notify={notify} 
-            reload={loadData}
+            reload={() => loadData(true)}
           />
         ) : (
           <>
