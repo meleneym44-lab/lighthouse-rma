@@ -1025,10 +1025,12 @@ function RMAFullPage({ rma, onBack, notify, reload }) {
         )}
       </div>
 
-      {/* Devices Grid */}
-      <div>
-        <h2 className="font-bold text-gray-800 mb-4">APPAREILS ({devices.length})</h2>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Devices List - Horizontal Rows */}
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div className="px-6 py-4 border-b bg-gray-50">
+          <h2 className="font-bold text-gray-800">APPAREILS ({devices.length})</h2>
+        </div>
+        <div className="divide-y">
           {devices.map((device, idx) => {
             const hasFindings = device.service_findings || device.inspection_complete;
             const hasAdditionalWork = device.additional_work_needed && device.additional_work_items?.length > 0;
@@ -1042,70 +1044,75 @@ function RMAFullPage({ rma, onBack, notify, reload }) {
               <div 
                 key={device.id || idx}
                 onClick={() => setSelectedDevice(device)}
-                className={`bg-white rounded-xl border-2 cursor-pointer transition-all hover:shadow-lg ${
+                className={`px-6 py-4 cursor-pointer transition-all hover:bg-gray-50 ${
                   hasFindings 
                     ? hasAdditionalWork 
-                      ? 'border-amber-400 bg-amber-50' 
-                      : 'border-green-400 bg-green-50'
-                    : 'border-gray-200 hover:border-blue-400'
+                      ? 'bg-amber-50 hover:bg-amber-100' 
+                      : 'bg-green-50 hover:bg-green-100'
+                    : ''
                 }`}
               >
-                {/* Device Header */}
-                <div className="px-4 py-3 border-b flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold ${
-                      hasFindings 
-                        ? hasAdditionalWork ? 'bg-amber-200 text-amber-700' : 'bg-green-200 text-green-700'
-                        : 'bg-gray-200 text-gray-600'
-                    }`}>
-                      {hasFindings ? (hasAdditionalWork ? '⚠' : '✓') : (idx + 1)}
-                    </span>
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${deviceStyle.bg} ${deviceStyle.text}`}>
-                      {deviceStyle.label}
-                    </span>
+                <div className="flex items-center gap-6">
+                  {/* Status Icon */}
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold flex-shrink-0 ${
+                    hasFindings 
+                      ? hasAdditionalWork ? 'bg-amber-200 text-amber-700' : 'bg-green-200 text-green-700'
+                      : 'bg-gray-200 text-gray-600'
+                  }`}>
+                    {hasFindings ? (hasAdditionalWork ? '⚠' : '✓') : (idx + 1)}
                   </div>
-                  <span className="text-xs text-gray-400">
-                    {device.service_type === 'calibration' ? '🔬' : '🔧'}
-                  </span>
-                </div>
 
-                {/* Device Info */}
-                <div className="p-4">
-                  <h3 className="font-bold text-gray-800">{device.model_name}</h3>
-                  <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
-                  
-                  {/* Customer Notes */}
-                  {device.notes && (
-                    <div className="mt-3 p-2 bg-blue-50 rounded-lg border border-blue-200">
-                      <p className="text-xs text-blue-600 font-medium">📝 Notes client:</p>
-                      <p className="text-sm text-blue-800 line-clamp-2">"{device.notes}"</p>
-                    </div>
-                  )}
-
-                  {/* Findings Preview */}
-                  {hasFindings && device.service_findings && (
-                    <div className="mt-3 p-2 bg-gray-100 rounded-lg">
-                      <p className="text-xs text-gray-500 font-medium">Constatations:</p>
-                      <p className="text-sm text-gray-700 line-clamp-2">{device.service_findings}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer */}
-                <div className={`px-4 py-3 border-t ${hasFindings ? hasAdditionalWork ? 'bg-amber-100' : 'bg-green-100' : 'bg-gray-50'}`}>
-                  {hasFindings ? (
-                    <div className="flex items-center justify-between">
-                      <span className={`text-sm font-medium ${hasAdditionalWork ? 'text-amber-700' : 'text-green-700'}`}>
-                        {hasAdditionalWork ? `Travaux: €${additionalTotal.toFixed(2)}` : 'RAS'}
+                  {/* Device Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 mb-1">
+                      <h3 className="font-bold text-gray-800">{device.model_name}</h3>
+                      <span className="text-sm text-gray-500">SN: {device.serial_number}</span>
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${deviceStyle.bg} ${deviceStyle.text}`}>
+                        {deviceStyle.label}
                       </span>
-                      <span className="text-xs text-gray-500">✓ Inspecté</span>
+                      <span className="text-xs text-gray-400">
+                        {device.service_type === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}
+                      </span>
                     </div>
-                  ) : (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-500">En attente</span>
-                      <span className="text-xs text-blue-600 font-medium">Cliquer pour inspecter →</span>
-                    </div>
-                  )}
+                    
+                    {/* Customer Notes */}
+                    {device.notes && (
+                      <p className="text-sm text-blue-600 mb-1">
+                        📝 Client: "{device.notes}"
+                      </p>
+                    )}
+
+                    {/* Findings Preview */}
+                    {hasFindings && device.service_findings && (
+                      <p className="text-sm text-gray-600 truncate">
+                        Constatations: {device.service_findings}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Additional Work / Status */}
+                  <div className="flex-shrink-0 text-right">
+                    {hasFindings ? (
+                      <>
+                        {hasAdditionalWork ? (
+                          <div>
+                            <p className="text-lg font-bold text-amber-700">€{additionalTotal.toFixed(2)}</p>
+                            <p className="text-xs text-amber-600">Travaux supp.</p>
+                          </div>
+                        ) : (
+                          <div>
+                            <p className="text-lg font-bold text-green-700">RAS</p>
+                            <p className="text-xs text-green-600">Aucun travaux</p>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div>
+                        <p className="text-sm text-gray-500">En attente</p>
+                        <p className="text-xs text-blue-600">Cliquer →</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -1181,7 +1188,15 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
   
   const saveAndComplete = async () => {
     setSaving(true);
-    console.log('Saving device inspection:', device.id, { findings, additionalWorkNeeded, workItems });
+    console.log('Saving device inspection:', device.id, device);
+    
+    if (!device.id) {
+      notify('Erreur: ID appareil manquant', 'error');
+      alert('Device ID is missing! Check console.');
+      setSaving(false);
+      return;
+    }
+    
     try {
       const updateData = {
         service_findings: findings,
@@ -1192,6 +1207,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
         status: 'inspection'
       };
       console.log('Update data:', updateData);
+      console.log('Device ID:', device.id);
       
       const { data, error } = await supabase
         .from('request_devices')
@@ -1201,11 +1217,21 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
       
       console.log('Supabase response:', { data, error });
       
-      if (error) throw error;
-      notify('✓ Inspection enregistrée!');
-      setEditMode(false);
-      reload();
-      onBack();
+      if (error) {
+        console.error('Supabase error:', error);
+        alert('Save error: ' + JSON.stringify(error));
+        throw error;
+      }
+      
+      if (!data || data.length === 0) {
+        console.warn('No data returned - update may have failed silently');
+        alert('Warning: No data returned. Columns may not exist in database. Run the SQL migration!');
+      } else {
+        notify('✓ Inspection enregistrée!');
+        setEditMode(false);
+        reload();
+        onBack();
+      }
     } catch (err) {
       console.error('Save error:', err);
       notify('Erreur: ' + err.message, 'error');
@@ -1215,7 +1241,15 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
   
   const saveProgress = async () => {
     setSaving(true);
-    console.log('Saving progress for device:', device.id);
+    console.log('Saving progress for device:', device.id, device);
+    
+    if (!device.id) {
+      notify('Erreur: ID appareil manquant', 'error');
+      alert('Device ID is missing! Check console.');
+      setSaving(false);
+      return;
+    }
+    
     try {
       const updateData = {
         service_findings: findings,
@@ -1223,6 +1257,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
         additional_work_items: additionalWorkNeeded ? workItems : []
       };
       console.log('Update data:', updateData);
+      console.log('Device ID:', device.id);
       
       const { data, error } = await supabase
         .from('request_devices')
@@ -1232,7 +1267,17 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
       
       console.log('Supabase response:', { data, error });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        alert('Save error: ' + JSON.stringify(error));
+        throw error;
+      }
+      
+      if (!data || data.length === 0) {
+        console.warn('No data returned - update may have failed silently');
+        alert('Warning: No data returned from update. Check if columns exist in database.');
+      }
+      
       notify('✓ Progression enregistrée');
       reload();
     } catch (err) {
@@ -1419,6 +1464,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
 function AvenantPreviewModal({ rma, devices, onClose, notify, reload }) {
   const [sending, setSending] = useState(false);
   const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
+  const devicesRAS = devices.filter(d => !d.additional_work_needed || !d.additional_work_items?.length);
   
   const totalAvenant = devicesWithWork.reduce((sum, device) => {
     const deviceTotal = (device.additional_work_items || []).reduce((dSum, item) => 
@@ -1427,10 +1473,14 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload }) {
     return sum + deviceTotal;
   }, 0);
   
+  // Calculate TVA (20%)
+  const tva = totalAvenant * 0.20;
+  const totalTTC = totalAvenant + tva;
+  
   const sendAvenant = async () => {
     setSending(true);
     try {
-      await supabase
+      const { error } = await supabase
         .from('service_requests')
         .update({
           status: 'quote_sent',
@@ -1439,6 +1489,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload }) {
         })
         .eq('id', rma.id);
       
+      if (error) throw error;
       notify('✓ Avenant envoyé au client!');
       reload();
       onClose();
@@ -1450,19 +1501,60 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload }) {
   
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b sticky top-0 bg-white z-10">
-          <h2 className="text-xl font-bold text-gray-800">📄 Aperçu Avenant</h2>
-          <p className="text-sm text-gray-500">RMA: {rma.request_number} • {rma.companies?.name}</p>
+      <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 border-b sticky top-0 bg-white z-10 flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">📄 Avenant au Devis</h2>
+            <p className="text-sm text-gray-500">Travaux supplémentaires découverts lors du service</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500">✕</button>
         </div>
         
         <div className="p-6">
-          <div className="border-2 border-gray-200 rounded-xl overflow-hidden">
-            <div className="bg-[#1a1a2e] text-white px-6 py-4">
-              <h3 className="text-lg font-bold">AVENANT - {rma.request_number}</h3>
-              <p className="text-gray-300">{rma.companies?.name}</p>
+          {/* Quote Header - Like official document */}
+          <div className="border-2 border-gray-300 rounded-xl overflow-hidden mb-6">
+            {/* Company Header */}
+            <div className="bg-[#1a1a2e] text-white p-6">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-2xl font-bold">LIGHTHOUSE FRANCE</h3>
+                  <p className="text-gray-300 text-sm mt-1">Service Métrologie & Calibration</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xl font-bold text-[#00A651]">AVENANT</p>
+                  <p className="text-gray-300">RMA: {rma.request_number}</p>
+                  <p className="text-gray-400 text-sm">{new Date().toLocaleDateString('fr-FR')}</p>
+                </div>
+              </div>
             </div>
             
+            {/* Client Info */}
+            <div className="bg-gray-50 px-6 py-4 border-b">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-medium">Client</p>
+                  <p className="font-bold text-gray-800">{rma.companies?.name}</p>
+                  {rma.companies?.billing_address && <p className="text-sm text-gray-600">{rma.companies.billing_address}</p>}
+                  {rma.companies?.billing_postal_code && <p className="text-sm text-gray-600">{rma.companies.billing_postal_code} {rma.companies.billing_city}</p>}
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-gray-500 uppercase font-medium">Référence</p>
+                  <p className="font-bold text-gray-800">{rma.request_number}</p>
+                  <p className="text-sm text-gray-600">Devis initial: {rma.quote_total ? `€${rma.quote_total.toFixed(2)}` : '—'}</p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Introduction */}
+            <div className="px-6 py-4 bg-amber-50 border-b">
+              <p className="text-sm text-amber-800">
+                <strong>Objet:</strong> Suite à l'inspection de vos appareils, nous avons constaté des travaux supplémentaires nécessaires. 
+                Veuillez trouver ci-dessous le détail des interventions recommandées.
+              </p>
+            </div>
+            
+            {/* Devices with additional work */}
             <div className="divide-y">
               {devicesWithWork.map((device, idx) => {
                 const deviceTotal = (device.additional_work_items || []).reduce((sum, item) => 
@@ -1470,54 +1562,106 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload }) {
                 );
                 
                 return (
-                  <div key={device.id} className="p-4">
-                    <div className="flex justify-between items-start mb-3">
+                  <div key={device.id} className="p-6">
+                    <div className="flex justify-between items-start mb-4">
                       <div>
-                        <p className="font-bold text-gray-800">APPAREIL {idx + 1}: {device.model_name}</p>
-                        <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
+                        <p className="font-bold text-gray-800 text-lg">{device.model_name}</p>
+                        <p className="text-sm text-gray-500">N° de série: {device.serial_number}</p>
+                        <p className="text-xs text-gray-400">Service: {device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation'}</p>
                       </div>
-                      <span className="font-bold text-lg">€{deviceTotal.toFixed(2)}</span>
+                      <span className="text-xl font-bold text-gray-800">€{deviceTotal.toFixed(2)} HT</span>
                     </div>
                     
+                    {/* Findings */}
                     {device.service_findings && (
-                      <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                        <p className="text-xs text-gray-500 uppercase mb-1">Constatations:</p>
-                        <p className="text-sm text-gray-700 italic">"{device.service_findings}"</p>
+                      <div className="bg-gray-100 rounded-lg p-4 mb-4">
+                        <p className="text-xs text-gray-500 uppercase font-medium mb-1">Constatations du technicien</p>
+                        <p className="text-gray-700">{device.service_findings}</p>
                       </div>
                     )}
                     
-                    <div className="space-y-1">
-                      <p className="text-xs text-gray-500 uppercase">Travaux recommandés:</p>
-                      {(device.additional_work_items || []).map((item, itemIdx) => (
-                        <div key={itemIdx} className="flex justify-between text-sm">
-                          <span>• {item.description} {item.quantity > 1 ? `(×${item.quantity})` : ''}</span>
-                          <span className="font-medium">€{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
+                    {/* Work Items Table */}
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2 text-gray-600">Description</th>
+                          <th className="text-center py-2 text-gray-600 w-20">Qté</th>
+                          <th className="text-right py-2 text-gray-600 w-24">P.U. HT</th>
+                          <th className="text-right py-2 text-gray-600 w-24">Total HT</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(device.additional_work_items || []).map((item, itemIdx) => (
+                          <tr key={itemIdx} className="border-b border-gray-100">
+                            <td className="py-2">{item.description}</td>
+                            <td className="py-2 text-center">{item.quantity}</td>
+                            <td className="py-2 text-right">€{(parseFloat(item.price) || 0).toFixed(2)}</td>
+                            <td className="py-2 text-right font-medium">€{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 );
               })}
             </div>
             
-            <div className="bg-[#00A651] text-white px-6 py-4 flex justify-between items-center">
-              <span className="text-lg font-bold">TOTAL AVENANT</span>
-              <span className="text-2xl font-bold">€{totalAvenant.toFixed(2)}</span>
+            {/* Devices without additional work (RAS) */}
+            {devicesRAS.length > 0 && (
+              <div className="px-6 py-4 bg-green-50 border-t">
+                <p className="text-sm text-green-800 font-medium mb-2">Appareils sans travaux supplémentaires:</p>
+                <div className="space-y-1">
+                  {devicesRAS.map(device => (
+                    <p key={device.id} className="text-sm text-green-700">
+                      ✓ {device.model_name} (SN: {device.serial_number}) - {device.service_findings || 'RAS'}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Totals */}
+            <div className="border-t-2">
+              <div className="px-6 py-3 flex justify-between items-center bg-gray-50">
+                <span className="text-gray-600">Sous-total HT</span>
+                <span className="font-bold text-gray-800">€{totalAvenant.toFixed(2)}</span>
+              </div>
+              <div className="px-6 py-3 flex justify-between items-center bg-gray-50 border-t">
+                <span className="text-gray-600">TVA (20%)</span>
+                <span className="font-medium text-gray-800">€{tva.toFixed(2)}</span>
+              </div>
+              <div className="px-6 py-4 flex justify-between items-center bg-[#00A651] text-white">
+                <span className="text-lg font-bold">TOTAL TTC</span>
+                <span className="text-2xl font-bold">€{totalTTC.toFixed(2)}</span>
+              </div>
             </div>
+          </div>
+          
+          {/* Terms */}
+          <div className="text-xs text-gray-500 space-y-1">
+            <p>• Ce devis est valable 30 jours à compter de sa date d'émission.</p>
+            <p>• Les travaux seront effectués après réception de votre accord écrit.</p>
+            <p>• Conditions de règlement: 30 jours fin de mois.</p>
           </div>
         </div>
         
-        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between">
+        {/* Actions */}
+        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between items-center sticky bottom-0">
           <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
-            ← Modifier
+            ← Retour
           </button>
-          <button 
-            onClick={sendAvenant}
-            disabled={sending}
-            className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium disabled:opacity-50"
-          >
-            {sending ? 'Envoi...' : 'Envoyer au Client →'}
-          </button>
+          <div className="flex gap-3">
+            <button className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+              📥 Télécharger PDF
+            </button>
+            <button 
+              onClick={sendAvenant}
+              disabled={sending}
+              className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium disabled:opacity-50"
+            >
+              {sending ? 'Envoi...' : '📧 Envoyer au Client'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
