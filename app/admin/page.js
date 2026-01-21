@@ -1403,6 +1403,8 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
 // Report Preview Modal - Exact replica of official Lighthouse France Rapport PDF
 function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving }) {
   const today = new Date().toLocaleDateString('fr-FR');
+  const serviceTypeText = device.service_type === 'calibration' ? 'Étalonnage' : device.service_type === 'repair' ? 'Réparation' : 'Étalonnage et Réparation';
+  const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
   
   return (
     <div className="space-y-6">
@@ -1447,72 +1449,72 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
             </div>
           </div>
 
-          {/* Info Table */}
+          {/* Info Table - No borders */}
           <table className="w-full text-sm mb-10" style={{ borderCollapse: 'collapse' }}>
             <tbody>
               {/* Row 1: Date + RMA */}
               <tr>
-                <td className="py-2 font-bold text-[#003366] w-36 align-top">Date d'achèvement</td>
-                <td className="py-2 text-gray-800 border-b border-gray-200">{today}</td>
-                <td className="py-2 text-right text-gray-800 border-b border-gray-200">
+                <td className="py-1.5 font-bold text-[#003366] w-36 align-top">Date d'achèvement</td>
+                <td className="py-1.5 text-gray-800">{today}</td>
+                <td className="py-1.5 text-gray-800 w-64 pl-8">
                   <span className="font-bold text-[#003366]">RMA # </span>{rma.request_number}
                 </td>
               </tr>
               
               {/* Row 2: Client */}
               <tr>
-                <td className="py-2 font-bold text-[#003366] align-top">Client</td>
-                <td className="py-2 text-gray-800 border-b border-gray-200" colSpan="2">{rma.companies?.name}</td>
+                <td className="py-1.5 font-bold text-[#003366] align-top">Client</td>
+                <td className="py-1.5 text-gray-800" colSpan="2">{rma.companies?.name}</td>
               </tr>
               
               {/* Row 3: Adresse */}
               <tr>
-                <td className="py-2 font-bold text-[#003366] align-top">Adresse</td>
-                <td className="py-2 text-gray-800 border-b border-gray-200" colSpan="2">{rma.companies?.billing_address || '—'}</td>
+                <td className="py-1.5 font-bold text-[#003366] align-top">Adresse</td>
+                <td className="py-1.5 text-gray-800" colSpan="2">{rma.companies?.billing_address || '—'}</td>
               </tr>
               
               {/* Row 4: Code postal + Contact */}
               <tr>
-                <td className="py-2 font-bold text-[#003366] align-top">Code postal / Ville</td>
-                <td className="py-2 text-gray-800 border-b border-gray-200">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
-                <td className="py-2 text-right text-gray-800 border-b border-gray-200">
+                <td className="py-1.5 font-bold text-[#003366] align-top">Code postal / Ville</td>
+                <td className="py-1.5 text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
+                <td className="py-1.5 text-gray-800 pl-8">
                   <span className="font-bold text-[#003366]">Contact </span>{rma.companies?.contact_name || '—'}
                 </td>
               </tr>
               
               {/* Row 5: Téléphone + Technicien */}
               <tr>
-                <td className="py-2 font-bold text-[#003366] align-top">Téléphone</td>
-                <td className="py-2 text-gray-800 border-b border-gray-200">{rma.companies?.phone || '—'}</td>
-                <td className="py-2 text-right text-gray-800 border-b border-gray-200">
+                <td className="py-1.5 font-bold text-[#003366] align-top">Téléphone</td>
+                <td className="py-1.5 text-gray-800">{rma.companies?.phone || '—'}</td>
+                <td className="py-1.5 text-gray-800 pl-8">
                   <span className="font-bold text-[#003366]">Technicien(ne) de service </span>Lighthouse France
                 </td>
               </tr>
               
               {/* Row 6: Modèle */}
               <tr>
-                <td className="py-2 font-bold text-[#003366] align-top">Modèle#</td>
-                <td className="py-2 text-gray-800 border-b border-gray-200" colSpan="2">{device.model_name}</td>
+                <td className="py-1.5 font-bold text-[#003366] align-top">Modèle#</td>
+                <td className="py-1.5 text-gray-800" colSpan="2">{device.model_name}</td>
               </tr>
               
               {/* Row 7: Numéro de série */}
               <tr>
-                <td className="py-2 font-bold text-[#003366] align-top">Numéro de série</td>
-                <td className="py-2 text-gray-800 border-b border-gray-200" colSpan="2">{device.serial_number}</td>
+                <td className="py-1.5 font-bold text-[#003366] align-top">Numéro de série</td>
+                <td className="py-1.5 text-gray-800" colSpan="2">{device.serial_number}</td>
               </tr>
             </tbody>
           </table>
 
-          {/* Content Sections */}
+          {/* Content Sections - No borders */}
           <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
             <tbody>
-              {/* Motif de retour */}
+              {/* Motif de retour = Service type + Customer notes */}
               <tr>
                 <td className="py-3 font-bold text-[#003366] w-36 align-top">Motif de retour</td>
-                <td className="py-3 text-gray-800">{device.service_type === 'calibration' ? 'Étalonnage annuel' : 'Réparation'}</td>
+                <td className="py-3 text-gray-800 whitespace-pre-wrap">{motifText}</td>
               </tr>
               
-              {/* Étalonnage effectué */}
+              {/* Étalonnage effectué - only for calibration */}
               {device.service_type === 'calibration' && (
                 <tr>
                   <td className="py-3 font-bold text-[#003366] align-top">Étalonnage effectué</td>
@@ -1526,13 +1528,13 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
                 <td className="py-3 text-gray-800">Conforme</td>
               </tr>
               
-              {/* Notes (Constatations) */}
+              {/* Constatations (Tech findings) */}
               <tr>
-                <td className="py-3 font-bold text-[#003366] align-top">Notes</td>
+                <td className="py-3 font-bold text-[#003366] align-top">Constatations</td>
                 <td className="py-3 text-gray-800 whitespace-pre-wrap">{findings || '—'}</td>
               </tr>
               
-              {/* Actions effectuées (Travaux description) */}
+              {/* Actions effectuées (Work description) */}
               <tr>
                 <td className="py-3 font-bold text-[#003366] align-top">Actions effectuées</td>
                 <td className="py-3 text-gray-800 whitespace-pre-wrap">{workCompleted || '—'}</td>
@@ -1556,7 +1558,7 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
           </table>
 
           {/* Footer - At bottom */}
-          <div className="mt-auto pt-20 text-center text-sm text-gray-600 border-t border-gray-200" style={{ marginTop: '80px', paddingTop: '20px' }}>
+          <div className="text-center text-sm text-gray-600" style={{ marginTop: '80px', paddingTop: '20px' }}>
             <p className="font-bold text-[#003366]">Lighthouse Worldwide Solutions</p>
             <p>16 Rue Paul Séjourné 94000 Créteil France</p>
             <p>01 43 77 28 07</p>
