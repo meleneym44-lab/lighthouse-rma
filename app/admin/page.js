@@ -175,6 +175,7 @@ export default function AdminPortal() {
             onBack={() => setSelectedRMA(null)} 
             notify={notify} 
             reload={() => loadData(true)}
+            profile={profile}
           />
         ) : (
           <>
@@ -861,7 +862,7 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
 // ============================================
 // RMA FULL PAGE VIEW - Main service interface
 // ============================================
-function RMAFullPage({ rma, onBack, notify, reload }) {
+function RMAFullPage({ rma, onBack, notify, reload, profile }) {
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [showAvenantPreview, setShowAvenantPreview] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -909,6 +910,7 @@ function RMAFullPage({ rma, onBack, notify, reload }) {
         onBack={() => { setSelectedDevice(null); reload(); }}
         notify={notify}
         reload={reload}
+        profile={profile}
       />
     );
   }
@@ -1154,7 +1156,7 @@ function RMAFullPage({ rma, onBack, notify, reload }) {
 }
 
 // Device Service Modal - For filling inspection/findings
-function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
+function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, staffMembers }) {
   const [findings, setFindings] = useState(device.service_findings || '');
   const [additionalWorkNeeded, setAdditionalWorkNeeded] = useState(device.additional_work_needed || false);
   const [workItems, setWorkItems] = useState(device.additional_work_items || []);
@@ -1162,6 +1164,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
   const [saving, setSaving] = useState(false);
   const [showReportPreview, setShowReportPreview] = useState(false);
   const [partsLoading, setPartsLoading] = useState({});
+  const [technicianName, setTechnicianName] = useState(device.technician_name || profile?.full_name || '');
   
   const avenantSent = rma.avenant_sent_at;
   const avenantApproved = rma.avenant_approved_at;
@@ -1242,7 +1245,8 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
       const { error } = await supabase.from('request_devices').update({
         service_findings: findings, additional_work_needed: additionalWorkNeeded,
         additional_work_items: additionalWorkNeeded ? workItems : [],
-        work_completed: workCompleted, work_checklist: checklistObj
+        work_completed: workCompleted, work_checklist: checklistObj,
+        technician_name: technicianName
       }).eq('id', device.id);
       if (error) throw error;
       notify('✓ Enregistré');
@@ -1260,6 +1264,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
         service_findings: findings, additional_work_needed: additionalWorkNeeded,
         additional_work_items: additionalWorkNeeded ? workItems : [],
         work_completed: workCompleted, work_checklist: checklistObj,
+        technician_name: technicianName,
         report_complete: true, report_completed_at: new Date().toISOString(), status: 'final_qc'
       }).eq('id', device.id);
       if (error) throw error;
@@ -1271,7 +1276,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
   };
 
   if (showReportPreview) {
-    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} />;
+    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} technicianName={technicianName} />;
   }
 
   const renderActionButtons = () => {
@@ -1320,6 +1325,16 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
           <div className="bg-gray-50 rounded-xl border p-4">
             <h3 className="font-bold text-gray-700 mb-2">Client</h3>
             <p className="font-medium text-gray-800">{rma.companies?.name}</p>
+          </div>
+          <div className="bg-gray-50 rounded-xl border p-4">
+            <h3 className="font-bold text-gray-700 mb-2">Technicien(ne) de service</h3>
+            <input 
+              type="text" 
+              value={technicianName} 
+              onChange={e => setTechnicianName(e.target.value)}
+              placeholder="Nom du technicien..."
+              className="w-full px-3 py-2 border rounded-lg text-sm"
+            />
           </div>
         </div>
 
@@ -1401,7 +1416,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
 }
 
 // Report Preview Modal - Exact replica of official Lighthouse France Rapport PDF
-function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving }) {
+function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving, technicianName }) {
   const today = new Date().toLocaleDateString('fr-FR');
   const serviceTypeText = device.service_type === 'calibration' ? 'Étalonnage' : device.service_type === 'repair' ? 'Réparation' : 'Étalonnage et Réparation';
   const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
@@ -1449,101 +1464,102 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
             </div>
           </div>
 
-          {/* Info Table - No borders */}
-          <table className="w-full text-sm mb-10" style={{ borderCollapse: 'collapse' }}>
+          {/* Info Table - Client/Device info */}
+          <table className="w-full text-sm mb-6" style={{ borderCollapse: 'collapse' }}>
             <tbody>
               {/* Row 1: Date + RMA */}
               <tr>
-                <td className="py-1.5 font-bold text-[#003366] w-36 align-top">Date d'achèvement</td>
-                <td className="py-1.5 text-gray-800">{today}</td>
-                <td className="py-1.5 text-gray-800 w-64 pl-8">
+                <td className="py-1 font-bold text-[#003366] w-36 align-top">Date d'achèvement</td>
+                <td className="py-1 text-gray-800">{today}</td>
+                <td className="py-1 text-gray-800 w-56 pl-8">
                   <span className="font-bold text-[#003366]">RMA # </span>{rma.request_number}
                 </td>
               </tr>
               
               {/* Row 2: Client */}
               <tr>
-                <td className="py-1.5 font-bold text-[#003366] align-top">Client</td>
-                <td className="py-1.5 text-gray-800" colSpan="2">{rma.companies?.name}</td>
+                <td className="py-1 font-bold text-[#003366] align-top">Client</td>
+                <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.name}</td>
               </tr>
               
               {/* Row 3: Adresse */}
               <tr>
-                <td className="py-1.5 font-bold text-[#003366] align-top">Adresse</td>
-                <td className="py-1.5 text-gray-800" colSpan="2">{rma.companies?.billing_address || '—'}</td>
+                <td className="py-1 font-bold text-[#003366] align-top">Adresse</td>
+                <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.billing_address || '—'}</td>
               </tr>
               
               {/* Row 4: Code postal + Contact */}
               <tr>
-                <td className="py-1.5 font-bold text-[#003366] align-top">Code postal / Ville</td>
-                <td className="py-1.5 text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
-                <td className="py-1.5 text-gray-800 pl-8">
+                <td className="py-1 font-bold text-[#003366] align-top">Code postal / Ville</td>
+                <td className="py-1 text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
+                <td className="py-1 text-gray-800 pl-8">
                   <span className="font-bold text-[#003366]">Contact </span>{rma.companies?.contact_name || '—'}
                 </td>
               </tr>
               
               {/* Row 5: Téléphone + Technicien */}
               <tr>
-                <td className="py-1.5 font-bold text-[#003366] align-top">Téléphone</td>
-                <td className="py-1.5 text-gray-800">{rma.companies?.phone || '—'}</td>
-                <td className="py-1.5 text-gray-800 pl-8">
-                  <span className="font-bold text-[#003366]">Technicien(ne) de service </span>Lighthouse France
+                <td className="py-1 font-bold text-[#003366] align-top">Téléphone</td>
+                <td className="py-1 text-gray-800">{rma.companies?.phone || '—'}</td>
+                <td className="py-1 text-gray-800 pl-8 align-top" rowSpan="1">
+                  <span className="font-bold text-[#003366]">Technicien(ne) de service</span><br/>
+                  <span>{technicianName || 'Lighthouse France'}</span>
                 </td>
               </tr>
               
               {/* Row 6: Modèle */}
               <tr>
-                <td className="py-1.5 font-bold text-[#003366] align-top">Modèle#</td>
-                <td className="py-1.5 text-gray-800" colSpan="2">{device.model_name}</td>
+                <td className="py-1 font-bold text-[#003366] align-top">Modèle#</td>
+                <td className="py-1 text-gray-800" colSpan="2">{device.model_name}</td>
               </tr>
               
               {/* Row 7: Numéro de série */}
               <tr>
-                <td className="py-1.5 font-bold text-[#003366] align-top">Numéro de série</td>
-                <td className="py-1.5 text-gray-800" colSpan="2">{device.serial_number}</td>
+                <td className="py-1 font-bold text-[#003366] align-top">Numéro de série</td>
+                <td className="py-1 text-gray-800" colSpan="2">{device.serial_number}</td>
               </tr>
             </tbody>
           </table>
 
-          {/* Content Sections - No borders */}
+          {/* Content Sections */}
           <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
             <tbody>
               {/* Motif de retour = Service type + Customer notes */}
               <tr>
-                <td className="py-3 font-bold text-[#003366] w-36 align-top">Motif de retour</td>
-                <td className="py-3 text-gray-800 whitespace-pre-wrap">{motifText}</td>
+                <td className="pt-6 pb-2 font-bold text-[#003366] w-36 align-top">Motif de retour</td>
+                <td className="pt-6 pb-2 text-gray-800 whitespace-pre-wrap">{motifText}</td>
               </tr>
               
               {/* Étalonnage effectué - only for calibration */}
               {device.service_type === 'calibration' && (
                 <tr>
-                  <td className="py-3 font-bold text-[#003366] align-top">Étalonnage effectué</td>
-                  <td className="py-3 text-gray-800">ISO 21501-4 Calibration</td>
+                  <td className="py-2 font-bold text-[#003366] align-top">Étalonnage effectué</td>
+                  <td className="py-2 text-gray-800">ISO 21501-4 Calibration</td>
                 </tr>
               )}
               
-              {/* Résultats à la réception */}
+              {/* Résultats à la réception - tight with above */}
               <tr>
-                <td className="py-3 font-bold text-[#003366] align-top">Résultats à la réception</td>
-                <td className="py-3 text-gray-800">Conforme</td>
+                <td className="py-2 font-bold text-[#003366] align-top">Résultats à la réception</td>
+                <td className="py-2 text-gray-800">Conforme</td>
               </tr>
               
               {/* Constatations (Tech findings) */}
               <tr>
-                <td className="py-3 font-bold text-[#003366] align-top">Constatations</td>
-                <td className="py-3 text-gray-800 whitespace-pre-wrap">{findings || '—'}</td>
+                <td className="pt-4 pb-2 font-bold text-[#003366] align-top">Constatations</td>
+                <td className="pt-4 pb-2 text-gray-800 whitespace-pre-wrap">{findings || '—'}</td>
               </tr>
               
               {/* Actions effectuées (Work description) */}
               <tr>
-                <td className="py-3 font-bold text-[#003366] align-top">Actions effectuées</td>
-                <td className="py-3 text-gray-800 whitespace-pre-wrap">{workCompleted || '—'}</td>
+                <td className="py-2 font-bold text-[#003366] align-top">Actions effectuées</td>
+                <td className="py-2 text-gray-800 whitespace-pre-wrap">{workCompleted || '—'}</td>
               </tr>
               
-              {/* Travaux réalisés (Checklist) */}
+              {/* Travaux réalisés (Checklist) - more space above */}
               <tr>
-                <td className="py-3 font-bold text-[#003366] align-top">Travaux réalisés</td>
-                <td className="py-3">
+                <td className="pt-6 pb-2 font-bold text-[#003366] align-top">Travaux réalisés</td>
+                <td className="pt-6 pb-2">
                   <div className="space-y-1">
                     {checklist.filter(item => item.checked).map(item => (
                       <div key={item.id} className="flex items-center gap-2">
@@ -1559,7 +1575,7 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
 
           {/* Footer - At bottom */}
           <div className="text-center text-sm text-gray-600" style={{ marginTop: '80px', paddingTop: '20px' }}>
-            <p className="font-bold text-[#003366]">Lighthouse Worldwide Solutions</p>
+            <p className="font-bold text-[#003366]">Lighthouse Worldwide Solutions France</p>
             <p>16 Rue Paul Séjourné 94000 Créteil France</p>
             <p>01 43 77 28 07</p>
           </div>
