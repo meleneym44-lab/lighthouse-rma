@@ -16,6 +16,7 @@ const STATUS_STYLES = {
   waiting_device: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Attente Appareil' },
   received: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Reçu' },
   in_queue: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'File attente' },
+  inspection: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Inspection' },
   calibration_in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Étalonnage' },
   repair_in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Réparation' },
   quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
@@ -842,10 +843,23 @@ function RMADetailModal({ rma, onClose, notify, reload }) {
   const [saving, setSaving] = useState(false);
   const [internalNotes, setInternalNotes] = useState(rma.internal_notes || '');
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const [serviceMode, setServiceMode] = useState(false); // NEW: Toggle service workflow
+  const [selectedDevice, setSelectedDevice] = useState(null); // NEW: Device being serviced
   const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
   const devices = rma.request_devices || [];
   const workflowStatuses = ['approved', 'waiting_bc', 'bc_review', 'waiting_device', 'received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'quote_sent', 'quote_approved', 'final_qc', 'ready_to_ship', 'shipped', 'completed'];
   const isContractRMA = rma.is_contract_rma || rma.contract_id;
+  
+  // Check if RMA is ready for service (received status or later)
+  const canStartService = ['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'inspection', 'final_qc'].includes(rma.status) ||
+    devices.some(d => ['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'inspection', 'final_qc'].includes(d.status));
+  
+  // Count inspections done
+  const inspectionsDone = devices.filter(d => d.inspection_complete || d.service_findings).length;
+  const allInspectionsDone = devices.length > 0 && inspectionsDone === devices.length;
+  
+  // Check if any device has additional work
+  const devicesWithAdditionalWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
 
   const updateStatus = async (newStatus) => {
     setSaving(true);
@@ -933,6 +947,38 @@ function RMADetailModal({ rma, onClose, notify, reload }) {
     setSaving(false);
   };
 
+  // If in service mode, show device service screen
+  if (selectedDevice) {
+    return (
+      <DeviceServiceScreen 
+        device={selectedDevice}
+        rma={rma}
+        onBack={() => { setSelectedDevice(null); reload(); }}
+        onClose={onClose}
+        notify={notify}
+        reload={reload}
+      />
+    );
+  }
+
+  // If in service mode, show RMA service overview
+  if (serviceMode) {
+    return (
+      <RMAServiceOverview
+        rma={rma}
+        devices={devices}
+        onSelectDevice={setSelectedDevice}
+        onBack={() => setServiceMode(false)}
+        onClose={onClose}
+        notify={notify}
+        reload={reload}
+        inspectionsDone={inspectionsDone}
+        allInspectionsDone={allInspectionsDone}
+        devicesWithAdditionalWork={devicesWithAdditionalWork}
+      />
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
       <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -948,7 +994,17 @@ function RMADetailModal({ rma, onClose, notify, reload }) {
             </div>
             <p className="text-sm text-gray-500">{rma.companies?.name}</p>
           </div>
-          <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+          <div className="flex items-center gap-3">
+            <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+            {canStartService && (
+              <button 
+                onClick={() => setServiceMode(true)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center gap-2"
+              >
+                🔧 Service
+              </button>
+            )}
+          </div>
         </div>
         
         {/* Contract Info Banner */}
@@ -1005,6 +1061,9 @@ function RMADetailModal({ rma, onClose, notify, reload }) {
                             {d.tokens_exhausted && (
                               <span className="px-1.5 py-0.5 bg-amber-200 text-amber-700 rounded text-xs font-medium">Tokens épuisés</span>
                             )}
+                            {d.inspection_complete && (
+                              <span className="px-1.5 py-0.5 bg-green-200 text-green-700 rounded text-xs font-medium">✓ Inspecté</span>
+                            )}
                           </div>
                           <p className="text-sm text-gray-500">SN: {d.serial_number}</p>
                           <p className="text-xs text-gray-400 mt-1">
@@ -1012,7 +1071,7 @@ function RMADetailModal({ rma, onClose, notify, reload }) {
                              d.service_type === 'repair' ? '🔧 Réparation' : 
                              d.service_type === 'calibration_repair' || d.service_type === 'cal_repair' ? '🔬+🔧' : d.service_type}
                           </p>
-                          {d.notes && <p className="text-sm text-gray-400 mt-1 italic">{d.notes}</p>}
+                          {d.notes && <p className="text-sm text-blue-600 mt-1 italic">📝 "{d.notes}"</p>}
                         </div>
                         <span className={`px-2 py-1 rounded text-xs font-medium ${deviceStyle.bg} ${deviceStyle.text}`}>
                           {deviceStyle.label}
@@ -1090,6 +1149,564 @@ function RMADetailModal({ rma, onClose, notify, reload }) {
           </div>
         </div>
         <div className="px-6 py-4 border-t bg-gray-50 sticky bottom-0"><button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Fermer</button></div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// SERVICE WORKFLOW COMPONENTS
+// ============================================
+
+// RMA Service Overview - Shows all devices, click to service each
+function RMAServiceOverview({ rma, devices, onSelectDevice, onBack, onClose, notify, reload, inspectionsDone, allInspectionsDone, devicesWithAdditionalWork }) {
+  const [showAvenantPreview, setShowAvenantPreview] = useState(false);
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 border-b sticky top-0 bg-white z-10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
+                ← Retour
+              </button>
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">SERVICE - {rma.request_number}</h2>
+                <p className="text-sm text-gray-500">{rma.companies?.name}</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-gray-500">Inspections: {inspectionsDone}/{devices.length}</p>
+              {allInspectionsDone && (
+                <span className="text-green-600 font-medium">✓ Toutes terminées</span>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        {/* Client Info */}
+        <div className="px-6 py-4 bg-gray-50 border-b">
+          <div className="grid md:grid-cols-4 gap-4">
+            <div>
+              <p className="text-xs text-gray-500 uppercase">Client</p>
+              <p className="font-medium">{rma.companies?.name}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase">Service demandé</p>
+              <p className="font-medium">{rma.requested_service === 'calibration' ? 'Étalonnage' : rma.requested_service === 'repair' ? 'Réparation' : rma.requested_service}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase">BC Original</p>
+              <p className="font-medium">{rma.quote_total ? `€${rma.quote_total.toFixed(2)}` : '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase">Date réception</p>
+              <p className="font-medium">{rma.received_at ? new Date(rma.received_at).toLocaleDateString('fr-FR') : '—'}</p>
+            </div>
+          </div>
+        </div>
+        
+        {/* Devices List */}
+        <div className="p-6">
+          <h3 className="font-bold text-gray-700 mb-4">APPAREILS ({devices.length})</h3>
+          
+          <div className="space-y-3">
+            {devices.map((device, idx) => {
+              const hasFindings = device.service_findings || device.inspection_complete;
+              const hasAdditionalWork = device.additional_work_needed && device.additional_work_items?.length > 0;
+              const additionalTotal = hasAdditionalWork 
+                ? device.additional_work_items.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0)
+                : 0;
+              
+              return (
+                <div 
+                  key={device.id || idx}
+                  onClick={() => onSelectDevice(device)}
+                  className={`rounded-xl p-4 border-2 cursor-pointer transition-all hover:shadow-md ${
+                    hasFindings 
+                      ? hasAdditionalWork 
+                        ? 'bg-amber-50 border-amber-300' 
+                        : 'bg-green-50 border-green-300'
+                      : 'bg-white border-gray-200 hover:border-blue-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg ${
+                        hasFindings 
+                          ? hasAdditionalWork ? 'bg-amber-200' : 'bg-green-200'
+                          : 'bg-gray-200'
+                      }`}>
+                        {hasFindings ? (hasAdditionalWork ? '⚠️' : '✓') : (idx + 1)}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-gray-800">{device.model_name}</p>
+                          <span className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600">
+                            {device.service_type === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
+                        {device.notes && (
+                          <p className="text-sm text-blue-600 mt-1">📝 "{device.notes}"</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      {hasFindings ? (
+                        <>
+                          <p className={`font-medium ${hasAdditionalWork ? 'text-amber-700' : 'text-green-700'}`}>
+                            {hasAdditionalWork ? `Travaux supp: €${additionalTotal.toFixed(2)}` : 'RAS'}
+                          </p>
+                          <p className="text-xs text-gray-500">✓ Inspection terminée</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-gray-500">En attente</p>
+                          <p className="text-xs text-blue-600">Cliquez pour commencer →</p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        
+        {/* Summary & Actions */}
+        <div className="px-6 py-4 border-t bg-gray-50">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">
+                {inspectionsDone}/{devices.length} inspections terminées
+                {devicesWithAdditionalWork.length > 0 && (
+                  <span className="ml-2 text-amber-600">
+                    • {devicesWithAdditionalWork.length} appareil(s) avec travaux supplémentaires
+                  </span>
+                )}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={onBack} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+                Retour
+              </button>
+              {allInspectionsDone && devicesWithAdditionalWork.length > 0 && (
+                <button 
+                  onClick={() => setShowAvenantPreview(true)}
+                  className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
+                >
+                  📄 Créer Avenant ({devicesWithAdditionalWork.length} appareil(s))
+                </button>
+              )}
+              {allInspectionsDone && devicesWithAdditionalWork.length === 0 && (
+                <button 
+                  onClick={() => notify('Toutes les inspections sont terminées sans travaux supplémentaires!')}
+                  className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
+                >
+                  ✓ Finaliser Service
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        {/* Avenant Preview Modal */}
+        {showAvenantPreview && (
+          <AvenantPreview 
+            rma={rma}
+            devices={devices}
+            onClose={() => setShowAvenantPreview(false)}
+            notify={notify}
+            reload={reload}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Device Service Screen - Fill findings for single device
+function DeviceServiceScreen({ device, rma, onBack, onClose, notify, reload }) {
+  const [findings, setFindings] = useState(device.service_findings || '');
+  const [additionalWorkNeeded, setAdditionalWorkNeeded] = useState(device.additional_work_needed || false);
+  const [workItems, setWorkItems] = useState(device.additional_work_items || []);
+  const [saving, setSaving] = useState(false);
+  
+  const addWorkItem = () => {
+    setWorkItems([...workItems, { id: Date.now(), description: '', quantity: 1, price: 0 }]);
+  };
+  
+  const updateWorkItem = (id, field, value) => {
+    setWorkItems(workItems.map(item => 
+      item.id === id ? { ...item, [field]: value } : item
+    ));
+  };
+  
+  const removeWorkItem = (id) => {
+    setWorkItems(workItems.filter(item => item.id !== id));
+  };
+  
+  const totalAdditional = workItems.reduce((sum, item) => 
+    sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
+  );
+  
+  const saveAndComplete = async () => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('request_devices')
+        .update({
+          service_findings: findings,
+          additional_work_needed: additionalWorkNeeded,
+          additional_work_items: additionalWorkNeeded ? workItems : [],
+          inspection_complete: true,
+          inspection_completed_at: new Date().toISOString(),
+          status: 'inspection'
+        })
+        .eq('id', device.id);
+      
+      if (error) throw error;
+      notify('✓ Inspection enregistrée!');
+      onBack();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSaving(false);
+  };
+  
+  const saveProgress = async () => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('request_devices')
+        .update({
+          service_findings: findings,
+          additional_work_needed: additionalWorkNeeded,
+          additional_work_items: additionalWorkNeeded ? workItems : []
+        })
+        .eq('id', device.id);
+      
+      if (error) throw error;
+      notify('Progression enregistrée');
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSaving(false);
+  };
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 border-b sticky top-0 bg-white z-10">
+          <div className="flex items-center gap-4">
+            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
+              ← Retour
+            </button>
+            <div>
+              <h2 className="text-xl font-bold text-gray-800">SERVICE - {device.model_name}</h2>
+              <p className="text-sm text-gray-500">SN: {device.serial_number} • RMA: {rma.request_number}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="p-6 space-y-6">
+          {/* Device Info */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <div className="grid md:grid-cols-3 gap-4">
+              <div>
+                <p className="text-xs text-blue-600 uppercase font-medium">Appareil</p>
+                <p className="font-bold text-blue-900">{device.model_name}</p>
+                <p className="text-sm text-blue-700">SN: {device.serial_number}</p>
+              </div>
+              <div>
+                <p className="text-xs text-blue-600 uppercase font-medium">Service</p>
+                <p className="font-medium text-blue-900">
+                  {device.service_type === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-blue-600 uppercase font-medium">Client</p>
+                <p className="font-medium text-blue-900">{rma.companies?.name}</p>
+              </div>
+            </div>
+          </div>
+          
+          {/* Customer Notes */}
+          {device.notes && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <p className="text-xs text-amber-600 uppercase font-medium mb-2">📝 Notes du client pour cet appareil</p>
+              <p className="text-amber-900 font-medium">"{device.notes}"</p>
+            </div>
+          )}
+          
+          {/* Findings */}
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">
+              CONSTATATIONS (Findings)
+            </label>
+            <p className="text-xs text-gray-500 mb-2">
+              Décrivez ce que vous avez observé lors de l'inspection
+            </p>
+            <textarea
+              value={findings}
+              onChange={e => setFindings(e.target.value)}
+              placeholder="Ex: Le laser montre des signes de faiblesse. Ventilateur bruyant..."
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl h-32 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+          
+          {/* Additional Work Toggle */}
+          <div className="bg-gray-50 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-bold text-gray-800">Travaux supplémentaires nécessaires ?</p>
+                <p className="text-sm text-gray-500">Des pièces ou main d'œuvre en plus du service original</p>
+              </div>
+              <div className="flex gap-4">
+                <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer ${!additionalWorkNeeded ? 'bg-green-100 text-green-700 ring-2 ring-green-500' : 'bg-gray-200'}`}>
+                  <input 
+                    type="radio" 
+                    checked={!additionalWorkNeeded}
+                    onChange={() => setAdditionalWorkNeeded(false)}
+                    className="sr-only"
+                  />
+                  Non (RAS)
+                </label>
+                <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer ${additionalWorkNeeded ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-500' : 'bg-gray-200'}`}>
+                  <input 
+                    type="radio" 
+                    checked={additionalWorkNeeded}
+                    onChange={() => setAdditionalWorkNeeded(true)}
+                    className="sr-only"
+                  />
+                  Oui
+                </label>
+              </div>
+            </div>
+          </div>
+          
+          {/* Additional Work Items */}
+          {additionalWorkNeeded && (
+            <div className="border-2 border-amber-200 rounded-xl p-4 bg-amber-50">
+              <h3 className="font-bold text-amber-800 mb-4">PIÈCES ET MAIN D'ŒUVRE SUPPLÉMENTAIRES</h3>
+              
+              <div className="space-y-3">
+                {workItems.map((item, idx) => (
+                  <div key={item.id} className="bg-white rounded-lg p-3 flex items-center gap-3">
+                    <span className="text-gray-400 font-medium">{idx + 1}.</span>
+                    <input
+                      type="text"
+                      value={item.description}
+                      onChange={e => updateWorkItem(item.id, 'description', e.target.value)}
+                      placeholder="Description (ex: Remplacement laser)"
+                      className="flex-1 px-3 py-2 border rounded-lg"
+                    />
+                    <input
+                      type="number"
+                      value={item.quantity}
+                      onChange={e => updateWorkItem(item.id, 'quantity', e.target.value)}
+                      className="w-16 px-3 py-2 border rounded-lg text-center"
+                      min="1"
+                    />
+                    <div className="flex items-center gap-1">
+                      <span className="text-gray-500">€</span>
+                      <input
+                        type="number"
+                        value={item.price}
+                        onChange={e => updateWorkItem(item.id, 'price', e.target.value)}
+                        placeholder="Prix"
+                        className="w-24 px-3 py-2 border rounded-lg text-right"
+                        step="0.01"
+                      />
+                    </div>
+                    <button 
+                      onClick={() => removeWorkItem(item.id)}
+                      className="p-2 text-red-500 hover:bg-red-100 rounded"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+              
+              <button
+                onClick={addWorkItem}
+                className="mt-3 px-4 py-2 bg-amber-200 hover:bg-amber-300 text-amber-800 rounded-lg text-sm font-medium"
+              >
+                + Ajouter ligne
+              </button>
+              
+              {workItems.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-amber-200 flex justify-between items-center">
+                  <span className="font-medium text-amber-800">Sous-total travaux supplémentaires:</span>
+                  <span className="text-xl font-bold text-amber-900">€{totalAdditional.toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        
+        {/* Footer Actions */}
+        <div className="px-6 py-4 border-t bg-gray-50 sticky bottom-0 flex justify-between">
+          <button onClick={onBack} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+            ← Retour
+          </button>
+          <div className="flex gap-3">
+            <button 
+              onClick={saveProgress}
+              disabled={saving}
+              className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
+            >
+              Enregistrer
+            </button>
+            <button 
+              onClick={saveAndComplete}
+              disabled={saving || !findings.trim()}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50"
+            >
+              {saving ? 'Enregistrement...' : 'Inspection Terminée →'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Avenant Preview - Review and send amendment quote
+function AvenantPreview({ rma, devices, onClose, notify, reload }) {
+  const [sending, setSending] = useState(false);
+  const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
+  
+  const totalAvenant = devicesWithWork.reduce((sum, device) => {
+    const deviceTotal = device.additional_work_items.reduce((dSum, item) => 
+      dSum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
+    );
+    return sum + deviceTotal;
+  }, 0);
+  
+  const sendAvenant = async () => {
+    setSending(true);
+    try {
+      // TODO: Generate PDF, upload, update RMA status, send notification
+      // For now, just update the status
+      await supabase
+        .from('service_requests')
+        .update({
+          status: 'quote_sent',
+          avenant_total: totalAvenant,
+          avenant_sent_at: new Date().toISOString()
+        })
+        .eq('id', rma.id);
+      
+      notify('✓ Avenant envoyé au client!');
+      reload();
+      onClose();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSending(false);
+  };
+  
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70">
+      <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div className="px-6 py-4 border-b sticky top-0 bg-white z-10">
+          <h2 className="text-xl font-bold text-gray-800">📄 Aperçu Avenant</h2>
+          <p className="text-sm text-gray-500">RMA: {rma.request_number} • {rma.companies?.name}</p>
+        </div>
+        
+        <div className="p-6">
+          {/* Avenant Content */}
+          <div className="border-2 border-gray-200 rounded-xl overflow-hidden">
+            {/* Header */}
+            <div className="bg-[#1a1a2e] text-white px-6 py-4">
+              <h3 className="text-lg font-bold">AVENANT - {rma.request_number}</h3>
+              <p className="text-gray-300">{rma.companies?.name}</p>
+            </div>
+            
+            {/* Devices */}
+            <div className="divide-y">
+              {devicesWithWork.map((device, idx) => {
+                const deviceTotal = device.additional_work_items.reduce((sum, item) => 
+                  sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
+                );
+                
+                return (
+                  <div key={device.id} className="p-4">
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <p className="font-bold text-gray-800">
+                          APPAREIL {idx + 1}: {device.model_name}
+                        </p>
+                        <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
+                        <p className="text-xs text-gray-400">
+                          Service original: {device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation'}
+                        </p>
+                      </div>
+                      <span className="font-bold text-lg">€{deviceTotal.toFixed(2)}</span>
+                    </div>
+                    
+                    {device.service_findings && (
+                      <div className="bg-gray-50 rounded-lg p-3 mb-3">
+                        <p className="text-xs text-gray-500 uppercase mb-1">Constatations du technicien:</p>
+                        <p className="text-sm text-gray-700 italic">"{device.service_findings}"</p>
+                      </div>
+                    )}
+                    
+                    <div className="space-y-1">
+                      <p className="text-xs text-gray-500 uppercase">Travaux recommandés:</p>
+                      {device.additional_work_items.map((item, itemIdx) => (
+                        <div key={itemIdx} className="flex justify-between text-sm">
+                          <span>• {item.description} {item.quantity > 1 ? `(×${item.quantity})` : ''}</span>
+                          <span className="font-medium">€{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            {/* Devices without additional work */}
+            {devices.filter(d => !d.additional_work_needed || !d.additional_work_items?.length).length > 0 && (
+              <div className="p-4 bg-green-50 border-t">
+                <p className="text-sm text-green-800 font-medium">Appareils sans travaux supplémentaires (RAS):</p>
+                <div className="mt-2 space-y-1">
+                  {devices.filter(d => !d.additional_work_needed || !d.additional_work_items?.length).map(device => (
+                    <p key={device.id} className="text-sm text-green-700">
+                      • {device.model_name} (SN: {device.serial_number})
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Total */}
+            <div className="bg-[#00A651] text-white px-6 py-4 flex justify-between items-center">
+              <span className="text-lg font-bold">TOTAL AVENANT</span>
+              <span className="text-2xl font-bold">€{totalAvenant.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* Actions */}
+        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between">
+          <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+            ← Modifier
+          </button>
+          <button 
+            onClick={sendAvenant}
+            disabled={sending}
+            className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium disabled:opacity-50"
+          >
+            {sending ? 'Envoi...' : 'Envoyer au Client →'}
+          </button>
+        </div>
       </div>
     </div>
   );
