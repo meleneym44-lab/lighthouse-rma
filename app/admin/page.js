@@ -1159,16 +1159,13 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
   const [additionalWorkNeeded, setAdditionalWorkNeeded] = useState(device.additional_work_needed || false);
   const [workItems, setWorkItems] = useState(device.additional_work_items || []);
   const [workCompleted, setWorkCompleted] = useState(device.work_completed || '');
-  const [workChecklist, setWorkChecklist] = useState(device.work_checklist || {});
   const [saving, setSaving] = useState(false);
-  const [editMode, setEditMode] = useState(!device.inspection_complete);
+  const [showReportPreview, setShowReportPreview] = useState(false);
   
-  // Check if avenant has been sent - then fully locked
   const avenantSent = rma.avenant_sent_at;
-  const isLocked = avenantSent;
-  const isComplete = device.inspection_complete;
+  const avenantApproved = rma.avenant_approved_at;
+  const reportComplete = device.report_complete;
   
-  // Default checklist items based on service type
   const getDefaultChecklist = () => {
     if (device.service_type === 'calibration') {
       return [
@@ -1192,276 +1189,84 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
   const [checklist, setChecklist] = useState(() => {
     const saved = device.work_checklist;
     if (saved && Object.keys(saved).length > 0) {
-      return getDefaultChecklist().map(item => ({
-        ...item,
-        checked: saved[item.id] || false
-      }));
+      return getDefaultChecklist().map(item => ({ ...item, checked: saved[item.id] || false }));
     }
     return getDefaultChecklist();
   });
   
-  const toggleChecklistItem = (id) => {
-    setChecklist(checklist.map(item => 
-      item.id === id ? { ...item, checked: !item.checked } : item
-    ));
-  };
-  
-  const addWorkItem = () => {
-    setWorkItems([...workItems, { id: Date.now(), description: '', quantity: 1, price: 0 }]);
-  };
-  
-  const updateWorkItem = (id, field, value) => {
-    setWorkItems(workItems.map(item => 
-      item.id === id ? { ...item, [field]: value } : item
-    ));
-  };
-  
-  const removeWorkItem = (id) => {
-    setWorkItems(workItems.filter(item => item.id !== id));
-  };
-  
-  const totalAdditional = workItems.reduce((sum, item) => 
-    sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
-  );
-  
-  const saveAndComplete = async () => {
-    setSaving(true);
-    console.log('Saving device inspection:', device.id, device);
-    
-    if (!device.id) {
-      notify('Erreur: ID appareil manquant', 'error');
-      alert('Device ID is missing! Check console.');
-      setSaving(false);
-      return;
-    }
-    
-    // Convert checklist array to object for storage
-    const checklistObj = {};
-    checklist.forEach(item => { checklistObj[item.id] = item.checked; });
-    
-    try {
-      const updateData = {
-        service_findings: findings,
-        additional_work_needed: additionalWorkNeeded,
-        additional_work_items: additionalWorkNeeded ? workItems : [],
-        work_completed: workCompleted,
-        work_checklist: checklistObj,
-        inspection_complete: true,
-        inspection_completed_at: new Date().toISOString(),
-        status: 'inspection'
-      };
-      console.log('Update data:', updateData);
-      console.log('Device ID:', device.id);
-      
-      const { data, error } = await supabase
-        .from('request_devices')
-        .update(updateData)
-        .eq('id', device.id)
-        .select();
-      
-      console.log('Supabase response:', { data, error });
-      
-      if (error) {
-        console.error('Supabase error:', error);
-        alert('Save error: ' + JSON.stringify(error));
-        throw error;
-      }
-      
-      if (!data || data.length === 0) {
-        console.warn('No data returned - update may have failed silently');
-        alert('Warning: No data returned. Columns may not exist in database. Run the SQL migration!');
-      } else {
-        notify('✓ Inspection enregistrée!');
-        setEditMode(false);
-        reload();
-        onBack();
-      }
-    } catch (err) {
-      console.error('Save error:', err);
-      notify('Erreur: ' + err.message, 'error');
-    }
-    setSaving(false);
-  };
+  const toggleChecklistItem = (id) => setChecklist(checklist.map(item => item.id === id ? { ...item, checked: !item.checked } : item));
+  const addWorkItem = () => setWorkItems([...workItems, { id: Date.now(), description: '', quantity: 1, price: 0 }]);
+  const updateWorkItem = (id, field, value) => setWorkItems(workItems.map(item => item.id === id ? { ...item, [field]: value } : item));
+  const removeWorkItem = (id) => setWorkItems(workItems.filter(item => item.id !== id));
+  const totalAdditional = workItems.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0);
+  const canPreviewReport = findings.trim() && workCompleted.trim();
   
   const saveProgress = async () => {
     setSaving(true);
-    console.log('Saving progress for device:', device.id, device);
-    
-    if (!device.id) {
-      notify('Erreur: ID appareil manquant', 'error');
-      alert('Device ID is missing! Check console.');
-      setSaving(false);
-      return;
-    }
-    
+    const checklistObj = {};
+    checklist.forEach(item => { checklistObj[item.id] = item.checked; });
     try {
-      // Convert checklist array to object for storage
-      const checklistObj = {};
-      checklist.forEach(item => { checklistObj[item.id] = item.checked; });
-      
-      const updateData = {
-        service_findings: findings,
-        additional_work_needed: additionalWorkNeeded,
+      const { error } = await supabase.from('request_devices').update({
+        service_findings: findings, additional_work_needed: additionalWorkNeeded,
         additional_work_items: additionalWorkNeeded ? workItems : [],
-        work_completed: workCompleted,
-        work_checklist: checklistObj
-      };
-      console.log('Update data:', updateData);
-      console.log('Device ID:', device.id);
-      
-      const { data, error } = await supabase
-        .from('request_devices')
-        .update(updateData)
-        .eq('id', device.id)
-        .select();
-      
-      console.log('Supabase response:', { data, error });
-      
-      if (error) {
-        console.error('Supabase error:', error);
-        alert('Save error: ' + JSON.stringify(error));
-        throw error;
-      }
-      
-      if (!data || data.length === 0) {
-        console.warn('No data returned - update may have failed silently');
-        alert('Warning: No data returned from update. Check if columns exist in database.');
-      }
-      
-      notify('✓ Progression enregistrée');
+        work_completed: workCompleted, work_checklist: checklistObj
+      }).eq('id', device.id);
+      if (error) throw error;
+      notify('✓ Enregistré');
       reload();
-    } catch (err) {
-      console.error('Save error:', err);
-      notify('Erreur: ' + err.message, 'error');
-    }
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+    setSaving(false);
+  };
+  
+  const completeReport = async () => {
+    setSaving(true);
+    const checklistObj = {};
+    checklist.forEach(item => { checklistObj[item.id] = item.checked; });
+    try {
+      const { error } = await supabase.from('request_devices').update({
+        service_findings: findings, additional_work_needed: additionalWorkNeeded,
+        additional_work_items: additionalWorkNeeded ? workItems : [],
+        work_completed: workCompleted, work_checklist: checklistObj,
+        report_complete: true, report_completed_at: new Date().toISOString(), status: 'final_qc'
+      }).eq('id', device.id);
+      if (error) throw error;
+      notify('✓ Rapport terminé → QC!');
+      reload();
+      onBack();
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
     setSaving(false);
   };
 
-  // Read-only view when inspection is complete and not in edit mode
-  if (isComplete && !editMode) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">← Retour</button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800">SERVICE - {device.model_name}</h1>
-              <p className="text-gray-500">SN: {device.serial_number} • RMA: {rma.request_number}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">✓ Inspection terminée</span>
-            {!isLocked && (
-              <button onClick={() => setEditMode(true)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">✏️ Modifier</button>
-            )}
-            {isLocked && (
-              <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium">🔒 Verrouillé</span>
-            )}
-          </div>
-        </div>
-
-        <div className="grid lg:grid-cols-3 gap-6">
-          <div className="space-y-4">
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="font-bold text-gray-700 mb-3">Appareil</h3>
-              <div className="space-y-2">
-                <div><p className="text-xs text-gray-500">Modèle</p><p className="font-bold text-gray-800">{device.model_name}</p></div>
-                <div><p className="text-xs text-gray-500">Numéro de série</p><p className="font-medium text-gray-800">{device.serial_number}</p></div>
-                <div><p className="text-xs text-gray-500">Service</p><p className="font-medium text-gray-800">{device.service_type === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}</p></div>
-              </div>
-            </div>
-            {device.notes && (
-              <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
-                <h3 className="font-bold text-amber-800 mb-2">📝 Notes du Client</h3>
-                <p className="text-amber-900">"{device.notes}"</p>
-              </div>
-            )}
-          </div>
-
-          <div className="lg:col-span-2 space-y-4">
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="font-bold text-gray-700 mb-2">CONSTATATIONS</h3>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-gray-800 whitespace-pre-wrap">{device.service_findings || 'Aucune constatation'}</p>
-              </div>
-            </div>
-
-            {device.additional_work_needed && device.additional_work_items?.length > 0 && (
-              <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
-                <h3 className="font-bold text-amber-800 mb-3">TRAVAUX SUPPLÉMENTAIRES</h3>
-                <div className="space-y-2">
-                  {device.additional_work_items.map((item, idx) => (
-                    <div key={idx} className="flex justify-between bg-white rounded-lg p-3">
-                      <span>{item.description} {item.quantity > 1 ? `(×${item.quantity})` : ''}</span>
-                      <span className="font-bold">€{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 pt-4 border-t border-amber-300 flex justify-between">
-                  <span className="font-bold text-amber-800">Total:</span>
-                  <span className="text-xl font-bold text-amber-900">€{device.additional_work_items.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0).toFixed(2)}</span>
-                </div>
-              </div>
-            )}
-
-            {!device.additional_work_needed && (
-              <div className="bg-green-50 border-2 border-green-300 rounded-xl p-4">
-                <p className="text-green-800 font-medium">✓ Aucun travail supplémentaire nécessaire (RAS)</p>
-              </div>
-            )}
-
-            {/* Travaux Réalisés - Read Only */}
-            {(device.work_completed || device.work_checklist) && (
-              <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-4">
-                <h3 className="font-bold text-blue-800 mb-3">TRAVAUX RÉALISÉS</h3>
-                
-                {device.work_checklist && Object.keys(device.work_checklist).length > 0 && (
-                  <div className="mb-4">
-                    <p className="text-xs text-blue-600 uppercase font-medium mb-2">Checklist</p>
-                    <div className="space-y-1">
-                      {Object.entries(device.work_checklist).map(([key, checked]) => (
-                        <div key={key} className="flex items-center gap-2 text-sm">
-                          <span className={checked ? 'text-green-600' : 'text-gray-400'}>{checked ? '✓' : '○'}</span>
-                          <span className={checked ? 'text-green-700' : 'text-gray-500'}>{key.replace(/_/g, ' ')}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {device.work_completed && (
-                  <div>
-                    <p className="text-xs text-blue-600 uppercase font-medium mb-2">Description</p>
-                    <p className="text-blue-900 whitespace-pre-wrap">{device.work_completed}</p>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
+  if (showReportPreview) {
+    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} />;
   }
-  
-  // Edit mode view
+
+  const renderActionButtons = () => {
+    if (reportComplete) return <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">✓ Rapport terminé</span>;
+    if (!additionalWorkNeeded) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button><button onClick={() => setShowReportPreview(true)} disabled={!canPreviewReport} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50">📄 Aperçu Rapport →</button></>);
+    if (additionalWorkNeeded && !avenantSent) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button><span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">⚠️ Créer avenant depuis page RMA</span></>);
+    if (additionalWorkNeeded && avenantSent && !avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button><span className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg">⏳ Attente approbation</span></>);
+    if (additionalWorkNeeded && avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button><button onClick={() => setShowReportPreview(true)} disabled={!canPreviewReport} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50">📄 Aperçu Rapport →</button></>);
+    return null;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">← Retour</button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">SERVICE - {device.model_name}</h1>
-            <p className="text-gray-500">SN: {device.serial_number} • RMA: {rma.request_number}</p>
-          </div>
+          <div><h1 className="text-2xl font-bold text-gray-800">SERVICE - {device.model_name}</h1><p className="text-gray-500">SN: {device.serial_number} • RMA: {rma.request_number}</p></div>
         </div>
-        <div className="flex items-center gap-3">
-          {isComplete && <button onClick={() => setEditMode(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Annuler</button>}
-          <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button>
-          <button onClick={saveAndComplete} disabled={saving || !findings.trim()} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50">
-            {saving ? 'Enregistrement...' : isComplete ? 'Mettre à jour' : 'Terminer Inspection →'}
-          </button>
-        </div>
+        <div className="flex items-center gap-3">{renderActionButtons()}</div>
       </div>
+
+      {additionalWorkNeeded && (
+        <div className={`rounded-lg p-3 ${avenantApproved ? 'bg-green-100 border border-green-300' : avenantSent ? 'bg-purple-100 border border-purple-300' : 'bg-amber-100 border border-amber-300'}`}>
+          <span className={`font-medium ${avenantApproved ? 'text-green-800' : avenantSent ? 'text-purple-800' : 'text-amber-800'}`}>
+            {avenantApproved ? '✓ Avenant approuvé par le client' : avenantSent ? '📤 Avenant envoyé - En attente approbation' : '⚠️ Travaux supplémentaires détectés - Avenant requis'}
+          </span>
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="space-y-4">
@@ -1469,13 +1274,13 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
             <h3 className="font-bold text-gray-700 mb-3">Appareil</h3>
             <div className="space-y-2">
               <div><p className="text-xs text-gray-500">Modèle</p><p className="font-bold text-gray-800">{device.model_name}</p></div>
-              <div><p className="text-xs text-gray-500">Numéro de série</p><p className="font-medium text-gray-800">{device.serial_number}</p></div>
-              <div><p className="text-xs text-gray-500">Service</p><p className="font-medium text-gray-800">{device.service_type === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}</p></div>
+              <div><p className="text-xs text-gray-500">N° série</p><p className="font-medium text-gray-800">{device.serial_number}</p></div>
+              <div><p className="text-xs text-gray-500">Service</p><p className="font-medium">{device.service_type === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}</p></div>
             </div>
           </div>
           {device.notes && (
             <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
-              <h3 className="font-bold text-amber-800 mb-2">📝 Notes du Client</h3>
+              <h3 className="font-bold text-amber-800 mb-2">📝 Notes Client</h3>
               <p className="text-amber-900">"{device.notes}"</p>
             </div>
           )}
@@ -1487,44 +1292,40 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
 
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-white rounded-xl shadow-sm border p-4">
-            <h3 className="font-bold text-gray-700 mb-2">CONSTATATIONS (Findings) *</h3>
-            <p className="text-sm text-gray-500 mb-3">Décrivez ce que vous avez observé. Cette description apparaîtra sur le rapport et l'avenant.</p>
-            <textarea value={findings} onChange={e => setFindings(e.target.value)} placeholder="Ex: Le laser montre des signes de faiblesse..." className="w-full px-4 py-3 border border-gray-300 rounded-xl h-40 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+            <h3 className="font-bold text-gray-700 mb-2">1. CONSTATATIONS *</h3>
+            <p className="text-sm text-gray-500 mb-3">Ce que vous avez observé (apparaît sur rapport et avenant)</p>
+            <textarea value={findings} onChange={e => setFindings(e.target.value)} placeholder="Ex: Calibration effectuée selon les spécifications..." className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="font-bold text-gray-800">Travaux supplémentaires nécessaires ?</h3>
-                <p className="text-sm text-gray-500">Pièces ou main d'œuvre en plus du service original</p>
+                <h3 className="font-bold text-gray-800">2. Travaux supplémentaires ?</h3>
+                <p className="text-sm text-gray-500">Pièces ou main d'œuvre en plus</p>
               </div>
               <div className="flex gap-3">
-                <button onClick={() => setAdditionalWorkNeeded(false)} className={`px-4 py-2 rounded-lg font-medium transition-all ${!additionalWorkNeeded ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>Non (RAS)</button>
-                <button onClick={() => setAdditionalWorkNeeded(true)} className={`px-4 py-2 rounded-lg font-medium transition-all ${additionalWorkNeeded ? 'bg-amber-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>Oui</button>
+                <button onClick={() => setAdditionalWorkNeeded(false)} className={`px-4 py-2 rounded-lg font-medium ${!additionalWorkNeeded ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>Non (RAS)</button>
+                <button onClick={() => setAdditionalWorkNeeded(true)} className={`px-4 py-2 rounded-lg font-medium ${additionalWorkNeeded ? 'bg-amber-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>Oui</button>
               </div>
             </div>
-          
             {additionalWorkNeeded && (
               <div className="border-t pt-4">
-                <h4 className="font-medium text-gray-700 mb-3">PIÈCES ET MAIN D'ŒUVRE</h4>
                 <div className="space-y-2">
                   {workItems.map((item, idx) => (
                     <div key={item.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
                       <span className="text-gray-400 w-6">{idx + 1}.</span>
                       <input type="text" value={item.description} onChange={e => updateWorkItem(item.id, 'description', e.target.value)} placeholder="Description" className="flex-1 px-3 py-2 border rounded-lg" />
                       <input type="number" value={item.quantity} onChange={e => updateWorkItem(item.id, 'quantity', e.target.value)} className="w-16 px-3 py-2 border rounded-lg text-center" min="1" />
-                      <div className="flex items-center gap-1">
-                        <span className="text-gray-400">€</span>
-                        <input type="number" value={item.price} onChange={e => updateWorkItem(item.id, 'price', e.target.value)} placeholder="Prix" className="w-24 px-3 py-2 border rounded-lg text-right" step="0.01" />
-                      </div>
+                      <span className="text-gray-400">€</span>
+                      <input type="number" value={item.price} onChange={e => updateWorkItem(item.id, 'price', e.target.value)} className="w-24 px-3 py-2 border rounded-lg text-right" step="0.01" />
                       <button onClick={() => removeWorkItem(item.id)} className="p-2 text-red-500 hover:bg-red-100 rounded">✕</button>
                     </div>
                   ))}
                 </div>
-                <button onClick={addWorkItem} className="mt-3 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium">+ Ajouter ligne</button>
+                <button onClick={addWorkItem} className="mt-3 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">+ Ajouter</button>
                 {workItems.length > 0 && (
-                  <div className="mt-4 pt-4 border-t flex justify-between items-center">
-                    <span className="font-medium text-gray-700">Sous-total:</span>
+                  <div className="mt-4 pt-4 border-t flex justify-between">
+                    <span className="font-medium">Sous-total:</span>
                     <span className="text-xl font-bold text-amber-700">€{totalAdditional.toFixed(2)}</span>
                   </div>
                 )}
@@ -1532,41 +1333,21 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
             )}
           </div>
 
-          {/* TRAVAUX RÉALISÉS Section */}
           <div className="bg-white rounded-xl shadow-sm border p-4">
-            <h3 className="font-bold text-gray-700 mb-2">TRAVAUX RÉALISÉS</h3>
-            <p className="text-sm text-gray-500 mb-4">Cochez les étapes effectuées et décrivez le travail réalisé. Cette section peut être remplie avant ou après l'approbation du client.</p>
-            
-            {/* Checklist */}
+            <h3 className="font-bold text-gray-700 mb-2">3. TRAVAUX RÉALISÉS *</h3>
+            <p className="text-sm text-gray-500 mb-4">Cochez et décrivez le travail effectué</p>
             <div className="bg-gray-50 rounded-lg p-4 mb-4">
-              <p className="text-xs text-gray-500 uppercase font-medium mb-3">Checklist {device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation'}</p>
+              <p className="text-xs text-gray-500 uppercase mb-3">Checklist</p>
               <div className="space-y-2">
                 {checklist.map(item => (
                   <label key={item.id} className="flex items-center gap-3 cursor-pointer hover:bg-gray-100 p-2 rounded-lg">
-                    <input 
-                      type="checkbox" 
-                      checked={item.checked} 
-                      onChange={() => toggleChecklistItem(item.id)}
-                      className="w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500"
-                    />
+                    <input type="checkbox" checked={item.checked} onChange={() => toggleChecklistItem(item.id)} className="w-5 h-5 rounded text-green-600" />
                     <span className={item.checked ? 'text-green-700' : 'text-gray-700'}>{item.label}</span>
                   </label>
                 ))}
               </div>
             </div>
-            
-            {/* Work Description */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Description des travaux effectués
-              </label>
-              <textarea 
-                value={workCompleted} 
-                onChange={e => setWorkCompleted(e.target.value)} 
-                placeholder="Décrivez en détail les travaux réalisés: pièces remplacées, ajustements effectués, résultats des tests..."
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl h-32 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
+            <textarea value={workCompleted} onChange={e => setWorkCompleted(e.target.value)} placeholder="Décrivez les travaux réalisés..." className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
           </div>
         </div>
       </div>
@@ -1574,8 +1355,103 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload }) {
   );
 }
 
+function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving }) {
+  const totalAdditional = (workItems || []).reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0);
 
-// Avenant Preview Modal
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">← Retour</button>
+          <div><h1 className="text-2xl font-bold text-gray-800">📄 Aperçu Rapport</h1><p className="text-gray-500">{device.model_name} • SN: {device.serial_number}</p></div>
+        </div>
+        <div className="flex items-center gap-3">
+          {canComplete ? (
+            <button onClick={onComplete} disabled={saving} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50">{saving ? 'Envoi...' : '✓ Terminer Rapport → QC'}</button>
+          ) : (
+            <span className="px-4 py-2 bg-amber-100 text-amber-700 rounded-lg">⏳ Approbation client requise</span>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-lg border-2 border-gray-300 overflow-hidden max-w-4xl mx-auto">
+        <div className="bg-[#1a1a2e] text-white p-6">
+          <div className="flex justify-between items-start">
+            <div><h2 className="text-2xl font-bold">LIGHTHOUSE FRANCE</h2><p className="text-gray-300">Rapport de Service</p></div>
+            <div className="text-right"><p className="text-xl font-bold text-[#00A651]">RAPPORT</p><p className="text-gray-300">RMA: {rma.request_number}</p><p className="text-gray-400 text-sm">{new Date().toLocaleDateString('fr-FR')}</p></div>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-2 border-b">
+          <div className="p-4 border-r">
+            <p className="text-xs text-gray-500 uppercase mb-1">Client</p>
+            <p className="font-bold text-gray-800">{rma.companies?.name}</p>
+            {rma.companies?.billing_address && <p className="text-sm text-gray-600">{rma.companies.billing_address}</p>}
+          </div>
+          <div className="p-4">
+            <p className="text-xs text-gray-500 uppercase mb-1">Appareil</p>
+            <p className="font-bold text-gray-800">{device.model_name}</p>
+            <p className="text-sm text-gray-600">N° série: {device.serial_number}</p>
+          </div>
+        </div>
+
+        <div className="p-6 border-b">
+          <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+            <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm">1</span>
+            CONSTATATIONS
+          </h3>
+          <div className="bg-gray-50 rounded-lg p-4"><p className="text-gray-700 whitespace-pre-wrap">{findings}</p></div>
+        </div>
+
+        {additionalWorkNeeded && workItems?.length > 0 && (
+          <div className="p-6 border-b bg-amber-50">
+            <h3 className="font-bold text-amber-800 mb-3 flex items-center gap-2">
+              <span className="w-6 h-6 bg-amber-500 text-white rounded-full flex items-center justify-center text-sm">2</span>
+              TRAVAUX SUPPLÉMENTAIRES
+            </h3>
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-amber-200"><th className="text-left py-2">Description</th><th className="text-center py-2 w-16">Qté</th><th className="text-right py-2 w-24">Prix</th><th className="text-right py-2 w-24">Total</th></tr></thead>
+              <tbody>
+                {workItems.map((item, idx) => (
+                  <tr key={idx} className="border-b border-amber-100">
+                    <td className="py-2">{item.description}</td>
+                    <td className="py-2 text-center">{item.quantity}</td>
+                    <td className="py-2 text-right">€{(parseFloat(item.price) || 0).toFixed(2)}</td>
+                    <td className="py-2 text-right font-medium">€{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot><tr><td colSpan={3} className="py-2 text-right font-bold">Total:</td><td className="py-2 text-right font-bold">€{totalAdditional.toFixed(2)}</td></tr></tfoot>
+            </table>
+          </div>
+        )}
+
+        <div className="p-6 border-b">
+          <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+            <span className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm">{additionalWorkNeeded ? '3' : '2'}</span>
+            TRAVAUX RÉALISÉS
+          </h3>
+          <div className="bg-green-50 rounded-lg p-4 mb-4">
+            <div className="grid md:grid-cols-2 gap-2">
+              {checklist.map(item => (
+                <div key={item.id} className="flex items-center gap-2">
+                  <span className={item.checked ? 'text-green-600' : 'text-gray-400'}>{item.checked ? '✓' : '○'}</span>
+                  <span className={item.checked ? 'text-green-700' : 'text-gray-500'}>{item.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-4"><p className="text-gray-700 whitespace-pre-wrap">{workCompleted}</p></div>
+        </div>
+
+        <div className="bg-gray-100 p-4 text-center text-sm text-gray-500">
+          <p>LIGHTHOUSE FRANCE • Ce rapport sera stocké après validation QC</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySent }) {
   const [sending, setSending] = useState(false);
   const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
