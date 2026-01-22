@@ -1156,7 +1156,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
 }
 
 // Device Service Modal - For filling inspection/findings
-function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, staffMembers }) {
+function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
   const [findings, setFindings] = useState(device.service_findings || '');
   const [additionalWorkNeeded, setAdditionalWorkNeeded] = useState(device.additional_work_needed || false);
   const [workItems, setWorkItems] = useState(device.additional_work_items || []);
@@ -1165,6 +1165,16 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, staf
   const [showReportPreview, setShowReportPreview] = useState(false);
   const [partsLoading, setPartsLoading] = useState({});
   const [technicianName, setTechnicianName] = useState(device.technician_name || profile?.full_name || '');
+  const [staffMembers, setStaffMembers] = useState([]);
+  
+  // Load staff members for technician dropdown
+  useEffect(() => {
+    const loadStaff = async () => {
+      const { data } = await supabase.from('profiles').select('id, full_name').order('full_name');
+      if (data) setStaffMembers(data);
+    };
+    loadStaff();
+  }, []);
   
   const avenantSent = rma.avenant_sent_at;
   const avenantApproved = rma.avenant_approved_at;
@@ -1276,7 +1286,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, staf
   };
 
   if (showReportPreview) {
-    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} technicianName={technicianName} />;
+    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} technicianName={technicianName} setTechnicianName={setTechnicianName} staffMembers={staffMembers} />;
   }
 
   const renderActionButtons = () => {
@@ -1328,13 +1338,17 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, staf
           </div>
           <div className="bg-gray-50 rounded-xl border p-4">
             <h3 className="font-bold text-gray-700 mb-2">Technicien(ne) de service</h3>
-            <input 
-              type="text" 
+            <select 
               value={technicianName} 
               onChange={e => setTechnicianName(e.target.value)}
-              placeholder="Nom du technicien..."
               className="w-full px-3 py-2 border rounded-lg text-sm"
-            />
+            >
+              <option value="">— Sélectionner —</option>
+              {staffMembers.map(s => (
+                <option key={s.id} value={s.full_name}>{s.full_name}</option>
+              ))}
+              <option value="Lighthouse France">Lighthouse France</option>
+            </select>
           </div>
         </div>
 
@@ -1416,10 +1430,26 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, staf
 }
 
 // Report Preview Modal - Exact replica of official Lighthouse France Rapport PDF
-function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving, technicianName }) {
+function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving, technicianName, setTechnicianName, staffMembers }) {
   const today = new Date().toLocaleDateString('fr-FR');
   const serviceTypeText = device.service_type === 'calibration' ? 'Étalonnage' : device.service_type === 'repair' ? 'Réparation' : 'Étalonnage et Réparation';
   const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
+  
+  // Toggleable/editable report fields
+  const [showCalType, setShowCalType] = useState(device.service_type === 'calibration' || device.service_type === 'both');
+  const [calType, setCalType] = useState('ISO 21501-4 Calibration');
+  const [showReceptionResult, setShowReceptionResult] = useState(true);
+  const [receptionResult, setReceptionResult] = useState('Conforme');
+  
+  const calTypeOptions = [
+    'ISO 21501-4 Calibration',
+    'ISO 21501-4 Particle Counter',
+    'ISO 14644-3 Calibration', 
+    'JIS B 9921 Calibration',
+    'Factory Calibration'
+  ];
+  
+  const receptionOptions = ['Conforme', 'Non conforme', 'À vérifier'];
   
   return (
     <div className="space-y-6">
@@ -1434,6 +1464,45 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
           ) : (
             <span className="px-4 py-2 bg-amber-100 text-amber-700 rounded-lg">⏳ Approbation client requise</span>
           )}
+        </div>
+      </div>
+
+      {/* Report Options - Toggles and selectors */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+        <h3 className="font-bold text-blue-800 mb-3">Options du rapport</h3>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div>
+            <label className="text-sm text-gray-600 block mb-1">Technicien(ne)</label>
+            <select value={technicianName} onChange={e => setTechnicianName(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+              <option value="">— Sélectionner —</option>
+              {staffMembers && staffMembers.map(s => (
+                <option key={s.id} value={s.full_name}>{s.full_name}</option>
+              ))}
+              <option value="Lighthouse France">Lighthouse France</option>
+            </select>
+          </div>
+          <div>
+            <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+              <input type="checkbox" checked={showCalType} onChange={e => setShowCalType(e.target.checked)} className="rounded" />
+              Étalonnage effectué
+            </label>
+            {showCalType && (
+              <select value={calType} onChange={e => setCalType(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+                {calTypeOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            )}
+          </div>
+          <div>
+            <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+              <input type="checkbox" checked={showReceptionResult} onChange={e => setShowReceptionResult(e.target.checked)} className="rounded" />
+              Résultats réception
+            </label>
+            {showReceptionResult && (
+              <select value={receptionResult} onChange={e => setReceptionResult(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+                {receptionOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1467,9 +1536,9 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
           {/* Info Table - Client/Device info */}
           <table className="w-full text-sm mb-6" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: '140px' }} />
+              <col style={{ width: '150px' }} />
               <col />
-              <col style={{ width: '220px' }} />
+              <col style={{ width: '240px' }} />
             </colgroup>
             <tbody>
               {/* Row 1: Date + RMA */}
@@ -1529,7 +1598,7 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
           {/* Content Sections */}
           <table className="w-full text-sm" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: '140px' }} />
+              <col style={{ width: '170px' }} />
               <col />
             </colgroup>
             <tbody>
@@ -1539,24 +1608,26 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
                 <td className="pt-6 pb-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word' }}>{motifText}</td>
               </tr>
               
-              {/* Étalonnage effectué - only for calibration */}
-              {device.service_type === 'calibration' && (
+              {/* Étalonnage effectué - toggleable */}
+              {showCalType && (
                 <tr>
                   <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Étalonnage effectué</td>
-                  <td className="py-2 text-gray-800">ISO 21501-4 Calibration</td>
+                  <td className="py-2 text-gray-800">{calType}</td>
                 </tr>
               )}
               
-              {/* Résultats à la réception - tight with above */}
-              <tr>
-                <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Résultats à la réception</td>
-                <td className="py-2 text-gray-800">Conforme</td>
-              </tr>
+              {/* Résultats à la réception - toggleable */}
+              {showReceptionResult && (
+                <tr>
+                  <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Résultats à la réception</td>
+                  <td className="py-2 text-gray-800">{receptionResult}</td>
+                </tr>
+              )}
               
               {/* Constatations (Tech findings) */}
               <tr>
-                <td className="pt-4 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Constatations</td>
-                <td className="pt-4 pb-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{findings || '—'}</td>
+                <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Constatations</td>
+                <td className="pt-6 pb-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{findings || '—'}</td>
               </tr>
               
               {/* Actions effectuées (Work description) */}
@@ -1567,8 +1638,8 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
               
               {/* Travaux réalisés (Checklist) - more space above */}
               <tr>
-                <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Travaux réalisés</td>
-                <td className="pt-6 pb-2">
+                <td className="pt-10 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Travaux réalisés</td>
+                <td className="pt-10 pb-2">
                   <div className="space-y-1">
                     {checklist.filter(item => item.checked).map(item => (
                       <div key={item.id} className="flex items-center gap-2">
