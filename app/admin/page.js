@@ -1173,12 +1173,12 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
   
   const calTypeOptions = [
     { value: 'none', label: 'Ne pas afficher' },
-    { value: 'Étalonnage ISO 21501-4', label: 'Étalonnage ISO 21501-4' },
-    { value: 'Étalonnage Non-ISO', label: 'Étalonnage Non-ISO' },
-    { value: 'Étalonnage Bio Collecteur', label: 'Étalonnage Bio Collecteur' },
-    { value: 'Étalonnage Compteur Liquide', label: 'Étalonnage Compteur Liquide' },
-    { value: 'Étalonnage Sonde de Température', label: 'Étalonnage Sonde de Température' },
-    { value: 'Étalonnage Diluteur', label: 'Étalonnage Diluteur' }
+    { value: 'ISO 21501-4', label: 'ISO 21501-4' },
+    { value: 'Non-ISO', label: 'Non-ISO' },
+    { value: 'Bio Collecteur', label: 'Bio Collecteur' },
+    { value: 'Compteur Liquide', label: 'Compteur Liquide' },
+    { value: 'Sonde de Température', label: 'Sonde de Température' },
+    { value: 'Diluteur', label: 'Diluteur' }
   ];
   
   const receptionOptions = [
@@ -1268,6 +1268,24 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
   const totalAdditional = workItems.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0);
   const canPreviewReport = findings.trim() && workCompleted.trim() && technicianName && calType && receptionResult;
   
+  const getValidationMessage = () => {
+    const missing = [];
+    if (!technicianName) missing.push('Technicien');
+    if (!calType) missing.push('Étalonnage effectué');
+    if (!receptionResult) missing.push('Résultats à la réception');
+    if (!findings.trim()) missing.push('Constatations');
+    if (!workCompleted.trim()) missing.push('Actions effectuées');
+    return missing.length > 0 ? `Veuillez remplir: ${missing.join(', ')}` : null;
+  };
+  
+  const handlePreviewClick = () => {
+    if (canPreviewReport) {
+      setShowReportPreview(true);
+    } else {
+      notify(getValidationMessage(), 'error');
+    }
+  };
+  
   const saveProgress = async () => {
     setSaving(true);
     const checklistObj = {};
@@ -1312,10 +1330,10 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
 
   const renderActionButtons = () => {
     if (reportComplete) return <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">✓ Rapport terminé</span>;
-    if (!additionalWorkNeeded) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button><button onClick={() => setShowReportPreview(true)} disabled={!canPreviewReport} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50">📄 Aperçu Rapport →</button></>);
+    if (!additionalWorkNeeded) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">📄 Aperçu Rapport →</button></>);
     if (additionalWorkNeeded && !avenantSent) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button><span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">⚠️ Créer avenant depuis page RMA</span></>);
     if (additionalWorkNeeded && avenantSent && !avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button><span className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg">⏳ Attente approbation</span></>);
-    if (additionalWorkNeeded && avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button><button onClick={() => setShowReportPreview(true)} disabled={!canPreviewReport} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50">📄 Aperçu Rapport →</button></>);
+    if (additionalWorkNeeded && avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">📄 Aperçu Rapport →</button></>);
     return null;
   };
 
@@ -1532,15 +1550,15 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
             <table className="w-full text-sm mb-6" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
               <colgroup>
                 <col style={{ width: '150px' }} />
+                <col style={{ width: '200px' }} />
                 <col />
-                <col style={{ width: '180px' }} />
               </colgroup>
               <tbody>
                 {/* Row 1: Date + RMA */}
                 <tr>
                   <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Date d'achèvement</td>
                   <td className="py-1 text-gray-800">{today}</td>
-                  <td className="py-1 text-gray-800 pl-4">
+                  <td className="py-1 text-gray-800">
                     <span className="font-bold text-[#003366]">RMA # </span>{rma.request_number}
                   </td>
                 </tr>
@@ -1561,7 +1579,7 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
                 <tr>
                   <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Code postal / Ville</td>
                   <td className="py-1 text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
-                  <td className="py-1 text-gray-800 pl-4">
+                  <td className="py-1 text-gray-800">
                     <span className="font-bold text-[#003366]">Contact </span>{rma.companies?.contact_name || '—'}
                   </td>
                 </tr>
@@ -1570,7 +1588,7 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
                 <tr>
                   <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Téléphone</td>
                   <td className="py-1 text-gray-800">{rma.companies?.phone || '—'}</td>
-                  <td className="py-1 text-gray-800 pl-4 align-top">
+                  <td className="py-1 text-gray-800 align-top">
                     <span className="font-bold text-[#003366]">Technicien(ne) de service</span>
                   </td>
                 </tr>
@@ -1579,7 +1597,7 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
                 <tr>
                   <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Modèle#</td>
                   <td className="py-1 text-gray-800">{device.model_name}</td>
-                  <td className="py-1 text-gray-800 pl-4">{technicianName || 'Lighthouse France'}</td>
+                  <td className="py-1 text-gray-800">{technicianName || 'Lighthouse France'}</td>
                 </tr>
                 
                 {/* Row 7: Numéro de série */}
