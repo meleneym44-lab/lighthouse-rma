@@ -1164,14 +1164,31 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
   const [saving, setSaving] = useState(false);
   const [showReportPreview, setShowReportPreview] = useState(false);
   const [partsLoading, setPartsLoading] = useState({});
-  const [technicianName, setTechnicianName] = useState(device.technician_name || profile?.full_name || '');
+  const [technicianName, setTechnicianName] = useState(device.technician_name || '');
   const [staffMembers, setStaffMembers] = useState([]);
+  
+  // Report options
+  const [showCalType, setShowCalType] = useState(false);
+  const [calType, setCalType] = useState('');
+  const [showReceptionResult, setShowReceptionResult] = useState(false);
+  const [receptionResult, setReceptionResult] = useState('');
+  
+  const calTypeOptions = [
+    'ISO 21501-4',
+    'Non-ISO',
+    'Bio Collector Calibration',
+    'Liquid Counter Calibration',
+    'Temperature Probe Calibration',
+    'Diluter Calibration'
+  ];
+  
+  const receptionOptions = ['Conforme', 'Non conforme', 'À vérifier'];
   
   // Load staff members for technician dropdown
   useEffect(() => {
     const loadStaff = async () => {
       const { data } = await supabase.from('profiles').select('id, full_name').order('full_name');
-      if (data) setStaffMembers(data);
+      if (data) setStaffMembers(data.filter(s => s.full_name)); // Only show profiles with names
     };
     loadStaff();
   }, []);
@@ -1245,7 +1262,8 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
   };
   
   const totalAdditional = workItems.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0);
-  const canPreviewReport = findings.trim() && workCompleted.trim();
+  const canPreviewReport = findings.trim() && workCompleted.trim() && technicianName && 
+    (!showCalType || calType) && (!showReceptionResult || receptionResult);
   
   const saveProgress = async () => {
     setSaving(true);
@@ -1286,7 +1304,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
   };
 
   if (showReportPreview) {
-    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} technicianName={technicianName} setTechnicianName={setTechnicianName} staffMembers={staffMembers} />;
+    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} technicianName={technicianName} calType={calType} showCalType={showCalType} receptionResult={receptionResult} showReceptionResult={showReceptionResult} />;
   }
 
   const renderActionButtons = () => {
@@ -1336,19 +1354,53 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
             <h3 className="font-bold text-gray-700 mb-2">Client</h3>
             <p className="font-medium text-gray-800">{rma.companies?.name}</p>
           </div>
-          <div className="bg-gray-50 rounded-xl border p-4">
-            <h3 className="font-bold text-gray-700 mb-2">Technicien(ne) de service</h3>
-            <select 
-              value={technicianName} 
-              onChange={e => setTechnicianName(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg text-sm"
-            >
-              <option value="">— Sélectionner —</option>
-              {staffMembers.map(s => (
-                <option key={s.id} value={s.full_name}>{s.full_name}</option>
-              ))}
-              <option value="Lighthouse France">Lighthouse France</option>
-            </select>
+          
+          {/* Report Options Section */}
+          <div className="bg-blue-50 rounded-xl border border-blue-200 p-4 space-y-3">
+            <h3 className="font-bold text-blue-800">Options du Rapport</h3>
+            
+            {/* Technician */}
+            <div>
+              <label className="text-sm text-gray-600 block mb-1">Technicien(ne) de service *</label>
+              <select 
+                value={technicianName} 
+                onChange={e => setTechnicianName(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg text-sm"
+              >
+                <option value="">— Sélectionner —</option>
+                {staffMembers.map(s => (
+                  <option key={s.id} value={s.full_name}>{s.full_name}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Calibration Type */}
+            <div>
+              <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+                <input type="checkbox" checked={showCalType} onChange={e => setShowCalType(e.target.checked)} className="rounded" />
+                Étalonnage effectué
+              </label>
+              {showCalType && (
+                <select value={calType} onChange={e => setCalType(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+                  <option value="">— Sélectionner type —</option>
+                  {calTypeOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+              )}
+            </div>
+            
+            {/* Reception Result */}
+            <div>
+              <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+                <input type="checkbox" checked={showReceptionResult} onChange={e => setShowReceptionResult(e.target.checked)} className="rounded" />
+                Résultats à la réception
+              </label>
+              {showReceptionResult && (
+                <select value={receptionResult} onChange={e => setReceptionResult(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+                  <option value="">— Sélectionner —</option>
+                  {receptionOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1430,26 +1482,10 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
 }
 
 // Report Preview Modal - Exact replica of official Lighthouse France Rapport PDF
-function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving, technicianName, setTechnicianName, staffMembers }) {
+function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving, technicianName, calType, showCalType, receptionResult, showReceptionResult }) {
   const today = new Date().toLocaleDateString('fr-FR');
   const serviceTypeText = device.service_type === 'calibration' ? 'Étalonnage' : device.service_type === 'repair' ? 'Réparation' : 'Étalonnage et Réparation';
   const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
-  
-  // Toggleable/editable report fields
-  const [showCalType, setShowCalType] = useState(device.service_type === 'calibration' || device.service_type === 'both');
-  const [calType, setCalType] = useState('ISO 21501-4 Calibration');
-  const [showReceptionResult, setShowReceptionResult] = useState(true);
-  const [receptionResult, setReceptionResult] = useState('Conforme');
-  
-  const calTypeOptions = [
-    'ISO 21501-4 Calibration',
-    'ISO 21501-4 Particle Counter',
-    'ISO 14644-3 Calibration', 
-    'JIS B 9921 Calibration',
-    'Factory Calibration'
-  ];
-  
-  const receptionOptions = ['Conforme', 'Non conforme', 'À vérifier'];
   
   return (
     <div className="space-y-6">
@@ -1464,45 +1500,6 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
           ) : (
             <span className="px-4 py-2 bg-amber-100 text-amber-700 rounded-lg">⏳ Approbation client requise</span>
           )}
-        </div>
-      </div>
-
-      {/* Report Options - Toggles and selectors */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-        <h3 className="font-bold text-blue-800 mb-3">Options du rapport</h3>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div>
-            <label className="text-sm text-gray-600 block mb-1">Technicien(ne)</label>
-            <select value={technicianName} onChange={e => setTechnicianName(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
-              <option value="">— Sélectionner —</option>
-              {staffMembers && staffMembers.map(s => (
-                <option key={s.id} value={s.full_name}>{s.full_name}</option>
-              ))}
-              <option value="Lighthouse France">Lighthouse France</option>
-            </select>
-          </div>
-          <div>
-            <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
-              <input type="checkbox" checked={showCalType} onChange={e => setShowCalType(e.target.checked)} className="rounded" />
-              Étalonnage effectué
-            </label>
-            {showCalType && (
-              <select value={calType} onChange={e => setCalType(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
-                {calTypeOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-              </select>
-            )}
-          </div>
-          <div>
-            <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
-              <input type="checkbox" checked={showReceptionResult} onChange={e => setShowReceptionResult(e.target.checked)} className="rounded" />
-              Résultats réception
-            </label>
-            {showReceptionResult && (
-              <select value={receptionResult} onChange={e => setReceptionResult(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
-                {receptionOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-              </select>
-            )}
-          </div>
         </div>
       </div>
 
@@ -1538,14 +1535,14 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
             <colgroup>
               <col style={{ width: '150px' }} />
               <col />
-              <col style={{ width: '240px' }} />
+              <col style={{ width: '200px' }} />
             </colgroup>
             <tbody>
               {/* Row 1: Date + RMA */}
               <tr>
                 <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Date d'achèvement</td>
                 <td className="py-1 text-gray-800">{today}</td>
-                <td className="py-1 text-gray-800 pl-8">
+                <td className="py-1 text-gray-800 pl-6">
                   <span className="font-bold text-[#003366]">RMA # </span>{rma.request_number}
                 </td>
               </tr>
@@ -1566,25 +1563,25 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
               <tr>
                 <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Code postal / Ville</td>
                 <td className="py-1 text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
-                <td className="py-1 text-gray-800 pl-8">
+                <td className="py-1 text-gray-800 pl-6">
                   <span className="font-bold text-[#003366]">Contact </span>{rma.companies?.contact_name || '—'}
                 </td>
               </tr>
               
-              {/* Row 5: Téléphone + Technicien */}
+              {/* Row 5: Téléphone + Technicien label */}
               <tr>
                 <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Téléphone</td>
                 <td className="py-1 text-gray-800">{rma.companies?.phone || '—'}</td>
-                <td className="py-1 text-gray-800 pl-8 align-top">
-                  <span className="font-bold text-[#003366]">Technicien(ne) de service </span>
-                  {technicianName || 'Lighthouse France'}
+                <td className="py-1 text-gray-800 pl-6 align-top">
+                  <span className="font-bold text-[#003366]">Technicien(ne) de service</span>
                 </td>
               </tr>
               
-              {/* Row 6: Modèle */}
+              {/* Row 6: Modèle + Technicien name */}
               <tr>
                 <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Modèle#</td>
-                <td className="py-1 text-gray-800" colSpan="2">{device.model_name}</td>
+                <td className="py-1 text-gray-800">{device.model_name}</td>
+                <td className="py-1 text-gray-800 pl-6">{technicianName || 'Lighthouse France'}</td>
               </tr>
               
               {/* Row 7: Numéro de série */}
