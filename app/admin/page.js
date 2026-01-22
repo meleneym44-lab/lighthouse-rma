@@ -1167,22 +1167,26 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
   const [technicianName, setTechnicianName] = useState(device.technician_name || '');
   const [staffMembers, setStaffMembers] = useState([]);
   
-  // Report options
-  const [showCalType, setShowCalType] = useState(false);
+  // Report options - empty string means not selected yet, 'none' means don't show
   const [calType, setCalType] = useState('');
-  const [showReceptionResult, setShowReceptionResult] = useState(false);
   const [receptionResult, setReceptionResult] = useState('');
   
   const calTypeOptions = [
-    'ISO 21501-4',
-    'Non-ISO',
-    'Bio Collector Calibration',
-    'Liquid Counter Calibration',
-    'Temperature Probe Calibration',
-    'Diluter Calibration'
+    { value: 'none', label: 'Ne pas afficher' },
+    { value: 'Étalonnage ISO 21501-4', label: 'Étalonnage ISO 21501-4' },
+    { value: 'Étalonnage Non-ISO', label: 'Étalonnage Non-ISO' },
+    { value: 'Étalonnage Bio Collecteur', label: 'Étalonnage Bio Collecteur' },
+    { value: 'Étalonnage Compteur Liquide', label: 'Étalonnage Compteur Liquide' },
+    { value: 'Étalonnage Sonde de Température', label: 'Étalonnage Sonde de Température' },
+    { value: 'Étalonnage Diluteur', label: 'Étalonnage Diluteur' }
   ];
   
-  const receptionOptions = ['Conforme', 'Non conforme', 'À vérifier'];
+  const receptionOptions = [
+    { value: 'none', label: 'Ne pas afficher' },
+    { value: 'Conforme', label: 'Conforme' },
+    { value: 'Non conforme', label: 'Non conforme' },
+    { value: 'À vérifier', label: 'À vérifier' }
+  ];
   
   // Load staff members for technician dropdown
   useEffect(() => {
@@ -1262,8 +1266,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
   };
   
   const totalAdditional = workItems.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0);
-  const canPreviewReport = findings.trim() && workCompleted.trim() && technicianName && 
-    (!showCalType || calType) && (!showReceptionResult || receptionResult);
+  const canPreviewReport = findings.trim() && workCompleted.trim() && technicianName && calType && receptionResult;
   
   const saveProgress = async () => {
     setSaving(true);
@@ -1304,7 +1307,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
   };
 
   if (showReportPreview) {
-    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} technicianName={technicianName} calType={calType} showCalType={showCalType} receptionResult={receptionResult} showReceptionResult={showReceptionResult} />;
+    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} technicianName={technicianName} calType={calType} receptionResult={receptionResult} />;
   }
 
   const renderActionButtons = () => {
@@ -1376,30 +1379,20 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
             
             {/* Calibration Type */}
             <div>
-              <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
-                <input type="checkbox" checked={showCalType} onChange={e => setShowCalType(e.target.checked)} className="rounded" />
-                Étalonnage effectué
-              </label>
-              {showCalType && (
-                <select value={calType} onChange={e => setCalType(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
-                  <option value="">— Sélectionner type —</option>
-                  {calTypeOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                </select>
-              )}
+              <label className="text-sm text-gray-600 block mb-1">Étalonnage effectué *</label>
+              <select value={calType} onChange={e => setCalType(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+                <option value="">— Sélectionner —</option>
+                {calTypeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              </select>
             </div>
             
             {/* Reception Result */}
             <div>
-              <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
-                <input type="checkbox" checked={showReceptionResult} onChange={e => setShowReceptionResult(e.target.checked)} className="rounded" />
-                Résultats à la réception
-              </label>
-              {showReceptionResult && (
-                <select value={receptionResult} onChange={e => setReceptionResult(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
-                  <option value="">— Sélectionner —</option>
-                  {receptionOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                </select>
-              )}
+              <label className="text-sm text-gray-600 block mb-1">Résultats à la réception *</label>
+              <select value={receptionResult} onChange={e => setReceptionResult(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+                <option value="">— Sélectionner —</option>
+                {receptionOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              </select>
             </div>
           </div>
         </div>
@@ -1482,10 +1475,13 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
 }
 
 // Report Preview Modal - Exact replica of official Lighthouse France Rapport PDF
-function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving, technicianName, calType, showCalType, receptionResult, showReceptionResult }) {
+function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving, technicianName, calType, receptionResult }) {
   const today = new Date().toLocaleDateString('fr-FR');
   const serviceTypeText = device.service_type === 'calibration' ? 'Étalonnage' : device.service_type === 'repair' ? 'Réparation' : 'Étalonnage et Réparation';
   const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
+  
+  const showCalType = calType && calType !== 'none';
+  const showReceptionResult = receptionResult && receptionResult !== 'none';
   
   return (
     <div className="space-y-6">
@@ -1505,7 +1501,7 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
 
       {/* Report Document - Exact replica of PDF */}
       <div className="bg-gray-400 p-8 min-h-full flex justify-center">
-        <div className="bg-white shadow-2xl w-full max-w-3xl" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '1000px' }}>
+        <div className="bg-white shadow-2xl w-full max-w-3xl relative" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '1000px', display: 'flex', flexDirection: 'column' }}>
           
           {/* Logo Header - Using actual logo image */}
           <div className="mb-10">
@@ -1530,128 +1526,131 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
             </div>
           </div>
 
-          {/* Info Table - Client/Device info */}
-          <table className="w-full text-sm mb-6" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-            <colgroup>
-              <col style={{ width: '150px' }} />
-              <col />
-              <col style={{ width: '200px' }} />
-            </colgroup>
-            <tbody>
-              {/* Row 1: Date + RMA */}
-              <tr>
-                <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Date d'achèvement</td>
-                <td className="py-1 text-gray-800">{today}</td>
-                <td className="py-1 text-gray-800 pl-6">
-                  <span className="font-bold text-[#003366]">RMA # </span>{rma.request_number}
-                </td>
-              </tr>
-              
-              {/* Row 2: Client */}
-              <tr>
-                <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Client</td>
-                <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.name}</td>
-              </tr>
-              
-              {/* Row 3: Adresse */}
-              <tr>
-                <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Adresse</td>
-                <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.billing_address || '—'}</td>
-              </tr>
-              
-              {/* Row 4: Code postal + Contact */}
-              <tr>
-                <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Code postal / Ville</td>
-                <td className="py-1 text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
-                <td className="py-1 text-gray-800 pl-6">
-                  <span className="font-bold text-[#003366]">Contact </span>{rma.companies?.contact_name || '—'}
-                </td>
-              </tr>
-              
-              {/* Row 5: Téléphone + Technicien label */}
-              <tr>
-                <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Téléphone</td>
-                <td className="py-1 text-gray-800">{rma.companies?.phone || '—'}</td>
-                <td className="py-1 text-gray-800 pl-6 align-top">
-                  <span className="font-bold text-[#003366]">Technicien(ne) de service</span>
-                </td>
-              </tr>
-              
-              {/* Row 6: Modèle + Technicien name */}
-              <tr>
-                <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Modèle#</td>
-                <td className="py-1 text-gray-800">{device.model_name}</td>
-                <td className="py-1 text-gray-800 pl-6">{technicianName || 'Lighthouse France'}</td>
-              </tr>
-              
-              {/* Row 7: Numéro de série */}
-              <tr>
-                <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Numéro de série</td>
-                <td className="py-1 text-gray-800" colSpan="2">{device.serial_number}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          {/* Content Sections */}
-          <table className="w-full text-sm" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-            <colgroup>
-              <col style={{ width: '170px' }} />
-              <col />
-            </colgroup>
-            <tbody>
-              {/* Motif de retour = Service type + Customer notes */}
-              <tr>
-                <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Motif de retour</td>
-                <td className="pt-6 pb-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word' }}>{motifText}</td>
-              </tr>
-              
-              {/* Étalonnage effectué - toggleable */}
-              {showCalType && (
+          {/* Main Content - Grows to fill space */}
+          <div className="flex-grow">
+            {/* Info Table - Client/Device info */}
+            <table className="w-full text-sm mb-6" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '150px' }} />
+                <col />
+                <col style={{ width: '180px' }} />
+              </colgroup>
+              <tbody>
+                {/* Row 1: Date + RMA */}
                 <tr>
-                  <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Étalonnage effectué</td>
-                  <td className="py-2 text-gray-800">{calType}</td>
+                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Date d'achèvement</td>
+                  <td className="py-1 text-gray-800">{today}</td>
+                  <td className="py-1 text-gray-800 pl-4">
+                    <span className="font-bold text-[#003366]">RMA # </span>{rma.request_number}
+                  </td>
                 </tr>
-              )}
-              
-              {/* Résultats à la réception - toggleable */}
-              {showReceptionResult && (
+                
+                {/* Row 2: Client */}
                 <tr>
-                  <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Résultats à la réception</td>
-                  <td className="py-2 text-gray-800">{receptionResult}</td>
+                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Client</td>
+                  <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.name}</td>
                 </tr>
-              )}
-              
-              {/* Constatations (Tech findings) */}
-              <tr>
-                <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Constatations</td>
-                <td className="pt-6 pb-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{findings || '—'}</td>
-              </tr>
-              
-              {/* Actions effectuées (Work description) */}
-              <tr>
-                <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Actions effectuées</td>
-                <td className="py-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{workCompleted || '—'}</td>
-              </tr>
-              
-              {/* Travaux réalisés (Checklist) - more space above */}
-              <tr>
-                <td className="pt-10 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Travaux réalisés</td>
-                <td className="pt-10 pb-2">
-                  <div className="space-y-1">
-                    {checklist.filter(item => item.checked).map(item => (
-                      <div key={item.id} className="flex items-center gap-2">
-                        <span className="text-[#003366]">☑</span>
-                        <span className="text-gray-800">{item.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                
+                {/* Row 3: Adresse */}
+                <tr>
+                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Adresse</td>
+                  <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.billing_address || '—'}</td>
+                </tr>
+                
+                {/* Row 4: Code postal + Contact */}
+                <tr>
+                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Code postal / Ville</td>
+                  <td className="py-1 text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
+                  <td className="py-1 text-gray-800 pl-4">
+                    <span className="font-bold text-[#003366]">Contact </span>{rma.companies?.contact_name || '—'}
+                  </td>
+                </tr>
+                
+                {/* Row 5: Téléphone + Technicien label */}
+                <tr>
+                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Téléphone</td>
+                  <td className="py-1 text-gray-800">{rma.companies?.phone || '—'}</td>
+                  <td className="py-1 text-gray-800 pl-4 align-top">
+                    <span className="font-bold text-[#003366]">Technicien(ne) de service</span>
+                  </td>
+                </tr>
+                
+                {/* Row 6: Modèle + Technicien name */}
+                <tr>
+                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Modèle#</td>
+                  <td className="py-1 text-gray-800">{device.model_name}</td>
+                  <td className="py-1 text-gray-800 pl-4">{technicianName || 'Lighthouse France'}</td>
+                </tr>
+                
+                {/* Row 7: Numéro de série */}
+                <tr>
+                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Numéro de série</td>
+                  <td className="py-1 text-gray-800" colSpan="2">{device.serial_number}</td>
+                </tr>
+              </tbody>
+            </table>
 
-          {/* Footer - At bottom */}
-          <div className="text-center text-sm text-gray-600" style={{ marginTop: '80px', paddingTop: '20px' }}>
+            {/* Content Sections */}
+            <table className="w-full text-sm" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '170px' }} />
+                <col />
+              </colgroup>
+              <tbody>
+                {/* Motif de retour = Service type + Customer notes */}
+                <tr>
+                  <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Motif de retour</td>
+                  <td className="pt-6 pb-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word' }}>{motifText}</td>
+                </tr>
+                
+                {/* Étalonnage effectué - only if not 'none' */}
+                {showCalType && (
+                  <tr>
+                    <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Étalonnage effectué</td>
+                    <td className="py-2 text-gray-800">{calType}</td>
+                  </tr>
+                )}
+                
+                {/* Résultats à la réception - only if not 'none' */}
+                {showReceptionResult && (
+                  <tr>
+                    <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Résultats à la réception</td>
+                    <td className="py-2 text-gray-800">{receptionResult}</td>
+                  </tr>
+                )}
+                
+                {/* Constatations (Tech findings) */}
+                <tr>
+                  <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Constatations</td>
+                  <td className="pt-6 pb-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{findings || '—'}</td>
+                </tr>
+                
+                {/* Actions effectuées (Work description) */}
+                <tr>
+                  <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Actions effectuées</td>
+                  <td className="py-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{workCompleted || '—'}</td>
+                </tr>
+                
+                {/* Travaux réalisés (Checklist) - more space above */}
+                <tr>
+                  <td className="pt-10 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Travaux réalisés</td>
+                  <td className="pt-10 pb-2">
+                    <div className="space-y-1">
+                      {checklist.filter(item => item.checked).map(item => (
+                        <div key={item.id} className="flex items-center gap-2">
+                          <span className="text-[#003366]">☑</span>
+                          <span className="text-gray-800">{item.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Footer - Always at bottom */}
+          <div className="text-center text-sm text-gray-600 mt-auto pt-8">
             <p className="font-bold text-[#003366]">Lighthouse Worldwide Solutions France</p>
             <p>16 Rue Paul Séjourné 94000 Créteil France</p>
             <p>01 43 77 28 07</p>
