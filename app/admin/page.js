@@ -60,6 +60,7 @@ export default function AdminPortal() {
   const [equipment, setEquipment] = useState([]);
   const [contracts, setContracts] = useState([]);
   const [selectedRMA, setSelectedRMA] = useState(null); // Full-page RMA view
+  const [selectedDeviceFromDashboard, setSelectedDeviceFromDashboard] = useState(null); // Direct device selection from device view
 
   const notify = useCallback((msg, type = 'success') => {
     setToast({ msg, type });
@@ -193,14 +194,27 @@ export default function AdminPortal() {
         {selectedRMA ? (
           <RMAFullPage 
             rma={selectedRMA} 
-            onBack={() => setSelectedRMA(null)} 
+            onBack={() => { setSelectedRMA(null); setSelectedDeviceFromDashboard(null); }} 
             notify={notify} 
             reload={() => loadData(true)}
             profile={profile}
+            initialDevice={selectedDeviceFromDashboard?.device}
           />
         ) : (
           <>
-            {activeSheet === 'dashboard' && <DashboardSheet requests={requests} notify={notify} reload={loadData} isAdmin={isAdmin} onSelectRMA={setSelectedRMA} filter={dashboardFilter} setFilter={setDashboardFilter} />}
+            {activeSheet === 'dashboard' && <DashboardSheet 
+              requests={requests} 
+              notify={notify} 
+              reload={loadData} 
+              isAdmin={isAdmin} 
+              onSelectRMA={setSelectedRMA} 
+              onSelectDevice={(device, rma) => {
+                setSelectedDeviceFromDashboard({ device, rma });
+                setSelectedRMA(rma);
+              }}
+              filter={dashboardFilter} 
+              setFilter={setDashboardFilter} 
+            />}
             {activeSheet === 'requests' && <RequestsSheet requests={requests} notify={notify} reload={loadData} profile={profile} />}
             {activeSheet === 'clients' && <ClientsSheet clients={clients} requests={requests} equipment={equipment} notify={notify} reload={loadData} isAdmin={isAdmin} />}
             {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} />}
@@ -272,9 +286,10 @@ function LoginPage() {
   );
 }
 
-function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, filter, setFilter }) {
+function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSelectDevice, filter, setFilter }) {
   const [reviewingBC, setReviewingBC] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [viewMode, setViewMode] = useState('rma'); // 'rma' or 'device'
   
   const archivedRMAs = requests.filter(r => r.status === 'archived');
   const activeRMAs = requests.filter(r => r.request_number && !['completed', 'cancelled', 'archived'].includes(r.status));
@@ -476,66 +491,246 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, filter
         </div>
       )}
       
-      {/* Filtered RMAs Table */}
+      {/* View Toggle & Table */}
       {filter !== 'bc' && (
         <div className="bg-white rounded-xl shadow-sm">
-          <div className="px-6 py-4 border-b border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="font-bold text-gray-800">
               {filterLabel ? `${filterLabel} (${filteredRMAs.length})` : `RMAs Actifs (${activeRMAs.length})`}
             </h2>
+            {/* View Toggle */}
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('rma')}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  viewMode === 'rma' ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                📋 Vue RMA
+              </button>
+              <button
+                onClick={() => setViewMode('device')}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  viewMode === 'device' ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                🔧 Vue Appareil
+              </button>
+            </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMA</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Client</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Appareil(s)</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Service</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Étape</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Date</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {filteredRMAs.length === 0 ? (
-                  <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Aucun RMA</td></tr>
-                ) : filteredRMAs.map(rma => {
-                  const jobType = getJobType(rma);
-                  const jobStyles = {
-                    service: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Service' },
-                    qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'QC' },
-                    ready: { bg: 'bg-green-100', text: 'text-green-700', label: 'Prêt' },
-                    other: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Admin' }
+          
+          {/* RMA View Table */}
+          {viewMode === 'rma' && (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMA</th>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Client</th>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Appareil(s)</th>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Service</th>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Étape</th>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Date</th>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredRMAs.length === 0 ? (
+                    <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Aucun RMA</td></tr>
+                  ) : filteredRMAs.map(rma => {
+                    const jobType = getJobType(rma);
+                    const jobStyles = {
+                      service: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Service' },
+                      qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'QC' },
+                      ready: { bg: 'bg-green-100', text: 'text-green-700', label: 'Prêt' },
+                      other: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Admin' }
+                    };
+                    const jobStyle = jobStyles[jobType] || jobStyles.other;
+                    const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
+                    const devices = rma.request_devices || [];
+                    const hasBCToReview = needsReview.find(n => n.id === rma.id);
+                    
+                    return (
+                      <tr key={rma.id} className={`hover:bg-gray-50 cursor-pointer ${hasBCToReview ? 'bg-red-50' : ''}`} onClick={() => !hasBCToReview && onSelectRMA(rma)}>
+                        <td className="px-4 py-3"><span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span></td>
+                        <td className="px-4 py-3"><p className="font-medium text-gray-800">{rma.companies?.name || '—'}</p></td>
+                        <td className="px-4 py-3">
+                          {devices.length > 0 ? <div className="text-sm">{devices.slice(0, 2).map((d, i) => <p key={i}>{d.model_name} <span className="text-gray-400">({d.serial_number})</span></p>)}{devices.length > 2 && <p className="text-gray-400">+{devices.length - 2} autres</p>}</div> : <span className="text-gray-400">{rma.serial_number || '—'}</span>}
+                        </td>
+                        <td className="px-4 py-3"><span className="text-sm">{rma.requested_service === 'calibration' ? '🔬 Étalonnage' : rma.requested_service === 'repair' ? '🔧 Réparation' : rma.requested_service}</span></td>
+                        <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span></td>
+                        <td className="px-4 py-3 text-sm text-gray-500">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</td>
+                        <td className="px-4 py-3">
+                          {hasBCToReview ? (
+                            <button onClick={(e) => { e.stopPropagation(); setReviewingBC(rma); }} className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded">🔍 Examiner BC</button>
+                          ) : (
+                            <button onClick={(e) => { e.stopPropagation(); onSelectRMA(rma); }} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          
+          {/* Device View Table */}
+          {viewMode === 'device' && (() => {
+            // Flatten all devices from filtered RMAs
+            const allDevices = filteredRMAs.flatMap(rma => 
+              (rma.request_devices || []).map(device => ({
+                ...device,
+                rma: rma
+              }))
+            );
+            
+            // Progress bar component for device view
+            const DeviceProgressBar = ({ device, rma }) => {
+              const serviceType = device.service_type || rma.requested_service || 'calibration';
+              const isRepair = serviceType === 'repair';
+              
+              const calibrationSteps = [
+                { id: 'submitted', label: 'Soumis' },
+                { id: 'rma_created', label: 'RMA' },
+                { id: 'bc_approved', label: 'BC' },
+                { id: 'received', label: 'Reçu' },
+                { id: 'queue', label: 'File' },
+                { id: 'calibration', label: 'Étal.' },
+                { id: 'final_qc', label: 'QC' },
+                { id: 'ready_to_ship', label: 'Prêt' },
+                { id: 'shipped', label: 'Expédié' }
+              ];
+              
+              const repairSteps = [
+                { id: 'submitted', label: 'Soumis' },
+                { id: 'rma_created', label: 'RMA' },
+                { id: 'bc_approved', label: 'BC' },
+                { id: 'received', label: 'Reçu' },
+                { id: 'inspection', label: 'Insp.' },
+                { id: 'customer_approval', label: 'Appr.' },
+                { id: 'repair', label: 'Rép.' },
+                { id: 'final_qc', label: 'QC' },
+                { id: 'ready_to_ship', label: 'Prêt' },
+                { id: 'shipped', label: 'Expédié' }
+              ];
+              
+              const steps = isRepair ? repairSteps : calibrationSteps;
+              
+              // Get step index
+              const getStepIndex = (status) => {
+                if (isRepair) {
+                  const map = {
+                    'submitted': 0, 'pending': 0,
+                    'approved': 1, 'waiting_bc': 2, 'bc_review': 2,
+                    'waiting_device': 3, 'received': 3,
+                    'inspection_complete': 4, 'quote_sent': 5,
+                    'repair_in_progress': 6, 'final_qc': 7, 'ready_to_ship': 8, 'shipped': 9
                   };
-                  const jobStyle = jobStyles[jobType] || jobStyles.other;
-                  const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
-                  const devices = rma.request_devices || [];
-                  const hasBCToReview = needsReview.find(n => n.id === rma.id);
-                  
-                  return (
-                    <tr key={rma.id} className={`hover:bg-gray-50 cursor-pointer ${hasBCToReview ? 'bg-red-50' : ''}`} onClick={() => !hasBCToReview && onSelectRMA(rma)}>
-                      <td className="px-4 py-3"><span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span></td>
-                      <td className="px-4 py-3"><p className="font-medium text-gray-800">{rma.companies?.name || '—'}</p></td>
-                      <td className="px-4 py-3">
-                        {devices.length > 0 ? <div className="text-sm">{devices.slice(0, 2).map((d, i) => <p key={i}>{d.model_name} <span className="text-gray-400">({d.serial_number})</span></p>)}{devices.length > 2 && <p className="text-gray-400">+{devices.length - 2} autres</p>}</div> : <span className="text-gray-400">{rma.serial_number || '—'}</span>}
-                      </td>
-                      <td className="px-4 py-3"><span className="text-sm">{rma.requested_service === 'calibration' ? '🔬 Étalonnage' : rma.requested_service === 'repair' ? '🔧 Réparation' : rma.requested_service}</span></td>
-                      <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span></td>
-                      <td className="px-4 py-3 text-sm text-gray-500">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</td>
-                      <td className="px-4 py-3">
-                        {hasBCToReview ? (
-                          <button onClick={(e) => { e.stopPropagation(); setReviewingBC(rma); }} className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded">🔍 Examiner BC</button>
-                        ) : (
-                          <button onClick={(e) => { e.stopPropagation(); onSelectRMA(rma); }} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button>
-                        )}
-                      </td>
+                  return map[status] ?? 0;
+                } else {
+                  const map = {
+                    'submitted': 0, 'pending': 0,
+                    'approved': 1, 'waiting_bc': 2, 'bc_review': 2,
+                    'waiting_device': 3, 'received': 3,
+                    'in_queue': 4, 'calibration_in_progress': 5,
+                    'final_qc': 6, 'ready_to_ship': 7, 'shipped': 8
+                  };
+                  return map[status] ?? 0;
+                }
+              };
+              
+              const currentIndex = getStepIndex(device.status || rma.status);
+              
+              return (
+                <div className="flex items-center w-full min-w-[300px]">
+                  {steps.map((step, index) => {
+                    const isCompleted = index < currentIndex;
+                    const isCurrent = index === currentIndex;
+                    const isLast = index === steps.length - 1;
+                    
+                    return (
+                      <div key={step.id} className="flex items-center flex-1">
+                        <div 
+                          className={`
+                            relative flex items-center justify-center flex-1 py-1 px-0.5 text-[10px] font-medium
+                            ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
+                            ${index === 0 ? 'rounded-l-sm' : ''}
+                            ${isLast ? 'rounded-r-sm' : ''}
+                          `}
+                          style={{
+                            clipPath: isLast 
+                              ? 'polygon(0 0, 100% 0, 100% 100%, 0 100%, 4px 50%)' 
+                              : index === 0 
+                                ? 'polygon(0 0, calc(100% - 4px) 0, 100% 50%, calc(100% - 4px) 100%, 0 100%)'
+                                : 'polygon(0 0, calc(100% - 4px) 0, 100% 50%, calc(100% - 4px) 100%, 0 100%, 4px 50%)'
+                          }}
+                        >
+                          {step.label}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            };
+            
+            return (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMA</th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Appareil</th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">N° Série</th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Service</th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600 min-w-[300px]">Progression</th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {allDevices.length === 0 ? (
+                      <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Aucun appareil</td></tr>
+                    ) : allDevices.map((device, idx) => {
+                      const deviceStyle = STATUS_STYLES[device.status] || STATUS_STYLES[device.rma.status] || STATUS_STYLES.submitted;
+                      const serviceType = device.service_type || device.rma.requested_service || 'calibration';
+                      
+                      return (
+                        <tr key={`${device.rma.id}-${device.id || idx}`} className="hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            <span className="font-mono font-bold text-[#00A651]">{device.rma.request_number}</span>
+                            <p className="text-xs text-gray-400">{device.rma.companies?.name}</p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="font-medium text-gray-800">{device.model_name || '—'}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="font-mono text-sm text-gray-600">{device.serial_number || '—'}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${serviceType === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {serviceType === 'repair' ? '🔧 Rép.' : '🔬 Étal.'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <DeviceProgressBar device={device} rma={device.rma} />
+                          </td>
+                          <td className="px-4 py-3">
+                            <button 
+                              onClick={() => onSelectDevice(device, device.rma)}
+                              className="px-3 py-1.5 text-sm bg-indigo-500 hover:bg-indigo-600 text-white rounded font-medium"
+                            >
+                              🔧 Traiter
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
         </div>
       )}
       
@@ -989,8 +1184,8 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
 // ============================================
 // RMA FULL PAGE VIEW - Adaptive workflow interface
 // ============================================
-function RMAFullPage({ rma, onBack, notify, reload, profile }) {
-  const [selectedDevice, setSelectedDevice] = useState(null);
+function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice }) {
+  const [selectedDevice, setSelectedDevice] = useState(initialDevice || null);
   const [showAvenantPreview, setShowAvenantPreview] = useState(false);
   const [showQCReview, setShowQCReview] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1202,7 +1397,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
 
   return (
     <div className="space-y-6">
-      {/* Header with workflow indicator */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-gray-700 font-medium">
@@ -1211,45 +1406,21 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-gray-800">{rma.request_number}</h1>
-              <span className={`px-3 py-1 rounded-full text-sm font-bold bg-${currentStage.color}-100 text-${currentStage.color}-700`}>
+              <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                workflowStage === 'waiting' ? 'bg-amber-100 text-amber-700' :
+                workflowStage === 'received' ? 'bg-cyan-100 text-cyan-700' :
+                workflowStage === 'service' ? 'bg-indigo-100 text-indigo-700' :
+                workflowStage === 'qc' ? 'bg-purple-100 text-purple-700' :
+                'bg-green-100 text-green-700'
+              }`}>
                 {currentStage.icon} {currentStage.label}
               </span>
               {isContractRMA && (
                 <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">📋 CONTRAT</span>
               )}
             </div>
-            <p className="text-gray-500">{currentStage.desc} • Créé le {new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
+            <p className="text-gray-500">{rma.companies?.name} • Créé le {new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
           </div>
-        </div>
-      </div>
-      
-      {/* Workflow Progress Bar */}
-      <div className="bg-white rounded-xl shadow-sm border p-4">
-        <div className="flex items-center justify-between">
-          {['waiting', 'received', 'service', 'qc', 'ready'].map((stage, idx) => {
-            const info = stageInfo[stage];
-            const isActive = stage === workflowStage;
-            const isPast = ['waiting', 'received', 'service', 'qc', 'ready'].indexOf(workflowStage) > idx;
-            return (
-              <div key={stage} className="flex items-center flex-1">
-                <div className={`flex flex-col items-center ${isActive ? 'scale-110' : ''}`}>
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl ${
-                    isPast ? 'bg-green-500 text-white' : 
-                    isActive ? 'bg-indigo-500 text-white ring-4 ring-indigo-200' : 
-                    'bg-gray-200 text-gray-400'
-                  }`}>
-                    {isPast ? '✓' : info.icon}
-                  </div>
-                  <p className={`text-xs mt-1 font-medium ${isActive ? 'text-indigo-700' : isPast ? 'text-green-700' : 'text-gray-400'}`}>
-                    {info.label}
-                  </p>
-                </div>
-                {idx < 4 && (
-                  <div className={`flex-1 h-1 mx-2 rounded ${isPast ? 'bg-green-500' : 'bg-gray-200'}`} />
-                )}
-              </div>
-            );
-          })}
         </div>
       </div>
 
