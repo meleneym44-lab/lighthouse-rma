@@ -8,26 +8,45 @@ if (typeof window !== 'undefined') {
 }
 
 const STATUS_STYLES = {
-  submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Nouvelle demande' },
-  approved: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'RMA Créé' },
+  // Admin steps (Soumis → Reçu)
+  submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Soumis' },
+  rma_created: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'RMA/Devis Créé' },
+  quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
   waiting_bc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Attente BC' },
   bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: '⚠️ BC à vérifier' },
   bc_rejected: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ BC Rejeté' },
-  waiting_device: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Attente Appareil' },
+  quote_approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'Devis Approuvé' },
+  waiting_reception: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En attente réception' },
   received: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Reçu' },
-  in_queue: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'File attente' },
-  inspection: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Inspection' },
-  calibration_in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Étalonnage' },
-  repair_in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Réparation' },
-  quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
-  quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: '🔴 Modification demandée' },
-  quote_approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'Devis approuvé' },
-  final_qc: { bg: 'bg-teal-100', text: 'text-teal-700', label: 'Contrôle final' },
-  ready_to_ship: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Prêt à expédier' },
+  
+  // Service steps (File d'attente → Étalonnage/Réparation)
+  in_queue: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'File d\'attente' },
+  inspection: { bg: 'bg-violet-100', text: 'text-violet-700', label: 'Inspection' },
+  approbation: { bg: 'bg-pink-100', text: 'text-pink-700', label: 'Approbation' },
+  calibration: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Étalonnage' },
+  repair: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Réparation' },
+  
+  // QC step
+  qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Contrôle QC' },
+  
+  // Final Admin steps (Prêt → Expédié)
+  ready: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Prêt' },
   shipped: { bg: 'bg-green-100', text: 'text-green-700', label: 'Expédié' },
+  
+  // Other
   completed: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Terminé' },
   cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' },
-  archived: { bg: 'bg-slate-100', text: 'text-slate-500', label: '📦 Archivé' }
+  archived: { bg: 'bg-slate-100', text: 'text-slate-500', label: '📦 Archivé' },
+  
+  // Legacy mappings (for backwards compatibility)
+  approved: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'RMA/Devis Créé' },
+  waiting_device: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En attente réception' },
+  calibration_in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Étalonnage' },
+  repair_in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Réparation' },
+  final_qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Contrôle QC' },
+  ready_to_ship: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Prêt' },
+  quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: '🔴 Modification demandée' }
+};
 };
 
 export default function AdminPortal() {
@@ -260,55 +279,60 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, filter
   
   const archivedRMAs = requests.filter(r => r.status === 'archived');
   const activeRMAs = requests.filter(r => r.request_number && !['completed', 'cancelled', 'archived'].includes(r.status));
+  
   // BC needs review
   const needsReview = requests.filter(r => 
     r.status === 'bc_review' || 
     ((r.bc_file_url || r.bc_signature_url) && r.status === 'waiting_bc')
   );
   
-  // RMA workflow stages based on device statuses
-  const getWorkflowStage = (rma) => {
+  // Service statuses: File d'attente, Inspection, Approbation, Étalonnage, Réparation
+  const serviceStatuses = ['in_queue', 'inspection', 'approbation', 'calibration', 'repair', 'calibration_in_progress', 'repair_in_progress'];
+  // QC statuses
+  const qcStatuses = ['qc', 'final_qc'];
+  // Ready statuses
+  const readyStatuses = ['ready', 'ready_to_ship'];
+  
+  // Filter by job type - check both RMA status AND device statuses
+  const getJobType = (rma) => {
     const devices = rma.request_devices || [];
-    if (devices.length === 0) {
-      // No devices yet - use RMA status
-      if (['approved', 'waiting_bc', 'waiting_device'].includes(rma.status)) return 'waiting';
-      if (['received', 'in_queue'].includes(rma.status)) return 'received';
-      return 'waiting';
+    
+    // Check device statuses first (more accurate for multi-device RMAs)
+    if (devices.length > 0) {
+      const anyInService = devices.some(d => serviceStatuses.includes(d.status));
+      const anyInQC = devices.some(d => qcStatuses.includes(d.status) || (d.report_complete && !d.qc_complete));
+      const allReady = devices.every(d => readyStatuses.includes(d.status) || d.qc_complete);
+      
+      if (allReady && devices.some(d => d.qc_complete)) return 'ready';
+      if (anyInQC) return 'qc';
+      if (anyInService) return 'service';
     }
     
-    // Check device statuses
-    const allQCComplete = devices.every(d => d.qc_complete);
-    const anyQCComplete = devices.some(d => d.qc_complete);
-    const allInFinalQC = devices.every(d => d.status === 'final_qc' || d.qc_complete);
-    const anyInFinalQC = devices.some(d => d.status === 'final_qc');
-    const allReadyToShip = devices.every(d => d.status === 'ready_to_ship' || d.qc_complete);
-    const allReportComplete = devices.every(d => d.report_complete);
-    const anyServiceStarted = devices.some(d => d.service_findings || d.inspection_complete);
+    // Fall back to RMA status
+    if (serviceStatuses.includes(rma.status)) return 'service';
+    if (qcStatuses.includes(rma.status)) return 'qc';
+    if (readyStatuses.includes(rma.status)) return 'ready';
     
-    if (allReadyToShip && allQCComplete) return 'ready';
-    if (allInFinalQC || anyInFinalQC) return 'qc';
-    if (allReportComplete) return 'qc';
-    if (anyServiceStarted || ['calibration_in_progress', 'repair_in_progress'].includes(rma.status)) return 'service';
-    if (['received', 'in_queue'].includes(rma.status)) return 'received';
-    return 'waiting';
+    return 'other';
   };
   
-  const byStage = {
-    waiting: activeRMAs.filter(r => getWorkflowStage(r) === 'waiting' && !needsReview.find(n => n.id === r.id)),
-    received: activeRMAs.filter(r => getWorkflowStage(r) === 'received'),
-    service: activeRMAs.filter(r => getWorkflowStage(r) === 'service'),
-    qc: activeRMAs.filter(r => getWorkflowStage(r) === 'qc'),
-    ready: activeRMAs.filter(r => getWorkflowStage(r) === 'ready')
+  const byJob = {
+    service: activeRMAs.filter(r => getJobType(r) === 'service'),
+    qc: activeRMAs.filter(r => getJobType(r) === 'qc'),
+    ready: activeRMAs.filter(r => getJobType(r) === 'ready')
   };
   
+  // Stats for the cards
   const stats = [
     { id: 'all', label: 'RMAs Actifs', value: activeRMAs.length, color: 'bg-blue-500', icon: '📋' },
     { id: 'bc', label: 'BC à vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
-    { id: 'waiting', label: 'En attente', value: byStage.waiting.length, color: 'bg-amber-500', icon: '⏳' },
-    { id: 'received', label: 'Reçus', value: byStage.received.length, color: 'bg-cyan-500', icon: '📦' },
-    { id: 'service', label: 'Service', value: byStage.service.length, color: 'bg-indigo-500', icon: '🔧' },
-    { id: 'qc', label: 'QC', value: byStage.qc.length, color: 'bg-purple-500', icon: '✅' },
-    { id: 'ready', label: 'Prêts', value: byStage.ready.length, color: 'bg-green-500', icon: '📤' }
+  ];
+  
+  // Job filter buttons
+  const jobFilters = [
+    { id: 'service', label: 'Service', value: byJob.service.length, color: 'bg-indigo-500', icon: '🔧' },
+    { id: 'qc', label: 'QC', value: byJob.qc.length, color: 'bg-purple-500', icon: '✅' },
+    { id: 'ready', label: 'Prêt', value: byJob.ready.length, color: 'bg-green-500', icon: '📤' }
   ];
   
   // Filter RMAs based on selected filter
@@ -316,11 +340,13 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, filter
     if (!filter) return activeRMAs;
     if (filter === 'all') return activeRMAs;
     if (filter === 'bc') return needsReview;
-    return byStage[filter] || activeRMAs;
+    if (byJob[filter]) return byJob[filter];
+    return activeRMAs;
   };
   
   const filteredRMAs = getFilteredRMAs();
-  const filterLabel = filter ? stats.find(s => s.id === filter)?.label : null;
+  const allFilters = [...stats, ...jobFilters];
+  const filterLabel = filter ? allFilters.find(s => s.id === filter)?.label : null;
 
   return (
     <div className="space-y-6">
@@ -361,25 +387,52 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, filter
         </div>
       )}
       
-      {/* Clickable Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-        {stats.map((stat) => (
-          <button 
-            key={stat.id} 
-            onClick={() => setFilter(filter === stat.id ? null : stat.id)}
-            className={`bg-white rounded-xl p-4 shadow-sm text-left transition-all ${
-              filter === stat.id ? 'ring-2 ring-offset-2 ring-blue-500 scale-105' : 'hover:shadow-md'
-            } ${stat.value > 0 && stat.id === 'bc' ? 'ring-2 ring-red-500 animate-pulse' : ''}`}
-          >
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 ${stat.color} rounded-lg flex items-center justify-center text-xl text-white`}>{stat.icon}</div>
-              <div>
-                <p className="text-xl font-bold text-gray-800">{stat.value}</p>
-                <p className="text-xs text-gray-500">{stat.label}</p>
+      {/* Stats Row */}
+      <div className="flex gap-4 items-start">
+        {/* Main stats */}
+        <div className="flex gap-3">
+          {stats.map((stat) => (
+            <button 
+              key={stat.id} 
+              onClick={() => setFilter(filter === stat.id ? null : stat.id)}
+              className={`bg-white rounded-xl p-4 shadow-sm text-left transition-all ${
+                filter === stat.id ? 'ring-2 ring-offset-2 ring-blue-500 scale-105' : 'hover:shadow-md'
+              } ${stat.value > 0 && stat.id === 'bc' ? 'ring-2 ring-red-500 animate-pulse' : ''}`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 ${stat.color} rounded-lg flex items-center justify-center text-xl text-white`}>{stat.icon}</div>
+                <div>
+                  <p className="text-xl font-bold text-gray-800">{stat.value}</p>
+                  <p className="text-xs text-gray-500">{stat.label}</p>
+                </div>
               </div>
-            </div>
-          </button>
-        ))}
+            </button>
+          ))}
+        </div>
+        
+        {/* Spacer */}
+        <div className="flex-1" />
+        
+        {/* Job Filter Buttons */}
+        <div className="flex gap-2">
+          {jobFilters.map((job) => (
+            <button 
+              key={job.id} 
+              onClick={() => setFilter(filter === job.id ? null : job.id)}
+              className={`px-4 py-3 rounded-xl font-medium transition-all flex items-center gap-2 ${
+                filter === job.id 
+                  ? `${job.color} text-white shadow-lg scale-105` 
+                  : 'bg-white hover:shadow-md border'
+              }`}
+            >
+              <span className="text-lg">{job.icon}</span>
+              <span>{job.label}</span>
+              <span className={`px-2 py-0.5 rounded-full text-sm font-bold ${filter === job.id ? 'bg-white/20' : 'bg-gray-100'}`}>
+                {job.value}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
       
       {/* Active Filter Indicator */}
@@ -957,39 +1010,52 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
   const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
   const isContractRMA = rma.is_contract_rma || rma.contract_id;
   
-  // Determine workflow stage for this RMA
-  const getWorkflowStage = () => {
-    if (devices.length === 0) {
-      if (['approved', 'waiting_bc', 'waiting_device'].includes(rma.status)) return 'waiting';
-      if (['received', 'in_queue'].includes(rma.status)) return 'received';
-      return 'waiting';
+  // Determine service type from devices or RMA
+  const serviceType = devices[0]?.service_type || rma.requested_service || 'calibration';
+  const isRepair = serviceType === 'repair';
+  
+  // Progress steps - matching customer portal exactly
+  const calibrationSteps = [
+    { id: 'submitted', label: 'Soumis' },
+    { id: 'rma_created', label: 'RMA/Devis Créé', altIds: ['approved', 'quote_sent', 'waiting_bc', 'bc_review'] },
+    { id: 'quote_approved', label: 'Devis Approuvé' },
+    { id: 'waiting_reception', label: 'En attente réception', altIds: ['waiting_device'] },
+    { id: 'received', label: 'Reçu' },
+    { id: 'in_queue', label: 'File d\'attente' },
+    { id: 'calibration', label: 'Étalonnage', altIds: ['calibration_in_progress'] },
+    { id: 'qc', label: 'Contrôle QC', altIds: ['final_qc'] },
+    { id: 'ready', label: 'Prêt', altIds: ['ready_to_ship'] },
+    { id: 'shipped', label: 'Expédié' }
+  ];
+  
+  const repairSteps = [
+    { id: 'submitted', label: 'Soumis' },
+    { id: 'rma_created', label: 'RMA/Devis Créé', altIds: ['approved', 'quote_sent', 'waiting_bc', 'bc_review'] },
+    { id: 'quote_approved', label: 'Devis Approuvé' },
+    { id: 'waiting_reception', label: 'En attente réception', altIds: ['waiting_device'] },
+    { id: 'received', label: 'Reçu' },
+    { id: 'inspection', label: 'Inspection' },
+    { id: 'approbation', label: 'Approbation' },
+    { id: 'repair', label: 'Réparation', altIds: ['repair_in_progress'] },
+    { id: 'qc', label: 'Contrôle QC', altIds: ['final_qc'] },
+    { id: 'ready', label: 'Prêt', altIds: ['ready_to_ship'] },
+    { id: 'shipped', label: 'Expédié' }
+  ];
+  
+  const steps = isRepair ? repairSteps : calibrationSteps;
+  
+  // Find current step index based on RMA status
+  const getCurrentStepIndex = () => {
+    const status = rma.status;
+    for (let i = 0; i < steps.length; i++) {
+      if (steps[i].id === status || steps[i].altIds?.includes(status)) {
+        return i;
+      }
     }
-    
-    const allQCComplete = devices.every(d => d.qc_complete);
-    const allInFinalQC = devices.every(d => d.status === 'final_qc' || d.qc_complete);
-    const anyInFinalQC = devices.some(d => d.status === 'final_qc' && !d.qc_complete);
-    const allReadyToShip = devices.every(d => d.status === 'ready_to_ship' || d.qc_complete);
-    const allReportComplete = devices.every(d => d.report_complete);
-    const anyServiceStarted = devices.some(d => d.service_findings || d.inspection_complete);
-    
-    if (allReadyToShip && allQCComplete) return 'ready';
-    if (anyInFinalQC || (allReportComplete && !allQCComplete)) return 'qc';
-    if (anyServiceStarted || ['calibration_in_progress', 'repair_in_progress'].includes(rma.status)) return 'service';
-    if (['received', 'in_queue'].includes(rma.status)) return 'received';
-    return 'waiting';
+    return 0;
   };
   
-  const workflowStage = getWorkflowStage();
-  
-  // Stage styling - using complete class names (Tailwind doesn't support dynamic classes)
-  const stageInfo = {
-    waiting: { icon: '⏳', label: 'En Attente', desc: 'En attente de l\'appareil', bgLight: 'bg-amber-100', textColor: 'text-amber-700', bgDark: 'bg-amber-500', ring: 'ring-amber-200' },
-    received: { icon: '📦', label: 'Reçu', desc: 'Appareil reçu - Prêt pour service', bgLight: 'bg-cyan-100', textColor: 'text-cyan-700', bgDark: 'bg-cyan-500', ring: 'ring-cyan-200' },
-    service: { icon: '🔧', label: 'Service', desc: 'Service en cours', bgLight: 'bg-indigo-100', textColor: 'text-indigo-700', bgDark: 'bg-indigo-500', ring: 'ring-indigo-200' },
-    qc: { icon: '✅', label: 'Contrôle Qualité', desc: 'Vérification qualité', bgLight: 'bg-purple-100', textColor: 'text-purple-700', bgDark: 'bg-purple-500', ring: 'ring-purple-200' },
-    ready: { icon: '📤', label: 'Prêt', desc: 'Prêt pour expédition', bgLight: 'bg-green-100', textColor: 'text-green-700', bgDark: 'bg-green-500', ring: 'ring-green-200' }
-  };
-  const currentStage = stageInfo[workflowStage];
+  const currentStepIndex = getCurrentStepIndex();
   
   // Count service progress
   const inspectionsDone = devices.filter(d => d.inspection_complete || d.service_findings).length;
@@ -1005,6 +1071,15 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
     return sum + deviceTotal;
   }, 0);
   const avenantSent = rma.avenant_sent_at;
+  
+  // Determine which job section this RMA is in
+  const serviceStatuses = ['in_queue', 'inspection', 'approbation', 'calibration', 'repair', 'calibration_in_progress', 'repair_in_progress'];
+  const qcStatuses = ['qc', 'final_qc'];
+  const readyStatuses = ['ready', 'ready_to_ship'];
+  
+  const isInService = serviceStatuses.includes(rma.status) || devices.some(d => serviceStatuses.includes(d.status));
+  const isInQC = qcStatuses.includes(rma.status) || devices.some(d => qcStatuses.includes(d.status) || (d.report_complete && !d.qc_complete));
+  const isReady = readyStatuses.includes(rma.status) || (devices.length > 0 && devices.every(d => d.qc_complete));
 
   // Update RMA status
   const updateStatus = async (newStatus) => {
@@ -1014,6 +1089,23 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
         .from('service_requests')
         .update({ status: newStatus, updated_at: new Date().toISOString() })
         .eq('id', rma.id);
+      if (error) throw error;
+      notify('Statut mis à jour!');
+      reload();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSaving(false);
+  };
+  
+  // Update device status
+  const updateDeviceStatus = async (deviceId, newStatus) => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('request_devices')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', deviceId);
       if (error) throw error;
       notify('Statut mis à jour!');
       reload();
@@ -1052,7 +1144,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
 
   return (
     <div className="space-y-6">
-      {/* Header with workflow indicator */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-gray-700 font-medium">
@@ -1061,41 +1153,48 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-gray-800">{rma.request_number}</h1>
-              <span className={`px-3 py-1 rounded-full text-sm font-bold ${currentStage.bgLight} ${currentStage.textColor}`}>
-                {currentStage.icon} {currentStage.label}
+              <span className={`px-3 py-1 rounded-full text-sm font-bold ${style.bg} ${style.text}`}>
+                {style.label}
+              </span>
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${isRepair ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                {isRepair ? '🔧 Réparation' : '🔬 Étalonnage'}
               </span>
               {isContractRMA && (
                 <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">📋 CONTRAT</span>
               )}
             </div>
-            <p className="text-gray-500">{currentStage.desc} • Créé le {new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
+            <p className="text-gray-500">Créé le {new Date(rma.created_at).toLocaleDateString('fr-FR')} • {rma.companies?.name || '—'}</p>
           </div>
         </div>
       </div>
       
-      {/* Workflow Progress Bar */}
-      <div className="bg-white rounded-xl shadow-sm border p-4">
-        <div className="flex items-center justify-between">
-          {['waiting', 'received', 'service', 'qc', 'ready'].map((stage, idx) => {
-            const info = stageInfo[stage];
-            const isActive = stage === workflowStage;
-            const isPast = ['waiting', 'received', 'service', 'qc', 'ready'].indexOf(workflowStage) > idx;
+      {/* Progress Bar - Matching Customer Portal */}
+      <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
+        <div className="flex items-center min-w-max">
+          {steps.map((step, idx) => {
+            const isComplete = idx < currentStepIndex;
+            const isCurrent = idx === currentStepIndex;
+            
             return (
-              <div key={stage} className="contents">
-                <div className={`flex flex-col items-center ${isActive ? 'scale-110' : ''}`}>
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl ${
-                    isPast ? 'bg-green-500 text-white' : 
-                    isActive ? `${info.bgDark} text-white ring-4 ${info.ring}` : 
+              <div key={step.id} className="flex items-center">
+                <div className="flex flex-col items-center">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                    isComplete ? 'bg-[#00A651] text-white' :
+                    isCurrent ? 'bg-[#003366] text-white' :
                     'bg-gray-200 text-gray-400'
                   }`}>
-                    {isPast ? '✓' : info.icon}
+                    {isComplete ? '✓' : idx + 1}
                   </div>
-                  <p className={`text-xs mt-1 font-medium ${isActive ? info.textColor : isPast ? 'text-green-700' : 'text-gray-400'}`}>
-                    {info.label}
+                  <p className={`text-xs mt-1 whitespace-nowrap ${
+                    isCurrent ? 'font-bold text-[#003366]' :
+                    isComplete ? 'text-[#00A651]' :
+                    'text-gray-400'
+                  }`}>
+                    {step.label}
                   </p>
                 </div>
-                {idx < 4 && (
-                  <div className={`flex-1 h-1 mx-2 rounded ${isPast ? 'bg-green-500' : 'bg-gray-200'}`} />
+                {idx < steps.length - 1 && (
+                  <div className={`w-8 h-0.5 mx-1 ${isComplete ? 'bg-[#00A651]' : 'bg-gray-200'}`} />
                 )}
               </div>
             );
@@ -1103,7 +1202,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
         </div>
       </div>
 
-      {/* Client Info - Always visible but compact */}
+      {/* Client Info */}
       <div className="bg-white rounded-xl shadow-sm border p-4">
         <div className="grid grid-cols-4 gap-4">
           <div>
@@ -1116,7 +1215,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
           </div>
           <div>
             <p className="text-xs text-gray-500">Service demandé</p>
-            <p className="font-medium">{rma.requested_service === 'calibration' ? '🔬 Étalonnage' : rma.requested_service === 'repair' ? '🔧 Réparation' : rma.requested_service || '—'}</p>
+            <p className="font-medium">{isRepair ? '🔧 Réparation' : '🔬 Étalonnage'}</p>
           </div>
           <div>
             <p className="text-xs text-gray-500">Appareils</p>
@@ -1125,215 +1224,149 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
         </div>
       </div>
 
-      {/* Stage-specific content */}
-      
-      {/* WAITING STAGE */}
-      {workflowStage === 'waiting' && (
-        <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-6">
-          <div className="text-center">
-            <p className="text-5xl mb-4">📦</p>
-            <h2 className="text-xl font-bold text-amber-800 mb-2">En attente de l'appareil</h2>
-            <p className="text-amber-600 mb-4">L'appareil n'a pas encore été reçu</p>
-            <button 
-              onClick={() => updateStatus('received')}
-              disabled={saving}
-              className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
-            >
-              {saving ? '...' : '📦 Marquer comme Reçu'}
-            </button>
-          </div>
+      {/* Devices Section with Per-Device Progress */}
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div className="px-4 py-3 bg-gray-50 border-b flex items-center justify-between">
+          <h3 className="font-bold text-gray-700">SUIVI PAR APPAREIL</h3>
         </div>
-      )}
-      
-      {/* RECEIVED STAGE */}
-      {workflowStage === 'received' && (
-        <div className="bg-cyan-50 border-2 border-cyan-200 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-xl font-bold text-cyan-800">📦 Appareil Reçu</h2>
-              <p className="text-cyan-600">Prêt à commencer le service</p>
-            </div>
-            <button 
-              onClick={() => updateStatus('calibration_in_progress')}
-              disabled={saving}
-              className="px-6 py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-medium disabled:opacity-50"
-            >
-              {saving ? '...' : '🔧 Démarrer Service'}
-            </button>
-          </div>
-        </div>
-      )}
-      
-      {/* SERVICE STAGE - Main work area */}
-      {workflowStage === 'service' && (
-        <div className="space-y-4">
-          {/* Progress summary */}
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-bold text-indigo-800">🔧 Service en cours</h2>
-                <p className="text-sm text-indigo-600">
-                  {reportsDone}/{devices.length} rapports terminés
-                </p>
-              </div>
-              {devicesWithAdditionalWork.length > 0 && !avenantSent && (
-                <button 
-                  onClick={() => setShowAvenantPreview(true)}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
-                >
-                  📄 Créer Avenant (€{totalAdditionalWork.toFixed(2)})
-                </button>
-              )}
-              {avenantSent && (
-                <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium">
-                  📄 Avenant envoyé {rma.avenant_approved_at ? '✓ Approuvé' : '⏳ En attente'}
-                </span>
-              )}
-            </div>
-          </div>
-          
-          {/* Device list for service */}
-          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-            <div className="px-4 py-3 bg-gray-50 border-b">
-              <h3 className="font-bold text-gray-700">Appareils à traiter</h3>
-            </div>
-            <div className="divide-y">
-              {devices.map(device => {
-                const hasReport = device.report_complete;
-                const hasFindings = device.service_findings;
-                const needsCert = (device.service_type === 'calibration' || device.service_type === 'both') && !device.calibration_certificate_url;
+        <div className="divide-y">
+          {devices.length === 0 ? (
+            <div className="p-8 text-center text-gray-400">Aucun appareil enregistré</div>
+          ) : devices.map(device => {
+            const deviceStyle = STATUS_STYLES[device.status] || STATUS_STYLES.submitted;
+            const deviceServiceType = device.service_type || serviceType;
+            const isDeviceRepair = deviceServiceType === 'repair';
+            
+            return (
+              <div key={device.id} className="p-4">
+                {/* Device Header */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-gray-800">{device.model_name}</span>
+                    <span className="text-gray-500 text-sm">SN: {device.serial_number}</span>
+                    <span className={`px-2 py-0.5 rounded text-xs ${isDeviceRepair ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                      {isDeviceRepair ? 'Réparation' : 'Étalonnage'}
+                    </span>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${deviceStyle.bg} ${deviceStyle.text}`}>
+                    {deviceStyle.label}
+                  </span>
+                </div>
                 
-                return (
-                  <div key={device.id} className={`p-4 flex items-center justify-between ${hasReport ? 'bg-green-50' : ''}`}>
-                    <div className="flex items-center gap-4">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${hasReport ? 'bg-green-500 text-white' : hasFindings ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}>
-                        {hasReport ? '✓' : hasFindings ? '⚡' : '○'}
-                      </div>
-                      <div>
-                        <p className="font-bold">{device.model_name}</p>
-                        <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
-                        {device.additional_work_needed && (
-                          <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">+ Travaux supp.</span>
+                {/* Device Progress Bar */}
+                <div className="flex items-center mb-3 overflow-x-auto">
+                  {(isDeviceRepair ? repairSteps : calibrationSteps).map((step, idx) => {
+                    const deviceStepIndex = (() => {
+                      const status = device.status;
+                      const deviceSteps = isDeviceRepair ? repairSteps : calibrationSteps;
+                      for (let i = 0; i < deviceSteps.length; i++) {
+                        if (deviceSteps[i].id === status || deviceSteps[i].altIds?.includes(status)) return i;
+                      }
+                      return currentStepIndex; // Fall back to RMA status
+                    })();
+                    
+                    const isComplete = idx < deviceStepIndex;
+                    const isCurrent = idx === deviceStepIndex;
+                    
+                    return (
+                      <div key={step.id} className="flex items-center">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
+                          isComplete ? 'bg-[#00A651] text-white' :
+                          isCurrent ? 'bg-[#003366] text-white' :
+                          'bg-gray-200 text-gray-400'
+                        }`}>
+                          {isComplete ? '✓' : ''}
+                        </div>
+                        {idx < (isDeviceRepair ? repairSteps : calibrationSteps).length - 1 && (
+                          <div className={`w-4 h-0.5 ${isComplete ? 'bg-[#00A651]' : 'bg-gray-200'}`} />
                         )}
                       </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {hasReport ? (
-                        <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">✓ Rapport terminé</span>
-                      ) : needsCert && hasFindings ? (
-                        <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm">⚠️ Certificat requis</span>
-                      ) : null}
-                      <button 
-                        onClick={() => setSelectedDevice(device)}
-                        className={`px-4 py-2 rounded-lg font-medium ${hasReport ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-indigo-500 hover:bg-indigo-600 text-white'}`}
-                      >
-                        {hasReport ? 'Voir' : 'Traiter →'}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* QC STAGE */}
-      {workflowStage === 'qc' && (
-        <div className="space-y-4">
-          <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-bold text-purple-800">✅ Contrôle Qualité</h2>
-                <p className="text-sm text-purple-600">{qcDone}/{devices.length} appareils validés</p>
-              </div>
-            </div>
-          </div>
-          
-          {/* Device list for QC */}
-          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-            <div className="px-4 py-3 bg-gray-50 border-b">
-              <h3 className="font-bold text-gray-700">Appareils à contrôler</h3>
-            </div>
-            <div className="divide-y">
-              {devices.map(device => {
-                const qcComplete = device.qc_complete;
-                const inQC = device.status === 'final_qc' && !qcComplete;
-                
-                return (
-                  <div key={device.id} className={`p-4 flex items-center justify-between ${qcComplete ? 'bg-green-50' : ''}`}>
-                    <div className="flex items-center gap-4">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${qcComplete ? 'bg-green-500 text-white' : 'bg-purple-500 text-white'}`}>
-                        {qcComplete ? '✓' : '?'}
-                      </div>
-                      <div>
-                        <p className="font-bold">{device.model_name}</p>
-                        <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
-                        <p className="text-xs text-gray-400">Tech: {device.technician_name || '—'}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {qcComplete ? (
-                        <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">✓ QC Validé</span>
-                      ) : (
-                        <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">En attente QC</span>
-                      )}
-                      <button 
-                        onClick={() => setShowQCReview(device)}
-                        className={`px-4 py-2 rounded-lg font-medium ${qcComplete ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-purple-500 hover:bg-purple-600 text-white'}`}
-                      >
-                        {qcComplete ? 'Voir' : 'Contrôler →'}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* READY STAGE */}
-      {workflowStage === 'ready' && (
-        <div className="space-y-4">
-          <div className="bg-green-50 border-2 border-green-200 rounded-xl p-6">
-            <div className="text-center">
-              <p className="text-5xl mb-4">📤</p>
-              <h2 className="text-xl font-bold text-green-800 mb-2">Prêt pour Expédition</h2>
-              <p className="text-green-600 mb-4">Tous les appareils ont passé le contrôle qualité</p>
-              <button 
-                onClick={() => updateStatus('shipped')}
-                disabled={saving}
-                className="px-8 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold text-lg disabled:opacity-50"
-              >
-                {saving ? '...' : '🚚 Marquer comme Expédié'}
-              </button>
-            </div>
-          </div>
-          
-          {/* Summary of completed devices */}
-          <div className="bg-white rounded-xl shadow-sm border p-4">
-            <h3 className="font-bold text-gray-700 mb-3">Résumé des appareils</h3>
-            <div className="space-y-2">
-              {devices.map(device => (
-                <div key={device.id} className="flex items-center justify-between bg-green-50 rounded-lg p-3">
-                  <div>
-                    <p className="font-medium">{device.model_name}</p>
-                    <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">✓ Service</span>
-                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">✓ QC</span>
-                    {device.calibration_certificate_url && (
-                      <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200">📄 Certificat</a>
-                    )}
-                  </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
-          </div>
+                
+                {/* Device Actions based on current step */}
+                <div className="flex items-center gap-2">
+                  {/* Service actions */}
+                  {serviceStatuses.includes(device.status) && (
+                    <button 
+                      onClick={() => setSelectedDevice(device)}
+                      className="px-3 py-1 bg-indigo-500 hover:bg-indigo-600 text-white rounded text-sm"
+                    >
+                      🔧 Traiter
+                    </button>
+                  )}
+                  
+                  {/* QC actions */}
+                  {(qcStatuses.includes(device.status) || (device.report_complete && !device.qc_complete)) && (
+                    <button 
+                      onClick={() => setShowQCReview(device)}
+                      className="px-3 py-1 bg-purple-500 hover:bg-purple-600 text-white rounded text-sm"
+                    >
+                      ✅ Contrôle QC
+                    </button>
+                  )}
+                  
+                  {/* View report if complete */}
+                  {device.report_complete && (
+                    <button 
+                      onClick={() => setSelectedDevice(device)}
+                      className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm"
+                    >
+                      📄 Voir Rapport
+                    </button>
+                  )}
+                  
+                  {/* Certificate link */}
+                  {device.calibration_certificate_url && (
+                    <a 
+                      href={device.calibration_certificate_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded text-sm"
+                    >
+                      📜 Certificat
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
-      )}
+      </div>
+
+      {/* Quick Actions based on RMA status */}
+      <div className="bg-white rounded-xl shadow-sm border p-4">
+        <h3 className="font-bold text-gray-700 mb-3">Actions Rapides</h3>
+        <div className="flex flex-wrap gap-2">
+          {/* Admin actions for early stages */}
+          {rma.status === 'waiting_device' && (
+            <button onClick={() => updateStatus('received')} disabled={saving} className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg disabled:opacity-50">
+              📦 Marquer Reçu
+            </button>
+          )}
+          
+          {rma.status === 'received' && (
+            <button onClick={() => updateStatus('in_queue')} disabled={saving} className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg disabled:opacity-50">
+              📋 Mettre en File d'attente
+            </button>
+          )}
+          
+          {/* Avenant button */}
+          {devicesWithAdditionalWork.length > 0 && !avenantSent && (
+            <button onClick={() => setShowAvenantPreview(true)} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg">
+              📄 Créer Avenant (€{totalAdditionalWork.toFixed(2)})
+            </button>
+          )}
+          
+          {/* Shipping action */}
+          {isReady && (
+            <button onClick={() => updateStatus('shipped')} disabled={saving} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg disabled:opacity-50">
+              🚚 Marquer Expédié
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Avenant Preview Modal */}
       {showAvenantPreview && (
