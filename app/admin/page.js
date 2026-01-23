@@ -285,6 +285,12 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, filter
     ((r.bc_file_url || r.bc_signature_url) && r.status === 'waiting_bc')
   );
   
+  // Waiting for device
+  const waitingDevice = activeRMAs.filter(r => r.status === 'waiting_device');
+  
+  // Waiting for BC (quote sent but not signed yet)
+  const waitingBC = activeRMAs.filter(r => ['quote_sent', 'waiting_bc'].includes(r.status) && !r.bc_submitted_at);
+  
   // Service statuses: File d'attente, Inspection, Approbation, Étalonnage, Réparation
   const serviceStatuses = ['in_queue', 'inspection', 'approbation', 'calibration', 'repair', 'calibration_in_progress', 'repair_in_progress'];
   // QC statuses
@@ -325,6 +331,8 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, filter
   const stats = [
     { id: 'all', label: 'RMAs Actifs', value: activeRMAs.length, color: 'bg-blue-500', icon: '📋' },
     { id: 'bc', label: 'BC à vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
+    { id: 'waiting_bc', label: 'Attente BC', value: waitingBC.length, color: 'bg-amber-500', icon: '📝' },
+    { id: 'waiting_device', label: 'Attente Appareil', value: waitingDevice.length, color: 'bg-cyan-500', icon: '📦' },
   ];
   
   // Job filter buttons
@@ -339,6 +347,8 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, filter
     if (!filter) return activeRMAs;
     if (filter === 'all') return activeRMAs;
     if (filter === 'bc') return needsReview;
+    if (filter === 'waiting_bc') return waitingBC;
+    if (filter === 'waiting_device') return waitingDevice;
     if (byJob[filter]) return byJob[filter];
     return activeRMAs;
   };
