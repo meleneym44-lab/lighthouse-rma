@@ -1231,23 +1231,23 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
             const isActive = stage === workflowStage;
             const isPast = ['waiting', 'received', 'service', 'qc', 'ready'].indexOf(workflowStage) > idx;
             return (
-              <React.Fragment key={stage}>
+              <div key={stage} className="flex items-center flex-1">
                 <div className={`flex flex-col items-center ${isActive ? 'scale-110' : ''}`}>
                   <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl ${
                     isPast ? 'bg-green-500 text-white' : 
-                    isActive ? `bg-${info.color}-500 text-white ring-4 ring-${info.color}-200` : 
+                    isActive ? 'bg-indigo-500 text-white ring-4 ring-indigo-200' : 
                     'bg-gray-200 text-gray-400'
                   }`}>
                     {isPast ? '✓' : info.icon}
                   </div>
-                  <p className={`text-xs mt-1 font-medium ${isActive ? `text-${info.color}-700` : isPast ? 'text-green-700' : 'text-gray-400'}`}>
+                  <p className={`text-xs mt-1 font-medium ${isActive ? 'text-indigo-700' : isPast ? 'text-green-700' : 'text-gray-400'}`}>
                     {info.label}
                   </p>
                 </div>
                 {idx < 4 && (
                   <div className={`flex-1 h-1 mx-2 rounded ${isPast ? 'bg-green-500' : 'bg-gray-200'}`} />
                 )}
-              </React.Fragment>
+              </div>
             );
           })}
         </div>
