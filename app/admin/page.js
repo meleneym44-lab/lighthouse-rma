@@ -47,7 +47,6 @@ const STATUS_STYLES = {
   ready_to_ship: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Prêt' },
   quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: '🔴 Modification demandée' }
 };
-};
 
 export default function AdminPortal() {
   const [user, setUser] = useState(null);
