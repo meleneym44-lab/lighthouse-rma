@@ -109,14 +109,13 @@ export default function AdminPortal() {
     c.status === 'bc_pending' || 
     c.status === 'quote_revision_requested'
   ).length;
-  // QC badge: count devices in final_qc status
-  const qcPendingCount = requests.reduce((count, r) => 
-    count + (r.request_devices?.filter(d => d.status === 'final_qc' && !d.qc_complete)?.length || 0), 0);
+  
+  // Dashboard filter state
+  const [dashboardFilter, setDashboardFilter] = useState(null);
   
   const sheets = [
     { id: 'dashboard', label: 'Tableau de Bord', icon: '📊' },
     { id: 'requests', label: 'Demandes', icon: '📋', badge: totalBadge > 0 ? totalBadge : null },
-    { id: 'qc', label: 'Contrôle Qualité', icon: '✅', badge: qcPendingCount > 0 ? qcPendingCount : null },
     { id: 'clients', label: 'Clients', icon: '👥' },
     { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
     { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
@@ -183,9 +182,8 @@ export default function AdminPortal() {
           />
         ) : (
           <>
-            {activeSheet === 'dashboard' && <DashboardSheet requests={requests} notify={notify} reload={loadData} isAdmin={isAdmin} onSelectRMA={setSelectedRMA} />}
+            {activeSheet === 'dashboard' && <DashboardSheet requests={requests} notify={notify} reload={loadData} isAdmin={isAdmin} onSelectRMA={setSelectedRMA} filter={dashboardFilter} setFilter={setDashboardFilter} />}
             {activeSheet === 'requests' && <RequestsSheet requests={requests} notify={notify} reload={loadData} profile={profile} />}
-            {activeSheet === 'qc' && <QCSheet requests={requests} notify={notify} reload={loadData} profile={profile} />}
             {activeSheet === 'clients' && <ClientsSheet clients={clients} requests={requests} equipment={equipment} notify={notify} reload={loadData} isAdmin={isAdmin} />}
             {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} />}
             {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} reloadMain={loadData} />}
@@ -256,34 +254,73 @@ function LoginPage() {
   );
 }
 
-function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA }) {
+function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, filter, setFilter }) {
   const [reviewingBC, setReviewingBC] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   
   const archivedRMAs = requests.filter(r => r.status === 'archived');
   const activeRMAs = requests.filter(r => r.request_number && !['completed', 'cancelled', 'archived'].includes(r.status));
-  // BC needs review if status is bc_review OR if bc_file_url/bc_signature_url exists and status is still waiting_bc
+  // BC needs review
   const needsReview = requests.filter(r => 
     r.status === 'bc_review' || 
     ((r.bc_file_url || r.bc_signature_url) && r.status === 'waiting_bc')
   );
   
-  const byStatus = {
-    waiting: activeRMAs.filter(r => ['approved', 'waiting_bc', 'waiting_device'].includes(r.status) && !needsReview.find(n => n.id === r.id)),
-    received: activeRMAs.filter(r => ['received', 'in_queue'].includes(r.status)),
-    inProgress: activeRMAs.filter(r => ['calibration_in_progress', 'repair_in_progress', 'quote_sent'].includes(r.status)),
-    ready: activeRMAs.filter(r => ['final_qc', 'ready_to_ship'].includes(r.status)),
-    shipped: activeRMAs.filter(r => r.status === 'shipped')
+  // RMA workflow stages based on device statuses
+  const getWorkflowStage = (rma) => {
+    const devices = rma.request_devices || [];
+    if (devices.length === 0) {
+      // No devices yet - use RMA status
+      if (['approved', 'waiting_bc', 'waiting_device'].includes(rma.status)) return 'waiting';
+      if (['received', 'in_queue'].includes(rma.status)) return 'received';
+      return 'waiting';
+    }
+    
+    // Check device statuses
+    const allQCComplete = devices.every(d => d.qc_complete);
+    const anyQCComplete = devices.some(d => d.qc_complete);
+    const allInFinalQC = devices.every(d => d.status === 'final_qc' || d.qc_complete);
+    const anyInFinalQC = devices.some(d => d.status === 'final_qc');
+    const allReadyToShip = devices.every(d => d.status === 'ready_to_ship' || d.qc_complete);
+    const allReportComplete = devices.every(d => d.report_complete);
+    const anyServiceStarted = devices.some(d => d.service_findings || d.inspection_complete);
+    
+    if (allReadyToShip && allQCComplete) return 'ready';
+    if (allInFinalQC || anyInFinalQC) return 'qc';
+    if (allReportComplete) return 'qc';
+    if (anyServiceStarted || ['calibration_in_progress', 'repair_in_progress'].includes(rma.status)) return 'service';
+    if (['received', 'in_queue'].includes(rma.status)) return 'received';
+    return 'waiting';
+  };
+  
+  const byStage = {
+    waiting: activeRMAs.filter(r => getWorkflowStage(r) === 'waiting' && !needsReview.find(n => n.id === r.id)),
+    received: activeRMAs.filter(r => getWorkflowStage(r) === 'received'),
+    service: activeRMAs.filter(r => getWorkflowStage(r) === 'service'),
+    qc: activeRMAs.filter(r => getWorkflowStage(r) === 'qc'),
+    ready: activeRMAs.filter(r => getWorkflowStage(r) === 'ready')
   };
   
   const stats = [
-    { label: 'RMAs Actifs', value: activeRMAs.length, color: 'bg-blue-500', icon: '📋' },
-    { label: 'BC à vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
-    { label: 'En attente', value: byStatus.waiting.length, color: 'bg-amber-500', icon: '⏳' },
-    { label: 'Reçus', value: byStatus.received.length, color: 'bg-cyan-500', icon: '📦' },
-    { label: 'En cours', value: byStatus.inProgress.length, color: 'bg-indigo-500', icon: '🔧' },
-    { label: 'Prêts', value: byStatus.ready.length, color: 'bg-green-500', icon: '✅' }
+    { id: 'all', label: 'RMAs Actifs', value: activeRMAs.length, color: 'bg-blue-500', icon: '📋' },
+    { id: 'bc', label: 'BC à vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
+    { id: 'waiting', label: 'En attente', value: byStage.waiting.length, color: 'bg-amber-500', icon: '⏳' },
+    { id: 'received', label: 'Reçus', value: byStage.received.length, color: 'bg-cyan-500', icon: '📦' },
+    { id: 'service', label: 'Service', value: byStage.service.length, color: 'bg-indigo-500', icon: '🔧' },
+    { id: 'qc', label: 'QC', value: byStage.qc.length, color: 'bg-purple-500', icon: '✅' },
+    { id: 'ready', label: 'Prêts', value: byStage.ready.length, color: 'bg-green-500', icon: '📤' }
   ];
+  
+  // Filter RMAs based on selected filter
+  const getFilteredRMAs = () => {
+    if (!filter) return activeRMAs;
+    if (filter === 'all') return activeRMAs;
+    if (filter === 'bc') return needsReview;
+    return byStage[filter] || activeRMAs;
+  };
+  
+  const filteredRMAs = getFilteredRMAs();
+  const filterLabel = filter ? stats.find(s => s.id === filter)?.label : null;
 
   return (
     <div className="space-y-6">
@@ -324,20 +361,38 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA }) {
         </div>
       )}
       
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {stats.map((stat, i) => (
-          <div key={i} className={`bg-white rounded-xl p-4 shadow-sm ${stat.value > 0 && stat.label === 'BC à vérifier' ? 'ring-2 ring-red-500 animate-pulse' : ''}`}>
+      {/* Clickable Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        {stats.map((stat) => (
+          <button 
+            key={stat.id} 
+            onClick={() => setFilter(filter === stat.id ? null : stat.id)}
+            className={`bg-white rounded-xl p-4 shadow-sm text-left transition-all ${
+              filter === stat.id ? 'ring-2 ring-offset-2 ring-blue-500 scale-105' : 'hover:shadow-md'
+            } ${stat.value > 0 && stat.id === 'bc' ? 'ring-2 ring-red-500 animate-pulse' : ''}`}
+          >
             <div className="flex items-center gap-3">
-              <div className={`w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center text-2xl text-white`}>{stat.icon}</div>
-              <div><p className="text-2xl font-bold text-gray-800">{stat.value}</p><p className="text-sm text-gray-500">{stat.label}</p></div>
+              <div className={`w-10 h-10 ${stat.color} rounded-lg flex items-center justify-center text-xl text-white`}>{stat.icon}</div>
+              <div>
+                <p className="text-xl font-bold text-gray-800">{stat.value}</p>
+                <p className="text-xs text-gray-500">{stat.label}</p>
+              </div>
             </div>
-          </div>
+          </button>
         ))}
       </div>
       
-      {/* BC Review Section - Top Priority */}
-      {needsReview.length > 0 && (
+      {/* Active Filter Indicator */}
+      {filter && (
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+          <span className="text-blue-700 font-medium">Filtre: {filterLabel}</span>
+          <span className="text-blue-600">({filteredRMAs.length} RMAs)</span>
+          <button onClick={() => setFilter(null)} className="ml-auto text-blue-600 hover:text-blue-800 font-medium">✕ Effacer</button>
+        </div>
+      )}
+      
+      {/* BC Review Section - Always show when there are BCs to review */}
+      {needsReview.length > 0 && (!filter || filter === 'bc') && (
         <div className="bg-red-50 border-2 border-red-300 rounded-xl shadow-lg">
           <div className="px-6 py-4 border-b border-red-200 bg-red-100 rounded-t-xl">
             <h2 className="font-bold text-red-800 text-lg">⚠️ Bons de Commande à Vérifier ({needsReview.length})</h2>
@@ -369,53 +424,68 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA }) {
         </div>
       )}
       
-      {/* Active RMAs Table */}
-      <div className="bg-white rounded-xl shadow-sm">
-        <div className="px-6 py-4 border-b border-gray-100"><h2 className="font-bold text-gray-800">RMAs Actifs ({activeRMAs.length})</h2></div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMA</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Client</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Appareil(s)</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Service</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Statut</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Date</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {activeRMAs.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Aucun RMA actif</td></tr>
-              ) : activeRMAs.map(rma => {
-                const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
-                const devices = rma.request_devices || [];
-                const hasBCToReview = needsReview.find(n => n.id === rma.id);
-                return (
-                  <tr key={rma.id} className={`hover:bg-gray-50 cursor-pointer ${hasBCToReview ? 'bg-red-50' : ''}`} onClick={() => !hasBCToReview && onSelectRMA(rma)}>
-                    <td className="px-4 py-3"><span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span></td>
-                    <td className="px-4 py-3"><p className="font-medium text-gray-800">{rma.companies?.name || '—'}</p></td>
-                    <td className="px-4 py-3">
-                      {devices.length > 0 ? <div className="text-sm">{devices.slice(0, 2).map((d, i) => <p key={i}>{d.model_name} <span className="text-gray-400">({d.serial_number})</span></p>)}{devices.length > 2 && <p className="text-gray-400">+{devices.length - 2} autres</p>}</div> : <span className="text-gray-400">{rma.serial_number || '—'}</span>}
-                    </td>
-                    <td className="px-4 py-3"><span className="text-sm">{rma.requested_service === 'calibration' ? '🔬 Étalonnage' : rma.requested_service === 'repair' ? '🔧 Réparation' : rma.requested_service}</span></td>
-                    <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span></td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</td>
-                    <td className="px-4 py-3">
-                      {hasBCToReview ? (
-                        <button onClick={(e) => { e.stopPropagation(); setReviewingBC(rma); }} className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded">🔍 Examiner BC</button>
-                      ) : (
-                        <button onClick={(e) => { e.stopPropagation(); onSelectRMA(rma); }} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {/* Filtered RMAs Table */}
+      {filter !== 'bc' && (
+        <div className="bg-white rounded-xl shadow-sm">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="font-bold text-gray-800">
+              {filterLabel ? `${filterLabel} (${filteredRMAs.length})` : `RMAs Actifs (${activeRMAs.length})`}
+            </h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMA</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Client</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Appareil(s)</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Service</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Étape</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Date</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredRMAs.length === 0 ? (
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Aucun RMA</td></tr>
+                ) : filteredRMAs.map(rma => {
+                  const stage = getWorkflowStage(rma);
+                  const stageStyles = {
+                    waiting: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'En attente' },
+                    received: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Reçu' },
+                    service: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Service' },
+                    qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'QC' },
+                    ready: { bg: 'bg-green-100', text: 'text-green-700', label: 'Prêt' }
+                  };
+                  const stageStyle = stageStyles[stage] || stageStyles.waiting;
+                  const devices = rma.request_devices || [];
+                  const hasBCToReview = needsReview.find(n => n.id === rma.id);
+                  
+                  return (
+                    <tr key={rma.id} className={`hover:bg-gray-50 cursor-pointer ${hasBCToReview ? 'bg-red-50' : ''}`} onClick={() => !hasBCToReview && onSelectRMA(rma)}>
+                      <td className="px-4 py-3"><span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span></td>
+                      <td className="px-4 py-3"><p className="font-medium text-gray-800">{rma.companies?.name || '—'}</p></td>
+                      <td className="px-4 py-3">
+                        {devices.length > 0 ? <div className="text-sm">{devices.slice(0, 2).map((d, i) => <p key={i}>{d.model_name} <span className="text-gray-400">({d.serial_number})</span></p>)}{devices.length > 2 && <p className="text-gray-400">+{devices.length - 2} autres</p>}</div> : <span className="text-gray-400">{rma.serial_number || '—'}</span>}
+                      </td>
+                      <td className="px-4 py-3"><span className="text-sm">{rma.requested_service === 'calibration' ? '🔬 Étalonnage' : rma.requested_service === 'repair' ? '🔧 Réparation' : rma.requested_service}</span></td>
+                      <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${stageStyle.bg} ${stageStyle.text}`}>{stageStyle.label}</span></td>
+                      <td className="px-4 py-3 text-sm text-gray-500">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</td>
+                      <td className="px-4 py-3">
+                        {hasBCToReview ? (
+                          <button onClick={(e) => { e.stopPropagation(); setReviewingBC(rma); }} className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded">🔍 Examiner BC</button>
+                        ) : (
+                          <button onClick={(e) => { e.stopPropagation(); onSelectRMA(rma); }} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
       
       {/* BC Review Modal */}
       {reviewingBC && <BCReviewModal rma={reviewingBC} onClose={() => setReviewingBC(null)} notify={notify} reload={reload} />}
@@ -865,20 +935,56 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
 }
 
 // ============================================
-// RMA FULL PAGE VIEW - Main service interface
+// RMA FULL PAGE VIEW - Adaptive workflow interface
 // ============================================
 function RMAFullPage({ rma, onBack, notify, reload, profile }) {
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [showAvenantPreview, setShowAvenantPreview] = useState(false);
+  const [showQCReview, setShowQCReview] = useState(null); // device being QC reviewed
   const [saving, setSaving] = useState(false);
   
   const devices = rma.request_devices || [];
   const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
   const isContractRMA = rma.is_contract_rma || rma.contract_id;
   
-  // Count inspections done
+  // Determine workflow stage for this RMA
+  const getWorkflowStage = () => {
+    if (devices.length === 0) {
+      if (['approved', 'waiting_bc', 'waiting_device'].includes(rma.status)) return 'waiting';
+      if (['received', 'in_queue'].includes(rma.status)) return 'received';
+      return 'waiting';
+    }
+    
+    const allQCComplete = devices.every(d => d.qc_complete);
+    const allInFinalQC = devices.every(d => d.status === 'final_qc' || d.qc_complete);
+    const anyInFinalQC = devices.some(d => d.status === 'final_qc' && !d.qc_complete);
+    const allReadyToShip = devices.every(d => d.status === 'ready_to_ship' || d.qc_complete);
+    const allReportComplete = devices.every(d => d.report_complete);
+    const anyServiceStarted = devices.some(d => d.service_findings || d.inspection_complete);
+    
+    if (allReadyToShip && allQCComplete) return 'ready';
+    if (anyInFinalQC || (allReportComplete && !allQCComplete)) return 'qc';
+    if (anyServiceStarted || ['calibration_in_progress', 'repair_in_progress'].includes(rma.status)) return 'service';
+    if (['received', 'in_queue'].includes(rma.status)) return 'received';
+    return 'waiting';
+  };
+  
+  const workflowStage = getWorkflowStage();
+  
+  // Stage styling
+  const stageInfo = {
+    waiting: { color: 'amber', icon: '⏳', label: 'En Attente', desc: 'En attente de l\'appareil' },
+    received: { color: 'cyan', icon: '📦', label: 'Reçu', desc: 'Appareil reçu - Prêt pour service' },
+    service: { color: 'indigo', icon: '🔧', label: 'Service', desc: 'Service en cours' },
+    qc: { color: 'purple', icon: '✅', label: 'Contrôle Qualité', desc: 'Vérification qualité' },
+    ready: { color: 'green', icon: '📤', label: 'Prêt', desc: 'Prêt pour expédition' }
+  };
+  const currentStage = stageInfo[workflowStage];
+  
+  // Count service progress
   const inspectionsDone = devices.filter(d => d.inspection_complete || d.service_findings).length;
-  const allInspectionsDone = devices.length > 0 && inspectionsDone === devices.length;
+  const reportsDone = devices.filter(d => d.report_complete).length;
+  const qcDone = devices.filter(d => d.qc_complete).length;
   
   // Check if any device has additional work
   const devicesWithAdditionalWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
@@ -888,6 +994,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
     );
     return sum + deviceTotal;
   }, 0);
+  const avenantSent = rma.avenant_sent_at;
 
   // Update RMA status
   const updateStatus = async (newStatus) => {
@@ -919,241 +1026,315 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
       />
     );
   }
-
-  // Check if avenant was already sent
-  const avenantSent = rma.avenant_sent_at;
+  
+  // If QC reviewing a device
+  if (showQCReview) {
+    return (
+      <QCReviewModal
+        device={showQCReview}
+        rma={rma}
+        onBack={() => { setShowQCReview(null); reload(); }}
+        notify={notify}
+        profile={profile}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header with workflow indicator */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <button 
-            onClick={onBack} 
-            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-gray-700 font-medium"
-          >
+          <button onClick={onBack} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-gray-700 font-medium">
             ← Tableau de Bord
           </button>
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-gray-800">{rma.request_number}</h1>
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>
-                {style.label}
+              <span className={`px-3 py-1 rounded-full text-sm font-bold bg-${currentStage.color}-100 text-${currentStage.color}-700`}>
+                {currentStage.icon} {currentStage.label}
               </span>
               {isContractRMA && (
-                <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">
-                  📋 CONTRAT
-                </span>
-              )}
-              {avenantSent && (
-                <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-bold">
-                  📄 Avenant envoyé
-                </span>
+                <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">📋 CONTRAT</span>
               )}
             </div>
-            <p className="text-gray-500">Créé le {new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* Show avenant button only if not already sent */}
-          {allInspectionsDone && devicesWithAdditionalWork.length > 0 && !avenantSent && (
-            <button 
-              onClick={() => setShowAvenantPreview(true)}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
-            >
-              📄 Créer Avenant (€{totalAdditionalWork.toFixed(2)})
-            </button>
-          )}
-          {/* Show view avenant if already sent */}
-          {avenantSent && (
-            <button 
-              onClick={() => setShowAvenantPreview(true)}
-              className="px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg font-medium"
-            >
-              📄 Voir Avenant (€{rma.avenant_total?.toFixed(2) || totalAdditionalWork.toFixed(2)})
-            </button>
-          )}
-          {allInspectionsDone && devicesWithAdditionalWork.length === 0 && (
-            <button 
-              onClick={() => updateStatus('final_qc')}
-              disabled={saving}
-              className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
-            >
-              ✓ Envoyer au QC
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Client Info Card */}
-      <div className="bg-white rounded-xl shadow-sm border">
-        <div className="px-6 py-4 border-b bg-gray-50">
-          <h2 className="font-bold text-gray-800">INFORMATIONS CLIENT</h2>
-        </div>
-        <div className="p-6">
-          <div className="grid md:grid-cols-4 gap-6">
-            <div>
-              <p className="text-xs text-gray-500 uppercase font-medium mb-1">Client</p>
-              <p className="font-bold text-gray-800 text-lg">{rma.companies?.name}</p>
-              {rma.companies?.billing_address && (
-                <p className="text-sm text-gray-500">{rma.companies.billing_address}</p>
-              )}
-              {rma.companies?.billing_postal_code && rma.companies?.billing_city && (
-                <p className="text-sm text-gray-500">{rma.companies.billing_postal_code} {rma.companies.billing_city}</p>
-              )}
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase font-medium mb-1">Service Demandé</p>
-              <p className="font-medium text-gray-800">
-                {rma.requested_service === 'calibration' ? '🔬 Étalonnage' : 
-                 rma.requested_service === 'repair' ? '🔧 Réparation' : rma.requested_service}
-              </p>
-              <p className="text-sm text-gray-500 mt-1">{devices.length} appareil(s)</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase font-medium mb-1">BC Original</p>
-              <p className="font-bold text-gray-800">{rma.quote_total ? `€${rma.quote_total.toFixed(2)}` : '—'}</p>
-              {rma.bc_submitted_at && (
-                <p className="text-sm text-green-600">✓ Approuvé {new Date(rma.bc_submitted_at).toLocaleDateString('fr-FR')}</p>
-              )}
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase font-medium mb-1">Documents</p>
-              <div className="space-y-1">
-                {rma.quote_url && <a href={rma.quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">📄 Devis</a>}
-                {rma.bc_file_url && <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">📋 BC</a>}
-                {rma.signed_quote_url && <a href={rma.signed_quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm block">✍️ Devis Signé</a>}
-                {!rma.quote_url && !rma.bc_file_url && !rma.signed_quote_url && <span className="text-gray-400 text-sm">Aucun</span>}
-              </div>
-            </div>
+            <p className="text-gray-500">{currentStage.desc} • Créé le {new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
           </div>
         </div>
       </div>
-
-      {/* Progress Bar */}
+      
+      {/* Workflow Progress Bar */}
       <div className="bg-white rounded-xl shadow-sm border p-4">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-gray-600">Progression des inspections</span>
-          <span className="text-sm font-bold text-gray-800">{inspectionsDone}/{devices.length}</span>
-        </div>
-        <div className="w-full bg-gray-200 rounded-full h-3">
-          <div 
-            className={`h-3 rounded-full transition-all ${allInspectionsDone ? 'bg-green-500' : 'bg-blue-500'}`}
-            style={{ width: `${devices.length > 0 ? (inspectionsDone / devices.length) * 100 : 0}%` }}
-          />
-        </div>
-        {allInspectionsDone && (
-          <p className="text-green-600 text-sm mt-2 font-medium">
-            ✓ Toutes les inspections sont terminées
-            {devicesWithAdditionalWork.length > 0 && ` • ${devicesWithAdditionalWork.length} appareil(s) avec travaux supplémentaires`}
-          </p>
-        )}
-      </div>
-
-      {/* Devices List - Horizontal Rows */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div className="px-6 py-4 border-b bg-gray-50">
-          <h2 className="font-bold text-gray-800">APPAREILS ({devices.length})</h2>
-        </div>
-        <div className="divide-y">
-          {devices.map((device, idx) => {
-            const hasFindings = device.service_findings || device.inspection_complete;
-            const hasAdditionalWork = device.additional_work_needed && device.additional_work_items?.length > 0;
-            const additionalTotal = hasAdditionalWork 
-              ? device.additional_work_items.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0)
-              : 0;
-            const deviceStatus = device.status || rma.status;
-            const deviceStyle = STATUS_STYLES[deviceStatus] || STATUS_STYLES.submitted;
-
+        <div className="flex items-center justify-between">
+          {['waiting', 'received', 'service', 'qc', 'ready'].map((stage, idx) => {
+            const info = stageInfo[stage];
+            const isActive = stage === workflowStage;
+            const isPast = ['waiting', 'received', 'service', 'qc', 'ready'].indexOf(workflowStage) > idx;
             return (
-              <div 
-                key={device.id || idx}
-                onClick={() => setSelectedDevice(device)}
-                className={`px-6 py-4 cursor-pointer transition-all hover:bg-gray-50 ${
-                  hasFindings 
-                    ? hasAdditionalWork 
-                      ? 'bg-amber-50 hover:bg-amber-100' 
-                      : 'bg-green-50 hover:bg-green-100'
-                    : ''
-                }`}
-              >
-                <div className="flex items-center gap-6">
-                  {/* Status Icon */}
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold flex-shrink-0 ${
-                    hasFindings 
-                      ? hasAdditionalWork ? 'bg-amber-200 text-amber-700' : 'bg-green-200 text-green-700'
-                      : 'bg-gray-200 text-gray-600'
+              <React.Fragment key={stage}>
+                <div className={`flex flex-col items-center ${isActive ? 'scale-110' : ''}`}>
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl ${
+                    isPast ? 'bg-green-500 text-white' : 
+                    isActive ? `bg-${info.color}-500 text-white ring-4 ring-${info.color}-200` : 
+                    'bg-gray-200 text-gray-400'
                   }`}>
-                    {hasFindings ? (hasAdditionalWork ? '⚠' : '✓') : (idx + 1)}
+                    {isPast ? '✓' : info.icon}
                   </div>
-
-                  {/* Device Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 mb-1">
-                      <h3 className="font-bold text-gray-800">{device.model_name}</h3>
-                      <span className="text-sm text-gray-500">SN: {device.serial_number}</span>
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${deviceStyle.bg} ${deviceStyle.text}`}>
-                        {deviceStyle.label}
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        {device.service_type === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}
-                      </span>
-                    </div>
-                    
-                    {/* Customer Notes */}
-                    {device.notes && (
-                      <p className="text-sm text-blue-600 mb-1">
-                        📝 Client: "{device.notes}"
-                      </p>
-                    )}
-
-                    {/* Findings Preview */}
-                    {hasFindings && device.service_findings && (
-                      <p className="text-sm text-gray-600 truncate">
-                        Constatations: {device.service_findings}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Additional Work / Status */}
-                  <div className="flex-shrink-0 text-right">
-                    {hasFindings ? (
-                      <>
-                        {hasAdditionalWork ? (
-                          <div>
-                            <p className="text-lg font-bold text-amber-700">€{additionalTotal.toFixed(2)}</p>
-                            <p className="text-xs text-amber-600">Travaux supp.</p>
-                          </div>
-                        ) : (
-                          <div>
-                            <p className="text-lg font-bold text-green-700">RAS</p>
-                            <p className="text-xs text-green-600">Aucun travaux</p>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div>
-                        <p className="text-sm text-gray-500">En attente</p>
-                        <p className="text-xs text-blue-600">Cliquer →</p>
-                      </div>
-                    )}
-                  </div>
+                  <p className={`text-xs mt-1 font-medium ${isActive ? `text-${info.color}-700` : isPast ? 'text-green-700' : 'text-gray-400'}`}>
+                    {info.label}
+                  </p>
                 </div>
-              </div>
+                {idx < 4 && (
+                  <div className={`flex-1 h-1 mx-2 rounded ${isPast ? 'bg-green-500' : 'bg-gray-200'}`} />
+                )}
+              </React.Fragment>
             );
           })}
         </div>
       </div>
 
+      {/* Client Info - Always visible but compact */}
+      <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="grid grid-cols-4 gap-4">
+          <div>
+            <p className="text-xs text-gray-500">Client</p>
+            <p className="font-bold text-gray-800">{rma.companies?.name}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Contact</p>
+            <p className="font-medium text-gray-700">{rma.companies?.contact_name || '—'}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Service demandé</p>
+            <p className="font-medium">{rma.requested_service === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Appareils</p>
+            <p className="font-bold text-lg">{devices.length}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Stage-specific content */}
+      
+      {/* WAITING STAGE */}
+      {workflowStage === 'waiting' && (
+        <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-6">
+          <div className="text-center">
+            <p className="text-5xl mb-4">📦</p>
+            <h2 className="text-xl font-bold text-amber-800 mb-2">En attente de l'appareil</h2>
+            <p className="text-amber-600 mb-4">L'appareil n'a pas encore été reçu</p>
+            <button 
+              onClick={() => updateStatus('received')}
+              disabled={saving}
+              className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
+            >
+              {saving ? '...' : '📦 Marquer comme Reçu'}
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {/* RECEIVED STAGE */}
+      {workflowStage === 'received' && (
+        <div className="bg-cyan-50 border-2 border-cyan-200 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-xl font-bold text-cyan-800">📦 Appareil Reçu</h2>
+              <p className="text-cyan-600">Prêt à commencer le service</p>
+            </div>
+            <button 
+              onClick={() => updateStatus('calibration_in_progress')}
+              disabled={saving}
+              className="px-6 py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-medium disabled:opacity-50"
+            >
+              {saving ? '...' : '🔧 Démarrer Service'}
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {/* SERVICE STAGE - Main work area */}
+      {workflowStage === 'service' && (
+        <div className="space-y-4">
+          {/* Progress summary */}
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-indigo-800">🔧 Service en cours</h2>
+                <p className="text-sm text-indigo-600">
+                  {reportsDone}/{devices.length} rapports terminés
+                </p>
+              </div>
+              {devicesWithAdditionalWork.length > 0 && !avenantSent && (
+                <button 
+                  onClick={() => setShowAvenantPreview(true)}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
+                >
+                  📄 Créer Avenant (€{totalAdditionalWork.toFixed(2)})
+                </button>
+              )}
+              {avenantSent && (
+                <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium">
+                  📄 Avenant envoyé {rma.avenant_approved_at ? '✓ Approuvé' : '⏳ En attente'}
+                </span>
+              )}
+            </div>
+          </div>
+          
+          {/* Device list for service */}
+          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <div className="px-4 py-3 bg-gray-50 border-b">
+              <h3 className="font-bold text-gray-700">Appareils à traiter</h3>
+            </div>
+            <div className="divide-y">
+              {devices.map(device => {
+                const hasReport = device.report_complete;
+                const hasFindings = device.service_findings;
+                const needsCert = (device.service_type === 'calibration' || device.service_type === 'both') && !device.calibration_certificate_url;
+                
+                return (
+                  <div key={device.id} className={`p-4 flex items-center justify-between ${hasReport ? 'bg-green-50' : ''}`}>
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${hasReport ? 'bg-green-500 text-white' : hasFindings ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}>
+                        {hasReport ? '✓' : hasFindings ? '⚡' : '○'}
+                      </div>
+                      <div>
+                        <p className="font-bold">{device.model_name}</p>
+                        <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
+                        {device.additional_work_needed && (
+                          <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">+ Travaux supp.</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {hasReport ? (
+                        <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">✓ Rapport terminé</span>
+                      ) : needsCert && hasFindings ? (
+                        <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm">⚠️ Certificat requis</span>
+                      ) : null}
+                      <button 
+                        onClick={() => setSelectedDevice(device)}
+                        className={`px-4 py-2 rounded-lg font-medium ${hasReport ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-indigo-500 hover:bg-indigo-600 text-white'}`}
+                      >
+                        {hasReport ? 'Voir' : 'Traiter →'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* QC STAGE */}
+      {workflowStage === 'qc' && (
+        <div className="space-y-4">
+          <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-purple-800">✅ Contrôle Qualité</h2>
+                <p className="text-sm text-purple-600">{qcDone}/{devices.length} appareils validés</p>
+              </div>
+            </div>
+          </div>
+          
+          {/* Device list for QC */}
+          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <div className="px-4 py-3 bg-gray-50 border-b">
+              <h3 className="font-bold text-gray-700">Appareils à contrôler</h3>
+            </div>
+            <div className="divide-y">
+              {devices.map(device => {
+                const qcComplete = device.qc_complete;
+                const inQC = device.status === 'final_qc' && !qcComplete;
+                
+                return (
+                  <div key={device.id} className={`p-4 flex items-center justify-between ${qcComplete ? 'bg-green-50' : ''}`}>
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${qcComplete ? 'bg-green-500 text-white' : 'bg-purple-500 text-white'}`}>
+                        {qcComplete ? '✓' : '?'}
+                      </div>
+                      <div>
+                        <p className="font-bold">{device.model_name}</p>
+                        <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
+                        <p className="text-xs text-gray-400">Tech: {device.technician_name || '—'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {qcComplete ? (
+                        <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">✓ QC Validé</span>
+                      ) : (
+                        <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">En attente QC</span>
+                      )}
+                      <button 
+                        onClick={() => setShowQCReview(device)}
+                        className={`px-4 py-2 rounded-lg font-medium ${qcComplete ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-purple-500 hover:bg-purple-600 text-white'}`}
+                      >
+                        {qcComplete ? 'Voir' : 'Contrôler →'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* READY STAGE */}
+      {workflowStage === 'ready' && (
+        <div className="space-y-4">
+          <div className="bg-green-50 border-2 border-green-200 rounded-xl p-6">
+            <div className="text-center">
+              <p className="text-5xl mb-4">📤</p>
+              <h2 className="text-xl font-bold text-green-800 mb-2">Prêt pour Expédition</h2>
+              <p className="text-green-600 mb-4">Tous les appareils ont passé le contrôle qualité</p>
+              <button 
+                onClick={() => updateStatus('shipped')}
+                disabled={saving}
+                className="px-8 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold text-lg disabled:opacity-50"
+              >
+                {saving ? '...' : '🚚 Marquer comme Expédié'}
+              </button>
+            </div>
+          </div>
+          
+          {/* Summary of completed devices */}
+          <div className="bg-white rounded-xl shadow-sm border p-4">
+            <h3 className="font-bold text-gray-700 mb-3">Résumé des appareils</h3>
+            <div className="space-y-2">
+              {devices.map(device => (
+                <div key={device.id} className="flex items-center justify-between bg-green-50 rounded-lg p-3">
+                  <div>
+                    <p className="font-medium">{device.model_name}</p>
+                    <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">✓ Service</span>
+                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">✓ QC</span>
+                    {device.calibration_certificate_url && (
+                      <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200">📄 Certificat</a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Avenant Preview Modal */}
       {showAvenantPreview && (
         <AvenantPreviewModal
           rma={rma}
-          devices={devices}
+          devices={devicesWithAdditionalWork}
+          totalAmount={totalAdditionalWork}
           onClose={() => setShowAvenantPreview(false)}
           notify={notify}
           reload={reload}
-          alreadySent={avenantSent}
+          isAlreadySent={!!avenantSent}
         />
       )}
     </div>
@@ -2223,110 +2404,6 @@ function ClientDetailModal({ client, requests, equipment, onClose, notify, reloa
           {activeTab === 'contacts' && <div className="space-y-3">{client.profiles?.map(contact => <div key={contact.id} className="bg-gray-50 rounded-lg p-4 flex justify-between items-center"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-[#1a1a2e] text-white flex items-center justify-center font-bold">{contact.full_name?.charAt(0)?.toUpperCase()}</div><div><p className="font-medium">{contact.full_name}</p><p className="text-sm text-gray-500">{contact.email}</p>{contact.phone && <p className="text-sm text-gray-400">{contact.phone}</p>}</div></div><span className={`px-2 py-1 rounded-full text-xs ${contact.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-200 text-gray-600'}`}>{contact.role === 'admin' ? '👑 Admin' : '👤 Utilisateur'}</span></div>)}</div>}
         </div>
       </div>
-    </div>
-  );
-}
-
-// ============================================
-// QC SHEET - Quality Control Review & Approve
-// ============================================
-function QCSheet({ requests, notify, reload, profile }) {
-  const [selectedDevice, setSelectedDevice] = useState(null);
-  const [selectedRMA, setSelectedRMA] = useState(null);
-  const [filter, setFilter] = useState('pending'); // pending, completed
-  
-  // Get all devices that need QC or have completed QC
-  const allDevices = requests.flatMap(r => 
-    (r.request_devices || []).map(d => ({ ...d, rma: r }))
-  ).filter(d => d.status === 'final_qc' || d.qc_complete);
-  
-  const pendingDevices = allDevices.filter(d => !d.qc_complete);
-  const completedDevices = allDevices.filter(d => d.qc_complete);
-  const displayedDevices = filter === 'pending' ? pendingDevices : completedDevices;
-  
-  if (selectedDevice && selectedRMA) {
-    return (
-      <QCReviewModal 
-        device={selectedDevice} 
-        rma={selectedRMA} 
-        onBack={() => { setSelectedDevice(null); setSelectedRMA(null); reload(); }}
-        notify={notify}
-        profile={profile}
-      />
-    );
-  }
-  
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">✅ Contrôle Qualité</h1>
-          <p className="text-gray-500">Vérification finale avant expédition</p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => setFilter('pending')} className={`px-4 py-2 rounded-lg font-medium ${filter === 'pending' ? 'bg-amber-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>
-            En attente ({pendingDevices.length})
-          </button>
-          <button onClick={() => setFilter('completed')} className={`px-4 py-2 rounded-lg font-medium ${filter === 'completed' ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>
-            Terminé ({completedDevices.length})
-          </button>
-        </div>
-      </div>
-      
-      {displayedDevices.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm border p-12 text-center">
-          <p className="text-4xl mb-4">{filter === 'pending' ? '🎉' : '📭'}</p>
-          <p className="text-gray-500">{filter === 'pending' ? 'Aucun appareil en attente de contrôle qualité' : 'Aucun contrôle qualité terminé'}</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">RMA</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Client</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Appareil</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">N° Série</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Service</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Technicien</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Statut</th>
-                <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {displayedDevices.map(device => (
-                <tr key={device.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-blue-600">{device.rma.request_number}</td>
-                  <td className="px-4 py-3 text-gray-800">{device.rma.companies?.name}</td>
-                  <td className="px-4 py-3 font-medium">{device.model_name}</td>
-                  <td className="px-4 py-3 text-gray-600 font-mono text-sm">{device.serial_number}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${device.service_type === 'calibration' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
-                      {device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">{device.technician_name || '—'}</td>
-                  <td className="px-4 py-3">
-                    {device.qc_complete ? (
-                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">✓ Validé</span>
-                    ) : (
-                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">En attente</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button 
-                      onClick={() => { setSelectedDevice(device); setSelectedRMA(device.rma); }}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium ${device.qc_complete ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-green-600 hover:bg-green-700 text-white'}`}
-                    >
-                      {device.qc_complete ? 'Voir' : 'Contrôler →'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }
