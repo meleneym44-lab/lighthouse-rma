@@ -943,6 +943,16 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
   const [showQCReview, setShowQCReview] = useState(null); // device being QC reviewed
   const [saving, setSaving] = useState(false);
   
+  // Safety check
+  if (!rma) {
+    return (
+      <div className="p-8 text-center">
+        <p className="text-red-500">Erreur: RMA non trouvé</p>
+        <button onClick={onBack} className="mt-4 px-4 py-2 bg-gray-200 rounded-lg">← Retour</button>
+      </div>
+    );
+  }
+  
   const devices = rma.request_devices || [];
   const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
   const isContractRMA = rma.is_contract_rma || rma.contract_id;
@@ -1071,7 +1081,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
             const isActive = stage === workflowStage;
             const isPast = ['waiting', 'received', 'service', 'qc', 'ready'].indexOf(workflowStage) > idx;
             return (
-              <React.Fragment key={stage}>
+              <div key={stage} className="contents">
                 <div className={`flex flex-col items-center ${isActive ? 'scale-110' : ''}`}>
                   <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl ${
                     isPast ? 'bg-green-500 text-white' : 
@@ -1087,7 +1097,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
                 {idx < 4 && (
                   <div className={`flex-1 h-1 mx-2 rounded ${isPast ? 'bg-green-500' : 'bg-gray-200'}`} />
                 )}
-              </React.Fragment>
+              </div>
             );
           })}
         </div>
@@ -1098,7 +1108,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
         <div className="grid grid-cols-4 gap-4">
           <div>
             <p className="text-xs text-gray-500">Client</p>
-            <p className="font-bold text-gray-800">{rma.companies?.name}</p>
+            <p className="font-bold text-gray-800">{rma.companies?.name || '—'}</p>
           </div>
           <div>
             <p className="text-xs text-gray-500">Contact</p>
@@ -1106,7 +1116,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
           </div>
           <div>
             <p className="text-xs text-gray-500">Service demandé</p>
-            <p className="font-medium">{rma.requested_service === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}</p>
+            <p className="font-medium">{rma.requested_service === 'calibration' ? '🔬 Étalonnage' : rma.requested_service === 'repair' ? '🔧 Réparation' : rma.requested_service || '—'}</p>
           </div>
           <div>
             <p className="text-xs text-gray-500">Appareils</p>
@@ -1329,12 +1339,11 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
       {showAvenantPreview && (
         <AvenantPreviewModal
           rma={rma}
-          devices={devicesWithAdditionalWork}
-          totalAmount={totalAdditionalWork}
+          devices={devices}
           onClose={() => setShowAvenantPreview(false)}
           notify={notify}
           reload={reload}
-          isAlreadySent={!!avenantSent}
+          alreadySent={!!avenantSent}
         />
       )}
     </div>
