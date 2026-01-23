@@ -594,6 +594,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                 { id: 'submitted', label: 'Soumis' },
                 { id: 'rma_created', label: 'RMA' },
                 { id: 'bc_approved', label: 'BC' },
+                { id: 'waiting_device', label: 'Attente' },
                 { id: 'received', label: 'Reçu' },
                 { id: 'queue', label: 'File' },
                 { id: 'calibration', label: 'Étal.' },
@@ -606,6 +607,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                 { id: 'submitted', label: 'Soumis' },
                 { id: 'rma_created', label: 'RMA' },
                 { id: 'bc_approved', label: 'BC' },
+                { id: 'waiting_device', label: 'Attente' },
                 { id: 'received', label: 'Reçu' },
                 { id: 'inspection', label: 'Insp.' },
                 { id: 'customer_approval', label: 'Appr.' },
@@ -625,7 +627,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                 }
                 
                 if (isRepair) {
-                  // Repair: 10 steps (0-9)
+                  // Repair: 11 steps (0-10)
                   const map = {
                     'submitted': 0, 'pending': 0, 'waiting_approval': 0,
                     'approved': 1, 'rma_created': 1, 'quote_sent': 1,
@@ -637,11 +639,11 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                     'repair': 7, 'repair_in_progress': 7, 'in_progress': 7,
                     'final_qc': 8, 'qc': 8, 'quality_check': 8,
                     'ready_to_ship': 9, 'ready': 9,
-                    'shipped': 9, 'delivered': 9, 'completed': 9
+                    'shipped': 10, 'delivered': 10, 'completed': 10
                   };
-                  return map[status] ?? 1; // Default to RMA created if has request_number
+                  return map[status] ?? 1;
                 } else {
-                  // Calibration: 9 steps (0-8)
+                  // Calibration: 10 steps (0-9)
                   const map = {
                     'submitted': 0, 'pending': 0, 'waiting_approval': 0,
                     'approved': 1, 'rma_created': 1, 'quote_sent': 1,
@@ -652,14 +654,14 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                     'calibration': 6, 'calibration_in_progress': 6, 'in_progress': 6,
                     'final_qc': 7, 'qc': 7, 'quality_check': 7,
                     'ready_to_ship': 8, 'ready': 8,
-                    'shipped': 8, 'delivered': 8, 'completed': 8
+                    'shipped': 9, 'delivered': 9, 'completed': 9
                   };
-                  return map[status] ?? 1; // Default to RMA created if has request_number
+                  return map[status] ?? 1;
                 }
               };
               
-              // Get the actual status to use
-              const effectiveStatus = device.status || rma.status;
+              // Get the actual status to use - prioritize rma.status as it's more reliably updated
+              const effectiveStatus = rma.status || device.status;
               const currentIndex = getStepIndex(effectiveStatus);
               
               return (
@@ -1262,6 +1264,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice }) {
     { id: 'submitted', label: 'Soumis' },
     { id: 'rma_created', label: 'RMA' },
     { id: 'bc_approved', label: 'BC' },
+    { id: 'waiting_device', label: 'Attente' },
     { id: 'received', label: 'Reçu' },
     { id: 'queue', label: 'File' },
     { id: 'calibration', label: 'Étal.' },
@@ -1274,6 +1277,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice }) {
     { id: 'submitted', label: 'Soumis' },
     { id: 'rma_created', label: 'RMA' },
     { id: 'bc_approved', label: 'BC' },
+    { id: 'waiting_device', label: 'Attente' },
     { id: 'received', label: 'Reçu' },
     { id: 'inspection', label: 'Insp.' },
     { id: 'customer_approval', label: 'Appr.' },
@@ -1291,7 +1295,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice }) {
     }
     
     if (isRepair) {
-      // Repair: 10 steps (0-9)
+      // Repair: 11 steps (0-10)
       const repairMap = {
         'submitted': 0, 'pending': 0, 'waiting_approval': 0,
         'approved': 1, 'rma_created': 1, 'quote_sent': 1,
@@ -1303,11 +1307,11 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice }) {
         'repair': 7, 'repair_in_progress': 7, 'in_progress': 7,
         'repair_complete': 8, 'final_qc': 8, 'qc': 8, 'quality_check': 8,
         'ready_to_ship': 9, 'ready': 9,
-        'shipped': 9, 'delivered': 9, 'completed': 9
+        'shipped': 10, 'delivered': 10, 'completed': 10
       };
       return repairMap[status] ?? 1;
     } else {
-      // Calibration: 9 steps (0-8)
+      // Calibration: 10 steps (0-9)
       const calibrationMap = {
         'submitted': 0, 'pending': 0, 'waiting_approval': 0,
         'approved': 1, 'rma_created': 1, 'quote_sent': 1,
@@ -1318,7 +1322,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice }) {
         'calibration': 6, 'calibration_in_progress': 6, 'in_progress': 6,
         'final_qc': 7, 'qc': 7, 'quality_check': 7,
         'ready_to_ship': 8, 'ready': 8,
-        'shipped': 8, 'delivered': 8, 'completed': 8
+        'shipped': 9, 'delivered': 9, 'completed': 9
       };
       return calibrationMap[status] ?? 1;
     }
