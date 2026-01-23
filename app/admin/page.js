@@ -971,13 +971,13 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
   
   const workflowStage = getWorkflowStage();
   
-  // Stage styling
+  // Stage styling - using complete class names (Tailwind doesn't support dynamic classes)
   const stageInfo = {
-    waiting: { color: 'amber', icon: '⏳', label: 'En Attente', desc: 'En attente de l\'appareil' },
-    received: { color: 'cyan', icon: '📦', label: 'Reçu', desc: 'Appareil reçu - Prêt pour service' },
-    service: { color: 'indigo', icon: '🔧', label: 'Service', desc: 'Service en cours' },
-    qc: { color: 'purple', icon: '✅', label: 'Contrôle Qualité', desc: 'Vérification qualité' },
-    ready: { color: 'green', icon: '📤', label: 'Prêt', desc: 'Prêt pour expédition' }
+    waiting: { icon: '⏳', label: 'En Attente', desc: 'En attente de l\'appareil', bgLight: 'bg-amber-100', textColor: 'text-amber-700', bgDark: 'bg-amber-500', ring: 'ring-amber-200' },
+    received: { icon: '📦', label: 'Reçu', desc: 'Appareil reçu - Prêt pour service', bgLight: 'bg-cyan-100', textColor: 'text-cyan-700', bgDark: 'bg-cyan-500', ring: 'ring-cyan-200' },
+    service: { icon: '🔧', label: 'Service', desc: 'Service en cours', bgLight: 'bg-indigo-100', textColor: 'text-indigo-700', bgDark: 'bg-indigo-500', ring: 'ring-indigo-200' },
+    qc: { icon: '✅', label: 'Contrôle Qualité', desc: 'Vérification qualité', bgLight: 'bg-purple-100', textColor: 'text-purple-700', bgDark: 'bg-purple-500', ring: 'ring-purple-200' },
+    ready: { icon: '📤', label: 'Prêt', desc: 'Prêt pour expédition', bgLight: 'bg-green-100', textColor: 'text-green-700', bgDark: 'bg-green-500', ring: 'ring-green-200' }
   };
   const currentStage = stageInfo[workflowStage];
   
@@ -1051,7 +1051,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-gray-800">{rma.request_number}</h1>
-              <span className={`px-3 py-1 rounded-full text-sm font-bold bg-${currentStage.color}-100 text-${currentStage.color}-700`}>
+              <span className={`px-3 py-1 rounded-full text-sm font-bold ${currentStage.bgLight} ${currentStage.textColor}`}>
                 {currentStage.icon} {currentStage.label}
               </span>
               {isContractRMA && (
@@ -1075,12 +1075,12 @@ function RMAFullPage({ rma, onBack, notify, reload, profile }) {
                 <div className={`flex flex-col items-center ${isActive ? 'scale-110' : ''}`}>
                   <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl ${
                     isPast ? 'bg-green-500 text-white' : 
-                    isActive ? `bg-${info.color}-500 text-white ring-4 ring-${info.color}-200` : 
+                    isActive ? `${info.bgDark} text-white ring-4 ${info.ring}` : 
                     'bg-gray-200 text-gray-400'
                   }`}>
                     {isPast ? '✓' : info.icon}
                   </div>
-                  <p className={`text-xs mt-1 font-medium ${isActive ? `text-${info.color}-700` : isPast ? 'text-green-700' : 'text-gray-400'}`}>
+                  <p className={`text-xs mt-1 font-medium ${isActive ? info.textColor : isPast ? 'text-green-700' : 'text-gray-400'}`}>
                     {info.label}
                   </p>
                 </div>
