@@ -617,30 +617,50 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               
               const steps = isRepair ? repairSteps : calibrationSteps;
               
-              // Get step index
+              // Get step index - map all possible statuses to progress steps
               const getStepIndex = (status) => {
+                // If no status, check if RMA has request_number (means it's at least created)
+                if (!status && rma.request_number) {
+                  return 1; // At least RMA created
+                }
+                
                 if (isRepair) {
+                  // Repair: 10 steps (0-9)
                   const map = {
-                    'submitted': 0, 'pending': 0,
-                    'approved': 1, 'waiting_bc': 2, 'bc_review': 2,
-                    'waiting_device': 3, 'received': 3,
-                    'inspection_complete': 4, 'quote_sent': 5,
-                    'repair_in_progress': 6, 'final_qc': 7, 'ready_to_ship': 8, 'shipped': 9
+                    'submitted': 0, 'pending': 0, 'waiting_approval': 0,
+                    'approved': 1, 'rma_created': 1, 'quote_sent': 1,
+                    'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
+                    'waiting_device': 3, 'bc_approved': 3,
+                    'received': 4, 'in_queue': 4,
+                    'inspection': 5, 'inspection_complete': 5,
+                    'customer_approval': 6, 'quote_approved': 6, 'waiting_parts': 6,
+                    'repair': 7, 'repair_in_progress': 7, 'in_progress': 7,
+                    'final_qc': 8, 'qc': 8, 'quality_check': 8,
+                    'ready_to_ship': 9, 'ready': 9,
+                    'shipped': 9, 'delivered': 9, 'completed': 9
                   };
-                  return map[status] ?? 0;
+                  return map[status] ?? 1; // Default to RMA created if has request_number
                 } else {
+                  // Calibration: 9 steps (0-8)
                   const map = {
-                    'submitted': 0, 'pending': 0,
-                    'approved': 1, 'waiting_bc': 2, 'bc_review': 2,
-                    'waiting_device': 3, 'received': 3,
-                    'in_queue': 4, 'calibration_in_progress': 5,
-                    'final_qc': 6, 'ready_to_ship': 7, 'shipped': 8
+                    'submitted': 0, 'pending': 0, 'waiting_approval': 0,
+                    'approved': 1, 'rma_created': 1, 'quote_sent': 1,
+                    'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
+                    'waiting_device': 3, 'bc_approved': 3,
+                    'received': 4, 'in_queue': 4,
+                    'queue': 5, 'queued': 5,
+                    'calibration': 6, 'calibration_in_progress': 6, 'in_progress': 6,
+                    'final_qc': 7, 'qc': 7, 'quality_check': 7,
+                    'ready_to_ship': 8, 'ready': 8,
+                    'shipped': 8, 'delivered': 8, 'completed': 8
                   };
-                  return map[status] ?? 0;
+                  return map[status] ?? 1; // Default to RMA created if has request_number
                 }
               };
               
-              const currentIndex = getStepIndex(device.status || rma.status);
+              // Get the actual status to use
+              const effectiveStatus = device.status || rma.status;
+              const currentIndex = getStepIndex(effectiveStatus);
               
               return (
                 <div className="flex items-center w-full min-w-[300px]">
@@ -1265,35 +1285,42 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice }) {
   
   // Get step index for a status
   const getStepIndex = (status, isRepair) => {
+    // If no status but RMA has request_number, it's at least created
+    if (!status && rma.request_number) {
+      return 1;
+    }
+    
     if (isRepair) {
+      // Repair: 10 steps (0-9)
       const repairMap = {
         'submitted': 0, 'pending': 0, 'waiting_approval': 0,
-        'approved': 1,
-        'waiting_bc': 2, 'waiting_po': 2, 'waiting_customer': 2,
-        'waiting_device': 3,
-        'received': 3, 'received_repair': 3, 
-        'inspection_complete': 4,
-        'quote_sent': 5,
-        'order_received': 6, 'waiting_parts': 6, 'repair_in_progress': 6,
-        'repair_complete': 7, 'final_qc': 7, 'quality_check': 7,
-        'ready_to_ship': 8,
+        'approved': 1, 'rma_created': 1, 'quote_sent': 1,
+        'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
+        'waiting_device': 3, 'bc_approved': 3,
+        'received': 4, 'received_repair': 4, 'in_queue': 4,
+        'inspection': 5, 'inspection_complete': 5,
+        'customer_approval': 6, 'quote_approved': 6, 'waiting_parts': 6,
+        'repair': 7, 'repair_in_progress': 7, 'in_progress': 7,
+        'repair_complete': 8, 'final_qc': 8, 'qc': 8, 'quality_check': 8,
+        'ready_to_ship': 9, 'ready': 9,
         'shipped': 9, 'delivered': 9, 'completed': 9
       };
-      return repairMap[status] ?? 0;
+      return repairMap[status] ?? 1;
     } else {
+      // Calibration: 9 steps (0-8)
       const calibrationMap = {
         'submitted': 0, 'pending': 0, 'waiting_approval': 0,
-        'approved': 1,
-        'waiting_bc': 2, 'waiting_po': 2, 'waiting_customer': 2,
-        'waiting_device': 3,
-        'received': 3, 'received_calibration': 3,
-        'in_queue': 4, 'queued': 4,
-        'in_progress': 5, 'calibration_in_progress': 5,
-        'final_qc': 6, 'quality_check': 6,
-        'ready_to_ship': 7,
+        'approved': 1, 'rma_created': 1, 'quote_sent': 1,
+        'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
+        'waiting_device': 3, 'bc_approved': 3,
+        'received': 4, 'received_calibration': 4, 'in_queue': 4,
+        'queue': 5, 'queued': 5,
+        'calibration': 6, 'calibration_in_progress': 6, 'in_progress': 6,
+        'final_qc': 7, 'qc': 7, 'quality_check': 7,
+        'ready_to_ship': 8, 'ready': 8,
         'shipped': 8, 'delivered': 8, 'completed': 8
       };
-      return calibrationMap[status] ?? 0;
+      return calibrationMap[status] ?? 1;
     }
   };
   
