@@ -109,10 +109,14 @@ export default function AdminPortal() {
     c.status === 'bc_pending' || 
     c.status === 'quote_revision_requested'
   ).length;
+  // QC badge: count devices in final_qc status
+  const qcPendingCount = requests.reduce((count, r) => 
+    count + (r.request_devices?.filter(d => d.status === 'final_qc' && !d.qc_complete)?.length || 0), 0);
   
   const sheets = [
     { id: 'dashboard', label: 'Tableau de Bord', icon: '📊' },
     { id: 'requests', label: 'Demandes', icon: '📋', badge: totalBadge > 0 ? totalBadge : null },
+    { id: 'qc', label: 'Contrôle Qualité', icon: '✅', badge: qcPendingCount > 0 ? qcPendingCount : null },
     { id: 'clients', label: 'Clients', icon: '👥' },
     { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
     { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
@@ -181,6 +185,7 @@ export default function AdminPortal() {
           <>
             {activeSheet === 'dashboard' && <DashboardSheet requests={requests} notify={notify} reload={loadData} isAdmin={isAdmin} onSelectRMA={setSelectedRMA} />}
             {activeSheet === 'requests' && <RequestsSheet requests={requests} notify={notify} reload={loadData} profile={profile} />}
+            {activeSheet === 'qc' && <QCSheet requests={requests} notify={notify} reload={loadData} profile={profile} />}
             {activeSheet === 'clients' && <ClientsSheet clients={clients} requests={requests} equipment={equipment} notify={notify} reload={loadData} isAdmin={isAdmin} />}
             {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} />}
             {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} reloadMain={loadData} />}
@@ -2143,6 +2148,356 @@ function ClientDetailModal({ client, requests, equipment, onClose, notify, reloa
           {activeTab === 'contacts' && <div className="space-y-3">{client.profiles?.map(contact => <div key={contact.id} className="bg-gray-50 rounded-lg p-4 flex justify-between items-center"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-[#1a1a2e] text-white flex items-center justify-center font-bold">{contact.full_name?.charAt(0)?.toUpperCase()}</div><div><p className="font-medium">{contact.full_name}</p><p className="text-sm text-gray-500">{contact.email}</p>{contact.phone && <p className="text-sm text-gray-400">{contact.phone}</p>}</div></div><span className={`px-2 py-1 rounded-full text-xs ${contact.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-200 text-gray-600'}`}>{contact.role === 'admin' ? '👑 Admin' : '👤 Utilisateur'}</span></div>)}</div>}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ============================================
+// QC SHEET - Quality Control Checklist
+// ============================================
+function QCSheet({ requests, notify, reload, profile }) {
+  const [selectedDevice, setSelectedDevice] = useState(null);
+  const [selectedRMA, setSelectedRMA] = useState(null);
+  const [filter, setFilter] = useState('pending'); // pending, completed
+  
+  // Get all devices that need QC or have completed QC
+  const allDevices = requests.flatMap(r => 
+    (r.request_devices || []).map(d => ({ ...d, rma: r }))
+  ).filter(d => d.status === 'final_qc' || d.qc_complete);
+  
+  const pendingDevices = allDevices.filter(d => !d.qc_complete);
+  const completedDevices = allDevices.filter(d => d.qc_complete);
+  const displayedDevices = filter === 'pending' ? pendingDevices : completedDevices;
+  
+  if (selectedDevice && selectedRMA) {
+    return (
+      <QCFormModal 
+        device={selectedDevice} 
+        rma={selectedRMA} 
+        onBack={() => { setSelectedDevice(null); setSelectedRMA(null); reload(); }}
+        notify={notify}
+        profile={profile}
+      />
+    );
+  }
+  
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">✅ Contrôle Qualité</h1>
+          <p className="text-gray-500">Vérification finale avant expédition</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => setFilter('pending')} className={`px-4 py-2 rounded-lg font-medium ${filter === 'pending' ? 'bg-amber-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>
+            En attente ({pendingDevices.length})
+          </button>
+          <button onClick={() => setFilter('completed')} className={`px-4 py-2 rounded-lg font-medium ${filter === 'completed' ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>
+            Terminé ({completedDevices.length})
+          </button>
+        </div>
+      </div>
+      
+      {displayedDevices.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border p-12 text-center">
+          <p className="text-4xl mb-4">{filter === 'pending' ? '🎉' : '📭'}</p>
+          <p className="text-gray-500">{filter === 'pending' ? 'Aucun appareil en attente de contrôle qualité' : 'Aucun contrôle qualité terminé'}</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">RMA</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Client</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Appareil</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">N° Série</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Service</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Technicien</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Statut</th>
+                <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {displayedDevices.map(device => (
+                <tr key={device.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 font-medium text-blue-600">{device.rma.request_number}</td>
+                  <td className="px-4 py-3 text-gray-800">{device.rma.companies?.name}</td>
+                  <td className="px-4 py-3 font-medium">{device.model_name}</td>
+                  <td className="px-4 py-3 text-gray-600 font-mono text-sm">{device.serial_number}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${device.service_type === 'calibration' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                      {device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">{device.technician_name || '—'}</td>
+                  <td className="px-4 py-3">
+                    {device.qc_complete ? (
+                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">✓ Validé</span>
+                    ) : (
+                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">En attente</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button 
+                      onClick={() => { setSelectedDevice(device); setSelectedRMA(device.rma); }}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium ${device.qc_complete ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-green-600 hover:bg-green-700 text-white'}`}
+                    >
+                      {device.qc_complete ? 'Voir' : 'Contrôler →'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// QC Form Modal - Checklist for calibration or repair
+function QCFormModal({ device, rma, onBack, notify, profile }) {
+  const [saving, setSaving] = useState(false);
+  const [qcType, setQcType] = useState(device.service_type === 'calibration' ? 'calibration' : 'repair');
+  const today = new Date().toLocaleDateString('fr-FR');
+  
+  // Calibration checklist items (from your document)
+  const calibrationChecklist = [
+    { id: 'cal_1', section: 'Étalonnage', label: 'Le nom du client est correct' },
+    { id: 'cal_2', section: 'Étalonnage', label: 'Adresse d\'étalonnage correcte' },
+    { id: 'cal_3', section: 'Étalonnage', label: 'Date d\'étalonnage correcte' },
+    { id: 'cal_4', section: 'Étalonnage', label: 'Dates de l\'équipement correctes' },
+    { id: 'cal_5', section: 'Étalonnage', label: 'Tailles/tolérances des particules correctes' },
+    { id: 'cal_6', section: 'Étalonnage', label: 'Toutes les données sont conformes pour le résultat final' },
+    { id: 'cal_7', section: 'Étalonnage', label: 'Double signature et nom du technicien corrects' },
+    { id: 'rpt_1', section: 'Rapport', label: 'Nom du client correct sur le rapport' },
+    { id: 'rpt_2', section: 'Rapport', label: 'Adresse du client correcte sur le rapport' },
+    { id: 'rpt_3', section: 'Rapport', label: 'Numéro RMA correct sur le rapport' },
+    { id: 'rpt_4', section: 'Rapport', label: 'Explication d\'échec ARD incluse (si applicable)' },
+    { id: 'lbl_1', section: 'Étiquette', label: 'Numéro de série de l\'étiquette correspond' },
+    { id: 'lbl_2', section: 'Étiquette', label: 'Date de l\'étiquette correspond au certificat' },
+    { id: 'lbl_3', section: 'Étiquette', label: 'Autocollant VOID présent sur l\'appareil' },
+    { id: 'ship_1', section: 'Expédition', label: 'Équipement prêt à être expédié' }
+  ];
+  
+  // Repair checklist items
+  const repairChecklist = [
+    { id: 'rep_1', section: 'Réparation', label: 'Rapport de réparation complet et signé' },
+    { id: 'rep_2', section: 'Réparation', label: 'Description de la panne documentée' },
+    { id: 'rep_3', section: 'Réparation', label: 'Pièces remplacées listées' },
+    { id: 'rep_4', section: 'Réparation', label: 'Tests de fonctionnement effectués' },
+    { id: 'rep_5', section: 'Réparation', label: 'Appareil fonctionne correctement' },
+    { id: 'rpt_1', section: 'Rapport', label: 'Nom du client correct sur le rapport' },
+    { id: 'rpt_2', section: 'Rapport', label: 'Adresse du client correcte sur le rapport' },
+    { id: 'rpt_3', section: 'Rapport', label: 'Numéro RMA correct sur le rapport' },
+    { id: 'ship_1', section: 'Expédition', label: 'Équipement prêt à être expédié' }
+  ];
+  
+  const checklistItems = qcType === 'calibration' ? calibrationChecklist : repairChecklist;
+  
+  // Initialize checklist state from device data or empty
+  const [checklist, setChecklist] = useState(() => {
+    const saved = device.qc_checklist || {};
+    const items = {};
+    checklistItems.forEach(item => { items[item.id] = saved[item.id] || false; });
+    return items;
+  });
+  
+  const [qcNotes, setQcNotes] = useState(device.qc_notes || '');
+  const [ardFailed, setArdFailed] = useState(device.qc_ard_failed || false);
+  const [specialClient, setSpecialClient] = useState(device.qc_special_client || 'none'); // none, jce, gsk
+  
+  const toggleItem = (id) => {
+    setChecklist(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+  
+  const allChecked = Object.values(checklist).every(v => v);
+  
+  const saveQC = async (complete = false) => {
+    setSaving(true);
+    try {
+      const updateData = {
+        qc_checklist: checklist,
+        qc_notes: qcNotes,
+        qc_ard_failed: ardFailed,
+        qc_special_client: specialClient,
+        qc_type: qcType
+      };
+      
+      if (complete) {
+        updateData.qc_complete = true;
+        updateData.qc_completed_at = new Date().toISOString();
+        updateData.qc_completed_by = profile?.id;
+        updateData.status = 'ready_to_ship';
+      }
+      
+      const { error } = await supabase.from('request_devices').update(updateData).eq('id', device.id);
+      if (error) throw error;
+      
+      notify(complete ? '✓ Contrôle qualité validé!' : '✓ Enregistré');
+      if (complete) onBack();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSaving(false);
+  };
+  
+  // Group items by section
+  const sections = [...new Set(checklistItems.map(item => item.section))];
+  
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">← Retour</button>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">CONTRÔLE QUALITÉ</h1>
+            <p className="text-gray-500">{device.model_name} • SN: {device.serial_number}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={() => saveQC(false)} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">
+            {saving ? '...' : 'Enregistrer'}
+          </button>
+          <button 
+            onClick={() => saveQC(true)} 
+            disabled={saving || !allChecked} 
+            className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50"
+          >
+            {saving ? '...' : '✓ Valider QC'}
+          </button>
+        </div>
+      </div>
+      
+      {/* Device Info Card */}
+      <div className="bg-white rounded-xl shadow-sm border p-6">
+        <div className="grid grid-cols-4 gap-6">
+          <div>
+            <p className="text-sm text-gray-500">Client</p>
+            <p className="font-bold text-gray-800">{rma.companies?.name}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Numéro de Série</p>
+            <p className="font-bold text-gray-800 font-mono">{device.serial_number}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Numéro RMA</p>
+            <p className="font-bold text-blue-600">{rma.request_number}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Date</p>
+            <p className="font-bold text-gray-800">{today}</p>
+          </div>
+        </div>
+      </div>
+      
+      {/* QC Type Selection */}
+      {device.service_type === 'both' && (
+        <div className="bg-white rounded-xl shadow-sm border p-4">
+          <p className="text-sm text-gray-600 mb-2">Type de contrôle:</p>
+          <div className="flex gap-3">
+            <button onClick={() => setQcType('calibration')} className={`px-4 py-2 rounded-lg font-medium ${qcType === 'calibration' ? 'bg-blue-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>
+              🔬 Étalonnage
+            </button>
+            <button onClick={() => setQcType('repair')} className={`px-4 py-2 rounded-lg font-medium ${qcType === 'repair' ? 'bg-orange-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>
+              🔧 Réparation
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {/* Special Options for Calibration */}
+      {qcType === 'calibration' && (
+        <div className="bg-white rounded-xl shadow-sm border p-4">
+          <div className="grid grid-cols-2 gap-6">
+            <div>
+              <p className="text-sm text-gray-600 mb-2">Client spécial:</p>
+              <div className="flex gap-2">
+                <button onClick={() => setSpecialClient('none')} className={`px-3 py-1 rounded-lg text-sm ${specialClient === 'none' ? 'bg-gray-500 text-white' : 'bg-gray-200'}`}>Aucun</button>
+                <button onClick={() => setSpecialClient('jce')} className={`px-3 py-1 rounded-lg text-sm ${specialClient === 'jce' ? 'bg-purple-500 text-white' : 'bg-gray-200'}`}>JCE</button>
+                <button onClick={() => setSpecialClient('gsk')} className={`px-3 py-1 rounded-lg text-sm ${specialClient === 'gsk' ? 'bg-green-500 text-white' : 'bg-gray-200'}`}>GSK</button>
+              </div>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 mb-2">Données reçues échouées (ARD)?</p>
+              <div className="flex gap-2">
+                <button onClick={() => setArdFailed(false)} className={`px-3 py-1 rounded-lg text-sm ${!ardFailed ? 'bg-green-500 text-white' : 'bg-gray-200'}`}>Non</button>
+                <button onClick={() => setArdFailed(true)} className={`px-3 py-1 rounded-lg text-sm ${ardFailed ? 'bg-red-500 text-white' : 'bg-gray-200'}`}>Oui</button>
+              </div>
+            </div>
+          </div>
+          
+          {/* Special client notes */}
+          {specialClient === 'gsk' && (
+            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-sm text-green-800">⚠️ GSK: Vérifier que les tolérances sont en microns (μm)</p>
+            </div>
+          )}
+          {specialClient === 'jce' && (
+            <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+              <p className="text-sm text-purple-800">⚠️ JCE: Vérifier que le test de filtre a été effectué</p>
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* Checklist */}
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div className="bg-gray-50 px-6 py-3 border-b">
+          <h2 className="font-bold text-gray-800">LISTE DE CONTRÔLE</h2>
+          <p className="text-sm text-gray-500">Cochez chaque élément après vérification</p>
+        </div>
+        
+        {sections.map(section => (
+          <div key={section} className="border-b last:border-b-0">
+            <div className="bg-gray-100 px-6 py-2">
+              <h3 className="font-medium text-gray-700">{section}</h3>
+            </div>
+            <div className="p-4 space-y-2">
+              {checklistItems.filter(item => item.section === section).map(item => (
+                <label key={item.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={checklist[item.id] || false}
+                    onChange={() => toggleItem(item.id)}
+                    className="w-5 h-5 rounded text-green-600"
+                  />
+                  <span className={checklist[item.id] ? 'text-green-700' : 'text-gray-700'}>{item.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      
+      {/* Notes */}
+      <div className="bg-white rounded-xl shadow-sm border p-4">
+        <h3 className="font-bold text-gray-700 mb-2">Notes QC (optionnel)</h3>
+        <textarea 
+          value={qcNotes}
+          onChange={e => setQcNotes(e.target.value)}
+          placeholder="Remarques ou observations..."
+          className="w-full px-4 py-3 border rounded-xl h-24 resize-none"
+        />
+      </div>
+      
+      {/* Validation Status */}
+      {!allChecked && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <p className="text-amber-800 font-medium">⚠️ Tous les éléments doivent être cochés pour valider le contrôle qualité</p>
+          <p className="text-amber-600 text-sm mt-1">
+            {Object.values(checklist).filter(v => !v).length} élément(s) restant(s)
+          </p>
+        </div>
+      )}
+      
+      {allChecked && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+          <p className="text-green-800 font-medium">✓ Tous les éléments vérifiés - Prêt pour validation</p>
+        </div>
+      )}
     </div>
   );
 }
