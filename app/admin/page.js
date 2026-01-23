@@ -1167,9 +1167,12 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
   const [technicianName, setTechnicianName] = useState(device.technician_name || '');
   const [staffMembers, setStaffMembers] = useState([]);
   
-  // Report options - empty string means not selected yet, 'none' means don't show
-  const [calType, setCalType] = useState('');
-  const [receptionResult, setReceptionResult] = useState('');
+  // Lock work items if they were previously saved (have items in DB)
+  const [workItemsLocked, setWorkItemsLocked] = useState((device.additional_work_items || []).length > 0);
+  
+  // Report options - initialize from device data, empty string means not selected yet, 'none' means don't show
+  const [calType, setCalType] = useState(device.cal_type || '');
+  const [receptionResult, setReceptionResult] = useState(device.reception_result || '');
   
   const calTypeOptions = [
     { value: 'none', label: 'Ne pas afficher' },
@@ -1295,10 +1298,16 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
         service_findings: findings, additional_work_needed: additionalWorkNeeded,
         additional_work_items: additionalWorkNeeded ? workItems : [],
         work_completed: workCompleted, work_checklist: checklistObj,
-        technician_name: technicianName
+        technician_name: technicianName,
+        cal_type: calType,
+        reception_result: receptionResult
       }).eq('id', device.id);
       if (error) throw error;
       notify('✓ Enregistré');
+      // Lock work items after successful save if there are any
+      if (additionalWorkNeeded && workItems.length > 0) {
+        setWorkItemsLocked(true);
+      }
       reload();
     } catch (err) { notify('Erreur: ' + err.message, 'error'); }
     setSaving(false);
@@ -1314,6 +1323,8 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
         additional_work_items: additionalWorkNeeded ? workItems : [],
         work_completed: workCompleted, work_checklist: checklistObj,
         technician_name: technicianName,
+        cal_type: calType,
+        reception_result: receptionResult,
         report_complete: true, report_completed_at: new Date().toISOString(), status: 'final_qc'
       }).eq('id', device.id);
       if (error) throw error;
@@ -1429,41 +1440,71 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
                 <p className="text-sm text-gray-500">Pièces ou main d'œuvre en plus</p>
               </div>
               <div className="flex gap-3">
-                <button onClick={() => setAdditionalWorkNeeded(false)} className={`px-4 py-2 rounded-lg font-medium ${!additionalWorkNeeded ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>Non (RAS)</button>
+                <button onClick={() => { setAdditionalWorkNeeded(false); setWorkItemsLocked(false); }} className={`px-4 py-2 rounded-lg font-medium ${!additionalWorkNeeded ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>Non (RAS)</button>
                 <button onClick={() => setAdditionalWorkNeeded(true)} className={`px-4 py-2 rounded-lg font-medium ${additionalWorkNeeded ? 'bg-amber-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>Oui</button>
               </div>
             </div>
             {additionalWorkNeeded && (
               <div className="border-t pt-4">
-                <div className="space-y-2">
-                  {workItems.map((item, idx) => (
-                    <div key={item.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                      <span className="text-gray-400 w-6">{idx + 1}.</span>
-                      <div className="relative">
-                        <input 
-                          type="text" 
-                          value={item.part_number || ''} 
-                          onChange={e => updateWorkItem(item.id, 'part_number', e.target.value)}
-                          onBlur={e => lookupPart(item.id, e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && lookupPart(item.id, e.target.value)}
-                          placeholder="N° Pièce" 
-                          className="w-28 px-3 py-2 border rounded-lg text-sm"
-                        />
-                        {partsLoading[item.id] && <span className="absolute right-2 top-2 text-blue-500 text-sm">...</span>}
-                      </div>
-                      <input type="text" value={item.description} onChange={e => updateWorkItem(item.id, 'description', e.target.value)} placeholder="Description" className="flex-1 px-3 py-2 border rounded-lg" />
-                      <input type="number" value={item.quantity} onChange={e => updateWorkItem(item.id, 'quantity', e.target.value)} className="w-16 px-3 py-2 border rounded-lg text-center" min="1" />
-                      <span className="text-gray-400">€</span>
-                      <input type="number" value={item.price} onChange={e => updateWorkItem(item.id, 'price', e.target.value)} className="w-24 px-3 py-2 border rounded-lg text-right" step="0.01" />
-                      <button onClick={() => removeWorkItem(item.id)} className="p-2 text-red-500 hover:bg-red-100 rounded">✕</button>
+                {/* Locked state - show read-only with edit button */}
+                {workItemsLocked ? (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm text-gray-500 flex items-center gap-2">🔒 Pièces enregistrées</span>
+                      <button onClick={() => setWorkItemsLocked(false)} className="px-3 py-1 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg">✏️ Modifier</button>
                     </div>
-                  ))}
-                </div>
-                <button onClick={addWorkItem} className="mt-3 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">+ Ajouter pièce</button>
-                {workItems.length > 0 && (
-                  <div className="mt-4 pt-4 border-t flex justify-between">
-                    <span className="font-medium">Sous-total:</span>
-                    <span className="text-xl font-bold text-amber-700">€{totalAdditional.toFixed(2)}</span>
+                    <div className="space-y-2">
+                      {workItems.map((item, idx) => (
+                        <div key={item.id} className="flex items-center gap-2 bg-gray-100 rounded-lg p-3">
+                          <span className="text-gray-400 w-6">{idx + 1}.</span>
+                          <span className="text-gray-500 text-sm w-24">{item.part_number || '—'}</span>
+                          <span className="flex-1 font-medium">{item.description}</span>
+                          <span className="text-gray-600">×{item.quantity}</span>
+                          <span className="font-bold text-amber-700 w-24 text-right">€{(parseFloat(item.price) || 0).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {workItems.length > 0 && (
+                      <div className="mt-4 pt-4 border-t flex justify-between">
+                        <span className="font-medium">Sous-total:</span>
+                        <span className="text-xl font-bold text-amber-700">€{totalAdditional.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Editable state */
+                  <div>
+                    <div className="space-y-2">
+                      {workItems.map((item, idx) => (
+                        <div key={item.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                          <span className="text-gray-400 w-6">{idx + 1}.</span>
+                          <div className="relative">
+                            <input 
+                              type="text" 
+                              value={item.part_number || ''} 
+                              onChange={e => updateWorkItem(item.id, 'part_number', e.target.value)}
+                              onBlur={e => lookupPart(item.id, e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && lookupPart(item.id, e.target.value)}
+                              placeholder="N° Pièce" 
+                              className="w-28 px-3 py-2 border rounded-lg text-sm"
+                            />
+                            {partsLoading[item.id] && <span className="absolute right-2 top-2 text-blue-500 text-sm">...</span>}
+                          </div>
+                          <input type="text" value={item.description} onChange={e => updateWorkItem(item.id, 'description', e.target.value)} placeholder="Description" className="flex-1 px-3 py-2 border rounded-lg" />
+                          <input type="number" value={item.quantity} onChange={e => updateWorkItem(item.id, 'quantity', e.target.value)} className="w-16 px-3 py-2 border rounded-lg text-center" min="1" />
+                          <span className="text-gray-400">€</span>
+                          <input type="number" value={item.price} onChange={e => updateWorkItem(item.id, 'price', e.target.value)} className="w-24 px-3 py-2 border rounded-lg text-right" step="0.01" />
+                          <button onClick={() => removeWorkItem(item.id)} className="p-2 text-red-500 hover:bg-red-100 rounded">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={addWorkItem} className="mt-3 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">+ Ajouter pièce</button>
+                    {workItems.length > 0 && (
+                      <div className="mt-4 pt-4 border-t flex justify-between">
+                        <span className="font-medium">Sous-total:</span>
+                        <span className="text-xl font-bold text-amber-700">€{totalAdditional.toFixed(2)}</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
