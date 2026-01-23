@@ -501,15 +501,15 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, filter
                 {filteredRMAs.length === 0 ? (
                   <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Aucun RMA</td></tr>
                 ) : filteredRMAs.map(rma => {
-                  const stage = getWorkflowStage(rma);
-                  const stageStyles = {
-                    waiting: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'En attente' },
-                    received: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Reçu' },
+                  const jobType = getJobType(rma);
+                  const jobStyles = {
                     service: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Service' },
                     qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'QC' },
-                    ready: { bg: 'bg-green-100', text: 'text-green-700', label: 'Prêt' }
+                    ready: { bg: 'bg-green-100', text: 'text-green-700', label: 'Prêt' },
+                    other: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Admin' }
                   };
-                  const stageStyle = stageStyles[stage] || stageStyles.waiting;
+                  const jobStyle = jobStyles[jobType] || jobStyles.other;
+                  const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
                   const devices = rma.request_devices || [];
                   const hasBCToReview = needsReview.find(n => n.id === rma.id);
                   
@@ -521,7 +521,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, filter
                         {devices.length > 0 ? <div className="text-sm">{devices.slice(0, 2).map((d, i) => <p key={i}>{d.model_name} <span className="text-gray-400">({d.serial_number})</span></p>)}{devices.length > 2 && <p className="text-gray-400">+{devices.length - 2} autres</p>}</div> : <span className="text-gray-400">{rma.serial_number || '—'}</span>}
                       </td>
                       <td className="px-4 py-3"><span className="text-sm">{rma.requested_service === 'calibration' ? '🔬 Étalonnage' : rma.requested_service === 'repair' ? '🔧 Réparation' : rma.requested_service}</span></td>
-                      <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${stageStyle.bg} ${stageStyle.text}`}>{stageStyle.label}</span></td>
+                      <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span></td>
                       <td className="px-4 py-3 text-sm text-gray-500">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</td>
                       <td className="px-4 py-3">
                         {hasBCToReview ? (
