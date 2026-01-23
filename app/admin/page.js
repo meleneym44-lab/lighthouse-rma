@@ -1179,6 +1179,13 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
   const [calType, setCalType] = useState(device.cal_type || '');
   const [receptionResult, setReceptionResult] = useState(device.reception_result || '');
   
+  // Certificate upload for calibrations
+  const [certificateUrl, setCertificateUrl] = useState(device.calibration_certificate_url || '');
+  const [uploadingCert, setUploadingCert] = useState(false);
+  
+  const isCalibration = device.service_type === 'calibration' || device.service_type === 'both';
+  const needsCertificate = isCalibration && !certificateUrl;
+  
   const calTypeOptions = [
     { value: 'none', label: 'Ne pas afficher' },
     { value: 'ISO 21501-4', label: 'ISO 21501-4' },
@@ -1204,6 +1211,41 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
     };
     loadStaff();
   }, []);
+  
+  // Upload certificate handler
+  const handleCertificateUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (file.type !== 'application/pdf') {
+      notify('Veuillez télécharger un fichier PDF', 'error');
+      return;
+    }
+    
+    setUploadingCert(true);
+    try {
+      const fileName = `certificates/${rma.request_number}/${device.serial_number}_${Date.now()}.pdf`;
+      const { error: uploadError } = await supabase.storage.from('documents').upload(fileName, file);
+      if (uploadError) throw uploadError;
+      
+      const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(fileName);
+      
+      // Save to device record
+      const { error: updateError } = await supabase.from('request_devices').update({
+        calibration_certificate_url: publicUrl,
+        calibration_certificate_uploaded_at: new Date().toISOString()
+      }).eq('id', device.id);
+      
+      if (updateError) throw updateError;
+      
+      setCertificateUrl(publicUrl);
+      notify('✓ Certificat téléchargé');
+      reload();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setUploadingCert(false);
+  };
   
   const avenantSent = rma.avenant_sent_at;
   const avenantApproved = rma.avenant_approved_at;
@@ -1274,7 +1316,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
   };
   
   const totalAdditional = workItems.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0);
-  const canPreviewReport = findings.trim() && workCompleted.trim() && technicianName && calType && receptionResult;
+  const canPreviewReport = findings.trim() && workCompleted.trim() && technicianName && calType && receptionResult && (!isCalibration || certificateUrl);
   
   const getValidationMessage = () => {
     const missing = [];
@@ -1283,6 +1325,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
     if (!receptionResult) missing.push('Résultats à la réception');
     if (!findings.trim()) missing.push('Constatations');
     if (!workCompleted.trim()) missing.push('Actions effectuées');
+    if (isCalibration && !certificateUrl) missing.push('Certificat d\'étalonnage');
     return missing.length > 0 ? `Veuillez remplir: ${missing.join(', ')}` : null;
   };
   
@@ -1429,6 +1472,38 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
               </select>
             </div>
           </div>
+          
+          {/* Certificate Upload - Only for calibrations */}
+          {isCalibration && (
+            <div className={`rounded-xl border p-4 ${certificateUrl ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+              <h3 className={`font-bold mb-2 ${certificateUrl ? 'text-green-800' : 'text-amber-800'}`}>
+                📜 Certificat d'Étalonnage {certificateUrl ? '✓' : '*'}
+              </h3>
+              
+              {certificateUrl ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-green-700">Certificat téléchargé</p>
+                  <div className="flex gap-2">
+                    <a href={certificateUrl} target="_blank" rel="noopener noreferrer" className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm">
+                      📄 Voir PDF
+                    </a>
+                    <label className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm cursor-pointer">
+                      Remplacer
+                      <input type="file" accept=".pdf" onChange={handleCertificateUpload} className="hidden" />
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-sm text-amber-700 mb-2">Requis pour envoyer au QC</p>
+                  <label className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer ${uploadingCert ? 'bg-gray-300' : 'bg-amber-500 hover:bg-amber-600 text-white'}`}>
+                    {uploadingCert ? '⏳ Téléchargement...' : '📤 Télécharger PDF'}
+                    <input type="file" accept=".pdf" onChange={handleCertificateUpload} disabled={uploadingCert} className="hidden" />
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-2 space-y-4">
@@ -2153,7 +2228,7 @@ function ClientDetailModal({ client, requests, equipment, onClose, notify, reloa
 }
 
 // ============================================
-// QC SHEET - Quality Control Checklist
+// QC SHEET - Quality Control Review & Approve
 // ============================================
 function QCSheet({ requests, notify, reload, profile }) {
   const [selectedDevice, setSelectedDevice] = useState(null);
@@ -2171,7 +2246,7 @@ function QCSheet({ requests, notify, reload, profile }) {
   
   if (selectedDevice && selectedRMA) {
     return (
-      <QCFormModal 
+      <QCReviewModal 
         device={selectedDevice} 
         rma={selectedRMA} 
         onBack={() => { setSelectedDevice(null); setSelectedRMA(null); reload(); }}
@@ -2256,95 +2331,48 @@ function QCSheet({ requests, notify, reload, profile }) {
   );
 }
 
-// QC Form Modal - Checklist for calibration or repair
-function QCFormModal({ device, rma, onBack, notify, profile }) {
+// QC Review Modal - View report, certificate, then approve
+function QCReviewModal({ device, rma, onBack, notify, profile }) {
   const [saving, setSaving] = useState(false);
-  const [qcType, setQcType] = useState(device.service_type === 'calibration' ? 'calibration' : 'repair');
+  const [step, setStep] = useState(1); // 1: Report, 2: Certificate, 3: Approve
+  const [qcNotes, setQcNotes] = useState(device.qc_notes || '');
   const today = new Date().toLocaleDateString('fr-FR');
   
-  // Calibration checklist items (from your document)
-  const calibrationChecklist = [
-    { id: 'cal_1', section: 'Étalonnage', label: 'Le nom du client est correct' },
-    { id: 'cal_2', section: 'Étalonnage', label: 'Adresse d\'étalonnage correcte' },
-    { id: 'cal_3', section: 'Étalonnage', label: 'Date d\'étalonnage correcte' },
-    { id: 'cal_4', section: 'Étalonnage', label: 'Dates de l\'équipement correctes' },
-    { id: 'cal_5', section: 'Étalonnage', label: 'Tailles/tolérances des particules correctes' },
-    { id: 'cal_6', section: 'Étalonnage', label: 'Toutes les données sont conformes pour le résultat final' },
-    { id: 'cal_7', section: 'Étalonnage', label: 'Double signature et nom du technicien corrects' },
-    { id: 'rpt_1', section: 'Rapport', label: 'Nom du client correct sur le rapport' },
-    { id: 'rpt_2', section: 'Rapport', label: 'Adresse du client correcte sur le rapport' },
-    { id: 'rpt_3', section: 'Rapport', label: 'Numéro RMA correct sur le rapport' },
-    { id: 'rpt_4', section: 'Rapport', label: 'Explication d\'échec ARD incluse (si applicable)' },
-    { id: 'lbl_1', section: 'Étiquette', label: 'Numéro de série de l\'étiquette correspond' },
-    { id: 'lbl_2', section: 'Étiquette', label: 'Date de l\'étiquette correspond au certificat' },
-    { id: 'lbl_3', section: 'Étiquette', label: 'Autocollant VOID présent sur l\'appareil' },
-    { id: 'ship_1', section: 'Expédition', label: 'Équipement prêt à être expédié' }
+  // Get checklist from device
+  const checklist = device.work_checklist || {};
+  const defaultChecklist = [
+    { id: 'visual', label: 'Inspection visuelle effectuée', checked: checklist.visual !== false },
+    { id: 'cleaning', label: 'Nettoyage effectué', checked: checklist.cleaning !== false },
+    { id: 'calibration', label: 'Étalonnage réalisé selon procédure', checked: checklist.calibration !== false },
+    { id: 'results', label: 'Résultats dans les spécifications', checked: checklist.results !== false },
+    { id: 'certificate', label: 'Certificat d\'étalonnage généré', checked: checklist.certificate !== false }
   ];
   
-  // Repair checklist items
-  const repairChecklist = [
-    { id: 'rep_1', section: 'Réparation', label: 'Rapport de réparation complet et signé' },
-    { id: 'rep_2', section: 'Réparation', label: 'Description de la panne documentée' },
-    { id: 'rep_3', section: 'Réparation', label: 'Pièces remplacées listées' },
-    { id: 'rep_4', section: 'Réparation', label: 'Tests de fonctionnement effectués' },
-    { id: 'rep_5', section: 'Réparation', label: 'Appareil fonctionne correctement' },
-    { id: 'rpt_1', section: 'Rapport', label: 'Nom du client correct sur le rapport' },
-    { id: 'rpt_2', section: 'Rapport', label: 'Adresse du client correcte sur le rapport' },
-    { id: 'rpt_3', section: 'Rapport', label: 'Numéro RMA correct sur le rapport' },
-    { id: 'ship_1', section: 'Expédition', label: 'Équipement prêt à être expédié' }
-  ];
+  const serviceTypeText = device.service_type === 'calibration' ? 'Étalonnage' : device.service_type === 'repair' ? 'Réparation' : 'Étalonnage et Réparation';
+  const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
   
-  const checklistItems = qcType === 'calibration' ? calibrationChecklist : repairChecklist;
+  const showCalType = device.cal_type && device.cal_type !== 'none';
+  const showReceptionResult = device.reception_result && device.reception_result !== 'none';
   
-  // Initialize checklist state from device data or empty
-  const [checklist, setChecklist] = useState(() => {
-    const saved = device.qc_checklist || {};
-    const items = {};
-    checklistItems.forEach(item => { items[item.id] = saved[item.id] || false; });
-    return items;
-  });
-  
-  const [qcNotes, setQcNotes] = useState(device.qc_notes || '');
-  const [ardFailed, setArdFailed] = useState(device.qc_ard_failed || false);
-  const [specialClient, setSpecialClient] = useState(device.qc_special_client || 'none'); // none, jce, gsk
-  
-  const toggleItem = (id) => {
-    setChecklist(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-  
-  const allChecked = Object.values(checklist).every(v => v);
-  
-  const saveQC = async (complete = false) => {
+  const approveQC = async () => {
     setSaving(true);
     try {
-      const updateData = {
-        qc_checklist: checklist,
+      const { error } = await supabase.from('request_devices').update({
+        qc_complete: true,
+        qc_completed_at: new Date().toISOString(),
+        qc_completed_by: profile?.id,
         qc_notes: qcNotes,
-        qc_ard_failed: ardFailed,
-        qc_special_client: specialClient,
-        qc_type: qcType
-      };
+        status: 'ready_to_ship'
+      }).eq('id', device.id);
       
-      if (complete) {
-        updateData.qc_complete = true;
-        updateData.qc_completed_at = new Date().toISOString();
-        updateData.qc_completed_by = profile?.id;
-        updateData.status = 'ready_to_ship';
-      }
-      
-      const { error } = await supabase.from('request_devices').update(updateData).eq('id', device.id);
       if (error) throw error;
-      
-      notify(complete ? '✓ Contrôle qualité validé!' : '✓ Enregistré');
-      if (complete) onBack();
+      notify('✓ Contrôle qualité validé - Prêt pour expédition!');
+      onBack();
     } catch (err) {
       notify('Erreur: ' + err.message, 'error');
     }
     setSaving(false);
   };
-  
-  // Group items by section
-  const sections = [...new Set(checklistItems.map(item => item.section))];
   
   return (
     <div className="space-y-6">
@@ -2354,148 +2382,279 @@ function QCFormModal({ device, rma, onBack, notify, profile }) {
           <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">← Retour</button>
           <div>
             <h1 className="text-2xl font-bold text-gray-800">CONTRÔLE QUALITÉ</h1>
-            <p className="text-gray-500">{device.model_name} • SN: {device.serial_number}</p>
+            <p className="text-gray-500">{device.model_name} • SN: {device.serial_number} • {rma.request_number}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button onClick={() => saveQC(false)} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">
-            {saving ? '...' : 'Enregistrer'}
-          </button>
+        {device.qc_complete && (
+          <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">✓ Déjà validé</span>
+        )}
+      </div>
+      
+      {/* Progress Steps */}
+      <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="flex items-center justify-between">
           <button 
-            onClick={() => saveQC(true)} 
-            disabled={saving || !allChecked} 
-            className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50"
+            onClick={() => setStep(1)}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium ${step === 1 ? 'bg-blue-500 text-white' : step > 1 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
           >
-            {saving ? '...' : '✓ Valider QC'}
+            {step > 1 ? '✓' : '1.'} Rapport de Service
+          </button>
+          <div className="w-8 h-0.5 bg-gray-300"></div>
+          <button 
+            onClick={() => setStep(2)}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium ${step === 2 ? 'bg-blue-500 text-white' : step > 2 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
+          >
+            {step > 2 ? '✓' : '2.'} Certificat
+          </button>
+          <div className="w-8 h-0.5 bg-gray-300"></div>
+          <button 
+            onClick={() => setStep(3)}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium ${step === 3 ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500'}`}
+          >
+            3. Validation
           </button>
         </div>
       </div>
       
-      {/* Device Info Card */}
-      <div className="bg-white rounded-xl shadow-sm border p-6">
-        <div className="grid grid-cols-4 gap-6">
-          <div>
-            <p className="text-sm text-gray-500">Client</p>
-            <p className="font-bold text-gray-800">{rma.companies?.name}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-500">Numéro de Série</p>
-            <p className="font-bold text-gray-800 font-mono">{device.serial_number}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-500">Numéro RMA</p>
-            <p className="font-bold text-blue-600">{rma.request_number}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-500">Date</p>
-            <p className="font-bold text-gray-800">{today}</p>
-          </div>
-        </div>
-      </div>
-      
-      {/* QC Type Selection */}
-      {device.service_type === 'both' && (
-        <div className="bg-white rounded-xl shadow-sm border p-4">
-          <p className="text-sm text-gray-600 mb-2">Type de contrôle:</p>
-          <div className="flex gap-3">
-            <button onClick={() => setQcType('calibration')} className={`px-4 py-2 rounded-lg font-medium ${qcType === 'calibration' ? 'bg-blue-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>
-              🔬 Étalonnage
-            </button>
-            <button onClick={() => setQcType('repair')} className={`px-4 py-2 rounded-lg font-medium ${qcType === 'repair' ? 'bg-orange-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>
-              🔧 Réparation
-            </button>
-          </div>
-        </div>
-      )}
-      
-      {/* Special Options for Calibration */}
-      {qcType === 'calibration' && (
-        <div className="bg-white rounded-xl shadow-sm border p-4">
-          <div className="grid grid-cols-2 gap-6">
-            <div>
-              <p className="text-sm text-gray-600 mb-2">Client spécial:</p>
-              <div className="flex gap-2">
-                <button onClick={() => setSpecialClient('none')} className={`px-3 py-1 rounded-lg text-sm ${specialClient === 'none' ? 'bg-gray-500 text-white' : 'bg-gray-200'}`}>Aucun</button>
-                <button onClick={() => setSpecialClient('jce')} className={`px-3 py-1 rounded-lg text-sm ${specialClient === 'jce' ? 'bg-purple-500 text-white' : 'bg-gray-200'}`}>JCE</button>
-                <button onClick={() => setSpecialClient('gsk')} className={`px-3 py-1 rounded-lg text-sm ${specialClient === 'gsk' ? 'bg-green-500 text-white' : 'bg-gray-200'}`}>GSK</button>
+      {/* Step 1: Service Report */}
+      {step === 1 && (
+        <div className="space-y-4">
+          <div className="bg-gray-400 p-8 min-h-full flex justify-center">
+            <div className="bg-white shadow-2xl w-full max-w-3xl relative" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '800px', display: 'flex', flexDirection: 'column' }}>
+              
+              {/* Logo */}
+              <div className="mb-8">
+                <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" className="h-12 w-auto" onError={(e) => { e.target.style.display = 'none'; }} />
               </div>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600 mb-2">Données reçues échouées (ARD)?</p>
-              <div className="flex gap-2">
-                <button onClick={() => setArdFailed(false)} className={`px-3 py-1 rounded-lg text-sm ${!ardFailed ? 'bg-green-500 text-white' : 'bg-gray-200'}`}>Non</button>
-                <button onClick={() => setArdFailed(true)} className={`px-3 py-1 rounded-lg text-sm ${ardFailed ? 'bg-red-500 text-white' : 'bg-gray-200'}`}>Oui</button>
+
+              {/* Info Table */}
+              <table className="w-full text-sm mb-6" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                <colgroup>
+                  <col style={{ width: '150px' }} />
+                  <col style={{ width: '200px' }} />
+                  <col />
+                </colgroup>
+                <tbody>
+                  <tr>
+                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Date d'achèvement</td>
+                    <td className="py-1 text-gray-800">{device.report_completed_at ? new Date(device.report_completed_at).toLocaleDateString('fr-FR') : today}</td>
+                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">RMA # </span>{rma.request_number}</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Client</td>
+                    <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.name}</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Adresse</td>
+                    <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.billing_address || '—'}</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Code postal / Ville</td>
+                    <td className="py-1 text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
+                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">Contact </span>{rma.companies?.contact_name || '—'}</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Téléphone</td>
+                    <td className="py-1 text-gray-800">{rma.companies?.phone || '—'}</td>
+                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">Technicien(ne) de service</span></td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Modèle#</td>
+                    <td className="py-1 text-gray-800">{device.model_name}</td>
+                    <td className="py-1 text-gray-800">{device.technician_name || 'Lighthouse France'}</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Numéro de série</td>
+                    <td className="py-1 text-gray-800" colSpan="2">{device.serial_number}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {/* Content */}
+              <div className="flex-grow">
+                <table className="w-full text-sm" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                  <colgroup>
+                    <col style={{ width: '170px' }} />
+                    <col />
+                  </colgroup>
+                  <tbody>
+                    <tr>
+                      <td className="pt-6 pb-2 font-bold text-[#003366] whitespace-nowrap">Motif de retour</td>
+                      <td className="pt-6 pb-2 text-gray-800">{motifText}</td>
+                    </tr>
+                    {showCalType && (
+                      <tr>
+                        <td className="py-2 font-bold text-[#003366] whitespace-nowrap">Étalonnage effectué</td>
+                        <td className="py-2 text-gray-800">{device.cal_type}</td>
+                      </tr>
+                    )}
+                    {showReceptionResult && (
+                      <tr>
+                        <td className="py-2 font-bold text-[#003366] whitespace-nowrap">Résultats à la réception</td>
+                        <td className="py-2 text-gray-800">{device.reception_result}</td>
+                      </tr>
+                    )}
+                    <tr>
+                      <td className="pt-6 pb-2 font-bold text-[#003366] whitespace-nowrap">Constatations</td>
+                      <td className="pt-6 pb-2 text-gray-800 whitespace-pre-wrap">{device.service_findings || '—'}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-2 font-bold text-[#003366] whitespace-nowrap">Actions effectuées</td>
+                      <td className="py-2 text-gray-800 whitespace-pre-wrap">{device.work_completed || '—'}</td>
+                    </tr>
+                    <tr>
+                      <td className="pt-8 pb-2 font-bold text-[#003366] whitespace-nowrap">Travaux réalisés</td>
+                      <td className="pt-8 pb-2">
+                        <div className="space-y-1">
+                          {defaultChecklist.filter(item => item.checked).map(item => (
+                            <div key={item.id} className="flex items-center gap-2">
+                              <span className="text-[#003366]">☑</span>
+                              <span className="text-gray-800">{item.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Footer */}
+              <div className="text-center text-sm text-gray-600 mt-auto pt-8">
+                <p className="font-bold text-[#003366]">Lighthouse Worldwide Solutions France</p>
+                <p>16 Rue Paul Séjourné 94000 Créteil France</p>
+                <p>01 43 77 28 07</p>
               </div>
             </div>
           </div>
           
-          {/* Special client notes */}
-          {specialClient === 'gsk' && (
-            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-sm text-green-800">⚠️ GSK: Vérifier que les tolérances sont en microns (μm)</p>
-            </div>
-          )}
-          {specialClient === 'jce' && (
-            <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-              <p className="text-sm text-purple-800">⚠️ JCE: Vérifier que le test de filtre a été effectué</p>
-            </div>
-          )}
+          <div className="flex justify-end">
+            <button onClick={() => setStep(2)} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
+              Rapport OK → Voir Certificat
+            </button>
+          </div>
         </div>
       )}
       
-      {/* Checklist */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div className="bg-gray-50 px-6 py-3 border-b">
-          <h2 className="font-bold text-gray-800">LISTE DE CONTRÔLE</h2>
-          <p className="text-sm text-gray-500">Cochez chaque élément après vérification</p>
-        </div>
-        
-        {sections.map(section => (
-          <div key={section} className="border-b last:border-b-0">
-            <div className="bg-gray-100 px-6 py-2">
-              <h3 className="font-medium text-gray-700">{section}</h3>
+      {/* Step 2: Certificate */}
+      {step === 2 && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl shadow-sm border p-8">
+            <div className="text-center mb-6">
+              <p className="text-6xl mb-4">📜</p>
+              <h2 className="text-xl font-bold text-gray-800 mb-2">
+                {device.service_type === 'repair' ? 'Documents de Réparation' : 'Certificat d\'Étalonnage'}
+              </h2>
+              <p className="text-gray-500">Vérifiez que le document est correct et complet</p>
             </div>
-            <div className="p-4 space-y-2">
-              {checklistItems.filter(item => item.section === section).map(item => (
-                <label key={item.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={checklist[item.id] || false}
-                    onChange={() => toggleItem(item.id)}
-                    className="w-5 h-5 rounded text-green-600"
+            
+            {device.calibration_certificate_url ? (
+              <div className="space-y-4">
+                {/* PDF Embed */}
+                <div className="bg-gray-100 rounded-xl overflow-hidden" style={{ height: '600px' }}>
+                  <iframe 
+                    src={device.calibration_certificate_url} 
+                    className="w-full h-full"
+                    title="Certificat d'étalonnage"
                   />
-                  <span className={checklist[item.id] ? 'text-green-700' : 'text-gray-700'}>{item.label}</span>
-                </label>
-              ))}
+                </div>
+                <div className="text-center">
+                  <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
+                    📄 Ouvrir dans un nouvel onglet
+                  </a>
+                </div>
+              </div>
+            ) : device.service_type === 'repair' ? (
+              <div className="bg-gray-100 rounded-xl p-12 text-center">
+                <p className="text-gray-600">Réparation - pas de certificat d'étalonnage requis</p>
+                <p className="text-sm text-gray-400 mt-2">Vérifiez le rapport de service à l'étape précédente</p>
+              </div>
+            ) : (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center">
+                <p className="text-red-600 font-medium">⚠️ Certificat non téléchargé</p>
+                <p className="text-sm text-red-500 mt-2">Le technicien doit télécharger le certificat avant validation QC</p>
+              </div>
+            )}
+            
+            <p className="text-sm text-gray-500 mt-4 text-center">
+              Vérifiez: Nom client, N° série, Date, Tolérances, Signatures
+            </p>
+          </div>
+          
+          <div className="flex justify-between">
+            <button onClick={() => setStep(1)} className="px-6 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
+              ← Retour au Rapport
+            </button>
+            <button onClick={() => setStep(3)} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
+              {device.calibration_certificate_url || device.service_type === 'repair' ? 'Document OK → Validation' : 'Continuer →'}
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {/* Step 3: Approve */}
+      {step === 3 && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl shadow-sm border p-8">
+            <div className="text-center mb-8">
+              <p className="text-6xl mb-4">✅</p>
+              <h2 className="text-xl font-bold text-gray-800 mb-2">Validation Finale</h2>
+              <p className="text-gray-500">Confirmez que tous les documents sont corrects</p>
+            </div>
+            
+            {/* Summary */}
+            <div className="bg-gray-50 rounded-xl p-6 mb-6">
+              <h3 className="font-bold text-gray-700 mb-4">Résumé</h3>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div><span className="text-gray-500">Client:</span> <span className="font-medium">{rma.companies?.name}</span></div>
+                <div><span className="text-gray-500">RMA:</span> <span className="font-medium text-blue-600">{rma.request_number}</span></div>
+                <div><span className="text-gray-500">Appareil:</span> <span className="font-medium">{device.model_name}</span></div>
+                <div><span className="text-gray-500">N° Série:</span> <span className="font-medium font-mono">{device.serial_number}</span></div>
+                <div><span className="text-gray-500">Service:</span> <span className="font-medium">{serviceTypeText}</span></div>
+                <div><span className="text-gray-500">Technicien:</span> <span className="font-medium">{device.technician_name || '—'}</span></div>
+              </div>
+            </div>
+            
+            {/* Notes */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Notes QC (optionnel)</label>
+              <textarea 
+                value={qcNotes}
+                onChange={e => setQcNotes(e.target.value)}
+                placeholder="Remarques ou observations..."
+                className="w-full px-4 py-3 border rounded-xl h-20 resize-none"
+              />
+            </div>
+            
+            {/* Checkmarks */}
+            <div className="space-y-3 mb-8">
+              <div className="flex items-center gap-3 text-green-700">
+                <span className="text-xl">✓</span>
+                <span>Rapport de service vérifié</span>
+              </div>
+              <div className="flex items-center gap-3 text-green-700">
+                <span className="text-xl">✓</span>
+                <span>Certificat d'étalonnage vérifié</span>
+              </div>
             </div>
           </div>
-        ))}
-      </div>
-      
-      {/* Notes */}
-      <div className="bg-white rounded-xl shadow-sm border p-4">
-        <h3 className="font-bold text-gray-700 mb-2">Notes QC (optionnel)</h3>
-        <textarea 
-          value={qcNotes}
-          onChange={e => setQcNotes(e.target.value)}
-          placeholder="Remarques ou observations..."
-          className="w-full px-4 py-3 border rounded-xl h-24 resize-none"
-        />
-      </div>
-      
-      {/* Validation Status */}
-      {!allChecked && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <p className="text-amber-800 font-medium">⚠️ Tous les éléments doivent être cochés pour valider le contrôle qualité</p>
-          <p className="text-amber-600 text-sm mt-1">
-            {Object.values(checklist).filter(v => !v).length} élément(s) restant(s)
-          </p>
-        </div>
-      )}
-      
-      {allChecked && (
-        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-          <p className="text-green-800 font-medium">✓ Tous les éléments vérifiés - Prêt pour validation</p>
+          
+          <div className="flex justify-between">
+            <button onClick={() => setStep(2)} className="px-6 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
+              ← Retour
+            </button>
+            {!device.qc_complete ? (
+              <button 
+                onClick={approveQC} 
+                disabled={saving}
+                className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium text-lg disabled:opacity-50"
+              >
+                {saving ? 'Validation...' : '✓ J\'approuve - Prêt pour expédition'}
+              </button>
+            ) : (
+              <span className="px-6 py-3 bg-green-100 text-green-700 rounded-lg font-medium">✓ Déjà validé</span>
+            )}
+          </div>
         </div>
       )}
     </div>
