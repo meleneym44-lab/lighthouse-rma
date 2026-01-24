@@ -83,7 +83,7 @@ export default function AdminPortal() {
 
   const loadData = useCallback(async (refreshSelectedRMAId = null) => {
     const { data: reqs } = await supabase.from('service_requests')
-      .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
+      .select('*, companies(id, name, contact_name, phone, email, address, city, postal_code, country, billing_city, billing_address, billing_postal_code), request_devices(*)')
       .order('created_at', { ascending: false });
     if (reqs) setRequests(reqs);
 
@@ -111,7 +111,7 @@ export default function AdminPortal() {
     if (refreshSelectedRMAId) {
       const { data: updatedRMA } = await supabase
         .from('service_requests')
-        .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
+        .select('*, companies(id, name, contact_name, phone, email, address, city, postal_code, country, billing_city, billing_address, billing_postal_code), request_devices(*)')
         .eq('id', refreshSelectedRMAId)
         .single();
       if (updatedRMA) setSelectedRMA(updatedRMA);
@@ -200,7 +200,11 @@ export default function AdminPortal() {
       <nav className="bg-[#1a1a2e] border-t border-gray-700">
         <div className="max-w-full mx-auto px-6 flex gap-1 overflow-x-auto">
           {sheets.map(sheet => (
-            <button key={sheet.id} onClick={() => setActiveSheet(sheet.id)}
+            <button key={sheet.id} onClick={() => { 
+              setActiveSheet(sheet.id); 
+              setSelectedRMA(null); 
+              setSelectedDeviceFromDashboard(null); 
+            }}
               className={`px-6 py-3 font-medium flex items-center gap-2 whitespace-nowrap relative ${activeSheet === sheet.id ? 'bg-[#00A651] text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
               <span>{sheet.icon}</span>{sheet.label}
               {sheet.badge > 0 && (
@@ -619,12 +623,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                         </td>
                         <td className="px-4 py-3"><span className="text-sm">{rma.requested_service === 'calibration' ? '🔬 Étalonnage' : rma.requested_service === 'repair' ? '🔧 Réparation' : rma.requested_service}</span></td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
-                            {rma.chat_status === 'open' && (
-                              <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold" title="Chat ouvert">💬</span>
-                            )}
-                          </div>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-500">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</td>
                         <td className="px-4 py-3">
@@ -1930,17 +1929,6 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     </a>
                   )}
                   
-                  {device.report_url && (
-                    <a href={device.report_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Rapport de service</p>
-                        <p className="text-sm text-gray-500">Détails techniques</p>
-                      </div>
-                    </a>
-                  )}
-                  
                   {/* RMA-level documents (shared across devices) */}
                   {rma.quote_url && (
                     <a href={rma.quote_url} target="_blank" rel="noopener noreferrer"
@@ -1959,17 +1947,31 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
                       <div>
                         <p className="font-medium text-gray-800">Bon de Commande</p>
-                        <p className="text-sm text-gray-500">BC signé</p>
+                        <p className="text-sm text-gray-500">BC client</p>
                       </div>
                     </a>
                   )}
                   
+                  {/* Avenant if sent */}
+                  {rma.avenant_sent_at && (
+                    <div className="flex items-center gap-4 p-4 border rounded-lg bg-orange-50">
+                      <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Avenant</p>
+                        <p className="text-sm text-gray-500">
+                          {rma.avenant_approved_at ? '✅ Approuvé' : '⏳ En attente'} • {new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR')}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Shipping documents */}
                   {device.bl_number && (
-                    <div className="flex items-center gap-4 p-4 border rounded-lg bg-gray-50">
-                      <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center text-2xl">📄</div>
+                    <div className="flex items-center gap-4 p-4 border rounded-lg bg-blue-50">
+                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
                       <div>
                         <p className="font-medium text-gray-800">Bon de Livraison</p>
-                        <p className="text-sm text-gray-500 font-mono">{device.bl_number}</p>
+                        <p className="text-sm text-gray-600 font-mono">{device.bl_number}</p>
                       </div>
                     </div>
                   )}
@@ -1980,14 +1982,24 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">📦</div>
                       <div>
                         <p className="font-medium text-gray-800">Suivi UPS</p>
-                        <p className="text-sm text-gray-500 font-mono">{device.tracking_number}</p>
+                        <p className="text-sm text-blue-600 font-mono">{device.tracking_number}</p>
                       </div>
                     </a>
+                  )}
+                  
+                  {device.shipped_at && (
+                    <div className="flex items-center gap-4 p-4 border rounded-lg bg-green-50">
+                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">🚚</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Expédié</p>
+                        <p className="text-sm text-gray-600">{new Date(device.shipped_at).toLocaleDateString('fr-FR')}</p>
+                      </div>
+                    </div>
                   )}
                 </div>
                 
                 {/* No documents message */}
-                {!device.calibration_certificate_url && !device.report_url && !rma.quote_url && !rma.bc_file_url && !device.bl_number && (
+                {!device.calibration_certificate_url && !rma.quote_url && !rma.bc_file_url && !device.bl_number && !device.tracking_number && !rma.avenant_sent_at && (
                   <p className="text-gray-400 text-center py-8">Aucun document disponible</p>
                 )}
               </div>
