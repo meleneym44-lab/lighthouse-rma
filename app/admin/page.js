@@ -1307,6 +1307,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice }) {
   const [selectedDevice, setSelectedDevice] = useState(initialDeviceNeedsQC ? null : freshInitialDevice);
   const [showAvenantPreview, setShowAvenantPreview] = useState(false);
   const [showQCReview, setShowQCReview] = useState(initialDeviceNeedsQC ? freshInitialDevice : null);
+  const [showShippingModal, setShowShippingModal] = useState(false);
   const [saving, setSaving] = useState(false);
   
   // Safety check
@@ -1737,11 +1738,11 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice }) {
               <h2 className="text-xl font-bold text-green-800 mb-2">Prêt pour Expédition</h2>
               <p className="text-green-600 mb-4">Tous les appareils ont passé le contrôle qualité</p>
               <button 
-                onClick={() => updateStatus('shipped')}
+                onClick={() => setShowShippingModal(true)}
                 disabled={saving}
                 className="px-8 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold text-lg disabled:opacity-50"
               >
-                {saving ? '...' : '🚚 Marquer comme Expédié'}
+                {saving ? '...' : '🚚 Préparer Expédition'}
               </button>
             </div>
           </div>
@@ -1771,6 +1772,18 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice }) {
             </div>
           </div>
         </div>
+      )}
+      
+      {/* Shipping Modal */}
+      {showShippingModal && (
+        <ShippingModal
+          rma={rma}
+          devices={devices}
+          onClose={() => setShowShippingModal(false)}
+          notify={notify}
+          reload={reload}
+          profile={profile}
+        />
       )}
 
       {/* Avenant Preview Modal */}
@@ -2812,6 +2825,453 @@ function RequestDetailModal({ request, onClose, onCreateQuote }) {
           {isPending && (
             <button onClick={onCreateQuote} className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium">
               💰 Créer Devis
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// SHIPPING MODAL - Full shipping workflow
+// ============================================
+function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
+  const [step, setStep] = useState(1); // 1: Review, 2: Confirm, 3: Complete
+  const [saving, setSaving] = useState(false);
+  const [shippingAddresses, setShippingAddresses] = useState([]);
+  const [shipments, setShipments] = useState([]); // Grouped by address
+  const [generatedBLs, setGeneratedBLs] = useState([]);
+  
+  // Fetch shipping addresses on mount
+  useEffect(() => {
+    const fetchAddresses = async () => {
+      // Get company shipping addresses
+      const { data: addresses } = await supabase
+        .from('shipping_addresses')
+        .select('*')
+        .eq('company_id', rma.company_id);
+      
+      if (addresses) {
+        setShippingAddresses(addresses);
+      }
+      
+      // Group devices by return address
+      groupDevicesByAddress(addresses || []);
+    };
+    fetchAddresses();
+  }, [rma.company_id]);
+  
+  // Group devices by their shipping address
+  const groupDevicesByAddress = (addresses) => {
+    const groups = {};
+    
+    devices.forEach(device => {
+      // Find the device's shipping address
+      let addressKey = 'default';
+      let address = null;
+      
+      if (device.shipping_address_id) {
+        address = addresses.find(a => a.id === device.shipping_address_id);
+        if (address) {
+          addressKey = device.shipping_address_id;
+        }
+      }
+      
+      // Use company billing address as default
+      if (!address) {
+        address = {
+          id: 'default',
+          name: rma.companies?.name || 'Client',
+          street: rma.companies?.billing_address || '',
+          city: rma.companies?.billing_city || '',
+          postal_code: rma.companies?.billing_postal_code || '',
+          country: 'France'
+        };
+        addressKey = 'default';
+      }
+      
+      if (!groups[addressKey]) {
+        groups[addressKey] = {
+          address,
+          devices: [],
+          parcels: 1,
+          weight: '',
+          trackingNumber: ''
+        };
+      }
+      groups[addressKey].devices.push(device);
+    });
+    
+    setShipments(Object.values(groups));
+  };
+  
+  // Update shipment details
+  const updateShipment = (index, field, value) => {
+    setShipments(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+  
+  // Calculate service price for a device
+  const getDevicePrice = (device) => {
+    // Base price from service type
+    const basePrice = device.service_type === 'repair' ? 245 : 390; // Example prices
+    
+    // Add additional work if any
+    const additionalTotal = (device.additional_work_items || []).reduce((sum, item) => {
+      return sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1);
+    }, 0);
+    
+    return basePrice + additionalTotal;
+  };
+  
+  // Generate BL number
+  const generateBLNumber = (index) => {
+    const rmaNum = rma.request_number?.replace('FR-', '') || '00000';
+    const date = new Date();
+    const dateStr = `${String(date.getDate()).padStart(2, '0')}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getFullYear()).slice(-2)}`;
+    return `BL-${rmaNum}-${dateStr}${shipments.length > 1 ? `-${index + 1}` : ''}`;
+  };
+  
+  // Generate BL PDF content (returns HTML for PDF generation)
+  const generateBLContent = (shipment, index) => {
+    const blNumber = generateBLNumber(index);
+    const today = new Date().toLocaleDateString('fr-FR');
+    
+    return {
+      blNumber,
+      date: today,
+      client: {
+        name: shipment.address.name || rma.companies?.name,
+        street: shipment.address.street,
+        city: `${shipment.address.postal_code} ${shipment.address.city}`,
+        country: shipment.address.country || 'France'
+      },
+      devices: shipment.devices.map(d => ({
+        model: d.model_name,
+        serial: d.serial_number,
+        service: d.service_type === 'repair' ? 'Réparation' : 'Étalonnage',
+        price: getDevicePrice(d)
+      })),
+      shipping: {
+        carrier: 'UPS',
+        tracking: shipment.trackingNumber || '---',
+        parcels: shipment.parcels,
+        weight: shipment.weight || '---'
+      },
+      total: shipment.devices.reduce((sum, d) => sum + getDevicePrice(d), 0) + 45 // +45€ shipping
+    };
+  };
+  
+  // Complete shipping
+  const completeShipping = async () => {
+    setSaving(true);
+    try {
+      const blData = [];
+      
+      // Generate BL for each shipment
+      for (let i = 0; i < shipments.length; i++) {
+        const shipment = shipments[i];
+        const blContent = generateBLContent(shipment, i);
+        blData.push(blContent);
+        
+        // Update each device in this shipment
+        for (const device of shipment.devices) {
+          await supabase.from('request_devices').update({
+            status: 'shipped',
+            shipped_at: new Date().toISOString(),
+            tracking_number: shipment.trackingNumber || null,
+            bl_number: blContent.blNumber,
+            bl_data: blContent
+          }).eq('id', device.id);
+        }
+      }
+      
+      // Update RMA status
+      await supabase.from('service_requests').update({
+        status: 'shipped',
+        shipped_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }).eq('id', rma.id);
+      
+      setGeneratedBLs(blData);
+      setStep(3);
+      notify('✅ Expédition complétée! BL générés.');
+      reload();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSaving(false);
+  };
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 border-b bg-gradient-to-r from-green-600 to-emerald-600 text-white">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-bold">🚚 Expédition - {rma.request_number}</h2>
+              <p className="text-green-100 text-sm">{devices.length} appareil(s) à expédier</p>
+            </div>
+            <button onClick={onClose} className="text-white/70 hover:text-white text-2xl">&times;</button>
+          </div>
+          
+          {/* Progress Steps */}
+          <div className="flex items-center gap-2 mt-4">
+            {['Vérification', 'Confirmation', 'Terminé'].map((label, idx) => (
+              <div key={idx} className="flex items-center">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                  step > idx + 1 ? 'bg-white text-green-600' : 
+                  step === idx + 1 ? 'bg-white text-green-600 ring-2 ring-white' : 
+                  'bg-green-500 text-green-200'
+                }`}>
+                  {step > idx + 1 ? '✓' : idx + 1}
+                </div>
+                <span className={`ml-2 text-sm ${step === idx + 1 ? 'text-white font-medium' : 'text-green-200'}`}>{label}</span>
+                {idx < 2 && <div className="w-8 h-0.5 bg-green-500 mx-2" />}
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {/* Step 1: Review Shipments */}
+          {step === 1 && (
+            <div className="space-y-6">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-blue-800">
+                  <strong>📦 {shipments.length} expédition(s)</strong> - Les appareils sont groupés par adresse de retour.
+                </p>
+              </div>
+              
+              {shipments.map((shipment, idx) => (
+                <div key={idx} className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden">
+                  {/* Shipment Header */}
+                  <div className="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                      <span className="w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center font-bold">
+                        {idx + 1}
+                      </span>
+                      <div>
+                        <p className="font-bold text-gray-800">Expédition #{idx + 1}</p>
+                        <p className="text-sm text-gray-500">{shipment.devices.length} appareil(s)</p>
+                      </div>
+                    </div>
+                    <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                      BL: {generateBLNumber(idx)}
+                    </span>
+                  </div>
+                  
+                  {/* Address */}
+                  <div className="p-4 border-b bg-amber-50">
+                    <div className="flex items-start gap-3">
+                      <span className="text-xl">📍</span>
+                      <div>
+                        <p className="font-bold text-gray-800">{shipment.address.name}</p>
+                        <p className="text-gray-600">{shipment.address.street}</p>
+                        <p className="text-gray-600">{shipment.address.postal_code} {shipment.address.city}</p>
+                        <p className="text-gray-500">{shipment.address.country || 'France'}</p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Devices Table */}
+                  <div className="p-4">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">Appareil</th>
+                          <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">N° Série</th>
+                          <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">Service</th>
+                          <th className="px-3 py-2 text-right text-sm font-bold text-gray-600">Prix HT</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {shipment.devices.map(device => (
+                          <tr key={device.id}>
+                            <td className="px-3 py-2 font-medium">{device.model_name}</td>
+                            <td className="px-3 py-2 font-mono text-sm text-gray-600">{device.serial_number}</td>
+                            <td className="px-3 py-2">
+                              <span className={`px-2 py-0.5 rounded text-xs ${device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                                {device.service_type === 'repair' ? '🔧 Réparation' : '🔬 Étalonnage'}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-right font-medium">{getDevicePrice(device).toFixed(2)} €</td>
+                          </tr>
+                        ))}
+                        <tr className="bg-gray-50">
+                          <td colSpan={3} className="px-3 py-2 text-right font-medium text-gray-600">Frais de port</td>
+                          <td className="px-3 py-2 text-right font-medium">45.00 €</td>
+                        </tr>
+                        <tr className="bg-green-50">
+                          <td colSpan={3} className="px-3 py-2 text-right font-bold text-gray-800">Total HT</td>
+                          <td className="px-3 py-2 text-right font-bold text-green-700">
+                            {(shipment.devices.reduce((sum, d) => sum + getDevicePrice(d), 0) + 45).toFixed(2)} €
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {/* Shipping Details */}
+                  <div className="px-4 pb-4 grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de colis</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={shipment.parcels}
+                        onChange={e => updateShipment(idx, 'parcels', parseInt(e.target.value) || 1)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Poids (kg)</label>
+                      <input
+                        type="text"
+                        placeholder="ex: 2.5"
+                        value={shipment.weight}
+                        onChange={e => updateShipment(idx, 'weight', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">N° Suivi (optionnel)</label>
+                      <input
+                        type="text"
+                        placeholder="1Z999AA10123456784"
+                        value={shipment.trackingNumber}
+                        onChange={e => updateShipment(idx, 'trackingNumber', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Step 2: Confirm */}
+          {step === 2 && (
+            <div className="space-y-6">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <p className="text-amber-800 font-medium">
+                  ⚠️ Veuillez vérifier les informations avant de confirmer l'expédition.
+                </p>
+              </div>
+              
+              {/* Summary */}
+              <div className="bg-white border rounded-xl p-6">
+                <h3 className="text-lg font-bold text-gray-800 mb-4">📋 Récapitulatif</h3>
+                
+                {shipments.map((shipment, idx) => (
+                  <div key={idx} className="mb-4 p-4 bg-gray-50 rounded-lg">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <p className="font-bold">Expédition #{idx + 1} - {generateBLNumber(idx)}</p>
+                        <p className="text-sm text-gray-600">{shipment.address.name}</p>
+                        <p className="text-sm text-gray-500">{shipment.address.postal_code} {shipment.address.city}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-green-700">
+                          {(shipment.devices.reduce((sum, d) => sum + getDevicePrice(d), 0) + 45).toFixed(2)} €
+                        </p>
+                        <p className="text-sm text-gray-500">{shipment.devices.length} appareil(s), {shipment.parcels} colis</p>
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      {shipment.devices.map(d => d.model_name).join(', ')}
+                    </div>
+                  </div>
+                ))}
+                
+                <div className="border-t pt-4 mt-4">
+                  <div className="flex justify-between items-center text-lg">
+                    <span className="font-bold">Total général</span>
+                    <span className="font-bold text-green-700">
+                      {shipments.reduce((total, s) => 
+                        total + s.devices.reduce((sum, d) => sum + getDevicePrice(d), 0) + 45
+                      , 0).toFixed(2)} €
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-blue-800 text-sm">
+                  <strong>📄 Documents générés:</strong> Un Bon de Livraison (BL) sera créé pour chaque expédition et sauvegardé dans le dossier RMA.
+                </p>
+              </div>
+            </div>
+          )}
+          
+          {/* Step 3: Complete */}
+          {step === 3 && (
+            <div className="text-center py-8">
+              <div className="text-6xl mb-4">✅</div>
+              <h3 className="text-2xl font-bold text-green-700 mb-2">Expédition Terminée!</h3>
+              <p className="text-gray-600 mb-6">Les appareils ont été marqués comme expédiés et les BL ont été générés.</p>
+              
+              <div className="bg-gray-50 rounded-xl p-6 max-w-md mx-auto">
+                <h4 className="font-bold text-gray-800 mb-3">Documents générés:</h4>
+                {generatedBLs.map((bl, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-3 bg-white rounded-lg mb-2 border">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">📄</span>
+                      <span className="font-mono font-medium">{bl.blNumber}</span>
+                    </div>
+                    <span className="text-sm text-gray-500">{bl.devices.length} appareil(s)</span>
+                  </div>
+                ))}
+              </div>
+              
+              <p className="text-sm text-gray-500 mt-6">
+                Les BL sont disponibles dans l'onglet Documents du RMA.
+              </p>
+            </div>
+          )}
+        </div>
+        
+        {/* Footer */}
+        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between">
+          {step === 1 && (
+            <>
+              <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+                Annuler
+              </button>
+              <button 
+                onClick={() => setStep(2)}
+                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
+              >
+                Continuer →
+              </button>
+            </>
+          )}
+          {step === 2 && (
+            <>
+              <button onClick={() => setStep(1)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+                ← Retour
+              </button>
+              <button 
+                onClick={completeShipping}
+                disabled={saving}
+                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                {saving ? '⏳ Traitement...' : '✅ Confirmer Expédition'}
+              </button>
+            </>
+          )}
+          {step === 3 && (
+            <button 
+              onClick={onClose}
+              className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium ml-auto"
+            >
+              Fermer
             </button>
           )}
         </div>
