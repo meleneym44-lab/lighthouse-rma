@@ -2958,18 +2958,15 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
   <style>
     @page { margin: 15mm; size: A4; }
     * { box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; font-size: 11pt; color: #333; margin: 0; padding: 20px; max-width: 210mm; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #00A651; }
-    .logo-section img { height: 50px; }
-    .logo-text { font-size: 24px; font-weight: bold; color: #00A651; }
-    .logo-sub { font-size: 10px; color: #666; letter-spacing: 2px; }
-    .company-header { text-align: right; font-size: 10pt; color: #555; }
+    body { font-family: Arial, sans-serif; font-size: 11pt; color: #333; margin: 0; padding: 30px; max-width: 210mm; margin: 0 auto; }
+    .header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #00A651; }
+    .logo-section img { height: 45px; }
+    .logo-text { font-size: 20px; font-weight: bold; color: #00A651; }
+    .logo-sub { font-size: 9px; color: #666; letter-spacing: 1px; }
     .title-section { text-align: center; margin: 25px 0; }
     .title { font-size: 18pt; font-weight: bold; color: #333; margin: 0; border-bottom: 3px solid #00A651; display: inline-block; padding-bottom: 5px; }
     .bl-number { font-size: 14pt; color: #00A651; font-weight: bold; margin-top: 10px; }
     .info-row { display: flex; justify-content: space-between; margin: 20px 0; }
-    .info-box { flex: 1; }
-    .info-box.right { text-align: right; }
     .client-box { background: #f8f9fa; border: 1px solid #e0e0e0; padding: 15px; margin: 15px 0; }
     .client-label { font-size: 9pt; color: #666; text-transform: uppercase; margin-bottom: 5px; }
     .client-name { font-size: 12pt; font-weight: bold; margin-bottom: 5px; }
@@ -2983,31 +2980,24 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
     .shipping-item { display: flex; }
     .shipping-label { color: #666; width: 120px; }
     .shipping-value { font-weight: 500; }
-    .signatures { display: flex; justify-content: space-between; margin-top: 40px; padding-top: 20px; }
-    .sig-box { width: 45%; }
-    .sig-company { font-weight: bold; font-size: 10pt; margin-bottom: 5px; }
-    .sig-name { font-size: 9pt; color: #666; margin-bottom: 40px; }
-    .sig-line { border-top: 1px solid #333; padding-top: 5px; font-size: 9pt; color: #666; }
     .return-note { text-align: center; margin: 30px 0; font-style: italic; color: #666; font-size: 10pt; }
-    .footer { margin-top: 40px; padding-top: 15px; border-top: 2px solid #00A651; display: flex; justify-content: space-between; align-items: flex-end; }
-    .footer-left { display: flex; align-items: center; gap: 15px; }
-    .footer-logo img { height: 40px; }
-    .footer-info { font-size: 8pt; color: #666; text-align: center; flex: 1; }
-    .footer-contact { font-size: 8pt; color: #666; text-align: right; }
-    @media print { body { padding: 0; } }
+    .prepared-by { margin: 20px 0; font-size: 10pt; }
+    .footer { margin-top: 40px; padding-top: 15px; border-top: 2px solid #00A651; display: flex; align-items: center; }
+    .footer-logo { flex-shrink: 0; }
+    .footer-logo img { height: 55px; }
+    .footer-info { font-size: 8pt; color: #666; text-align: center; flex: 1; padding: 0 20px; }
+    @media print { body { padding: 20px; } }
   </style>
 </head>
 <body>
   <div class="header">
     <div class="logo-section">
       <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
-      <div style="display:none"><div class="logo-text">LIGHTHOUSE</div><div class="logo-sub">WORLDWIDE SOLUTIONS</div></div>
+      <div style="display:none"><div class="logo-text">LIGHTHOUSE</div><div class="logo-sub">FRANCE</div></div>
     </div>
-    <div class="company-header">
-      <strong>LIGHTHOUSE FRANCE</strong><br>
-      16 Rue Paul Séjourné<br>
-      94000 CRÉTEIL<br>
-      Tél. 01 43 77 28 07
+    <div>
+      <div class="logo-text">LIGHTHOUSE</div>
+      <div class="logo-sub">FRANCE</div>
     </div>
   </div>
 
@@ -3017,12 +3007,8 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
   </div>
 
   <div class="info-row">
-    <div class="info-box">
-      <span style="color:#666">Créteil, le</span> <strong>${bl.date}</strong>
-    </div>
-    <div class="info-box right">
-      <span style="color:#666">RMA:</span> <strong>${bl.rmaNumber}</strong>
-    </div>
+    <div><span style="color:#666">Créteil, le</span> <strong>${bl.date}</strong></div>
+    <div><span style="color:#666">RMA:</span> <strong>${bl.rmaNumber}</strong></div>
   </div>
 
   <div class="client-box">
@@ -3067,34 +3053,19 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
 
   <div class="return-note">Merci de nous retourner une copie signée de ce bordereau</div>
 
-  <div class="signatures">
-    <div class="sig-box">
-      <div class="sig-company">LIGHTHOUSE FRANCE</div>
-      <div class="sig-name">${employeeName}</div>
-      <div class="sig-line">Date et signature</div>
-    </div>
-    <div class="sig-box">
-      <div class="sig-company">${bl.client.name}</div>
-      <div class="sig-name">&nbsp;</div>
-      <div class="sig-line">Date et signature</div>
-    </div>
+  <div class="prepared-by">
+    <span style="color:#666">Préparé par:</span> <strong>${employeeName}</strong>
   </div>
 
   <div class="footer">
-    <div class="footer-left">
-      <div class="footer-logo">
-        <img src="/images/logos/capcert-logo.png" alt="CAPCERT" onerror="this.outerHTML='<div style=\\'font-size:10px;color:#666\\'>CAPCERT<br>ISO 9001</div>'">
-      </div>
+    <div class="footer-logo">
+      <img src="/images/logos/capcert-logo.png" alt="CAPCERT" onerror="this.outerHTML='<div style=\\'font-size:11px;color:#666;border:1px solid #ddd;padding:10px;border-radius:4px\\'><strong>CAPCERT</strong><br>ISO 9001</div>'">
     </div>
     <div class="footer-info">
       <strong>Lighthouse France SA</strong> au capital de 10 000 €<br>
+      16 rue Paul Séjourné, 94000 CRÉTEIL | Tél. 01 43 77 28 07<br>
       SIRET 50178134800013 | TVA FR 86501781348<br>
       contact@gometrologie.com | www.gometrologie.com
-    </div>
-    <div class="footer-contact">
-      16 rue Paul Séjourné<br>
-      94000 CRÉTEIL<br>
-      Tél. 01 43 77 28 07
     </div>
   </div>
 
@@ -3319,57 +3290,114 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
           {/* Step 3: BL Preview */}
           {step === 3 && shipments.map((shipment, idx) => {
             const bl = generateBLContent(shipment, idx);
+            const employeeName = profile?.full_name || 'Lighthouse France';
             return (
-              <div key={idx} className="bg-white border-2 rounded-xl overflow-hidden mb-4">
-                <div className="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
+              <div key={idx} className="mb-4">
+                {/* Controls bar */}
+                <div className="bg-gray-100 px-4 py-3 rounded-t-xl flex justify-between items-center">
                   <div>
                     <h3 className="font-bold">{bl.blNumber}</h3>
                     <p className="text-sm text-gray-500">{bl.devices.length} appareil(s)</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className={blsPrinted[idx] ? 'text-green-600 font-medium' : 'text-gray-400'}>{blsPrinted[idx] ? '✓ Imprimé' : ''}</span>
-                    <button onClick={() => setStep(1)} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm">✏️ Modifier</button>
+                    <button onClick={() => setStep(1)} className="px-3 py-1 bg-white hover:bg-gray-50 border rounded text-sm">✏️ Modifier</button>
                     <button onClick={() => printBL(idx)} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">🖨️ Imprimer BL</button>
                   </div>
                 </div>
-                <div className="p-6">
-                  <div className="flex justify-between mb-6">
-                    <div>
-                      <div className="text-2xl font-bold text-[#00A651]">LIGHTHOUSE</div>
-                      <div className="text-sm text-gray-500">Worldwide Solutions</div>
+                
+                {/* PDF Preview - exact match to printed version */}
+                <div className="bg-white border-2 border-t-0 rounded-b-xl overflow-hidden shadow-lg">
+                  <div style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '30px', maxWidth: '210mm', margin: '0 auto', background: 'white' }}>
+                    {/* Header with logo */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', paddingBottom: '15px', borderBottom: '2px solid #00A651' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '45px' }} onError={(e) => { e.target.style.display = 'none'; }} />
+                        <div>
+                          <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#00A651' }}>LIGHTHOUSE</div>
+                          <div style={{ fontSize: '9px', color: '#666', letterSpacing: '1px' }}>FRANCE</div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-right text-sm text-gray-500">LIGHTHOUSE FRANCE<br/>1 Rue de la Pépinière<br/>94000 Créteil</div>
-                  </div>
-                  <h3 className="text-xl font-bold">BON DE LIVRAISON</h3>
-                  <p className="text-[#00A651] font-bold text-lg mb-4">{bl.blNumber}</p>
-                  <p className="text-sm text-gray-600 mb-4">Créteil, le {bl.date} | RMA: {bl.rmaNumber}</p>
-                  <div className="bg-gray-50 p-4 rounded-lg mb-4">
-                    <strong className="text-lg">{bl.client.name}</strong>
-                    {bl.client.attention && <><br/>À l'attention de: {bl.client.attention}</>}
-                    <br/>{bl.client.street}<br/>{bl.client.city}<br/>{bl.client.country}
-                  </div>
-                  <table className="w-full text-sm mb-4">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="px-3 py-2 text-left border">Qté</th>
-                        <th className="px-3 py-2 text-left border">Désignation</th>
-                        <th className="px-3 py-2 text-left border">N° Série</th>
-                        <th className="px-3 py-2 text-left border">Service</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bl.devices.map((d, i) => (
-                        <tr key={i}>
-                          <td className="px-3 py-2 border">1</td>
-                          <td className="px-3 py-2 border">Compteur de particules LIGHTHOUSE {d.model}</td>
-                          <td className="px-3 py-2 border font-mono">{d.serial}</td>
-                          <td className="px-3 py-2 border">{d.service}</td>
+
+                    {/* Title */}
+                    <div style={{ textAlign: 'center', margin: '25px 0' }}>
+                      <h1 style={{ fontSize: '18pt', fontWeight: 'bold', color: '#333', margin: 0, borderBottom: '3px solid #00A651', display: 'inline-block', paddingBottom: '5px' }}>BON DE LIVRAISON</h1>
+                      <div style={{ fontSize: '14pt', color: '#00A651', fontWeight: 'bold', marginTop: '10px' }}>{bl.blNumber}</div>
+                    </div>
+
+                    {/* Date and RMA row */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', margin: '20px 0' }}>
+                      <div><span style={{ color: '#666' }}>Créteil, le</span> <strong>{bl.date}</strong></div>
+                      <div><span style={{ color: '#666' }}>RMA:</span> <strong>{bl.rmaNumber}</strong></div>
+                    </div>
+
+                    {/* Client box */}
+                    <div style={{ background: '#f8f9fa', border: '1px solid #e0e0e0', padding: '15px', margin: '15px 0' }}>
+                      <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', marginBottom: '5px' }}>Destinataire</div>
+                      <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{bl.client.name}</div>
+                      {bl.client.attention && <div>À l'attention de: <strong>{bl.client.attention}</strong></div>}
+                      <div>{bl.client.street}</div>
+                      <div>{bl.client.city}</div>
+                      <div>{bl.client.country}</div>
+                    </div>
+
+                    {/* Devices table */}
+                    <table style={{ width: '100%', borderCollapse: 'collapse', margin: '20px 0' }}>
+                      <thead>
+                        <tr style={{ background: '#00A651', color: 'white' }}>
+                          <th style={{ padding: '10px', textAlign: 'left', fontSize: '10pt', width: '50px' }}>Qté</th>
+                          <th style={{ padding: '10px', textAlign: 'left', fontSize: '10pt' }}>Désignation</th>
+                          <th style={{ padding: '10px', textAlign: 'left', fontSize: '10pt', width: '120px' }}>N° Série</th>
+                          <th style={{ padding: '10px', textAlign: 'left', fontSize: '10pt', width: '100px' }}>Service</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div className="bg-green-50 p-4 rounded-lg">
-                    <strong>Expédition:</strong> {bl.shipping.carrier} • N° {bl.shipping.tracking} • {bl.shipping.parcels} colis • {bl.shipping.weight} kg
+                      </thead>
+                      <tbody>
+                        {bl.devices.map((d, i) => (
+                          <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#f9f9f9' }}>
+                            <td style={{ padding: '10px', borderBottom: '1px solid #ddd', fontSize: '10pt' }}>1</td>
+                            <td style={{ padding: '10px', borderBottom: '1px solid #ddd', fontSize: '10pt' }}>Compteur de particules LIGHTHOUSE {d.model}</td>
+                            <td style={{ padding: '10px', borderBottom: '1px solid #ddd', fontSize: '10pt', fontFamily: 'monospace' }}>{d.serial}</td>
+                            <td style={{ padding: '10px', borderBottom: '1px solid #ddd', fontSize: '10pt' }}>{d.service}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    {/* Shipping info */}
+                    <div style={{ margin: '25px 0' }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '11pt', marginBottom: '10px', borderBottom: '1px solid #00A651', paddingBottom: '5px' }}>Informations d'expédition</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <div style={{ display: 'flex' }}><span style={{ color: '#666', width: '120px' }}>Transporteur:</span><span style={{ fontWeight: '500' }}>{bl.shipping.carrier}</span></div>
+                        <div style={{ display: 'flex' }}><span style={{ color: '#666', width: '120px' }}>N° de suivi:</span><span style={{ fontWeight: '500', fontFamily: 'monospace' }}>{bl.shipping.tracking}</span></div>
+                        <div style={{ display: 'flex' }}><span style={{ color: '#666', width: '120px' }}>Nombre de colis:</span><span style={{ fontWeight: '500' }}>{bl.shipping.parcels}</span></div>
+                        <div style={{ display: 'flex' }}><span style={{ color: '#666', width: '120px' }}>Poids:</span><span style={{ fontWeight: '500' }}>{bl.shipping.weight} kg</span></div>
+                      </div>
+                    </div>
+
+                    {/* Return note */}
+                    <div style={{ textAlign: 'center', margin: '30px 0', fontStyle: 'italic', color: '#666', fontSize: '10pt' }}>
+                      Merci de nous retourner une copie signée de ce bordereau
+                    </div>
+
+                    {/* Prepared by */}
+                    <div style={{ margin: '20px 0', fontSize: '10pt' }}>
+                      <span style={{ color: '#666' }}>Préparé par:</span> <strong>{employeeName}</strong>
+                    </div>
+
+                    {/* Footer */}
+                    <div style={{ marginTop: '30px', paddingTop: '15px', borderTop: '2px solid #00A651', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '55px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:11px;color:#666;border:1px solid #ddd;padding:8px;border-radius:4px"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
+                      </div>
+                      <div style={{ textAlign: 'center', fontSize: '8pt', color: '#666', flex: 1, padding: '0 20px' }}>
+                        <strong>Lighthouse France SA</strong> au capital de 10 000 €<br/>
+                        16 rue Paul Séjourné, 94000 CRÉTEIL | Tél. 01 43 77 28 07<br/>
+                        SIRET 50178134800013 | TVA FR 86501781348<br/>
+                        contact@gometrologie.com | www.gometrologie.com
+                      </div>
+                      <div style={{ width: '80px' }}></div>
+                    </div>
                   </div>
                 </div>
               </div>
