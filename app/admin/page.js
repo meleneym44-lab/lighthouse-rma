@@ -61,6 +61,20 @@ export default function AdminPortal() {
   const [contracts, setContracts] = useState([]);
   const [selectedRMA, setSelectedRMA] = useState(null); // Full-page RMA view
   const [selectedDeviceFromDashboard, setSelectedDeviceFromDashboard] = useState(null); // Direct device selection from device view
+  
+  // Business settings - used across all documents (BL, quotes, invoices)
+  const [businessSettings, setBusinessSettings] = useState({
+    company_name: 'Lighthouse France SAS',
+    address: '16 rue Paul Séjourné',
+    city: 'CRÉTEIL',
+    postal_code: '94000',
+    phone: '01 43 77 28 07',
+    email: 'France@golighthouse.com',
+    website: 'www.golighthouse.fr',
+    siret: '50178134800013',
+    tva: 'FR 86501781348',
+    capital: '10 000'
+  });
 
   const notify = useCallback((msg, type = 'success') => {
     setToast({ msg, type });
@@ -86,6 +100,12 @@ export default function AdminPortal() {
 
     const { data: contractsData } = await supabase.from('contracts').select('id, status').order('created_at', { ascending: false });
     if (contractsData) setContracts(contractsData);
+    
+    // Load business settings
+    const { data: settings } = await supabase.from('business_settings').select('*').eq('id', 1).single();
+    if (settings) {
+      setBusinessSettings(settings);
+    }
     
     // Only refresh selected RMA if ID is provided
     if (refreshSelectedRMAId) {
@@ -199,6 +219,7 @@ export default function AdminPortal() {
             reload={() => loadData(selectedRMA?.id)}
             profile={profile}
             initialDevice={selectedDeviceFromDashboard?.device}
+            businessSettings={businessSettings}
           />
         ) : (
           <>
@@ -220,7 +241,7 @@ export default function AdminPortal() {
             {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} />}
             {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} reloadMain={loadData} />}
             {activeSheet === 'settings' && <SettingsSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
-            {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
+            {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} />}
           </>
         )}
       </main>
@@ -1292,7 +1313,7 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
 // ============================================
 // RMA FULL PAGE VIEW - Adaptive workflow interface
 // ============================================
-function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice }) {
+function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, businessSettings }) {
   // Find the fresh device data from RMA (initialDevice might be stale)
   const freshDevices = rma?.request_devices || [];
   const freshInitialDevice = initialDevice 
@@ -1783,6 +1804,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice }) {
           notify={notify}
           reload={reload}
           profile={profile}
+          businessSettings={businessSettings}
         />
       )}
 
@@ -2837,7 +2859,7 @@ function RequestDetailModal({ request, onClose, onCreateQuote }) {
 // ============================================
 // SHIPPING MODAL - Full shipping workflow v26
 // ============================================
-function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
+function ShippingModal({ rma, devices, onClose, notify, reload, profile, businessSettings }) {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [shipments, setShipments] = useState([]);
@@ -2956,6 +2978,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
   const printBL = (index) => {
     const s = shipments[index], bl = generateBLContent(s, index);
     const employeeName = profile?.full_name || 'Lighthouse France';
+    const biz = businessSettings || {};
     const w = window.open('', '_blank');
     if (!w) { notify('Popup bloqué', 'error'); return; }
     w.document.write(`<!DOCTYPE html>
@@ -2987,10 +3010,10 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
     .shipping-label { color: #666; width: 130px; }
     .shipping-value { font-weight: 500; }
     .footer-section { margin-top: 40px; padding-top: 20px; border-top: 2px solid #00A651; }
-    .prepared-by { font-size: 10pt; margin-bottom: 20px; }
-    .footer-content { display: flex; align-items: center; gap: 25px; }
+    .prepared-by { font-size: 10pt; margin-bottom: 15px; }
+    .footer-content { display: flex; align-items: flex-start; gap: 20px; }
     .footer-logo img { height: 70px; }
-    .footer-info { font-size: 8pt; color: #666; }
+    .footer-info { font-size: 8pt; color: #666; text-align: center; flex: 1; }
     @media print { 
       body { padding: 0; }
       .page { padding: 0; max-width: 100%; }
@@ -3009,7 +3032,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
     </div>
 
     <div class="info-row">
-      <div><span style="color:#666">Créteil, le</span> <strong>${bl.date}</strong></div>
+      <div><span style="color:#666">${biz.city || 'Créteil'}, le</span> <strong>${bl.date}</strong></div>
       <div><span style="color:#666">RMA:</span> <strong>${bl.rmaNumber}</strong></div>
     </div>
 
@@ -3062,10 +3085,10 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
           <img src="/images/logos/capcert-logo.png" alt="CAPCERT" onerror="this.outerHTML='<div style=\\'font-size:14px;color:#00A651;border:2px solid #00A651;padding:12px 15px;border-radius:4px;text-align:center\\'><strong>CAPCERT</strong><br>ISO 9001</div>'">
         </div>
         <div class="footer-info">
-          <strong style="color:#333">Lighthouse France SAS</strong> au capital de 10 000 €<br>
-          16 rue Paul Séjourné, 94000 CRÉTEIL | Tél. 01 43 77 28 07<br>
-          SIRET 50178134800013 | TVA FR 86501781348<br>
-          contact@gometrologie.com | www.gometrologie.com
+          <strong style="color:#333">${biz.company_name || 'Lighthouse France SAS'}</strong> au capital de ${biz.capital || '10 000'} €<br>
+          ${biz.address || '16 rue Paul Séjourné'}, ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} | Tél. ${biz.phone || '01 43 77 28 07'}<br>
+          SIRET ${biz.siret || '50178134800013'} | TVA ${biz.tva || 'FR 86501781348'}<br>
+          ${biz.email || 'France@golighthouse.com'} | ${biz.website || 'www.golighthouse.fr'}
         </div>
       </div>
     </div>
@@ -3293,6 +3316,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
           {step === 3 && shipments.map((shipment, idx) => {
             const bl = generateBLContent(shipment, idx);
             const employeeName = profile?.full_name || 'Lighthouse France';
+            const biz = businessSettings || {};
             return (
               <div key={idx} className="mb-4">
                 {/* Controls bar */}
@@ -3324,7 +3348,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
 
                     {/* Date and RMA row */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', margin: '20px 0' }}>
-                      <div><span style={{ color: '#666' }}>Créteil, le</span> <strong>{bl.date}</strong></div>
+                      <div><span style={{ color: '#666' }}>{biz.city || 'Créteil'}, le</span> <strong>{bl.date}</strong></div>
                       <div><span style={{ color: '#666' }}>RMA:</span> <strong>{bl.rmaNumber}</strong></div>
                     </div>
 
@@ -3374,19 +3398,19 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
                     {/* Footer section */}
                     <div style={{ marginTop: '40px', paddingTop: '20px', borderTop: '2px solid #00A651' }}>
                       {/* Prepared by */}
-                      <div style={{ fontSize: '10pt', marginBottom: '20px' }}>
+                      <div style={{ fontSize: '10pt', marginBottom: '15px' }}>
                         <span style={{ color: '#666' }}>Préparé par:</span> <strong>{employeeName}</strong>
                       </div>
-                      {/* Footer with logo and info */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '25px' }}>
+                      {/* Footer with logo and centered info */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '20px' }}>
                         <div>
                           <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '70px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:14px;color:#00A651;border:2px solid #00A651;padding:12px 15px;border-radius:4px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
                         </div>
-                        <div style={{ fontSize: '8pt', color: '#666' }}>
-                          <strong style={{ color: '#333' }}>Lighthouse France SAS</strong> au capital de 10 000 €<br/>
-                          16 rue Paul Séjourné, 94000 CRÉTEIL | Tél. 01 43 77 28 07<br/>
-                          SIRET 50178134800013 | TVA FR 86501781348<br/>
-                          contact@gometrologie.com | www.gometrologie.com
+                        <div style={{ fontSize: '8pt', color: '#666', textAlign: 'center', flex: 1 }}>
+                          <strong style={{ color: '#333' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
+                          {biz.address || '16 rue Paul Séjourné'}, {biz.postal_code || '94000'} {biz.city || 'CRÉTEIL'} | Tél. {biz.phone || '01 43 77 28 07'}<br/>
+                          SIRET {biz.siret || '50178134800013'} | TVA {biz.tva || 'FR 86501781348'}<br/>
+                          {biz.email || 'France@golighthouse.com'} | {biz.website || 'www.golighthouse.fr'}
                         </div>
                       </div>
                     </div>
@@ -6018,7 +6042,184 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
 
 function SettingsSheet({ profile, staffMembers, notify, reload }) { return <div className="space-y-6"><h1 className="text-2xl font-bold text-gray-800">Paramètres</h1><div className="bg-white rounded-xl shadow-sm"><div className="px-6 py-4 border-b"><h2 className="font-bold text-gray-800">Équipe Lighthouse</h2></div><div className="p-6 space-y-3">{staffMembers.map(member => <div key={member.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-[#00A651] text-white flex items-center justify-center font-bold">{member.full_name?.charAt(0)?.toUpperCase()}</div><div><p className="font-medium">{member.full_name}</p><p className="text-sm text-gray-500">{member.email}</p></div></div><span className={`px-3 py-1 rounded-full text-sm ${member.role === 'lh_admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>{member.role === 'lh_admin' ? '👑 Admin' : '👤 Employé'}</span></div>)}</div></div></div>; }
 
-function AdminSheet({ profile, staffMembers, notify, reload }) { return <div className="space-y-6"><h1 className="text-2xl font-bold text-gray-800">🔐 Administration</h1><div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4"><div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer"><div className="text-3xl mb-3">💰</div><h3 className="font-bold text-gray-800">Tarification</h3><p className="text-sm text-gray-500">Gérer les prix des services</p></div><div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer"><div className="text-3xl mb-3">🔑</div><h3 className="font-bold text-gray-800">Permissions</h3><p className="text-sm text-gray-500">Gérer les accès des employés</p></div><div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer"><div className="text-3xl mb-3">⚙️</div><h3 className="font-bold text-gray-800">Système</h3><p className="text-sm text-gray-500">Configuration avancée</p></div></div></div>; }
+function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, setBusinessSettings }) {
+  const [editingSettings, setEditingSettings] = useState(false);
+  const [tempSettings, setTempSettings] = useState(businessSettings);
+  const [saving, setSaving] = useState(false);
+  
+  const saveSettings = async () => {
+    setSaving(true);
+    try {
+      // Try to update first
+      const { error: updateError } = await supabase
+        .from('business_settings')
+        .upsert({ id: 1, ...tempSettings, updated_at: new Date().toISOString() });
+      
+      if (updateError) throw updateError;
+      
+      setBusinessSettings(tempSettings);
+      setEditingSettings(false);
+      notify('✅ Paramètres enregistrés!');
+    } catch (err) {
+      console.error('Settings save error:', err);
+      notify('Erreur: ' + (err.message || 'Erreur'), 'error');
+    }
+    setSaving(false);
+  };
+  
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-gray-800">🔐 Administration</h1>
+      
+      {/* Business Settings Card */}
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b bg-gradient-to-r from-blue-600 to-indigo-600 flex justify-between items-center">
+          <div>
+            <h2 className="text-lg font-bold text-white">🏢 Informations de l'entreprise</h2>
+            <p className="text-blue-100 text-sm">Utilisées sur les BL, devis et factures</p>
+          </div>
+          {!editingSettings && (
+            <button onClick={() => { setTempSettings(businessSettings); setEditingSettings(true); }} className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg font-medium">
+              ✏️ Modifier
+            </button>
+          )}
+        </div>
+        
+        <div className="p-6">
+          {editingSettings ? (
+            <div className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nom de la société</label>
+                  <input type="text" value={tempSettings.company_name} onChange={e => setTempSettings({...tempSettings, company_name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Capital</label>
+                  <div className="flex">
+                    <input type="text" value={tempSettings.capital} onChange={e => setTempSettings({...tempSettings, capital: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-l-lg" />
+                    <span className="px-3 py-2 bg-gray-100 border border-l-0 border-gray-300 rounded-r-lg">€</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Adresse</label>
+                <input type="text" value={tempSettings.address} onChange={e => setTempSettings({...tempSettings, address: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+              </div>
+              
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Code postal</label>
+                  <input type="text" value={tempSettings.postal_code} onChange={e => setTempSettings({...tempSettings, postal_code: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ville</label>
+                  <input type="text" value={tempSettings.city} onChange={e => setTempSettings({...tempSettings, city: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+              </div>
+              
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
+                  <input type="text" value={tempSettings.phone} onChange={e => setTempSettings({...tempSettings, phone: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input type="email" value={tempSettings.email} onChange={e => setTempSettings({...tempSettings, email: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Site web</label>
+                <input type="text" value={tempSettings.website} onChange={e => setTempSettings({...tempSettings, website: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+              </div>
+              
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label>
+                  <input type="text" value={tempSettings.siret} onChange={e => setTempSettings({...tempSettings, siret: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">TVA Intracommunautaire</label>
+                  <input type="text" value={tempSettings.tva} onChange={e => setTempSettings({...tempSettings, tva: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+              </div>
+              
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <button onClick={() => setEditingSettings(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Annuler</button>
+                <button onClick={saveSettings} disabled={saving} className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50">
+                  {saving ? '⏳ Enregistrement...' : '✅ Enregistrer'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="font-bold text-lg text-gray-800 mb-3">{businessSettings.company_name}</h3>
+                  <div className="space-y-1 text-gray-600">
+                    <p>{businessSettings.address}</p>
+                    <p>{businessSettings.postal_code} {businessSettings.city}</p>
+                    <p>📞 {businessSettings.phone}</p>
+                    <p>✉️ {businessSettings.email}</p>
+                    <p>🌐 {businessSettings.website}</p>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="font-medium text-gray-700 mb-3">Informations légales</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between py-2 border-b border-gray-100">
+                      <span className="text-gray-500">Capital</span>
+                      <span className="font-medium">{businessSettings.capital} €</span>
+                    </div>
+                    <div className="flex justify-between py-2 border-b border-gray-100">
+                      <span className="text-gray-500">SIRET</span>
+                      <span className="font-mono">{businessSettings.siret}</span>
+                    </div>
+                    <div className="flex justify-between py-2">
+                      <span className="text-gray-500">TVA</span>
+                      <span className="font-mono">{businessSettings.tva}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Preview how it looks on documents */}
+              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500 mb-2">Aperçu sur les documents:</p>
+                <p className="text-xs text-gray-600 text-center">
+                  <strong>{businessSettings.company_name}</strong> au capital de {businessSettings.capital} €<br/>
+                  {businessSettings.address}, {businessSettings.postal_code} {businessSettings.city} | Tél. {businessSettings.phone}<br/>
+                  SIRET {businessSettings.siret} | TVA {businessSettings.tva}<br/>
+                  {businessSettings.email} | {businessSettings.website}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* Other admin cards */}
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer">
+          <div className="text-3xl mb-3">💰</div>
+          <h3 className="font-bold text-gray-800">Tarification</h3>
+          <p className="text-sm text-gray-500">Gérer les prix des services</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer">
+          <div className="text-3xl mb-3">🔑</div>
+          <h3 className="font-bold text-gray-800">Permissions</h3>
+          <p className="text-sm text-gray-500">Gérer les accès des employés</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer">
+          <div className="text-3xl mb-3">⚙️</div>
+          <h3 className="font-bold text-gray-800">Système</h3>
+          <p className="text-sm text-gray-500">Configuration avancée</p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ============================================
 // QUOTE TEMPLATES - Calibration by Device Type
