@@ -577,13 +577,49 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
           
           {/* Device View Table */}
           {viewMode === 'device' && (() => {
-            // Flatten all devices from filtered RMAs
-            const allDevices = filteredRMAs.flatMap(rma => 
+            // Flatten all devices from ALL active RMAs (not just filtered)
+            const allDevicesRaw = activeRMAs.flatMap(rma => 
               (rma.request_devices || []).map(device => ({
                 ...device,
                 rma: rma
               }))
             );
+            
+            // Define status categories for filtering
+            const waitingStatuses = ['waiting_device', 'bc_approved'];
+            const serviceStatuses = ['received', 'in_queue', 'queue', 'calibration', 'calibration_in_progress', 
+                                     'inspection', 'inspection_complete', 'customer_approval', 'repair', 'repair_in_progress'];
+            const qcStatuses = ['final_qc', 'qc', 'quality_check'];
+            const readyStatuses = ['ready_to_ship', 'ready'];
+            
+            // Helper to get device's effective status
+            const getDeviceStatus = (device) => device.status || device.rma.status;
+            
+            // Helper to determine device category
+            const getDeviceCategory = (device) => {
+              const status = getDeviceStatus(device);
+              // Check for QC based on report_complete flag too
+              if (device.report_complete && !device.qc_complete) return 'qc';
+              if (device.qc_complete) return 'ready';
+              if (qcStatuses.includes(status)) return 'qc';
+              if (readyStatuses.includes(status)) return 'ready';
+              if (serviceStatuses.includes(status)) return 'service';
+              if (waitingStatuses.includes(status)) return 'waiting_device';
+              return 'other';
+            };
+            
+            // Filter devices based on selected filter
+            const allDevices = (() => {
+              if (!filter || filter === 'all') return allDevicesRaw;
+              if (filter === 'service') return allDevicesRaw.filter(d => getDeviceCategory(d) === 'service');
+              if (filter === 'qc') return allDevicesRaw.filter(d => getDeviceCategory(d) === 'qc');
+              if (filter === 'ready') return allDevicesRaw.filter(d => getDeviceCategory(d) === 'ready');
+              if (filter === 'waiting_device') return allDevicesRaw.filter(d => getDeviceCategory(d) === 'waiting_device');
+              // For other filters (bc, waiting_bc), filter by RMA
+              return filteredRMAs.flatMap(rma => 
+                (rma.request_devices || []).map(device => ({ ...device, rma }))
+              );
+            })();
             
             // Progress bar component for device view
             const DeviceProgressBar = ({ device, rma }) => {
@@ -738,12 +774,41 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                             <DeviceProgressBar device={device} rma={device.rma} />
                           </td>
                           <td className="px-4 py-3">
-                            <button 
-                              onClick={() => onSelectDevice(device, device.rma)}
-                              className="px-3 py-1.5 text-sm bg-indigo-500 hover:bg-indigo-600 text-white rounded font-medium"
-                            >
-                              🔧 Traiter
-                            </button>
+                            {(() => {
+                              const category = getDeviceCategory(device);
+                              if (category === 'qc') {
+                                return (
+                                  <button 
+                                    onClick={() => onSelectDevice(device, device.rma)}
+                                    className="px-3 py-1.5 text-sm bg-purple-500 hover:bg-purple-600 text-white rounded font-medium"
+                                  >
+                                    ✅ Contrôler
+                                  </button>
+                                );
+                              }
+                              if (category === 'ready') {
+                                return (
+                                  <span className="px-3 py-1.5 text-sm bg-green-100 text-green-700 rounded font-medium">
+                                    ✓ Prêt
+                                  </span>
+                                );
+                              }
+                              if (category === 'waiting_device') {
+                                return (
+                                  <span className="px-3 py-1.5 text-sm bg-cyan-100 text-cyan-700 rounded font-medium">
+                                    📦 Attente
+                                  </span>
+                                );
+                              }
+                              return (
+                                <button 
+                                  onClick={() => onSelectDevice(device, device.rma)}
+                                  className="px-3 py-1.5 text-sm bg-indigo-500 hover:bg-indigo-600 text-white rounded font-medium"
+                                >
+                                  🔧 Traiter
+                                </button>
+                              );
+                            })()}
                           </td>
                         </tr>
                       );
@@ -1207,9 +1272,20 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
 // RMA FULL PAGE VIEW - Adaptive workflow interface
 // ============================================
 function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice }) {
-  const [selectedDevice, setSelectedDevice] = useState(initialDevice || null);
+  // Find the fresh device data from RMA (initialDevice might be stale)
+  const freshDevices = rma?.request_devices || [];
+  const freshInitialDevice = initialDevice 
+    ? freshDevices.find(d => d.id === initialDevice.id) || initialDevice
+    : null;
+  
+  // Determine if initial device should go to QC instead of Service
+  const initialDeviceNeedsQC = freshInitialDevice && 
+    (freshInitialDevice.status === 'final_qc' || 
+     (freshInitialDevice.report_complete && !freshInitialDevice.qc_complete));
+  
+  const [selectedDevice, setSelectedDevice] = useState(initialDeviceNeedsQC ? null : freshInitialDevice);
   const [showAvenantPreview, setShowAvenantPreview] = useState(false);
-  const [showQCReview, setShowQCReview] = useState(null);
+  const [showQCReview, setShowQCReview] = useState(initialDeviceNeedsQC ? freshInitialDevice : null);
   const [saving, setSaving] = useState(false);
   
   // Safety check
