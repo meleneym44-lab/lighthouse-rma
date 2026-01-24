@@ -1346,7 +1346,7 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
 // ============================================
 // RMA ACTIONS COMPONENT - RMA-level action buttons
 // ============================================
-function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenant, saving, setSaving }) {
+function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenant, onStartService, saving, setSaving }) {
   // Determine what actions are available based on RMA/device state
   const isWaitingForDevice = ['approved', 'waiting_bc', 'waiting_device', 'waiting_po', 'bc_review', 'bc_approved'].includes(rma.status) && 
     !devices.some(d => d.status === 'received' || d.status === 'in_queue');
@@ -1389,7 +1389,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
     setSaving(false);
   };
   
-  // Start service on RMA
+  // Start service on RMA - update status and open first device
   const startService = async () => {
     setSaving(true);
     try {
@@ -1400,6 +1400,11 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
       
       notify('✅ Service démarré!');
       reload();
+      
+      // Open service modal for first device
+      if (devices.length > 0 && onStartService) {
+        onStartService(devices[0]);
+      }
     } catch (err) {
       notify('Erreur: ' + err.message, 'error');
     }
@@ -2063,6 +2068,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           reload={reload}
           onOpenShipping={() => setShowShippingModal(true)}
           onOpenAvenant={() => setShowAvenantPreview(true)}
+          onStartService={(device) => setShowServiceModal(device)}
           saving={saving}
           setSaving={setSaving}
         />
@@ -3866,6 +3872,7 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
   const [newMessage, setNewMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [filter, setFilter] = useState('open'); // 'open', 'closed', 'all'
+  const [search, setSearch] = useState('');
   const [profile, setProfile] = useState(null);
   
   // Load profile
@@ -3880,11 +3887,34 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
     loadProfile();
   }, []);
   
-  // Filter RMAs based on chat status
+  // Filter RMAs based on chat status AND search
   const filteredRMAs = requests.filter(r => {
-    if (filter === 'open') return r.chat_status === 'open';
-    if (filter === 'closed') return r.chat_status === 'closed' || !r.chat_status;
-    return true; // 'all'
+    // Apply status filter
+    if (filter === 'open' && r.chat_status !== 'open') return false;
+    if (filter === 'closed' && r.chat_status === 'open') return false;
+    
+    // Apply search filter
+    if (search.trim()) {
+      const searchLower = search.trim().toLowerCase();
+      const searchUpper = search.trim().toUpperCase();
+      
+      // Search in RMA number
+      if (r.request_number?.toUpperCase().includes(searchUpper)) return true;
+      
+      // Search in company name
+      if (r.companies?.name?.toLowerCase().includes(searchLower)) return true;
+      
+      // Search in device serial numbers
+      const devices = r.request_devices || [];
+      if (devices.some(d => d.serial_number?.toUpperCase().includes(searchUpper))) return true;
+      
+      // Search in device models
+      if (devices.some(d => d.model_name?.toLowerCase().includes(searchLower))) return true;
+      
+      return false;
+    }
+    
+    return true;
   }).sort((a, b) => {
     // Open chats first, then by most recent message
     if (a.chat_status === 'open' && b.chat_status !== 'open') return -1;
@@ -3972,6 +4002,18 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
         <div className="w-1/3 bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col">
           <div className="p-4 border-b bg-gray-50">
             <h2 className="font-bold text-gray-800 mb-3">💬 Conversations</h2>
+            
+            {/* Search Input */}
+            <div className="mb-3">
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="🔍 Rechercher RMA, N° série, client..."
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            
             <div className="flex gap-2">
               {[
                 { id: 'open', label: 'Ouverts', count: requests.filter(r => r.chat_status === 'open').length },
@@ -4000,7 +4042,9 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
           
           <div className="flex-1 overflow-y-auto divide-y">
             {filteredRMAs.length === 0 ? (
-              <p className="text-gray-400 text-center py-8">Aucune conversation</p>
+              <p className="text-gray-400 text-center py-8">
+                {search.trim() ? 'Aucun résultat pour cette recherche' : 'Aucune conversation'}
+              </p>
             ) : (
               filteredRMAs.map(rma => (
                 <div
