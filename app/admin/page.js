@@ -2835,7 +2835,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin })
   })();
   
   // Perform search when search changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (!search.trim() || search.trim().length < 2) {
       setSearchResults(null);
       return;
