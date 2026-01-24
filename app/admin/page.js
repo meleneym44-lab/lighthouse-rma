@@ -546,9 +546,22 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                       other: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Admin' }
                     };
                     const jobStyle = jobStyles[jobType] || jobStyles.other;
-                    const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
                     const devices = rma.request_devices || [];
                     const hasBCToReview = needsReview.find(n => n.id === rma.id);
+                    
+                    // Compute effective status based on device states (more accurate than rma.status)
+                    const getEffectiveStatus = () => {
+                      if (devices.length === 0) return rma.status;
+                      const allQCComplete = devices.every(d => d.qc_complete);
+                      const anyInQC = devices.some(d => d.report_complete && !d.qc_complete);
+                      const allReportsComplete = devices.every(d => d.report_complete);
+                      
+                      if (allQCComplete) return 'ready_to_ship';
+                      if (anyInQC || allReportsComplete) return 'final_qc';
+                      return rma.status;
+                    };
+                    const effectiveStatus = getEffectiveStatus();
+                    const style = STATUS_STYLES[effectiveStatus] || STATUS_STYLES.submitted;
                     
                     return (
                       <tr key={rma.id} className={`hover:bg-gray-50 cursor-pointer ${hasBCToReview ? 'bg-red-50' : ''}`} onClick={() => !hasBCToReview && onSelectRMA(rma)}>
@@ -1981,6 +1994,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
     const checklistObj = {};
     checklist.forEach(item => { checklistObj[item.id] = item.checked; });
     try {
+      // Update device status
       const { error } = await supabase.from('request_devices').update({
         service_findings: findings, additional_work_needed: additionalWorkNeeded,
         additional_work_items: additionalWorkNeeded ? workItems : [],
@@ -1991,6 +2005,22 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
         report_complete: true, report_completed_at: new Date().toISOString(), status: 'final_qc'
       }).eq('id', device.id);
       if (error) throw error;
+      
+      // Check if all devices in this RMA are now in QC or beyond
+      const allDevices = rma.request_devices || [];
+      const otherDevices = allDevices.filter(d => d.id !== device.id);
+      const allOthersInQCOrBeyond = otherDevices.every(d => 
+        d.report_complete || d.status === 'final_qc' || d.qc_complete || d.status === 'ready_to_ship'
+      );
+      
+      // If all devices are in QC (including this one we just updated), update RMA status
+      if (allOthersInQCOrBeyond) {
+        await supabase.from('service_requests').update({
+          status: 'final_qc',
+          updated_at: new Date().toISOString()
+        }).eq('id', rma.id);
+      }
+      
       notify('✓ Rapport terminé → QC!');
       reload();
       onBack();
@@ -2877,6 +2907,20 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
       }).eq('id', device.id);
       
       if (error) throw error;
+      
+      // Check if all devices in this RMA are now ready to ship
+      const allDevices = rma.request_devices || [];
+      const otherDevices = allDevices.filter(d => d.id !== device.id);
+      const allOthersReady = otherDevices.every(d => d.qc_complete || d.status === 'ready_to_ship');
+      
+      // If all devices are ready (including this one we just updated), update RMA status
+      if (allOthersReady) {
+        await supabase.from('service_requests').update({
+          status: 'ready_to_ship',
+          updated_at: new Date().toISOString()
+        }).eq('id', rma.id);
+      }
+      
       notify('✓ Contrôle qualité validé - Prêt pour expédition!');
       onBack();
     } catch (err) {
