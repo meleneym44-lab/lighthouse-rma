@@ -2948,9 +2948,159 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
   
   const printBL = (index) => {
     const s = shipments[index], bl = generateBLContent(s, index);
+    const employeeName = profile?.full_name || 'Lighthouse France';
     const w = window.open('', '_blank');
     if (!w) { notify('Popup bloqué', 'error'); return; }
-    w.document.write(`<html><head><title>BL - ${bl.blNumber}</title><style>body{font-family:Arial;padding:40px;max-width:800px;margin:0 auto}table{width:100%;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #ddd;padding:10px;text-align:left}th{background:#f5f5f5}.sig{display:flex;justify-content:space-between;margin-top:60px}.sig-box{width:45%;border-top:1px solid #333;padding-top:10px;margin-top:60px}</style></head><body><div style="display:flex;justify-content:space-between"><div><div style="font-size:24px;font-weight:bold;color:#00A651">LIGHTHOUSE</div><div style="font-size:12px;color:#666">Worldwide Solutions</div></div><div style="text-align:right;font-size:12px;color:#666">LIGHTHOUSE FRANCE<br>1 Rue de la Pépinière<br>94000 Créteil</div></div><h2 style="margin-top:30px">BON DE LIVRAISON</h2><p style="color:#00A651;font-weight:bold;font-size:18px">${bl.blNumber}</p><p>Créteil, le ${bl.date} | RMA: ${bl.rmaNumber}</p><div style="background:#f9f9f9;padding:20px;margin:20px 0"><strong style="font-size:16px">${bl.client.name}</strong><br>${bl.client.attention ? 'À l attention de: ' + bl.client.attention + '<br>' : ''}${bl.client.street}<br>${bl.client.city}<br>${bl.client.country}</div><table><thead><tr><th>Qté</th><th>Désignation</th><th>N° Série</th><th>Service</th></tr></thead><tbody>${bl.devices.map(d => '<tr><td>1</td><td>Compteur de particules LIGHTHOUSE ' + d.model + '</td><td>' + d.serial + '</td><td>' + d.service + '</td></tr>').join('')}</tbody></table><div style="background:#e8f5e9;padding:15px;border-radius:8px;margin:20px 0"><strong>Informations d expédition</strong><br>Transporteur: ${bl.shipping.carrier}<br>N° de suivi: ${bl.shipping.tracking}<br>Nombre de colis: ${bl.shipping.parcels}<br>Poids: ${bl.shipping.weight} kg</div><div class="sig"><div class="sig-box"><strong>LIGHTHOUSE FRANCE</strong><br><small>Date et signature</small></div><div class="sig-box"><strong>${bl.client.name}</strong><br><small>Date et signature</small></div></div><p style="text-align:center;margin-top:40px;font-size:11px;color:#666">Merci de nous retourner une copie signée de ce bordereau.</p><script>window.print()</script></body></html>`);
+    w.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>BL - ${bl.blNumber}</title>
+  <style>
+    @page { margin: 15mm; size: A4; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; font-size: 11pt; color: #333; margin: 0; padding: 20px; max-width: 210mm; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #00A651; }
+    .logo-section img { height: 50px; }
+    .logo-text { font-size: 24px; font-weight: bold; color: #00A651; }
+    .logo-sub { font-size: 10px; color: #666; letter-spacing: 2px; }
+    .company-header { text-align: right; font-size: 10pt; color: #555; }
+    .title-section { text-align: center; margin: 25px 0; }
+    .title { font-size: 18pt; font-weight: bold; color: #333; margin: 0; border-bottom: 3px solid #00A651; display: inline-block; padding-bottom: 5px; }
+    .bl-number { font-size: 14pt; color: #00A651; font-weight: bold; margin-top: 10px; }
+    .info-row { display: flex; justify-content: space-between; margin: 20px 0; }
+    .info-box { flex: 1; }
+    .info-box.right { text-align: right; }
+    .client-box { background: #f8f9fa; border: 1px solid #e0e0e0; padding: 15px; margin: 15px 0; }
+    .client-label { font-size: 9pt; color: #666; text-transform: uppercase; margin-bottom: 5px; }
+    .client-name { font-size: 12pt; font-weight: bold; margin-bottom: 5px; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    th { background: #00A651; color: white; padding: 10px; text-align: left; font-size: 10pt; }
+    td { padding: 10px; border-bottom: 1px solid #ddd; font-size: 10pt; }
+    tr:nth-child(even) { background: #f9f9f9; }
+    .shipping-section { margin: 25px 0; }
+    .shipping-title { font-weight: bold; font-size: 11pt; margin-bottom: 10px; border-bottom: 1px solid #00A651; padding-bottom: 5px; }
+    .shipping-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .shipping-item { display: flex; }
+    .shipping-label { color: #666; width: 120px; }
+    .shipping-value { font-weight: 500; }
+    .signatures { display: flex; justify-content: space-between; margin-top: 40px; padding-top: 20px; }
+    .sig-box { width: 45%; }
+    .sig-company { font-weight: bold; font-size: 10pt; margin-bottom: 5px; }
+    .sig-name { font-size: 9pt; color: #666; margin-bottom: 40px; }
+    .sig-line { border-top: 1px solid #333; padding-top: 5px; font-size: 9pt; color: #666; }
+    .return-note { text-align: center; margin: 30px 0; font-style: italic; color: #666; font-size: 10pt; }
+    .footer { margin-top: 40px; padding-top: 15px; border-top: 2px solid #00A651; display: flex; justify-content: space-between; align-items: flex-end; }
+    .footer-left { display: flex; align-items: center; gap: 15px; }
+    .footer-logo img { height: 40px; }
+    .footer-info { font-size: 8pt; color: #666; text-align: center; flex: 1; }
+    .footer-contact { font-size: 8pt; color: #666; text-align: right; }
+    @media print { body { padding: 0; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-section">
+      <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <div style="display:none"><div class="logo-text">LIGHTHOUSE</div><div class="logo-sub">WORLDWIDE SOLUTIONS</div></div>
+    </div>
+    <div class="company-header">
+      <strong>LIGHTHOUSE FRANCE</strong><br>
+      16 Rue Paul Séjourné<br>
+      94000 CRÉTEIL<br>
+      Tél. 01 43 77 28 07
+    </div>
+  </div>
+
+  <div class="title-section">
+    <h1 class="title">BON DE LIVRAISON</h1>
+    <div class="bl-number">${bl.blNumber}</div>
+  </div>
+
+  <div class="info-row">
+    <div class="info-box">
+      <span style="color:#666">Créteil, le</span> <strong>${bl.date}</strong>
+    </div>
+    <div class="info-box right">
+      <span style="color:#666">RMA:</span> <strong>${bl.rmaNumber}</strong>
+    </div>
+  </div>
+
+  <div class="client-box">
+    <div class="client-label">Destinataire</div>
+    <div class="client-name">${bl.client.name}</div>
+    ${bl.client.attention ? `<div>À l'attention de: <strong>${bl.client.attention}</strong></div>` : ''}
+    <div>${bl.client.street}</div>
+    <div>${bl.client.city}</div>
+    <div>${bl.client.country}</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:50px">Qté</th>
+        <th>Désignation</th>
+        <th style="width:120px">N° Série</th>
+        <th style="width:100px">Service</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${bl.devices.map(d => `
+        <tr>
+          <td>1</td>
+          <td>Compteur de particules LIGHTHOUSE ${d.model}</td>
+          <td style="font-family:monospace">${d.serial}</td>
+          <td>${d.service}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <div class="shipping-section">
+    <div class="shipping-title">Informations d'expédition</div>
+    <div class="shipping-grid">
+      <div class="shipping-item"><span class="shipping-label">Transporteur:</span><span class="shipping-value">${bl.shipping.carrier}</span></div>
+      <div class="shipping-item"><span class="shipping-label">N° de suivi:</span><span class="shipping-value" style="font-family:monospace">${bl.shipping.tracking}</span></div>
+      <div class="shipping-item"><span class="shipping-label">Nombre de colis:</span><span class="shipping-value">${bl.shipping.parcels}</span></div>
+      <div class="shipping-item"><span class="shipping-label">Poids:</span><span class="shipping-value">${bl.shipping.weight} kg</span></div>
+    </div>
+  </div>
+
+  <div class="return-note">Merci de nous retourner une copie signée de ce bordereau</div>
+
+  <div class="signatures">
+    <div class="sig-box">
+      <div class="sig-company">LIGHTHOUSE FRANCE</div>
+      <div class="sig-name">${employeeName}</div>
+      <div class="sig-line">Date et signature</div>
+    </div>
+    <div class="sig-box">
+      <div class="sig-company">${bl.client.name}</div>
+      <div class="sig-name">&nbsp;</div>
+      <div class="sig-line">Date et signature</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="footer-left">
+      <div class="footer-logo">
+        <img src="/images/logos/capcert-logo.png" alt="CAPCERT" onerror="this.outerHTML='<div style=\\'font-size:10px;color:#666\\'>CAPCERT<br>ISO 9001</div>'">
+      </div>
+    </div>
+    <div class="footer-info">
+      <strong>Lighthouse France SA</strong> au capital de 10 000 €<br>
+      SIRET 50178134800013 | TVA FR 86501781348<br>
+      contact@gometrologie.com | www.gometrologie.com
+    </div>
+    <div class="footer-contact">
+      16 rue Paul Séjourné<br>
+      94000 CRÉTEIL<br>
+      Tél. 01 43 77 28 07
+    </div>
+  </div>
+
+  <script>window.onload = function() { window.print(); }</script>
+</body>
+</html>`);
     w.document.close();
     setBlsPrinted(prev => ({ ...prev, [index]: true }));
   };
