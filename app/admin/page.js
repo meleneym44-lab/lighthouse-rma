@@ -2986,103 +2986,116 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
 <head>
   <title>BL - ${bl.blNumber}</title>
   <style>
-    @page { margin: 20mm 15mm; size: A4; }
+    @page { margin: 15mm; size: A4; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, sans-serif; font-size: 11pt; color: #333; padding: 0; }
-    .page { width: 100%; max-width: 180mm; margin: 0 auto; padding: 20px 0; }
+    html, body { height: 100%; }
+    body { font-family: Arial, sans-serif; font-size: 11pt; color: #333; }
+    .page { 
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 10px 20px;
+    }
+    .content { flex: 1; }
     .header { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #00A651; }
     .header img { height: 50px; }
-    .title-section { text-align: center; margin: 30px 0; }
+    .title-section { text-align: center; margin: 25px 0; }
     .title { font-size: 18pt; font-weight: bold; color: #333; margin: 0; border-bottom: 3px solid #00A651; display: inline-block; padding-bottom: 5px; }
     .bl-number { font-size: 14pt; color: #00A651; font-weight: bold; margin-top: 10px; }
-    .info-row { display: flex; justify-content: space-between; margin: 20px 0; }
+    .info-row { display: flex; justify-content: space-between; margin: 15px 0; }
     .client-box { background: #f8f9fa; border: 1px solid #e0e0e0; padding: 15px; margin: 15px 0; }
     .client-label { font-size: 9pt; color: #666; text-transform: uppercase; margin-bottom: 5px; }
     .client-name { font-size: 12pt; font-weight: bold; margin-bottom: 5px; }
-    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-    th { background: #00A651; color: white; padding: 10px; text-align: left; font-size: 10pt; }
-    td { padding: 10px; border-bottom: 1px solid #ddd; font-size: 10pt; }
+    table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+    th { background: #00A651; color: white; padding: 8px 10px; text-align: left; font-size: 10pt; }
+    td { padding: 8px 10px; border-bottom: 1px solid #ddd; font-size: 10pt; }
     tr:nth-child(even) { background: #f9f9f9; }
-    .shipping-section { margin: 25px 0; }
+    .shipping-section { margin: 20px 0; }
     .shipping-title { font-weight: bold; font-size: 11pt; margin-bottom: 10px; border-bottom: 1px solid #00A651; padding-bottom: 5px; }
-    .shipping-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .shipping-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .shipping-item { display: flex; }
     .shipping-label { color: #666; width: 130px; }
     .shipping-value { font-weight: 500; }
-    .footer-section { margin-top: 40px; padding-top: 20px; border-top: 2px solid #00A651; }
+    .footer-section { 
+      margin-top: auto;
+      padding-top: 20px; 
+      border-top: 2px solid #00A651;
+    }
     .prepared-by { font-size: 10pt; margin-bottom: 15px; }
-    .footer-content { display: flex; align-items: flex-start; gap: 20px; }
-    .footer-logo img { height: 70px; }
+    .footer-content { display: flex; align-items: flex-start; gap: 25px; }
+    .footer-logo img { height: 90px; }
     .footer-info { font-size: 8pt; color: #666; text-align: center; flex: 1; }
     @media print { 
-      body { padding: 0; }
-      .page { padding: 0; max-width: 100%; }
+      .page { min-height: 100%; padding: 0; }
     }
   </style>
 </head>
 <body>
   <div class="page">
-    <div class="header">
-      <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" onerror="this.outerHTML='<div style=\\'font-size:24px;font-weight:bold;color:#00A651\\'>LIGHTHOUSE<div style=\\'font-size:10px;color:#666\\'>FRANCE</div></div>'">
-    </div>
+    <div class="content">
+      <div class="header">
+        <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" onerror="this.outerHTML='<div style=\\'font-size:24px;font-weight:bold;color:#00A651\\'>LIGHTHOUSE<div style=\\'font-size:10px;color:#666\\'>FRANCE</div></div>'">
+      </div>
 
-    <div class="title-section">
-      <h1 class="title">BON DE LIVRAISON</h1>
-      <div class="bl-number">${bl.blNumber}</div>
-    </div>
+      <div class="title-section">
+        <h1 class="title">BON DE LIVRAISON</h1>
+        <div class="bl-number">${bl.blNumber}</div>
+      </div>
 
-    <div class="info-row">
-      <div><span style="color:#666">${biz.city || 'Créteil'}, le</span> <strong>${bl.date}</strong></div>
-      <div><span style="color:#666">RMA:</span> <strong>${bl.rmaNumber}</strong></div>
-    </div>
+      <div class="info-row">
+        <div><span style="color:#666">${biz.city || 'Créteil'}, le</span> <strong>${bl.date}</strong></div>
+        <div><span style="color:#666">RMA:</span> <strong>${bl.rmaNumber}</strong></div>
+      </div>
 
-    <div class="client-box">
-      <div class="client-label">Destinataire</div>
-      <div class="client-name">${bl.client.name}</div>
-      ${bl.client.attention ? `<div>À l'attention de: <strong>${bl.client.attention}</strong></div>` : ''}
-      <div>${bl.client.street}</div>
-      <div>${bl.client.city}</div>
-      <div>${bl.client.country}</div>
-    </div>
+      <div class="client-box">
+        <div class="client-label">Destinataire</div>
+        <div class="client-name">${bl.client.name}</div>
+        ${bl.client.attention ? `<div>À l'attention de: <strong>${bl.client.attention}</strong></div>` : ''}
+        <div>${bl.client.street}</div>
+        <div>${bl.client.city}</div>
+        <div>${bl.client.country}</div>
+      </div>
 
-    <table>
-      <thead>
-        <tr>
-          <th style="width:50px">Qté</th>
-          <th>Désignation</th>
-          <th style="width:120px">N° Série</th>
-          <th style="width:100px">Service</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${bl.devices.map(d => `
+      <table>
+        <thead>
           <tr>
-            <td>1</td>
-            <td>Compteur de particules LIGHTHOUSE ${d.model}</td>
-            <td style="font-family:monospace">${d.serial}</td>
-            <td>${d.service}</td>
+            <th style="width:50px">Qté</th>
+            <th>Désignation</th>
+            <th style="width:120px">N° Série</th>
+            <th style="width:100px">Service</th>
           </tr>
-        `).join('')}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          ${bl.devices.map(d => `
+            <tr>
+              <td>1</td>
+              <td>Compteur de particules LIGHTHOUSE ${d.model}</td>
+              <td style="font-family:monospace">${d.serial}</td>
+              <td>${d.service}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
 
-    <div class="shipping-section">
-      <div class="shipping-title">Informations d'expédition</div>
-      <div class="shipping-grid">
-        <div class="shipping-item"><span class="shipping-label">Transporteur:</span><span class="shipping-value">${bl.shipping.carrier}</span></div>
-        <div class="shipping-item"><span class="shipping-label">N° de suivi:</span><span class="shipping-value" style="font-family:monospace">${bl.shipping.tracking}</span></div>
-        <div class="shipping-item"><span class="shipping-label">Nombre de colis:</span><span class="shipping-value">${bl.shipping.parcels}</span></div>
-        <div class="shipping-item"><span class="shipping-label">Poids:</span><span class="shipping-value">${bl.shipping.weight} kg</span></div>
+      <div class="shipping-section">
+        <div class="shipping-title">Informations d'expédition</div>
+        <div class="shipping-grid">
+          <div class="shipping-item"><span class="shipping-label">Transporteur:</span><span class="shipping-value">${bl.shipping.carrier}</span></div>
+          <div class="shipping-item"><span class="shipping-label">N° de suivi:</span><span class="shipping-value" style="font-family:monospace">${bl.shipping.tracking}</span></div>
+          <div class="shipping-item"><span class="shipping-label">Nombre de colis:</span><span class="shipping-value">${bl.shipping.parcels}</span></div>
+          <div class="shipping-item"><span class="shipping-label">Poids:</span><span class="shipping-value">${bl.shipping.weight} kg</span></div>
+        </div>
+      </div>
+
+      <div class="prepared-by">
+        <span style="color:#666">Préparé par:</span> <strong>${employeeName}</strong>
       </div>
     </div>
 
     <div class="footer-section">
-      <div class="prepared-by">
-        <span style="color:#666">Préparé par:</span> <strong>${employeeName}</strong>
-      </div>
       <div class="footer-content">
         <div class="footer-logo">
-          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" onerror="this.outerHTML='<div style=\\'font-size:14px;color:#00A651;border:2px solid #00A651;padding:12px 15px;border-radius:4px;text-align:center\\'><strong>CAPCERT</strong><br>ISO 9001</div>'">
+          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" onerror="this.outerHTML='<div style=\\'font-size:16px;color:#00A651;border:2px solid #00A651;padding:15px 20px;border-radius:4px;text-align:center\\'><strong>CAPCERT</strong><br>ISO 9001</div>'">
         </div>
         <div class="footer-info">
           <strong style="color:#333">${biz.company_name || 'Lighthouse France SAS'}</strong> au capital de ${biz.capital || '10 000'} €<br>
@@ -3332,79 +3345,82 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                   </div>
                 </div>
                 
-                {/* PDF Preview - exact match to printed version */}
+                {/* PDF Preview - A4 proportions */}
                 <div className="bg-white border-2 border-t-0 rounded-b-xl overflow-hidden shadow-lg">
-                  <div style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '30px', maxWidth: '180mm', margin: '0 auto', background: 'white' }}>
-                    {/* Header with logo only */}
-                    <div style={{ marginBottom: '20px', paddingBottom: '15px', borderBottom: '2px solid #00A651' }}>
-                      <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#00A651">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
-                    </div>
-
-                    {/* Title */}
-                    <div style={{ textAlign: 'center', margin: '30px 0' }}>
-                      <h1 style={{ fontSize: '18pt', fontWeight: 'bold', color: '#333', margin: 0, borderBottom: '3px solid #00A651', display: 'inline-block', paddingBottom: '5px' }}>BON DE LIVRAISON</h1>
-                      <div style={{ fontSize: '14pt', color: '#00A651', fontWeight: 'bold', marginTop: '10px' }}>{bl.blNumber}</div>
-                    </div>
-
-                    {/* Date and RMA row */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', margin: '20px 0' }}>
-                      <div><span style={{ color: '#666' }}>{biz.city || 'Créteil'}, le</span> <strong>{bl.date}</strong></div>
-                      <div><span style={{ color: '#666' }}>RMA:</span> <strong>{bl.rmaNumber}</strong></div>
-                    </div>
-
-                    {/* Client box */}
-                    <div style={{ background: '#f8f9fa', border: '1px solid #e0e0e0', padding: '15px', margin: '15px 0' }}>
-                      <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', marginBottom: '5px' }}>Destinataire</div>
-                      <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{bl.client.name}</div>
-                      {bl.client.attention && <div>À l'attention de: <strong>{bl.client.attention}</strong></div>}
-                      <div>{bl.client.street}</div>
-                      <div>{bl.client.city}</div>
-                      <div>{bl.client.country}</div>
-                    </div>
-
-                    {/* Devices table */}
-                    <table style={{ width: '100%', borderCollapse: 'collapse', margin: '20px 0' }}>
-                      <thead>
-                        <tr style={{ background: '#00A651', color: 'white' }}>
-                          <th style={{ padding: '10px', textAlign: 'left', fontSize: '10pt', width: '50px' }}>Qté</th>
-                          <th style={{ padding: '10px', textAlign: 'left', fontSize: '10pt' }}>Désignation</th>
-                          <th style={{ padding: '10px', textAlign: 'left', fontSize: '10pt', width: '120px' }}>N° Série</th>
-                          <th style={{ padding: '10px', textAlign: 'left', fontSize: '10pt', width: '100px' }}>Service</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {bl.devices.map((d, i) => (
-                          <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#f9f9f9' }}>
-                            <td style={{ padding: '10px', borderBottom: '1px solid #ddd', fontSize: '10pt' }}>1</td>
-                            <td style={{ padding: '10px', borderBottom: '1px solid #ddd', fontSize: '10pt' }}>Compteur de particules LIGHTHOUSE {d.model}</td>
-                            <td style={{ padding: '10px', borderBottom: '1px solid #ddd', fontSize: '10pt', fontFamily: 'monospace' }}>{d.serial}</td>
-                            <td style={{ padding: '10px', borderBottom: '1px solid #ddd', fontSize: '10pt' }}>{d.service}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-
-                    {/* Shipping info */}
-                    <div style={{ margin: '25px 0' }}>
-                      <div style={{ fontWeight: 'bold', fontSize: '11pt', marginBottom: '10px', borderBottom: '1px solid #00A651', paddingBottom: '5px' }}>Informations d'expédition</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                        <div style={{ display: 'flex' }}><span style={{ color: '#666', width: '130px' }}>Transporteur:</span><span style={{ fontWeight: '500' }}>{bl.shipping.carrier}</span></div>
-                        <div style={{ display: 'flex' }}><span style={{ color: '#666', width: '130px' }}>N° de suivi:</span><span style={{ fontWeight: '500', fontFamily: 'monospace' }}>{bl.shipping.tracking}</span></div>
-                        <div style={{ display: 'flex' }}><span style={{ color: '#666', width: '130px' }}>Nombre de colis:</span><span style={{ fontWeight: '500' }}>{bl.shipping.parcels}</span></div>
-                        <div style={{ display: 'flex' }}><span style={{ color: '#666', width: '130px' }}>Poids:</span><span style={{ fontWeight: '500' }}>{bl.shipping.weight} kg</span></div>
+                  <div style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '30px', maxWidth: '210mm', margin: '0 auto', background: 'white', minHeight: '297mm', display: 'flex', flexDirection: 'column' }}>
+                    {/* Content area */}
+                    <div style={{ flex: 1 }}>
+                      {/* Header with logo only */}
+                      <div style={{ marginBottom: '20px', paddingBottom: '15px', borderBottom: '2px solid #00A651' }}>
+                        <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#00A651">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
                       </div>
-                    </div>
 
-                    {/* Footer section */}
-                    <div style={{ marginTop: '40px', paddingTop: '20px', borderTop: '2px solid #00A651' }}>
+                      {/* Title */}
+                      <div style={{ textAlign: 'center', margin: '25px 0' }}>
+                        <h1 style={{ fontSize: '18pt', fontWeight: 'bold', color: '#333', margin: 0, borderBottom: '3px solid #00A651', display: 'inline-block', paddingBottom: '5px' }}>BON DE LIVRAISON</h1>
+                        <div style={{ fontSize: '14pt', color: '#00A651', fontWeight: 'bold', marginTop: '10px' }}>{bl.blNumber}</div>
+                      </div>
+
+                      {/* Date and RMA row */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', margin: '15px 0' }}>
+                        <div><span style={{ color: '#666' }}>{biz.city || 'Créteil'}, le</span> <strong>{bl.date}</strong></div>
+                        <div><span style={{ color: '#666' }}>RMA:</span> <strong>{bl.rmaNumber}</strong></div>
+                      </div>
+
+                      {/* Client box */}
+                      <div style={{ background: '#f8f9fa', border: '1px solid #e0e0e0', padding: '15px', margin: '15px 0' }}>
+                        <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', marginBottom: '5px' }}>Destinataire</div>
+                        <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{bl.client.name}</div>
+                        {bl.client.attention && <div>À l'attention de: <strong>{bl.client.attention}</strong></div>}
+                        <div>{bl.client.street}</div>
+                        <div>{bl.client.city}</div>
+                        <div>{bl.client.country}</div>
+                      </div>
+
+                      {/* Devices table */}
+                      <table style={{ width: '100%', borderCollapse: 'collapse', margin: '15px 0' }}>
+                        <thead>
+                          <tr style={{ background: '#00A651', color: 'white' }}>
+                            <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: '10pt', width: '50px' }}>Qté</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: '10pt' }}>Désignation</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: '10pt', width: '120px' }}>N° Série</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: '10pt', width: '100px' }}>Service</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bl.devices.map((d, i) => (
+                            <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#f9f9f9' }}>
+                              <td style={{ padding: '8px 10px', borderBottom: '1px solid #ddd', fontSize: '10pt' }}>1</td>
+                              <td style={{ padding: '8px 10px', borderBottom: '1px solid #ddd', fontSize: '10pt' }}>Compteur de particules LIGHTHOUSE {d.model}</td>
+                              <td style={{ padding: '8px 10px', borderBottom: '1px solid #ddd', fontSize: '10pt', fontFamily: 'monospace' }}>{d.serial}</td>
+                              <td style={{ padding: '8px 10px', borderBottom: '1px solid #ddd', fontSize: '10pt' }}>{d.service}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+
+                      {/* Shipping info */}
+                      <div style={{ margin: '20px 0' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '11pt', marginBottom: '10px', borderBottom: '1px solid #00A651', paddingBottom: '5px' }}>Informations d'expédition</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                          <div style={{ display: 'flex' }}><span style={{ color: '#666', width: '130px' }}>Transporteur:</span><span style={{ fontWeight: '500' }}>{bl.shipping.carrier}</span></div>
+                          <div style={{ display: 'flex' }}><span style={{ color: '#666', width: '130px' }}>N° de suivi:</span><span style={{ fontWeight: '500', fontFamily: 'monospace' }}>{bl.shipping.tracking}</span></div>
+                          <div style={{ display: 'flex' }}><span style={{ color: '#666', width: '130px' }}>Nombre de colis:</span><span style={{ fontWeight: '500' }}>{bl.shipping.parcels}</span></div>
+                          <div style={{ display: 'flex' }}><span style={{ color: '#666', width: '130px' }}>Poids:</span><span style={{ fontWeight: '500' }}>{bl.shipping.weight} kg</span></div>
+                        </div>
+                      </div>
+
                       {/* Prepared by */}
-                      <div style={{ fontSize: '10pt', marginBottom: '15px' }}>
+                      <div style={{ fontSize: '10pt', marginTop: '20px' }}>
                         <span style={{ color: '#666' }}>Préparé par:</span> <strong>{employeeName}</strong>
                       </div>
-                      {/* Footer with logo and centered info */}
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '20px' }}>
+                    </div>
+
+                    {/* Footer section - at bottom */}
+                    <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '2px solid #00A651' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '25px' }}>
                         <div>
-                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '70px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:14px;color:#00A651;border:2px solid #00A651;padding:12px 15px;border-radius:4px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
+                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '90px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:16px;color:#00A651;border:2px solid #00A651;padding:15px 20px;border-radius:4px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
                         </div>
                         <div style={{ fontSize: '8pt', color: '#666', textAlign: 'center', flex: 1 }}>
                           <strong style={{ color: '#333' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
