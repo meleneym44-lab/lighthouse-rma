@@ -83,7 +83,7 @@ export default function AdminPortal() {
 
   const loadData = useCallback(async (refreshSelectedRMAId = null) => {
     const { data: reqs } = await supabase.from('service_requests')
-      .select('*, companies(id, name, contact_name, phone, email, address, city, postal_code, country, billing_city, billing_address, billing_postal_code), request_devices(*)')
+      .select('*, companies(*), request_devices(*)')
       .order('created_at', { ascending: false });
     if (reqs) setRequests(reqs);
 
@@ -111,7 +111,7 @@ export default function AdminPortal() {
     if (refreshSelectedRMAId) {
       const { data: updatedRMA } = await supabase
         .from('service_requests')
-        .select('*, companies(id, name, contact_name, phone, email, address, city, postal_code, country, billing_city, billing_address, billing_postal_code), request_devices(*)')
+        .select('*, companies(*), request_devices(*)')
         .eq('id', refreshSelectedRMAId)
         .single();
       if (updatedRMA) setSelectedRMA(updatedRMA);
