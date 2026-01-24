@@ -1,11 +1,458 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { jsPDF } from 'jspdf';
 
 // Expose supabase to window for debugging
 if (typeof window !== 'undefined') {
   window.supabase = supabase;
 }
+
+// ============================================
+// PDF GENERATION UTILITIES
+// ============================================
+
+// Helper to add Lighthouse header to PDF
+const addPDFHeader = (doc, title, rmaNumber) => {
+  // Green header bar
+  doc.setFillColor(0, 166, 81); // #00A651
+  doc.rect(0, 0, 210, 25, 'F');
+  
+  // Company name
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(18);
+  doc.setFont('helvetica', 'bold');
+  doc.text('LIGHTHOUSE FRANCE', 15, 12);
+  
+  // Document title
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'normal');
+  doc.text(title, 15, 20);
+  
+  // RMA number on right
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text(rmaNumber, 195, 15, { align: 'right' });
+  
+  // Reset colors
+  doc.setTextColor(0, 0, 0);
+  
+  return 35; // Return Y position after header
+};
+
+// Helper to add footer
+const addPDFFooter = (doc, pageNum, totalPages) => {
+  const pageHeight = doc.internal.pageSize.height;
+  doc.setFontSize(8);
+  doc.setTextColor(128, 128, 128);
+  doc.text('LIGHTHOUSE FRANCE • 1 Rue de la Pépinière, 94000 Créteil • Tel: +33 1 XX XX XX XX', 105, pageHeight - 10, { align: 'center' });
+  doc.text(`Page ${pageNum}/${totalPages}`, 195, pageHeight - 10, { align: 'right' });
+  doc.setTextColor(0, 0, 0);
+};
+
+// Generate Quote/Devis PDF
+const generateQuotePDF = async (rma, devices, businessSettings) => {
+  const doc = new jsPDF();
+  const company = rma.companies || {};
+  
+  let y = addPDFHeader(doc, 'DEVIS / QUOTE', rma.request_number);
+  
+  // Date
+  doc.setFontSize(10);
+  doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, y);
+  doc.text(`Validité: 30 jours`, 195, y, { align: 'right' });
+  y += 10;
+  
+  // Client info box
+  doc.setFillColor(245, 245, 245);
+  doc.rect(15, y, 85, 35, 'F');
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text('CLIENT', 20, y + 7);
+  doc.setFont('helvetica', 'normal');
+  doc.text(company.name || 'N/A', 20, y + 14);
+  doc.text(company.address || company.billing_address || '', 20, y + 20);
+  doc.text(`${company.postal_code || company.billing_postal_code || ''} ${company.city || company.billing_city || ''}`, 20, y + 26);
+  doc.text(company.country || 'France', 20, y + 32);
+  
+  // Lighthouse info box
+  doc.rect(110, y, 85, 35, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.text('LIGHTHOUSE FRANCE', 115, y + 7);
+  doc.setFont('helvetica', 'normal');
+  doc.text('1 Rue de la Pépinière', 115, y + 14);
+  doc.text('94000 Créteil', 115, y + 20);
+  doc.text('France', 115, y + 26);
+  y += 45;
+  
+  // Table header
+  doc.setFillColor(0, 166, 81);
+  doc.setTextColor(255, 255, 255);
+  doc.rect(15, y, 180, 8, 'F');
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Description', 20, y + 6);
+  doc.text('Qté', 130, y + 6);
+  doc.text('Prix Unit.', 150, y + 6);
+  doc.text('Total', 180, y + 6);
+  doc.setTextColor(0, 0, 0);
+  y += 10;
+  
+  // Table rows
+  let total = 0;
+  doc.setFont('helvetica', 'normal');
+  devices.forEach((device, idx) => {
+    const price = parseFloat(device.quoted_price) || 0;
+    total += price;
+    
+    // Alternate row colors
+    if (idx % 2 === 0) {
+      doc.setFillColor(250, 250, 250);
+      doc.rect(15, y - 2, 180, 12, 'F');
+    }
+    
+    const serviceType = device.service_type === 'calibration' ? 'Étalonnage' : 
+                        device.service_type === 'repair' ? 'Réparation' : 'Service';
+    doc.text(`${device.model_name} - ${serviceType}`, 20, y + 4);
+    doc.text(`SN: ${device.serial_number}`, 20, y + 9);
+    doc.text('1', 135, y + 6);
+    doc.text(`€${price.toFixed(2)}`, 155, y + 6);
+    doc.text(`€${price.toFixed(2)}`, 185, y + 6);
+    y += 14;
+  });
+  
+  // Total
+  y += 5;
+  doc.setDrawColor(0, 166, 81);
+  doc.line(15, y, 195, y);
+  y += 8;
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text('TOTAL HT:', 140, y);
+  doc.text(`€${total.toFixed(2)}`, 185, y);
+  
+  // TVA
+  const tva = total * 0.20;
+  y += 7;
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text('TVA (20%):', 140, y);
+  doc.text(`€${tva.toFixed(2)}`, 185, y);
+  
+  // Total TTC
+  y += 7;
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text('TOTAL TTC:', 140, y);
+  doc.text(`€${(total + tva).toFixed(2)}`, 185, y);
+  
+  // Payment terms
+  y += 20;
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Conditions de paiement: 30 jours net', 15, y);
+  y += 5;
+  doc.text('Pour confirmer cette commande, veuillez nous retourner un bon de commande.', 15, y);
+  
+  addPDFFooter(doc, 1, 1);
+  
+  return doc.output('blob');
+};
+
+// Generate Service Report PDF
+const generateServiceReportPDF = async (device, rma, technicianName, calType, receptionResult, findings, workCompleted, checklist) => {
+  const doc = new jsPDF();
+  const company = rma.companies || {};
+  
+  let y = addPDFHeader(doc, 'RAPPORT DE SERVICE', rma.request_number);
+  
+  // Date
+  doc.setFontSize(10);
+  doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, y);
+  y += 10;
+  
+  // Two column layout for device and client info
+  // Device info
+  doc.setFillColor(240, 249, 255);
+  doc.rect(15, y, 85, 40, 'F');
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('APPAREIL', 20, y + 7);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(`Modèle: ${device.model_name}`, 20, y + 15);
+  doc.text(`N° Série: ${device.serial_number}`, 20, y + 22);
+  doc.text(`Service: ${device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation'}`, 20, y + 29);
+  if (calType && calType !== 'none') doc.text(`Type: ${calType}`, 20, y + 36);
+  
+  // Client info
+  doc.setFillColor(245, 245, 245);
+  doc.rect(110, y, 85, 40, 'F');
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('CLIENT', 115, y + 7);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(company.name || 'N/A', 115, y + 15);
+  doc.text(company.address || company.billing_address || '', 115, y + 22, { maxWidth: 75 });
+  y += 50;
+  
+  // Reception result
+  if (receptionResult && receptionResult !== 'none') {
+    doc.setFillColor(receptionResult === 'Conforme' ? 220 : 255, receptionResult === 'Conforme' ? 252 : 243, receptionResult === 'Conforme' ? 231 : 224);
+    doc.rect(15, y, 180, 10, 'F');
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Résultat à la réception: ${receptionResult}`, 20, y + 7);
+    y += 15;
+  }
+  
+  // Findings section
+  doc.setFillColor(254, 249, 195);
+  doc.rect(15, y, 180, 8, 'F');
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('CONSTATATIONS', 20, y + 6);
+  y += 12;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  const findingsLines = doc.splitTextToSize(findings || 'Aucune constatation', 170);
+  doc.text(findingsLines, 20, y);
+  y += findingsLines.length * 5 + 10;
+  
+  // Work completed section
+  doc.setFillColor(220, 252, 231);
+  doc.rect(15, y, 180, 8, 'F');
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('TRAVAUX EFFECTUÉS', 20, y + 6);
+  y += 12;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  const workLines = doc.splitTextToSize(workCompleted || 'Aucun travail effectué', 170);
+  doc.text(workLines, 20, y);
+  y += workLines.length * 5 + 10;
+  
+  // Checklist if available
+  if (checklist && checklist.length > 0) {
+    doc.setFillColor(240, 249, 255);
+    doc.rect(15, y, 180, 8, 'F');
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('VÉRIFICATIONS', 20, y + 6);
+    y += 12;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    checklist.forEach(item => {
+      const status = item.checked ? '✓' : '○';
+      doc.text(`${status} ${item.label}`, 25, y);
+      y += 5;
+    });
+    y += 5;
+  }
+  
+  // Technician signature
+  y = Math.max(y, 220);
+  doc.setDrawColor(200, 200, 200);
+  doc.line(15, y, 195, y);
+  y += 10;
+  doc.setFontSize(10);
+  doc.text(`Technicien: ${technicianName || 'N/A'}`, 15, y);
+  doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 150, y);
+  
+  addPDFFooter(doc, 1, 1);
+  
+  return doc.output('blob');
+};
+
+// Generate Bon de Livraison PDF
+const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings) => {
+  const doc = new jsPDF();
+  const company = rma.companies || {};
+  const address = shipment.address || {};
+  
+  let y = addPDFHeader(doc, 'BON DE LIVRAISON', blNumber);
+  
+  // Date and tracking
+  doc.setFontSize(10);
+  doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, y);
+  if (shipment.trackingNumber) {
+    doc.text(`N° Suivi UPS: ${shipment.trackingNumber}`, 195, y, { align: 'right' });
+  }
+  y += 10;
+  
+  // Shipping address
+  doc.setFillColor(245, 245, 245);
+  doc.rect(15, y, 85, 40, 'F');
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('DESTINATAIRE', 20, y + 7);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(address.company_name || company.name || 'N/A', 20, y + 15);
+  if (address.attention) doc.text(`À l'att. de: ${address.attention}`, 20, y + 21);
+  doc.text(address.address_line1 || '', 20, y + 27);
+  doc.text(`${address.postal_code || ''} ${address.city || ''}`, 20, y + 33);
+  
+  // Sender
+  doc.rect(110, y, 85, 40, 'F');
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('EXPÉDITEUR', 115, y + 7);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text('LIGHTHOUSE FRANCE', 115, y + 15);
+  doc.text('1 Rue de la Pépinière', 115, y + 21);
+  doc.text('94000 Créteil, France', 115, y + 27);
+  y += 50;
+  
+  // Reference
+  doc.setFontSize(10);
+  doc.text(`Référence RMA: ${rma.request_number}`, 15, y);
+  y += 10;
+  
+  // Table header
+  doc.setFillColor(0, 166, 81);
+  doc.setTextColor(255, 255, 255);
+  doc.rect(15, y, 180, 8, 'F');
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Modèle', 20, y + 6);
+  doc.text('N° Série', 90, y + 6);
+  doc.text('Service', 140, y + 6);
+  doc.setTextColor(0, 0, 0);
+  y += 10;
+  
+  // Devices
+  doc.setFont('helvetica', 'normal');
+  const devicesToList = shipment.devices || devices;
+  devicesToList.forEach((device, idx) => {
+    if (idx % 2 === 0) {
+      doc.setFillColor(250, 250, 250);
+      doc.rect(15, y - 2, 180, 8, 'F');
+    }
+    doc.text(device.model_name || '', 20, y + 4);
+    doc.text(device.serial_number || '', 90, y + 4);
+    doc.text(device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation', 140, y + 4);
+    y += 10;
+  });
+  
+  // Shipping info
+  y += 10;
+  doc.setDrawColor(200, 200, 200);
+  doc.line(15, y, 195, y);
+  y += 8;
+  doc.setFontSize(10);
+  doc.text(`Nombre de colis: ${shipment.parcels || 1}`, 15, y);
+  doc.text(`Poids total: ${shipment.weight || '1'} kg`, 100, y);
+  
+  // Signature area
+  y = 230;
+  doc.rect(15, y, 85, 30);
+  doc.setFontSize(9);
+  doc.text('Signature Expéditeur:', 20, y + 7);
+  
+  doc.rect(110, y, 85, 30);
+  doc.text('Signature Destinataire:', 115, y + 7);
+  doc.text('Date:', 115, y + 25);
+  
+  addPDFFooter(doc, 1, 1);
+  
+  return doc.output('blob');
+};
+
+// Generate UPS Label PDF
+const generateUPSLabelPDF = async (rma, shipment) => {
+  const doc = new jsPDF();
+  const address = shipment.address || {};
+  
+  // UPS Style label
+  doc.setFillColor(53, 28, 21); // UPS Brown
+  doc.rect(30, 20, 150, 20, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(28);
+  doc.setFont('helvetica', 'bold');
+  doc.text('UPS', 105, 35, { align: 'center' });
+  
+  // Tracking number
+  doc.setTextColor(0, 0, 0);
+  doc.setFillColor(245, 245, 245);
+  doc.rect(30, 45, 150, 20, 'F');
+  doc.setFontSize(16);
+  doc.text(shipment.trackingNumber || 'TRACKING', 105, 58, { align: 'center' });
+  
+  // Barcode placeholder (simple lines to represent)
+  doc.setDrawColor(0, 0, 0);
+  for (let i = 0; i < 40; i++) {
+    const x = 45 + i * 3;
+    const height = Math.random() > 0.5 ? 20 : 15;
+    doc.setLineWidth(Math.random() > 0.5 ? 1 : 0.5);
+    doc.line(x, 70, x, 70 + height);
+  }
+  
+  // To address
+  doc.setLineWidth(0.5);
+  doc.rect(30, 100, 150, 50);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('DESTINATAIRE / TO:', 35, 110);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(12);
+  doc.text(address.company_name || '', 35, 120);
+  if (address.attention) {
+    doc.text(`À l'att.: ${address.attention}`, 35, 128);
+  }
+  doc.text(address.address_line1 || '', 35, 136);
+  doc.text(`${address.postal_code || ''} ${address.city || ''}`, 35, 144);
+  
+  // From address
+  doc.rect(30, 155, 150, 45);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('EXPÉDITEUR / FROM:', 35, 165);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.text('LIGHTHOUSE FRANCE', 35, 175);
+  doc.text('1 Rue de la Pépinière', 35, 183);
+  doc.text('94000 Créteil, France', 35, 191);
+  
+  // Package info
+  doc.rect(30, 205, 150, 25);
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`${shipment.parcels || 1} COLIS`, 60, 218);
+  doc.text(`${shipment.weight || '1'} KG`, 130, 218);
+  
+  // Reference
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Réf: ${rma.request_number}`, 105, 240, { align: 'center' });
+  
+  return doc.output('blob');
+};
+
+// Upload PDF to Supabase Storage
+const uploadPDFToStorage = async (blob, folder, filename) => {
+  try {
+    const file = new File([blob], filename, { type: 'application/pdf' });
+    const filePath = `${folder}/${filename}`;
+    
+    const { error: uploadError } = await supabase.storage
+      .from('documents')
+      .upload(filePath, file, { upsert: true });
+    
+    if (uploadError) throw uploadError;
+    
+    const { data: { publicUrl } } = supabase.storage
+      .from('documents')
+      .getPublicUrl(filePath);
+    
+    return publicUrl;
+  } catch (err) {
+    console.error('PDF upload error:', err);
+    throw err;
+  }
+};
 
 const STATUS_STYLES = {
   // Admin steps (Soumis → Reçu)
@@ -1947,6 +2394,18 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     </a>
                   )}
                   
+                  {/* Service Report PDF */}
+                  {device.report_url && (
+                    <a href={device.report_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Rapport de Service</p>
+                        <p className="text-sm text-gray-500">Détails du service</p>
+                      </div>
+                    </a>
+                  )}
+                  
                   {/* Avenant if sent */}
                   {rma.avenant_sent_at && (
                     <div className="flex items-center gap-4 p-4 border rounded-lg bg-orange-50">
@@ -1960,8 +2419,17 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     </div>
                   )}
                   
-                  {/* Shipping documents */}
-                  {device.bl_number && (
+                  {/* BL PDF */}
+                  {device.bl_url ? (
+                    <a href={device.bl_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Bon de Livraison</p>
+                        <p className="text-sm text-gray-600 font-mono">{device.bl_number}</p>
+                      </div>
+                    </a>
+                  ) : device.bl_number && (
                     <div className="flex items-center gap-4 p-4 border rounded-lg bg-blue-50">
                       <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
                       <div>
@@ -1971,6 +2439,19 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     </div>
                   )}
                   
+                  {/* UPS Label PDF */}
+                  {device.ups_label_url && (
+                    <a href={device.ups_label_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">🏷️</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Étiquette UPS</p>
+                        <p className="text-sm text-gray-500">Label d'expédition</p>
+                      </div>
+                    </a>
+                  )}
+                  
+                  {/* UPS Tracking Link */}
                   {device.tracking_number && (
                     <a href={`https://www.ups.com/track?tracknum=${device.tracking_number}`} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
@@ -1994,7 +2475,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 </div>
                 
                 {/* No documents message */}
-                {!device.calibration_certificate_url && !rma.quote_url && !rma.bc_file_url && !device.bl_number && !device.tracking_number && !rma.avenant_sent_at && (
+                {!device.calibration_certificate_url && !device.report_url && !rma.quote_url && !rma.bc_file_url && !device.bl_number && !device.bl_url && !device.tracking_number && !rma.avenant_sent_at && (
                   <p className="text-gray-400 text-center py-8">Aucun document disponible</p>
                 )}
               </div>
@@ -2379,8 +2860,22 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
     const checklistObj = {};
     checklist.forEach(item => { checklistObj[item.id] = item.checked; });
     try {
+      // Generate Service Report PDF
+      let reportUrl = null;
+      try {
+        const pdfBlob = await generateServiceReportPDF(
+          device, rma, technicianName, calType, receptionResult, 
+          findings, workCompleted, checklist
+        );
+        const fileName = `${rma.request_number}_${device.serial_number}_rapport_${Date.now()}.pdf`;
+        reportUrl = await uploadPDFToStorage(pdfBlob, `reports/${rma.request_number}`, fileName);
+      } catch (pdfErr) {
+        console.error('PDF generation error:', pdfErr);
+        // Continue without PDF if it fails
+      }
+
       // Update device status
-      const { error } = await supabase.from('request_devices').update({
+      const updateData = {
         service_findings: findings, additional_work_needed: additionalWorkNeeded,
         additional_work_items: additionalWorkNeeded ? workItems : [],
         work_completed: workCompleted, work_checklist: checklistObj,
@@ -2388,7 +2883,14 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
         cal_type: calType,
         reception_result: receptionResult,
         report_complete: true, report_completed_at: new Date().toISOString(), status: 'final_qc'
-      }).eq('id', device.id);
+      };
+      
+      // Add report URL if generated
+      if (reportUrl) {
+        updateData.report_url = reportUrl;
+      }
+      
+      const { error } = await supabase.from('request_devices').update(updateData).eq('id', device.id);
       if (error) throw error;
       
       // Check if all devices in this RMA are now in QC or beyond
@@ -3502,13 +4004,40 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       for (let i = 0; i < shipments.length; i++) {
         const s = shipments[i], bl = generateBLContent(s, i);
         blData.push(bl);
+        
+        // Generate BL PDF
+        let blUrl = null;
+        try {
+          const blPdfBlob = await generateBLPDF(rma, devices, s, bl.blNumber, businessSettings);
+          const blFileName = `${rma.request_number}_BL_${bl.blNumber}_${Date.now()}.pdf`;
+          blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${rma.request_number}`, blFileName);
+        } catch (pdfErr) {
+          console.error('BL PDF generation error:', pdfErr);
+        }
+        
+        // Generate UPS Label PDF
+        let upsLabelUrl = null;
+        try {
+          const upsPdfBlob = await generateUPSLabelPDF(rma, s);
+          const upsFileName = `${rma.request_number}_UPS_${s.trackingNumber || i}_${Date.now()}.pdf`;
+          upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
+        } catch (pdfErr) {
+          console.error('UPS Label PDF generation error:', pdfErr);
+        }
+        
         for (const d of s.devices) {
-          await supabase.from('request_devices').update({ 
+          const updateData = { 
             status: 'shipped', 
             shipped_at: new Date().toISOString(), 
             tracking_number: s.trackingNumber || null, 
-            bl_number: bl.blNumber 
-          }).eq('id', d.id);
+            bl_number: bl.blNumber
+          };
+          
+          // Add PDF URLs if generated
+          if (blUrl) updateData.bl_url = blUrl;
+          if (upsLabelUrl) updateData.ups_label_url = upsLabelUrl;
+          
+          await supabase.from('request_devices').update(updateData).eq('id', d.id);
         }
       }
       await supabase.from('service_requests').update({ 
@@ -7370,6 +7899,29 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
     };
 
     try {
+      // Generate Quote PDF
+      let quoteUrl = null;
+      try {
+        const rmaForPDF = {
+          ...request,
+          request_number: rmaNumber,
+          companies: request.companies
+        };
+        const devicesForPDF = devicePricing.map(d => ({
+          model_name: d.model,
+          serial_number: d.serial,
+          service_type: d.needsCalibration && d.needsRepair ? 'both' : d.needsCalibration ? 'calibration' : 'repair',
+          quoted_price: getDeviceServiceTotal(d)
+        }));
+        
+        const pdfBlob = await generateQuotePDF(rmaForPDF, devicesForPDF, {});
+        const fileName = `${rmaNumber}_devis_${Date.now()}.pdf`;
+        quoteUrl = await uploadPDFToStorage(pdfBlob, `quotes/${rmaNumber}`, fileName);
+      } catch (pdfErr) {
+        console.error('PDF generation error:', pdfErr);
+        // Continue without PDF if it fails
+      }
+
       // Determine status and whether to auto-approve
       let newStatus = 'quote_sent';
       let bcUrl = null;
@@ -7393,6 +7945,11 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         is_contract_rma: hasContractCoveredDevices,
         contract_id: hasContractCoveredDevices ? contractInfo?.primaryContract?.id : null
       };
+      
+      // Add quote PDF URL if generated
+      if (quoteUrl) {
+        updateData.quote_url = quoteUrl;
+      }
       
       // Add BC URL if contract-covered
       if (bcUrl) {
