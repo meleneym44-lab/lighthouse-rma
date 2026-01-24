@@ -994,442 +994,317 @@ const uploadPDFToStorage = async (blob, folder, filename) => {
 // BL and REPORT PDF GENERATION - Using same jsPDF approach as Quote
 // ============================================
 
-// Generate BL PDF - matches the printBL layout using jsPDF
+// Generate BL PDF - Uses html2canvas to capture actual rendered HTML
 const generateBLPDFFromHTML = async (bl, employeeName, businessSettings) => {
+  // Load html2canvas if needed
+  if (!window.html2canvas) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+  
   const jsPDF = await loadJsPDF();
-  const pdf = new jsPDF('p', 'mm', 'a4');
   const biz = businessSettings || {};
+
+  // Create a temporary container with the exact BL HTML
+  const container = document.createElement('div');
+  container.style.position = 'absolute';
+  container.style.left = '-9999px';
+  container.style.top = '0';
+  container.style.width = '210mm';
+  container.style.minHeight = '297mm';
+  container.style.background = 'white';
+  container.style.fontFamily = 'Arial, sans-serif';
+  container.style.fontSize = '11pt';
+  container.style.color = '#333';
+  container.style.padding = '15px 25px';
+  container.style.boxSizing = 'border-box';
+  container.style.display = 'flex';
+  container.style.flexDirection = 'column';
   
-  const pageWidth = 210, pageHeight = 297, margin = 15;
-  const contentWidth = pageWidth - (margin * 2);
-  const { green, darkBlue, gray, lightGray, white } = PDF_COLORS;
-  
-  let y = margin;
-  
-  // Load logo
-  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
-  
-  // ===== HEADER WITH LOGO =====
-  if (lighthouseLogo) {
-    try {
-      const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y, 50, 12);
-    } catch (e) {
-      pdf.setFontSize(22);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(51, 51, 51);
-      pdf.text('LIGHTHOUSE', margin, y + 8);
-      pdf.setFontSize(8);
-      pdf.text('FRANCE', margin, y + 12);
+  container.innerHTML = `
+    <div style="flex: 1 0 auto;">
+      <!-- Header -->
+      <div style="margin-bottom: 15px; padding-bottom: 12px; border-bottom: 2px solid #333;">
+        <div style="font-size: 24px; font-weight: bold; color: #333;">LIGHTHOUSE<div style="font-size: 10px; color: #666;">FRANCE</div></div>
+      </div>
+
+      <!-- Title -->
+      <div style="text-align: center; margin: 20px 0;">
+        <h1 style="font-size: 20pt; font-weight: bold; color: #333; margin: 0;">BON DE LIVRAISON</h1>
+        <div style="font-size: 14pt; color: #333; font-weight: bold; margin-top: 8px;">${bl.blNumber}</div>
+      </div>
+
+      <!-- Date & RMA Row -->
+      <div style="display: flex; justify-content: space-between; margin: 12px 0;">
+        <div><span style="color: #666;">${biz.city || 'Créteil'}, le</span> <strong>${bl.date}</strong></div>
+        <div><span style="color: #666;">RMA:</span> <strong>${bl.rmaNumber}</strong></div>
+      </div>
+
+      <!-- Client Box -->
+      <div style="background: #f8f9fa; border: 1px solid #ddd; padding: 15px; margin: 12px 0;">
+        <div style="font-size: 9pt; color: #666; text-transform: uppercase; font-weight: 600; margin-bottom: 5px;">Destinataire</div>
+        <div style="font-size: 12pt; font-weight: bold; margin-bottom: 5px;">${bl.client.name}</div>
+        ${bl.client.attention ? `<div>À l'attention de: <strong>${bl.client.attention}</strong></div>` : ''}
+        <div>${bl.client.street}</div>
+        <div>${bl.client.city}</div>
+        <div>${bl.client.country}</div>
+      </div>
+
+      <!-- Devices Table -->
+      <table style="width: 100%; border-collapse: collapse; margin: 12px 0;">
+        <thead>
+          <tr>
+            <th style="background: rgba(51,51,51,0.35); color: #333; padding: 10px 12px; text-align: left; font-size: 10pt; font-weight: bold; border-bottom: 2px solid #333; width: 50px;">Qté</th>
+            <th style="background: rgba(51,51,51,0.35); color: #333; padding: 10px 12px; text-align: left; font-size: 10pt; font-weight: bold; border-bottom: 2px solid #333;">Désignation</th>
+            <th style="background: rgba(51,51,51,0.35); color: #333; padding: 10px 12px; text-align: left; font-size: 10pt; font-weight: bold; border-bottom: 2px solid #333; width: 120px;">N° Série</th>
+            <th style="background: rgba(51,51,51,0.35); color: #333; padding: 10px 12px; text-align: left; font-size: 10pt; font-weight: bold; border-bottom: 2px solid #333; width: 100px;">Service</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${bl.devices.map((d, idx) => `
+            <tr>
+              <td style="padding: 10px 12px; border-bottom: 1px solid #ddd; font-size: 10pt; ${idx % 2 === 1 ? 'background: #f9f9f9;' : ''} text-align: center; font-weight: 600;">1</td>
+              <td style="padding: 10px 12px; border-bottom: 1px solid #ddd; font-size: 10pt; ${idx % 2 === 1 ? 'background: #f9f9f9;' : ''}">Compteur de particules LIGHTHOUSE ${d.model}</td>
+              <td style="padding: 10px 12px; border-bottom: 1px solid #ddd; font-size: 10pt; ${idx % 2 === 1 ? 'background: #f9f9f9;' : ''} font-family: monospace;">${d.serial}</td>
+              <td style="padding: 10px 12px; border-bottom: 1px solid #ddd; font-size: 10pt; ${idx % 2 === 1 ? 'background: #f9f9f9;' : ''}">${d.service}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+
+      <!-- Shipping Info -->
+      <div style="margin: 15px 0;">
+        <div style="font-weight: bold; font-size: 11pt; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 5px;">Informations d'expédition</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div style="display: flex; padding: 6px 0;"><span style="color: #666; width: 130px;">Transporteur:</span><span style="font-weight: 600;">${bl.shipping.carrier}</span></div>
+          <div style="display: flex; padding: 6px 0;"><span style="color: #666; width: 130px;">N° de suivi:</span><span style="font-weight: 600; font-family: monospace;">${bl.shipping.tracking}</span></div>
+          <div style="display: flex; padding: 6px 0;"><span style="color: #666; width: 130px;">Nombre de colis:</span><span style="font-weight: 600;">${bl.shipping.parcels}</span></div>
+          <div style="display: flex; padding: 6px 0;"><span style="color: #666; width: 130px;">Poids:</span><span style="font-weight: 600;">${bl.shipping.weight} kg</span></div>
+        </div>
+      </div>
+
+      <!-- Prepared By -->
+      <div style="font-size: 10pt; margin-top: 12px; color: #666;">
+        Préparé par: <strong style="color: #333;">${employeeName}</strong>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="flex-shrink: 0; margin-top: auto; padding-top: 15px; border-top: 2px solid #333;">
+      <div style="display: flex; align-items: center; justify-content: center; gap: 30px;">
+        <div style="font-size: 18px; color: #333; border: 2px solid #333; padding: 18px 24px; border-radius: 6px; text-align: center;"><strong>CAPCERT</strong><br>ISO 9001</div>
+        <div style="font-size: 8pt; color: #555; text-align: center; line-height: 1.8;">
+          <strong style="color: #333; font-size: 9pt;">${biz.company_name || 'Lighthouse France SAS'}</strong> au capital de ${biz.capital || '10 000'} €<br>
+          ${biz.address || '16 rue Paul Séjourné'}, ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} | Tél. ${biz.phone || '01 43 77 28 07'}<br>
+          SIRET ${biz.siret || '50178134800013'} | TVA ${biz.tva || 'FR 86501781348'}<br>
+          ${biz.email || 'France@golighthouse.com'} | ${biz.website || 'www.golighthouse.fr'}
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(container);
+
+  try {
+    const canvas = await window.html2canvas(container, { 
+      scale: 2, 
+      useCORS: true, 
+      backgroundColor: '#ffffff',
+      logging: false,
+      width: container.offsetWidth,
+      height: Math.max(container.offsetHeight, 1122)
+    });
+    
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const imgData = canvas.toDataURL('image/png');
+    const pdfWidth = 210;
+    const pdfHeight = 297;
+    const imgRatio = canvas.height / canvas.width;
+    let imgHeight = pdfWidth * imgRatio;
+    
+    if (imgHeight > pdfHeight) {
+      imgHeight = pdfHeight;
     }
-  } else {
-    pdf.setFontSize(22);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(51, 51, 51);
-    pdf.text('LIGHTHOUSE', margin, y + 8);
-    pdf.setFontSize(8);
-    pdf.text('FRANCE', margin, y + 12);
+    
+    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
+    
+    return pdf.output('blob');
+  } finally {
+    document.body.removeChild(container);
   }
-  
-  y += 16;
-  pdf.setDrawColor(51, 51, 51);
-  pdf.setLineWidth(0.5);
-  pdf.line(margin, y, pageWidth - margin, y);
-  y += 12;
-
-  // ===== TITLE =====
-  pdf.setFontSize(20);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text('BON DE LIVRAISON', pageWidth / 2, y, { align: 'center' });
-  y += 8;
-  pdf.setFontSize(14);
-  pdf.text(bl.blNumber, pageWidth / 2, y, { align: 'center' });
-  y += 12;
-
-  // ===== DATE & RMA ROW =====
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(102, 102, 102);
-  pdf.text(`${biz.city || 'Créteil'}, le`, margin, y);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(bl.date, margin + 25, y);
-  
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(102, 102, 102);
-  pdf.text('RMA:', pageWidth - margin - 40, y);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(bl.rmaNumber, pageWidth - margin - 25, y);
-  y += 10;
-
-  // ===== DESTINATAIRE BOX =====
-  pdf.setFillColor(248, 249, 250);
-  pdf.setDrawColor(221, 221, 221);
-  pdf.rect(margin, y, contentWidth, 35, 'FD');
-  
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(102, 102, 102);
-  pdf.text('DESTINATAIRE', margin + 5, y + 6);
-  
-  pdf.setFontSize(12);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(bl.client.name, margin + 5, y + 14);
-  
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  let clientY = y + 20;
-  if (bl.client.attention) {
-    pdf.text(`À l'attention de: ${bl.client.attention}`, margin + 5, clientY);
-    clientY += 5;
-  }
-  pdf.text(bl.client.street, margin + 5, clientY);
-  clientY += 5;
-  pdf.text(bl.client.city, margin + 5, clientY);
-  
-  y += 40;
-
-  // ===== DEVICES TABLE =====
-  const colWidths = [20, 80, 40, 40];
-  const tableX = margin;
-  
-  // Table header
-  pdf.setFillColor(51, 51, 51, 0.35);
-  pdf.rect(tableX, y, contentWidth, 10, 'F');
-  pdf.setDrawColor(51, 51, 51);
-  pdf.line(tableX, y + 10, tableX + contentWidth, y + 10);
-  
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text('Qté', tableX + 5, y + 7);
-  pdf.text('Désignation', tableX + 25, y + 7);
-  pdf.text('N° Série', tableX + 110, y + 7);
-  pdf.text('Service', tableX + 155, y + 7);
-  y += 10;
-
-  // Table rows
-  pdf.setFont('helvetica', 'normal');
-  bl.devices.forEach((d, idx) => {
-    const rowY = y + (idx * 10);
-    
-    if (idx % 2 === 1) {
-      pdf.setFillColor(249, 249, 249);
-      pdf.rect(tableX, rowY, contentWidth, 10, 'F');
-    }
-    
-    pdf.setDrawColor(221, 221, 221);
-    pdf.line(tableX, rowY + 10, tableX + contentWidth, rowY + 10);
-    
-    pdf.setTextColor(51, 51, 51);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('1', tableX + 8, rowY + 7);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(`Compteur de particules LIGHTHOUSE ${d.model}`, tableX + 25, rowY + 7);
-    pdf.setFont('courier', 'normal');
-    pdf.text(d.serial, tableX + 110, rowY + 7);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(d.service, tableX + 155, rowY + 7);
-  });
-  
-  y += (bl.devices.length * 10) + 10;
-
-  // ===== SHIPPING INFO =====
-  pdf.setFontSize(11);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text("Informations d'expédition", margin, y);
-  y += 3;
-  pdf.setDrawColor(51, 51, 51);
-  pdf.line(margin, y, margin + 60, y);
-  y += 8;
-
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(102, 102, 102);
-  pdf.text('Transporteur:', margin, y);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(bl.shipping.carrier, margin + 30, y);
-  
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(102, 102, 102);
-  pdf.text('N° de suivi:', margin + 90, y);
-  pdf.setFont('courier', 'bold');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(bl.shipping.tracking, margin + 115, y);
-  y += 6;
-
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(102, 102, 102);
-  pdf.text('Nombre de colis:', margin, y);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(String(bl.shipping.parcels), margin + 35, y);
-  
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(102, 102, 102);
-  pdf.text('Poids:', margin + 90, y);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(`${bl.shipping.weight} kg`, margin + 105, y);
-  y += 12;
-
-  // ===== PREPARED BY =====
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(102, 102, 102);
-  pdf.text('Préparé par:', margin, y);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(employeeName, margin + 25, y);
-
-  // ===== FOOTER =====
-  const footerY = pageHeight - 30;
-  pdf.setDrawColor(51, 51, 51);
-  pdf.setLineWidth(0.5);
-  pdf.line(margin, footerY, pageWidth - margin, footerY);
-  
-  // CAPCERT placeholder
-  pdf.setDrawColor(51, 51, 51);
-  pdf.setLineWidth(0.5);
-  pdf.rect(margin + 10, footerY + 3, 30, 22, 'D');
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text('CAPCERT', margin + 14, footerY + 12);
-  pdf.setFontSize(8);
-  pdf.text('ISO 9001', margin + 16, footerY + 18);
-  
-  // Company info
-  pdf.setFontSize(8);
-  pdf.setTextColor(85, 85, 85);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(biz.company_name || 'Lighthouse France SAS', pageWidth / 2 + 10, footerY + 6);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(`au capital de ${biz.capital || '10 000'} €`, pageWidth / 2 + 10, footerY + 10);
-  pdf.text(`${biz.address || '16 rue Paul Séjourné'}, ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'}`, pageWidth / 2 + 10, footerY + 14);
-  pdf.text(`SIRET ${biz.siret || '50178134800013'} | TVA ${biz.tva || 'FR 86501781348'}`, pageWidth / 2 + 10, footerY + 18);
-  pdf.text(`${biz.email || 'France@golighthouse.com'} | ${biz.website || 'www.golighthouse.fr'}`, pageWidth / 2 + 10, footerY + 22);
-
-  return pdf.output('blob');
 };
 
-// Generate Service Report PDF - matches the ReportPreviewModal layout using jsPDF
+// Generate Service Report PDF - Uses html2canvas to capture actual rendered HTML
 const generateReportPDFFromHTML = async (device, rma, technicianName, calType, receptionResult, findings, workCompleted, checklist) => {
+  // Load html2canvas if needed
+  if (!window.html2canvas) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+  
   const jsPDF = await loadJsPDF();
-  const pdf = new jsPDF('p', 'mm', 'a4');
-  
-  const pageWidth = 210, pageHeight = 297, margin = 20;
-  const contentWidth = pageWidth - (margin * 2);
-  
-  let y = margin;
   
   const today = new Date().toLocaleDateString('fr-FR');
   const serviceTypeText = device.service_type === 'calibration' ? 'Étalonnage' : device.service_type === 'repair' ? 'Réparation' : 'Étalonnage et Réparation';
   const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
-  
-  // ===== LOGO HEADER (Yellow/Blue bars + LIGHTHOUSE text) =====
-  // Yellow bar
-  pdf.setFillColor(255, 210, 0);
-  pdf.rect(margin, y, 20, 4, 'F');
-  // Blue bar
-  pdf.setFillColor(0, 51, 102);
-  pdf.rect(margin, y + 5, 20, 4, 'F');
-  
-  // LIGHTHOUSE text
-  pdf.setFontSize(20);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text('LIGHTHOUSE', margin + 25, y + 6);
-  pdf.setFontSize(8);
-  pdf.setTextColor(102, 102, 102);
-  pdf.text('WORLDWIDE SOLUTIONS', margin + 25, y + 10);
-  
-  y += 25;
-
-  // ===== INFO TABLE =====
-  const col1 = margin;
-  const col2 = margin + 45;
-  const col3 = margin + 100;
-  const rowH = 6;
-  
-  pdf.setFontSize(10);
-  
-  // Row 1: Date + RMA
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text("Date d'achèvement", col1, y);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(today, col2, y);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text('RMA #', col3, y);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(rma.request_number, col3 + 15, y);
-  y += rowH;
-  
-  // Row 2: Client
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text('Client', col1, y);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(rma.companies?.name || '', col2, y);
-  y += rowH;
-  
-  // Row 3: Adresse
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text('Adresse', col1, y);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(rma.companies?.billing_address || '—', col2, y);
-  y += rowH;
-  
-  // Row 4: Code postal + Contact
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text('Code postal / Ville', col1, y);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(`${rma.companies?.billing_postal_code || ''} ${rma.companies?.billing_city || ''}`, col2, y);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text('Contact', col3, y);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(rma.companies?.contact_name || '—', col3 + 18, y);
-  y += rowH;
-  
-  // Row 5: Téléphone + Technicien label
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text('Téléphone', col1, y);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(rma.companies?.phone || '—', col2, y);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text('Technicien(ne) de service', col3, y);
-  y += rowH;
-  
-  // Row 6: Modèle + Technicien name
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text('Modèle#', col1, y);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(device.model_name, col2, y);
-  pdf.text(technicianName || 'Lighthouse France', col3, y);
-  y += rowH;
-  
-  // Row 7: Numéro de série
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text('Numéro de série', col1, y);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(51, 51, 51);
-  pdf.text(device.serial_number, col2, y);
-  y += 15;
-
-  // ===== CONTENT SECTIONS =====
-  const labelX = margin;
-  const valueX = margin + 50;
-  
-  // Motif de retour
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text('Motif de retour', labelX, y);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(51, 51, 51);
-  const motifLines = pdf.splitTextToSize(motifText, contentWidth - 55);
-  pdf.text(motifLines, valueX, y);
-  y += Math.max(motifLines.length * 5, 8);
-  
-  // Étalonnage effectué (if applicable)
-  if (calType && calType !== 'none') {
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(0, 51, 102);
-    pdf.text('Étalonnage effectué', labelX, y);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(51, 51, 51);
-    pdf.text(calType, valueX, y);
-    y += 8;
-  }
-  
-  // Résultats à la réception (if applicable)
-  if (receptionResult && receptionResult !== 'none') {
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(0, 51, 102);
-    pdf.text('Résultats à la réception', labelX, y);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(51, 51, 51);
-    pdf.text(receptionResult, valueX, y);
-    y += 8;
-  }
-  
-  y += 5;
-  
-  // Constatations
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text('Constatations', labelX, y);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(51, 51, 51);
-  const findingsText = findings || '—';
-  const findingsLines = pdf.splitTextToSize(findingsText, contentWidth - 55);
-  pdf.text(findingsLines, valueX, y);
-  y += Math.max(findingsLines.length * 5, 8) + 5;
-  
-  // Actions effectuées
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text('Actions effectuées', labelX, y);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(51, 51, 51);
-  const workText = workCompleted || '—';
-  const workLines = pdf.splitTextToSize(workText, contentWidth - 55);
-  pdf.text(workLines, valueX, y);
-  y += Math.max(workLines.length * 5, 8) + 10;
-  
-  // Travaux réalisés (checklist)
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text('Travaux réalisés', labelX, y);
-  
+  const showCalType = calType && calType !== 'none';
+  const showReceptionResult = receptionResult && receptionResult !== 'none';
   const checkedItems = (checklist || []).filter(item => item.checked);
-  if (checkedItems.length > 0) {
-    checkedItems.forEach((item, idx) => {
-      pdf.setTextColor(0, 51, 102);
-      pdf.text('☑', valueX, y + (idx * 5));
-      pdf.setTextColor(51, 51, 51);
-      pdf.text(item.label, valueX + 6, y + (idx * 5));
+
+  // Create a temporary container with the exact report HTML
+  const container = document.createElement('div');
+  container.style.position = 'absolute';
+  container.style.left = '-9999px';
+  container.style.top = '0';
+  container.style.width = '210mm';
+  container.style.minHeight = '297mm';
+  container.style.background = 'white';
+  container.style.fontFamily = 'Arial, sans-serif';
+  container.style.padding = '40px 50px';
+  container.style.boxSizing = 'border-box';
+  container.style.display = 'flex';
+  container.style.flexDirection = 'column';
+  
+  container.innerHTML = `
+    <!-- Logo Header -->
+    <div style="margin-bottom: 40px; display: flex; align-items: center; gap: 8px;">
+      <div style="display: flex; flex-direction: column; gap: 2px; margin-right: 8px;">
+        <div style="width: 48px; height: 8px; background: #FFD200;"></div>
+        <div style="width: 48px; height: 8px; background: #003366;"></div>
+      </div>
+      <div>
+        <div style="font-size: 24px; font-weight: bold; letter-spacing: 2px; color: #003366;">LIGHTHOUSE</div>
+        <div style="font-size: 10px; letter-spacing: 3px; color: #666; margin-top: -4px;">WORLDWIDE SOLUTIONS</div>
+      </div>
+    </div>
+
+    <!-- Info Table -->
+    <table style="width: 100%; font-size: 12px; margin-bottom: 24px; border-collapse: collapse;">
+      <tr>
+        <td style="padding: 4px 0; font-weight: bold; color: #003366; width: 150px;">Date d'achèvement</td>
+        <td style="padding: 4px 0; color: #333; width: 200px;">${today}</td>
+        <td style="padding: 4px 0;"><span style="font-weight: bold; color: #003366;">RMA # </span><span style="color: #333;">${rma.request_number}</span></td>
+      </tr>
+      <tr>
+        <td style="padding: 4px 0; font-weight: bold; color: #003366;">Client</td>
+        <td style="padding: 4px 0; color: #333;" colspan="2">${rma.companies?.name || ''}</td>
+      </tr>
+      <tr>
+        <td style="padding: 4px 0; font-weight: bold; color: #003366;">Adresse</td>
+        <td style="padding: 4px 0; color: #333;" colspan="2">${rma.companies?.billing_address || '—'}</td>
+      </tr>
+      <tr>
+        <td style="padding: 4px 0; font-weight: bold; color: #003366;">Code postal / Ville</td>
+        <td style="padding: 4px 0; color: #333;">${rma.companies?.billing_postal_code || ''} ${rma.companies?.billing_city || ''}</td>
+        <td style="padding: 4px 0;"><span style="font-weight: bold; color: #003366;">Contact </span><span style="color: #333;">${rma.companies?.contact_name || '—'}</span></td>
+      </tr>
+      <tr>
+        <td style="padding: 4px 0; font-weight: bold; color: #003366;">Téléphone</td>
+        <td style="padding: 4px 0; color: #333;">${rma.companies?.phone || '—'}</td>
+        <td style="padding: 4px 0; font-weight: bold; color: #003366;">Technicien(ne) de service</td>
+      </tr>
+      <tr>
+        <td style="padding: 4px 0; font-weight: bold; color: #003366;">Modèle#</td>
+        <td style="padding: 4px 0; color: #333;">${device.model_name}</td>
+        <td style="padding: 4px 0; color: #333;">${technicianName || 'Lighthouse France'}</td>
+      </tr>
+      <tr>
+        <td style="padding: 4px 0; font-weight: bold; color: #003366;">Numéro de série</td>
+        <td style="padding: 4px 0; color: #333;" colspan="2">${device.serial_number}</td>
+      </tr>
+    </table>
+
+    <!-- Content Sections -->
+    <div style="flex-grow: 1;">
+      <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
+        <tr>
+          <td style="padding: 20px 0 8px; font-weight: bold; color: #003366; width: 170px; vertical-align: top;">Motif de retour</td>
+          <td style="padding: 20px 0 8px; color: #333;">${motifText}</td>
+        </tr>
+        ${showCalType ? `
+        <tr>
+          <td style="padding: 8px 0; font-weight: bold; color: #003366; vertical-align: top;">Étalonnage effectué</td>
+          <td style="padding: 8px 0; color: #333;">${calType}</td>
+        </tr>
+        ` : ''}
+        ${showReceptionResult ? `
+        <tr>
+          <td style="padding: 8px 0; font-weight: bold; color: #003366; vertical-align: top;">Résultats à la réception</td>
+          <td style="padding: 8px 0; color: #333;">${receptionResult}</td>
+        </tr>
+        ` : ''}
+        <tr>
+          <td style="padding: 20px 0 8px; font-weight: bold; color: #003366; vertical-align: top;">Constatations</td>
+          <td style="padding: 20px 0 8px; color: #333; white-space: pre-wrap;">${findings || '—'}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; font-weight: bold; color: #003366; vertical-align: top;">Actions effectuées</td>
+          <td style="padding: 8px 0; color: #333; white-space: pre-wrap;">${workCompleted || '—'}</td>
+        </tr>
+        <tr>
+          <td style="padding: 30px 0 8px; font-weight: bold; color: #003366; vertical-align: top;">Travaux réalisés</td>
+          <td style="padding: 30px 0 8px;">
+            ${checkedItems.map(item => `
+              <div style="margin-bottom: 4px;">
+                <span style="color: #003366;">☑</span>
+                <span style="color: #333; margin-left: 8px;">${item.label}</span>
+              </div>
+            `).join('')}
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Footer - positioned at bottom -->
+    <div style="text-align: center; font-size: 12px; color: #666; padding-top: 32px; margin-top: auto;">
+      <div style="font-weight: bold; color: #003366;">Lighthouse Worldwide Solutions France</div>
+      <div>16 Rue Paul Séjourné 94000 Créteil France</div>
+      <div>01 43 77 28 07</div>
+    </div>
+  `;
+
+  document.body.appendChild(container);
+
+  try {
+    // Capture the container
+    const canvas = await window.html2canvas(container, { 
+      scale: 2, 
+      useCORS: true, 
+      backgroundColor: '#ffffff',
+      logging: false,
+      width: container.offsetWidth,
+      height: Math.max(container.offsetHeight, 1122) // 297mm at 96dpi ≈ 1122px - ensure minimum A4 height
     });
-    y += checkedItems.length * 5;
-  } else {
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(51, 51, 51);
-    pdf.text('—', valueX, y);
+    
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const imgData = canvas.toDataURL('image/png');
+    const pdfWidth = 210;
+    const pdfHeight = 297;
+    const imgRatio = canvas.height / canvas.width;
+    let imgHeight = pdfWidth * imgRatio;
+    
+    // If content is shorter than A4, just add it at top (footer will be at bottom of content)
+    // If content is taller, scale to fit
+    if (imgHeight > pdfHeight) {
+      imgHeight = pdfHeight;
+    }
+    
+    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
+    
+    return pdf.output('blob');
+  } finally {
+    document.body.removeChild(container);
   }
-
-  // ===== FOOTER =====
-  const footerY = pageHeight - 25;
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 51, 102);
-  pdf.text('Lighthouse Worldwide Solutions France', pageWidth / 2, footerY, { align: 'center' });
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(102, 102, 102);
-  pdf.text('16 Rue Paul Séjourné 94000 Créteil France', pageWidth / 2, footerY + 5, { align: 'center' });
-  pdf.text('01 43 77 28 07', pageWidth / 2, footerY + 10, { align: 'center' });
-
-  return pdf.output('blob');
 };
 
 const STATUS_STYLES = {
