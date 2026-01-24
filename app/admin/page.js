@@ -1805,24 +1805,46 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         </div>
       )}
       
-      {/* SHIPPED/COMPLETED STAGE - Archive View */}
+      {/* SHIPPED/COMPLETED STAGE - Archive View (matches customer portal) */}
       {workflowStage === 'shipped' && (
         <div className="space-y-6">
           {/* Completion Banner */}
           <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between">
               <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-4xl">✅</span>
-                  <div>
-                    <h2 className="text-2xl font-bold">RMA Complété</h2>
-                    <p className="text-blue-100">Expédié le {rma.shipped_at ? new Date(rma.shipped_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</p>
-                  </div>
-                </div>
+                <p className="text-white/70 text-sm uppercase tracking-wide mb-1">RMA Complété</p>
+                <p className="text-2xl font-bold">
+                  {rma.requested_service === 'calibration' ? 'Étalonnage' :
+                   rma.requested_service === 'repair' ? 'Réparation' :
+                   rma.requested_service === 'calibration_repair' ? 'Étalonnage + Réparation' :
+                   'Service'}
+                </p>
               </div>
               <div className="text-right">
-                <p className="text-blue-200 text-sm">Durée totale</p>
-                <p className="text-2xl font-bold">
+                <p className="text-white/70 text-sm uppercase tracking-wide mb-1">Référence</p>
+                <p className="text-xl font-mono font-bold">{rma.request_number}</p>
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-white/20 grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+              <div>
+                <p className="text-white/70">Créé le</p>
+                <p className="font-medium">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
+              </div>
+              <div>
+                <p className="text-white/70">Reçu le</p>
+                <p className="font-medium">{rma.received_at ? new Date(rma.received_at).toLocaleDateString('fr-FR') : '—'}</p>
+              </div>
+              <div>
+                <p className="text-white/70">Expédié le</p>
+                <p className="font-medium">{rma.shipped_at ? new Date(rma.shipped_at).toLocaleDateString('fr-FR') : '—'}</p>
+              </div>
+              <div>
+                <p className="text-white/70">Appareils</p>
+                <p className="font-medium">{devices.length}</p>
+              </div>
+              <div>
+                <p className="text-white/70">Durée totale</p>
+                <p className="font-medium">
                   {rma.shipped_at && rma.created_at 
                     ? Math.ceil((new Date(rma.shipped_at) - new Date(rma.created_at)) / (1000 * 60 * 60 * 24)) + ' jours'
                     : '—'}
@@ -1831,152 +1853,263 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             </div>
           </div>
 
-          {/* Timeline Summary */}
-          <div className="bg-white rounded-xl shadow-sm border p-6">
-            <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">📅 Chronologie</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
-                <p className="text-xs text-gray-500 mb-1">Créé</p>
-                <p className="font-medium">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
-              </div>
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
-                <p className="text-xs text-gray-500 mb-1">Reçu</p>
-                <p className="font-medium">{rma.received_at ? new Date(rma.received_at).toLocaleDateString('fr-FR') : '—'}</p>
-              </div>
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
-                <p className="text-xs text-gray-500 mb-1">Service terminé</p>
-                <p className="font-medium">{devices[0]?.report_completed_at ? new Date(devices[0].report_completed_at).toLocaleDateString('fr-FR') : '—'}</p>
-              </div>
-              <div className="text-center p-3 bg-green-50 rounded-lg">
-                <p className="text-xs text-green-600 mb-1">Expédié</p>
-                <p className="font-medium text-green-700">{rma.shipped_at ? new Date(rma.shipped_at).toLocaleDateString('fr-FR') : '—'}</p>
-              </div>
+          {/* Per-Device Progress Bars */}
+          <div className="bg-white rounded-xl shadow-sm border p-4">
+            <p className="text-xs text-gray-500 uppercase font-medium mb-3">Suivi par appareil</p>
+            <div className="space-y-3">
+              {devices.map((device, idx) => (
+                <div key={device.id} className="bg-gray-50 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-800">{device.model_name}</span>
+                      <span className="text-xs text-gray-500 font-mono">SN: {device.serial_number}</span>
+                    </div>
+                    <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-700 font-medium">
+                      ✓ {device.service_type === 'calibration' ? 'Étalonné' : device.service_type === 'repair' ? 'Réparé' : 'Terminé'}
+                    </span>
+                  </div>
+                  <DeviceProgressBar device={{...device, status: 'shipped'}} />
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Tabs for different sections */}
+          {/* Tabs */}
           <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-            <div className="flex border-b">
+            <div className="flex border-b border-gray-100 overflow-x-auto">
               {[
-                { id: 'devices', label: '🔧 Appareils', count: devices.length },
-                { id: 'documents', label: '📄 Documents' },
-                { id: 'shipping', label: '📦 Expédition' },
-                { id: 'notes', label: '💬 Notes' }
+                { id: 'details', label: 'Détails', icon: '📋' },
+                { id: 'history', label: 'Historique', icon: '📜' },
+                { id: 'documents', label: 'Documents', icon: '📄' },
+                { id: 'shipping', label: 'Expédition', icon: '📦' }
               ].map(tab => (
                 <button
                   key={tab.id}
                   onClick={() => setArchiveTab(tab.id)}
-                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                  className={`px-6 py-3 font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
                     archiveTab === tab.id 
-                      ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500' 
-                      : 'text-gray-600 hover:bg-gray-50'
+                      ? 'text-blue-600 border-b-2 border-blue-500 -mb-px bg-blue-50' 
+                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                   }`}
                 >
-                  {tab.label} {tab.count ? `(${tab.count})` : ''}
+                  <span>{tab.icon}</span>
+                  {tab.label}
                 </button>
               ))}
             </div>
             
             <div className="p-6">
-              {/* Devices Tab (default) */}
-              {archiveTab === 'devices' && (
-                <div className="space-y-4">
-                  {devices.map(device => (
-                    <div key={device.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <h4 className="font-bold text-lg">{device.model_name}</h4>
-                          <p className="text-gray-500 font-mono">SN: {device.serial_number}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
-                            ✓ {device.service_type === 'repair' ? 'Réparé' : 'Étalonné'}
+              {/* Details Tab - Device Cards */}
+              {archiveTab === 'details' && (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                      <span className="text-lg">🔧</span>
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-gray-800">Appareils traités</h2>
+                      <p className="text-sm text-gray-500">{devices.length} appareil(s)</p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid gap-4">
+                    {devices.map((device, idx) => (
+                      <div key={device.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                        {/* Device Header */}
+                        <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                          <span className="text-sm font-medium text-gray-500">Appareil #{idx + 1}</span>
+                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            device.service_type === 'calibration' ? 'bg-blue-100 text-blue-700' : 
+                            device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' :
+                            'bg-purple-100 text-purple-700'
+                          }`}>
+                            {device.service_type === 'calibration' ? '🔬 Étalonnage' : 
+                             device.service_type === 'repair' ? '🔧 Réparation' :
+                             '🔬🔧 Étal. + Rép.'}
                           </span>
                         </div>
-                      </div>
-                      
-                      {/* Service Summary */}
-                      <div className="grid grid-cols-2 gap-4 mb-3">
-                        <div>
-                          <p className="text-xs text-gray-500">Service</p>
-                          <p className="font-medium">{device.service_type === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500">Technicien</p>
-                          <p className="font-medium">{device.technician_name || '—'}</p>
-                        </div>
-                        {device.cal_type && (
-                          <div>
-                            <p className="text-xs text-gray-500">Type d'étalonnage</p>
-                            <p className="font-medium">{device.cal_type === 'periodic' ? 'Périodique' : device.cal_type === 'initial' ? 'Initial' : device.cal_type}</p>
+                        
+                        {/* Device Info Grid */}
+                        <div className="p-4">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase tracking-wide">Modèle</p>
+                              <p className="font-semibold text-gray-800">{device.model_name}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase tracking-wide">N° de série</p>
+                              <p className="font-mono font-semibold text-blue-600">{device.serial_number}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase tracking-wide">Technicien</p>
+                              <p className="font-medium">{device.technician_name || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase tracking-wide">N° BL</p>
+                              <p className="font-mono font-medium">{device.bl_number || '—'}</p>
+                            </div>
                           </div>
-                        )}
-                        {device.bl_number && (
-                          <div>
-                            <p className="text-xs text-gray-500">N° BL</p>
-                            <p className="font-medium font-mono">{device.bl_number}</p>
+                          
+                          {/* Calibration Details */}
+                          {device.cal_type && (
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4 pt-4 border-t">
+                              <div>
+                                <p className="text-xs text-gray-500 uppercase tracking-wide">Type d'étalonnage</p>
+                                <p className="font-medium">{device.cal_type === 'periodic' ? 'Périodique' : device.cal_type === 'initial' ? 'Initial' : device.cal_type}</p>
+                              </div>
+                              {device.reception_result && (
+                                <div>
+                                  <p className="text-xs text-gray-500 uppercase tracking-wide">Résultat réception</p>
+                                  <p className="font-medium">{device.reception_result === 'conforme' ? '✅ Conforme' : '⚠️ Non conforme'}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          
+                          {/* Findings/Work */}
+                          {device.service_findings && (
+                            <div className="bg-gray-50 rounded-lg p-3 mb-3">
+                              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Constatations</p>
+                              <p className="text-sm text-gray-700">{device.service_findings}</p>
+                            </div>
+                          )}
+                          {device.work_completed && (
+                            <div className="bg-blue-50 rounded-lg p-3 mb-3">
+                              <p className="text-xs text-blue-600 uppercase tracking-wide mb-1">Travaux effectués</p>
+                              <p className="text-sm text-gray-700">{device.work_completed}</p>
+                            </div>
+                          )}
+                          
+                          {/* Document Links */}
+                          <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t">
+                            {device.calibration_certificate_url && (
+                              <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" 
+                                 className="px-3 py-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg text-sm flex items-center gap-1 transition-colors">
+                                🏆 Certificat
+                              </a>
+                            )}
+                            {device.report_url && (
+                              <a href={device.report_url} target="_blank" rel="noopener noreferrer"
+                                 className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm flex items-center gap-1 transition-colors">
+                                📋 Rapport
+                              </a>
+                            )}
                           </div>
-                        )}
-                      </div>
-                      
-                      {/* Findings/Work */}
-                      {device.service_findings && (
-                        <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                          <p className="text-xs text-gray-500 mb-1">Constatations</p>
-                          <p className="text-sm">{device.service_findings}</p>
                         </div>
-                      )}
-                      {device.work_completed && (
-                        <div className="bg-blue-50 rounded-lg p-3 mb-3">
-                          <p className="text-xs text-blue-600 mb-1">Travaux effectués</p>
-                          <p className="text-sm">{device.work_completed}</p>
-                        </div>
-                      )}
-                      
-                      {/* Document Links */}
-                      <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t">
-                        {device.calibration_certificate_url && (
-                          <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" 
-                             className="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-sm flex items-center gap-1">
-                            📄 Certificat d'étalonnage
-                          </a>
-                        )}
-                        {device.report_url && (
-                          <a href={device.report_url} target="_blank" rel="noopener noreferrer"
-                             className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm flex items-center gap-1">
-                            📋 Rapport de service
-                          </a>
-                        )}
+                        
+                        {/* Tracking Footer */}
                         {device.tracking_number && (
-                          <a href={`https://www.ups.com/track?tracknum=${device.tracking_number}`} target="_blank" rel="noopener noreferrer"
-                             className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded-lg text-sm flex items-center gap-1">
-                            📦 Suivi: {device.tracking_number}
-                          </a>
+                          <div className="bg-green-50 px-4 py-3 border-t border-green-100">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-green-600">📦</span>
+                                <span className="text-sm font-medium text-green-800">Expédié</span>
+                              </div>
+                              <a 
+                                href={`https://www.ups.com/track?tracknum=${device.tracking_number}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm text-green-700 font-mono hover:underline"
+                              >
+                                {device.tracking_number} →
+                              </a>
+                            </div>
+                          </div>
                         )}
                       </div>
-                      
-                      {/* Progress bar showing completed */}
-                      <div className="mt-3">
-                        <DeviceProgressBar device={{...device, status: 'shipped'}} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* History Tab */}
+              {archiveTab === 'history' && (
+                <div className="space-y-4">
+                  <h3 className="font-bold text-gray-800 flex items-center gap-2">📜 Historique du RMA</h3>
+                  <div className="relative">
+                    <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
+                    <div className="space-y-4">
+                      {/* Build timeline from RMA data */}
+                      {[
+                        { date: rma.created_at, label: 'Demande créée', icon: '📝', color: 'gray' },
+                        rma.quoted_at && { date: rma.quoted_at, label: 'Devis envoyé', icon: '💰', color: 'blue' },
+                        rma.bc_submitted_at && { date: rma.bc_submitted_at, label: 'BC reçu', icon: '📄', color: 'blue' },
+                        rma.received_at && { date: rma.received_at, label: 'Appareil reçu', icon: '📦', color: 'cyan' },
+                        devices[0]?.report_completed_at && { date: devices[0].report_completed_at, label: 'Service terminé', icon: '🔧', color: 'indigo' },
+                        devices[0]?.qc_completed_at && { date: devices[0].qc_completed_at, label: 'Contrôle qualité validé', icon: '✅', color: 'purple' },
+                        rma.shipped_at && { date: rma.shipped_at, label: 'Expédié au client', icon: '🚚', color: 'green' }
+                      ].filter(Boolean).sort((a, b) => new Date(a.date) - new Date(b.date)).map((event, idx) => (
+                        <div key={idx} className="relative pl-10">
+                          <div className={`absolute left-2 w-5 h-5 rounded-full border-2 border-white shadow flex items-center justify-center text-xs ${
+                            event.color === 'green' ? 'bg-green-500' :
+                            event.color === 'blue' ? 'bg-blue-500' :
+                            event.color === 'indigo' ? 'bg-indigo-500' :
+                            event.color === 'purple' ? 'bg-purple-500' :
+                            event.color === 'cyan' ? 'bg-cyan-500' :
+                            'bg-gray-400'
+                          }`}>
+                            <span className="text-white">{event.icon}</span>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <p className="font-medium text-gray-800">{event.label}</p>
+                            <p className="text-sm text-gray-500">
+                              {new Date(event.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  {/* Notes Section */}
+                  {(rma.notes || rma.internal_notes || devices.some(d => d.service_findings || d.qc_notes)) && (
+                    <div className="mt-6 pt-6 border-t">
+                      <h4 className="font-bold text-gray-700 mb-3">💬 Notes</h4>
+                      <div className="space-y-3">
+                        {rma.notes && (
+                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                            <p className="text-xs text-yellow-600 mb-1">Notes client</p>
+                            <p className="text-sm">{rma.notes}</p>
+                          </div>
+                        )}
+                        {rma.internal_notes && (
+                          <div className="bg-gray-50 border rounded-lg p-3">
+                            <p className="text-xs text-gray-500 mb-1">Notes internes</p>
+                            <p className="text-sm">{rma.internal_notes}</p>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
               
               {/* Documents Tab */}
               {archiveTab === 'documents' && (
-                <div className="space-y-4">
-                  <h4 className="font-bold text-gray-700 mb-3">Documents liés à ce RMA</h4>
+                <div className="space-y-6">
+                  <h3 className="font-bold text-gray-800 flex items-center gap-2">📄 Documents</h3>
+                  
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Quote */}
                     {rma.quote_url && (
                       <a href={rma.quote_url} target="_blank" rel="noopener noreferrer"
                          className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                        <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
+                        <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
                         <div>
-                          <p className="font-medium">Devis</p>
-                          <p className="text-sm text-gray-500">Devis initial</p>
+                          <p className="font-medium text-gray-800">Devis</p>
+                          <p className="text-sm text-gray-500">Offre de prix initiale</p>
+                        </div>
+                      </a>
+                    )}
+                    
+                    {/* BC */}
+                    {rma.bc_file_url && (
+                      <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer"
+                         className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
+                        <div>
+                          <p className="font-medium text-gray-800">Bon de Commande</p>
+                          <p className="text-sm text-gray-500">BC signé par le client</p>
                         </div>
                       </a>
                     )}
@@ -1985,87 +2118,78 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     {rma.avenant_url && (
                       <a href={rma.avenant_url} target="_blank" rel="noopener noreferrer"
                          className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                        <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
+                        <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
                         <div>
-                          <p className="font-medium">Avenant</p>
+                          <p className="font-medium text-gray-800">Avenant</p>
                           <p className="text-sm text-gray-500">Travaux supplémentaires</p>
                         </div>
                       </a>
                     )}
                     
-                    {/* Certificates */}
+                    {/* Certificates per device */}
                     {devices.filter(d => d.calibration_certificate_url).map(device => (
                       <a key={device.id} href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer"
                          className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
                         <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">🏆</div>
                         <div>
-                          <p className="font-medium">Certificat - {device.serial_number}</p>
-                          <p className="text-sm text-gray-500">{device.model_name}</p>
+                          <p className="font-medium text-gray-800">Certificat d'étalonnage</p>
+                          <p className="text-sm text-gray-500">{device.model_name} - {device.serial_number}</p>
                         </div>
                       </a>
                     ))}
                     
-                    {/* BL */}
+                    {/* BL info */}
                     {devices.some(d => d.bl_number) && (
                       <div className="flex items-center gap-4 p-4 border rounded-lg bg-gray-50">
                         <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
                         <div>
-                          <p className="font-medium">Bon de Livraison</p>
+                          <p className="font-medium text-gray-800">Bon de Livraison</p>
                           <p className="text-sm text-gray-500 font-mono">{devices[0]?.bl_number}</p>
                         </div>
                       </div>
                     )}
                   </div>
                   
-                  {/* Photos section */}
-                  {rma.photos && rma.photos.length > 0 && (
-                    <div className="mt-6">
-                      <h4 className="font-bold text-gray-700 mb-3">📸 Photos</h4>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {rma.photos.map((photo, idx) => (
-                          <a key={idx} href={photo.url} target="_blank" rel="noopener noreferrer"
-                             className="aspect-square bg-gray-100 rounded-lg overflow-hidden hover:opacity-80 transition-opacity">
-                            <img src={photo.url} alt={photo.name || `Photo ${idx + 1}`} className="w-full h-full object-cover" />
-                          </a>
-                        ))}
-                      </div>
-                    </div>
+                  {/* No documents message */}
+                  {!rma.quote_url && !rma.bc_file_url && !rma.avenant_url && !devices.some(d => d.calibration_certificate_url) && (
+                    <p className="text-gray-400 text-center py-8">Aucun document disponible</p>
                   )}
                 </div>
               )}
               
               {/* Shipping Tab */}
               {archiveTab === 'shipping' && (
-                <div className="space-y-4">
-                  <h4 className="font-bold text-gray-700 mb-3">Informations d'expédition</h4>
+                <div className="space-y-6">
+                  <h3 className="font-bold text-gray-800 flex items-center gap-2">📦 Expédition</h3>
+                  
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div className="bg-gray-50 rounded-lg p-4">
-                        <p className="text-xs text-gray-500 mb-1">Transporteur</p>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Transporteur</p>
                         <p className="font-medium text-lg">UPS</p>
                       </div>
                       <div className="bg-gray-50 rounded-lg p-4">
-                        <p className="text-xs text-gray-500 mb-1">N° de suivi</p>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">N° de suivi</p>
                         {devices[0]?.tracking_number ? (
                           <a href={`https://www.ups.com/track?tracknum=${devices[0].tracking_number}`} 
                              target="_blank" rel="noopener noreferrer"
-                             className="font-mono text-blue-600 hover:underline">
+                             className="font-mono text-blue-600 hover:underline text-lg">
                             {devices[0].tracking_number}
                           </a>
                         ) : <p className="text-gray-400">—</p>}
                       </div>
                       <div className="bg-gray-50 rounded-lg p-4">
-                        <p className="text-xs text-gray-500 mb-1">N° Bon de Livraison</p>
-                        <p className="font-mono font-medium">{devices[0]?.bl_number || '—'}</p>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">N° Bon de Livraison</p>
+                        <p className="font-mono font-medium text-lg">{devices[0]?.bl_number || '—'}</p>
                       </div>
                     </div>
                     <div className="space-y-4">
                       <div className="bg-gray-50 rounded-lg p-4">
-                        <p className="text-xs text-gray-500 mb-1">Date d'expédition</p>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Date d'expédition</p>
                         <p className="font-medium">{rma.shipped_at ? new Date(rma.shipped_at).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</p>
                       </div>
                       <div className="bg-gray-50 rounded-lg p-4">
-                        <p className="text-xs text-gray-500 mb-1">Adresse de livraison</p>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Adresse de livraison</p>
                         <div className="text-sm">
                           <p className="font-medium">{rma.companies?.name}</p>
                           <p>{rma.shipping_address?.street || rma.companies?.address}</p>
@@ -2075,52 +2199,6 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
-              
-              {/* Notes Tab */}
-              {archiveTab === 'notes' && (
-                <div className="space-y-4">
-                  <h4 className="font-bold text-gray-700 mb-3">Notes et commentaires</h4>
-                  
-                  {/* RMA Notes */}
-                  {rma.notes && (
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                      <p className="text-xs text-yellow-600 mb-1">Notes RMA</p>
-                      <p className="text-sm whitespace-pre-wrap">{rma.notes}</p>
-                    </div>
-                  )}
-                  
-                  {/* Internal Notes */}
-                  {rma.internal_notes && (
-                    <div className="bg-gray-50 border rounded-lg p-4">
-                      <p className="text-xs text-gray-500 mb-1">Notes internes</p>
-                      <p className="text-sm whitespace-pre-wrap">{rma.internal_notes}</p>
-                    </div>
-                  )}
-                  
-                  {/* Device-specific notes */}
-                  {devices.filter(d => d.service_findings || d.qc_notes).map(device => (
-                    <div key={device.id} className="border rounded-lg p-4">
-                      <p className="font-medium mb-2">{device.model_name} - {device.serial_number}</p>
-                      {device.service_findings && (
-                        <div className="mb-2">
-                          <p className="text-xs text-gray-500">Constatations service</p>
-                          <p className="text-sm">{device.service_findings}</p>
-                        </div>
-                      )}
-                      {device.qc_notes && (
-                        <div>
-                          <p className="text-xs text-purple-500">Notes QC</p>
-                          <p className="text-sm">{device.qc_notes}</p>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  
-                  {!rma.notes && !rma.internal_notes && !devices.some(d => d.service_findings || d.qc_notes) && (
-                    <p className="text-gray-400 text-center py-8">Aucune note pour ce RMA</p>
-                  )}
                 </div>
               )}
             </div>
