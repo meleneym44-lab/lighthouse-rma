@@ -1,7 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { jsPDF } from 'jspdf';
 
 // Expose supabase to window for debugging
 if (typeof window !== 'undefined') {
@@ -9,8 +8,21 @@ if (typeof window !== 'undefined') {
 }
 
 // ============================================
-// PDF GENERATION UTILITIES
+// PDF GENERATION UTILITIES (using html2canvas + jspdf from CDN)
 // ============================================
+
+// Load jsPDF dynamically from CDN
+const loadJsPDF = async () => {
+  if (window.jspdf) return window.jspdf.jsPDF;
+  
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    script.onload = () => resolve(window.jspdf.jsPDF);
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+};
 
 // Helper to add Lighthouse header to PDF
 const addPDFHeader = (doc, title, rmaNumber) => {
@@ -52,6 +64,7 @@ const addPDFFooter = (doc, pageNum, totalPages) => {
 
 // Generate Quote/Devis PDF
 const generateQuotePDF = async (rma, devices, businessSettings) => {
+  const jsPDF = await loadJsPDF();
   const doc = new jsPDF();
   const company = rma.companies || {};
   
@@ -161,6 +174,7 @@ const generateQuotePDF = async (rma, devices, businessSettings) => {
 
 // Generate Service Report PDF
 const generateServiceReportPDF = async (device, rma, technicianName, calType, receptionResult, findings, workCompleted, checklist) => {
+  const jsPDF = await loadJsPDF();
   const doc = new jsPDF();
   const company = rma.companies || {};
   
@@ -267,6 +281,7 @@ const generateServiceReportPDF = async (device, rma, technicianName, calType, re
 
 // Generate Bon de Livraison PDF
 const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings) => {
+  const jsPDF = await loadJsPDF();
   const doc = new jsPDF();
   const company = rma.companies || {};
   const address = shipment.address || {};
@@ -363,6 +378,7 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings)
 
 // Generate UPS Label PDF
 const generateUPSLabelPDF = async (rma, shipment) => {
+  const jsPDF = await loadJsPDF();
   const doc = new jsPDF();
   const address = shipment.address || {};
   
