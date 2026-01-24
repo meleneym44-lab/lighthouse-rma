@@ -2849,7 +2849,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
   const [shipping, setShipping] = useState({ 
     address_id: addresses.find(a => a.is_default)?.id || '',
     showNewForm: false,
-    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' }
+    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' },
+    parcels: 1 // Number of parcels/boxes for the shipment
   });
   const [saving, setSaving] = useState(false);
 
@@ -3020,6 +3021,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           problem_description: devices.map(d => `[${d.brand === 'other' ? d.brand_other : 'Lighthouse'}] ${d.model} - ${d.serial_number}\nService: ${d.service_type === 'other' ? d.service_other : d.service_type}\nAccessoires: ${d.accessories.join(', ') || 'Aucun'}\nNotes: ${d.notes}`).join('\n\n---\n\n'),
           urgency: 'normal',
           shipping_address_id: addressId,
+          parcels_count: shipping.parcels || 1,
           status: 'submitted',
           submitted_at: new Date().toISOString()
         })
@@ -3937,6 +3939,40 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
           </div>
         </div>
       )}
+
+      {/* Number of Parcels */}
+      <div className="mt-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
+        <label className="block text-sm font-bold text-[#1E3A5F] mb-2">
+          📦 Nombre de colis
+        </label>
+        <p className="text-sm text-gray-600 mb-3">
+          Indiquez le nombre de colis/boîtes dans lesquels vous enverrez vos appareils.
+        </p>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShipping({ ...shipping, parcels: Math.max(1, (shipping.parcels || 1) - 1) })}
+            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
+          >
+            −
+          </button>
+          <input
+            type="number"
+            min="1"
+            value={shipping.parcels || 1}
+            onChange={e => setShipping({ ...shipping, parcels: Math.max(1, parseInt(e.target.value) || 1) })}
+            className="w-20 px-3 py-2 text-center border border-gray-300 rounded-lg font-bold text-lg"
+          />
+          <button
+            type="button"
+            onClick={() => setShipping({ ...shipping, parcels: (shipping.parcels || 1) + 1 })}
+            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
+          >
+            +
+          </button>
+          <span className="text-gray-600 ml-2">colis</span>
+        </div>
+      </div>
 
       {/* Warning for address outside France Metropolitan */}
       {(isOutsideMetro || newAddressIsOutsideMetro) && (
