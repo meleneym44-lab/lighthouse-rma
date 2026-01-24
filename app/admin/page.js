@@ -69,7 +69,7 @@ export default function AdminPortal() {
 
   const loadData = useCallback(async (refreshSelectedRMAId = null) => {
     const { data: reqs } = await supabase.from('service_requests')
-      .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*), shipping_addresses(*)')
+      .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
       .order('created_at', { ascending: false });
     if (reqs) setRequests(reqs);
 
@@ -91,7 +91,7 @@ export default function AdminPortal() {
     if (refreshSelectedRMAId) {
       const { data: updatedRMA } = await supabase
         .from('service_requests')
-        .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*), shipping_addresses(*)')
+        .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
         .eq('id', refreshSelectedRMAId)
         .single();
       if (updatedRMA) setSelectedRMA(updatedRMA);
@@ -2844,22 +2844,12 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
   const [generatedBLs, setGeneratedBLs] = useState([]);
   const [labelsPrinted, setLabelsPrinted] = useState({});
   const [blsPrinted, setBlsPrinted] = useState({});
+  const [loading, setLoading] = useState(true);
   
-  // Get shipping address from RMA (linked via shipping_address_id)
-  const shippingAddress = rma.shipping_addresses;
-  
-  // Initialize shipments on mount
+  // Fetch shipping address on mount and initialize shipments
   useEffect(() => {
-    if (shipments.length === 0 && devices.length > 0) {
-      const address = shippingAddress ? {
-        company_name: shippingAddress.company_name || shippingAddress.label || rma.companies?.name,
-        attention: shippingAddress.attention || '',
-        address_line1: shippingAddress.address_line1 || '',
-        city: shippingAddress.city || '',
-        postal_code: shippingAddress.postal_code || '',
-        country: shippingAddress.country || 'France',
-        phone: shippingAddress.phone || ''
-      } : {
+    const initShipments = async () => {
+      let address = {
         company_name: rma.companies?.name || 'Client',
         attention: '',
         address_line1: rma.companies?.billing_address || '',
@@ -2869,6 +2859,27 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
         phone: ''
       };
       
+      // If RMA has a shipping_address_id, fetch it
+      if (rma.shipping_address_id) {
+        const { data: shippingAddr } = await supabase
+          .from('shipping_addresses')
+          .select('*')
+          .eq('id', rma.shipping_address_id)
+          .single();
+        
+        if (shippingAddr) {
+          address = {
+            company_name: shippingAddr.company_name || shippingAddr.label || rma.companies?.name,
+            attention: shippingAddr.attention || '',
+            address_line1: shippingAddr.address_line1 || '',
+            city: shippingAddr.city || '',
+            postal_code: shippingAddr.postal_code || '',
+            country: shippingAddr.country || 'France',
+            phone: shippingAddr.phone || ''
+          };
+        }
+      }
+      
       setShipments([{
         address,
         devices: devices,
@@ -2877,6 +2888,13 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
         trackingNumber: '',
         notes: ''
       }]);
+      setLoading(false);
+    };
+    
+    if (devices.length > 0) {
+      initShipments();
+    } else {
+      setLoading(false);
     }
   }, []);
   
@@ -2997,8 +3015,18 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
         
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
+          {/* Loading State */}
+          {loading && (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <div className="text-4xl mb-4">⏳</div>
+                <p className="text-gray-500">Chargement des informations...</p>
+              </div>
+            </div>
+          )}
+          
           {/* Step 1: Review */}
-          {step === 1 && shipments.map((shipment, idx) => (
+          {!loading && step === 1 && shipments.map((shipment, idx) => (
             <div key={idx} className="space-y-6">
               {/* Address Section */}
               <div className="bg-white border-2 border-gray-200 rounded-xl">
