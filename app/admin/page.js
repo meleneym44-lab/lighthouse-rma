@@ -3024,7 +3024,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     .client-label { font-size: 9pt; color: #666; text-transform: uppercase; font-weight: 600; margin-bottom: 5px; }
     .client-name { font-size: 12pt; font-weight: bold; margin-bottom: 5px; }
     table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-    th { background: rgba(51,51,51,0.25); color: #333; padding: 10px 12px; text-align: left; font-size: 10pt; font-weight: bold; border-bottom: 2px solid #333; }
+    th { background: rgba(51,51,51,0.35); color: #333; padding: 10px 12px; text-align: left; font-size: 10pt; font-weight: bold; border-bottom: 2px solid #333; }
     td { padding: 10px 12px; border-bottom: 1px solid #ddd; font-size: 10pt; background: rgba(255,255,255,0.9); }
     tr:nth-child(even) td { background: rgba(249,249,249,0.9); }
     .shipping-section { margin: 15px 0; }
@@ -3416,7 +3416,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                       {/* Table - semi-transparent header */}
                       <table style={{ width: '100%', borderCollapse: 'collapse', margin: '12px 0' }}>
                         <thead>
-                          <tr style={{ background: 'rgba(51,51,51,0.25)' }}>
+                          <tr style={{ background: 'rgba(51,51,51,0.35)' }}>
                             <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '50px', fontWeight: 'bold' }}>Qté</th>
                             <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', fontWeight: 'bold' }}>Désignation</th>
                             <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '120px', fontWeight: 'bold' }}>N° Série</th>
