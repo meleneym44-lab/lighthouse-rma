@@ -69,7 +69,7 @@ export default function AdminPortal() {
 
   const loadData = useCallback(async (refreshSelectedRMAId = null) => {
     const { data: reqs } = await supabase.from('service_requests')
-      .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
+      .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*), shipping_addresses(*)')
       .order('created_at', { ascending: false });
     if (reqs) setRequests(reqs);
 
@@ -91,7 +91,7 @@ export default function AdminPortal() {
     if (refreshSelectedRMAId) {
       const { data: updatedRMA } = await supabase
         .from('service_requests')
-        .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
+        .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*), shipping_addresses(*)')
         .eq('id', refreshSelectedRMAId)
         .single();
       if (updatedRMA) setSelectedRMA(updatedRMA);
@@ -2833,8 +2833,9 @@ function RequestDetailModal({ request, onClose, onCreateQuote }) {
   );
 }
 
+
 // ============================================
-// SHIPPING MODAL - Full shipping workflow
+// SHIPPING MODAL - Full shipping workflow v26
 // ============================================
 function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
   const [step, setStep] = useState(1);
@@ -2844,26 +2845,48 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
   const [labelsPrinted, setLabelsPrinted] = useState({});
   const [blsPrinted, setBlsPrinted] = useState({});
   
-  // Initialize shipments on mount (once)
+  // Get shipping address from RMA (linked via shipping_address_id)
+  const shippingAddress = rma.shipping_addresses;
+  
+  // Initialize shipments on mount
   useEffect(() => {
     if (shipments.length === 0 && devices.length > 0) {
-      // Simple grouping - all devices to default address
+      const address = shippingAddress ? {
+        company_name: shippingAddress.company_name || shippingAddress.label || rma.companies?.name,
+        attention: shippingAddress.attention || '',
+        address_line1: shippingAddress.address_line1 || '',
+        city: shippingAddress.city || '',
+        postal_code: shippingAddress.postal_code || '',
+        country: shippingAddress.country || 'France',
+        phone: shippingAddress.phone || ''
+      } : {
+        company_name: rma.companies?.name || 'Client',
+        attention: '',
+        address_line1: rma.companies?.billing_address || '',
+        city: rma.companies?.billing_city || '',
+        postal_code: rma.companies?.billing_postal_code || '',
+        country: 'France',
+        phone: ''
+      };
+      
       setShipments([{
-        address: {
-          company_name: rma.companies?.name || 'Client',
-          address_line1: rma.companies?.billing_address || '',
-          city: rma.companies?.billing_city || '',
-          postal_code: rma.companies?.billing_postal_code || '',
-          country: 'France',
-          attention: ''
-        },
+        address,
         devices: devices,
         parcels: rma.parcels_count || 1,
         weight: '2.0',
-        trackingNumber: ''
+        trackingNumber: '',
+        notes: ''
       }]);
     }
   }, []);
+  
+  const updateAddress = (index, field, value) => {
+    setShipments(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], address: { ...updated[index].address, [field]: value }};
+      return updated;
+    });
+  };
   
   const updateShipment = (index, field, value) => {
     setShipments(prev => {
@@ -2880,86 +2903,37 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
     return `BL-${rmaNum}-${dateStr}${shipments.length > 1 ? `-${index + 1}` : ''}`;
   };
   
-  const generateTrackingNumber = () => {
-    return `1Z999AA1${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`;
-  };
+  const generateTrackingNumber = () => `1Z999AA1${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`;
   
   const createUPSLabels = () => {
-    setShipments(prev => prev.map(s => ({
-      ...s,
-      trackingNumber: s.trackingNumber || generateTrackingNumber()
-    })));
+    setShipments(prev => prev.map(s => ({ ...s, trackingNumber: s.trackingNumber || generateTrackingNumber() })));
     setStep(2);
   };
   
-  const generateBLContent = (shipment, index) => {
-    return {
-      blNumber: generateBLNumber(index),
-      date: new Date().toLocaleDateString('fr-FR'),
-      rmaNumber: rma.request_number,
-      client: {
-        name: shipment.address.company_name,
-        attention: shipment.address.attention || '',
-        street: shipment.address.address_line1,
-        city: `${shipment.address.postal_code} ${shipment.address.city}`,
-        country: shipment.address.country || 'France'
-      },
-      devices: shipment.devices.map(d => ({
-        model: d.model_name,
-        serial: d.serial_number,
-        service: d.service_type === 'repair' ? 'Réparation' : 'Étalonnage'
-      })),
-      shipping: {
-        carrier: 'UPS',
-        tracking: shipment.trackingNumber,
-        parcels: shipment.parcels,
-        weight: shipment.weight
-      }
-    };
-  };
+  const generateBLContent = (shipment, index) => ({
+    blNumber: generateBLNumber(index),
+    date: new Date().toLocaleDateString('fr-FR'),
+    rmaNumber: rma.request_number,
+    client: { name: shipment.address.company_name, attention: shipment.address.attention, street: shipment.address.address_line1, city: `${shipment.address.postal_code} ${shipment.address.city}`, country: shipment.address.country || 'France' },
+    devices: shipment.devices.map(d => ({ model: d.model_name, serial: d.serial_number, service: d.service_type === 'repair' ? 'Réparation' : 'Étalonnage' })),
+    shipping: { carrier: 'UPS', tracking: shipment.trackingNumber, parcels: shipment.parcels, weight: shipment.weight }
+  });
   
   const printLabel = (index) => {
-    const shipment = shipments[index];
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      notify('Popup bloqué - autorisez les popups', 'error');
-      return;
-    }
-    printWindow.document.write(`
-      <html><head><title>UPS Label</title>
-      <style>body{font-family:Arial;padding:20px}.label{border:3px solid #351C15;padding:20px;max-width:400px;margin:0 auto}.ups{font-size:32px;font-weight:bold;color:#351C15;text-align:center}.tracking{font-size:18px;font-family:monospace;text-align:center;margin:20px 0;padding:10px;background:#f5f5f5}</style>
-      </head><body><div class="label"><div class="ups">UPS</div><div class="tracking">${shipment.trackingNumber}</div>
-      <p><strong>${shipment.address.company_name}</strong><br>${shipment.address.address_line1}<br>${shipment.address.postal_code} ${shipment.address.city}</p>
-      <p style="text-align:center">${shipment.parcels} colis - ${shipment.weight} kg</p></div>
-      <script>window.print()</script></body></html>
-    `);
-    printWindow.document.close();
+    const s = shipments[index];
+    const w = window.open('', '_blank');
+    if (!w) { notify('Popup bloqué', 'error'); return; }
+    w.document.write(`<html><head><title>UPS Label</title><style>body{font-family:Arial;padding:20px}.label{border:3px solid #351C15;padding:20px;max-width:400px;margin:0 auto}.ups{font-size:32px;font-weight:bold;color:#351C15;text-align:center}.tracking{font-size:18px;font-family:monospace;text-align:center;margin:20px 0;padding:10px;background:#f5f5f5}.addr{margin:15px 0;padding:15px;border:1px solid #ddd}</style></head><body><div class="label"><div class="ups">UPS</div><div class="tracking">${s.trackingNumber}</div><div class="addr"><small>DESTINATAIRE:</small><br><strong>${s.address.company_name}</strong><br>${s.address.attention ? 'À l att. de: ' + s.address.attention + '<br>' : ''}${s.address.address_line1}<br>${s.address.postal_code} ${s.address.city}<br>${s.address.country}</div><div class="addr"><small>EXPÉDITEUR:</small><br><strong>LIGHTHOUSE FRANCE</strong><br>1 Rue de la Pépinière<br>94000 Créteil<br>France</div><p style="text-align:center;font-size:20px;font-weight:bold">${s.parcels} COLIS - ${s.weight} KG</p><p style="text-align:center;color:#666">${rma.request_number}</p></div><script>window.print()</script></body></html>`);
+    w.document.close();
     setLabelsPrinted(prev => ({ ...prev, [index]: true }));
   };
   
   const printBL = (index) => {
-    const shipment = shipments[index];
-    const bl = generateBLContent(shipment, index);
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      notify('Popup bloqué - autorisez les popups', 'error');
-      return;
-    }
-    printWindow.document.write(`
-      <html><head><title>BL - ${bl.blNumber}</title>
-      <style>body{font-family:Arial;padding:40px;max-width:800px;margin:0 auto}table{width:100%;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #ddd;padding:10px;text-align:left}th{background:#f5f5f5}</style>
-      </head><body>
-      <div style="display:flex;justify-content:space-between"><div><div style="font-size:24px;font-weight:bold;color:#00A651">LIGHTHOUSE</div><div style="font-size:12px;color:#666">Worldwide Solutions</div></div><div style="text-align:right;font-size:12px;color:#666">LIGHTHOUSE FRANCE<br>1 Rue de la Pépinière<br>94000 Créteil</div></div>
-      <h2>BON DE LIVRAISON</h2><p style="color:#00A651;font-weight:bold">${bl.blNumber}</p>
-      <p>Créteil, le ${bl.date} | RMA: ${bl.rmaNumber}</p>
-      <div style="background:#f9f9f9;padding:20px;margin:20px 0"><strong>${bl.client.name}</strong><br>${bl.client.street}<br>${bl.client.city}</div>
-      <table><thead><tr><th>Qté</th><th>Désignation</th><th>N° Série</th><th>Service</th></tr></thead><tbody>
-      ${bl.devices.map(d => `<tr><td>1</td><td>LIGHTHOUSE ${d.model}</td><td>${d.serial}</td><td>${d.service}</td></tr>`).join('')}
-      </tbody></table>
-      <div style="background:#e8f5e9;padding:15px;border-radius:8px"><strong>Expédition:</strong> ${bl.shipping.carrier} | N° ${bl.shipping.tracking} | ${bl.shipping.parcels} colis | ${bl.shipping.weight} kg</div>
-      <script>window.print()</script></body></html>
-    `);
-    printWindow.document.close();
+    const s = shipments[index], bl = generateBLContent(s, index);
+    const w = window.open('', '_blank');
+    if (!w) { notify('Popup bloqué', 'error'); return; }
+    w.document.write(`<html><head><title>BL - ${bl.blNumber}</title><style>body{font-family:Arial;padding:40px;max-width:800px;margin:0 auto}table{width:100%;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #ddd;padding:10px;text-align:left}th{background:#f5f5f5}.sig{display:flex;justify-content:space-between;margin-top:60px}.sig-box{width:45%;border-top:1px solid #333;padding-top:10px;margin-top:60px}</style></head><body><div style="display:flex;justify-content:space-between"><div><div style="font-size:24px;font-weight:bold;color:#00A651">LIGHTHOUSE</div><div style="font-size:12px;color:#666">Worldwide Solutions</div></div><div style="text-align:right;font-size:12px;color:#666">LIGHTHOUSE FRANCE<br>1 Rue de la Pépinière<br>94000 Créteil</div></div><h2 style="margin-top:30px">BON DE LIVRAISON</h2><p style="color:#00A651;font-weight:bold;font-size:18px">${bl.blNumber}</p><p>Créteil, le ${bl.date} | RMA: ${bl.rmaNumber}</p><div style="background:#f9f9f9;padding:20px;margin:20px 0"><strong style="font-size:16px">${bl.client.name}</strong><br>${bl.client.attention ? 'À l attention de: ' + bl.client.attention + '<br>' : ''}${bl.client.street}<br>${bl.client.city}<br>${bl.client.country}</div><table><thead><tr><th>Qté</th><th>Désignation</th><th>N° Série</th><th>Service</th></tr></thead><tbody>${bl.devices.map(d => '<tr><td>1</td><td>Compteur de particules LIGHTHOUSE ' + d.model + '</td><td>' + d.serial + '</td><td>' + d.service + '</td></tr>').join('')}</tbody></table><div style="background:#e8f5e9;padding:15px;border-radius:8px;margin:20px 0"><strong>Informations d expédition</strong><br>Transporteur: ${bl.shipping.carrier}<br>N° de suivi: ${bl.shipping.tracking}<br>Nombre de colis: ${bl.shipping.parcels}<br>Poids: ${bl.shipping.weight} kg</div><div class="sig"><div class="sig-box"><strong>LIGHTHOUSE FRANCE</strong><br><small>Date et signature</small></div><div class="sig-box"><strong>${bl.client.name}</strong><br><small>Date et signature</small></div></div><p style="text-align:center;margin-top:40px;font-size:11px;color:#666">Merci de nous retourner une copie signée de ce bordereau.</p><script>window.print()</script></body></html>`);
+    w.document.close();
     setBlsPrinted(prev => ({ ...prev, [index]: true }));
   };
   
@@ -2967,34 +2941,29 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
     setSaving(true);
     try {
       const blData = [];
-      
       for (let i = 0; i < shipments.length; i++) {
-        const shipment = shipments[i];
-        const blContent = generateBLContent(shipment, i);
-        blData.push(blContent);
-        
-        for (const device of shipment.devices) {
-          await supabase.from('request_devices').update({
-            status: 'shipped',
-            shipped_at: new Date().toISOString(),
-            tracking_number: shipment.trackingNumber || null,
-            bl_number: blContent.blNumber
-          }).eq('id', device.id);
+        const s = shipments[i], bl = generateBLContent(s, i);
+        blData.push(bl);
+        for (const d of s.devices) {
+          await supabase.from('request_devices').update({ 
+            status: 'shipped', 
+            shipped_at: new Date().toISOString(), 
+            tracking_number: s.trackingNumber || null, 
+            bl_number: bl.blNumber 
+          }).eq('id', d.id);
         }
       }
-      
-      await supabase.from('service_requests').update({
-        status: 'shipped',
-        shipped_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+      await supabase.from('service_requests').update({ 
+        status: 'shipped', 
+        shipped_at: new Date().toISOString(), 
+        updated_at: new Date().toISOString() 
       }).eq('id', rma.id);
-      
       setGeneratedBLs(blData);
       setStep(4);
       notify('✅ Expédition complétée!');
       reload();
-    } catch (err) {
-      notify('Erreur: ' + (err.message || 'Erreur inconnue'), 'error');
+    } catch (err) { 
+      notify('Erreur: ' + (err.message || 'Erreur'), 'error'); 
     }
     setSaving(false);
   };
@@ -3028,99 +2997,253 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
         
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
+          {/* Step 1: Review */}
           {step === 1 && shipments.map((shipment, idx) => (
-            <div key={idx} className="bg-white border-2 border-gray-200 rounded-xl mb-4">
-              <div className="bg-gray-50 px-4 py-3 border-b">
-                <p className="font-bold">📦 Expédition vers: {shipment.address.company_name}</p>
-                <p className="text-sm text-gray-500">{shipment.address.postal_code} {shipment.address.city}</p>
+            <div key={idx} className="space-y-6">
+              {/* Address Section */}
+              <div className="bg-white border-2 border-gray-200 rounded-xl">
+                <div className="bg-amber-50 px-4 py-3 border-b">
+                  <h3 className="font-bold text-amber-800">📍 Adresse de livraison</h3>
+                </div>
+                <div className="p-4 grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Société *</label>
+                    <input type="text" value={shipment.address.company_name} onChange={e => updateAddress(idx, 'company_name', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">À l'attention de</label>
+                    <input type="text" value={shipment.address.attention} onChange={e => updateAddress(idx, 'attention', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Nom du contact" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Adresse *</label>
+                    <input type="text" value={shipment.address.address_line1} onChange={e => updateAddress(idx, 'address_line1', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Code postal *</label>
+                    <input type="text" value={shipment.address.postal_code} onChange={e => updateAddress(idx, 'postal_code', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Ville *</label>
+                    <input type="text" value={shipment.address.city} onChange={e => updateAddress(idx, 'city', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Pays</label>
+                    <input type="text" value={shipment.address.country} onChange={e => updateAddress(idx, 'country', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
+                    <input type="text" value={shipment.address.phone || ''} onChange={e => updateAddress(idx, 'phone', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="+33..." />
+                  </div>
+                </div>
               </div>
-              <div className="p-4">
-                <table className="w-full mb-4">
-                  <thead className="bg-gray-50"><tr><th className="px-3 py-2 text-left text-sm">Appareil</th><th className="px-3 py-2 text-left text-sm">N° Série</th><th className="px-3 py-2 text-left text-sm">Service</th></tr></thead>
-                  <tbody>
-                    {shipment.devices.map(d => (
-                      <tr key={d.id} className="border-t"><td className="px-3 py-2">{d.model_name}</td><td className="px-3 py-2 font-mono text-sm">{d.serial_number}</td><td className="px-3 py-2">{d.service_type === 'repair' ? '🔧 Rép.' : '🔬 Étal.'}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div className="grid grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium mb-1">Colis</label><input type="number" min="1" value={shipment.parcels} onChange={e => updateShipment(idx, 'parcels', parseInt(e.target.value) || 1)} className="w-full px-3 py-2 border rounded-lg" /></div>
-                  <div><label className="block text-sm font-medium mb-1">Poids (kg)</label><input type="text" value={shipment.weight} onChange={e => updateShipment(idx, 'weight', e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
+              
+              {/* Devices Section */}
+              <div className="bg-white border-2 border-gray-200 rounded-xl">
+                <div className="bg-blue-50 px-4 py-3 border-b">
+                  <h3 className="font-bold text-blue-800">📦 Appareils à expédier ({shipment.devices.length})</h3>
+                </div>
+                <div className="p-4">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">Appareil</th>
+                        <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">N° Série</th>
+                        <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">Service</th>
+                        <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">Certificat</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {shipment.devices.map(device => (
+                        <tr key={device.id}>
+                          <td className="px-3 py-3 font-medium">{device.model_name}</td>
+                          <td className="px-3 py-3 font-mono text-sm">{device.serial_number}</td>
+                          <td className="px-3 py-3">
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {device.service_type === 'repair' ? '🔧 Réparation' : '🔬 Étalonnage'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3">
+                            {device.calibration_certificate_url ? (
+                              <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm">📄 Voir</a>
+                            ) : <span className="text-gray-400 text-sm">—</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              
+              {/* Shipping Details */}
+              <div className="bg-white border-2 border-gray-200 rounded-xl">
+                <div className="bg-green-50 px-4 py-3 border-b">
+                  <h3 className="font-bold text-green-800">🚚 Détails d'expédition</h3>
+                </div>
+                <div className="p-4 grid md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de colis</label>
+                    <input type="number" min="1" value={shipment.parcels} onChange={e => updateShipment(idx, 'parcels', parseInt(e.target.value) || 1)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Poids total (kg)</label>
+                    <input type="text" value={shipment.weight} onChange={e => updateShipment(idx, 'weight', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">BL #</label>
+                    <input type="text" value={generateBLNumber(idx)} disabled className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 font-mono" />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Notes internes</label>
+                    <textarea value={shipment.notes || ''} onChange={e => updateShipment(idx, 'notes', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={2} placeholder="Notes pour l'expédition..." />
+                  </div>
+                </div>
+              </div>
+              
+              {/* RMA Summary */}
+              <div className="bg-gray-50 rounded-xl p-4">
+                <h4 className="font-bold text-gray-700 mb-2">📋 Récapitulatif RMA</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div><span className="text-gray-500">RMA:</span> <span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span></div>
+                  <div><span className="text-gray-500">Client:</span> <span className="font-medium">{rma.companies?.name}</span></div>
+                  <div><span className="text-gray-500">Appareils:</span> <span className="font-medium">{devices.length}</span></div>
+                  <div><span className="text-gray-500">Date:</span> <span className="font-medium">{new Date().toLocaleDateString('fr-FR')}</span></div>
                 </div>
               </div>
             </div>
           ))}
           
+          {/* Step 2: UPS Labels */}
           {step === 2 && shipments.map((shipment, idx) => (
             <div key={idx} className="bg-white border-2 rounded-xl p-6 mb-4">
               <div className="flex justify-between items-center mb-4">
-                <div><h3 className="font-bold">Expédition #{idx + 1}</h3><p className="text-gray-500">{shipment.address.city}</p></div>
-                <div className="text-right"><p className="font-mono text-lg font-bold text-amber-600">{shipment.trackingNumber}</p></div>
+                <div>
+                  <h3 className="font-bold text-lg">Expédition #{idx + 1}</h3>
+                  <p className="text-gray-500">{shipment.address.postal_code} {shipment.address.city}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-mono text-lg font-bold text-amber-600">{shipment.trackingNumber}</p>
+                  <a href={`https://www.ups.com/track?tracknum=${shipment.trackingNumber}`} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline">Suivre →</a>
+                </div>
               </div>
-              <div className="bg-gray-50 rounded-lg p-4 mb-4 text-center border-2 border-dashed">
-                <div className="text-3xl font-bold">UPS</div>
-                <div className="font-mono">{shipment.trackingNumber}</div>
-                <div className="text-sm text-gray-600 mt-2">{shipment.parcels} colis • {shipment.weight} kg</div>
+              <div className="bg-gray-50 rounded-lg p-6 mb-4 text-center border-2 border-dashed">
+                <div className="text-4xl font-bold text-[#351C15]">UPS</div>
+                <div className="font-mono text-xl my-3">{shipment.trackingNumber}</div>
+                <div className="text-gray-600">{shipment.address.company_name}<br/>{shipment.address.postal_code} {shipment.address.city}</div>
+                <div className="text-lg font-bold mt-3">{shipment.parcels} colis • {shipment.weight} kg</div>
               </div>
               <div className="flex justify-between items-center">
-                <span>{labelsPrinted[idx] ? '✓ Imprimé' : 'Non imprimé'}</span>
-                <button onClick={() => printLabel(idx)} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg">🖨️ Imprimer</button>
+                <span className={labelsPrinted[idx] ? 'text-green-600 font-medium' : 'text-gray-400'}>{labelsPrinted[idx] ? '✓ Imprimé' : 'Non imprimé'}</span>
+                <button onClick={() => printLabel(idx)} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium">🖨️ Imprimer Étiquette</button>
               </div>
             </div>
           ))}
           
+          {/* Step 3: BL Preview */}
           {step === 3 && shipments.map((shipment, idx) => {
             const bl = generateBLContent(shipment, idx);
             return (
               <div key={idx} className="bg-white border-2 rounded-xl overflow-hidden mb-4">
                 <div className="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
-                  <div><h3 className="font-bold">{bl.blNumber}</h3><p className="text-sm text-gray-500">{bl.devices.length} appareil(s)</p></div>
-                  <div className="flex items-center gap-2">
-                    <span>{blsPrinted[idx] ? '✓ Imprimé' : ''}</span>
-                    <button onClick={() => printBL(idx)} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg">🖨️ Imprimer BL</button>
+                  <div>
+                    <h3 className="font-bold">{bl.blNumber}</h3>
+                    <p className="text-sm text-gray-500">{bl.devices.length} appareil(s)</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={blsPrinted[idx] ? 'text-green-600 font-medium' : 'text-gray-400'}>{blsPrinted[idx] ? '✓ Imprimé' : ''}</span>
+                    <button onClick={() => setStep(1)} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm">✏️ Modifier</button>
+                    <button onClick={() => printBL(idx)} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">🖨️ Imprimer BL</button>
                   </div>
                 </div>
-                <div className="p-4">
-                  <div className="flex justify-between mb-4"><div className="text-xl font-bold text-[#00A651]">LIGHTHOUSE</div><div className="text-right text-sm text-gray-500">LIGHTHOUSE FRANCE<br/>94000 Créteil</div></div>
-                  <h3 className="font-bold">BON DE LIVRAISON - {bl.blNumber}</h3>
-                  <p className="text-sm text-gray-500 mb-4">{bl.date} | {bl.rmaNumber}</p>
-                  <div className="bg-gray-50 p-3 rounded mb-4"><strong>{bl.client.name}</strong><br/>{bl.client.street}<br/>{bl.client.city}</div>
-                  <table className="w-full text-sm mb-4"><thead className="bg-gray-100"><tr><th className="px-2 py-1 text-left border">Qté</th><th className="px-2 py-1 text-left border">Désignation</th><th className="px-2 py-1 text-left border">N° Série</th></tr></thead><tbody>
-                    {bl.devices.map((d, i) => <tr key={i}><td className="px-2 py-1 border">1</td><td className="px-2 py-1 border">LIGHTHOUSE {d.model}</td><td className="px-2 py-1 border font-mono">{d.serial}</td></tr>)}
-                  </tbody></table>
-                  <div className="bg-green-50 p-3 rounded text-sm"><strong>Expédition:</strong> {bl.shipping.carrier} • {bl.shipping.tracking} • {bl.shipping.parcels} colis</div>
+                <div className="p-6">
+                  <div className="flex justify-between mb-6">
+                    <div>
+                      <div className="text-2xl font-bold text-[#00A651]">LIGHTHOUSE</div>
+                      <div className="text-sm text-gray-500">Worldwide Solutions</div>
+                    </div>
+                    <div className="text-right text-sm text-gray-500">LIGHTHOUSE FRANCE<br/>1 Rue de la Pépinière<br/>94000 Créteil</div>
+                  </div>
+                  <h3 className="text-xl font-bold">BON DE LIVRAISON</h3>
+                  <p className="text-[#00A651] font-bold text-lg mb-4">{bl.blNumber}</p>
+                  <p className="text-sm text-gray-600 mb-4">Créteil, le {bl.date} | RMA: {bl.rmaNumber}</p>
+                  <div className="bg-gray-50 p-4 rounded-lg mb-4">
+                    <strong className="text-lg">{bl.client.name}</strong>
+                    {bl.client.attention && <><br/>À l'attention de: {bl.client.attention}</>}
+                    <br/>{bl.client.street}<br/>{bl.client.city}<br/>{bl.client.country}
+                  </div>
+                  <table className="w-full text-sm mb-4">
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th className="px-3 py-2 text-left border">Qté</th>
+                        <th className="px-3 py-2 text-left border">Désignation</th>
+                        <th className="px-3 py-2 text-left border">N° Série</th>
+                        <th className="px-3 py-2 text-left border">Service</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bl.devices.map((d, i) => (
+                        <tr key={i}>
+                          <td className="px-3 py-2 border">1</td>
+                          <td className="px-3 py-2 border">Compteur de particules LIGHTHOUSE {d.model}</td>
+                          <td className="px-3 py-2 border font-mono">{d.serial}</td>
+                          <td className="px-3 py-2 border">{d.service}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <strong>Expédition:</strong> {bl.shipping.carrier} • N° {bl.shipping.tracking} • {bl.shipping.parcels} colis • {bl.shipping.weight} kg
+                  </div>
                 </div>
               </div>
             );
           })}
           
+          {/* Step 4: Complete */}
           {step === 4 && (
             <div className="text-center py-8">
               <div className="text-6xl mb-4">✅</div>
               <h3 className="text-2xl font-bold text-green-700 mb-2">Expédition Terminée!</h3>
               <p className="text-gray-600 mb-6">Les appareils ont été marqués comme expédiés.</p>
-              {generatedBLs.map((bl, idx) => (
-                <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg mb-2 max-w-md mx-auto">
-                  <span className="font-mono font-medium">📄 {bl.blNumber}</span>
-                  <a href={`https://www.ups.com/track?tracknum=${bl.shipping.tracking}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm">{bl.shipping.tracking}</a>
-                </div>
-              ))}
+              <div className="bg-gray-50 rounded-xl p-6 max-w-md mx-auto">
+                {generatedBLs.map((bl, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-3 bg-white rounded-lg mb-2 border">
+                    <span className="font-mono font-medium">📄 {bl.blNumber}</span>
+                    <a href={`https://www.ups.com/track?tracknum=${bl.shipping.tracking}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm">{bl.shipping.tracking}</a>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
         
         {/* Footer */}
         <div className="px-6 py-4 border-t bg-gray-50 flex justify-between">
-          {step === 1 && <><button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-lg">Annuler</button><button onClick={createUPSLabels} className="px-6 py-2 bg-green-500 text-white rounded-lg">Créer Étiquettes →</button></>}
-          {step === 2 && <><button onClick={() => setStep(1)} className="px-4 py-2 bg-gray-200 rounded-lg">← Retour</button><button onClick={() => setStep(3)} className="px-6 py-2 bg-green-500 text-white rounded-lg">Continuer →</button></>}
-          {step === 3 && <><button onClick={() => setStep(2)} className="px-4 py-2 bg-gray-200 rounded-lg">← Retour</button><button onClick={completeShipping} disabled={saving} className="px-6 py-2 bg-green-500 text-white rounded-lg disabled:opacity-50">{saving ? '⏳...' : '✅ Finaliser'}</button></>}
-          {step === 4 && <button onClick={onClose} className="px-6 py-2 bg-green-500 text-white rounded-lg ml-auto">Fermer</button>}
+          {step === 1 && (
+            <>
+              <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Annuler</button>
+              <button onClick={createUPSLabels} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium">Créer Étiquettes UPS →</button>
+            </>
+          )}
+          {step === 2 && (
+            <>
+              <button onClick={() => setStep(1)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">← Retour</button>
+              <button onClick={() => setStep(3)} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium">Continuer vers BL →</button>
+            </>
+          )}
+          {step === 3 && (
+            <>
+              <button onClick={() => setStep(2)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">← Retour</button>
+              <button onClick={completeShipping} disabled={saving} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">{saving ? '⏳ Traitement...' : '✅ Finaliser Expédition'}</button>
+            </>
+          )}
+          {step === 4 && (
+            <button onClick={onClose} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium ml-auto">Fermer</button>
+          )}
         </div>
       </div>
     </div>
   );
 }
-
 function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, onSelectRMA }) {
   const [selectedClient, setSelectedClient] = useState(null);
   const [search, setSearch] = useState('');
