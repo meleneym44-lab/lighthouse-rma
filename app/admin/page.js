@@ -148,6 +148,8 @@ export default function AdminPortal() {
     c.status === 'bc_pending' || 
     c.status === 'quote_revision_requested'
   ).length;
+  // Open chats count
+  const openChatsCount = requests.filter(r => r.chat_status === 'open').length;
   
   // Dashboard filter state
   const [dashboardFilter, setDashboardFilter] = useState(null);
@@ -156,6 +158,7 @@ export default function AdminPortal() {
     { id: 'dashboard', label: 'Tableau de Bord', icon: '📊' },
     { id: 'requests', label: 'Demandes', icon: '📋', badge: totalBadge > 0 ? totalBadge : null },
     { id: 'clients', label: 'Clients', icon: '👥' },
+    { id: 'messages', label: 'Messages', icon: '💬', badge: openChatsCount > 0 ? openChatsCount : null },
     { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
     { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
     { id: 'settings', label: 'Paramètres', icon: '⚙️' },
@@ -249,6 +252,12 @@ export default function AdminPortal() {
                 setSelectedDeviceFromDashboard({ device, rma });
                 setSelectedRMA(rma);
               }}
+            />}
+            {activeSheet === 'messages' && <MessagesSheet 
+              requests={requests} 
+              notify={notify} 
+              reload={loadData}
+              onSelectRMA={setSelectedRMA}
             />}
             {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} />}
             {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} reloadMain={loadData} />}
@@ -1472,11 +1481,6 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   // State
   const [selectedDevice, setSelectedDevice] = useState(initialDevice || null);
   const [viewMode, setViewMode] = useState(initialDevice ? 'device' : 'overview'); // 'overview' or 'device'
-  const [messagesOpen, setMessagesOpen] = useState(false);
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [sendingMessage, setSendingMessage] = useState(false);
-  const [chatStatus, setChatStatus] = useState(rma.chat_status || 'closed'); // 'open' or 'closed'
   const [deviceTab, setDeviceTab] = useState('details'); // For device detail view tabs
   const [saving, setSaving] = useState(false);
   
@@ -1500,58 +1504,6 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   const company = rma.companies || {};
   const isRMAClosed = ['shipped', 'completed', 'delivered'].includes(rma.status);
   const isContractRMA = rma.is_contract_rma || rma.contract_id;
-  
-  // Load messages
-  useEffect(() => {
-    const loadMessages = async () => {
-      const { data } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('request_id', rma.id)
-        .order('created_at', { ascending: true });
-      if (data) setMessages(data);
-    };
-    loadMessages();
-  }, [rma.id]);
-  
-  // Send message function
-  const sendMessage = async () => {
-    if (!newMessage.trim() || sendingMessage) return;
-    
-    setSendingMessage(true);
-    try {
-      const { data, error } = await supabase
-        .from('messages')
-        .insert({
-          request_id: rma.id,
-          sender_id: profile?.id,
-          sender_type: 'admin',
-          sender_name: profile?.full_name || 'Admin',
-          content: newMessage.trim()
-        })
-        .select()
-        .single();
-      
-      if (error) throw error;
-      
-      setMessages(prev => [...prev, data]);
-      setNewMessage('');
-      
-      // Auto-open chat if it was closed
-      if (chatStatus === 'closed') {
-        await supabase.from('service_requests').update({ 
-          chat_status: 'open',
-          chat_opened_at: new Date().toISOString()
-        }).eq('id', rma.id);
-        setChatStatus('open');
-      }
-      
-      notify('✅ Message envoyé!');
-    } catch (err) {
-      notify('Erreur: ' + err.message, 'error');
-    }
-    setSendingMessage(false);
-  };
   
   // Progress steps for devices
   const calibrationSteps = [
@@ -1674,6 +1626,33 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     };
     return labels[status] || status;
   };
+
+  // ========== SERVICE MODAL (Full Page) ==========
+  if (showServiceModal) {
+    return (
+      <DeviceServiceModal
+        device={showServiceModal}
+        rma={rma}
+        onBack={() => { setShowServiceModal(null); reload(); }}
+        notify={notify}
+        reload={reload}
+        profile={profile}
+      />
+    );
+  }
+  
+  // ========== QC REVIEW MODAL (Full Page) ==========
+  if (showQCReview) {
+    return (
+      <QCReviewModal
+        device={showQCReview}
+        rma={rma}
+        onBack={() => { setShowQCReview(null); reload(); }}
+        notify={notify}
+        profile={profile}
+      />
+    );
+  }
 
   // ========== DEVICE DETAIL VIEW ==========
   if (viewMode === 'device' && selectedDevice) {
@@ -2010,28 +1989,6 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             )}
           </div>
         </div>
-        
-        {/* Modals for device view */}
-        {showServiceModal && (
-          <DeviceServiceModal
-            device={showServiceModal}
-            rma={rma}
-            onBack={() => { setShowServiceModal(null); reload(); }}
-            notify={notify}
-            reload={reload}
-            profile={profile}
-          />
-        )}
-        
-        {showQCReview && (
-          <QCReviewModal
-            device={showQCReview}
-            rma={rma}
-            onBack={() => { setShowQCReview(null); reload(); }}
-            notify={notify}
-            profile={profile}
-          />
-        )}
       </div>
     );
   }
@@ -2111,110 +2068,16 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         />
       )}
 
-      {/* Messages/Chat Section - Collapsible */}
-      <div className={`bg-white rounded-xl shadow-sm border overflow-hidden ${chatStatus === 'open' ? 'ring-2 ring-amber-400' : ''}`}>
-        <button 
-          onClick={() => setMessagesOpen(!messagesOpen)}
-          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-        >
+      {/* Chat Status Indicator - Link to Messages Sheet */}
+      {rma.chat_status === 'open' && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className={`w-8 h-8 rounded-full flex items-center justify-center ${chatStatus === 'open' ? 'bg-amber-100' : 'bg-purple-100'}`}>
-              💬
-            </span>
-            <span className="font-bold text-gray-800">Messages</span>
-            {messages.length > 0 && (
-              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs font-bold">{messages.length}</span>
-            )}
-            {chatStatus === 'open' && (
-              <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold flex items-center gap-1">
-                🔔 Chat Ouvert
-              </span>
-            )}
+            <span className="w-3 h-3 bg-amber-500 rounded-full animate-pulse"></span>
+            <span className="font-medium text-amber-800">💬 Chat ouvert avec le client</span>
           </div>
-          <span className="text-gray-400 text-xl">{messagesOpen ? '▼' : '▶'}</span>
-        </button>
-        
-        {messagesOpen && (
-          <div className="border-t">
-            {/* Chat Status Bar */}
-            <div className={`px-6 py-3 flex items-center justify-between ${chatStatus === 'open' ? 'bg-amber-50' : 'bg-gray-50'}`}>
-              <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${chatStatus === 'open' ? 'bg-amber-500 animate-pulse' : 'bg-gray-400'}`}></span>
-                <span className="text-sm font-medium text-gray-700">
-                  {chatStatus === 'open' ? 'Conversation ouverte - En attente de résolution' : 'Conversation fermée'}
-                </span>
-              </div>
-              <button
-                onClick={async () => {
-                  const newStatus = chatStatus === 'open' ? 'closed' : 'open';
-                  await supabase.from('service_requests').update({ 
-                    chat_status: newStatus,
-                    chat_opened_at: newStatus === 'open' ? new Date().toISOString() : rma.chat_opened_at,
-                    chat_closed_at: newStatus === 'closed' ? new Date().toISOString() : null
-                  }).eq('id', rma.id);
-                  setChatStatus(newStatus);
-                  notify(newStatus === 'open' ? '🔔 Chat ouvert - Vous recevrez des rappels' : '✅ Chat fermé');
-                }}
-                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                  chatStatus === 'open' 
-                    ? 'bg-green-500 hover:bg-green-600 text-white' 
-                    : 'bg-amber-500 hover:bg-amber-600 text-white'
-                }`}
-              >
-                {chatStatus === 'open' ? '✓ Fermer le chat' : '+ Ouvrir le chat'}
-              </button>
-            </div>
-            
-            {/* Messages List */}
-            <div className="px-6 py-4">
-              {messages.length === 0 ? (
-                <p className="text-gray-400 text-center py-6">Aucun message</p>
-              ) : (
-                <div className="space-y-3 max-h-80 overflow-y-auto mb-4">
-                  {messages.map(msg => (
-                    <div key={msg.id} className={`p-3 rounded-lg ${msg.sender_type === 'admin' ? 'bg-blue-50 ml-8' : 'bg-gray-100 mr-8'}`}>
-                      <div className="flex justify-between items-start mb-1">
-                        <span className="text-xs font-medium text-gray-600">
-                          {msg.sender_type === 'admin' ? '👤 ' + (msg.sender_name || 'Admin') : '🏢 Client'}
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          {new Date(msg.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{msg.content}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              {/* Message Input */}
-              <div className="flex gap-2">
-                <textarea
-                  value={newMessage}
-                  onChange={e => setNewMessage(e.target.value)}
-                  placeholder="Tapez votre message..."
-                  className="flex-1 px-4 py-2 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  rows={2}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      sendMessage();
-                    }
-                  }}
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={sendingMessage || !newMessage.trim()}
-                  className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed self-end"
-                >
-                  {sendingMessage ? '⏳' : '📤'} Envoyer
-                </button>
-              </div>
-              <p className="text-xs text-gray-400 mt-2">Appuyez sur Entrée pour envoyer, Shift+Entrée pour nouvelle ligne</p>
-            </div>
-          </div>
-        )}
-      </div>
+          <span className="text-sm text-amber-600">Voir l'onglet Messages pour répondre</span>
+        </div>
+      )}
 
       {/* Devices List */}
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
@@ -2291,27 +2154,6 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           notify={notify}
           reload={reload}
           alreadySent={!!rma.avenant_sent_at}
-        />
-      )}
-      
-      {showQCReview && (
-        <QCReviewModal
-          device={showQCReview}
-          rma={rma}
-          onBack={() => { setShowQCReview(null); reload(); }}
-          notify={notify}
-          profile={profile}
-        />
-      )}
-      
-      {showServiceModal && (
-        <DeviceServiceModal
-          device={showServiceModal}
-          rma={rma}
-          onBack={() => { setShowServiceModal(null); reload(); }}
-          notify={notify}
-          reload={reload}
-          profile={profile}
         />
       )}
     </div>
@@ -4014,6 +3856,281 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     </div>
   );
 }
+
+// ============================================
+// MESSAGES SHEET - All chats with clients
+// ============================================
+function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
+  const [selectedRMA, setSelectedRMA] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [filter, setFilter] = useState('open'); // 'open', 'closed', 'all'
+  const [profile, setProfile] = useState(null);
+  
+  // Load profile
+  useEffect(() => {
+    const loadProfile = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        if (data) setProfile(data);
+      }
+    };
+    loadProfile();
+  }, []);
+  
+  // Filter RMAs based on chat status
+  const filteredRMAs = requests.filter(r => {
+    if (filter === 'open') return r.chat_status === 'open';
+    if (filter === 'closed') return r.chat_status === 'closed' || !r.chat_status;
+    return true; // 'all'
+  }).sort((a, b) => {
+    // Open chats first, then by most recent message
+    if (a.chat_status === 'open' && b.chat_status !== 'open') return -1;
+    if (b.chat_status === 'open' && a.chat_status !== 'open') return 1;
+    return new Date(b.updated_at) - new Date(a.updated_at);
+  });
+  
+  // Load messages when RMA is selected
+  useEffect(() => {
+    if (!selectedRMA) {
+      setMessages([]);
+      return;
+    }
+    
+    const loadMessages = async () => {
+      const { data } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('request_id', selectedRMA.id)
+        .order('created_at', { ascending: true });
+      if (data) setMessages(data);
+    };
+    loadMessages();
+  }, [selectedRMA?.id]);
+  
+  // Send message
+  const sendMessage = async () => {
+    if (!newMessage.trim() || sendingMessage || !selectedRMA) return;
+    
+    setSendingMessage(true);
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
+          request_id: selectedRMA.id,
+          sender_id: profile?.id,
+          sender_type: 'admin',
+          sender_name: profile?.full_name || 'Admin',
+          content: newMessage.trim()
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      setMessages(prev => [...prev, data]);
+      setNewMessage('');
+      
+      // Auto-open chat if it was closed
+      if (selectedRMA.chat_status !== 'open') {
+        await supabase.from('service_requests').update({ 
+          chat_status: 'open',
+          chat_opened_at: new Date().toISOString()
+        }).eq('id', selectedRMA.id);
+        setSelectedRMA(prev => ({ ...prev, chat_status: 'open' }));
+      }
+      
+      notify('✅ Message envoyé!');
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSendingMessage(false);
+  };
+  
+  // Toggle chat status
+  const toggleChatStatus = async () => {
+    if (!selectedRMA) return;
+    
+    const newStatus = selectedRMA.chat_status === 'open' ? 'closed' : 'open';
+    await supabase.from('service_requests').update({ 
+      chat_status: newStatus,
+      chat_opened_at: newStatus === 'open' ? new Date().toISOString() : selectedRMA.chat_opened_at,
+      chat_closed_at: newStatus === 'closed' ? new Date().toISOString() : null
+    }).eq('id', selectedRMA.id);
+    
+    setSelectedRMA(prev => ({ ...prev, chat_status: newStatus }));
+    notify(newStatus === 'open' ? '🔔 Chat ouvert' : '✅ Chat fermé');
+    reload();
+  };
+  
+  return (
+    <div className="p-6">
+      <div className="flex gap-6 h-[calc(100vh-200px)]">
+        {/* Left Panel - RMA List */}
+        <div className="w-1/3 bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col">
+          <div className="p-4 border-b bg-gray-50">
+            <h2 className="font-bold text-gray-800 mb-3">💬 Conversations</h2>
+            <div className="flex gap-2">
+              {[
+                { id: 'open', label: 'Ouverts', count: requests.filter(r => r.chat_status === 'open').length },
+                { id: 'closed', label: 'Fermés' },
+                { id: 'all', label: 'Tous' }
+              ].map(f => (
+                <button
+                  key={f.id}
+                  onClick={() => setFilter(f.id)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
+                    filter === f.id 
+                      ? 'bg-blue-500 text-white' 
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {f.label}
+                  {f.count > 0 && (
+                    <span className={`px-1.5 py-0.5 rounded-full text-xs ${filter === f.id ? 'bg-white/20' : 'bg-amber-500 text-white'}`}>
+                      {f.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto divide-y">
+            {filteredRMAs.length === 0 ? (
+              <p className="text-gray-400 text-center py-8">Aucune conversation</p>
+            ) : (
+              filteredRMAs.map(rma => (
+                <div
+                  key={rma.id}
+                  onClick={() => setSelectedRMA(rma)}
+                  className={`p-4 cursor-pointer transition-colors ${
+                    selectedRMA?.id === rma.id 
+                      ? 'bg-blue-50 border-l-4 border-blue-500' 
+                      : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-1">
+                    <span className="font-mono font-bold text-sm text-[#00A651]">{rma.request_number}</span>
+                    {rma.chat_status === 'open' && (
+                      <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+                    )}
+                  </div>
+                  <p className="font-medium text-gray-800 text-sm truncate">{rma.companies?.name}</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {rma.request_devices?.length || 0} appareil(s) • {new Date(rma.updated_at).toLocaleDateString('fr-FR')}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+        
+        {/* Right Panel - Chat */}
+        <div className="flex-1 bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col">
+          {!selectedRMA ? (
+            <div className="flex-1 flex items-center justify-center text-gray-400">
+              <div className="text-center">
+                <p className="text-5xl mb-4">💬</p>
+                <p>Sélectionnez une conversation</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Chat Header */}
+              <div className={`p-4 border-b flex items-center justify-between ${selectedRMA.chat_status === 'open' ? 'bg-amber-50' : 'bg-gray-50'}`}>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-[#00A651]">{selectedRMA.request_number}</span>
+                    {selectedRMA.chat_status === 'open' && (
+                      <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">🔔 Ouvert</span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-600">{selectedRMA.companies?.name}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={toggleChatStatus}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                      selectedRMA.chat_status === 'open'
+                        ? 'bg-green-500 hover:bg-green-600 text-white'
+                        : 'bg-amber-500 hover:bg-amber-600 text-white'
+                    }`}
+                  >
+                    {selectedRMA.chat_status === 'open' ? '✓ Fermer' : '+ Ouvrir'}
+                  </button>
+                  <button
+                    onClick={() => onSelectRMA(selectedRMA)}
+                    className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium"
+                  >
+                    Voir RMA →
+                  </button>
+                </div>
+              </div>
+              
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {messages.length === 0 ? (
+                  <p className="text-gray-400 text-center py-8">Aucun message dans cette conversation</p>
+                ) : (
+                  messages.map(msg => (
+                    <div key={msg.id} className={`flex ${msg.sender_type === 'admin' ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[70%] p-3 rounded-lg ${
+                        msg.sender_type === 'admin' 
+                          ? 'bg-blue-500 text-white' 
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        <div className="flex justify-between items-start mb-1 gap-4">
+                          <span className={`text-xs font-medium ${msg.sender_type === 'admin' ? 'text-blue-100' : 'text-gray-500'}`}>
+                            {msg.sender_type === 'admin' ? (msg.sender_name || 'Admin') : 'Client'}
+                          </span>
+                          <span className={`text-xs ${msg.sender_type === 'admin' ? 'text-blue-200' : 'text-gray-400'}`}>
+                            {new Date(msg.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              
+              {/* Message Input */}
+              <div className="p-4 border-t bg-gray-50">
+                <div className="flex gap-2">
+                  <textarea
+                    value={newMessage}
+                    onChange={e => setNewMessage(e.target.value)}
+                    placeholder="Tapez votre message..."
+                    className="flex-1 px-4 py-2 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={2}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        sendMessage();
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={sendMessage}
+                    disabled={sendingMessage || !newMessage.trim()}
+                    className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed self-end"
+                  >
+                    {sendingMessage ? '⏳' : '📤'}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Entrée pour envoyer • Shift+Entrée pour nouvelle ligne</p>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, onSelectRMA, onSelectDevice }) {
   const [selectedClient, setSelectedClient] = useState(null);
   const [search, setSearch] = useState('');
