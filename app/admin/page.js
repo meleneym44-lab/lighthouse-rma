@@ -67,7 +67,7 @@ export default function AdminPortal() {
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  const loadData = useCallback(async (refreshSelectedRMA = false) => {
+  const loadData = useCallback(async (refreshSelectedRMAId = null) => {
     const { data: reqs } = await supabase.from('service_requests')
       .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
       .order('created_at', { ascending: false });
@@ -87,16 +87,16 @@ export default function AdminPortal() {
     const { data: contractsData } = await supabase.from('contracts').select('id, status').order('created_at', { ascending: false });
     if (contractsData) setContracts(contractsData);
     
-    // Only refresh selected RMA if explicitly requested AND we have one selected
-    if (refreshSelectedRMA && selectedRMA) {
+    // Only refresh selected RMA if ID is provided
+    if (refreshSelectedRMAId) {
       const { data: updatedRMA } = await supabase
         .from('service_requests')
         .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
-        .eq('id', selectedRMA.id)
+        .eq('id', refreshSelectedRMAId)
         .single();
       if (updatedRMA) setSelectedRMA(updatedRMA);
     }
-  }, [selectedRMA]);
+  }, []); // No dependencies - stable function
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -196,7 +196,7 @@ export default function AdminPortal() {
             rma={selectedRMA} 
             onBack={() => { setSelectedRMA(null); setSelectedDeviceFromDashboard(null); }} 
             notify={notify} 
-            reload={() => loadData(true)}
+            reload={() => loadData(selectedRMA?.id)}
             profile={profile}
             initialDevice={selectedDeviceFromDashboard?.device}
           />
@@ -2837,76 +2837,34 @@ function RequestDetailModal({ request, onClose, onCreateQuote }) {
 // SHIPPING MODAL - Full shipping workflow
 // ============================================
 function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
-  const [step, setStep] = useState(1); // 1: Review, 2: Confirm, 3: Complete
+  const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
-  const [shippingAddresses, setShippingAddresses] = useState([]);
-  const [shipments, setShipments] = useState([]); // Grouped by address
+  const [shipments, setShipments] = useState([]);
   const [generatedBLs, setGeneratedBLs] = useState([]);
+  const [labelsPrinted, setLabelsPrinted] = useState({});
+  const [blsPrinted, setBlsPrinted] = useState({});
   
-  // Fetch shipping addresses on mount
+  // Initialize shipments on mount (once)
   useEffect(() => {
-    const fetchAddresses = async () => {
-      // Get company shipping addresses
-      const { data: addresses } = await supabase
-        .from('shipping_addresses')
-        .select('*')
-        .eq('company_id', rma.company_id);
-      
-      if (addresses) {
-        setShippingAddresses(addresses);
-      }
-      
-      // Group devices by return address
-      groupDevicesByAddress(addresses || []);
-    };
-    fetchAddresses();
-  }, [rma.company_id]);
-  
-  // Group devices by their shipping address
-  const groupDevicesByAddress = (addresses) => {
-    const groups = {};
-    
-    devices.forEach(device => {
-      // Find the device's shipping address
-      let addressKey = 'default';
-      let address = null;
-      
-      if (device.shipping_address_id) {
-        address = addresses.find(a => a.id === device.shipping_address_id);
-        if (address) {
-          addressKey = device.shipping_address_id;
-        }
-      }
-      
-      // Use company billing address as default
-      if (!address) {
-        address = {
-          id: 'default',
-          name: rma.companies?.name || 'Client',
-          street: rma.companies?.billing_address || '',
+    if (shipments.length === 0 && devices.length > 0) {
+      // Simple grouping - all devices to default address
+      setShipments([{
+        address: {
+          company_name: rma.companies?.name || 'Client',
+          address_line1: rma.companies?.billing_address || '',
           city: rma.companies?.billing_city || '',
           postal_code: rma.companies?.billing_postal_code || '',
-          country: 'France'
-        };
-        addressKey = 'default';
-      }
-      
-      if (!groups[addressKey]) {
-        groups[addressKey] = {
-          address,
-          devices: [],
-          parcels: 1,
-          weight: '',
-          trackingNumber: ''
-        };
-      }
-      groups[addressKey].devices.push(device);
-    });
-    
-    setShipments(Object.values(groups));
-  };
+          country: 'France',
+          attention: ''
+        },
+        devices: devices,
+        parcels: rma.parcels_count || 1,
+        weight: '2.0',
+        trackingNumber: ''
+      }]);
+    }
+  }, []);
   
-  // Update shipment details
   const updateShipment = (index, field, value) => {
     setShipments(prev => {
       const updated = [...prev];
@@ -2915,20 +2873,6 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
     });
   };
   
-  // Calculate service price for a device
-  const getDevicePrice = (device) => {
-    // Base price from service type
-    const basePrice = device.service_type === 'repair' ? 245 : 390; // Example prices
-    
-    // Add additional work if any
-    const additionalTotal = (device.additional_work_items || []).reduce((sum, item) => {
-      return sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1);
-    }, 0);
-    
-    return basePrice + additionalTotal;
-  };
-  
-  // Generate BL number
   const generateBLNumber = (index) => {
     const rmaNum = rma.request_number?.replace('FR-', '') || '00000';
     const date = new Date();
@@ -2936,61 +2880,109 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
     return `BL-${rmaNum}-${dateStr}${shipments.length > 1 ? `-${index + 1}` : ''}`;
   };
   
-  // Generate BL PDF content (returns HTML for PDF generation)
+  const generateTrackingNumber = () => {
+    return `1Z999AA1${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`;
+  };
+  
+  const createUPSLabels = () => {
+    setShipments(prev => prev.map(s => ({
+      ...s,
+      trackingNumber: s.trackingNumber || generateTrackingNumber()
+    })));
+    setStep(2);
+  };
+  
   const generateBLContent = (shipment, index) => {
-    const blNumber = generateBLNumber(index);
-    const today = new Date().toLocaleDateString('fr-FR');
-    
     return {
-      blNumber,
-      date: today,
+      blNumber: generateBLNumber(index),
+      date: new Date().toLocaleDateString('fr-FR'),
+      rmaNumber: rma.request_number,
       client: {
-        name: shipment.address.name || rma.companies?.name,
-        street: shipment.address.street,
+        name: shipment.address.company_name,
+        attention: shipment.address.attention || '',
+        street: shipment.address.address_line1,
         city: `${shipment.address.postal_code} ${shipment.address.city}`,
         country: shipment.address.country || 'France'
       },
       devices: shipment.devices.map(d => ({
         model: d.model_name,
         serial: d.serial_number,
-        service: d.service_type === 'repair' ? 'Réparation' : 'Étalonnage',
-        price: getDevicePrice(d)
+        service: d.service_type === 'repair' ? 'Réparation' : 'Étalonnage'
       })),
       shipping: {
         carrier: 'UPS',
-        tracking: shipment.trackingNumber || '---',
+        tracking: shipment.trackingNumber,
         parcels: shipment.parcels,
-        weight: shipment.weight || '---'
-      },
-      total: shipment.devices.reduce((sum, d) => sum + getDevicePrice(d), 0) + 45 // +45€ shipping
+        weight: shipment.weight
+      }
     };
   };
   
-  // Complete shipping
+  const printLabel = (index) => {
+    const shipment = shipments[index];
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      notify('Popup bloqué - autorisez les popups', 'error');
+      return;
+    }
+    printWindow.document.write(`
+      <html><head><title>UPS Label</title>
+      <style>body{font-family:Arial;padding:20px}.label{border:3px solid #351C15;padding:20px;max-width:400px;margin:0 auto}.ups{font-size:32px;font-weight:bold;color:#351C15;text-align:center}.tracking{font-size:18px;font-family:monospace;text-align:center;margin:20px 0;padding:10px;background:#f5f5f5}</style>
+      </head><body><div class="label"><div class="ups">UPS</div><div class="tracking">${shipment.trackingNumber}</div>
+      <p><strong>${shipment.address.company_name}</strong><br>${shipment.address.address_line1}<br>${shipment.address.postal_code} ${shipment.address.city}</p>
+      <p style="text-align:center">${shipment.parcels} colis - ${shipment.weight} kg</p></div>
+      <script>window.print()</script></body></html>
+    `);
+    printWindow.document.close();
+    setLabelsPrinted(prev => ({ ...prev, [index]: true }));
+  };
+  
+  const printBL = (index) => {
+    const shipment = shipments[index];
+    const bl = generateBLContent(shipment, index);
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      notify('Popup bloqué - autorisez les popups', 'error');
+      return;
+    }
+    printWindow.document.write(`
+      <html><head><title>BL - ${bl.blNumber}</title>
+      <style>body{font-family:Arial;padding:40px;max-width:800px;margin:0 auto}table{width:100%;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #ddd;padding:10px;text-align:left}th{background:#f5f5f5}</style>
+      </head><body>
+      <div style="display:flex;justify-content:space-between"><div><div style="font-size:24px;font-weight:bold;color:#00A651">LIGHTHOUSE</div><div style="font-size:12px;color:#666">Worldwide Solutions</div></div><div style="text-align:right;font-size:12px;color:#666">LIGHTHOUSE FRANCE<br>1 Rue de la Pépinière<br>94000 Créteil</div></div>
+      <h2>BON DE LIVRAISON</h2><p style="color:#00A651;font-weight:bold">${bl.blNumber}</p>
+      <p>Créteil, le ${bl.date} | RMA: ${bl.rmaNumber}</p>
+      <div style="background:#f9f9f9;padding:20px;margin:20px 0"><strong>${bl.client.name}</strong><br>${bl.client.street}<br>${bl.client.city}</div>
+      <table><thead><tr><th>Qté</th><th>Désignation</th><th>N° Série</th><th>Service</th></tr></thead><tbody>
+      ${bl.devices.map(d => `<tr><td>1</td><td>LIGHTHOUSE ${d.model}</td><td>${d.serial}</td><td>${d.service}</td></tr>`).join('')}
+      </tbody></table>
+      <div style="background:#e8f5e9;padding:15px;border-radius:8px"><strong>Expédition:</strong> ${bl.shipping.carrier} | N° ${bl.shipping.tracking} | ${bl.shipping.parcels} colis | ${bl.shipping.weight} kg</div>
+      <script>window.print()</script></body></html>
+    `);
+    printWindow.document.close();
+    setBlsPrinted(prev => ({ ...prev, [index]: true }));
+  };
+  
   const completeShipping = async () => {
     setSaving(true);
     try {
       const blData = [];
       
-      // Generate BL for each shipment
       for (let i = 0; i < shipments.length; i++) {
         const shipment = shipments[i];
         const blContent = generateBLContent(shipment, i);
         blData.push(blContent);
         
-        // Update each device in this shipment
         for (const device of shipment.devices) {
           await supabase.from('request_devices').update({
             status: 'shipped',
             shipped_at: new Date().toISOString(),
             tracking_number: shipment.trackingNumber || null,
-            bl_number: blContent.blNumber,
-            bl_data: blContent
+            bl_number: blContent.blNumber
           }).eq('id', device.id);
         }
       }
       
-      // Update RMA status
       await supabase.from('service_requests').update({
         status: 'shipped',
         shipped_at: new Date().toISOString(),
@@ -2998,14 +2990,16 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
       }).eq('id', rma.id);
       
       setGeneratedBLs(blData);
-      setStep(3);
-      notify('✅ Expédition complétée! BL générés.');
+      setStep(4);
+      notify('✅ Expédition complétée!');
       reload();
     } catch (err) {
-      notify('Erreur: ' + err.message, 'error');
+      notify('Erreur: ' + (err.message || 'Erreur inconnue'), 'error');
     }
     setSaving(false);
   };
+  
+  const stepLabels = ['Vérification', 'Étiquette UPS', 'Bon de Livraison', 'Terminé'];
   
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
@@ -3015,24 +3009,18 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
           <div className="flex justify-between items-center">
             <div>
               <h2 className="text-xl font-bold">🚚 Expédition - {rma.request_number}</h2>
-              <p className="text-green-100 text-sm">{devices.length} appareil(s) à expédier</p>
+              <p className="text-green-100 text-sm">{devices.length} appareil(s)</p>
             </div>
             <button onClick={onClose} className="text-white/70 hover:text-white text-2xl">&times;</button>
           </div>
-          
-          {/* Progress Steps */}
-          <div className="flex items-center gap-2 mt-4">
-            {['Vérification', 'Confirmation', 'Terminé'].map((label, idx) => (
-              <div key={idx} className="flex items-center">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                  step > idx + 1 ? 'bg-white text-green-600' : 
-                  step === idx + 1 ? 'bg-white text-green-600 ring-2 ring-white' : 
-                  'bg-green-500 text-green-200'
-                }`}>
+          <div className="flex items-center gap-1 mt-4">
+            {stepLabels.map((label, idx) => (
+              <div key={idx} className="flex items-center flex-1">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${step > idx + 1 ? 'bg-white text-green-600' : step === idx + 1 ? 'bg-white text-green-600' : 'bg-green-500 text-green-200'}`}>
                   {step > idx + 1 ? '✓' : idx + 1}
                 </div>
-                <span className={`ml-2 text-sm ${step === idx + 1 ? 'text-white font-medium' : 'text-green-200'}`}>{label}</span>
-                {idx < 2 && <div className="w-8 h-0.5 bg-green-500 mx-2" />}
+                <span className={`ml-2 text-xs hidden sm:inline ${step === idx + 1 ? 'text-white font-medium' : 'text-green-200'}`}>{label}</span>
+                {idx < 3 && <div className="flex-1 h-0.5 bg-green-500 mx-2" />}
               </div>
             ))}
           </div>
@@ -3040,240 +3028,93 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
         
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* Step 1: Review Shipments */}
-          {step === 1 && (
-            <div className="space-y-6">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-blue-800">
-                  <strong>📦 {shipments.length} expédition(s)</strong> - Les appareils sont groupés par adresse de retour.
-                </p>
+          {step === 1 && shipments.map((shipment, idx) => (
+            <div key={idx} className="bg-white border-2 border-gray-200 rounded-xl mb-4">
+              <div className="bg-gray-50 px-4 py-3 border-b">
+                <p className="font-bold">📦 Expédition vers: {shipment.address.company_name}</p>
+                <p className="text-sm text-gray-500">{shipment.address.postal_code} {shipment.address.city}</p>
               </div>
-              
-              {shipments.map((shipment, idx) => (
-                <div key={idx} className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden">
-                  {/* Shipment Header */}
-                  <div className="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <span className="w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center font-bold">
-                        {idx + 1}
-                      </span>
-                      <div>
-                        <p className="font-bold text-gray-800">Expédition #{idx + 1}</p>
-                        <p className="text-sm text-gray-500">{shipment.devices.length} appareil(s)</p>
-                      </div>
-                    </div>
-                    <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
-                      BL: {generateBLNumber(idx)}
-                    </span>
-                  </div>
-                  
-                  {/* Address */}
-                  <div className="p-4 border-b bg-amber-50">
-                    <div className="flex items-start gap-3">
-                      <span className="text-xl">📍</span>
-                      <div>
-                        <p className="font-bold text-gray-800">{shipment.address.name}</p>
-                        <p className="text-gray-600">{shipment.address.street}</p>
-                        <p className="text-gray-600">{shipment.address.postal_code} {shipment.address.city}</p>
-                        <p className="text-gray-500">{shipment.address.country || 'France'}</p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Devices Table */}
-                  <div className="p-4">
-                    <table className="w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">Appareil</th>
-                          <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">N° Série</th>
-                          <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">Service</th>
-                          <th className="px-3 py-2 text-right text-sm font-bold text-gray-600">Prix HT</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {shipment.devices.map(device => (
-                          <tr key={device.id}>
-                            <td className="px-3 py-2 font-medium">{device.model_name}</td>
-                            <td className="px-3 py-2 font-mono text-sm text-gray-600">{device.serial_number}</td>
-                            <td className="px-3 py-2">
-                              <span className={`px-2 py-0.5 rounded text-xs ${device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                                {device.service_type === 'repair' ? '🔧 Réparation' : '🔬 Étalonnage'}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-right font-medium">{getDevicePrice(device).toFixed(2)} €</td>
-                          </tr>
-                        ))}
-                        <tr className="bg-gray-50">
-                          <td colSpan={3} className="px-3 py-2 text-right font-medium text-gray-600">Frais de port</td>
-                          <td className="px-3 py-2 text-right font-medium">45.00 €</td>
-                        </tr>
-                        <tr className="bg-green-50">
-                          <td colSpan={3} className="px-3 py-2 text-right font-bold text-gray-800">Total HT</td>
-                          <td className="px-3 py-2 text-right font-bold text-green-700">
-                            {(shipment.devices.reduce((sum, d) => sum + getDevicePrice(d), 0) + 45).toFixed(2)} €
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  
-                  {/* Shipping Details */}
-                  <div className="px-4 pb-4 grid grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de colis</label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={shipment.parcels}
-                        onChange={e => updateShipment(idx, 'parcels', parseInt(e.target.value) || 1)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Poids (kg)</label>
-                      <input
-                        type="text"
-                        placeholder="ex: 2.5"
-                        value={shipment.weight}
-                        onChange={e => updateShipment(idx, 'weight', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">N° Suivi (optionnel)</label>
-                      <input
-                        type="text"
-                        placeholder="1Z999AA10123456784"
-                        value={shipment.trackingNumber}
-                        onChange={e => updateShipment(idx, 'trackingNumber', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-sm"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          
-          {/* Step 2: Confirm */}
-          {step === 2 && (
-            <div className="space-y-6">
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <p className="text-amber-800 font-medium">
-                  ⚠️ Veuillez vérifier les informations avant de confirmer l'expédition.
-                </p>
-              </div>
-              
-              {/* Summary */}
-              <div className="bg-white border rounded-xl p-6">
-                <h3 className="text-lg font-bold text-gray-800 mb-4">📋 Récapitulatif</h3>
-                
-                {shipments.map((shipment, idx) => (
-                  <div key={idx} className="mb-4 p-4 bg-gray-50 rounded-lg">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <p className="font-bold">Expédition #{idx + 1} - {generateBLNumber(idx)}</p>
-                        <p className="text-sm text-gray-600">{shipment.address.name}</p>
-                        <p className="text-sm text-gray-500">{shipment.address.postal_code} {shipment.address.city}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-green-700">
-                          {(shipment.devices.reduce((sum, d) => sum + getDevicePrice(d), 0) + 45).toFixed(2)} €
-                        </p>
-                        <p className="text-sm text-gray-500">{shipment.devices.length} appareil(s), {shipment.parcels} colis</p>
-                      </div>
-                    </div>
-                    <div className="text-sm text-gray-600">
-                      {shipment.devices.map(d => d.model_name).join(', ')}
-                    </div>
-                  </div>
-                ))}
-                
-                <div className="border-t pt-4 mt-4">
-                  <div className="flex justify-between items-center text-lg">
-                    <span className="font-bold">Total général</span>
-                    <span className="font-bold text-green-700">
-                      {shipments.reduce((total, s) => 
-                        total + s.devices.reduce((sum, d) => sum + getDevicePrice(d), 0) + 45
-                      , 0).toFixed(2)} €
-                    </span>
-                  </div>
+              <div className="p-4">
+                <table className="w-full mb-4">
+                  <thead className="bg-gray-50"><tr><th className="px-3 py-2 text-left text-sm">Appareil</th><th className="px-3 py-2 text-left text-sm">N° Série</th><th className="px-3 py-2 text-left text-sm">Service</th></tr></thead>
+                  <tbody>
+                    {shipment.devices.map(d => (
+                      <tr key={d.id} className="border-t"><td className="px-3 py-2">{d.model_name}</td><td className="px-3 py-2 font-mono text-sm">{d.serial_number}</td><td className="px-3 py-2">{d.service_type === 'repair' ? '🔧 Rép.' : '🔬 Étal.'}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="block text-sm font-medium mb-1">Colis</label><input type="number" min="1" value={shipment.parcels} onChange={e => updateShipment(idx, 'parcels', parseInt(e.target.value) || 1)} className="w-full px-3 py-2 border rounded-lg" /></div>
+                  <div><label className="block text-sm font-medium mb-1">Poids (kg)</label><input type="text" value={shipment.weight} onChange={e => updateShipment(idx, 'weight', e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
                 </div>
               </div>
-              
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-blue-800 text-sm">
-                  <strong>📄 Documents générés:</strong> Un Bon de Livraison (BL) sera créé pour chaque expédition et sauvegardé dans le dossier RMA.
-                </p>
+            </div>
+          ))}
+          
+          {step === 2 && shipments.map((shipment, idx) => (
+            <div key={idx} className="bg-white border-2 rounded-xl p-6 mb-4">
+              <div className="flex justify-between items-center mb-4">
+                <div><h3 className="font-bold">Expédition #{idx + 1}</h3><p className="text-gray-500">{shipment.address.city}</p></div>
+                <div className="text-right"><p className="font-mono text-lg font-bold text-amber-600">{shipment.trackingNumber}</p></div>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4 mb-4 text-center border-2 border-dashed">
+                <div className="text-3xl font-bold">UPS</div>
+                <div className="font-mono">{shipment.trackingNumber}</div>
+                <div className="text-sm text-gray-600 mt-2">{shipment.parcels} colis • {shipment.weight} kg</div>
+              </div>
+              <div className="flex justify-between items-center">
+                <span>{labelsPrinted[idx] ? '✓ Imprimé' : 'Non imprimé'}</span>
+                <button onClick={() => printLabel(idx)} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg">🖨️ Imprimer</button>
               </div>
             </div>
-          )}
+          ))}
           
-          {/* Step 3: Complete */}
-          {step === 3 && (
+          {step === 3 && shipments.map((shipment, idx) => {
+            const bl = generateBLContent(shipment, idx);
+            return (
+              <div key={idx} className="bg-white border-2 rounded-xl overflow-hidden mb-4">
+                <div className="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
+                  <div><h3 className="font-bold">{bl.blNumber}</h3><p className="text-sm text-gray-500">{bl.devices.length} appareil(s)</p></div>
+                  <div className="flex items-center gap-2">
+                    <span>{blsPrinted[idx] ? '✓ Imprimé' : ''}</span>
+                    <button onClick={() => printBL(idx)} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg">🖨️ Imprimer BL</button>
+                  </div>
+                </div>
+                <div className="p-4">
+                  <div className="flex justify-between mb-4"><div className="text-xl font-bold text-[#00A651]">LIGHTHOUSE</div><div className="text-right text-sm text-gray-500">LIGHTHOUSE FRANCE<br/>94000 Créteil</div></div>
+                  <h3 className="font-bold">BON DE LIVRAISON - {bl.blNumber}</h3>
+                  <p className="text-sm text-gray-500 mb-4">{bl.date} | {bl.rmaNumber}</p>
+                  <div className="bg-gray-50 p-3 rounded mb-4"><strong>{bl.client.name}</strong><br/>{bl.client.street}<br/>{bl.client.city}</div>
+                  <table className="w-full text-sm mb-4"><thead className="bg-gray-100"><tr><th className="px-2 py-1 text-left border">Qté</th><th className="px-2 py-1 text-left border">Désignation</th><th className="px-2 py-1 text-left border">N° Série</th></tr></thead><tbody>
+                    {bl.devices.map((d, i) => <tr key={i}><td className="px-2 py-1 border">1</td><td className="px-2 py-1 border">LIGHTHOUSE {d.model}</td><td className="px-2 py-1 border font-mono">{d.serial}</td></tr>)}
+                  </tbody></table>
+                  <div className="bg-green-50 p-3 rounded text-sm"><strong>Expédition:</strong> {bl.shipping.carrier} • {bl.shipping.tracking} • {bl.shipping.parcels} colis</div>
+                </div>
+              </div>
+            );
+          })}
+          
+          {step === 4 && (
             <div className="text-center py-8">
               <div className="text-6xl mb-4">✅</div>
               <h3 className="text-2xl font-bold text-green-700 mb-2">Expédition Terminée!</h3>
-              <p className="text-gray-600 mb-6">Les appareils ont été marqués comme expédiés et les BL ont été générés.</p>
-              
-              <div className="bg-gray-50 rounded-xl p-6 max-w-md mx-auto">
-                <h4 className="font-bold text-gray-800 mb-3">Documents générés:</h4>
-                {generatedBLs.map((bl, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 bg-white rounded-lg mb-2 border">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">📄</span>
-                      <span className="font-mono font-medium">{bl.blNumber}</span>
-                    </div>
-                    <span className="text-sm text-gray-500">{bl.devices.length} appareil(s)</span>
-                  </div>
-                ))}
-              </div>
-              
-              <p className="text-sm text-gray-500 mt-6">
-                Les BL sont disponibles dans l'onglet Documents du RMA.
-              </p>
+              <p className="text-gray-600 mb-6">Les appareils ont été marqués comme expédiés.</p>
+              {generatedBLs.map((bl, idx) => (
+                <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg mb-2 max-w-md mx-auto">
+                  <span className="font-mono font-medium">📄 {bl.blNumber}</span>
+                  <a href={`https://www.ups.com/track?tracknum=${bl.shipping.tracking}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm">{bl.shipping.tracking}</a>
+                </div>
+              ))}
             </div>
           )}
         </div>
         
         {/* Footer */}
         <div className="px-6 py-4 border-t bg-gray-50 flex justify-between">
-          {step === 1 && (
-            <>
-              <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
-                Annuler
-              </button>
-              <button 
-                onClick={() => setStep(2)}
-                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
-              >
-                Continuer →
-              </button>
-            </>
-          )}
-          {step === 2 && (
-            <>
-              <button onClick={() => setStep(1)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
-                ← Retour
-              </button>
-              <button 
-                onClick={completeShipping}
-                disabled={saving}
-                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50"
-              >
-                {saving ? '⏳ Traitement...' : '✅ Confirmer Expédition'}
-              </button>
-            </>
-          )}
-          {step === 3 && (
-            <button 
-              onClick={onClose}
-              className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium ml-auto"
-            >
-              Fermer
-            </button>
-          )}
+          {step === 1 && <><button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-lg">Annuler</button><button onClick={createUPSLabels} className="px-6 py-2 bg-green-500 text-white rounded-lg">Créer Étiquettes →</button></>}
+          {step === 2 && <><button onClick={() => setStep(1)} className="px-4 py-2 bg-gray-200 rounded-lg">← Retour</button><button onClick={() => setStep(3)} className="px-6 py-2 bg-green-500 text-white rounded-lg">Continuer →</button></>}
+          {step === 3 && <><button onClick={() => setStep(2)} className="px-4 py-2 bg-gray-200 rounded-lg">← Retour</button><button onClick={completeShipping} disabled={saving} className="px-6 py-2 bg-green-500 text-white rounded-lg disabled:opacity-50">{saving ? '⏳...' : '✅ Finaliser'}</button></>}
+          {step === 4 && <button onClick={onClose} className="px-6 py-2 bg-green-500 text-white rounded-lg ml-auto">Fermer</button>}
         </div>
       </div>
     </div>
