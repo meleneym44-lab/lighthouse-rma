@@ -169,6 +169,146 @@ const generateQuotePDF = async (rma, devices, businessSettings) => {
   }
   y += 8;
 
+  // ===== SERVICE DESCRIPTION BLOCKS =====
+  // Determine what service types are needed based on devices
+  const calibrationTypes = new Set();
+  let hasRepair = false;
+  devices.forEach(d => {
+    const svcType = d.service_type || d.serviceType || 'calibration';
+    const devType = d.device_type || d.deviceType || 'particle_counter';
+    if (svcType.includes('calibration') || svcType === 'cal_repair') {
+      calibrationTypes.add(devType);
+    }
+    if (svcType.includes('repair') || svcType === 'cal_repair') {
+      hasRepair = true;
+    }
+  });
+  if (calibrationTypes.size === 0) calibrationTypes.add('particle_counter');
+
+  // Service descriptions data
+  const CAL_DATA = {
+    particle_counter: {
+      title: "Etalonnage Compteur de Particules Aeroportees",
+      prestations: [
+        "Verification des fonctionnalites du compteur",
+        "Verification et reglage du debit",
+        "Verification de la cellule de mesure",
+        "Controle et reglage des seuils de mesures granulometrique a l'aide de spheres de latex calibrees et certifiees",
+        "Verification en nombre par comparaison a un etalon etalonne selon la norme ISO 17025, conformement a la norme ISO 21501-4",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    bio_collector: {
+      title: "Etalonnage Bio Collecteur",
+      prestations: [
+        "Verification des fonctionnalites de l'appareil",
+        "Verification et reglage du debit",
+        "Verification de la cellule d'impaction",
+        "Controle des parametres de collecte",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    liquid_counter: {
+      title: "Etalonnage Compteur de Particules en Milieu Liquide",
+      prestations: [
+        "Verification des fonctionnalites du compteur",
+        "Verification et reglage du debit",
+        "Verification de la cellule de mesure optique",
+        "Controle et reglage des seuils de mesures granulometrique",
+        "Verification en nombre par comparaison a un etalon",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    other: {
+      title: "Etalonnage Equipement",
+      prestations: [
+        "Verification des fonctionnalites de l'appareil",
+        "Etalonnage selon les specifications du fabricant",
+        "Tests de fonctionnement",
+        "Fourniture d'un rapport de test"
+      ]
+    }
+  };
+
+  const REPAIR_DATA = {
+    title: "Reparation",
+    prestations: [
+      "Diagnostic complet de l'appareil",
+      "Identification des composants defectueux",
+      "Remplacement des pieces defectueuses (pieces facturees en sus)",
+      "Tests de fonctionnement complets",
+      "Verification d'etalonnage post-reparation si applicable"
+    ]
+  };
+
+  const DISCLAIMERS = [
+    "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables.",
+    "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses et necessitent un remplacement.",
+    "Les mesures stockees dans les appareils seront eventuellement perdues lors des operations de maintenance.",
+    "Les equipements envoyes devront etre decontamines de toutes substances chimiques, bacteriennes ou radioactives."
+  ];
+
+  // Draw service blocks
+  const drawServiceBlock = (data, color) => {
+    const lineH = 5;
+    let lines = [];
+    data.prestations.forEach(p => {
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
+      wrapped.forEach(l => lines.push(l));
+    });
+    const blockH = 12 + (lines.length * lineH);
+    checkPageBreak(blockH);
+    
+    pdf.setDrawColor(...color);
+    pdf.setLineWidth(1);
+    pdf.line(margin, y, margin, y + blockH - 3);
+    
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(data.title, margin + 5, y + 6);
+    y += 10;
+    
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    data.prestations.forEach(p => {
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
+      wrapped.forEach((line, i) => {
+        if (i === 0) pdf.text('-', margin + 5, y);
+        pdf.text(line, margin + 9, y);
+        y += lineH;
+      });
+    });
+    y += 3;
+  };
+
+  // Draw calibration blocks (blue)
+  calibrationTypes.forEach(type => {
+    const data = CAL_DATA[type] || CAL_DATA.particle_counter;
+    drawServiceBlock(data, [59, 130, 246]);
+  });
+  
+  // Draw repair block (orange) if needed
+  if (hasRepair) {
+    drawServiceBlock(REPAIR_DATA, [249, 115, 22]);
+  }
+
+  // ===== CONDITIONS/DISCLAIMERS =====
+  checkPageBreak(25);
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS', margin, y);
+  y += 4;
+  pdf.setFontSize(8);
+  pdf.setTextColor(...gray);
+  DISCLAIMERS.forEach(d => {
+    pdf.text('- ' + d, margin, y);
+    y += 4;
+  });
+  y += 5;
+
   // ===== PRICING TABLE =====
   const rowH = 8;
   
