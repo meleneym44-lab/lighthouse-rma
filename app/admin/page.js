@@ -6157,7 +6157,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
       {step === 1 && (
         <div className="space-y-4">
           <div className="bg-gray-400 p-8 min-h-full flex justify-center">
-            <div className="bg-white shadow-2xl w-full max-w-3xl relative" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '800px', display: 'flex', flexDirection: 'column' }}>
+            <div id="qc-report-preview" className="bg-white shadow-2xl w-full max-w-3xl relative" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '800px', display: 'flex', flexDirection: 'column' }}>
               
               {/* Logo */}
               <div className="mb-8">
@@ -6269,6 +6269,187 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
             <button onClick={() => setStep(2)} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
               Rapport OK → Voir Certificat
             </button>
+          </div>
+          
+          {/* PDF TEST BUTTONS - TEMPORARY */}
+          <div className="bg-yellow-50 border-2 border-yellow-400 rounded-xl p-4">
+            <p className="font-bold text-yellow-800 mb-3">🧪 PDF Test - Click to download different methods:</p>
+            <div className="flex flex-wrap gap-2">
+              <button 
+                onClick={async () => {
+                  try {
+                    // Method 2: html2canvas + jsPDF
+                    const element = document.getElementById('qc-report-preview');
+                    if (!element) { alert('Element not found!'); return; }
+                    
+                    // Load html2canvas if needed
+                    if (!window.html2canvas) {
+                      await new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+                        script.onload = resolve;
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                      });
+                    }
+                    
+                    const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+                    const jsPDF = await loadJsPDF();
+                    const pdf = new jsPDF('p', 'mm', 'a4');
+                    const imgData = canvas.toDataURL('image/png');
+                    const pdfWidth = 210;
+                    const imgRatio = canvas.height / canvas.width;
+                    const imgHeight = pdfWidth * imgRatio;
+                    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
+                    pdf.save('Test2_html2canvas.pdf');
+                    notify('✓ Method 2 downloaded!');
+                  } catch (err) {
+                    notify('Error: ' + err.message, 'error');
+                    console.error(err);
+                  }
+                }}
+                className="px-3 py-2 bg-green-500 hover:bg-green-600 text-white rounded text-sm font-medium"
+              >
+                Method 2: html2canvas
+              </button>
+              
+              <button 
+                onClick={async () => {
+                  try {
+                    // Method 3: html2pdf.js
+                    const element = document.getElementById('qc-report-preview');
+                    if (!element) { alert('Element not found!'); return; }
+                    
+                    // Load html2pdf if needed
+                    if (!window.html2pdf) {
+                      await new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+                        script.onload = resolve;
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                      });
+                    }
+                    
+                    const opt = {
+                      margin: 0,
+                      filename: 'Test3_html2pdf.pdf',
+                      image: { type: 'jpeg', quality: 0.98 },
+                      html2canvas: { scale: 2, useCORS: true },
+                      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                    };
+                    await window.html2pdf().set(opt).from(element).save();
+                    notify('✓ Method 3 downloaded!');
+                  } catch (err) {
+                    notify('Error: ' + err.message, 'error');
+                    console.error(err);
+                  }
+                }}
+                className="px-3 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded text-sm font-medium"
+              >
+                Method 3: html2pdf.js
+              </button>
+              
+              <button 
+                onClick={() => {
+                  // Method 4: Print dialog
+                  const element = document.getElementById('qc-report-preview');
+                  if (!element) { alert('Element not found!'); return; }
+                  
+                  const printWindow = window.open('', '_blank');
+                  printWindow.document.write(`<!DOCTYPE html><html><head><title>Report PDF</title>
+                    <style>
+                      @page { margin: 10mm; size: A4; }
+                      body { margin: 0; font-family: Arial, sans-serif; }
+                      .report { padding: 40px 50px; }
+                      table { width: 100%; border-collapse: collapse; }
+                      td { padding: 4px 0; }
+                      .label { font-weight: bold; color: #003366; }
+                      .check { color: #003366; }
+                    </style>
+                  </head><body>`);
+                  printWindow.document.write(element.innerHTML);
+                  printWindow.document.write('</body></html>');
+                  printWindow.document.close();
+                  printWindow.onload = () => printWindow.print();
+                  notify('Print dialog opened - save as PDF');
+                }}
+                className="px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded text-sm font-medium"
+              >
+                Method 4: Print Dialog
+              </button>
+              
+              <button 
+                onClick={async () => {
+                  try {
+                    // Method 5: High-res canvas
+                    const element = document.getElementById('qc-report-preview');
+                    if (!element) { alert('Element not found!'); return; }
+                    
+                    if (!window.html2canvas) {
+                      await new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+                        script.onload = resolve;
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                      });
+                    }
+                    
+                    const canvas = await window.html2canvas(element, { 
+                      scale: 3, 
+                      useCORS: true, 
+                      backgroundColor: '#ffffff',
+                      logging: false
+                    });
+                    const jsPDF = await loadJsPDF();
+                    const pdf = new jsPDF('p', 'mm', 'a4');
+                    const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                    pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+                    pdf.save('Test5_highres.pdf');
+                    notify('✓ Method 5 downloaded!');
+                  } catch (err) {
+                    notify('Error: ' + err.message, 'error');
+                    console.error(err);
+                  }
+                }}
+                className="px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded text-sm font-medium"
+              >
+                Method 5: High-Res
+              </button>
+              
+              <button 
+                onClick={async () => {
+                  try {
+                    // Current method (jsPDF drawing)
+                    const checklistArr = device.work_checklist ? Object.entries(device.work_checklist).map(([key, val]) => ({ id: key, label: key, checked: val })) : [];
+                    const pdfBlob = await generateReportPDFFromHTML(
+                      device, rma, 
+                      device.technician_name, 
+                      device.cal_type, 
+                      device.reception_result,
+                      device.service_findings, 
+                      device.work_completed, 
+                      checklistArr
+                    );
+                    const url = URL.createObjectURL(pdfBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'Test1_current_jsPDF.pdf';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    notify('✓ Current method downloaded!');
+                  } catch (err) {
+                    notify('Error: ' + err.message, 'error');
+                    console.error(err);
+                  }
+                }}
+                className="px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded text-sm font-medium"
+              >
+                Current: jsPDF Draw
+              </button>
+            </div>
+            <p className="text-xs text-yellow-700 mt-2">Compare which PDF looks closest to the preview above, then tell me which works best.</p>
           </div>
         </div>
       )}
