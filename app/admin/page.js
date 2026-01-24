@@ -1314,23 +1314,18 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
 // RMA FULL PAGE VIEW - Adaptive workflow interface
 // ============================================
 function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, businessSettings }) {
-  // Find the fresh device data from RMA (initialDevice might be stale)
-  const freshDevices = rma?.request_devices || [];
-  const freshInitialDevice = initialDevice 
-    ? freshDevices.find(d => d.id === initialDevice.id) || initialDevice
-    : null;
-  
-  // Determine if initial device should go to QC instead of Service
-  const initialDeviceNeedsQC = freshInitialDevice && 
-    (freshInitialDevice.status === 'final_qc' || 
-     (freshInitialDevice.report_complete && !freshInitialDevice.qc_complete));
-  
-  const [selectedDevice, setSelectedDevice] = useState(initialDeviceNeedsQC ? null : freshInitialDevice);
-  const [showAvenantPreview, setShowAvenantPreview] = useState(false);
-  const [showQCReview, setShowQCReview] = useState(initialDeviceNeedsQC ? freshInitialDevice : null);
-  const [showShippingModal, setShowShippingModal] = useState(false);
-  const [archiveTab, setArchiveTab] = useState('devices'); // For shipped/completed view tabs
+  // State
+  const [selectedDevice, setSelectedDevice] = useState(initialDevice || null);
+  const [viewMode, setViewMode] = useState(initialDevice ? 'device' : 'overview'); // 'overview' or 'device'
+  const [messagesOpen, setMessagesOpen] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [deviceTab, setDeviceTab] = useState('details'); // For device detail view tabs
   const [saving, setSaving] = useState(false);
+  
+  // Legacy state for existing modals (Stage 3 will clean this up)
+  const [showAvenantPreview, setShowAvenantPreview] = useState(false);
+  const [showQCReview, setShowQCReview] = useState(null);
+  const [showShippingModal, setShowShippingModal] = useState(false);
   
   // Safety check
   if (!rma) {
@@ -1343,51 +1338,24 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   }
   
   const devices = rma.request_devices || [];
-  const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
+  const company = rma.companies || {};
+  const isRMAClosed = ['shipped', 'completed', 'delivered'].includes(rma.status);
   const isContractRMA = rma.is_contract_rma || rma.contract_id;
   
-  // Determine workflow stage for this RMA
-  const getWorkflowStage = () => {
-    // Check if RMA is shipped/completed first
-    if (['shipped', 'completed', 'delivered'].includes(rma.status)) return 'shipped';
-    
-    if (devices.length === 0) {
-      if (['approved', 'waiting_bc', 'waiting_device'].includes(rma.status)) return 'waiting';
-      if (['received', 'in_queue'].includes(rma.status)) return 'received';
-      return 'waiting';
-    }
-    
-    // Check if all devices are shipped
-    const allShipped = devices.every(d => d.status === 'shipped');
-    if (allShipped) return 'shipped';
-    
-    const allQCComplete = devices.every(d => d.qc_complete);
-    const anyInFinalQC = devices.some(d => d.status === 'final_qc' && !d.qc_complete);
-    const allReadyToShip = devices.every(d => d.status === 'ready_to_ship' || d.qc_complete);
-    const allReportComplete = devices.every(d => d.report_complete);
-    const anyServiceStarted = devices.some(d => d.service_findings || d.inspection_complete);
-    
-    if (allReadyToShip && allQCComplete) return 'ready';
-    if (anyInFinalQC || (allReportComplete && !allQCComplete)) return 'qc';
-    if (anyServiceStarted || ['calibration_in_progress', 'repair_in_progress'].includes(rma.status)) return 'service';
-    if (['received', 'in_queue'].includes(rma.status)) return 'received';
-    return 'waiting';
-  };
+  // Load messages
+  useEffect(() => {
+    const loadMessages = async () => {
+      const { data } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('request_id', rma.id)
+        .order('created_at', { ascending: true });
+      if (data) setMessages(data);
+    };
+    loadMessages();
+  }, [rma.id]);
   
-  const workflowStage = getWorkflowStage();
-  
-  // Stage styling
-  const stageInfo = {
-    waiting: { color: 'amber', icon: '⏳', label: 'En Attente', desc: 'En attente de l\'appareil' },
-    received: { color: 'cyan', icon: '📦', label: 'Reçu', desc: 'Appareil reçu - Prêt pour service' },
-    service: { color: 'indigo', icon: '🔧', label: 'Service', desc: 'Service en cours' },
-    qc: { color: 'purple', icon: '✅', label: 'Contrôle Qualité', desc: 'Vérification qualité' },
-    ready: { color: 'green', icon: '📤', label: 'Prêt', desc: 'Prêt pour expédition' },
-    shipped: { color: 'blue', icon: '✅', label: 'Terminé', desc: 'RMA complété et expédié' }
-  };
-  const currentStage = stageInfo[workflowStage];
-  
-  // Progress steps - matching customer portal exactly
+  // Progress steps for devices
   const calibrationSteps = [
     { id: 'submitted', label: 'Soumis' },
     { id: 'rma_created', label: 'RMA' },
@@ -1415,106 +1383,42 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     { id: 'shipped', label: 'Expédié' }
   ];
   
-  // Get step index for a status
+  // Get step index for a device status
   const getStepIndex = (status, isRepair) => {
-    // If no status but RMA has request_number, it's at least created
-    if (!status && rma.request_number) {
-      return 1;
-    }
+    if (!status && rma.request_number) return 1;
     
     if (isRepair) {
-      // Repair: 11 steps (0-10)
       const repairMap = {
         'submitted': 0, 'pending': 0, 'waiting_approval': 0,
         'approved': 1, 'rma_created': 1, 'quote_sent': 1,
-        'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
-        'waiting_device': 3, 'bc_approved': 3,
-        'received': 4, 'received_repair': 4, 'in_queue': 4,
+        'waiting_bc': 2, 'bc_submitted': 2, 'bc_review': 2, 'bc_approved': 2,
+        'waiting_device': 3, 'waiting_po': 3,
+        'received': 4, 'in_queue': 4,
         'inspection': 5, 'inspection_complete': 5,
-        'customer_approval': 6, 'quote_approved': 6, 'waiting_parts': 6,
-        'repair': 7, 'repair_in_progress': 7, 'in_progress': 7,
-        'repair_complete': 8, 'final_qc': 8, 'qc': 8, 'quality_check': 8,
-        'ready_to_ship': 9, 'ready': 9,
+        'customer_approval': 6, 'waiting_customer': 6,
+        'repair_in_progress': 7, 'repair': 7,
+        'final_qc': 8, 'qc_complete': 8,
+        'ready_to_ship': 9,
         'shipped': 10, 'delivered': 10, 'completed': 10
       };
-      return repairMap[status] ?? 1;
+      return repairMap[status] ?? 0;
     } else {
-      // Calibration: 10 steps (0-9)
-      const calibrationMap = {
+      const calMap = {
         'submitted': 0, 'pending': 0, 'waiting_approval': 0,
         'approved': 1, 'rma_created': 1, 'quote_sent': 1,
-        'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
-        'waiting_device': 3, 'bc_approved': 3,
-        'received': 4, 'received_calibration': 4, 'in_queue': 4,
-        'queue': 5, 'queued': 5,
-        'calibration': 6, 'calibration_in_progress': 6, 'in_progress': 6,
-        'final_qc': 7, 'qc': 7, 'quality_check': 7,
-        'ready_to_ship': 8, 'ready': 8,
+        'waiting_bc': 2, 'bc_submitted': 2, 'bc_review': 2, 'bc_approved': 2,
+        'waiting_device': 3, 'waiting_po': 3,
+        'received': 4, 'in_queue': 5,
+        'calibration_in_progress': 6, 'calibration': 6,
+        'final_qc': 7, 'qc_complete': 7,
+        'ready_to_ship': 8,
         'shipped': 9, 'delivered': 9, 'completed': 9
       };
-      return calibrationMap[status] ?? 1;
+      return calMap[status] ?? 0;
     }
   };
   
-  // Count service progress
-  const reportsDone = devices.filter(d => d.report_complete).length;
-  const qcDone = devices.filter(d => d.qc_complete).length;
-  
-  // Check if any device has additional work
-  const devicesWithAdditionalWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
-  const totalAdditionalWork = devicesWithAdditionalWork.reduce((sum, device) => {
-    const deviceTotal = (device.additional_work_items || []).reduce((dSum, item) => 
-      dSum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
-    );
-    return sum + deviceTotal;
-  }, 0);
-  const avenantSent = rma.avenant_sent_at;
-
-  // Update RMA status
-  const updateStatus = async (newStatus) => {
-    setSaving(true);
-    try {
-      const { error } = await supabase
-        .from('service_requests')
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq('id', rma.id);
-      if (error) throw error;
-      notify('Statut mis à jour!');
-      reload();
-    } catch (err) {
-      notify('Erreur: ' + err.message, 'error');
-    }
-    setSaving(false);
-  };
-
-  // If viewing device service screen
-  if (selectedDevice) {
-    return (
-      <DeviceServiceModal
-        device={selectedDevice}
-        rma={rma}
-        onBack={() => { setSelectedDevice(null); reload(); }}
-        notify={notify}
-        reload={reload}
-        profile={profile}
-      />
-    );
-  }
-  
-  // If QC reviewing a device
-  if (showQCReview) {
-    return (
-      <QCReviewModal
-        device={showQCReview}
-        rma={rma}
-        onBack={() => { setShowQCReview(null); reload(); }}
-        notify={notify}
-        profile={profile}
-      />
-    );
-  }
-  
-  // Device Progress Bar Component (matching customer portal style)
+  // Device Progress Bar Component
   const DeviceProgressBar = ({ device }) => {
     const deviceServiceType = device.service_type || rma.requested_service || 'calibration';
     const isRepair = deviceServiceType === 'repair';
@@ -1554,6 +1458,317 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     );
   };
 
+  // Get device status label
+  const getDeviceStatusLabel = (device) => {
+    const status = device.status || rma.status;
+    const labels = {
+      'submitted': 'Soumis',
+      'approved': 'Approuvé',
+      'waiting_bc': 'Attente BC',
+      'waiting_device': 'Attente appareil',
+      'received': 'Reçu',
+      'in_queue': 'En file',
+      'calibration_in_progress': 'Étalonnage',
+      'repair_in_progress': 'Réparation',
+      'final_qc': 'Contrôle QC',
+      'ready_to_ship': 'Prêt',
+      'shipped': 'Expédié'
+    };
+    return labels[status] || status;
+  };
+
+  // ========== DEVICE DETAIL VIEW ==========
+  if (viewMode === 'device' && selectedDevice) {
+    const device = devices.find(d => d.id === selectedDevice.id) || selectedDevice;
+    
+    return (
+      <div className="space-y-6">
+        {/* Back to RMA Overview */}
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => { setViewMode('overview'); setSelectedDevice(null); setDeviceTab('details'); }}
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-gray-700 font-medium"
+          >
+            ← Retour au RMA
+          </button>
+        </div>
+        
+        {/* Device Header */}
+        <div className="bg-white rounded-xl shadow-sm border p-6">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800">{device.model_name}</h1>
+              <p className="text-lg text-gray-500 font-mono">SN: {device.serial_number}</p>
+            </div>
+            <div className="text-right">
+              <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                device.status === 'shipped' ? 'bg-green-100 text-green-700' :
+                device.status === 'ready_to_ship' ? 'bg-blue-100 text-blue-700' :
+                'bg-amber-100 text-amber-700'
+              }`}>
+                {getDeviceStatusLabel(device)}
+              </span>
+              <p className="text-sm text-gray-500 mt-2">
+                {device.service_type === 'calibration' ? '🔬 Étalonnage' : 
+                 device.service_type === 'repair' ? '🔧 Réparation' : 
+                 '🔬🔧 Étal. + Rép.'}
+              </p>
+            </div>
+          </div>
+          
+          {/* Progress Bar */}
+          <DeviceProgressBar device={device} />
+          
+          {/* Return Shipping Address */}
+          <div className="mt-4 pt-4 border-t">
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Adresse de retour</p>
+            <p className="text-sm text-gray-700">
+              {/* TODO: Load device-specific shipping address if available */}
+              {company.address || '—'}, {company.postal_code} {company.city}, {company.country || 'France'}
+            </p>
+          </div>
+        </div>
+        
+        {/* Device Tabs */}
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <div className="flex border-b">
+            {[
+              { id: 'details', label: 'Détails', icon: '📋' },
+              { id: 'history', label: 'Historique', icon: '📜' },
+              { id: 'documents', label: 'Documents', icon: '📄' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setDeviceTab(tab.id)}
+                className={`flex-1 px-4 py-3 text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                  deviceTab === tab.id 
+                    ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500' 
+                    : 'text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                <span>{tab.icon}</span> {tab.label}
+              </button>
+            ))}
+          </div>
+          
+          <div className="p-6">
+            {/* Details Tab */}
+            {deviceTab === 'details' && (
+              <div className="space-y-6">
+                {/* Service Info */}
+                <div>
+                  <h3 className="font-bold text-gray-800 mb-3">Informations du service</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 uppercase">Type de service</p>
+                      <p className="font-medium">{device.service_type === 'calibration' ? 'Étalonnage' : device.service_type === 'repair' ? 'Réparation' : device.service_type}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 uppercase">Technicien</p>
+                      <p className="font-medium">{device.technician_name || '—'}</p>
+                    </div>
+                    {device.cal_type && (
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <p className="text-xs text-gray-500 uppercase">Type d'étalonnage</p>
+                        <p className="font-medium">{device.cal_type}</p>
+                      </div>
+                    )}
+                    {device.reception_result && (
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <p className="text-xs text-gray-500 uppercase">Résultat réception</p>
+                        <p className="font-medium">{device.reception_result}</p>
+                      </div>
+                    )}
+                    {device.bl_number && (
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <p className="text-xs text-gray-500 uppercase">N° BL</p>
+                        <p className="font-medium font-mono">{device.bl_number}</p>
+                      </div>
+                    )}
+                    {device.tracking_number && (
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <p className="text-xs text-gray-500 uppercase">N° Suivi</p>
+                        <a href={`https://www.ups.com/track?tracknum=${device.tracking_number}`} target="_blank" rel="noopener noreferrer" className="font-mono text-blue-600 hover:underline">{device.tracking_number}</a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Findings & Work */}
+                {(device.service_findings || device.work_completed) && (
+                  <div>
+                    <h3 className="font-bold text-gray-800 mb-3">Rapport de service</h3>
+                    {device.service_findings && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-3">
+                        <p className="text-xs text-amber-600 uppercase mb-1">Constatations</p>
+                        <p className="text-gray-700 whitespace-pre-wrap">{device.service_findings}</p>
+                      </div>
+                    )}
+                    {device.work_completed && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <p className="text-xs text-blue-600 uppercase mb-1">Travaux effectués</p>
+                        <p className="text-gray-700 whitespace-pre-wrap">{device.work_completed}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {/* Customer Notes */}
+                {device.notes && (
+                  <div>
+                    <h3 className="font-bold text-gray-800 mb-3">Notes du client</h3>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-gray-700 whitespace-pre-wrap">{device.notes}</p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Internal Notes */}
+                {device.internal_notes && (
+                  <div>
+                    <h3 className="font-bold text-gray-800 mb-3">Notes internes</h3>
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                      <p className="text-gray-700 whitespace-pre-wrap">{device.internal_notes}</p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* QC Notes */}
+                {device.qc_notes && (
+                  <div>
+                    <h3 className="font-bold text-gray-800 mb-3">Notes QC</h3>
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                      <p className="text-gray-700 whitespace-pre-wrap">{device.qc_notes}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* History Tab */}
+            {deviceTab === 'history' && (
+              <div className="space-y-4">
+                <h3 className="font-bold text-gray-800">Historique de cet appareil</h3>
+                <div className="relative">
+                  <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
+                  <div className="space-y-4">
+                    {[
+                      { date: rma.created_at, label: 'RMA créé', icon: '📝', color: 'gray' },
+                      rma.received_at && { date: rma.received_at, label: 'Appareil reçu', icon: '📦', color: 'cyan' },
+                      device.service_started_at && { date: device.service_started_at, label: 'Service démarré', icon: '🔧', color: 'indigo' },
+                      device.report_completed_at && { date: device.report_completed_at, label: 'Rapport complété', icon: '📋', color: 'blue' },
+                      device.qc_completed_at && { date: device.qc_completed_at, label: 'QC validé', icon: '✅', color: 'purple' },
+                      device.shipped_at && { date: device.shipped_at, label: 'Expédié', icon: '🚚', color: 'green' }
+                    ].filter(Boolean).sort((a, b) => new Date(a.date) - new Date(b.date)).map((event, idx) => (
+                      <div key={idx} className="relative pl-10">
+                        <div className={`absolute left-2 w-5 h-5 rounded-full border-2 border-white shadow flex items-center justify-center text-xs ${
+                          event.color === 'green' ? 'bg-green-500' :
+                          event.color === 'blue' ? 'bg-blue-500' :
+                          event.color === 'indigo' ? 'bg-indigo-500' :
+                          event.color === 'purple' ? 'bg-purple-500' :
+                          event.color === 'cyan' ? 'bg-cyan-500' :
+                          'bg-gray-400'
+                        }`}>
+                        </div>
+                        <div className="bg-gray-50 rounded-lg p-3">
+                          <p className="font-medium text-gray-800">{event.icon} {event.label}</p>
+                          <p className="text-sm text-gray-500">
+                            {new Date(event.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Documents Tab */}
+            {deviceTab === 'documents' && (
+              <div className="space-y-4">
+                <h3 className="font-bold text-gray-800">Documents</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Device-specific documents */}
+                  {device.calibration_certificate_url && (
+                    <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">🏆</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Certificat d'étalonnage</p>
+                        <p className="text-sm text-gray-500">Document officiel</p>
+                      </div>
+                    </a>
+                  )}
+                  
+                  {device.report_url && (
+                    <a href={device.report_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Rapport de service</p>
+                        <p className="text-sm text-gray-500">Détails techniques</p>
+                      </div>
+                    </a>
+                  )}
+                  
+                  {/* RMA-level documents (shared across devices) */}
+                  {rma.quote_url && (
+                    <a href={rma.quote_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Devis</p>
+                        <p className="text-sm text-gray-500">Offre de prix</p>
+                      </div>
+                    </a>
+                  )}
+                  
+                  {rma.bc_file_url && (
+                    <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Bon de Commande</p>
+                        <p className="text-sm text-gray-500">BC signé</p>
+                      </div>
+                    </a>
+                  )}
+                  
+                  {device.bl_number && (
+                    <div className="flex items-center gap-4 p-4 border rounded-lg bg-gray-50">
+                      <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center text-2xl">📄</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Bon de Livraison</p>
+                        <p className="text-sm text-gray-500 font-mono">{device.bl_number}</p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {device.tracking_number && (
+                    <a href={`https://www.ups.com/track?tracknum=${device.tracking_number}`} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">📦</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Suivi UPS</p>
+                        <p className="text-sm text-gray-500 font-mono">{device.tracking_number}</p>
+                      </div>
+                    </a>
+                  )}
+                </div>
+                
+                {/* No documents message */}
+                {!device.calibration_certificate_url && !device.report_url && !rma.quote_url && !rma.bc_file_url && !device.bl_number && (
+                  <p className="text-gray-400 text-center py-8">Aucun document disponible</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ========== RMA OVERVIEW VIEW (Default) ==========
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -1565,648 +1780,153 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-gray-800">{rma.request_number}</h1>
-              <span className={`px-3 py-1 rounded-full text-sm font-bold ${
-                workflowStage === 'waiting' ? 'bg-amber-100 text-amber-700' :
-                workflowStage === 'received' ? 'bg-cyan-100 text-cyan-700' :
-                workflowStage === 'service' ? 'bg-indigo-100 text-indigo-700' :
-                workflowStage === 'qc' ? 'bg-purple-100 text-purple-700' :
-                workflowStage === 'shipped' ? 'bg-blue-100 text-blue-700' :
-                'bg-green-100 text-green-700'
+              <span className={`px-3 py-1.5 rounded-full text-sm font-bold ${
+                isRMAClosed ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
               }`}>
-                {currentStage.icon} {currentStage.label}
+                {isRMAClosed ? '✅ TERMINÉ' : '🔄 OUVERT'}
               </span>
               {isContractRMA && (
                 <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">📋 CONTRAT</span>
               )}
             </div>
-            <p className="text-gray-500">{rma.companies?.name} • Créé le {new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
+            <p className="text-gray-500">Créé le {new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
           </div>
         </div>
       </div>
 
-      {/* Client Info - Always visible but compact */}
-      <div className="bg-white rounded-xl shadow-sm border p-4">
-        <div className="grid grid-cols-4 gap-4">
+      {/* Client Info - Full Details */}
+      <div className="bg-white rounded-xl shadow-sm border p-6">
+        <h2 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <span className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">🏢</span>
+          Informations Client
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
-            <p className="text-xs text-gray-500">Client</p>
-            <p className="font-bold text-gray-800">{rma.companies?.name}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Société</p>
+            <p className="font-bold text-gray-800">{company.name || '—'}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Contact</p>
-            <p className="font-medium text-gray-700">{rma.companies?.contact_name || '—'}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Contact</p>
+            <p className="font-medium text-gray-700">{company.contact_name || '—'}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Service demandé</p>
-            <p className="font-medium">{rma.requested_service === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Téléphone</p>
+            <p className="font-medium text-gray-700">{company.phone || '—'}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Appareils</p>
-            <p className="font-bold text-lg">{devices.length}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Email</p>
+            <p className="font-medium text-gray-700 truncate">{company.email || '—'}</p>
           </div>
+        </div>
+        <div className="mt-4 pt-4 border-t">
+          <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Adresse</p>
+          <p className="text-gray-700">
+            {company.address || company.billing_address || '—'}
+            {(company.postal_code || company.billing_postal_code) && `, ${company.postal_code || company.billing_postal_code}`}
+            {(company.city || company.billing_city) && ` ${company.city || company.billing_city}`}
+            {company.country && `, ${company.country}`}
+          </p>
         </div>
       </div>
 
-      {/* Stage-specific content */}
-      
-      {/* WAITING STAGE */}
-      {workflowStage === 'waiting' && (
-        <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-6">
-          <div className="text-center">
-            <p className="text-5xl mb-4">📦</p>
-            <h2 className="text-xl font-bold text-amber-800 mb-2">En attente de l'appareil</h2>
-            <p className="text-amber-600 mb-4">L'appareil n'a pas encore été reçu</p>
-            <button 
-              onClick={() => updateStatus('received')}
-              disabled={saving}
-              className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
-            >
-              {saving ? '...' : '📦 Marquer comme Reçu'}
-            </button>
+      {/* Messages Section - Collapsible */}
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <button 
+          onClick={() => setMessagesOpen(!messagesOpen)}
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <span className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">💬</span>
+            <span className="font-bold text-gray-800">Messages</span>
+            {messages.length > 0 && (
+              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs font-bold">{messages.length}</span>
+            )}
           </div>
-        </div>
-      )}
-      
-      {/* RECEIVED STAGE */}
-      {workflowStage === 'received' && (
-        <div className="bg-cyan-50 border-2 border-cyan-200 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-4">
+          <span className="text-gray-400 text-xl">{messagesOpen ? '▼' : '▶'}</span>
+        </button>
+        
+        {messagesOpen && (
+          <div className="px-6 pb-6 border-t">
+            {messages.length === 0 ? (
+              <p className="text-gray-400 text-center py-6">Aucun message</p>
+            ) : (
+              <div className="space-y-3 mt-4 max-h-64 overflow-y-auto">
+                {messages.map(msg => (
+                  <div key={msg.id} className={`p-3 rounded-lg ${msg.sender_type === 'admin' ? 'bg-blue-50 ml-8' : 'bg-gray-50 mr-8'}`}>
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="text-xs font-medium text-gray-600">
+                        {msg.sender_type === 'admin' ? '👤 Admin' : '🏢 Client'}
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        {new Date(msg.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-700">{msg.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Message input will be added in Stage 4 */}
+            <p className="text-xs text-gray-400 text-center mt-4">Envoi de messages bientôt disponible</p>
+          </div>
+        )}
+      </div>
+
+      {/* Devices List */}
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div className="px-6 py-4 border-b bg-gray-50">
+          <div className="flex items-center gap-3">
+            <span className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">🔧</span>
             <div>
-              <h2 className="text-xl font-bold text-cyan-800">📦 Appareil Reçu</h2>
-              <p className="text-cyan-600">Prêt à commencer le service</p>
-            </div>
-            <button 
-              onClick={() => updateStatus('calibration_in_progress')}
-              disabled={saving}
-              className="px-6 py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-medium disabled:opacity-50"
-            >
-              {saving ? '...' : '🔧 Démarrer Service'}
-            </button>
-          </div>
-        </div>
-      )}
-      
-      {/* SERVICE STAGE - Main work area */}
-      {workflowStage === 'service' && (
-        <div className="space-y-4">
-          {/* Progress summary */}
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-bold text-indigo-800">🔧 Service en cours</h2>
-                <p className="text-sm text-indigo-600">
-                  {reportsDone}/{devices.length} rapports terminés
-                </p>
-              </div>
-              {devicesWithAdditionalWork.length > 0 && !avenantSent && (
-                <button 
-                  onClick={() => setShowAvenantPreview(true)}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
-                >
-                  📄 Créer Avenant (€{totalAdditionalWork.toFixed(2)})
-                </button>
-              )}
-              {avenantSent && (
-                <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium">
-                  📄 Avenant envoyé {rma.avenant_approved_at ? '✓ Approuvé' : '⏳ En attente'}
-                </span>
-              )}
-            </div>
-          </div>
-          
-          {/* Device list for service */}
-          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-            <div className="px-4 py-3 bg-gray-50 border-b">
-              <h3 className="font-bold text-gray-700">Appareils à traiter</h3>
-            </div>
-            <div className="divide-y">
-              {devices.map(device => {
-                const hasReport = device.report_complete;
-                const hasFindings = device.service_findings;
-                
-                return (
-                  <div key={device.id} className={`p-4 ${hasReport ? 'bg-green-50' : ''}`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${hasReport ? 'bg-green-500 text-white' : hasFindings ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}>
-                          {hasReport ? '✓' : hasFindings ? '⚡' : '○'}
-                        </div>
-                        <div>
-                          <p className="font-bold">{device.model_name}</p>
-                          <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => setSelectedDevice(device)}
-                        className={`px-4 py-2 rounded-lg font-medium ${hasReport ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-indigo-500 hover:bg-indigo-600 text-white'}`}
-                      >
-                        {hasReport ? 'Voir' : 'Traiter →'}
-                      </button>
-                    </div>
-                    <DeviceProgressBar device={device} />
-                  </div>
-                );
-              })}
+              <h2 className="font-bold text-gray-800">Appareils</h2>
+              <p className="text-sm text-gray-500">{devices.length} appareil(s) • Cliquez pour voir les détails</p>
             </div>
           </div>
         </div>
-      )}
-      
-      {/* QC STAGE */}
-      {workflowStage === 'qc' && (
-        <div className="space-y-4">
-          <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-bold text-purple-800">✅ Contrôle Qualité</h2>
-                <p className="text-sm text-purple-600">{qcDone}/{devices.length} appareils validés</p>
-              </div>
-            </div>
-          </div>
-          
-          {/* Device list for QC */}
-          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-            <div className="px-4 py-3 bg-gray-50 border-b">
-              <h3 className="font-bold text-gray-700">Appareils à contrôler</h3>
-            </div>
-            <div className="divide-y">
-              {devices.map(device => {
-                const qcComplete = device.qc_complete;
-                
-                return (
-                  <div key={device.id} className={`p-4 ${qcComplete ? 'bg-green-50' : ''}`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${qcComplete ? 'bg-green-500 text-white' : 'bg-purple-500 text-white'}`}>
-                          {qcComplete ? '✓' : '?'}
-                        </div>
-                        <div>
-                          <p className="font-bold">{device.model_name}</p>
-                          <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => setShowQCReview(device)}
-                        className={`px-4 py-2 rounded-lg font-medium ${qcComplete ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-purple-500 hover:bg-purple-600 text-white'}`}
-                      >
-                        {qcComplete ? 'Voir' : 'Contrôler →'}
-                      </button>
-                    </div>
-                    <DeviceProgressBar device={device} />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* READY STAGE */}
-      {workflowStage === 'ready' && (
-        <div className="space-y-4">
-          <div className="bg-green-50 border-2 border-green-200 rounded-xl p-6">
-            <div className="text-center">
-              <p className="text-5xl mb-4">📤</p>
-              <h2 className="text-xl font-bold text-green-800 mb-2">Prêt pour Expédition</h2>
-              <p className="text-green-600 mb-4">Tous les appareils ont passé le contrôle qualité</p>
-              <button 
-                onClick={() => setShowShippingModal(true)}
-                disabled={saving}
-                className="px-8 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold text-lg disabled:opacity-50"
+        
+        <div className="divide-y">
+          {devices.length === 0 ? (
+            <p className="text-gray-400 text-center py-8">Aucun appareil enregistré</p>
+          ) : (
+            devices.map((device, idx) => (
+              <div 
+                key={device.id}
+                onClick={() => { setSelectedDevice(device); setViewMode('device'); setDeviceTab('details'); }}
+                className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
               >
-                {saving ? '...' : '🚚 Préparer Expédition'}
-              </button>
-            </div>
-          </div>
-          
-          {/* Summary of completed devices */}
-          <div className="bg-white rounded-xl shadow-sm border p-4">
-            <h3 className="font-bold text-gray-700 mb-3">Résumé des appareils</h3>
-            <div className="space-y-3">
-              {devices.map(device => (
-                <div key={device.id} className="bg-green-50 rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <p className="font-medium">{device.model_name}</p>
-                      <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-lg font-bold text-gray-400">
+                      {idx + 1}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">✓ Service</span>
-                      <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">✓ QC</span>
-                      {device.calibration_certificate_url && (
-                        <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200">📄 Certificat</a>
-                      )}
+                    <div>
+                      <p className="font-bold text-gray-800">{device.model_name}</p>
+                      <p className="text-sm text-gray-500 font-mono">SN: {device.serial_number}</p>
                     </div>
                   </div>
-                  <DeviceProgressBar device={device} />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* SHIPPED/COMPLETED STAGE - Archive View (matches customer portal) */}
-      {workflowStage === 'shipped' && (
-        <div className="space-y-6">
-          {/* Completion Banner */}
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-white/70 text-sm uppercase tracking-wide mb-1">RMA Complété</p>
-                <p className="text-2xl font-bold">
-                  {rma.requested_service === 'calibration' ? 'Étalonnage' :
-                   rma.requested_service === 'repair' ? 'Réparation' :
-                   rma.requested_service === 'calibration_repair' ? 'Étalonnage + Réparation' :
-                   'Service'}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-white/70 text-sm uppercase tracking-wide mb-1">Référence</p>
-                <p className="text-xl font-mono font-bold">{rma.request_number}</p>
-              </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-white/20 grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-              <div>
-                <p className="text-white/70">Créé le</p>
-                <p className="font-medium">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
-              </div>
-              <div>
-                <p className="text-white/70">Reçu le</p>
-                <p className="font-medium">{rma.received_at ? new Date(rma.received_at).toLocaleDateString('fr-FR') : '—'}</p>
-              </div>
-              <div>
-                <p className="text-white/70">Expédié le</p>
-                <p className="font-medium">{rma.shipped_at ? new Date(rma.shipped_at).toLocaleDateString('fr-FR') : '—'}</p>
-              </div>
-              <div>
-                <p className="text-white/70">Appareils</p>
-                <p className="font-medium">{devices.length}</p>
-              </div>
-              <div>
-                <p className="text-white/70">Durée totale</p>
-                <p className="font-medium">
-                  {rma.shipped_at && rma.created_at 
-                    ? Math.ceil((new Date(rma.shipped_at) - new Date(rma.created_at)) / (1000 * 60 * 60 * 24)) + ' jours'
-                    : '—'}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Per-Device Progress Bars */}
-          <div className="bg-white rounded-xl shadow-sm border p-4">
-            <p className="text-xs text-gray-500 uppercase font-medium mb-3">Suivi par appareil</p>
-            <div className="space-y-3">
-              {devices.map((device, idx) => (
-                <div key={device.id} className="bg-gray-50 rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-800">{device.model_name}</span>
-                      <span className="text-xs text-gray-500 font-mono">SN: {device.serial_number}</span>
-                    </div>
-                    <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-700 font-medium">
-                      ✓ {device.service_type === 'calibration' ? 'Étalonné' : device.service_type === 'repair' ? 'Réparé' : 'Terminé'}
+                  <div className="flex items-center gap-3">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      device.service_type === 'calibration' ? 'bg-blue-100 text-blue-700' : 
+                      device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' :
+                      'bg-purple-100 text-purple-700'
+                    }`}>
+                      {device.service_type === 'calibration' ? '🔬 Étalonnage' : 
+                       device.service_type === 'repair' ? '🔧 Réparation' : 
+                       '🔬🔧 Étal. + Rép.'}
                     </span>
-                  </div>
-                  <DeviceProgressBar device={{...device, status: 'shipped'}} />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Tabs */}
-          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-            <div className="flex border-b border-gray-100 overflow-x-auto">
-              {[
-                { id: 'details', label: 'Détails', icon: '📋' },
-                { id: 'history', label: 'Historique', icon: '📜' },
-                { id: 'documents', label: 'Documents', icon: '📄' },
-                { id: 'shipping', label: 'Expédition', icon: '📦' }
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setArchiveTab(tab.id)}
-                  className={`px-6 py-3 font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
-                    archiveTab === tab.id 
-                      ? 'text-blue-600 border-b-2 border-blue-500 -mb-px bg-blue-50' 
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  <span>{tab.icon}</span>
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-            
-            <div className="p-6">
-              {/* Details Tab - Device Cards */}
-              {archiveTab === 'details' && (
-                <div className="space-y-6">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                      <span className="text-lg">🔧</span>
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-bold text-gray-800">Appareils traités</h2>
-                      <p className="text-sm text-gray-500">{devices.length} appareil(s)</p>
-                    </div>
-                  </div>
-                  
-                  <div className="grid gap-4">
-                    {devices.map((device, idx) => (
-                      <div key={device.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                        {/* Device Header */}
-                        <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
-                          <span className="text-sm font-medium text-gray-500">Appareil #{idx + 1}</span>
-                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            device.service_type === 'calibration' ? 'bg-blue-100 text-blue-700' : 
-                            device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' :
-                            'bg-purple-100 text-purple-700'
-                          }`}>
-                            {device.service_type === 'calibration' ? '🔬 Étalonnage' : 
-                             device.service_type === 'repair' ? '🔧 Réparation' :
-                             '🔬🔧 Étal. + Rép.'}
-                          </span>
-                        </div>
-                        
-                        {/* Device Info Grid */}
-                        <div className="p-4">
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                            <div>
-                              <p className="text-xs text-gray-500 uppercase tracking-wide">Modèle</p>
-                              <p className="font-semibold text-gray-800">{device.model_name}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-gray-500 uppercase tracking-wide">N° de série</p>
-                              <p className="font-mono font-semibold text-blue-600">{device.serial_number}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-gray-500 uppercase tracking-wide">Technicien</p>
-                              <p className="font-medium">{device.technician_name || '—'}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-gray-500 uppercase tracking-wide">N° BL</p>
-                              <p className="font-mono font-medium">{device.bl_number || '—'}</p>
-                            </div>
-                          </div>
-                          
-                          {/* Calibration Details */}
-                          {device.cal_type && (
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4 pt-4 border-t">
-                              <div>
-                                <p className="text-xs text-gray-500 uppercase tracking-wide">Type d'étalonnage</p>
-                                <p className="font-medium">{device.cal_type === 'periodic' ? 'Périodique' : device.cal_type === 'initial' ? 'Initial' : device.cal_type}</p>
-                              </div>
-                              {device.reception_result && (
-                                <div>
-                                  <p className="text-xs text-gray-500 uppercase tracking-wide">Résultat réception</p>
-                                  <p className="font-medium">{device.reception_result === 'conforme' ? '✅ Conforme' : '⚠️ Non conforme'}</p>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          
-                          {/* Findings/Work */}
-                          {device.service_findings && (
-                            <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Constatations</p>
-                              <p className="text-sm text-gray-700">{device.service_findings}</p>
-                            </div>
-                          )}
-                          {device.work_completed && (
-                            <div className="bg-blue-50 rounded-lg p-3 mb-3">
-                              <p className="text-xs text-blue-600 uppercase tracking-wide mb-1">Travaux effectués</p>
-                              <p className="text-sm text-gray-700">{device.work_completed}</p>
-                            </div>
-                          )}
-                          
-                          {/* Document Links */}
-                          <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t">
-                            {device.calibration_certificate_url && (
-                              <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" 
-                                 className="px-3 py-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg text-sm flex items-center gap-1 transition-colors">
-                                🏆 Certificat
-                              </a>
-                            )}
-                            {device.report_url && (
-                              <a href={device.report_url} target="_blank" rel="noopener noreferrer"
-                                 className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm flex items-center gap-1 transition-colors">
-                                📋 Rapport
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                        
-                        {/* Tracking Footer */}
-                        {device.tracking_number && (
-                          <div className="bg-green-50 px-4 py-3 border-t border-green-100">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className="text-green-600">📦</span>
-                                <span className="text-sm font-medium text-green-800">Expédié</span>
-                              </div>
-                              <a 
-                                href={`https://www.ups.com/track?tracknum=${device.tracking_number}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-sm text-green-700 font-mono hover:underline"
-                              >
-                                {device.tracking_number} →
-                              </a>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                    <span className="text-gray-400 text-xl">→</span>
                   </div>
                 </div>
-              )}
-              
-              {/* History Tab */}
-              {archiveTab === 'history' && (
-                <div className="space-y-4">
-                  <h3 className="font-bold text-gray-800 flex items-center gap-2">📜 Historique du RMA</h3>
-                  <div className="relative">
-                    <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
-                    <div className="space-y-4">
-                      {/* Build timeline from RMA data */}
-                      {[
-                        { date: rma.created_at, label: 'Demande créée', icon: '📝', color: 'gray' },
-                        rma.quoted_at && { date: rma.quoted_at, label: 'Devis envoyé', icon: '💰', color: 'blue' },
-                        rma.bc_submitted_at && { date: rma.bc_submitted_at, label: 'BC reçu', icon: '📄', color: 'blue' },
-                        rma.received_at && { date: rma.received_at, label: 'Appareil reçu', icon: '📦', color: 'cyan' },
-                        devices[0]?.report_completed_at && { date: devices[0].report_completed_at, label: 'Service terminé', icon: '🔧', color: 'indigo' },
-                        devices[0]?.qc_completed_at && { date: devices[0].qc_completed_at, label: 'Contrôle qualité validé', icon: '✅', color: 'purple' },
-                        rma.shipped_at && { date: rma.shipped_at, label: 'Expédié au client', icon: '🚚', color: 'green' }
-                      ].filter(Boolean).sort((a, b) => new Date(a.date) - new Date(b.date)).map((event, idx) => (
-                        <div key={idx} className="relative pl-10">
-                          <div className={`absolute left-2 w-5 h-5 rounded-full border-2 border-white shadow flex items-center justify-center text-xs ${
-                            event.color === 'green' ? 'bg-green-500' :
-                            event.color === 'blue' ? 'bg-blue-500' :
-                            event.color === 'indigo' ? 'bg-indigo-500' :
-                            event.color === 'purple' ? 'bg-purple-500' :
-                            event.color === 'cyan' ? 'bg-cyan-500' :
-                            'bg-gray-400'
-                          }`}>
-                            <span className="text-white">{event.icon}</span>
-                          </div>
-                          <div className="bg-gray-50 rounded-lg p-3">
-                            <p className="font-medium text-gray-800">{event.label}</p>
-                            <p className="text-sm text-gray-500">
-                              {new Date(event.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  
-                  {/* Notes Section */}
-                  {(rma.notes || rma.internal_notes || devices.some(d => d.service_findings || d.qc_notes)) && (
-                    <div className="mt-6 pt-6 border-t">
-                      <h4 className="font-bold text-gray-700 mb-3">💬 Notes</h4>
-                      <div className="space-y-3">
-                        {rma.notes && (
-                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                            <p className="text-xs text-yellow-600 mb-1">Notes client</p>
-                            <p className="text-sm">{rma.notes}</p>
-                          </div>
-                        )}
-                        {rma.internal_notes && (
-                          <div className="bg-gray-50 border rounded-lg p-3">
-                            <p className="text-xs text-gray-500 mb-1">Notes internes</p>
-                            <p className="text-sm">{rma.internal_notes}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-              
-              {/* Documents Tab */}
-              {archiveTab === 'documents' && (
-                <div className="space-y-6">
-                  <h3 className="font-bold text-gray-800 flex items-center gap-2">📄 Documents</h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Quote */}
-                    {rma.quote_url && (
-                      <a href={rma.quote_url} target="_blank" rel="noopener noreferrer"
-                         className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                        <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
-                        <div>
-                          <p className="font-medium text-gray-800">Devis</p>
-                          <p className="text-sm text-gray-500">Offre de prix initiale</p>
-                        </div>
-                      </a>
-                    )}
-                    
-                    {/* BC */}
-                    {rma.bc_file_url && (
-                      <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer"
-                         className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
-                        <div>
-                          <p className="font-medium text-gray-800">Bon de Commande</p>
-                          <p className="text-sm text-gray-500">BC signé par le client</p>
-                        </div>
-                      </a>
-                    )}
-                    
-                    {/* Avenant */}
-                    {rma.avenant_url && (
-                      <a href={rma.avenant_url} target="_blank" rel="noopener noreferrer"
-                         className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                        <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
-                        <div>
-                          <p className="font-medium text-gray-800">Avenant</p>
-                          <p className="text-sm text-gray-500">Travaux supplémentaires</p>
-                        </div>
-                      </a>
-                    )}
-                    
-                    {/* Certificates per device */}
-                    {devices.filter(d => d.calibration_certificate_url).map(device => (
-                      <a key={device.id} href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer"
-                         className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">🏆</div>
-                        <div>
-                          <p className="font-medium text-gray-800">Certificat d'étalonnage</p>
-                          <p className="text-sm text-gray-500">{device.model_name} - {device.serial_number}</p>
-                        </div>
-                      </a>
-                    ))}
-                    
-                    {/* BL info */}
-                    {devices.some(d => d.bl_number) && (
-                      <div className="flex items-center gap-4 p-4 border rounded-lg bg-gray-50">
-                        <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
-                        <div>
-                          <p className="font-medium text-gray-800">Bon de Livraison</p>
-                          <p className="text-sm text-gray-500 font-mono">{devices[0]?.bl_number}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* No documents message */}
-                  {!rma.quote_url && !rma.bc_file_url && !rma.avenant_url && !devices.some(d => d.calibration_certificate_url) && (
-                    <p className="text-gray-400 text-center py-8">Aucun document disponible</p>
-                  )}
-                </div>
-              )}
-              
-              {/* Shipping Tab */}
-              {archiveTab === 'shipping' && (
-                <div className="space-y-6">
-                  <h3 className="font-bold text-gray-800 flex items-center gap-2">📦 Expédition</h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Transporteur</p>
-                        <p className="font-medium text-lg">UPS</p>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">N° de suivi</p>
-                        {devices[0]?.tracking_number ? (
-                          <a href={`https://www.ups.com/track?tracknum=${devices[0].tracking_number}`} 
-                             target="_blank" rel="noopener noreferrer"
-                             className="font-mono text-blue-600 hover:underline text-lg">
-                            {devices[0].tracking_number}
-                          </a>
-                        ) : <p className="text-gray-400">—</p>}
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">N° Bon de Livraison</p>
-                        <p className="font-mono font-medium text-lg">{devices[0]?.bl_number || '—'}</p>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Date d'expédition</p>
-                        <p className="font-medium">{rma.shipped_at ? new Date(rma.shipped_at).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</p>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Adresse de livraison</p>
-                        <div className="text-sm">
-                          <p className="font-medium">{rma.companies?.name}</p>
-                          <p>{rma.shipping_address?.street || rma.companies?.address}</p>
-                          <p>{rma.shipping_address?.postal_code || rma.companies?.postal_code} {rma.shipping_address?.city || rma.companies?.city}</p>
-                          <p>{rma.shipping_address?.country || rma.companies?.country || 'France'}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+                
+                {/* Progress Bar */}
+                <DeviceProgressBar device={device} />
+              </div>
+            ))
+          )}
         </div>
-      )}
-      
-      {/* Shipping Modal */}
+      </div>
+
+      {/* Legacy Modals - Will be reorganized in Stage 3 */}
       {showShippingModal && (
         <ShippingModal
           rma={rma}
@@ -2219,15 +1939,24 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         />
       )}
 
-      {/* Avenant Preview Modal */}
       {showAvenantPreview && (
         <AvenantPreviewModal
           rma={rma}
-          devices={devicesWithAdditionalWork}
+          devices={devices.filter(d => d.additional_work_needed)}
           onClose={() => setShowAvenantPreview(false)}
           notify={notify}
           reload={reload}
-          alreadySent={!!avenantSent}
+          alreadySent={!!rma.avenant_sent_at}
+        />
+      )}
+      
+      {showQCReview && (
+        <QCReviewModal
+          device={showQCReview}
+          rma={rma}
+          onBack={() => { setShowQCReview(null); reload(); }}
+          notify={notify}
+          profile={profile}
         />
       )}
     </div>
