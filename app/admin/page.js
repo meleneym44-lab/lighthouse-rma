@@ -2823,27 +2823,317 @@ function RequestDetailModal({ request, onClose, onCreateQuote }) {
 function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin }) {
   const [selectedClient, setSelectedClient] = useState(null);
   const [search, setSearch] = useState('');
-  const filteredClients = clients.filter(c => c.name?.toLowerCase().includes(search.toLowerCase()) || c.profiles?.some(p => p.email?.toLowerCase().includes(search.toLowerCase())));
-  const getClientStats = (clientId) => { const clientRequests = requests.filter(r => r.company_id === clientId); return { total: clientRequests.length, active: clientRequests.filter(r => !['completed', 'cancelled', 'shipped'].includes(r.status) && r.request_number).length }; };
+  const [searchResults, setSearchResults] = useState(null); // null = show clients, object = show search results
+  
+  // Determine what kind of search this is
+  const searchType = (() => {
+    const s = search.trim().toUpperCase();
+    if (s.startsWith('FR-') || s.startsWith('FR')) return 'rma';
+    if (s.length >= 3 && /^\d+$/.test(s)) return 'serial'; // Numeric string = likely serial
+    if (s.length >= 2) return 'all'; // Search everything
+    return 'none';
+  })();
+  
+  // Perform search when search changes
+  React.useEffect(() => {
+    if (!search.trim() || search.trim().length < 2) {
+      setSearchResults(null);
+      return;
+    }
+    
+    const s = search.trim().toLowerCase();
+    const sUpper = search.trim().toUpperCase();
+    
+    // Search for RMAs by number
+    const rmaMatches = requests.filter(r => 
+      r.request_number?.toUpperCase().includes(sUpper)
+    );
+    
+    // Search for devices by serial number across all RMAs
+    const serialMatches = [];
+    requests.forEach(rma => {
+      (rma.request_devices || []).forEach(device => {
+        if (device.serial_number?.toLowerCase().includes(s)) {
+          serialMatches.push({ device, rma });
+        }
+      });
+    });
+    
+    // Also search equipment table for serial numbers
+    const equipmentMatches = equipment.filter(eq => 
+      eq.serial_number?.toLowerCase().includes(s)
+    );
+    
+    // Search clients by name/email
+    const clientMatches = clients.filter(c => 
+      c.name?.toLowerCase().includes(s) || 
+      c.profiles?.some(p => p.email?.toLowerCase().includes(s))
+    );
+    
+    // If we have RMA or serial matches, show those results
+    if (rmaMatches.length > 0 || serialMatches.length > 0) {
+      setSearchResults({
+        type: rmaMatches.length > 0 ? 'rma' : 'serial',
+        rmas: rmaMatches,
+        serialDevices: serialMatches,
+        equipment: equipmentMatches,
+        clients: clientMatches
+      });
+    } else if (clientMatches.length > 0 || equipmentMatches.length > 0) {
+      setSearchResults({
+        type: 'client',
+        rmas: [],
+        serialDevices: [],
+        equipment: equipmentMatches,
+        clients: clientMatches
+      });
+    } else {
+      setSearchResults({
+        type: 'none',
+        rmas: [],
+        serialDevices: [],
+        equipment: [],
+        clients: []
+      });
+    }
+  }, [search, requests, equipment, clients]);
+  
+  const filteredClients = clients.filter(c => 
+    c.name?.toLowerCase().includes(search.toLowerCase()) || 
+    c.profiles?.some(p => p.email?.toLowerCase().includes(search.toLowerCase()))
+  );
+  
+  const getClientStats = (clientId) => { 
+    const clientRequests = requests.filter(r => r.company_id === clientId); 
+    return { 
+      total: clientRequests.length, 
+      active: clientRequests.filter(r => !['completed', 'cancelled', 'shipped'].includes(r.status) && r.request_number).length 
+    }; 
+  };
+  
+  // Get all RMAs for a serial number
+  const getSerialHistory = (serialNumber) => {
+    const history = [];
+    requests.forEach(rma => {
+      (rma.request_devices || []).forEach(device => {
+        if (device.serial_number === serialNumber) {
+          history.push({ rma, device });
+        }
+      });
+    });
+    return history.sort((a, b) => new Date(b.rma.created_at) - new Date(a.rma.created_at));
+  };
+  
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center"><h1 className="text-2xl font-bold text-gray-800">Clients ({clients.length})</h1><input type="text" placeholder="🔍 Rechercher..." value={search} onChange={e => setSearch(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg w-80" /></div>
-      <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Entreprise</th><th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Contact principal</th><th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Ville</th><th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMAs</th><th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th></tr></thead>
-          <tbody className="divide-y divide-gray-100">
-            {filteredClients.map(client => { const stats = getClientStats(client.id); const mainContact = client.profiles?.find(p => p.role === 'admin') || client.profiles?.[0]; return (
-              <tr key={client.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedClient(client)}>
-                <td className="px-4 py-3"><p className="font-medium text-gray-800">{client.name}</p></td>
-                <td className="px-4 py-3">{mainContact ? <div><p className="text-sm">{mainContact.full_name}</p><p className="text-xs text-gray-400">{mainContact.email}</p></div> : <span className="text-gray-400">—</span>}</td>
-                <td className="px-4 py-3 text-sm text-gray-600">{client.billing_city || '—'}</td>
-                <td className="px-4 py-3"><span className="text-sm">{stats.total} total{stats.active > 0 && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">{stats.active} actif(s)</span>}</span></td>
-                <td className="px-4 py-3"><button onClick={e => { e.stopPropagation(); setSelectedClient(client); }} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button></td>
-              </tr>
-            ); })}
-          </tbody>
-        </table>
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-800">Clients ({clients.length})</h1>
+        <div className="relative">
+          <input 
+            type="text" 
+            placeholder="🔍 Client, N° série, ou RMA..." 
+            value={search} 
+            onChange={e => setSearch(e.target.value)} 
+            className="px-4 py-2 border border-gray-300 rounded-lg w-96" 
+          />
+          {search && (
+            <button 
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
+      
+      {/* Search Results */}
+      {searchResults && search.trim().length >= 2 ? (
+        <div className="space-y-6">
+          {/* RMA Results */}
+          {searchResults.rmas.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm">
+              <div className="px-6 py-4 border-b border-gray-100 bg-blue-50">
+                <h2 className="font-bold text-blue-800">📋 RMAs trouvés ({searchResults.rmas.length})</h2>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {searchResults.rmas.map(rma => {
+                  const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
+                  const devices = rma.request_devices || [];
+                  return (
+                    <div key={rma.id} className="p-4 hover:bg-gray-50">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono font-bold text-[#00A651] text-lg">{rma.request_number}</span>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+                          </div>
+                          <p className="text-gray-600 mt-1">{rma.companies?.name}</p>
+                          <p className="text-sm text-gray-400">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm text-gray-500">{devices.length} appareil(s)</p>
+                          {devices.slice(0, 3).map((d, i) => (
+                            <p key={i} className="text-xs text-gray-400">{d.model_name} - {d.serial_number}</p>
+                          ))}
+                          {devices.length > 3 && <p className="text-xs text-gray-400">+{devices.length - 3} autres</p>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          
+          {/* Serial Number Results */}
+          {searchResults.serialDevices.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm">
+              <div className="px-6 py-4 border-b border-gray-100 bg-green-50">
+                <h2 className="font-bold text-green-800">🔧 Historique N° Série ({searchResults.serialDevices.length} RMA(s))</h2>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {/* Group by serial number */}
+                {(() => {
+                  const bySerial = {};
+                  searchResults.serialDevices.forEach(({ device, rma }) => {
+                    if (!bySerial[device.serial_number]) {
+                      bySerial[device.serial_number] = { device, rmas: [] };
+                    }
+                    bySerial[device.serial_number].rmas.push({ rma, device });
+                  });
+                  
+                  return Object.entries(bySerial).map(([serial, data]) => (
+                    <div key={serial} className="p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <span className="font-mono font-bold text-gray-800 text-lg">{serial}</span>
+                        <span className="text-gray-500">{data.device.model_name}</span>
+                        <span className="px-2 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{data.rmas.length} intervention(s)</span>
+                      </div>
+                      <div className="ml-4 space-y-2">
+                        {data.rmas.sort((a, b) => new Date(b.rma.created_at) - new Date(a.rma.created_at)).map(({ rma, device }) => {
+                          const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
+                          return (
+                            <div key={rma.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                              <div className="flex items-center gap-3">
+                                <span className="font-mono text-[#00A651] font-medium">{rma.request_number}</span>
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+                                <span className="text-sm text-gray-500">{device.service_type === 'repair' ? '🔧 Réparation' : '🔬 Étalonnage'}</span>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm text-gray-600">{rma.companies?.name}</p>
+                                <p className="text-xs text-gray-400">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
+          )}
+          
+          {/* Equipment matches (devices registered but maybe no RMA yet) */}
+          {searchResults.equipment.length > 0 && searchResults.serialDevices.length === 0 && (
+            <div className="bg-white rounded-xl shadow-sm">
+              <div className="px-6 py-4 border-b border-gray-100 bg-amber-50">
+                <h2 className="font-bold text-amber-800">📦 Appareils enregistrés ({searchResults.equipment.length})</h2>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {searchResults.equipment.map(eq => (
+                  <div key={eq.id} className="p-4 flex justify-between items-center">
+                    <div>
+                      <p className="font-medium">{eq.model_name}</p>
+                      <p className="font-mono text-sm text-gray-600">SN: {eq.serial_number}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-gray-600">{eq.companies?.name || 'Client inconnu'}</p>
+                      <p className="text-xs text-gray-400">{eq.brand}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Client matches */}
+          {searchResults.clients.length > 0 && searchResults.rmas.length === 0 && searchResults.serialDevices.length === 0 && (
+            <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h2 className="font-bold text-gray-800">👥 Clients ({searchResults.clients.length})</h2>
+              </div>
+              <table className="w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Entreprise</th>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Contact principal</th>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Ville</th>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMAs</th>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {searchResults.clients.map(client => { 
+                    const stats = getClientStats(client.id); 
+                    const mainContact = client.profiles?.find(p => p.role === 'admin') || client.profiles?.[0]; 
+                    return (
+                      <tr key={client.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedClient(client)}>
+                        <td className="px-4 py-3"><p className="font-medium text-gray-800">{client.name}</p></td>
+                        <td className="px-4 py-3">{mainContact ? <div><p className="text-sm">{mainContact.full_name}</p><p className="text-xs text-gray-400">{mainContact.email}</p></div> : <span className="text-gray-400">—</span>}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{client.billing_city || '—'}</td>
+                        <td className="px-4 py-3"><span className="text-sm">{stats.total} total{stats.active > 0 && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">{stats.active} actif(s)</span>}</span></td>
+                        <td className="px-4 py-3"><button onClick={e => { e.stopPropagation(); setSelectedClient(client); }} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button></td>
+                      </tr>
+                    ); 
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          
+          {/* No results */}
+          {searchResults.type === 'none' && (
+            <div className="bg-white rounded-xl shadow-sm p-8 text-center">
+              <p className="text-5xl mb-4">🔍</p>
+              <p className="text-gray-500">Aucun résultat pour "{search}"</p>
+              <p className="text-sm text-gray-400 mt-2">Essayez un numéro de série, un numéro RMA, ou un nom de client</p>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Default: Show all clients */
+        <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Entreprise</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Contact principal</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Ville</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMAs</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {(search ? filteredClients : clients).map(client => { 
+                const stats = getClientStats(client.id); 
+                const mainContact = client.profiles?.find(p => p.role === 'admin') || client.profiles?.[0]; 
+                return (
+                  <tr key={client.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedClient(client)}>
+                    <td className="px-4 py-3"><p className="font-medium text-gray-800">{client.name}</p></td>
+                    <td className="px-4 py-3">{mainContact ? <div><p className="text-sm">{mainContact.full_name}</p><p className="text-xs text-gray-400">{mainContact.email}</p></div> : <span className="text-gray-400">—</span>}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{client.billing_city || '—'}</td>
+                    <td className="px-4 py-3"><span className="text-sm">{stats.total} total{stats.active > 0 && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">{stats.active} actif(s)</span>}</span></td>
+                    <td className="px-4 py-3"><button onClick={e => { e.stopPropagation(); setSelectedClient(client); }} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button></td>
+                  </tr>
+                ); 
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      
       {selectedClient && <ClientDetailModal client={selectedClient} requests={requests.filter(r => r.company_id === selectedClient.id)} equipment={equipment.filter(e => e.company_id === selectedClient.id)} onClose={() => setSelectedClient(null)} notify={notify} reload={reload} isAdmin={isAdmin} />}
     </div>
   );
