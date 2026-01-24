@@ -2986,7 +2986,10 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
 <head>
   <title>BL - ${bl.blNumber}</title>
   <style>
-    @page { margin: 15mm; size: A4; }
+    @page { 
+      margin: 15mm; 
+      size: A4;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; }
     body { font-family: Arial, sans-serif; font-size: 11pt; color: #333; }
@@ -3004,7 +3007,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      opacity: 0.04;
+      opacity: 0.06;
       pointer-events: none;
       z-index: 999;
     }
@@ -3017,13 +3020,13 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     .title { font-size: 20pt; font-weight: bold; color: #333; margin: 0; }
     .bl-number { font-size: 14pt; color: #333; font-weight: bold; margin-top: 8px; }
     .info-row { display: flex; justify-content: space-between; margin: 12px 0; }
-    .client-box { background: #f8f9fa; border: 1px solid #ddd; padding: 15px; margin: 12px 0; }
+    .client-box { background: rgba(248,249,250,0.85); border: 1px solid #ddd; padding: 15px; margin: 12px 0; }
     .client-label { font-size: 9pt; color: #666; text-transform: uppercase; font-weight: 600; margin-bottom: 5px; }
     .client-name { font-size: 12pt; font-weight: bold; margin-bottom: 5px; }
     table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-    th { background: #333; color: white; padding: 10px 12px; text-align: left; font-size: 10pt; }
-    td { padding: 10px 12px; border-bottom: 1px solid #ddd; font-size: 10pt; }
-    tr:nth-child(even) { background: #f9f9f9; }
+    th { background: rgba(51,51,51,0.9); color: white; padding: 10px 12px; text-align: left; font-size: 10pt; }
+    td { padding: 10px 12px; border-bottom: 1px solid #ddd; font-size: 10pt; background: rgba(255,255,255,0.9); }
+    tr:nth-child(even) td { background: rgba(249,249,249,0.9); }
     .shipping-section { margin: 15px 0; }
     .shipping-title { font-weight: bold; font-size: 11pt; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 5px; }
     .shipping-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -3045,12 +3048,16 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     .footer-info strong { color: #333; font-size: 9pt; }
     
     @media print { 
+      @page { margin: 15mm; }
       .page { min-height: 100%; padding: 10px 20px; }
       .watermark { position: fixed; }
+      /* Make backgrounds print */
+      th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
   </style>
 </head>
-<body>
+<body onload="window.print()">
   <div class="page">
     <!-- Watermark - shows through everything -->
     <div class="watermark">
@@ -3132,7 +3139,6 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     </div>
   </div>
 
-  <script>window.onload = function() { window.print(); }</script>
 </body>
 </html>`);
     w.document.close();
@@ -3374,7 +3380,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                 <div className="bg-white border-2 border-t-0 rounded-b-xl overflow-hidden shadow-lg">
                   <div style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', minHeight: '270mm', display: 'flex', flexDirection: 'column', position: 'relative' }}>
                     {/* Watermark - on top of everything */}
-                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.04, pointerEvents: 'none', zIndex: 999 }}>
+                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.06, pointerEvents: 'none', zIndex: 999 }}>
                       <img src="/images/logos/Lighthouse-Square-logo.png" alt="" style={{ width: '400px', height: 'auto' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:150px;font-weight:bold;color:#000">LWS</div>'; }} />
                     </div>
                     
@@ -3397,8 +3403,8 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                         <div><span style={{ color: '#666' }}>RMA:</span> <strong>{bl.rmaNumber}</strong></div>
                       </div>
 
-                      {/* Client box */}
-                      <div style={{ background: '#f8f9fa', border: '1px solid #ddd', padding: '15px', margin: '12px 0' }}>
+                      {/* Client box - semi-transparent */}
+                      <div style={{ background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px', margin: '12px 0' }}>
                         <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Destinataire</div>
                         <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{bl.client.name}</div>
                         {bl.client.attention && <div>À l'attention de: <strong>{bl.client.attention}</strong></div>}
@@ -3407,10 +3413,10 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                         <div>{bl.client.country}</div>
                       </div>
 
-                      {/* Table */}
+                      {/* Table - semi-transparent header */}
                       <table style={{ width: '100%', borderCollapse: 'collapse', margin: '12px 0' }}>
                         <thead>
-                          <tr style={{ background: '#333' }}>
+                          <tr style={{ background: 'rgba(51,51,51,0.9)' }}>
                             <th style={{ color: 'white', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '50px' }}>Qté</th>
                             <th style={{ color: 'white', padding: '10px 12px', textAlign: 'left', fontSize: '10pt' }}>Désignation</th>
                             <th style={{ color: 'white', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '120px' }}>N° Série</th>
@@ -3419,11 +3425,11 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                         </thead>
                         <tbody>
                           {bl.devices.map((d, i) => (
-                            <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#f9f9f9' }}>
-                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', textAlign: 'center', fontWeight: '600' }}>1</td>
-                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt' }}>Compteur de particules LIGHTHOUSE {d.model}</td>
-                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', fontFamily: 'monospace' }}>{d.serial}</td>
-                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt' }}>{d.service}</td>
+                            <tr key={i}>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', textAlign: 'center', fontWeight: '600', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>1</td>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>Compteur de particules LIGHTHOUSE {d.model}</td>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', fontFamily: 'monospace', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>{d.serial}</td>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>{d.service}</td>
                             </tr>
                           ))}
                         </tbody>
