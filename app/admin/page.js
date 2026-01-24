@@ -388,14 +388,10 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
     ready: activeRMAs.filter(r => getJobType(r) === 'ready')
   };
   
-  // Count open chats
-  const openChats = requests.filter(r => r.chat_status === 'open');
-  
   // Stats for the cards
   const stats = [
     { id: 'all', label: 'RMAs Actifs', value: activeRMAs.length, color: 'bg-blue-500', icon: '📋' },
     { id: 'bc', label: 'BC à vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
-    { id: 'chat', label: 'Chats Ouverts', value: openChats.length, color: 'bg-amber-500', icon: '💬' },
     { id: 'waiting_bc', label: 'Attente BC', value: waitingBC.length, color: 'bg-orange-500', icon: '📝' },
     { id: 'waiting_device', label: 'Attente Appareil', value: waitingDevice.length, color: 'bg-cyan-500', icon: '📦' },
   ];
@@ -412,7 +408,6 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
     if (!filter) return activeRMAs;
     if (filter === 'all') return activeRMAs;
     if (filter === 'bc') return needsReview;
-    if (filter === 'chat') return openChats;
     if (filter === 'waiting_bc') return waitingBC;
     if (filter === 'waiting_device') return waitingDevice;
     if (byJob[filter]) return byJob[filter];
