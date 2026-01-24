@@ -8,7 +8,8 @@ if (typeof window !== 'undefined') {
 }
 
 // ============================================
-// PDF GENERATION UTILITIES (using html2canvas + jspdf from CDN)
+// PDF GENERATION UTILITIES - PROFESSIONAL STYLE
+// Matches the customer portal quote PDF format exactly
 // ============================================
 
 // Load jsPDF dynamically from CDN
@@ -24,427 +25,806 @@ const loadJsPDF = async () => {
   });
 };
 
-// Helper to add Lighthouse header to PDF
-const addPDFHeader = (doc, title, rmaNumber) => {
-  // Green header bar
-  doc.setFillColor(0, 166, 81); // #00A651
-  doc.rect(0, 0, 210, 25, 'F');
-  
-  // Company name
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(18);
-  doc.setFont('helvetica', 'bold');
-  doc.text('LIGHTHOUSE FRANCE', 15, 12);
-  
-  // Document title
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'normal');
-  doc.text(title, 15, 20);
-  
-  // RMA number on right
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.text(rmaNumber, 195, 15, { align: 'right' });
-  
-  // Reset colors
-  doc.setTextColor(0, 0, 0);
-  
-  return 35; // Return Y position after header
+// Load image as base64 for PDF
+const loadImageAsBase64 = async (url) => {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    return null;
+  }
 };
 
-// Helper to add footer
-const addPDFFooter = (doc, pageNum, totalPages) => {
-  const pageHeight = doc.internal.pageSize.height;
-  doc.setFontSize(8);
-  doc.setTextColor(128, 128, 128);
-  doc.text('LIGHTHOUSE FRANCE • 1 Rue de la Pépinière, 94000 Créteil • Tel: +33 1 XX XX XX XX', 105, pageHeight - 10, { align: 'center' });
-  doc.text(`Page ${pageNum}/${totalPages}`, 195, pageHeight - 10, { align: 'right' });
-  doc.setTextColor(0, 0, 0);
+// Color palette (matching customer portal)
+const PDF_COLORS = {
+  green: [0, 166, 81],
+  darkBlue: [26, 26, 46],
+  gray: [80, 80, 80],
+  lightGray: [130, 130, 130],
+  white: [255, 255, 255]
 };
 
-// Generate Quote/Devis PDF
+// Generate Quote/Devis PDF - PROFESSIONAL FORMAT
 const generateQuotePDF = async (rma, devices, businessSettings) => {
   const jsPDF = await loadJsPDF();
-  const doc = new jsPDF();
+  const pdf = new jsPDF('p', 'mm', 'a4');
   const company = rma.companies || {};
+  const biz = businessSettings || {};
   
-  let y = addPDFHeader(doc, 'DEVIS / QUOTE', rma.request_number);
+  const pageWidth = 210, pageHeight = 297, margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  const footerHeight = 16;
+  const { green, darkBlue, gray, lightGray, white } = PDF_COLORS;
   
-  // Date
-  doc.setFontSize(10);
-  doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, y);
-  doc.text(`Validité: 30 jours`, 195, y, { align: 'right' });
-  y += 10;
+  let y = margin;
   
-  // Client info box
-  doc.setFillColor(245, 245, 245);
-  doc.rect(15, y, 85, 35, 'F');
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'bold');
-  doc.text('CLIENT', 20, y + 7);
-  doc.setFont('helvetica', 'normal');
-  doc.text(company.name || 'N/A', 20, y + 14);
-  doc.text(company.address || company.billing_address || '', 20, y + 20);
-  doc.text(`${company.postal_code || company.billing_postal_code || ''} ${company.city || company.billing_city || ''}`, 20, y + 26);
-  doc.text(company.country || 'France', 20, y + 32);
+  // Load logos
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
   
-  // Lighthouse info box
-  doc.rect(110, y, 85, 35, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.text('LIGHTHOUSE FRANCE', 115, y + 7);
-  doc.setFont('helvetica', 'normal');
-  doc.text('1 Rue de la Pépinière', 115, y + 14);
-  doc.text('94000 Créteil', 115, y + 20);
-  doc.text('France', 115, y + 26);
-  y += 45;
+  const addFooter = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+    pdf.setTextColor(...white);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(biz.company_name || 'Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(180, 180, 180);
+    pdf.setFontSize(8);
+    pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'} - Tel. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+  };
   
-  // Table header
-  doc.setFillColor(0, 166, 81);
-  doc.setTextColor(255, 255, 255);
-  doc.rect(15, y, 180, 8, 'F');
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Description', 20, y + 6);
-  doc.text('Qté', 130, y + 6);
-  doc.text('Prix Unit.', 150, y + 6);
-  doc.text('Total', 180, y + 6);
-  doc.setTextColor(0, 0, 0);
-  y += 10;
+  const getUsableHeight = () => pageHeight - footerHeight - margin;
   
-  // Table rows
-  let total = 0;
-  doc.setFont('helvetica', 'normal');
-  devices.forEach((device, idx) => {
-    const price = parseFloat(device.quoted_price) || 0;
-    total += price;
-    
-    // Alternate row colors
-    if (idx % 2 === 0) {
-      doc.setFillColor(250, 250, 250);
-      doc.rect(15, y - 2, 180, 12, 'F');
+  const checkPageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) {
+      addFooter();
+      pdf.addPage();
+      y = margin;
+      return true;
     }
-    
-    const serviceType = device.service_type === 'calibration' ? 'Étalonnage' : 
-                        device.service_type === 'repair' ? 'Réparation' : 'Service';
-    doc.text(`${device.model_name} - ${serviceType}`, 20, y + 4);
-    doc.text(`SN: ${device.serial_number}`, 20, y + 9);
-    doc.text('1', 135, y + 6);
-    doc.text(`€${price.toFixed(2)}`, 155, y + 6);
-    doc.text(`€${price.toFixed(2)}`, 185, y + 6);
-    y += 14;
-  });
-  
-  // Total
-  y += 5;
-  doc.setDrawColor(0, 166, 81);
-  doc.line(15, y, 195, y);
-  y += 8;
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text('TOTAL HT:', 140, y);
-  doc.text(`€${total.toFixed(2)}`, 185, y);
-  
-  // TVA
-  const tva = total * 0.20;
-  y += 7;
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.text('TVA (20%):', 140, y);
-  doc.text(`€${tva.toFixed(2)}`, 185, y);
-  
-  // Total TTC
-  y += 7;
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text('TOTAL TTC:', 140, y);
-  doc.text(`€${(total + tva).toFixed(2)}`, 185, y);
-  
-  // Payment terms
-  y += 20;
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Conditions de paiement: 30 jours net', 15, y);
-  y += 5;
-  doc.text('Pour confirmer cette commande, veuillez nous retourner un bon de commande.', 15, y);
-  
-  addPDFFooter(doc, 1, 1);
-  
-  return doc.output('blob');
-};
+    return false;
+  };
 
-// Generate Service Report PDF
-const generateServiceReportPDF = async (device, rma, technicianName, calType, receptionResult, findings, workCompleted, checklist) => {
-  const jsPDF = await loadJsPDF();
-  const doc = new jsPDF();
-  const company = rma.companies || {};
-  
-  let y = addPDFHeader(doc, 'RAPPORT DE SERVICE', rma.request_number);
-  
-  // Date
-  doc.setFontSize(10);
-  doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, y);
-  y += 10;
-  
-  // Two column layout for device and client info
-  // Device info
-  doc.setFillColor(240, 249, 255);
-  doc.rect(15, y, 85, 40, 'F');
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.text('APPAREIL', 20, y + 7);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.text(`Modèle: ${device.model_name}`, 20, y + 15);
-  doc.text(`N° Série: ${device.serial_number}`, 20, y + 22);
-  doc.text(`Service: ${device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation'}`, 20, y + 29);
-  if (calType && calType !== 'none') doc.text(`Type: ${calType}`, 20, y + 36);
-  
-  // Client info
-  doc.setFillColor(245, 245, 245);
-  doc.rect(110, y, 85, 40, 'F');
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.text('CLIENT', 115, y + 7);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.text(company.name || 'N/A', 115, y + 15);
-  doc.text(company.address || company.billing_address || '', 115, y + 22, { maxWidth: 75 });
-  y += 50;
-  
-  // Reception result
-  if (receptionResult && receptionResult !== 'none') {
-    doc.setFillColor(receptionResult === 'Conforme' ? 220 : 255, receptionResult === 'Conforme' ? 252 : 243, receptionResult === 'Conforme' ? 231 : 224);
-    doc.rect(15, y, 180, 10, 'F');
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`Résultat à la réception: ${receptionResult}`, 20, y + 7);
-    y += 15;
+  // ===== HEADER =====
+  if (lighthouseLogo) {
+    try {
+      const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+    } catch (e) {
+      pdf.setFontSize(26);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...darkBlue);
+      pdf.text('LIGHTHOUSE', margin, y + 8);
+    }
+  } else {
+    pdf.setFontSize(26);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('LIGHTHOUSE', margin, y + 8);
   }
   
-  // Findings section
-  doc.setFillColor(254, 249, 195);
-  doc.rect(15, y, 180, 8, 'F');
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.text('CONSTATATIONS', 20, y + 6);
-  y += 12;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  const findingsLines = doc.splitTextToSize(findings || 'Aucune constatation', 170);
-  doc.text(findingsLines, 20, y);
-  y += findingsLines.length * 5 + 10;
+  pdf.setFontSize(18);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...green);
+  pdf.text('OFFRE DE PRIX', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('N. ' + (rma.request_number || 'FR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
   
-  // Work completed section
-  doc.setFillColor(220, 252, 231);
-  doc.rect(15, y, 180, 8, 'F');
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.text('TRAVAUX EFFECTUÉS', 20, y + 6);
-  y += 12;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  const workLines = doc.splitTextToSize(workCompleted || 'Aucun travail effectué', 170);
-  doc.text(workLines, 20, y);
-  y += workLines.length * 5 + 10;
+  y += 18;
+  pdf.setDrawColor(...green);
+  pdf.setLineWidth(1);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 7;
+
+  // ===== INFO BAR =====
+  pdf.setFillColor(245, 245, 245);
+  pdf.rect(margin, y, contentWidth, 16, 'F');
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('DATE', margin + 5, y + 5);
+  pdf.text('VALIDITE', margin + 60, y + 5);
+  pdf.text('CONDITIONS', margin + 115, y + 5);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  const qDate = rma.quoted_at ? new Date(rma.quoted_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
+  pdf.text(qDate, margin + 5, y + 12);
+  pdf.text('30 jours', margin + 60, y + 12);
+  pdf.text('A reception de facture', margin + 115, y + 12);
+  y += 20;
+
+  // ===== CLIENT =====
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CLIENT', margin, y);
+  y += 5;
+  pdf.setFontSize(14);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(company.name || 'Client', margin, y);
+  y += 6;
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  if (company.billing_address || company.address) {
+    pdf.text(company.billing_address || company.address, margin, y);
+    y += 5;
+  }
+  const city = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
+  if (city) {
+    pdf.text(city, margin, y);
+    y += 5;
+  }
+  y += 8;
+
+  // ===== PRICING TABLE =====
+  const rowH = 8;
   
-  // Checklist if available
+  pdf.setFontSize(13);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Recapitulatif des Prix', margin, y);
+  y += 7;
+
+  // Header row
+  pdf.setFillColor(...darkBlue);
+  pdf.rect(margin, y, contentWidth, 9, 'F');
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...white);
+  pdf.text('Appareil', margin + 3, y + 6);
+  pdf.text('N. Serie', margin + 55, y + 6);
+  pdf.text('Service', margin + 100, y + 6);
+  pdf.text('Prix HT', pageWidth - margin - 3, y + 6, { align: 'right' });
+  y += 9;
+
+  let servicesSubtotal = 0;
+  let shippingTotal = 0;
+  
+  devices.forEach((device, idx) => {
+    const price = parseFloat(device.quoted_price) || 0;
+    servicesSubtotal += price;
+    const shipping = parseFloat(device.shipping) || 0;
+    shippingTotal += shipping;
+    
+    const serviceType = device.service_type === 'calibration' ? 'Etalonnage' : 
+                        device.service_type === 'repair' ? 'Reparation' : 'Service';
+    
+    pdf.setFillColor(idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(device.model_name || '-', margin + 3, y + 5.5);
+    pdf.setFont('courier', 'normal');
+    pdf.text(device.serial_number || '-', margin + 55, y + 5.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(serviceType, margin + 100, y + 5.5);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(price.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+    y += rowH;
+  });
+
+  // Totals
+  const grandTotal = servicesSubtotal + shippingTotal;
+  
+  pdf.setDrawColor(200, 200, 200);
+  pdf.line(margin, y, pageWidth - margin, y);
+  
+  pdf.setFillColor(255, 255, 255);
+  pdf.rect(margin, y, contentWidth, rowH, 'F');
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(9);
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Sous-total services', margin + 3, y + 5.5);
+  pdf.text(servicesSubtotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+  y += rowH;
+
+  pdf.rect(margin, y, contentWidth, rowH, 'F');
+  pdf.text('Total frais de port', margin + 3, y + 5.5);
+  pdf.text(shippingTotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+  y += rowH;
+
+  pdf.setFillColor(...green);
+  pdf.rect(margin, y, contentWidth, 11, 'F');
+  pdf.setTextColor(...white);
+  pdf.setFontSize(11);
+  pdf.text('TOTAL HT', margin + 4, y + 7.5);
+  pdf.setFontSize(16);
+  pdf.text(grandTotal.toFixed(2) + ' EUR', pageWidth - margin - 4, y + 8, { align: 'right' });
+  y += 15;
+
+  // ===== SIGNATURE SECTION =====
+  const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
+  
+  pdf.setDrawColor(200, 200, 200);
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, sigY, pageWidth - margin, sigY);
+  
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('ETABLI PAR', margin, sigY + 7);
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('M. Meleney', margin, sigY + 14);
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('Lighthouse France', margin, sigY + 20);
+
+  // Capcert logo
+  if (capcertLogo) {
+    try {
+      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
+    } catch (e) {}
+  }
+
+  // Signature box
+  const sigBoxX = pageWidth - margin - 62;
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('Signature client', sigBoxX + 16, sigY + 7);
+  pdf.setDrawColor(180, 180, 180);
+  pdf.setLineWidth(0.3);
+  pdf.setLineDashPattern([2, 2], 0);
+  pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 22, 2, 2, 'D');
+  pdf.setLineDashPattern([], 0);
+  pdf.text('Lu et approuve', sigBoxX + 18, sigY + 37);
+
+  addFooter();
+  return pdf.output('blob');
+};
+
+// Generate Service Report PDF - PROFESSIONAL FORMAT
+const generateServiceReportPDF = async (device, rma, technicianName, calType, receptionResult, findings, workCompleted, checklist, businessSettings) => {
+  const jsPDF = await loadJsPDF();
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const company = rma.companies || {};
+  const biz = businessSettings || {};
+  
+  const pageWidth = 210, pageHeight = 297, margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  const footerHeight = 16;
+  const { green, darkBlue, gray, lightGray, white } = PDF_COLORS;
+  
+  let y = margin;
+  
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
+  
+  const addFooter = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+    pdf.setTextColor(...white);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(biz.company_name || 'Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(180, 180, 180);
+    pdf.setFontSize(8);
+    pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'} - Tel. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+  };
+
+  // ===== HEADER =====
+  if (lighthouseLogo) {
+    try {
+      const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+    } catch (e) {
+      pdf.setFontSize(26);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...darkBlue);
+      pdf.text('LIGHTHOUSE', margin, y + 8);
+    }
+  } else {
+    pdf.setFontSize(26);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('LIGHTHOUSE', margin, y + 8);
+  }
+  
+  pdf.setFontSize(18);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...green);
+  pdf.text('RAPPORT DE SERVICE', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('RMA ' + (rma.request_number || 'FR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
+  
+  y += 18;
+  pdf.setDrawColor(...green);
+  pdf.setLineWidth(1);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 10;
+
+  // ===== INFO BAR =====
+  pdf.setFillColor(245, 245, 245);
+  pdf.rect(margin, y, contentWidth, 16, 'F');
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('DATE', margin + 5, y + 5);
+  pdf.text('TECHNICIEN', margin + 50, y + 5);
+  pdf.text('TYPE', margin + 110, y + 5);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(new Date().toLocaleDateString('fr-FR'), margin + 5, y + 12);
+  pdf.text(technicianName || 'N/A', margin + 50, y + 12);
+  pdf.text(calType || 'Standard', margin + 110, y + 12);
+  y += 22;
+
+  // ===== DEVICE INFO =====
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('APPAREIL', margin, y);
+  y += 5;
+  
+  pdf.setFillColor(240, 249, 255);
+  pdf.rect(margin, y, contentWidth / 2 - 5, 28, 'F');
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(device.model_name || 'N/A', margin + 5, y + 8);
+  pdf.setFontSize(10);
+  pdf.setFont('courier', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('SN: ' + (device.serial_number || 'N/A'), margin + 5, y + 16);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation', margin + 5, y + 23);
+  
+  // Client box
+  pdf.setFillColor(245, 245, 245);
+  pdf.rect(margin + contentWidth / 2 + 5, y, contentWidth / 2 - 5, 28, 'F');
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('CLIENT', margin + contentWidth / 2 + 10, y + 5);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(company.name || 'N/A', margin + contentWidth / 2 + 10, y + 13);
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  const addr = [company.billing_address || company.address, company.billing_city || company.city].filter(Boolean).join(', ');
+  pdf.text(addr.substring(0, 40), margin + contentWidth / 2 + 10, y + 20);
+  
+  y += 35;
+
+  // ===== RECEPTION RESULT =====
+  if (receptionResult && receptionResult !== 'none') {
+    const isConform = receptionResult === 'Conforme';
+    pdf.setFillColor(isConform ? 220 : 254, isConform ? 252 : 243, isConform ? 231 : 199);
+    pdf.rect(margin, y, contentWidth, 12, 'F');
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(isConform ? 22 : 161, isConform ? 163 : 98, isConform ? 74 : 7);
+    pdf.text((isConform ? '✓ ' : '⚠ ') + 'Résultat à la réception: ' + receptionResult, margin + 5, y + 8);
+    y += 17;
+  }
+
+  // ===== FINDINGS =====
+  pdf.setDrawColor(...[59, 130, 246]); // Blue
+  pdf.setLineWidth(1);
+  pdf.line(margin, y, margin, y + 30);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('CONSTATATIONS', margin + 5, y + 6);
+  y += 10;
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  const findingsLines = pdf.splitTextToSize(findings || 'Aucune constatation particulière', contentWidth - 10);
+  findingsLines.forEach(line => {
+    pdf.text(line, margin + 5, y);
+    y += 5;
+  });
+  y += 8;
+
+  // ===== WORK COMPLETED =====
+  pdf.setDrawColor(...green);
+  pdf.setLineWidth(1);
+  pdf.line(margin, y, margin, y + 30);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('TRAVAUX EFFECTUÉS', margin + 5, y + 6);
+  y += 10;
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  const workLines = pdf.splitTextToSize(workCompleted || 'Service effectué selon procédure standard', contentWidth - 10);
+  workLines.forEach(line => {
+    pdf.text(line, margin + 5, y);
+    y += 5;
+  });
+  y += 8;
+
+  // ===== CHECKLIST =====
   if (checklist && checklist.length > 0) {
-    doc.setFillColor(240, 249, 255);
-    doc.rect(15, y, 180, 8, 'F');
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text('VÉRIFICATIONS', 20, y + 6);
-    y += 12;
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('VÉRIFICATIONS', margin, y);
+    y += 6;
+    
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
     checklist.forEach(item => {
-      const status = item.checked ? '✓' : '○';
-      doc.text(`${status} ${item.label}`, 25, y);
+      const checked = item.checked;
+      pdf.setTextColor(checked ? 22 : 161, checked ? 163 : 98, checked ? 74 : 7);
+      pdf.text(checked ? '✓' : '○', margin + 3, y);
+      pdf.setTextColor(...gray);
+      pdf.text(item.label, margin + 10, y);
       y += 5;
     });
     y += 5;
   }
+
+  // ===== SIGNATURE SECTION =====
+  const sigY = Math.max(y + 10, pageHeight - footerHeight - 40);
   
-  // Technician signature
-  y = Math.max(y, 220);
-  doc.setDrawColor(200, 200, 200);
-  doc.line(15, y, 195, y);
-  y += 10;
-  doc.setFontSize(10);
-  doc.text(`Technicien: ${technicianName || 'N/A'}`, 15, y);
-  doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 150, y);
+  pdf.setDrawColor(200, 200, 200);
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, sigY, pageWidth - margin, sigY);
   
-  addPDFFooter(doc, 1, 1);
-  
-  return doc.output('blob');
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('TECHNICIEN', margin, sigY + 7);
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(technicianName || 'N/A', margin, sigY + 14);
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('Date: ' + new Date().toLocaleDateString('fr-FR'), margin, sigY + 20);
+
+  if (capcertLogo) {
+    try {
+      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(capcertLogo, format, pageWidth - margin - 35, sigY + 3, 32, 32);
+    } catch (e) {}
+  }
+
+  addFooter();
+  return pdf.output('blob');
 };
 
-// Generate Bon de Livraison PDF
+// Generate Bon de Livraison PDF - PROFESSIONAL FORMAT
 const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings) => {
   const jsPDF = await loadJsPDF();
-  const doc = new jsPDF();
+  const pdf = new jsPDF('p', 'mm', 'a4');
   const company = rma.companies || {};
   const address = shipment.address || {};
+  const biz = businessSettings || {};
   
-  let y = addPDFHeader(doc, 'BON DE LIVRAISON', blNumber);
+  const pageWidth = 210, pageHeight = 297, margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  const footerHeight = 16;
+  const { green, darkBlue, gray, lightGray, white } = PDF_COLORS;
   
-  // Date and tracking
-  doc.setFontSize(10);
-  doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, y);
-  if (shipment.trackingNumber) {
-    doc.text(`N° Suivi UPS: ${shipment.trackingNumber}`, 195, y, { align: 'right' });
-  }
-  y += 10;
+  let y = margin;
   
-  // Shipping address
-  doc.setFillColor(245, 245, 245);
-  doc.rect(15, y, 85, 40, 'F');
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.text('DESTINATAIRE', 20, y + 7);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.text(address.company_name || company.name || 'N/A', 20, y + 15);
-  if (address.attention) doc.text(`À l'att. de: ${address.attention}`, 20, y + 21);
-  doc.text(address.address_line1 || '', 20, y + 27);
-  doc.text(`${address.postal_code || ''} ${address.city || ''}`, 20, y + 33);
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
   
-  // Sender
-  doc.rect(110, y, 85, 40, 'F');
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.text('EXPÉDITEUR', 115, y + 7);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.text('LIGHTHOUSE FRANCE', 115, y + 15);
-  doc.text('1 Rue de la Pépinière', 115, y + 21);
-  doc.text('94000 Créteil, France', 115, y + 27);
-  y += 50;
-  
-  // Reference
-  doc.setFontSize(10);
-  doc.text(`Référence RMA: ${rma.request_number}`, 15, y);
-  y += 10;
-  
-  // Table header
-  doc.setFillColor(0, 166, 81);
-  doc.setTextColor(255, 255, 255);
-  doc.rect(15, y, 180, 8, 'F');
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Modèle', 20, y + 6);
-  doc.text('N° Série', 90, y + 6);
-  doc.text('Service', 140, y + 6);
-  doc.setTextColor(0, 0, 0);
-  y += 10;
-  
-  // Devices
-  doc.setFont('helvetica', 'normal');
-  const devicesToList = shipment.devices || devices;
-  devicesToList.forEach((device, idx) => {
-    if (idx % 2 === 0) {
-      doc.setFillColor(250, 250, 250);
-      doc.rect(15, y - 2, 180, 8, 'F');
+  const addFooter = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+    pdf.setTextColor(...white);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(biz.company_name || 'Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(180, 180, 180);
+    pdf.setFontSize(8);
+    pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'} - Tel. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+  };
+
+  // ===== HEADER =====
+  if (lighthouseLogo) {
+    try {
+      const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+    } catch (e) {
+      pdf.setFontSize(26);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...darkBlue);
+      pdf.text('LIGHTHOUSE', margin, y + 8);
     }
-    doc.text(device.model_name || '', 20, y + 4);
-    doc.text(device.serial_number || '', 90, y + 4);
-    doc.text(device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation', 140, y + 4);
-    y += 10;
+  } else {
+    pdf.setFontSize(26);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('LIGHTHOUSE', margin, y + 8);
+  }
+  
+  pdf.setFontSize(18);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...green);
+  pdf.text('BON DE LIVRAISON', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text(blNumber, pageWidth - margin, y + 14, { align: 'right' });
+  
+  y += 18;
+  pdf.setDrawColor(...green);
+  pdf.setLineWidth(1);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 10;
+
+  // ===== INFO BAR =====
+  pdf.setFillColor(245, 245, 245);
+  pdf.rect(margin, y, contentWidth, 12, 'F');
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('DATE', margin + 5, y + 4);
+  pdf.text('RMA', margin + 60, y + 4);
+  pdf.text('N° SUIVI UPS', margin + 110, y + 4);
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(new Date().toLocaleDateString('fr-FR'), margin + 5, y + 10);
+  pdf.text(rma.request_number || 'N/A', margin + 60, y + 10);
+  pdf.setFont('courier', 'normal');
+  pdf.text(shipment.trackingNumber || 'N/A', margin + 110, y + 10);
+  y += 18;
+
+  // ===== ADDRESSES =====
+  // Destinataire
+  pdf.setFillColor(245, 245, 245);
+  pdf.rect(margin, y, contentWidth / 2 - 5, 38, 'F');
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('DESTINATAIRE', margin + 5, y + 6);
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(address.company_name || company.name || 'N/A', margin + 5, y + 14);
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  if (address.attention) pdf.text("À l'att. de: " + address.attention, margin + 5, y + 20);
+  pdf.text(address.address_line1 || '', margin + 5, y + 26);
+  pdf.text((address.postal_code || '') + ' ' + (address.city || ''), margin + 5, y + 32);
+  
+  // Expéditeur
+  pdf.setFillColor(240, 249, 255);
+  pdf.rect(margin + contentWidth / 2 + 5, y, contentWidth / 2 - 5, 38, 'F');
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('EXPÉDITEUR', margin + contentWidth / 2 + 10, y + 6);
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(biz.company_name || 'LIGHTHOUSE FRANCE', margin + contentWidth / 2 + 10, y + 14);
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text(biz.address || '16 rue Paul Séjourné', margin + contentWidth / 2 + 10, y + 20);
+  pdf.text((biz.postal_code || '94000') + ' ' + (biz.city || 'Créteil'), margin + contentWidth / 2 + 10, y + 26);
+  pdf.text('France', margin + contentWidth / 2 + 10, y + 32);
+  
+  y += 45;
+
+  // ===== DEVICES TABLE =====
+  const rowH = 10;
+  
+  // Header
+  pdf.setFillColor(...darkBlue);
+  pdf.rect(margin, y, contentWidth, 9, 'F');
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...white);
+  pdf.text('Qté', margin + 5, y + 6);
+  pdf.text('Désignation', margin + 20, y + 6);
+  pdf.text('N° Série', margin + 100, y + 6);
+  pdf.text('Service', margin + 150, y + 6);
+  y += 9;
+
+  const devicesToList = shipment.devices || devices;
+  devicesToList.forEach((d, idx) => {
+    pdf.setFillColor(idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('1', margin + 7, y + 7);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text('Compteur LIGHTHOUSE ' + (d.model_name || d.model || ''), margin + 20, y + 7);
+    pdf.setFont('courier', 'normal');
+    pdf.text(d.serial_number || d.serial || '', margin + 100, y + 7);
+    pdf.setFont('helvetica', 'normal');
+    const svc = d.service_type === 'calibration' ? 'Étalonnage' : d.service_type === 'repair' ? 'Réparation' : 'Service';
+    pdf.text(svc, margin + 150, y + 7);
+    y += rowH;
   });
   
-  // Shipping info
-  y += 10;
-  doc.setDrawColor(200, 200, 200);
-  doc.line(15, y, 195, y);
+  y += 5;
+
+  // ===== SHIPPING INFO =====
+  pdf.setDrawColor(...green);
+  pdf.setLineWidth(0.5);
+  pdf.line(margin, y, pageWidth - margin, y);
   y += 8;
-  doc.setFontSize(10);
-  doc.text(`Nombre de colis: ${shipment.parcels || 1}`, 15, y);
-  doc.text(`Poids total: ${shipment.weight || '1'} kg`, 100, y);
   
-  // Signature area
-  y = 230;
-  doc.rect(15, y, 85, 30);
-  doc.setFontSize(9);
-  doc.text('Signature Expéditeur:', 20, y + 7);
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Informations d\'expédition', margin, y);
+  y += 7;
   
-  doc.rect(110, y, 85, 30);
-  doc.text('Signature Destinataire:', 115, y + 7);
-  doc.text('Date:', 115, y + 25);
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('Transporteur:', margin, y);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('UPS', margin + 35, y);
   
-  addPDFFooter(doc, 1, 1);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text('Nombre de colis:', margin + 80, y);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(String(shipment.parcels || 1), margin + 120, y);
   
-  return doc.output('blob');
+  pdf.setFont('helvetica', 'normal');
+  pdf.text('Poids:', margin + 140, y);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text((shipment.weight || '1') + ' kg', margin + 155, y);
+  
+  y += 15;
+
+  // ===== SIGNATURE SECTION =====
+  const sigY = Math.max(y, pageHeight - footerHeight - 50);
+  
+  pdf.setDrawColor(200, 200, 200);
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, sigY, pageWidth - margin, sigY);
+  
+  // Signature boxes
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('Signature Expéditeur', margin + 20, sigY + 8);
+  pdf.setDrawColor(180, 180, 180);
+  pdf.roundedRect(margin, sigY + 12, 80, 25, 2, 2, 'D');
+  
+  pdf.text('Signature Destinataire', margin + contentWidth / 2 + 20, sigY + 8);
+  pdf.roundedRect(margin + contentWidth / 2, sigY + 12, 80, 25, 2, 2, 'D');
+
+  if (capcertLogo) {
+    try {
+      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(capcertLogo, format, pageWidth - margin - 25, sigY + 10, 22, 22);
+    } catch (e) {}
+  }
+
+  addFooter();
+  return pdf.output('blob');
 };
 
-// Generate UPS Label PDF
+// Generate UPS Label PDF - PROFESSIONAL FORMAT
 const generateUPSLabelPDF = async (rma, shipment) => {
   const jsPDF = await loadJsPDF();
-  const doc = new jsPDF();
+  const pdf = new jsPDF('p', 'mm', 'a4');
   const address = shipment.address || {};
   
-  // UPS Style label
-  doc.setFillColor(53, 28, 21); // UPS Brown
-  doc.rect(30, 20, 150, 20, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(28);
-  doc.setFont('helvetica', 'bold');
-  doc.text('UPS', 105, 35, { align: 'center' });
+  const pageWidth = 210;
+  const { darkBlue, gray, white } = PDF_COLORS;
   
-  // Tracking number
-  doc.setTextColor(0, 0, 0);
-  doc.setFillColor(245, 245, 245);
-  doc.rect(30, 45, 150, 20, 'F');
-  doc.setFontSize(16);
-  doc.text(shipment.trackingNumber || 'TRACKING', 105, 58, { align: 'center' });
+  // UPS Brown color
+  const upsBrown = [53, 28, 21];
   
-  // Barcode placeholder (simple lines to represent)
-  doc.setDrawColor(0, 0, 0);
-  for (let i = 0; i < 40; i++) {
-    const x = 45 + i * 3;
-    const height = Math.random() > 0.5 ? 20 : 15;
-    doc.setLineWidth(Math.random() > 0.5 ? 1 : 0.5);
-    doc.line(x, 70, x, 70 + height);
+  let y = 30;
+  
+  // UPS Header
+  pdf.setFillColor(...upsBrown);
+  pdf.rect(30, y, 150, 25, 'F');
+  pdf.setTextColor(...white);
+  pdf.setFontSize(36);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('UPS', 105, y + 17, { align: 'center' });
+  y += 30;
+  
+  // Tracking number box
+  pdf.setFillColor(245, 245, 245);
+  pdf.rect(30, y, 150, 20, 'F');
+  pdf.setDrawColor(...upsBrown);
+  pdf.setLineWidth(2);
+  pdf.rect(30, y, 150, 20, 'D');
+  pdf.setTextColor(...darkBlue);
+  pdf.setFontSize(18);
+  pdf.setFont('courier', 'bold');
+  pdf.text(shipment.trackingNumber || 'TRACKING NUMBER', 105, y + 13, { align: 'center' });
+  y += 28;
+  
+  // Barcode representation
+  pdf.setFillColor(0, 0, 0);
+  for (let i = 0; i < 50; i++) {
+    const x = 40 + i * 2.5;
+    const height = 15 + Math.random() * 10;
+    const width = Math.random() > 0.5 ? 1.5 : 0.8;
+    pdf.rect(x, y, width, height, 'F');
   }
+  y += 35;
   
-  // To address
-  doc.setLineWidth(0.5);
-  doc.rect(30, 100, 150, 50);
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.text('DESTINATAIRE / TO:', 35, 110);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(12);
-  doc.text(address.company_name || '', 35, 120);
+  // TO Address
+  pdf.setDrawColor(...darkBlue);
+  pdf.setLineWidth(1);
+  pdf.rect(30, y, 150, 55, 'D');
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...gray);
+  pdf.text('DESTINATAIRE / TO:', 35, y + 8);
+  
+  pdf.setFontSize(14);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(address.company_name || '', 35, y + 18);
+  
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'normal');
   if (address.attention) {
-    doc.text(`À l'att.: ${address.attention}`, 35, 128);
+    pdf.text("À l'att.: " + address.attention, 35, y + 26);
   }
-  doc.text(address.address_line1 || '', 35, 136);
-  doc.text(`${address.postal_code || ''} ${address.city || ''}`, 35, 144);
+  pdf.text(address.address_line1 || '', 35, y + 34);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text((address.postal_code || '') + ' ' + (address.city || ''), 35, y + 42);
+  pdf.text(address.country || 'France', 35, y + 50);
+  y += 62;
   
-  // From address
-  doc.rect(30, 155, 150, 45);
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.text('EXPÉDITEUR / FROM:', 35, 165);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11);
-  doc.text('LIGHTHOUSE FRANCE', 35, 175);
-  doc.text('1 Rue de la Pépinière', 35, 183);
-  doc.text('94000 Créteil, France', 35, 191);
+  // FROM Address
+  pdf.setDrawColor(...gray);
+  pdf.setLineWidth(0.5);
+  pdf.rect(30, y, 150, 45, 'D');
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...gray);
+  pdf.text('EXPÉDITEUR / FROM:', 35, y + 8);
+  
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('LIGHTHOUSE FRANCE', 35, y + 18);
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text('16 rue Paul Séjourné', 35, y + 26);
+  pdf.text('94000 Créteil, France', 35, y + 34);
+  y += 52;
   
   // Package info
-  doc.rect(30, 205, 150, 25);
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.text(`${shipment.parcels || 1} COLIS`, 60, 218);
-  doc.text(`${shipment.weight || '1'} KG`, 130, 218);
+  pdf.setFillColor(...upsBrown);
+  pdf.rect(30, y, 150, 20, 'F');
+  pdf.setTextColor(...white);
+  pdf.setFontSize(16);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text((shipment.parcels || 1) + ' COLIS', 65, y + 13);
+  pdf.text((shipment.weight || '1') + ' KG', 145, y + 13);
+  y += 28;
   
   // Reference
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Réf: ${rma.request_number}`, 105, 240, { align: 'center' });
+  pdf.setFontSize(10);
+  pdf.setTextColor(...gray);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text('Réf: ' + (rma.request_number || ''), 105, y, { align: 'center' });
   
-  return doc.output('blob');
+  return pdf.output('blob');
 };
 
 // Upload PDF to Supabase Storage
@@ -2099,6 +2479,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         notify={notify}
         reload={reload}
         profile={profile}
+        businessSettings={businessSettings}
       />
     );
   }
@@ -2671,7 +3052,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
 }
 
 // Device Service Modal - For filling inspection/findings
-function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
+function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, businessSettings }) {
   const [findings, setFindings] = useState(device.service_findings || '');
   const [additionalWorkNeeded, setAdditionalWorkNeeded] = useState(device.additional_work_needed || false);
   const [workItems, setWorkItems] = useState(device.additional_work_items || []);
@@ -2881,7 +3262,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
       try {
         const pdfBlob = await generateServiceReportPDF(
           device, rma, technicianName, calType, receptionResult, 
-          findings, workCompleted, checklist
+          findings, workCompleted, checklist, businessSettings
         );
         const fileName = `${rma.request_number}_${device.serial_number}_rapport_${Date.now()}.pdf`;
         reportUrl = await uploadPDFToStorage(pdfBlob, `reports/${rma.request_number}`, fileName);
