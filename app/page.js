@@ -67,7 +67,7 @@ export default function AdminPortal() {
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  const loadData = useCallback(async (refreshSelectedRMA = false) => {
+  const loadData = useCallback(async (refreshSelectedRMAId = null) => {
     const { data: reqs } = await supabase.from('service_requests')
       .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
       .order('created_at', { ascending: false });
@@ -87,16 +87,16 @@ export default function AdminPortal() {
     const { data: contractsData } = await supabase.from('contracts').select('id, status').order('created_at', { ascending: false });
     if (contractsData) setContracts(contractsData);
     
-    // Only refresh selected RMA if explicitly requested AND we have one selected
-    if (refreshSelectedRMA && selectedRMA) {
+    // Only refresh selected RMA if ID is provided
+    if (refreshSelectedRMAId) {
       const { data: updatedRMA } = await supabase
         .from('service_requests')
         .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
-        .eq('id', selectedRMA.id)
+        .eq('id', refreshSelectedRMAId)
         .single();
       if (updatedRMA) setSelectedRMA(updatedRMA);
     }
-  }, [selectedRMA]);
+  }, []); // No dependencies - stable function
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -196,7 +196,7 @@ export default function AdminPortal() {
             rma={selectedRMA} 
             onBack={() => { setSelectedRMA(null); setSelectedDeviceFromDashboard(null); }} 
             notify={notify} 
-            reload={() => loadData(true)}
+            reload={() => loadData(selectedRMA?.id)}
             profile={profile}
             initialDevice={selectedDeviceFromDashboard?.device}
           />
