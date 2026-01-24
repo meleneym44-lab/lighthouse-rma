@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
 // Expose supabase to window for debugging
@@ -7,6140 +7,253 @@ if (typeof window !== 'undefined') {
   window.supabase = supabase;
 }
 
-const STATUS_STYLES = {
-  // Admin steps (Soumis → Reçu)
-  submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Soumis' },
-  rma_created: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'RMA/Devis Créé' },
-  quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
-  waiting_bc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Attente BC' },
-  bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: '⚠️ BC à vérifier' },
-  bc_rejected: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ BC Rejeté' },
-  quote_approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'Devis Approuvé' },
-  waiting_reception: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En attente réception' },
-  received: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Reçu' },
+// France Metropolitan postal code check
+// Valid France Metropolitan: 5 digits, starting with 01-95 (includes Corsica 20)
+// INVALID (show warning): DOM-TOM (97xxx, 98xxx), foreign addresses, or non-French codes
+
+const isFranceMetropolitan = (postalCode) => {
+  if (!postalCode) return false; // No postal code = can't verify = show warning
   
-  // Service steps (File d'attente → Étalonnage/Réparation)
-  in_queue: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'File d\'attente' },
-  inspection: { bg: 'bg-violet-100', text: 'text-violet-700', label: 'Inspection' },
-  approbation: { bg: 'bg-pink-100', text: 'text-pink-700', label: 'Approbation' },
-  calibration: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Étalonnage' },
-  repair: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Réparation' },
+  // Clean the postal code (remove spaces)
+  const cleaned = postalCode.toString().replace(/\s/g, '');
   
-  // QC step
-  qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Contrôle QC' },
+  // Must be exactly 5 digits for France
+  if (!/^\d{5}$/.test(cleaned)) return false;
   
-  // Final Admin steps (Prêt → Expédié)
-  ready: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Prêt' },
-  shipped: { bg: 'bg-green-100', text: 'text-green-700', label: 'Expédié' },
+  // Get first 2 digits (department code)
+  const dept = parseInt(cleaned.substring(0, 2), 10);
   
-  // Other
-  completed: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Terminé' },
-  cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' },
-  archived: { bg: 'bg-slate-100', text: 'text-slate-500', label: '📦 Archivé' },
-  
-  // Legacy mappings (for backwards compatibility)
-  approved: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'RMA/Devis Créé' },
-  waiting_device: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En attente réception' },
-  calibration_in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Étalonnage' },
-  repair_in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Réparation' },
-  final_qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Contrôle QC' },
-  ready_to_ship: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Prêt' },
-  quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: '🔴 Modification demandée' }
+  // France Metropolitan departments: 01-95
+  // 01-19: Valid
+  // 20: Corsica (2A/2B) - included in metropolitan
+  // 21-95: Valid
+  // 96: Not used
+  // 97-98: DOM-TOM (overseas) - NOT metropolitan
+  // 99: Not used
+  return dept >= 1 && dept <= 95;
 };
 
-export default function AdminPortal() {
-  const [user, setUser] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [activeSheet, setActiveSheet] = useState('dashboard');
-  const [toast, setToast] = useState(null);
-  const [requests, setRequests] = useState([]);
-  const [clients, setClients] = useState([]);
-  const [staffMembers, setStaffMembers] = useState([]);
-  const [equipment, setEquipment] = useState([]);
-  const [contracts, setContracts] = useState([]);
-  const [selectedRMA, setSelectedRMA] = useState(null); // Full-page RMA view
-  const [selectedDeviceFromDashboard, setSelectedDeviceFromDashboard] = useState(null); // Direct device selection from device view
-
-  const notify = useCallback((msg, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  }, []);
-
-  const loadData = useCallback(async (refreshSelectedRMAId = null) => {
-    const { data: reqs } = await supabase.from('service_requests')
-      .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
-      .order('created_at', { ascending: false });
-    if (reqs) setRequests(reqs);
-
-    const { data: companies } = await supabase.from('companies')
-      .select('*, profiles(id, full_name, email, phone, role), shipping_addresses(*)')
-      .order('name', { ascending: true });
-    if (companies) setClients(companies);
-
-    const { data: equip } = await supabase.from('equipment').select('*, companies(name)').order('created_at', { ascending: false });
-    if (equip) setEquipment(equip);
-
-    const { data: staff } = await supabase.from('profiles').select('*').in('role', ['lh_admin', 'lh_employee']).order('full_name');
-    if (staff) setStaffMembers(staff);
-
-    const { data: contractsData } = await supabase.from('contracts').select('id, status').order('created_at', { ascending: false });
-    if (contractsData) setContracts(contractsData);
-    
-    // Only refresh selected RMA if ID is provided
-    if (refreshSelectedRMAId) {
-      const { data: updatedRMA } = await supabase
-        .from('service_requests')
-        .select('*, companies(id, name, billing_city, billing_address, billing_postal_code), request_devices(*)')
-        .eq('id', refreshSelectedRMAId)
-        .single();
-      if (updatedRMA) setSelectedRMA(updatedRMA);
-    }
-  }, []); // No dependencies - stable function
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUser(session.user);
-        const { data: p } = await supabase.from('profiles').select('*, companies(*)').eq('id', session.user.id).single();
-        if (p) {
-          if (p.role !== 'lh_admin' && p.role !== 'lh_employee') { window.location.href = '/'; return; }
-          setProfile(p);
-          await loadData();
-        }
-      }
-      setLoading(false);
-    };
-    checkAuth();
-  }, [loadData]);
-
-  const logout = async () => { await supabase.auth.signOut(); window.location.href = '/'; };
-  const isAdmin = profile?.role === 'lh_admin';
-  
-  // Count pending requests and modification requests
-  const pendingCount = requests.filter(r => r.status === 'submitted' && !r.request_number).length;
-  const modificationCount = requests.filter(r => r.status === 'quote_revision_requested').length;
-  const totalBadge = pendingCount + modificationCount;
-  // Contract badge: new requests, BC pending review, OR quote revision requested
-  const contractActionCount = contracts.filter(c => 
-    c.status === 'requested' || 
-    c.status === 'bc_pending' || 
-    c.status === 'quote_revision_requested'
-  ).length;
-  
-  // Dashboard filter state
-  const [dashboardFilter, setDashboardFilter] = useState(null);
-  
-  const sheets = [
-    { id: 'dashboard', label: 'Tableau de Bord', icon: '📊' },
-    { id: 'requests', label: 'Demandes', icon: '📋', badge: totalBadge > 0 ? totalBadge : null },
-    { id: 'clients', label: 'Clients', icon: '👥' },
-    { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
-    { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
-    { id: 'settings', label: 'Paramètres', icon: '⚙️' },
-    ...(isAdmin ? [{ id: 'admin', label: 'Admin', icon: '🔐' }] : [])
-  ];
-
-  if (loading) return <div className="min-h-screen bg-gray-100 flex items-center justify-center"><div className="w-12 h-12 border-4 border-[#00A651] border-t-transparent rounded-full animate-spin" /></div>;
-  if (!user || !profile) return <LoginPage />;
-
-  return (
-    <div className="min-h-screen bg-gray-100">
-      {toast && <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg text-white ${toast.type === 'error' ? 'bg-red-500' : 'bg-green-500'}`}>{toast.msg}</div>}
-      <header className="bg-white text-[#1a1a2e] shadow-lg border-b-4 border-[#00A651]">
-        <div className="max-w-full mx-auto px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <img 
-              src="/images/logos/lighthouse-logo.png" 
-              alt="Lighthouse France" 
-              className="h-10 w-auto"
-              onError={(e) => {
-                e.target.style.display = 'none';
-                e.target.nextSibling.style.display = 'flex';
-              }}
-            />
-            <div className="items-center gap-2 hidden">
-              <span className="text-2xl font-bold text-[#00A651]">LIGHTHOUSE</span>
-            </div>
-            <div className="text-sm text-gray-500">France • Admin Portal</div>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="font-medium">{profile?.full_name}</p>
-              <p className="text-xs text-gray-500">{isAdmin ? 'Administrateur' : 'Employe'}</p>
-            </div>
-            <button onClick={logout} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm text-white">Deconnexion</button>
-          </div>
-        </div>
-      </header>
-      <nav className="bg-[#1a1a2e] border-t border-gray-700">
-        <div className="max-w-full mx-auto px-6 flex gap-1 overflow-x-auto">
-          {sheets.map(sheet => (
-            <button key={sheet.id} onClick={() => setActiveSheet(sheet.id)}
-              className={`px-6 py-3 font-medium flex items-center gap-2 whitespace-nowrap relative ${activeSheet === sheet.id ? 'bg-[#00A651] text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
-              <span>{sheet.icon}</span>{sheet.label}
-              {sheet.badge > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1 animate-pulse">
-                  {sheet.badge}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      </nav>
-      <main className="max-w-full mx-auto p-6">
-        {/* Full-page RMA View */}
-        {selectedRMA ? (
-          <RMAFullPage 
-            rma={selectedRMA} 
-            onBack={() => { setSelectedRMA(null); setSelectedDeviceFromDashboard(null); }} 
-            notify={notify} 
-            reload={() => loadData(selectedRMA?.id)}
-            profile={profile}
-            initialDevice={selectedDeviceFromDashboard?.device}
-          />
-        ) : (
-          <>
-            {activeSheet === 'dashboard' && <DashboardSheet 
-              requests={requests} 
-              notify={notify} 
-              reload={loadData} 
-              isAdmin={isAdmin} 
-              onSelectRMA={setSelectedRMA} 
-              onSelectDevice={(device, rma) => {
-                setSelectedDeviceFromDashboard({ device, rma });
-                setSelectedRMA(rma);
-              }}
-              filter={dashboardFilter} 
-              setFilter={setDashboardFilter} 
-            />}
-            {activeSheet === 'requests' && <RequestsSheet requests={requests} notify={notify} reload={loadData} profile={profile} />}
-            {activeSheet === 'clients' && <ClientsSheet clients={clients} requests={requests} equipment={equipment} notify={notify} reload={loadData} isAdmin={isAdmin} onSelectRMA={setSelectedRMA} />}
-            {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} />}
-            {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} reloadMain={loadData} />}
-            {activeSheet === 'settings' && <SettingsSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
-            {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
-          </>
-        )}
-      </main>
-    </div>
-  );
-}
-
-function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-    if (authError) { setError(authError.message); setLoading(false); return; }
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).single();
-    if (profile?.role !== 'lh_admin' && profile?.role !== 'lh_employee') {
-      setError('Accès non autorisé. Ce portail est réservé au personnel Lighthouse.');
-      await supabase.auth.signOut();
-      setLoading(false);
-      return;
-    }
-    window.location.reload();
-  };
-
-  return (
-    <div className="min-h-screen bg-[#1a1a2e] flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-8">
-        <div className="text-center mb-8">
-          <img 
-            src="/images/logos/lighthouse-logo.png" 
-            alt="Lighthouse France" 
-            className="h-14 w-auto mx-auto mb-3"
-            onError={(e) => {
-              e.target.style.display = 'none';
-              e.target.nextSibling.style.display = 'block';
-            }}
-          />
-          <h1 className="text-3xl font-bold text-[#00A651] hidden">LIGHTHOUSE</h1>
-          <p className="text-gray-500 mt-2">France - Portail Administrateur</p>
-        </div>
-        {error && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-lg" required />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-lg" required />
-          </div>
-          <button type="submit" disabled={loading} className="w-full py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] disabled:opacity-50">
-            {loading ? 'Connexion...' : 'Se connecter'}
-          </button>
-        </form>
-        <p className="text-center text-sm text-gray-400 mt-6">Accès réservé au personnel Lighthouse France</p>
-      </div>
-    </div>
-  );
-}
-
-function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSelectDevice, filter, setFilter }) {
-  const [reviewingBC, setReviewingBC] = useState(null);
-  const [showArchived, setShowArchived] = useState(false);
-  const [viewMode, setViewMode] = useState('rma'); // 'rma' or 'device'
-  
-  const archivedRMAs = requests.filter(r => r.status === 'archived');
-  const activeRMAs = requests.filter(r => r.request_number && !['completed', 'cancelled', 'archived'].includes(r.status));
-  
-  // BC needs review
-  const needsReview = requests.filter(r => 
-    r.status === 'bc_review' || 
-    ((r.bc_file_url || r.bc_signature_url) && r.status === 'waiting_bc')
-  );
-  
-  // Waiting for device
-  const waitingDevice = activeRMAs.filter(r => r.status === 'waiting_device');
-  
-  // Waiting for BC (quote sent but not signed yet)
-  const waitingBC = activeRMAs.filter(r => ['quote_sent', 'waiting_bc'].includes(r.status) && !r.bc_submitted_at);
-  
-  // Service statuses: File d'attente, Inspection, Approbation, Étalonnage, Réparation
-  const serviceStatuses = ['in_queue', 'inspection', 'approbation', 'calibration', 'repair', 'calibration_in_progress', 'repair_in_progress'];
-  // QC statuses
-  const qcStatuses = ['qc', 'final_qc'];
-  // Ready statuses
-  const readyStatuses = ['ready', 'ready_to_ship'];
-  
-  // Filter by job type - check both RMA status AND device statuses
-  const getJobType = (rma) => {
-    const devices = rma.request_devices || [];
-    
-    // Check device statuses first (more accurate for multi-device RMAs)
-    if (devices.length > 0) {
-      const anyInService = devices.some(d => serviceStatuses.includes(d.status));
-      const anyInQC = devices.some(d => qcStatuses.includes(d.status) || (d.report_complete && !d.qc_complete));
-      const allReady = devices.every(d => readyStatuses.includes(d.status) || d.qc_complete);
-      
-      if (allReady && devices.some(d => d.qc_complete)) return 'ready';
-      if (anyInQC) return 'qc';
-      if (anyInService) return 'service';
-    }
-    
-    // Fall back to RMA status
-    if (serviceStatuses.includes(rma.status)) return 'service';
-    if (qcStatuses.includes(rma.status)) return 'qc';
-    if (readyStatuses.includes(rma.status)) return 'ready';
-    
-    return 'other';
-  };
-  
-  const byJob = {
-    service: activeRMAs.filter(r => getJobType(r) === 'service'),
-    qc: activeRMAs.filter(r => getJobType(r) === 'qc'),
-    ready: activeRMAs.filter(r => getJobType(r) === 'ready')
-  };
-  
-  // Stats for the cards
-  const stats = [
-    { id: 'all', label: 'RMAs Actifs', value: activeRMAs.length, color: 'bg-blue-500', icon: '📋' },
-    { id: 'bc', label: 'BC à vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
-    { id: 'waiting_bc', label: 'Attente BC', value: waitingBC.length, color: 'bg-amber-500', icon: '📝' },
-    { id: 'waiting_device', label: 'Attente Appareil', value: waitingDevice.length, color: 'bg-cyan-500', icon: '📦' },
-  ];
-  
-  // Job filter buttons
-  const jobFilters = [
-    { id: 'service', label: 'Service', value: byJob.service.length, color: 'bg-indigo-500', icon: '🔧' },
-    { id: 'qc', label: 'QC', value: byJob.qc.length, color: 'bg-purple-500', icon: '✅' },
-    { id: 'ready', label: 'Prêt', value: byJob.ready.length, color: 'bg-green-500', icon: '📤' }
-  ];
-  
-  // Filter RMAs based on selected filter
-  const getFilteredRMAs = () => {
-    if (!filter) return activeRMAs;
-    if (filter === 'all') return activeRMAs;
-    if (filter === 'bc') return needsReview;
-    if (filter === 'waiting_bc') return waitingBC;
-    if (filter === 'waiting_device') return waitingDevice;
-    if (byJob[filter]) return byJob[filter];
-    return activeRMAs;
-  };
-  
-  const filteredRMAs = getFilteredRMAs();
-  const allFilters = [...stats, ...jobFilters];
-  const filterLabel = filter ? allFilters.find(s => s.id === filter)?.label : null;
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">Tableau de Bord</h1>
-        <div className="flex gap-2">
-          {archivedRMAs.length > 0 && (
-            <button 
-              onClick={() => setShowArchived(!showArchived)} 
-              className={`px-4 py-2 rounded-lg text-sm ${showArchived ? 'bg-slate-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
-            >
-              📦 Archives ({archivedRMAs.length})
-            </button>
-          )}
-          <button onClick={reload} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">🔄 Actualiser</button>
-        </div>
-      </div>
-      
-      {/* Archived RMAs Section */}
-      {showArchived && archivedRMAs.length > 0 && (
-        <div className="bg-slate-50 border border-slate-200 rounded-xl">
-          <div className="px-6 py-4 border-b border-slate-200">
-            <h2 className="font-bold text-slate-700">📦 RMAs Archivés ({archivedRMAs.length})</h2>
-          </div>
-          <div className="p-4 space-y-2 max-h-64 overflow-y-auto">
-            {archivedRMAs.map(rma => (
-              <div key={rma.id} onClick={() => onSelectRMA(rma)} className="bg-white rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-slate-100 border border-slate-200">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-sm text-slate-500">{rma.request_number}</span>
-                  <span className="text-sm text-slate-600">{rma.companies?.name}</span>
-                </div>
-                <div className="text-right">
-                  <span className="text-xs text-slate-400">Archivé le {rma.archived_at ? new Date(rma.archived_at).toLocaleDateString('fr-FR') : '—'}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-        {stats.map((stat) => (
-          <button 
-            key={stat.id} 
-            onClick={() => setFilter(filter === stat.id ? null : stat.id)}
-            className={`bg-white rounded-xl p-4 shadow-sm text-left transition-all ${
-              filter === stat.id ? 'ring-2 ring-offset-2 ring-blue-500' : 'hover:shadow-md'
-            } ${stat.value > 0 && stat.id === 'bc' ? 'ring-2 ring-red-500 animate-pulse' : ''}`}
-          >
-            <div className="flex items-center gap-3">
-              <div className={`w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center text-2xl text-white`}>{stat.icon}</div>
-              <div>
-                <p className="text-2xl font-bold text-gray-800">{stat.value}</p>
-                <p className="text-sm text-gray-500">{stat.label}</p>
-              </div>
-            </div>
-          </button>
-        ))}
-        {jobFilters.map((job) => (
-          <button 
-            key={job.id} 
-            onClick={() => setFilter(filter === job.id ? null : job.id)}
-            className={`bg-white rounded-xl p-4 shadow-sm text-left transition-all ${
-              filter === job.id ? 'ring-2 ring-offset-2 ring-blue-500' : 'hover:shadow-md'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className={`w-12 h-12 ${job.color} rounded-lg flex items-center justify-center text-2xl text-white`}>{job.icon}</div>
-              <div>
-                <p className="text-2xl font-bold text-gray-800">{job.value}</p>
-                <p className="text-sm text-gray-500">{job.label}</p>
-              </div>
-            </div>
-          </button>
-        ))}
-      </div>
-      
-      {/* Active Filter Indicator - only show when filtering (not for 'all') */}
-      {filter && filter !== 'all' && (
-        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
-          <span className="text-blue-700 font-medium">Filtre: {filterLabel}</span>
-          <span className="text-blue-600">({filteredRMAs.length} RMAs)</span>
-          <button onClick={() => setFilter(null)} className="ml-auto text-blue-600 hover:text-blue-800 font-medium">✕ Effacer</button>
-        </div>
-      )}
-      
-      {/* BC Review Section - Always show when there are BCs to review */}
-      {needsReview.length > 0 && (!filter || filter === 'bc') && (
-        <div className="bg-red-50 border-2 border-red-300 rounded-xl shadow-lg">
-          <div className="px-6 py-4 border-b border-red-200 bg-red-100 rounded-t-xl">
-            <h2 className="font-bold text-red-800 text-lg">⚠️ Bons de Commande à Vérifier ({needsReview.length})</h2>
-            <p className="text-sm text-red-600">Cliquez sur "Examiner" pour vérifier le document et approuver</p>
-          </div>
-          <div className="p-4 space-y-3">
-            {needsReview.map(rma => (
-              <div key={rma.id} className="bg-white rounded-lg p-4 flex items-center justify-between shadow-sm border border-red-100">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
-                  <div>
-                    <span className="font-mono font-bold text-[#00A651] text-lg">{rma.request_number}</span>
-                    <p className="font-medium text-gray-800">{rma.companies?.name}</p>
-                    <p className="text-sm text-gray-500">
-                      BC soumis le {rma.bc_submitted_at ? new Date(rma.bc_submitted_at).toLocaleDateString('fr-FR') : new Date(rma.updated_at).toLocaleDateString('fr-FR')}
-                      {rma.bc_signed_by && <span className="ml-2">• Signé par: {rma.bc_signed_by}</span>}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setReviewingBC(rma)}
-                  className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium flex items-center gap-2"
-                >
-                  🔍 Examiner
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      
-      {/* View Toggle & Table */}
-      {filter !== 'bc' && (
-        <div className="bg-white rounded-xl shadow-sm">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="font-bold text-gray-800">
-              {filterLabel ? `${filterLabel} (${filteredRMAs.length})` : `RMAs Actifs (${activeRMAs.length})`}
-            </h2>
-            {/* View Toggle */}
-            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-              <button
-                onClick={() => setViewMode('rma')}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                  viewMode === 'rma' ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                📋 Vue RMA
-              </button>
-              <button
-                onClick={() => setViewMode('device')}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                  viewMode === 'device' ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                🔧 Vue Appareil
-              </button>
-            </div>
-          </div>
-          
-          {/* RMA View Table */}
-          {viewMode === 'rma' && (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMA</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Client</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Appareil(s)</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Service</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Étape</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Date</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filteredRMAs.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Aucun RMA</td></tr>
-                  ) : filteredRMAs.map(rma => {
-                    const jobType = getJobType(rma);
-                    const jobStyles = {
-                      service: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Service' },
-                      qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'QC' },
-                      ready: { bg: 'bg-green-100', text: 'text-green-700', label: 'Prêt' },
-                      other: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Admin' }
-                    };
-                    const jobStyle = jobStyles[jobType] || jobStyles.other;
-                    const devices = rma.request_devices || [];
-                    const hasBCToReview = needsReview.find(n => n.id === rma.id);
-                    
-                    // Compute effective status based on device states (more accurate than rma.status)
-                    const getEffectiveStatus = () => {
-                      if (devices.length === 0) return rma.status;
-                      const allQCComplete = devices.every(d => d.qc_complete);
-                      const anyInQC = devices.some(d => d.report_complete && !d.qc_complete);
-                      const allReportsComplete = devices.every(d => d.report_complete);
-                      
-                      if (allQCComplete) return 'ready_to_ship';
-                      if (anyInQC || allReportsComplete) return 'final_qc';
-                      return rma.status;
-                    };
-                    const effectiveStatus = getEffectiveStatus();
-                    const style = STATUS_STYLES[effectiveStatus] || STATUS_STYLES.submitted;
-                    
-                    return (
-                      <tr key={rma.id} className={`hover:bg-gray-50 cursor-pointer ${hasBCToReview ? 'bg-red-50' : ''}`} onClick={() => !hasBCToReview && onSelectRMA(rma)}>
-                        <td className="px-4 py-3"><span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span></td>
-                        <td className="px-4 py-3"><p className="font-medium text-gray-800">{rma.companies?.name || '—'}</p></td>
-                        <td className="px-4 py-3">
-                          {devices.length > 0 ? <div className="text-sm">{devices.slice(0, 2).map((d, i) => <p key={i}>{d.model_name} <span className="text-gray-400">({d.serial_number})</span></p>)}{devices.length > 2 && <p className="text-gray-400">+{devices.length - 2} autres</p>}</div> : <span className="text-gray-400">{rma.serial_number || '—'}</span>}
-                        </td>
-                        <td className="px-4 py-3"><span className="text-sm">{rma.requested_service === 'calibration' ? '🔬 Étalonnage' : rma.requested_service === 'repair' ? '🔧 Réparation' : rma.requested_service}</span></td>
-                        <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span></td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</td>
-                        <td className="px-4 py-3">
-                          {hasBCToReview ? (
-                            <button onClick={(e) => { e.stopPropagation(); setReviewingBC(rma); }} className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded">🔍 Examiner BC</button>
-                          ) : (
-                            <button onClick={(e) => { e.stopPropagation(); onSelectRMA(rma); }} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          
-          {/* Device View Table */}
-          {viewMode === 'device' && (() => {
-            // Flatten all devices from ALL active RMAs (not just filtered)
-            const allDevicesRaw = activeRMAs.flatMap(rma => 
-              (rma.request_devices || []).map(device => ({
-                ...device,
-                rma: rma
-              }))
-            );
-            
-            // Define status categories for filtering
-            const waitingStatuses = ['waiting_device', 'bc_approved'];
-            const serviceStatuses = ['received', 'in_queue', 'queue', 'calibration', 'calibration_in_progress', 
-                                     'inspection', 'inspection_complete', 'customer_approval', 'repair', 'repair_in_progress'];
-            const qcStatuses = ['final_qc', 'qc', 'quality_check'];
-            const readyStatuses = ['ready_to_ship', 'ready'];
-            
-            // Helper to get device's effective status
-            const getDeviceStatus = (device) => device.status || device.rma.status;
-            
-            // Helper to determine device category
-            const getDeviceCategory = (device) => {
-              const status = getDeviceStatus(device);
-              // Check for QC based on report_complete flag too
-              if (device.report_complete && !device.qc_complete) return 'qc';
-              if (device.qc_complete) return 'ready';
-              if (qcStatuses.includes(status)) return 'qc';
-              if (readyStatuses.includes(status)) return 'ready';
-              if (serviceStatuses.includes(status)) return 'service';
-              if (waitingStatuses.includes(status)) return 'waiting_device';
-              return 'other';
-            };
-            
-            // Filter devices based on selected filter
-            const allDevices = (() => {
-              if (!filter || filter === 'all') return allDevicesRaw;
-              if (filter === 'service') return allDevicesRaw.filter(d => getDeviceCategory(d) === 'service');
-              if (filter === 'qc') return allDevicesRaw.filter(d => getDeviceCategory(d) === 'qc');
-              if (filter === 'ready') return allDevicesRaw.filter(d => getDeviceCategory(d) === 'ready');
-              if (filter === 'waiting_device') return allDevicesRaw.filter(d => getDeviceCategory(d) === 'waiting_device');
-              // For other filters (bc, waiting_bc), filter by RMA
-              return filteredRMAs.flatMap(rma => 
-                (rma.request_devices || []).map(device => ({ ...device, rma }))
-              );
-            })();
-            
-            // Progress bar component for device view
-            const DeviceProgressBar = ({ device, rma }) => {
-              const serviceType = device.service_type || rma.requested_service || 'calibration';
-              const isRepair = serviceType === 'repair';
-              
-              const calibrationSteps = [
-                { id: 'submitted', label: 'Soumis' },
-                { id: 'rma_created', label: 'RMA' },
-                { id: 'bc_approved', label: 'BC' },
-                { id: 'waiting_device', label: 'Attente' },
-                { id: 'received', label: 'Reçu' },
-                { id: 'queue', label: 'File' },
-                { id: 'calibration', label: 'Étal.' },
-                { id: 'final_qc', label: 'QC' },
-                { id: 'ready_to_ship', label: 'Prêt' },
-                { id: 'shipped', label: 'Expédié' }
-              ];
-              
-              const repairSteps = [
-                { id: 'submitted', label: 'Soumis' },
-                { id: 'rma_created', label: 'RMA' },
-                { id: 'bc_approved', label: 'BC' },
-                { id: 'waiting_device', label: 'Attente' },
-                { id: 'received', label: 'Reçu' },
-                { id: 'inspection', label: 'Insp.' },
-                { id: 'customer_approval', label: 'Appr.' },
-                { id: 'repair', label: 'Rép.' },
-                { id: 'final_qc', label: 'QC' },
-                { id: 'ready_to_ship', label: 'Prêt' },
-                { id: 'shipped', label: 'Expédié' }
-              ];
-              
-              const steps = isRepair ? repairSteps : calibrationSteps;
-              
-              // Get step index - map all possible statuses to progress steps
-              const getStepIndex = (status) => {
-                // If no status, check if RMA has request_number (means it's at least created)
-                if (!status && rma.request_number) {
-                  return 1; // At least RMA created
-                }
-                
-                if (isRepair) {
-                  // Repair: 11 steps (0-10)
-                  const map = {
-                    'submitted': 0, 'pending': 0, 'waiting_approval': 0,
-                    'approved': 1, 'rma_created': 1, 'quote_sent': 1,
-                    'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
-                    'waiting_device': 3, 'bc_approved': 3,
-                    'received': 4, 'in_queue': 4,
-                    'inspection': 5, 'inspection_complete': 5,
-                    'customer_approval': 6, 'quote_approved': 6, 'waiting_parts': 6,
-                    'repair': 7, 'repair_in_progress': 7, 'in_progress': 7,
-                    'final_qc': 8, 'qc': 8, 'quality_check': 8,
-                    'ready_to_ship': 9, 'ready': 9,
-                    'shipped': 10, 'delivered': 10, 'completed': 10
-                  };
-                  return map[status] ?? 1;
-                } else {
-                  // Calibration: 10 steps (0-9)
-                  const map = {
-                    'submitted': 0, 'pending': 0, 'waiting_approval': 0,
-                    'approved': 1, 'rma_created': 1, 'quote_sent': 1,
-                    'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
-                    'waiting_device': 3, 'bc_approved': 3,
-                    'received': 4, 'in_queue': 4,
-                    'queue': 5, 'queued': 5,
-                    'calibration': 6, 'calibration_in_progress': 6, 'in_progress': 6,
-                    'final_qc': 7, 'qc': 7, 'quality_check': 7,
-                    'ready_to_ship': 8, 'ready': 8,
-                    'shipped': 9, 'delivered': 9, 'completed': 9
-                  };
-                  return map[status] ?? 1;
-                }
-              };
-              
-              // Get the actual status to use - prioritize device.status as it's updated per-device
-              // Also check report_complete flag to determine if in QC
-              const effectiveStatus = (() => {
-                // If report is complete but QC not done, device is in QC
-                if (device.report_complete && !device.qc_complete) return 'final_qc';
-                // If QC is complete, device is ready
-                if (device.qc_complete) return 'ready_to_ship';
-                // Otherwise use device status, falling back to RMA status
-                return device.status || rma.status;
-              })();
-              const currentIndex = getStepIndex(effectiveStatus);
-              
-              return (
-                <div className="flex items-center w-full min-w-[300px]">
-                  {steps.map((step, index) => {
-                    const isCompleted = index < currentIndex;
-                    const isCurrent = index === currentIndex;
-                    const isLast = index === steps.length - 1;
-                    
-                    return (
-                      <div key={step.id} className="flex items-center flex-1">
-                        <div 
-                          className={`
-                            relative flex items-center justify-center flex-1 py-1 px-0.5 text-[10px] font-medium
-                            ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
-                            ${index === 0 ? 'rounded-l-sm' : ''}
-                            ${isLast ? 'rounded-r-sm' : ''}
-                          `}
-                          style={{
-                            clipPath: isLast 
-                              ? 'polygon(0 0, 100% 0, 100% 100%, 0 100%, 4px 50%)' 
-                              : index === 0 
-                                ? 'polygon(0 0, calc(100% - 4px) 0, 100% 50%, calc(100% - 4px) 100%, 0 100%)'
-                                : 'polygon(0 0, calc(100% - 4px) 0, 100% 50%, calc(100% - 4px) 100%, 0 100%, 4px 50%)'
-                          }}
-                        >
-                          {step.label}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            };
-            
-            return (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMA</th>
-                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Appareil</th>
-                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">N° Série</th>
-                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Service</th>
-                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600 min-w-[300px]">Progression</th>
-                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {allDevices.length === 0 ? (
-                      <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Aucun appareil</td></tr>
-                    ) : allDevices.map((device, idx) => {
-                      const deviceStyle = STATUS_STYLES[device.status] || STATUS_STYLES[device.rma.status] || STATUS_STYLES.submitted;
-                      const serviceType = device.service_type || device.rma.requested_service || 'calibration';
-                      
-                      return (
-                        <tr key={`${device.rma.id}-${device.id || idx}`} className="hover:bg-gray-50">
-                          <td className="px-4 py-3">
-                            <span className="font-mono font-bold text-[#00A651]">{device.rma.request_number}</span>
-                            <p className="text-xs text-gray-400">{device.rma.companies?.name}</p>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="font-medium text-gray-800">{device.model_name || '—'}</span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="font-mono text-sm text-gray-600">{device.serial_number || '—'}</span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${serviceType === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {serviceType === 'repair' ? '🔧 Rép.' : '🔬 Étal.'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <DeviceProgressBar device={device} rma={device.rma} />
-                          </td>
-                          <td className="px-4 py-3">
-                            {(() => {
-                              const category = getDeviceCategory(device);
-                              if (category === 'qc') {
-                                return (
-                                  <button 
-                                    onClick={() => onSelectDevice(device, device.rma)}
-                                    className="px-3 py-1.5 text-sm bg-purple-500 hover:bg-purple-600 text-white rounded font-medium"
-                                  >
-                                    ✅ Contrôler
-                                  </button>
-                                );
-                              }
-                              if (category === 'ready') {
-                                return (
-                                  <span className="px-3 py-1.5 text-sm bg-green-100 text-green-700 rounded font-medium">
-                                    ✓ Prêt
-                                  </span>
-                                );
-                              }
-                              if (category === 'waiting_device') {
-                                return (
-                                  <span className="px-3 py-1.5 text-sm bg-cyan-100 text-cyan-700 rounded font-medium">
-                                    📦 Attente
-                                  </span>
-                                );
-                              }
-                              return (
-                                <button 
-                                  onClick={() => onSelectDevice(device, device.rma)}
-                                  className="px-3 py-1.5 text-sm bg-indigo-500 hover:bg-indigo-600 text-white rounded font-medium"
-                                >
-                                  🔧 Traiter
-                                </button>
-                              );
-                            })()}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            );
-          })()}
-        </div>
-      )}
-      
-      {/* BC Review Modal */}
-      {reviewingBC && <BCReviewModal rma={reviewingBC} onClose={() => setReviewingBC(null)} notify={notify} reload={reload} />}
-    </div>
-  );
-}
-
-// BC Review Modal - Full screen document review
-function BCReviewModal({ rma, onClose, notify, reload }) {
-  const [approving, setApproving] = useState(false);
-  const [rejecting, setRejecting] = useState(false);
-  const [rejectReason, setRejectReason] = useState('');
-  
-  const approveBC = async () => {
-    setApproving(true);
-    const { error } = await supabase
-      .from('service_requests')
-      .update({ 
-        status: 'waiting_device', 
-        bc_approved_at: new Date().toISOString()
-        // bc_approved_by removed - was causing UUID error
-      })
-      .eq('id', rma.id);
-    
-    if (error) {
-      notify('Erreur: ' + error.message, 'error');
-    } else {
-      notify('✅ BC approuvé! En attente de l\'appareil.');
-      reload();
-      onClose();
-    }
-    setApproving(false);
-  };
-  
-  const rejectBC = async () => {
-    if (!rejectReason.trim()) {
-      notify('Veuillez indiquer la raison du refus', 'error');
-      return;
-    }
-    setRejecting(true);
-    const { error } = await supabase
-      .from('service_requests')
-      .update({ 
-        status: 'bc_rejected', // Show rejection to customer
-        bc_rejected_at: new Date().toISOString(),
-        bc_rejection_reason: rejectReason,
-        // Clear old BC data
-        bc_file_url: null,
-        bc_signature_url: null,
-        bc_submitted_at: null
-      })
-      .eq('id', rma.id);
-    
-    if (error) {
-      notify('Erreur: ' + error.message, 'error');
-    } else {
-      notify('BC refusé. Le client devra soumettre un nouveau BC.');
-      reload();
-      onClose();
-    }
-    setRejecting(false);
-  };
-  
-  const devices = rma.request_devices || [];
-  
-  return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex" onClick={onClose}>
-      <div className="bg-white w-full max-w-6xl m-auto rounded-xl overflow-hidden flex flex-col max-h-[95vh]" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="px-6 py-4 bg-gradient-to-r from-red-500 to-red-600 text-white flex justify-between items-center">
-          <div>
-            <h2 className="text-xl font-bold">Vérification du Bon de Commande</h2>
-            <p className="text-red-100">{rma.request_number} • {rma.companies?.name}</p>
-          </div>
-          <button onClick={onClose} className="text-white/70 hover:text-white text-3xl">&times;</button>
-        </div>
-        
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="grid lg:grid-cols-2 gap-6">
-            {/* Left: Document Preview */}
-            <div className="space-y-4">
-              <h3 className="font-bold text-gray-800 text-lg">📄 Document BC</h3>
-              
-              {/* BC File */}
-              {rma.bc_file_url ? (
-                <div className="border-2 border-gray-200 rounded-lg overflow-hidden">
-                  <div className="bg-gray-100 px-4 py-2 flex justify-between items-center">
-                    <span className="font-medium">Fichier BC uploadé</span>
-                    <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
-                      Ouvrir dans nouvel onglet ↗
-                    </a>
-                  </div>
-                  {rma.bc_file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                    <img src={rma.bc_file_url} alt="BC Document" className="w-full" />
-                  ) : rma.bc_file_url.match(/\.pdf$/i) ? (
-                    <iframe src={rma.bc_file_url} className="w-full h-96" title="BC PDF" />
-                  ) : (
-                    <div className="p-8 text-center">
-                      <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-6 py-3 bg-blue-500 text-white rounded-lg inline-block">
-                        📥 Télécharger le fichier
-                      </a>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center text-gray-400">
-                  Aucun fichier BC uploadé
-                </div>
-              )}
-              
-              {/* Signature */}
-              {rma.bc_signature_url && (
-                <div className="border-2 border-gray-200 rounded-lg overflow-hidden">
-                  <div className="bg-gray-100 px-4 py-2">
-                    <span className="font-medium">Signature électronique</span>
-                  </div>
-                  <div className="p-4 bg-white">
-                    <img src={rma.bc_signature_url} alt="Signature" className="max-h-32 mx-auto" />
-                    <p className="text-center text-sm text-gray-500 mt-2">
-                      Signé par: <strong>{rma.bc_signed_by || '—'}</strong>
-                      {rma.bc_signature_date && <span> le {new Date(rma.bc_signature_date).toLocaleDateString('fr-FR')}</span>}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            {/* Right: Order Details */}
-            <div className="space-y-4">
-              <h3 className="font-bold text-gray-800 text-lg">📋 Détails de la Commande</h3>
-              
-              {/* RMA Info */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-500">N° RMA</p>
-                    <p className="font-mono font-bold text-[#00A651]">{rma.request_number}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Service demandé</p>
-                    <p className="font-medium">{rma.requested_service}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Date soumission BC</p>
-                    <p className="font-medium">{rma.bc_submitted_at ? new Date(rma.bc_submitted_at).toLocaleString('fr-FR') : '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Client</p>
-                    <p className="font-medium">{rma.companies?.name}</p>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Devices */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="font-medium text-gray-700 mb-3">Appareils ({devices.length})</h4>
-                <div className="space-y-2">
-                  {devices.map((d, i) => (
-                    <div key={i} className="bg-white rounded p-3 border">
-                      <p className="font-medium">{d.model_name}</p>
-                      <p className="text-sm text-gray-500">SN: {d.serial_number} • {d.service_type}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Quote Info (if available) */}
-              {(rma.quote_total || rma.quote_url) && (
-                <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                  <h4 className="font-medium text-blue-800 mb-2">💰 Devis envoyé</h4>
-                  {rma.quote_total && <p className="text-2xl font-bold text-blue-700">{rma.quote_total.toFixed(2)} €</p>}
-                  {rma.quote_url && (
-                    <a href={rma.quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
-                      Voir le devis ↗
-                    </a>
-                  )}
-                </div>
-              )}
-              
-              {/* Reject Reason Input */}
-              <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-                <h4 className="font-medium text-red-800 mb-2">Refuser le BC?</h4>
-                <textarea
-                  value={rejectReason}
-                  onChange={e => setRejectReason(e.target.value)}
-                  placeholder="Indiquez la raison du refus (document illisible, montant incorrect, etc.)..."
-                  className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm h-20 resize-none"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        {/* Footer Actions */}
-        <div className="px-6 py-4 bg-gray-100 border-t flex justify-between items-center">
-          <button onClick={onClose} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
-            Annuler
-          </button>
-          <div className="flex gap-3">
-            <button
-              onClick={rejectBC}
-              disabled={rejecting}
-              className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50"
-            >
-              {rejecting ? 'Refus...' : '❌ Refuser BC'}
-            </button>
-            <button
-              onClick={approveBC}
-              disabled={approving}
-              className="px-8 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50"
-            >
-              {approving ? 'Approbation...' : '✅ Approuver BC'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+// Returns true if address is OUTSIDE France Metropolitan (needs warning)
+const isOutsideFranceMetropolitan = (postalCode) => {
+  return !isFranceMetropolitan(postalCode);
+};
 
 // ============================================
-// CONTRACT BC REVIEW MODAL - Copied from RMA BCReviewModal
+// SERIAL NUMBER DECODER - LIGHTHOUSE PRODUCTS
 // ============================================
-function ContractBCReviewModal({ contract, onClose, notify, reload }) {
-  const [approving, setApproving] = useState(false);
-  const [rejecting, setRejecting] = useState(false);
-  const [rejectReason, setRejectReason] = useState('');
-  
-  const approveBC = async () => {
-    setApproving(true);
-    const { error } = await supabase
-      .from('contracts')
-      .update({ 
-        status: 'active', 
-        bc_approved_at: new Date().toISOString()
-      })
-      .eq('id', contract.id);
-    
-    if (error) {
-      notify('Erreur: ' + error.message, 'error');
-    } else {
-      notify('✅ Contrat activé! Le client peut maintenant utiliser ses tokens.');
-      reload();
-      onClose();
-    }
-    setApproving(false);
-  };
-  
-  const rejectBC = async () => {
-    if (!rejectReason.trim()) {
-      notify('Veuillez indiquer la raison du refus', 'error');
-      return;
-    }
-    setRejecting(true);
-    const { error } = await supabase
-      .from('contracts')
-      .update({ 
-        status: 'bc_rejected',
-        bc_rejection_reason: rejectReason,
-        // Clear old BC data so customer can resubmit
-        bc_file_url: null,
-        signed_quote_url: null,
-        bc_submitted_at: null
-      })
-      .eq('id', contract.id);
-    
-    if (error) {
-      notify('Erreur: ' + error.message, 'error');
-    } else {
-      notify('BC refusé. Le client devra soumettre un nouveau BC.');
-      reload();
-      onClose();
-    }
-    setRejecting(false);
-  };
-  
-  const devices = contract.contract_devices || [];
-  const totalPrice = devices.reduce((sum, d) => sum + (d.unit_price || 0), 0);
-  const totalTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
-  
-  return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex" onClick={onClose}>
-      <div className="bg-white w-full max-w-6xl m-auto rounded-xl overflow-hidden flex flex-col max-h-[95vh]" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="px-6 py-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white flex justify-between items-center">
-          <div>
-            <h2 className="text-xl font-bold">Vérification du Bon de Commande - Contrat</h2>
-            <p className="text-orange-100">{contract.contract_number} • {contract.companies?.name}</p>
-          </div>
-          <button onClick={onClose} className="text-white/70 hover:text-white text-3xl">&times;</button>
-        </div>
-        
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="grid lg:grid-cols-2 gap-6">
-            {/* Left: Document Preview */}
-            <div className="space-y-4">
-              <h3 className="font-bold text-gray-800 text-lg">📄 Documents</h3>
-              
-              {/* Signed Quote PDF */}
-              {contract.signed_quote_url ? (
-                <div className="border-2 border-green-200 rounded-lg overflow-hidden">
-                  <div className="bg-green-100 px-4 py-2 flex justify-between items-center">
-                    <span className="font-medium text-green-800">✅ Devis Signé (PDF)</span>
-                    <a href={contract.signed_quote_url} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:underline text-sm">
-                      Ouvrir dans nouvel onglet ↗
-                    </a>
-                  </div>
-                  <iframe src={contract.signed_quote_url} className="w-full h-96" title="Devis Signé PDF" />
-                </div>
-              ) : (
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center text-gray-400">
-                  Aucun devis signé (signature électronique uniquement)
-                </div>
-              )}
-              
-              {/* BC File (if uploaded separately) */}
-              {contract.bc_file_url && (
-                <div className="border-2 border-purple-200 rounded-lg overflow-hidden">
-                  <div className="bg-purple-100 px-4 py-2 flex justify-between items-center">
-                    <span className="font-medium text-purple-800">📋 Bon de Commande Client</span>
-                    <a href={contract.bc_file_url} target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:underline text-sm">
-                      Ouvrir dans nouvel onglet ↗
-                    </a>
-                  </div>
-                  {contract.bc_file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                    <img src={contract.bc_file_url} alt="BC Document" className="w-full" />
-                  ) : contract.bc_file_url.match(/\.pdf$/i) ? (
-                    <iframe src={contract.bc_file_url} className="w-full h-64" title="BC PDF" />
-                  ) : (
-                    <div className="p-8 text-center">
-                      <a href={contract.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-6 py-3 bg-purple-500 text-white rounded-lg inline-block">
-                        📥 Télécharger le fichier
-                      </a>
-                    </div>
-                  )}
-                </div>
-              )}
-              
-              {/* Signature Info */}
-              {contract.bc_signed_by && (
-                <div className="bg-gray-50 rounded-lg p-4 border">
-                  <p className="text-sm text-gray-600">
-                    <strong>Signé par:</strong> {contract.bc_signed_by}
-                  </p>
-                  {contract.bc_submitted_at && (
-                    <p className="text-sm text-gray-500">
-                      <strong>Date:</strong> {new Date(contract.bc_submitted_at).toLocaleString('fr-FR')}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-            
-            {/* Right: Contract Details */}
-            <div className="space-y-4">
-              <h3 className="font-bold text-gray-800 text-lg">📋 Détails du Contrat</h3>
-              
-              {/* Contract Info */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-500">N° Contrat</p>
-                    <p className="font-mono font-bold text-[#00A651]">{contract.contract_number}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Période</p>
-                    <p className="font-medium text-sm">
-                      {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Date soumission BC</p>
-                    <p className="font-medium">{contract.bc_submitted_at ? new Date(contract.bc_submitted_at).toLocaleString('fr-FR') : '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Client</p>
-                    <p className="font-medium">{contract.companies?.name}</p>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Pricing Summary */}
-              <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-                <h4 className="font-medium text-green-800 mb-2">💰 Récapitulatif</h4>
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-sm text-green-700">{devices.length} appareils • {totalTokens} étalonnages/an</p>
-                  </div>
-                  <p className="text-2xl font-bold text-green-700">{totalPrice.toFixed(2)} € HT</p>
-                </div>
-              </div>
-              
-              {/* Devices */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="font-medium text-gray-700 mb-3">Appareils ({devices.length})</h4>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {devices.map((d, i) => (
-                    <div key={i} className="bg-white rounded p-3 border">
-                      <p className="font-medium">{d.model_name || 'Appareil'}</p>
-                      <p className="text-sm text-gray-500">SN: {d.serial_number} • {d.tokens_total || 1} étal./an • {(d.unit_price || 0).toFixed(2)} €</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Reject Reason Input */}
-              <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-                <h4 className="font-medium text-red-800 mb-2">Refuser le BC?</h4>
-                <textarea
-                  value={rejectReason}
-                  onChange={e => setRejectReason(e.target.value)}
-                  placeholder="Indiquez la raison du refus (document illisible, montant incorrect, etc.)..."
-                  className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm h-20 resize-none"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        {/* Footer Actions */}
-        <div className="px-6 py-4 bg-gray-100 border-t flex justify-between items-center">
-          <button onClick={onClose} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
-            Annuler
-          </button>
-          <div className="flex gap-3">
-            <button
-              onClick={rejectBC}
-              disabled={rejecting}
-              className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50"
-            >
-              {rejecting ? 'Refus...' : '❌ Refuser BC'}
-            </button>
-            <button
-              onClick={approveBC}
-              disabled={approving}
-              className="px-8 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50"
-            >
-              {approving ? 'Activation...' : '✅ Approuver & Activer Contrat'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+// Serial number formats:
+// 9-digit: YYMMCC### (CC = 2-digit product code)
+// 10-digit: YYMMCCC### (CCC = 3-digit product code)
+// 8-digit: CCC##### (CCC = 3-digit product code for accessories)
 
-// ============================================
-// RMA FULL PAGE VIEW - Adaptive workflow interface
-// ============================================
-function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice }) {
-  // Find the fresh device data from RMA (initialDevice might be stale)
-  const freshDevices = rma?.request_devices || [];
-  const freshInitialDevice = initialDevice 
-    ? freshDevices.find(d => d.id === initialDevice.id) || initialDevice
-    : null;
-  
-  // Determine if initial device should go to QC instead of Service
-  const initialDeviceNeedsQC = freshInitialDevice && 
-    (freshInitialDevice.status === 'final_qc' || 
-     (freshInitialDevice.report_complete && !freshInitialDevice.qc_complete));
-  
-  const [selectedDevice, setSelectedDevice] = useState(initialDeviceNeedsQC ? null : freshInitialDevice);
-  const [showAvenantPreview, setShowAvenantPreview] = useState(false);
-  const [showQCReview, setShowQCReview] = useState(initialDeviceNeedsQC ? freshInitialDevice : null);
-  const [showShippingModal, setShowShippingModal] = useState(false);
-  const [saving, setSaving] = useState(false);
-  
-  // Safety check
-  if (!rma) {
-    return (
-      <div className="p-8 text-center">
-        <p className="text-red-500">Erreur: RMA non trouvé</p>
-        <button onClick={onBack} className="mt-4 px-4 py-2 bg-gray-200 rounded-lg">← Retour</button>
-      </div>
-    );
-  }
-  
-  const devices = rma.request_devices || [];
-  const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
-  const isContractRMA = rma.is_contract_rma || rma.contract_id;
-  
-  // Determine workflow stage for this RMA
-  const getWorkflowStage = () => {
-    if (devices.length === 0) {
-      if (['approved', 'waiting_bc', 'waiting_device'].includes(rma.status)) return 'waiting';
-      if (['received', 'in_queue'].includes(rma.status)) return 'received';
-      return 'waiting';
-    }
-    
-    const allQCComplete = devices.every(d => d.qc_complete);
-    const anyInFinalQC = devices.some(d => d.status === 'final_qc' && !d.qc_complete);
-    const allReadyToShip = devices.every(d => d.status === 'ready_to_ship' || d.qc_complete);
-    const allReportComplete = devices.every(d => d.report_complete);
-    const anyServiceStarted = devices.some(d => d.service_findings || d.inspection_complete);
-    
-    if (allReadyToShip && allQCComplete) return 'ready';
-    if (anyInFinalQC || (allReportComplete && !allQCComplete)) return 'qc';
-    if (anyServiceStarted || ['calibration_in_progress', 'repair_in_progress'].includes(rma.status)) return 'service';
-    if (['received', 'in_queue'].includes(rma.status)) return 'received';
-    return 'waiting';
-  };
-  
-  const workflowStage = getWorkflowStage();
-  
-  // Stage styling
-  const stageInfo = {
-    waiting: { color: 'amber', icon: '⏳', label: 'En Attente', desc: 'En attente de l\'appareil' },
-    received: { color: 'cyan', icon: '📦', label: 'Reçu', desc: 'Appareil reçu - Prêt pour service' },
-    service: { color: 'indigo', icon: '🔧', label: 'Service', desc: 'Service en cours' },
-    qc: { color: 'purple', icon: '✅', label: 'Contrôle Qualité', desc: 'Vérification qualité' },
-    ready: { color: 'green', icon: '📤', label: 'Prêt', desc: 'Prêt pour expédition' }
-  };
-  const currentStage = stageInfo[workflowStage];
-  
-  // Progress steps - matching customer portal exactly
-  const calibrationSteps = [
-    { id: 'submitted', label: 'Soumis' },
-    { id: 'rma_created', label: 'RMA' },
-    { id: 'bc_approved', label: 'BC' },
-    { id: 'waiting_device', label: 'Attente' },
-    { id: 'received', label: 'Reçu' },
-    { id: 'queue', label: 'File' },
-    { id: 'calibration', label: 'Étal.' },
-    { id: 'final_qc', label: 'QC' },
-    { id: 'ready_to_ship', label: 'Prêt' },
-    { id: 'shipped', label: 'Expédié' }
-  ];
+const PRODUCT_CODES = {
+  // === 9-DIGIT SERIAL NUMBERS (2-digit CC codes) ===
+  // Airborne Particle Counters
+  '01': { model: 'Remote CEMS', category: 'particle_counter' },
+  '02': { model: 'Handheld 3016', category: 'particle_counter' },
+  '03': { model: 'Solair 5100/5100+', category: 'particle_counter' },
+  '04': { model: 'Solair 3100/3100+', category: 'particle_counter' },
+  '05': { model: 'Solair 1100/1100+', category: 'particle_counter' },
+  '06': { model: 'Remote 1100/1104/1100LD/1104LD', category: 'particle_counter' },
+  '07': { model: 'Remote 5100', category: 'particle_counter' },
+  '08': { model: 'Remote 3010/5010', category: 'particle_counter' },
+  '09': { model: 'Mini Manifold 1.0 CFM', category: 'particle_counter' },
+  '10': { model: 'Remote 3014P/5014P', category: 'particle_counter' },
+  '11': { model: 'Manifold Controller', category: 'other' },
+  '12': { model: 'TRH Sensor (0-5V version)', category: 'temp_humidity' },
+  '13': { model: 'AV Probe - Instrument', category: 'other' },
+  '14': { model: 'DP Sensor - Instrument', category: 'other' },
+  '15': { model: 'AMC Sample System', category: 'other' },
+  '16': { model: 'Remote 3014/5014', category: 'particle_counter' },
+  '17': { model: 'Remote 3012/5012', category: 'particle_counter' },
+  '18': { model: 'Remote 5102', category: 'particle_counter' },
+  '19': { model: 'Remote 2010', category: 'particle_counter' },
+  '20': { model: 'Remote 2014P', category: 'particle_counter' },
+  '21': { model: 'Remote 2014', category: 'particle_counter' },
+  '22': { model: 'Handheld 2016', category: 'particle_counter' },
+  '23': { model: 'Solair 3010+', category: 'particle_counter' },
+  '24': { model: 'Remote 3014i/5014i', category: 'particle_counter' },
+  '25': { model: 'Remote 50104', category: 'particle_counter' },
+  '26': { model: 'Solair 1001+', category: 'particle_counter' },
+  '27': { model: 'Handheld 5016', category: 'particle_counter' },
+  '28': { model: 'Remote 5104', category: 'particle_counter' },
+  '29': { model: 'UM-II (or 32 Port Manifold)', category: 'other' },
+  '30': { model: 'Mini Manifold 0.1 CFM', category: 'other' },
+  '31': { model: 'Remote 3102', category: 'particle_counter' },
+  '32': { model: 'Remote 3104', category: 'particle_counter' },
+  '33': { model: 'Boulder Counter', category: 'particle_counter' },
+  '34': { model: 'Remote 5104V', category: 'particle_counter' },
+  '35': { model: 'Remote 2014i', category: 'particle_counter' },
+  '36': { model: 'Remote 3104V', category: 'particle_counter' },
+  '37': { model: 'Remote 2012', category: 'particle_counter' },
+  '38': { model: 'Solair 5200/5200+', category: 'particle_counter' },
+  '39': { model: 'Solair 3200/3200+', category: 'particle_counter' },
+  '40': { model: 'Remote LPC 0.2μm/0.3μm/0.5μm (Modbus)', category: 'liquid_counter' },
+  '41': { model: 'Remote LPC 0.1μm (Modbus)', category: 'liquid_counter' },
+  '42': { model: 'LS-60', category: 'liquid_counter' },
+  '43': { model: 'NanoCount/NC50+/NC65C+/NC25+/NC30+', category: 'liquid_counter' },
+  '44': { model: 'IAQ Handheld', category: 'particle_counter' },
+  '45': { model: 'MiniMultiplexer', category: 'other' },
+  '46': { model: 'Remote LPC 0.2μm/0.3μm/0.5μm (4-20mA)', category: 'liquid_counter' },
+  '47': { model: 'Remote LPC 0.1μm (4-20mA)', category: 'liquid_counter' },
+  '48': { model: 'LS-20', category: 'liquid_counter' },
+  '49': { model: 'Remote LPC 1.5μm (Modbus)', category: 'liquid_counter' },
+  '50': { model: 'Solair 3100Rx', category: 'particle_counter' },
+  '51': { model: 'Solair 5100Rx', category: 'particle_counter' },
+  '52': { model: 'Solair 3200Rx', category: 'particle_counter' },
+  '53': { model: 'Solair 5200Rx', category: 'particle_counter' },
+  '54': { model: 'Remote PN 0.1 CFM (Modbus)', category: 'particle_counter' },
+  '55': { model: 'Remote PN 0.1 CFM (4-20mA)', category: 'particle_counter' },
+  '56': { model: 'Remote PN 1.0 CFM (Modbus)', category: 'particle_counter' },
+  '57': { model: 'Remote PN 1.0 CFM (4-20mA)', category: 'particle_counter' },
+  '58': { model: 'TOC, Neptune', category: 'other' },
+  '60': { model: 'Handheld 3013', category: 'particle_counter' },
+  '61': { model: 'Solair 2010+', category: 'particle_counter' },
+  '62': { model: 'Solair 3350/5350/3350Rx/5350Rx', category: 'particle_counter' },
+  '65': { model: 'Viable, Remote Active Count', category: 'bio_collector' },
+  '70': { model: 'TRH Sensor (SIU)', category: 'temp_humidity' },
+  '71': { model: 'DP Sensor - Analog (SIU)', category: 'other' },
+  '72': { model: 'Freq. DP Sensor (SIU)', category: 'other' },
+  '73': { model: 'Remote 5104P', category: 'particle_counter' },
+  '74': { model: 'Remote 3104P', category: 'particle_counter' },
+  '75': { model: 'Remote 50104V', category: 'particle_counter' },
+  '76': { model: 'Remote 5102V', category: 'particle_counter' },
+  '80': { model: 'SIU Standard', category: 'other' },
+  '81': { model: 'SIU Lite', category: 'other' },
+  '82': { model: 'IDP', category: 'other' },
+  '83': { model: 'IIU Gateway', category: 'other' },
+  '84': { model: 'IIU HSEM', category: 'other' },
+  '85': { model: 'IIU Analog', category: 'other' },
+  '86': { model: 'IIU Alarm Controller', category: 'other' },
+  '87': { model: 'AAU', category: 'other' },
+  '88': { model: '8 Port Alarm Controller', category: 'other' },
+  '89': { model: 'Toggle Switch Controller', category: 'other' },
+  '92': { model: 'LMS Laptop', category: 'other' },
+  '93': { model: 'LMS Computer', category: 'other' },
+  '94': { model: 'LMS DataServer', category: 'other' },
+  '98': { model: 'S1100LD Standard', category: 'particle_counter' },
+  '99': { model: 'Specials', category: 'other' },
 
-  const repairSteps = [
-    { id: 'submitted', label: 'Soumis' },
-    { id: 'rma_created', label: 'RMA' },
-    { id: 'bc_approved', label: 'BC' },
-    { id: 'waiting_device', label: 'Attente' },
-    { id: 'received', label: 'Reçu' },
-    { id: 'inspection', label: 'Insp.' },
-    { id: 'customer_approval', label: 'Appr.' },
-    { id: 'repair', label: 'Rép.' },
-    { id: 'final_qc', label: 'QC' },
-    { id: 'ready_to_ship', label: 'Prêt' },
-    { id: 'shipped', label: 'Expédié' }
-  ];
-  
-  // Get step index for a status
-  const getStepIndex = (status, isRepair) => {
-    // If no status but RMA has request_number, it's at least created
-    if (!status && rma.request_number) {
-      return 1;
-    }
-    
-    if (isRepair) {
-      // Repair: 11 steps (0-10)
-      const repairMap = {
-        'submitted': 0, 'pending': 0, 'waiting_approval': 0,
-        'approved': 1, 'rma_created': 1, 'quote_sent': 1,
-        'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
-        'waiting_device': 3, 'bc_approved': 3,
-        'received': 4, 'received_repair': 4, 'in_queue': 4,
-        'inspection': 5, 'inspection_complete': 5,
-        'customer_approval': 6, 'quote_approved': 6, 'waiting_parts': 6,
-        'repair': 7, 'repair_in_progress': 7, 'in_progress': 7,
-        'repair_complete': 8, 'final_qc': 8, 'qc': 8, 'quality_check': 8,
-        'ready_to_ship': 9, 'ready': 9,
-        'shipped': 10, 'delivered': 10, 'completed': 10
-      };
-      return repairMap[status] ?? 1;
-    } else {
-      // Calibration: 10 steps (0-9)
-      const calibrationMap = {
-        'submitted': 0, 'pending': 0, 'waiting_approval': 0,
-        'approved': 1, 'rma_created': 1, 'quote_sent': 1,
-        'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
-        'waiting_device': 3, 'bc_approved': 3,
-        'received': 4, 'received_calibration': 4, 'in_queue': 4,
-        'queue': 5, 'queued': 5,
-        'calibration': 6, 'calibration_in_progress': 6, 'in_progress': 6,
-        'final_qc': 7, 'qc': 7, 'quality_check': 7,
-        'ready_to_ship': 8, 'ready': 8,
-        'shipped': 9, 'delivered': 9, 'completed': 9
-      };
-      return calibrationMap[status] ?? 1;
-    }
-  };
-  
-  // Count service progress
-  const reportsDone = devices.filter(d => d.report_complete).length;
-  const qcDone = devices.filter(d => d.qc_complete).length;
-  
-  // Check if any device has additional work
-  const devicesWithAdditionalWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
-  const totalAdditionalWork = devicesWithAdditionalWork.reduce((sum, device) => {
-    const deviceTotal = (device.additional_work_items || []).reduce((dSum, item) => 
-      dSum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
-    );
-    return sum + deviceTotal;
-  }, 0);
-  const avenantSent = rma.avenant_sent_at;
+  // === 10-DIGIT SERIAL NUMBERS (3-digit CCC codes) ===
+  '100': { model: 'ApexR5', category: 'particle_counter' },
+  '101': { model: 'ApexR3', category: 'particle_counter' },
+  '102': { model: 'ApexR02', category: 'particle_counter' },
+  '103': { model: 'ApexR03', category: 'particle_counter' },
+  '104': { model: 'ApexR05', category: 'particle_counter' },
+  '105': { model: 'ApexP3', category: 'particle_counter' },
+  '106': { model: 'ApexP5', category: 'particle_counter' },
+  '129': { model: 'ActiveCount25H', category: 'bio_collector' },
+  '130': { model: 'ActiveCount100', category: 'bio_collector' },
+  '131': { model: 'ActiveCount100H', category: 'bio_collector' },
+  '140': { model: 'Apex 1100', category: 'particle_counter' },
+  '141': { model: 'ApexZ3', category: 'particle_counter' },
+  '142': { model: 'ApexZ30', category: 'particle_counter' },
+  '143': { model: 'ApexZ5', category: 'particle_counter' },
+  '144': { model: 'ApexZ50', category: 'particle_counter' },
+  '150': { model: 'ApexR02P', category: 'particle_counter' },
+  '151': { model: 'ApexR03P', category: 'particle_counter' },
+  '152': { model: 'ApexR05P', category: 'particle_counter' },
+  '153': { model: 'ApexR3P', category: 'particle_counter' },
+  '154': { model: 'ApexR5P', category: 'particle_counter' },
+  '155': { model: 'ApexBCRp', category: 'bio_collector' },
+  '160': { model: 'FILTR', category: 'other' },
+  '165': { model: 'Manifold III', category: 'other' },
+  '170': { model: 'Vertex50', category: 'liquid_counter' },
+  '171': { model: 'Vertex50C', category: 'liquid_counter' },
+  '172': { model: 'Vertex100', category: 'liquid_counter' },
+  '504': { model: 'Pentagon QIII ST', category: 'other' },
+  '505': { model: 'Pentagon QIII SX', category: 'other' },
+  '506': { model: 'Pentagon QIII SM', category: 'other' },
 
-  // Update RMA status
-  const updateStatus = async (newStatus) => {
-    setSaving(true);
-    try {
-      const { error } = await supabase
-        .from('service_requests')
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq('id', rma.id);
-      if (error) throw error;
-      notify('Statut mis à jour!');
-      reload();
-    } catch (err) {
-      notify('Erreur: ' + err.message, 'error');
-    }
-    setSaving(false);
-  };
+  // === 8-DIGIT SERIAL NUMBERS (3-digit CCC codes for accessories) ===
+  '100_acc': { model: '0.1 CFM MiniManifold Blower', category: 'other' },
+  '101_acc': { model: 'Handheld Battery', category: 'other' },
+  '102_acc': { model: 'Solair Battery', category: 'other' },
+  '103_acc': { model: 'Engineering Serial Number', category: 'other' },
+  '104_acc': { model: '1.0 CFM MiniManifold Blower', category: 'other' },
+  '110_acc': { model: 'Remote Display - Remote P', category: 'other' },
+  '112_acc': { model: 'Remote Display - NC', category: 'other' },
+  '120_acc': { model: 'TRH Probe (Handhelds, R4-Series, TRH Wands)', category: 'temp_humidity' },
+  '125_acc': { model: 'TRH Digital Probe', category: 'temp_humidity' },
+  '130_acc': { model: 'Current to Frequency Converter', category: 'other' },
+  '140_acc': { model: 'Voltage to Frequency Converter', category: 'other' },
+  '150_acc': { model: 'IFS, ScanAir, ScanAir Pro', category: 'bio_collector' },
+  '160_acc': { model: 'RS485 Gateway', category: 'other' },
+  '170_acc': { model: 'DP Switch', category: 'other' },
+  '180_acc': { model: 'Particle Diluter', category: 'diluter' },
+  '185_acc': { model: 'RA-25 Flow Calibrator', category: 'other' },
+  '190_acc': { model: 'RA-100 Flow Calibrator', category: 'other' },
+  '250_acc': { model: 'High Pressure Diffuser 1.0 cfm', category: 'other' },
+  '260_acc': { model: 'High Pressure Diffuser 0.1 cfm', category: 'other' },
+  '270_acc': { model: 'High Pressure Controller 1100', category: 'other' },
+  '280_acc': { model: 'High Pressure Diffuser 2.0 cfm', category: 'other' },
+  '290_acc': { model: 'High Pressure Diffuser 3.5 cfm, 5-10 PSI', category: 'other' },
+  '291_acc': { model: 'High Pressure Diffuser 3.5 cfm, 30-70 PSI', category: 'other' },
+  '292_acc': { model: 'High Pressure Diffuser 3.5 cfm, 70-150 PSI', category: 'other' },
+  '293_acc': { model: 'High Pressure Diffuser 3.5 cfm, 30-150 PSI', category: 'other' },
+  '330_acc': { model: 'TRH Sensor', category: 'temp_humidity' },
+  '340_acc': { model: 'TRH Wand', category: 'temp_humidity' },
+  '350_acc': { model: 'Data Server HASP Key', category: 'other' },
+  '351_acc': { model: 'Web Server HASP Key', category: 'other' },
+  '352_acc': { model: 'LMS System HASP Key', category: 'other' },
+  '420_acc': { model: 'Liquid Calibration Station 110V', category: 'other' },
+  '421_acc': { model: 'Liquid Calibration Station 220V', category: 'other' },
+  '510_acc': { model: 'Air Calibration Station', category: 'other' },
+  '520_acc': { model: 'System Cabinet', category: 'other' },
+};
 
-  // If viewing device service screen
-  if (selectedDevice) {
-    return (
-      <DeviceServiceModal
-        device={selectedDevice}
-        rma={rma}
-        onBack={() => { setSelectedDevice(null); reload(); }}
-        notify={notify}
-        reload={reload}
-        profile={profile}
-      />
-    );
-  }
+// Decode serial number to get model and category
+const decodeSerialNumber = (serialNumber) => {
+  if (!serialNumber) return null;
   
-  // If QC reviewing a device
-  if (showQCReview) {
-    return (
-      <QCReviewModal
-        device={showQCReview}
-        rma={rma}
-        onBack={() => { setShowQCReview(null); reload(); }}
-        notify={notify}
-        profile={profile}
-      />
-    );
-  }
+  // Clean the serial number (remove spaces, dashes)
+  const sn = serialNumber.toString().replace(/[\s-]/g, '');
   
-  // Device Progress Bar Component (matching customer portal style)
-  const DeviceProgressBar = ({ device }) => {
-    const deviceServiceType = device.service_type || rma.requested_service || 'calibration';
-    const isRepair = deviceServiceType === 'repair';
-    const steps = isRepair ? repairSteps : calibrationSteps;
-    const currentIndex = getStepIndex(device.status || rma.status, isRepair);
-    
-    return (
-      <div className="flex items-center w-full">
-        {steps.map((step, index) => {
-          const isCompleted = index < currentIndex;
-          const isCurrent = index === currentIndex;
-          const isLast = index === steps.length - 1;
-          
-          return (
-            <div key={step.id} className="flex items-center flex-1">
-              <div 
-                className={`
-                  relative flex items-center justify-center flex-1 py-1.5 px-1 text-xs font-medium
-                  ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#1E3A5F] text-white' : 'bg-gray-200 text-gray-500'}
-                  ${index === 0 ? 'rounded-l-md' : ''}
-                  ${isLast ? 'rounded-r-md' : ''}
-                `}
-                style={{
-                  clipPath: isLast 
-                    ? 'polygon(0 0, 100% 0, 100% 100%, 0 100%, 6px 50%)' 
-                    : index === 0 
-                      ? 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%)'
-                      : 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%)'
-                }}
-              >
-                {step.label}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button onClick={onBack} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-gray-700 font-medium">
-            ← Tableau de Bord
-          </button>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-gray-800">{rma.request_number}</h1>
-              <span className={`px-3 py-1 rounded-full text-sm font-bold ${
-                workflowStage === 'waiting' ? 'bg-amber-100 text-amber-700' :
-                workflowStage === 'received' ? 'bg-cyan-100 text-cyan-700' :
-                workflowStage === 'service' ? 'bg-indigo-100 text-indigo-700' :
-                workflowStage === 'qc' ? 'bg-purple-100 text-purple-700' :
-                'bg-green-100 text-green-700'
-              }`}>
-                {currentStage.icon} {currentStage.label}
-              </span>
-              {isContractRMA && (
-                <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">📋 CONTRAT</span>
-              )}
-            </div>
-            <p className="text-gray-500">{rma.companies?.name} • Créé le {new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Client Info - Always visible but compact */}
-      <div className="bg-white rounded-xl shadow-sm border p-4">
-        <div className="grid grid-cols-4 gap-4">
-          <div>
-            <p className="text-xs text-gray-500">Client</p>
-            <p className="font-bold text-gray-800">{rma.companies?.name}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Contact</p>
-            <p className="font-medium text-gray-700">{rma.companies?.contact_name || '—'}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Service demandé</p>
-            <p className="font-medium">{rma.requested_service === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Appareils</p>
-            <p className="font-bold text-lg">{devices.length}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Stage-specific content */}
-      
-      {/* WAITING STAGE */}
-      {workflowStage === 'waiting' && (
-        <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-6">
-          <div className="text-center">
-            <p className="text-5xl mb-4">📦</p>
-            <h2 className="text-xl font-bold text-amber-800 mb-2">En attente de l'appareil</h2>
-            <p className="text-amber-600 mb-4">L'appareil n'a pas encore été reçu</p>
-            <button 
-              onClick={() => updateStatus('received')}
-              disabled={saving}
-              className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
-            >
-              {saving ? '...' : '📦 Marquer comme Reçu'}
-            </button>
-          </div>
-        </div>
-      )}
-      
-      {/* RECEIVED STAGE */}
-      {workflowStage === 'received' && (
-        <div className="bg-cyan-50 border-2 border-cyan-200 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-xl font-bold text-cyan-800">📦 Appareil Reçu</h2>
-              <p className="text-cyan-600">Prêt à commencer le service</p>
-            </div>
-            <button 
-              onClick={() => updateStatus('calibration_in_progress')}
-              disabled={saving}
-              className="px-6 py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-medium disabled:opacity-50"
-            >
-              {saving ? '...' : '🔧 Démarrer Service'}
-            </button>
-          </div>
-        </div>
-      )}
-      
-      {/* SERVICE STAGE - Main work area */}
-      {workflowStage === 'service' && (
-        <div className="space-y-4">
-          {/* Progress summary */}
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-bold text-indigo-800">🔧 Service en cours</h2>
-                <p className="text-sm text-indigo-600">
-                  {reportsDone}/{devices.length} rapports terminés
-                </p>
-              </div>
-              {devicesWithAdditionalWork.length > 0 && !avenantSent && (
-                <button 
-                  onClick={() => setShowAvenantPreview(true)}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
-                >
-                  📄 Créer Avenant (€{totalAdditionalWork.toFixed(2)})
-                </button>
-              )}
-              {avenantSent && (
-                <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium">
-                  📄 Avenant envoyé {rma.avenant_approved_at ? '✓ Approuvé' : '⏳ En attente'}
-                </span>
-              )}
-            </div>
-          </div>
-          
-          {/* Device list for service */}
-          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-            <div className="px-4 py-3 bg-gray-50 border-b">
-              <h3 className="font-bold text-gray-700">Appareils à traiter</h3>
-            </div>
-            <div className="divide-y">
-              {devices.map(device => {
-                const hasReport = device.report_complete;
-                const hasFindings = device.service_findings;
-                
-                return (
-                  <div key={device.id} className={`p-4 ${hasReport ? 'bg-green-50' : ''}`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${hasReport ? 'bg-green-500 text-white' : hasFindings ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}>
-                          {hasReport ? '✓' : hasFindings ? '⚡' : '○'}
-                        </div>
-                        <div>
-                          <p className="font-bold">{device.model_name}</p>
-                          <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => setSelectedDevice(device)}
-                        className={`px-4 py-2 rounded-lg font-medium ${hasReport ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-indigo-500 hover:bg-indigo-600 text-white'}`}
-                      >
-                        {hasReport ? 'Voir' : 'Traiter →'}
-                      </button>
-                    </div>
-                    <DeviceProgressBar device={device} />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* QC STAGE */}
-      {workflowStage === 'qc' && (
-        <div className="space-y-4">
-          <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-bold text-purple-800">✅ Contrôle Qualité</h2>
-                <p className="text-sm text-purple-600">{qcDone}/{devices.length} appareils validés</p>
-              </div>
-            </div>
-          </div>
-          
-          {/* Device list for QC */}
-          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-            <div className="px-4 py-3 bg-gray-50 border-b">
-              <h3 className="font-bold text-gray-700">Appareils à contrôler</h3>
-            </div>
-            <div className="divide-y">
-              {devices.map(device => {
-                const qcComplete = device.qc_complete;
-                
-                return (
-                  <div key={device.id} className={`p-4 ${qcComplete ? 'bg-green-50' : ''}`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${qcComplete ? 'bg-green-500 text-white' : 'bg-purple-500 text-white'}`}>
-                          {qcComplete ? '✓' : '?'}
-                        </div>
-                        <div>
-                          <p className="font-bold">{device.model_name}</p>
-                          <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => setShowQCReview(device)}
-                        className={`px-4 py-2 rounded-lg font-medium ${qcComplete ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-purple-500 hover:bg-purple-600 text-white'}`}
-                      >
-                        {qcComplete ? 'Voir' : 'Contrôler →'}
-                      </button>
-                    </div>
-                    <DeviceProgressBar device={device} />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* READY STAGE */}
-      {workflowStage === 'ready' && (
-        <div className="space-y-4">
-          <div className="bg-green-50 border-2 border-green-200 rounded-xl p-6">
-            <div className="text-center">
-              <p className="text-5xl mb-4">📤</p>
-              <h2 className="text-xl font-bold text-green-800 mb-2">Prêt pour Expédition</h2>
-              <p className="text-green-600 mb-4">Tous les appareils ont passé le contrôle qualité</p>
-              <button 
-                onClick={() => setShowShippingModal(true)}
-                disabled={saving}
-                className="px-8 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold text-lg disabled:opacity-50"
-              >
-                {saving ? '...' : '🚚 Préparer Expédition'}
-              </button>
-            </div>
-          </div>
-          
-          {/* Summary of completed devices */}
-          <div className="bg-white rounded-xl shadow-sm border p-4">
-            <h3 className="font-bold text-gray-700 mb-3">Résumé des appareils</h3>
-            <div className="space-y-3">
-              {devices.map(device => (
-                <div key={device.id} className="bg-green-50 rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <p className="font-medium">{device.model_name}</p>
-                      <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">✓ Service</span>
-                      <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">✓ QC</span>
-                      {device.calibration_certificate_url && (
-                        <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200">📄 Certificat</a>
-                      )}
-                    </div>
-                  </div>
-                  <DeviceProgressBar device={device} />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Shipping Modal */}
-      {showShippingModal && (
-        <ShippingModal
-          rma={rma}
-          devices={devices}
-          onClose={() => setShowShippingModal(false)}
-          notify={notify}
-          reload={reload}
-          profile={profile}
-        />
-      )}
-
-      {/* Avenant Preview Modal */}
-      {showAvenantPreview && (
-        <AvenantPreviewModal
-          rma={rma}
-          devices={devicesWithAdditionalWork}
-          onClose={() => setShowAvenantPreview(false)}
-          notify={notify}
-          reload={reload}
-          alreadySent={!!avenantSent}
-        />
-      )}
-    </div>
-  );
-}
-
-// Device Service Modal - For filling inspection/findings
-function DeviceServiceModal({ device, rma, onBack, notify, reload, profile }) {
-  const [findings, setFindings] = useState(device.service_findings || '');
-  const [additionalWorkNeeded, setAdditionalWorkNeeded] = useState(device.additional_work_needed || false);
-  const [workItems, setWorkItems] = useState(device.additional_work_items || []);
-  const [workCompleted, setWorkCompleted] = useState(device.work_completed || '');
-  const [saving, setSaving] = useState(false);
-  const [showReportPreview, setShowReportPreview] = useState(false);
-  const [partsLoading, setPartsLoading] = useState({});
-  const [technicianName, setTechnicianName] = useState(device.technician_name || '');
-  const [staffMembers, setStaffMembers] = useState([]);
+  // Must be all digits
+  if (!/^\d+$/.test(sn)) return null;
   
-  // Lock work items if they were previously saved (have items in DB)
-  const [workItemsLocked, setWorkItemsLocked] = useState((device.additional_work_items || []).length > 0);
+  const length = sn.length;
+  let productCode = null;
+  let format = null;
   
-  // Report options - initialize from device data, empty string means not selected yet, 'none' means don't show
-  const [calType, setCalType] = useState(device.cal_type || '');
-  const [receptionResult, setReceptionResult] = useState(device.reception_result || '');
-  
-  // Certificate upload for calibrations
-  const [certificateUrl, setCertificateUrl] = useState(device.calibration_certificate_url || '');
-  const [uploadingCert, setUploadingCert] = useState(false);
-  
-  const isCalibration = device.service_type === 'calibration' || device.service_type === 'both';
-  const needsCertificate = isCalibration && !certificateUrl;
-  
-  const calTypeOptions = [
-    { value: 'none', label: 'Ne pas afficher' },
-    { value: 'ISO 21501-4', label: 'ISO 21501-4' },
-    { value: 'Non-ISO', label: 'Non-ISO' },
-    { value: 'Bio Collecteur', label: 'Bio Collecteur' },
-    { value: 'Compteur Liquide', label: 'Compteur Liquide' },
-    { value: 'Sonde de Température', label: 'Sonde de Température' },
-    { value: 'Diluteur', label: 'Diluteur' }
-  ];
-  
-  const receptionOptions = [
-    { value: 'none', label: 'Ne pas afficher' },
-    { value: 'Conforme', label: 'Conforme' },
-    { value: 'Non conforme', label: 'Non conforme' },
-    { value: 'À vérifier', label: 'À vérifier' }
-  ];
-  
-  // Load staff members for technician dropdown
-  useEffect(() => {
-    const loadStaff = async () => {
-      const { data } = await supabase.from('profiles').select('id, full_name').order('full_name');
-      if (data) setStaffMembers(data.filter(s => s.full_name)); // Only show profiles with names
-    };
-    loadStaff();
-  }, []);
-  
-  // Upload certificate handler
-  const handleCertificateUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    if (file.type !== 'application/pdf') {
-      notify('Veuillez télécharger un fichier PDF', 'error');
-      return;
-    }
-    
-    setUploadingCert(true);
-    try {
-      const fileName = `certificates/${rma.request_number}/${device.serial_number}_${Date.now()}.pdf`;
-      const { error: uploadError } = await supabase.storage.from('documents').upload(fileName, file);
-      if (uploadError) throw uploadError;
-      
-      const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(fileName);
-      
-      // Save to device record
-      const { error: updateError } = await supabase.from('request_devices').update({
-        calibration_certificate_url: publicUrl,
-        calibration_certificate_uploaded_at: new Date().toISOString()
-      }).eq('id', device.id);
-      
-      if (updateError) throw updateError;
-      
-      setCertificateUrl(publicUrl);
-      notify('✓ Certificat téléchargé');
-      reload();
-    } catch (err) {
-      notify('Erreur: ' + err.message, 'error');
-    }
-    setUploadingCert(false);
-  };
-  
-  const avenantSent = rma.avenant_sent_at;
-  const avenantApproved = rma.avenant_approved_at;
-  const reportComplete = device.report_complete;
-  
-  const getDefaultChecklist = () => {
-    if (device.service_type === 'calibration') {
-      return [
-        { id: 'visual_inspection', label: 'Inspection visuelle effectuée', checked: false },
-        { id: 'cleaning', label: 'Nettoyage effectué', checked: false },
-        { id: 'calibration_performed', label: 'Étalonnage réalisé selon procédure', checked: false },
-        { id: 'results_within_spec', label: 'Résultats dans les spécifications', checked: false },
-        { id: 'certificate_generated', label: 'Certificat d\'étalonnage généré', checked: false },
-      ];
-    } else {
-      return [
-        { id: 'visual_inspection', label: 'Inspection visuelle effectuée', checked: false },
-        { id: 'diagnostic', label: 'Diagnostic complet réalisé', checked: false },
-        { id: 'repair_performed', label: 'Réparation effectuée', checked: false },
-        { id: 'parts_replaced', label: 'Pièces remplacées (si applicable)', checked: false },
-        { id: 'functional_test', label: 'Test fonctionnel OK', checked: false },
-      ];
-    }
-  };
-  
-  const [checklist, setChecklist] = useState(() => {
-    const saved = device.work_checklist;
-    if (saved && Object.keys(saved).length > 0) {
-      return getDefaultChecklist().map(item => ({ ...item, checked: saved[item.id] || false }));
-    }
-    return getDefaultChecklist();
-  });
-  
-  const toggleChecklistItem = (id) => setChecklist(checklist.map(item => item.id === id ? { ...item, checked: !item.checked } : item));
-  
-  // Add work item with part number field
-  const addWorkItem = () => setWorkItems([...workItems, { id: Date.now(), part_number: '', description: '', quantity: 1, price: 0 }]);
-  
-  const updateWorkItem = (id, field, value) => setWorkItems(workItems.map(item => item.id === id ? { ...item, [field]: value } : item));
-  
-  const removeWorkItem = (id) => setWorkItems(workItems.filter(item => item.id !== id));
-  
-  // Lookup part by part number from existing parts_pricing table
-  const lookupPart = async (itemId, partNumber) => {
-    if (!partNumber || partNumber.length < 2) return;
-    
-    setPartsLoading(prev => ({ ...prev, [itemId]: true }));
-    try {
-      const { data, error } = await supabase
-        .from('parts_pricing')
-        .select('part_number, description, description_fr, unit_price')
-        .ilike('part_number', `%${partNumber}%`)
-        .limit(1)
-        .single();
-      
-      if (data && !error) {
-        // Use French description if available, otherwise English
-        const desc = data.description_fr || data.description || '';
-        setWorkItems(prev => prev.map(item => 
-          item.id === itemId ? { ...item, description: desc, price: data.unit_price || 0, part_number: data.part_number } : item
-        ));
-        notify(`✓ ${data.part_number}: ${desc}`);
-      }
-    } catch (err) {
-      // Part not found - that's okay, user can enter manually
-    }
-    setPartsLoading(prev => ({ ...prev, [itemId]: false }));
-  };
-  
-  const totalAdditional = workItems.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0);
-  const canPreviewReport = findings.trim() && workCompleted.trim() && technicianName && calType && receptionResult && (!isCalibration || certificateUrl);
-  
-  const getValidationMessage = () => {
-    const missing = [];
-    if (!technicianName) missing.push('Technicien');
-    if (!calType) missing.push('Étalonnage effectué');
-    if (!receptionResult) missing.push('Résultats à la réception');
-    if (!findings.trim()) missing.push('Constatations');
-    if (!workCompleted.trim()) missing.push('Actions effectuées');
-    if (isCalibration && !certificateUrl) missing.push('Certificat d\'étalonnage');
-    return missing.length > 0 ? `Veuillez remplir: ${missing.join(', ')}` : null;
-  };
-  
-  const handlePreviewClick = () => {
-    if (canPreviewReport) {
-      setShowReportPreview(true);
-    } else {
-      notify(getValidationMessage(), 'error');
-    }
-  };
-  
-  const saveProgress = async () => {
-    setSaving(true);
-    const checklistObj = {};
-    checklist.forEach(item => { checklistObj[item.id] = item.checked; });
-    try {
-      const { error } = await supabase.from('request_devices').update({
-        service_findings: findings, additional_work_needed: additionalWorkNeeded,
-        additional_work_items: additionalWorkNeeded ? workItems : [],
-        work_completed: workCompleted, work_checklist: checklistObj,
-        technician_name: technicianName,
-        cal_type: calType,
-        reception_result: receptionResult
-      }).eq('id', device.id);
-      if (error) throw error;
-      notify('✓ Enregistré');
-      // Lock work items after successful save if there are any
-      if (additionalWorkNeeded && workItems.length > 0) {
-        setWorkItemsLocked(true);
-      }
-      reload();
-    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
-    setSaving(false);
-  };
-  
-  const completeReport = async () => {
-    setSaving(true);
-    const checklistObj = {};
-    checklist.forEach(item => { checklistObj[item.id] = item.checked; });
-    try {
-      // Update device status
-      const { error } = await supabase.from('request_devices').update({
-        service_findings: findings, additional_work_needed: additionalWorkNeeded,
-        additional_work_items: additionalWorkNeeded ? workItems : [],
-        work_completed: workCompleted, work_checklist: checklistObj,
-        technician_name: technicianName,
-        cal_type: calType,
-        reception_result: receptionResult,
-        report_complete: true, report_completed_at: new Date().toISOString(), status: 'final_qc'
-      }).eq('id', device.id);
-      if (error) throw error;
-      
-      // Check if all devices in this RMA are now in QC or beyond
-      const allDevices = rma.request_devices || [];
-      const otherDevices = allDevices.filter(d => d.id !== device.id);
-      const allOthersInQCOrBeyond = otherDevices.every(d => 
-        d.report_complete || d.status === 'final_qc' || d.qc_complete || d.status === 'ready_to_ship'
-      );
-      
-      // If all devices are in QC (including this one we just updated), update RMA status
-      if (allOthersInQCOrBeyond) {
-        await supabase.from('service_requests').update({
-          status: 'final_qc',
-          updated_at: new Date().toISOString()
-        }).eq('id', rma.id);
-      }
-      
-      notify('✓ Rapport terminé → QC!');
-      reload();
-      onBack();
-    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
-    setSaving(false);
-  };
-
-  if (showReportPreview) {
-    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} technicianName={technicianName} calType={calType} receptionResult={receptionResult} />;
-  }
-
-  const renderActionButtons = () => {
-    if (reportComplete) return <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">✓ Rapport terminé</span>;
-    if (!additionalWorkNeeded) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">📄 Aperçu Rapport →</button></>);
-    if (additionalWorkNeeded && !avenantSent) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button><span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">⚠️ Créer avenant depuis page RMA</span></>);
-    if (additionalWorkNeeded && avenantSent && !avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button><span className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg">⏳ Attente approbation</span></>);
-    if (additionalWorkNeeded && avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">📄 Aperçu Rapport →</button></>);
+  if (length === 9) {
+    // 9-digit: YYMMCC### - extract CC (positions 4-5, 0-indexed)
+    productCode = sn.substring(4, 6);
+    format = '9-digit';
+  } else if (length === 10) {
+    // 10-digit: YYMMCCC### - extract CCC (positions 4-6, 0-indexed)
+    productCode = sn.substring(4, 7);
+    format = '10-digit';
+  } else if (length === 8) {
+    // 8-digit: CCC##### - extract CCC (positions 0-2)
+    productCode = sn.substring(0, 3) + '_acc';
+    format = '8-digit';
+  } else {
     return null;
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">← Retour</button>
-          <div><h1 className="text-2xl font-bold text-gray-800">SERVICE - {device.model_name}</h1><p className="text-gray-500">SN: {device.serial_number} • RMA: {rma.request_number}</p></div>
-        </div>
-        <div className="flex items-center gap-3">{renderActionButtons()}</div>
-      </div>
-
-      {additionalWorkNeeded && (
-        <div className={`rounded-lg p-3 ${avenantApproved ? 'bg-green-100 border border-green-300' : avenantSent ? 'bg-purple-100 border border-purple-300' : 'bg-amber-100 border border-amber-300'}`}>
-          <span className={`font-medium ${avenantApproved ? 'text-green-800' : avenantSent ? 'text-purple-800' : 'text-amber-800'}`}>
-            {avenantApproved ? '✓ Avenant approuvé par le client' : avenantSent ? '📤 Avenant envoyé - En attente approbation' : '⚠️ Travaux supplémentaires détectés - Avenant requis'}
-          </span>
-        </div>
-      )}
-
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl shadow-sm border p-4">
-            <h3 className="font-bold text-gray-700 mb-3">Appareil</h3>
-            <div className="space-y-2">
-              <div><p className="text-xs text-gray-500">Modèle</p><p className="font-bold text-gray-800">{device.model_name}</p></div>
-              <div><p className="text-xs text-gray-500">N° série</p><p className="font-medium text-gray-800">{device.serial_number}</p></div>
-              <div><p className="text-xs text-gray-500">Service</p><p className="font-medium">{device.service_type === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}</p></div>
-            </div>
-          </div>
-          {device.notes && (
-            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
-              <h3 className="font-bold text-amber-800 mb-2">📝 Notes Client</h3>
-              <p className="text-amber-900">"{device.notes}"</p>
-            </div>
-          )}
-          <div className="bg-gray-50 rounded-xl border p-4">
-            <h3 className="font-bold text-gray-700 mb-2">Client</h3>
-            <p className="font-medium text-gray-800">{rma.companies?.name}</p>
-          </div>
-          
-          {/* Report Options Section */}
-          <div className="bg-blue-50 rounded-xl border border-blue-200 p-4 space-y-3">
-            <h3 className="font-bold text-blue-800">Options du Rapport</h3>
-            
-            {/* Technician */}
-            <div>
-              <label className="text-sm text-gray-600 block mb-1">Technicien(ne) de service *</label>
-              <select 
-                value={technicianName} 
-                onChange={e => setTechnicianName(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm"
-              >
-                <option value="">— Sélectionner —</option>
-                {staffMembers.map(s => (
-                  <option key={s.id} value={s.full_name}>{s.full_name}</option>
-                ))}
-              </select>
-            </div>
-            
-            {/* Calibration Type */}
-            <div>
-              <label className="text-sm text-gray-600 block mb-1">Étalonnage effectué *</label>
-              <select value={calType} onChange={e => setCalType(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
-                <option value="">— Sélectionner —</option>
-                {calTypeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-              </select>
-            </div>
-            
-            {/* Reception Result */}
-            <div>
-              <label className="text-sm text-gray-600 block mb-1">Résultats à la réception *</label>
-              <select value={receptionResult} onChange={e => setReceptionResult(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
-                <option value="">— Sélectionner —</option>
-                {receptionOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-              </select>
-            </div>
-          </div>
-          
-          {/* Certificate Upload - Only for calibrations */}
-          {isCalibration && (
-            <div className={`rounded-xl border p-4 ${certificateUrl ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
-              <h3 className={`font-bold mb-2 ${certificateUrl ? 'text-green-800' : 'text-amber-800'}`}>
-                📜 Certificat d'Étalonnage {certificateUrl ? '✓' : '*'}
-              </h3>
-              
-              {certificateUrl ? (
-                <div className="space-y-2">
-                  <p className="text-sm text-green-700">Certificat téléchargé</p>
-                  <div className="flex gap-2">
-                    <a href={certificateUrl} target="_blank" rel="noopener noreferrer" className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm">
-                      📄 Voir PDF
-                    </a>
-                    <label className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm cursor-pointer">
-                      Remplacer
-                      <input type="file" accept=".pdf" onChange={handleCertificateUpload} className="hidden" />
-                    </label>
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <p className="text-sm text-amber-700 mb-2">Requis pour envoyer au QC</p>
-                  <label className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer ${uploadingCert ? 'bg-gray-300' : 'bg-amber-500 hover:bg-amber-600 text-white'}`}>
-                    {uploadingCert ? '⏳ Téléchargement...' : '📤 Télécharger PDF'}
-                    <input type="file" accept=".pdf" onChange={handleCertificateUpload} disabled={uploadingCert} className="hidden" />
-                  </label>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="lg:col-span-2 space-y-4">
-          <div className="bg-white rounded-xl shadow-sm border p-4">
-            <h3 className="font-bold text-gray-700 mb-2">1. CONSTATATIONS *</h3>
-            <p className="text-sm text-gray-500 mb-3">Ce que vous avez observé (apparaît sur rapport et avenant)</p>
-            <textarea value={findings} onChange={e => setFindings(e.target.value)} placeholder="Ex: Calibration effectuée selon les spécifications..." className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border p-4">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-bold text-gray-800">2. Travaux supplémentaires ?</h3>
-                <p className="text-sm text-gray-500">Pièces ou main d'œuvre en plus</p>
-              </div>
-              <div className="flex gap-3">
-                <button onClick={() => { setAdditionalWorkNeeded(false); setWorkItemsLocked(false); }} className={`px-4 py-2 rounded-lg font-medium ${!additionalWorkNeeded ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>Non (RAS)</button>
-                <button onClick={() => setAdditionalWorkNeeded(true)} className={`px-4 py-2 rounded-lg font-medium ${additionalWorkNeeded ? 'bg-amber-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>Oui</button>
-              </div>
-            </div>
-            {additionalWorkNeeded && (
-              <div className="border-t pt-4">
-                {/* Locked state - show read-only with edit button */}
-                {workItemsLocked ? (
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm text-gray-500 flex items-center gap-2">🔒 Pièces enregistrées</span>
-                      <button onClick={() => setWorkItemsLocked(false)} className="px-3 py-1 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg">✏️ Modifier</button>
-                    </div>
-                    <div className="space-y-2">
-                      {workItems.map((item, idx) => (
-                        <div key={item.id} className="flex items-center gap-2 bg-gray-100 rounded-lg p-3">
-                          <span className="text-gray-400 w-6">{idx + 1}.</span>
-                          <span className="text-gray-500 text-sm w-24">{item.part_number || '—'}</span>
-                          <span className="flex-1 font-medium">{item.description}</span>
-                          <span className="text-gray-600">×{item.quantity}</span>
-                          <span className="font-bold text-amber-700 w-24 text-right">€{(parseFloat(item.price) || 0).toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-                    {workItems.length > 0 && (
-                      <div className="mt-4 pt-4 border-t flex justify-between">
-                        <span className="font-medium">Sous-total:</span>
-                        <span className="text-xl font-bold text-amber-700">€{totalAdditional.toFixed(2)}</span>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  /* Editable state */
-                  <div>
-                    <div className="space-y-2">
-                      {workItems.map((item, idx) => (
-                        <div key={item.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                          <span className="text-gray-400 w-6">{idx + 1}.</span>
-                          <div className="relative">
-                            <input 
-                              type="text" 
-                              value={item.part_number || ''} 
-                              onChange={e => updateWorkItem(item.id, 'part_number', e.target.value)}
-                              onBlur={e => lookupPart(item.id, e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && lookupPart(item.id, e.target.value)}
-                              placeholder="N° Pièce" 
-                              className="w-28 px-3 py-2 border rounded-lg text-sm"
-                            />
-                            {partsLoading[item.id] && <span className="absolute right-2 top-2 text-blue-500 text-sm">...</span>}
-                          </div>
-                          <input type="text" value={item.description} onChange={e => updateWorkItem(item.id, 'description', e.target.value)} placeholder="Description" className="flex-1 px-3 py-2 border rounded-lg" />
-                          <input type="number" value={item.quantity} onChange={e => updateWorkItem(item.id, 'quantity', e.target.value)} className="w-16 px-3 py-2 border rounded-lg text-center" min="1" />
-                          <span className="text-gray-400">€</span>
-                          <input type="number" value={item.price} onChange={e => updateWorkItem(item.id, 'price', e.target.value)} className="w-24 px-3 py-2 border rounded-lg text-right" step="0.01" />
-                          <button onClick={() => removeWorkItem(item.id)} className="p-2 text-red-500 hover:bg-red-100 rounded">✕</button>
-                        </div>
-                      ))}
-                    </div>
-                    <button onClick={addWorkItem} className="mt-3 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">+ Ajouter pièce</button>
-                    {workItems.length > 0 && (
-                      <div className="mt-4 pt-4 border-t flex justify-between">
-                        <span className="font-medium">Sous-total:</span>
-                        <span className="text-xl font-bold text-amber-700">€{totalAdditional.toFixed(2)}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border p-4">
-            <h3 className="font-bold text-gray-700 mb-2">3. TRAVAUX RÉALISÉS *</h3>
-            <p className="text-sm text-gray-500 mb-4">Cochez et décrivez le travail effectué</p>
-            <div className="bg-gray-50 rounded-lg p-4 mb-4">
-              <p className="text-xs text-gray-500 uppercase mb-3">Checklist</p>
-              <div className="space-y-2">
-                {checklist.map(item => (
-                  <label key={item.id} className="flex items-center gap-3 cursor-pointer hover:bg-gray-100 p-2 rounded-lg">
-                    <input type="checkbox" checked={item.checked} onChange={() => toggleChecklistItem(item.id)} className="w-5 h-5 rounded text-green-600" />
-                    <span className={item.checked ? 'text-green-700' : 'text-gray-700'}>{item.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <textarea value={workCompleted} onChange={e => setWorkCompleted(e.target.value)} placeholder="Décrivez les travaux réalisés..." className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Report Preview Modal - Exact replica of official Lighthouse France Rapport PDF
-function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving, technicianName, calType, receptionResult }) {
-  const today = new Date().toLocaleDateString('fr-FR');
-  const serviceTypeText = device.service_type === 'calibration' ? 'Étalonnage' : device.service_type === 'repair' ? 'Réparation' : 'Étalonnage et Réparation';
-  const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
+  }
   
-  const showCalType = calType && calType !== 'none';
-  const showReceptionResult = receptionResult && receptionResult !== 'none';
+  // Look up the product code
+  let product = PRODUCT_CODES[productCode];
   
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">← Retour</button>
-          <div><h1 className="text-2xl font-bold text-gray-800">📄 Aperçu Rapport de Service</h1><p className="text-gray-500">{device.model_name} • SN: {device.serial_number}</p></div>
-        </div>
-        <div className="flex items-center gap-3">
-          {canComplete ? (
-            <button onClick={onComplete} disabled={saving} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50">{saving ? 'Envoi...' : '✓ Terminer Rapport → QC'}</button>
-          ) : (
-            <span className="px-4 py-2 bg-amber-100 text-amber-700 rounded-lg">⏳ Approbation client requise</span>
-          )}
-        </div>
-      </div>
-
-      {/* Report Document - Exact replica of PDF */}
-      <div className="bg-gray-400 p-8 min-h-full flex justify-center">
-        <div className="bg-white shadow-2xl w-full max-w-3xl relative" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '1000px', display: 'flex', flexDirection: 'column' }}>
-          
-          {/* Logo Header - Using actual logo image */}
-          <div className="mb-10">
-            <img 
-              src="/images/logos/lighthouse-logo.png" 
-              alt="Lighthouse Worldwide Solutions" 
-              className="h-12 w-auto"
-              onError={(e) => {
-                e.target.style.display = 'none';
-                e.target.nextSibling.style.display = 'flex';
-              }}
-            />
-            <div className="items-center gap-2 hidden">
-              <div className="flex flex-col gap-0.5 mr-2">
-                <div className="w-12 h-2 bg-[#FFD200]"></div>
-                <div className="w-12 h-2 bg-[#003366]"></div>
-              </div>
-              <div>
-                <span className="text-2xl font-bold tracking-wide" style={{ color: '#003366' }}>LIGHTHOUSE</span>
-                <p className="text-xs tracking-widest text-gray-500 -mt-1">WORLDWIDE SOLUTIONS</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Main Content - Grows to fill space */}
-          <div className="flex-grow">
-            {/* Info Table - Client/Device info */}
-            <table className="w-full text-sm mb-6" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-              <colgroup>
-                <col style={{ width: '150px' }} />
-                <col style={{ width: '200px' }} />
-                <col />
-              </colgroup>
-              <tbody>
-                {/* Row 1: Date + RMA */}
-                <tr>
-                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Date d'achèvement</td>
-                  <td className="py-1 text-gray-800">{today}</td>
-                  <td className="py-1 text-gray-800">
-                    <span className="font-bold text-[#003366]">RMA # </span>{rma.request_number}
-                  </td>
-                </tr>
-                
-                {/* Row 2: Client */}
-                <tr>
-                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Client</td>
-                  <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.name}</td>
-                </tr>
-                
-                {/* Row 3: Adresse */}
-                <tr>
-                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Adresse</td>
-                  <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.billing_address || '—'}</td>
-                </tr>
-                
-                {/* Row 4: Code postal + Contact */}
-                <tr>
-                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Code postal / Ville</td>
-                  <td className="py-1 text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
-                  <td className="py-1 text-gray-800">
-                    <span className="font-bold text-[#003366]">Contact </span>{rma.companies?.contact_name || '—'}
-                  </td>
-                </tr>
-                
-                {/* Row 5: Téléphone + Technicien label */}
-                <tr>
-                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Téléphone</td>
-                  <td className="py-1 text-gray-800">{rma.companies?.phone || '—'}</td>
-                  <td className="py-1 text-gray-800 align-top">
-                    <span className="font-bold text-[#003366]">Technicien(ne) de service</span>
-                  </td>
-                </tr>
-                
-                {/* Row 6: Modèle + Technicien name */}
-                <tr>
-                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Modèle#</td>
-                  <td className="py-1 text-gray-800">{device.model_name}</td>
-                  <td className="py-1 text-gray-800">{technicianName || 'Lighthouse France'}</td>
-                </tr>
-                
-                {/* Row 7: Numéro de série */}
-                <tr>
-                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Numéro de série</td>
-                  <td className="py-1 text-gray-800" colSpan="2">{device.serial_number}</td>
-                </tr>
-              </tbody>
-            </table>
-
-            {/* Content Sections */}
-            <table className="w-full text-sm" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-              <colgroup>
-                <col style={{ width: '170px' }} />
-                <col />
-              </colgroup>
-              <tbody>
-                {/* Motif de retour = Service type + Customer notes */}
-                <tr>
-                  <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Motif de retour</td>
-                  <td className="pt-6 pb-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word' }}>{motifText}</td>
-                </tr>
-                
-                {/* Étalonnage effectué - only if not 'none' */}
-                {showCalType && (
-                  <tr>
-                    <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Étalonnage effectué</td>
-                    <td className="py-2 text-gray-800">{calType}</td>
-                  </tr>
-                )}
-                
-                {/* Résultats à la réception - only if not 'none' */}
-                {showReceptionResult && (
-                  <tr>
-                    <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Résultats à la réception</td>
-                    <td className="py-2 text-gray-800">{receptionResult}</td>
-                  </tr>
-                )}
-                
-                {/* Constatations (Tech findings) */}
-                <tr>
-                  <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Constatations</td>
-                  <td className="pt-6 pb-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{findings || '—'}</td>
-                </tr>
-                
-                {/* Actions effectuées (Work description) */}
-                <tr>
-                  <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Actions effectuées</td>
-                  <td className="py-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{workCompleted || '—'}</td>
-                </tr>
-                
-                {/* Travaux réalisés (Checklist) - more space above */}
-                <tr>
-                  <td className="pt-10 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Travaux réalisés</td>
-                  <td className="pt-10 pb-2">
-                    <div className="space-y-1">
-                      {checklist.filter(item => item.checked).map(item => (
-                        <div key={item.id} className="flex items-center gap-2">
-                          <span className="text-[#003366]">☑</span>
-                          <span className="text-gray-800">{item.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          {/* Footer - Always at bottom */}
-          <div className="text-center text-sm text-gray-600 mt-auto pt-8">
-            <p className="font-bold text-[#003366]">Lighthouse Worldwide Solutions France</p>
-            <p>16 Rue Paul Séjourné 94000 Créteil France</p>
-            <p>01 43 77 28 07</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Avenant Preview Modal - Shows additional work quote to send to client
-function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySent }) {
-  const [sending, setSending] = useState(false);
-  const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
-  const devicesRAS = devices.filter(d => !d.additional_work_needed || !d.additional_work_items?.length);
+  // For 8-digit, also try without _acc suffix (some overlap)
+  if (!product && format === '8-digit') {
+    product = PRODUCT_CODES[sn.substring(0, 3)];
+  }
   
-  const totalAvenant = devicesWithWork.reduce((sum, device) => {
-    const deviceTotal = (device.additional_work_items || []).reduce((dSum, item) => 
-      dSum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
-    );
-    return sum + deviceTotal;
-  }, 0);
-  
-  const sendAvenant = async () => {
-    setSending(true);
-    try {
-      const { error } = await supabase
-        .from('service_requests')
-        .update({
-          status: 'quote_sent',
-          avenant_total: totalAvenant,
-          avenant_sent_at: new Date().toISOString()
-        })
-        .eq('id', rma.id);
-      
-      if (error) throw error;
-      notify('✓ Avenant envoyé au client!');
-      reload();
-      onClose();
-    } catch (err) {
-      notify('Erreur: ' + err.message, 'error');
-    }
-    setSending(false);
-  };
-  
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="px-6 py-4 border-b sticky top-0 bg-white z-10 flex justify-between items-center">
-          <div>
-            <div className="flex items-center gap-3">
-              <h2 className="text-xl font-bold text-gray-800">📄 Avenant au Devis</h2>
-              {alreadySent && (
-                <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
-                  ✓ Envoyé le {new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR')}
-                </span>
-              )}
-            </div>
-            <p className="text-sm text-gray-500">Travaux supplémentaires découverts lors du service</p>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500">✕</button>
-        </div>
-        
-        <div className="p-6">
-          {/* Quote Header - Like official document */}
-          <div className="border-2 border-gray-300 rounded-xl overflow-hidden mb-6">
-            {/* Company Header */}
-            <div className="bg-[#1a1a2e] text-white p-6">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-2xl font-bold">LIGHTHOUSE FRANCE</h3>
-                  <p className="text-gray-300 text-sm mt-1">Service Métrologie & Calibration</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xl font-bold text-[#00A651]">AVENANT</p>
-                  <p className="text-gray-300">RMA: {rma.request_number}</p>
-                  <p className="text-gray-400 text-sm">{alreadySent ? new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
-                </div>
-              </div>
-            </div>
-            
-            {/* Client Info */}
-            <div className="bg-gray-50 px-6 py-4 border-b">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs text-gray-500 uppercase font-medium">Client</p>
-                  <p className="font-bold text-gray-800">{rma.companies?.name}</p>
-                  {rma.companies?.billing_address && <p className="text-sm text-gray-600">{rma.companies.billing_address}</p>}
-                  {rma.companies?.billing_postal_code && <p className="text-sm text-gray-600">{rma.companies.billing_postal_code} {rma.companies.billing_city}</p>}
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-gray-500 uppercase font-medium">Référence</p>
-                  <p className="font-bold text-gray-800">{rma.request_number}</p>
-                  <p className="text-sm text-gray-600">Devis initial: {rma.quote_total ? `€${rma.quote_total.toFixed(2)}` : '—'}</p>
-                </div>
-              </div>
-            </div>
-            
-            {/* Introduction */}
-            <div className="px-6 py-4 bg-amber-50 border-b">
-              <p className="text-sm text-amber-800">
-                <strong>Objet:</strong> Suite à l'inspection de vos appareils, nous avons constaté des travaux supplémentaires nécessaires. 
-                Veuillez trouver ci-dessous le détail des interventions recommandées.
-              </p>
-            </div>
-            
-            {/* Devices with additional work */}
-            <div className="divide-y">
-              {devicesWithWork.map((device, idx) => {
-                const deviceTotal = (device.additional_work_items || []).reduce((sum, item) => 
-                  sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
-                );
-                
-                return (
-                  <div key={device.id} className="p-6">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <p className="font-bold text-gray-800 text-lg">{device.model_name}</p>
-                        <p className="text-sm text-gray-500">N° de série: {device.serial_number}</p>
-                        <p className="text-xs text-gray-400">Service: {device.service_type === 'calibration' ? 'Étalonnage' : 'Réparation'}</p>
-                      </div>
-                      <span className="text-xl font-bold text-gray-800">€{deviceTotal.toFixed(2)}</span>
-                    </div>
-                    
-                    {/* Findings */}
-                    {device.service_findings && (
-                      <div className="bg-gray-100 rounded-lg p-4 mb-4">
-                        <p className="text-xs text-gray-500 uppercase font-medium mb-1">Constatations du technicien</p>
-                        <p className="text-gray-700">{device.service_findings}</p>
-                      </div>
-                    )}
-                    
-                    {/* Work Items Table */}
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b">
-                          <th className="text-left py-2 text-gray-600">Description</th>
-                          <th className="text-center py-2 text-gray-600 w-20">Qté</th>
-                          <th className="text-right py-2 text-gray-600 w-24">Prix Unit.</th>
-                          <th className="text-right py-2 text-gray-600 w-24">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(device.additional_work_items || []).map((item, itemIdx) => (
-                          <tr key={itemIdx} className="border-b border-gray-100">
-                            <td className="py-2">{item.description}</td>
-                            <td className="py-2 text-center">{item.quantity}</td>
-                            <td className="py-2 text-right">€{(parseFloat(item.price) || 0).toFixed(2)}</td>
-                            <td className="py-2 text-right font-medium">€{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })}
-            </div>
-            
-            {/* Devices without additional work (RAS) */}
-            {devicesRAS.length > 0 && (
-              <div className="px-6 py-4 bg-green-50 border-t">
-                <p className="text-sm text-green-800 font-medium mb-2">Appareils sans travaux supplémentaires:</p>
-                <div className="space-y-1">
-                  {devicesRAS.map(device => (
-                    <p key={device.id} className="text-sm text-green-700">
-                      ✓ {device.model_name} (SN: {device.serial_number}) - {device.service_findings || 'RAS'}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            {/* Total */}
-            <div className="px-6 py-4 flex justify-between items-center bg-[#00A651] text-white">
-              <span className="text-lg font-bold">TOTAL AVENANT</span>
-              <span className="text-2xl font-bold">€{totalAvenant.toFixed(2)}</span>
-            </div>
-          </div>
-          
-          {/* Terms */}
-          <div className="text-xs text-gray-500 space-y-1">
-            <p>• Ce devis est valable 30 jours à compter de sa date d'émission.</p>
-            <p>• Les travaux seront effectués après réception de votre accord écrit.</p>
-            <p>• Conditions de règlement: 30 jours fin de mois.</p>
-          </div>
-        </div>
-        
-        {/* Actions */}
-        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between items-center sticky bottom-0">
-          <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
-            ← Fermer
-          </button>
-          <div className="flex gap-3">
-            <button className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
-              📥 Télécharger PDF
-            </button>
-            {!alreadySent && (
-              <button 
-                onClick={sendAvenant}
-                disabled={sending}
-                className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium disabled:opacity-50"
-              >
-                {sending ? 'Envoi...' : '📧 Envoyer au Client'}
-              </button>
-            )}
-            {alreadySent && (
-              <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">
-                ✓ Envoyé le {new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR')}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RequestsSheet({ requests, notify, reload, profile }) {
-  const [selectedRequest, setSelectedRequest] = useState(null);
-  const [quoteRequest, setQuoteRequest] = useState(null);
-  const [filter, setFilter] = useState('pending');
-  
-  const pendingRequests = requests.filter(r => r.status === 'submitted' && !r.request_number);
-  const modificationRequests = requests.filter(r => r.status === 'quote_revision_requested');
-  const allPending = [...modificationRequests, ...pendingRequests];
-  const displayRequests = filter === 'pending' ? allPending : requests;
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">Demandes</h1>
-        <div className="flex gap-2">
-          <button onClick={() => setFilter('pending')} className={`px-4 py-2 rounded-lg text-sm font-medium ${filter === 'pending' ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}>
-            En attente ({allPending.length})
-          </button>
-          <button onClick={() => setFilter('all')} className={`px-4 py-2 rounded-lg text-sm font-medium ${filter === 'all' ? 'bg-gray-700 text-white' : 'bg-gray-200'}`}>
-            Toutes ({requests.length})
-          </button>
-        </div>
-      </div>
-      
-      {/* Modification Requests Alert */}
-      {modificationRequests.length > 0 && filter === 'pending' && (
-        <div className="bg-red-50 border-2 border-red-300 p-4 rounded-xl">
-          <p className="font-bold text-red-800">🔴 {modificationRequests.length} demande(s) de modification de devis</p>
-          <p className="text-sm text-red-600">Le client a demandé des modifications - veuillez réviser et renvoyer</p>
-        </div>
-      )}
-      
-      {pendingRequests.length > 0 && filter === 'pending' && (
-        <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg">
-          <p className="font-medium text-amber-800">⚠️ {pendingRequests.length} nouvelle(s) demande(s) - Créez un devis pour traiter</p>
-        </div>
-      )}
-      
-      <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">ID / RMA</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Client</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Type</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Appareils</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Statut</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Soumis</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {displayRequests.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{filter === 'pending' ? 'Aucune demande en attente' : 'Aucune demande'}</td></tr>
-            ) : displayRequests.map(req => {
-              const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
-              const devices = req.request_devices || [];
-              const isPending = req.status === 'submitted' && !req.request_number;
-              const needsRevision = req.status === 'quote_revision_requested';
-              const isContractRMA = req.is_contract_rma || req.contract_id;
-              
-              return (
-                <tr key={req.id} className={`hover:bg-gray-50 ${needsRevision ? 'bg-red-50' : isPending ? 'bg-amber-50/50' : ''}`}>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      {req.request_number ? (
-                        <span className="font-mono font-bold text-[#00A651]">{req.request_number}</span>
-                      ) : (
-                        <span className="text-amber-600 font-medium">Nouvelle</span>
-                      )}
-                      {isContractRMA && (
-                        <span className="px-1.5 py-0.5 text-xs font-bold rounded bg-emerald-100 text-emerald-700">
-                          📋
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium text-gray-800">{req.companies?.name || '—'}</p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3"><span className="text-sm">{req.request_type === 'service' ? '🔧 Service' : '📦 Pièces'}</span></td>
-                  <td className="px-4 py-3"><span className="text-sm text-gray-600">{devices.length > 0 ? devices.length + ' appareil(s)' : '1 appareil'}</span></td>
-                  <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span></td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{new Date(req.created_at).toLocaleDateString('fr-FR')}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-2">
-                      {(isPending || needsRevision) && (
-                        <button onClick={() => setQuoteRequest(req)} className={`px-3 py-1 text-sm text-white rounded font-medium ${needsRevision ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}>
-                          {needsRevision ? '🔴 Réviser Devis' : '💰 Créer Devis'}
-                        </button>
-                      )}
-                      <button onClick={() => setSelectedRequest(req)} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir</button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {selectedRequest && <RequestDetailModal request={selectedRequest} onClose={() => setSelectedRequest(null)} onCreateQuote={() => { setSelectedRequest(null); setQuoteRequest(selectedRequest); }} />}
-      {quoteRequest && <QuoteEditorModal request={quoteRequest} onClose={() => setQuoteRequest(null)} notify={notify} reload={reload} profile={profile} />}
-    </div>
-  );
-}
-
-function RequestDetailModal({ request, onClose, onCreateQuote }) {
-  const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
-  const devices = request.request_devices || [];
-  const isPending = request.status === 'submitted' && !request.request_number;
-  
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b sticky top-0 bg-white flex justify-between items-center">
-          <div>
-            <h2 className="text-xl font-bold text-gray-800">{request.request_number || 'Nouvelle Demande'}</h2>
-            <p className="text-sm text-gray-500">{request.companies?.name}</p>
-          </div>
-          <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>{style.label}</span>
-        </div>
-        
-        <div className="p-6 space-y-6">
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Client</h3><p className="font-medium">{request.companies?.name}</p></div>
-            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Service</h3><p className="font-medium">{request.requested_service}</p><p className="text-sm text-gray-500">Soumis le {new Date(request.created_at).toLocaleDateString('fr-FR')}</p></div>
-          </div>
-          
-          {/* Devices */}
-          <div>
-            <h3 className="font-bold text-gray-700 mb-3">Appareils ({devices.length || 1})</h3>
-            {devices.length > 0 ? (
-              <div className="space-y-2">
-                {devices.map((d, i) => (
-                  <div key={i} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
-                    <div>
-                      <p className="font-medium">{d.model_name}</p>
-                      <p className="text-sm text-gray-500">SN: {d.serial_number}</p>
-                      {d.service_type && <p className="text-xs text-gray-400">{d.service_type}</p>}
-                    </div>
-                    <span className="text-sm text-gray-400">{d.equipment_type}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="bg-gray-50 rounded-lg p-3"><p className="font-medium">{request.serial_number}</p></div>
-            )}
-          </div>
-          
-          {request.problem_description && <div><h3 className="font-bold text-gray-700 mb-2">Notes du client</h3><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm whitespace-pre-wrap">{request.problem_description}</p></div></div>}
-        </div>
-        
-        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between">
-          <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Fermer</button>
-          {isPending && (
-            <button onClick={onCreateQuote} className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium">
-              💰 Créer Devis
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================
-// SHIPPING MODAL - Full shipping workflow
-// ============================================
-function ShippingModal({ rma, devices, onClose, notify, reload, profile }) {
-  const [step, setStep] = useState(1); // 1: Review, 2: UPS Label, 3: BL Preview, 4: Complete
-  const [saving, setSaving] = useState(false);
-  const [shippingAddresses, setShippingAddresses] = useState([]);
-  const [shipments, setShipments] = useState([]); // Grouped by address
-  const [currentShipmentIndex, setCurrentShipmentIndex] = useState(0);
-  const [generatedBLs, setGeneratedBLs] = useState([]);
-  const [labelsPrinted, setLabelsPrinted] = useState({});
-  const [blsPrinted, setBlsPrinted] = useState({});
-  
-  // Fetch shipping addresses on mount
-  useEffect(() => {
-    const fetchAddresses = async () => {
-      const { data: addresses } = await supabase
-        .from('shipping_addresses')
-        .select('*')
-        .eq('company_id', rma.company_id);
-      
-      if (addresses) {
-        setShippingAddresses(addresses);
-        groupDevicesByAddress(addresses);
-      } else {
-        groupDevicesByAddress([]);
-      }
-    };
-    fetchAddresses();
-  }, [rma.company_id]);
-  
-  // Group devices by their shipping address
-  const groupDevicesByAddress = (addresses) => {
-    const groups = {};
-    
-    devices.forEach(device => {
-      let addressKey = 'default';
-      let address = null;
-      
-      if (device.shipping_address_id) {
-        address = addresses.find(a => a.id === device.shipping_address_id);
-        if (address) {
-          addressKey = device.shipping_address_id;
-        }
-      }
-      
-      if (!address) {
-        address = {
-          id: 'default',
-          company_name: rma.companies?.name || 'Client',
-          address_line1: rma.companies?.billing_address || '',
-          city: rma.companies?.billing_city || '',
-          postal_code: rma.companies?.billing_postal_code || '',
-          country: 'France',
-          attention: ''
-        };
-        addressKey = 'default';
-      }
-      
-      if (!groups[addressKey]) {
-        groups[addressKey] = {
-          address,
-          devices: [],
-          parcels: rma.parcels_count || 1,
-          weight: '2.0',
-          trackingNumber: ''
-        };
-      }
-      groups[addressKey].devices.push(device);
-    });
-    
-    setShipments(Object.values(groups));
-  };
-  
-  const updateShipment = (index, field, value) => {
-    setShipments(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
-      return updated;
-    });
-  };
-  
-  const generateBLNumber = (index) => {
-    const rmaNum = rma.request_number?.replace('FR-', '') || '00000';
-    const date = new Date();
-    const dateStr = `${String(date.getDate()).padStart(2, '0')}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getFullYear()).slice(-2)}`;
-    return `BL-${rmaNum}-${dateStr}${shipments.length > 1 ? `-${index + 1}` : ''}`;
-  };
-  
-  const generateTrackingNumber = () => {
-    // Generate example UPS tracking number
-    return `1Z999AA1${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`;
-  };
-  
-  // Create UPS labels (placeholder - generates example tracking)
-  const createUPSLabels = () => {
-    setShipments(prev => prev.map((s, idx) => ({
-      ...s,
-      trackingNumber: s.trackingNumber || generateTrackingNumber()
-    })));
-    setStep(3);
-  };
-  
-  // Generate BL content
-  const generateBLContent = (shipment, index) => {
-    const blNumber = generateBLNumber(index);
-    const today = new Date().toLocaleDateString('fr-FR');
-    
+  if (product) {
     return {
-      blNumber,
-      date: today,
-      rmaNumber: rma.request_number,
-      client: {
-        name: shipment.address.company_name || rma.companies?.name,
-        attention: shipment.address.attention || '',
-        street: shipment.address.address_line1,
-        city: `${shipment.address.postal_code} ${shipment.address.city}`,
-        country: shipment.address.country || 'France'
-      },
-      devices: shipment.devices.map(d => ({
-        model: d.model_name,
-        serial: d.serial_number,
-        service: d.service_type === 'repair' ? 'Réparation' : 'Étalonnage'
-      })),
-      shipping: {
-        carrier: 'UPS',
-        tracking: shipment.trackingNumber,
-        parcels: shipment.parcels,
-        weight: shipment.weight
-      }
+      model: product.model,
+      category: product.category,
+      productCode: productCode.replace('_acc', ''),
+      format
     };
-  };
-  
-  // Print UPS Label
-  const printLabel = (index) => {
-    const shipment = shipments[index];
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>UPS Label - ${shipment.trackingNumber}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            .label { border: 3px solid #351C15; padding: 20px; max-width: 400px; margin: 0 auto; }
-            .ups-logo { font-size: 32px; font-weight: bold; color: #351C15; text-align: center; margin-bottom: 20px; }
-            .tracking { font-size: 18px; font-family: monospace; text-align: center; margin: 20px 0; padding: 10px; background: #f5f5f5; }
-            .barcode { text-align: center; font-family: 'Libre Barcode 128', monospace; font-size: 48px; margin: 20px 0; }
-            .address { margin: 15px 0; padding: 15px; border: 1px solid #ddd; }
-            .address-label { font-size: 12px; color: #666; margin-bottom: 5px; }
-            .address-text { font-size: 14px; }
-            .weight { text-align: center; font-size: 24px; margin: 15px 0; }
-            @media print { body { padding: 0; } }
-          </style>
-        </head>
-        <body>
-          <div class="label">
-            <div class="ups-logo">UPS</div>
-            <div class="tracking">${shipment.trackingNumber}</div>
-            <div class="barcode">||| ${shipment.trackingNumber} |||</div>
-            <div class="address">
-              <div class="address-label">SHIP TO:</div>
-              <div class="address-text">
-                <strong>${shipment.address.company_name || rma.companies?.name}</strong><br>
-                ${shipment.address.attention ? `ATTN: ${shipment.address.attention}<br>` : ''}
-                ${shipment.address.address_line1}<br>
-                ${shipment.address.postal_code} ${shipment.address.city}<br>
-                ${shipment.address.country || 'FRANCE'}
-              </div>
-            </div>
-            <div class="address">
-              <div class="address-label">SHIP FROM:</div>
-              <div class="address-text">
-                <strong>LIGHTHOUSE FRANCE</strong><br>
-                1 Rue de la Pépinière<br>
-                94000 Créteil<br>
-                FRANCE
-              </div>
-            </div>
-            <div class="weight">WEIGHT: ${shipment.weight} KG</div>
-            <div style="text-align: center; font-size: 12px; color: #666;">
-              ${shipment.parcels} PARCEL(S) - ${rma.request_number}
-            </div>
-          </div>
-          <script>window.onload = function() { window.print(); }</script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    setLabelsPrinted(prev => ({ ...prev, [index]: true }));
-  };
-  
-  // Print BL
-  const printBL = (index) => {
-    const shipment = shipments[index];
-    const bl = generateBLContent(shipment, index);
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Bon de Livraison - ${bl.blNumber}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; }
-            .header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 40px; }
-            .logo { font-size: 24px; font-weight: bold; color: #00A651; }
-            .logo-sub { font-size: 12px; color: #666; }
-            .company-info { text-align: right; font-size: 12px; color: #666; }
-            .title { font-size: 20px; font-weight: bold; margin: 30px 0 10px; }
-            .bl-number { font-size: 16px; color: #00A651; margin-bottom: 20px; }
-            .client-box { background: #f9f9f9; padding: 20px; margin: 20px 0; }
-            .client-name { font-size: 16px; font-weight: bold; }
-            .date-line { display: flex; justify-content: space-between; margin: 20px 0; }
-            table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-            th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-            th { background: #f5f5f5; font-weight: bold; }
-            .shipping-info { margin: 20px 0; padding: 15px; background: #e8f5e9; border-radius: 8px; }
-            .signatures { display: flex; justify-content: space-between; margin-top: 60px; }
-            .signature-box { width: 45%; }
-            .signature-line { border-top: 1px solid #333; margin-top: 60px; padding-top: 5px; }
-            .footer { margin-top: 40px; font-size: 10px; color: #666; text-align: center; border-top: 1px solid #ddd; padding-top: 20px; }
-            @media print { body { padding: 20px; } }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div>
-              <div class="logo">LIGHTHOUSE</div>
-              <div class="logo-sub">Worldwide Solutions</div>
-            </div>
-            <div class="company-info">
-              LIGHTHOUSE FRANCE<br>
-              1 Rue de la Pépinière<br>
-              94000 Créteil<br>
-              France
-            </div>
-          </div>
-          
-          <div class="title">BON DE LIVRAISON</div>
-          <div class="bl-number">${bl.blNumber}</div>
-          
-          <div class="date-line">
-            <div>Créteil, le ${bl.date}</div>
-            <div>RMA: ${bl.rmaNumber}</div>
-          </div>
-          
-          <div class="client-box">
-            <div class="client-name">${bl.client.name}</div>
-            ${bl.client.attention ? `<div>À l'attention de: ${bl.client.attention}</div>` : ''}
-            <div>${bl.client.street}</div>
-            <div>${bl.client.city}</div>
-            <div>${bl.client.country}</div>
-          </div>
-          
-          <table>
-            <thead>
-              <tr>
-                <th>Qté</th>
-                <th>Désignation</th>
-                <th>N° Série</th>
-                <th>Service</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${bl.devices.map(d => `
-                <tr>
-                  <td>1</td>
-                  <td>Compteur de particules LIGHTHOUSE ${d.model}</td>
-                  <td>${d.serial}</td>
-                  <td>${d.service}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-          
-          <div class="shipping-info">
-            <strong>Informations d'expédition</strong><br>
-            Transporteur: ${bl.shipping.carrier}<br>
-            N° de suivi: ${bl.shipping.tracking}<br>
-            Nombre de colis: ${bl.shipping.parcels}<br>
-            Poids: ${bl.shipping.weight} kg
-          </div>
-          
-          <div class="signatures">
-            <div class="signature-box">
-              <strong>LIGHTHOUSE FRANCE</strong>
-              <div class="signature-line">Date et signature</div>
-            </div>
-            <div class="signature-box">
-              <strong>${bl.client.name}</strong>
-              <div class="signature-line">Date et signature</div>
-            </div>
-          </div>
-          
-          <div class="footer">
-            Merci de nous retourner une copie signée de ce bordereau.<br>
-            LIGHTHOUSE FRANCE - SIRET: XXX XXX XXX XXXXX - TVA: FRXXXXXXXXX
-          </div>
-          
-          <script>window.onload = function() { window.print(); }</script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    setBlsPrinted(prev => ({ ...prev, [index]: true }));
-  };
-  
-  // Complete shipping - mark as shipped
-  const completeShipping = async () => {
-    setSaving(true);
-    try {
-      const blData = [];
-      
-      for (let i = 0; i < shipments.length; i++) {
-        const shipment = shipments[i];
-        const blContent = generateBLContent(shipment, i);
-        blData.push(blContent);
-        
-        // Update each device in this shipment
-        for (const device of shipment.devices) {
-          const { error } = await supabase.from('request_devices').update({
-            status: 'shipped',
-            shipped_at: new Date().toISOString(),
-            tracking_number: shipment.trackingNumber || null,
-            bl_number: blContent.blNumber
-          }).eq('id', device.id);
-          
-          if (error) {
-            console.error('Error updating device:', error);
-            throw error;
-          }
-        }
-      }
-      
-      // Update RMA status
-      const { error: rmaError } = await supabase.from('service_requests').update({
-        status: 'shipped',
-        shipped_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }).eq('id', rma.id);
-      
-      if (rmaError) {
-        console.error('Error updating RMA:', rmaError);
-        throw rmaError;
-      }
-      
-      setGeneratedBLs(blData);
-      setStep(4);
-      notify('✅ Expédition complétée!');
-      reload();
-    } catch (err) {
-      console.error('Shipping error:', err);
-      notify('Erreur: ' + (err.message || 'Erreur inconnue'), 'error');
-    }
-    setSaving(false);
-  };
-  
-  const currentShipment = shipments[currentShipmentIndex];
-  const allLabelsPrinted = shipments.every((_, idx) => labelsPrinted[idx]);
-  const allBLsPrinted = shipments.every((_, idx) => blsPrinted[idx]);
-  
-  const stepLabels = ['Vérification', 'Étiquette UPS', 'Bon de Livraison', 'Terminé'];
-  
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div className="bg-white rounded-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="px-6 py-4 border-b bg-gradient-to-r from-green-600 to-emerald-600 text-white">
-          <div className="flex justify-between items-center">
-            <div>
-              <h2 className="text-xl font-bold">🚚 Expédition - {rma.request_number}</h2>
-              <p className="text-green-100 text-sm">{devices.length} appareil(s) • {shipments.length} expédition(s)</p>
-            </div>
-            <button onClick={onClose} className="text-white/70 hover:text-white text-2xl">&times;</button>
-          </div>
-          
-          {/* Progress Steps */}
-          <div className="flex items-center gap-1 mt-4">
-            {stepLabels.map((label, idx) => (
-              <div key={idx} className="flex items-center flex-1">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                  step > idx + 1 ? 'bg-white text-green-600' : 
-                  step === idx + 1 ? 'bg-white text-green-600 ring-2 ring-white ring-offset-2 ring-offset-green-600' : 
-                  'bg-green-500 text-green-200'
-                }`}>
-                  {step > idx + 1 ? '✓' : idx + 1}
-                </div>
-                <span className={`ml-2 text-xs ${step === idx + 1 ? 'text-white font-medium' : 'text-green-200'} hidden sm:inline`}>{label}</span>
-                {idx < 3 && <div className="flex-1 h-0.5 bg-green-500 mx-2" />}
-              </div>
-            ))}
-          </div>
-        </div>
-        
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          
-          {/* Step 1: Review Shipping Info */}
-          {step === 1 && (
-            <div className="space-y-6">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-blue-800">
-                  <strong>📋 Vérifiez les informations d'expédition</strong> - Modifiez si nécessaire avant de continuer.
-                </p>
-              </div>
-              
-              {shipments.map((shipment, idx) => (
-                <div key={idx} className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden">
-                  <div className="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <span className="w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center font-bold">{idx + 1}</span>
-                      <div>
-                        <p className="font-bold text-gray-800">Expédition #{idx + 1}</p>
-                        <p className="text-sm text-gray-500">{shipment.devices.length} appareil(s)</p>
-                      </div>
-                    </div>
-                    <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
-                      {generateBLNumber(idx)}
-                    </span>
-                  </div>
-                  
-                  {/* Address */}
-                  <div className="p-4 border-b bg-amber-50">
-                    <div className="flex items-start gap-3">
-                      <span className="text-xl">📍</span>
-                      <div className="flex-1">
-                        <p className="font-bold text-gray-800">{shipment.address.company_name || rma.companies?.name}</p>
-                        {shipment.address.attention && <p className="text-gray-600">À l'attention de: {shipment.address.attention}</p>}
-                        <p className="text-gray-600">{shipment.address.address_line1}</p>
-                        <p className="text-gray-600">{shipment.address.postal_code} {shipment.address.city}</p>
-                        <p className="text-gray-500">{shipment.address.country || 'France'}</p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Devices */}
-                  <div className="p-4 border-b">
-                    <table className="w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">Appareil</th>
-                          <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">N° Série</th>
-                          <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">Service</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {shipment.devices.map(device => (
-                          <tr key={device.id}>
-                            <td className="px-3 py-2 font-medium">{device.model_name}</td>
-                            <td className="px-3 py-2 font-mono text-sm text-gray-600">{device.serial_number}</td>
-                            <td className="px-3 py-2">
-                              <span className={`px-2 py-0.5 rounded text-xs ${device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                                {device.service_type === 'repair' ? '🔧 Réparation' : '🔬 Étalonnage'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  
-                  {/* Shipping Details */}
-                  <div className="px-4 py-4 grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de colis</label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={shipment.parcels}
-                        onChange={e => updateShipment(idx, 'parcels', parseInt(e.target.value) || 1)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Poids total (kg)</label>
-                      <input
-                        type="text"
-                        placeholder="ex: 2.5"
-                        value={shipment.weight}
-                        onChange={e => updateShipment(idx, 'weight', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          
-          {/* Step 2: UPS Labels */}
-          {step === 2 && (
-            <div className="space-y-6">
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <p className="text-amber-800">
-                  <strong>🏷️ Imprimez les étiquettes UPS</strong> - Une étiquette par expédition.
-                </p>
-              </div>
-              
-              {shipments.map((shipment, idx) => (
-                <div key={idx} className="bg-white border-2 border-gray-200 rounded-xl p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="font-bold text-lg">Expédition #{idx + 1}</h3>
-                      <p className="text-gray-500">{shipment.devices.length} appareil(s) → {shipment.address.city}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-mono text-lg font-bold text-amber-600">{shipment.trackingNumber}</p>
-                      <a 
-                        href={`https://www.ups.com/track?tracknum=${shipment.trackingNumber}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-blue-500 hover:underline"
-                      >
-                        Suivre sur UPS →
-                      </a>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-gray-50 rounded-lg p-4 mb-4 border-2 border-dashed border-gray-300">
-                    <div className="text-center">
-                      <div className="text-4xl font-bold text-gray-800 mb-2">UPS</div>
-                      <div className="font-mono text-xl mb-2">{shipment.trackingNumber}</div>
-                      <div className="text-sm text-gray-600">
-                        {shipment.address.company_name || rma.companies?.name}<br />
-                        {shipment.address.postal_code} {shipment.address.city}
-                      </div>
-                      <div className="mt-2 text-lg font-bold">{shipment.parcels} colis • {shipment.weight} kg</div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {labelsPrinted[idx] ? (
-                        <span className="text-green-600 font-medium">✓ Imprimé</span>
-                      ) : (
-                        <span className="text-gray-400">Non imprimé</span>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => printLabel(idx)}
-                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
-                    >
-                      🖨️ Imprimer Étiquette
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          
-          {/* Step 3: BL Preview */}
-          {step === 3 && (
-            <div className="space-y-6">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-blue-800">
-                  <strong>📄 Vérifiez et imprimez les Bons de Livraison</strong>
-                </p>
-              </div>
-              
-              {shipments.map((shipment, idx) => {
-                const bl = generateBLContent(shipment, idx);
-                return (
-                  <div key={idx} className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden">
-                    <div className="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
-                      <div>
-                        <h3 className="font-bold">{bl.blNumber}</h3>
-                        <p className="text-sm text-gray-500">{bl.devices.length} appareil(s)</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {blsPrinted[idx] ? (
-                          <span className="text-green-600 font-medium">✓ Imprimé</span>
-                        ) : (
-                          <span className="text-gray-400">Non imprimé</span>
-                        )}
-                        <button
-                          onClick={() => printBL(idx)}
-                          className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium"
-                        >
-                          🖨️ Imprimer BL
-                        </button>
-                      </div>
-                    </div>
-                    
-                    {/* BL Preview */}
-                    <div className="p-6 bg-white" style={{ fontFamily: 'Arial, sans-serif' }}>
-                      <div className="flex justify-between items-start mb-6">
-                        <div>
-                          <div className="text-2xl font-bold text-[#00A651]">LIGHTHOUSE</div>
-                          <div className="text-sm text-gray-500">Worldwide Solutions</div>
-                        </div>
-                        <div className="text-right text-sm text-gray-500">
-                          LIGHTHOUSE FRANCE<br />
-                          1 Rue de la Pépinière<br />
-                          94000 Créteil
-                        </div>
-                      </div>
-                      
-                      <div className="text-xl font-bold mb-1">BON DE LIVRAISON</div>
-                      <div className="text-[#00A651] font-medium mb-4">{bl.blNumber}</div>
-                      
-                      <div className="flex justify-between text-sm mb-4">
-                        <div>Créteil, le {bl.date}</div>
-                        <div>RMA: {bl.rmaNumber}</div>
-                      </div>
-                      
-                      <div className="bg-gray-50 p-4 rounded mb-4">
-                        <div className="font-bold">{bl.client.name}</div>
-                        {bl.client.attention && <div>À l'attention de: {bl.client.attention}</div>}
-                        <div>{bl.client.street}</div>
-                        <div>{bl.client.city}</div>
-                      </div>
-                      
-                      <table className="w-full mb-4 text-sm">
-                        <thead className="bg-gray-100">
-                          <tr>
-                            <th className="px-3 py-2 text-left border">Qté</th>
-                            <th className="px-3 py-2 text-left border">Désignation</th>
-                            <th className="px-3 py-2 text-left border">N° Série</th>
-                            <th className="px-3 py-2 text-left border">Service</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {bl.devices.map((d, i) => (
-                            <tr key={i}>
-                              <td className="px-3 py-2 border">1</td>
-                              <td className="px-3 py-2 border">Compteur de particules LIGHTHOUSE {d.model}</td>
-                              <td className="px-3 py-2 border font-mono">{d.serial}</td>
-                              <td className="px-3 py-2 border">{d.service}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      
-                      <div className="bg-green-50 p-3 rounded text-sm">
-                        <strong>Expédition:</strong> {bl.shipping.carrier} • 
-                        N° {bl.shipping.tracking} • 
-                        {bl.shipping.parcels} colis • 
-                        {bl.shipping.weight} kg
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          
-          {/* Step 4: Complete */}
-          {step === 4 && (
-            <div className="text-center py-8">
-              <div className="text-6xl mb-4">✅</div>
-              <h3 className="text-2xl font-bold text-green-700 mb-2">Expédition Terminée!</h3>
-              <p className="text-gray-600 mb-6">Les appareils ont été marqués comme expédiés.</p>
-              
-              <div className="bg-gray-50 rounded-xl p-6 max-w-md mx-auto">
-                <h4 className="font-bold text-gray-800 mb-3">Récapitulatif:</h4>
-                {generatedBLs.map((bl, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 bg-white rounded-lg mb-2 border">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">📄</span>
-                      <div>
-                        <span className="font-mono font-medium">{bl.blNumber}</span>
-                        <p className="text-xs text-gray-500">{bl.devices.length} appareil(s)</p>
-                      </div>
-                    </div>
-                    <a 
-                      href={`https://www.ups.com/track?tracknum=${bl.shipping.tracking}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-blue-500 hover:underline"
-                    >
-                      {bl.shipping.tracking}
-                    </a>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-        
-        {/* Footer */}
-        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between">
-          {step === 1 && (
-            <>
-              <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Annuler</button>
-              <button 
-                onClick={createUPSLabels}
-                disabled={shipments.length === 0}
-                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50"
-              >
-                Créer Étiquettes UPS →
-              </button>
-            </>
-          )}
-          {step === 2 && (
-            <>
-              <button onClick={() => setStep(1)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">← Retour</button>
-              <button 
-                onClick={() => setStep(3)}
-                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
-              >
-                Continuer vers BL →
-              </button>
-            </>
-          )}
-          {step === 3 && (
-            <>
-              <button onClick={() => setStep(2)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">← Retour</button>
-              <button 
-                onClick={completeShipping}
-                disabled={saving}
-                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50"
-              >
-                {saving ? '⏳ Traitement...' : '✅ Finaliser Expédition'}
-              </button>
-            </>
-          )}
-          {step === 4 && (
-            <button 
-              onClick={onClose}
-              className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium ml-auto"
-            >
-              Fermer
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, onSelectRMA }) {
-  const [selectedClient, setSelectedClient] = useState(null);
-  const [search, setSearch] = useState('');
-  const [searchResults, setSearchResults] = useState(null); // null = show clients, object = show search results
-  
-  // Determine what kind of search this is
-  const searchType = (() => {
-    const s = search.trim().toUpperCase();
-    if (s.startsWith('FR-') || s.startsWith('FR')) return 'rma';
-    if (s.length >= 3 && /^\d+$/.test(s)) return 'serial'; // Numeric string = likely serial
-    if (s.length >= 2) return 'all'; // Search everything
-    return 'none';
-  })();
-  
-  // Perform search when search changes
-  useEffect(() => {
-    if (!search.trim() || search.trim().length < 2) {
-      setSearchResults(null);
-      return;
-    }
-    
-    const s = search.trim().toLowerCase();
-    const sUpper = search.trim().toUpperCase();
-    
-    // Search for RMAs by number
-    const rmaMatches = requests.filter(r => 
-      r.request_number?.toUpperCase().includes(sUpper)
-    );
-    
-    // Search for devices by serial number across all RMAs
-    const serialMatches = [];
-    requests.forEach(rma => {
-      (rma.request_devices || []).forEach(device => {
-        if (device.serial_number?.toLowerCase().includes(s)) {
-          serialMatches.push({ device, rma });
-        }
-      });
-    });
-    
-    // Also search equipment table for serial numbers
-    const equipmentMatches = equipment.filter(eq => 
-      eq.serial_number?.toLowerCase().includes(s)
-    );
-    
-    // Search clients by name/email
-    const clientMatches = clients.filter(c => 
-      c.name?.toLowerCase().includes(s) || 
-      c.profiles?.some(p => p.email?.toLowerCase().includes(s))
-    );
-    
-    // If we have RMA or serial matches, show those results
-    if (rmaMatches.length > 0 || serialMatches.length > 0) {
-      setSearchResults({
-        type: rmaMatches.length > 0 ? 'rma' : 'serial',
-        rmas: rmaMatches,
-        serialDevices: serialMatches,
-        equipment: equipmentMatches,
-        clients: clientMatches
-      });
-    } else if (clientMatches.length > 0 || equipmentMatches.length > 0) {
-      setSearchResults({
-        type: 'client',
-        rmas: [],
-        serialDevices: [],
-        equipment: equipmentMatches,
-        clients: clientMatches
-      });
-    } else {
-      setSearchResults({
-        type: 'none',
-        rmas: [],
-        serialDevices: [],
-        equipment: [],
-        clients: []
-      });
-    }
-  }, [search, requests, equipment, clients]);
-  
-  const filteredClients = clients.filter(c => 
-    c.name?.toLowerCase().includes(search.toLowerCase()) || 
-    c.profiles?.some(p => p.email?.toLowerCase().includes(search.toLowerCase()))
-  );
-  
-  const getClientStats = (clientId) => { 
-    const clientRequests = requests.filter(r => r.company_id === clientId); 
-    return { 
-      total: clientRequests.length, 
-      active: clientRequests.filter(r => !['completed', 'cancelled', 'shipped'].includes(r.status) && r.request_number).length 
-    }; 
-  };
-  
-  // Get all RMAs for a serial number
-  const getSerialHistory = (serialNumber) => {
-    const history = [];
-    requests.forEach(rma => {
-      (rma.request_devices || []).forEach(device => {
-        if (device.serial_number === serialNumber) {
-          history.push({ rma, device });
-        }
-      });
-    });
-    return history.sort((a, b) => new Date(b.rma.created_at) - new Date(a.rma.created_at));
-  };
-  
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">Clients ({clients.length})</h1>
-        <div className="relative">
-          <input 
-            type="text" 
-            placeholder="🔍 Client, N° série, ou RMA..." 
-            value={search} 
-            onChange={e => setSearch(e.target.value)} 
-            className="px-4 py-2 border border-gray-300 rounded-lg w-96" 
-          />
-          {search && (
-            <button 
-              onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-      </div>
-      
-      {/* Search Results */}
-      {searchResults && search.trim().length >= 2 ? (
-        <div className="space-y-6">
-          {/* RMA Results */}
-          {searchResults.rmas.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm">
-              <div className="px-6 py-4 border-b border-gray-100 bg-blue-50">
-                <h2 className="font-bold text-blue-800">📋 RMAs trouvés ({searchResults.rmas.length})</h2>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {searchResults.rmas.map(rma => {
-                  const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
-                  const devices = rma.request_devices || [];
-                  return (
-                    <div 
-                      key={rma.id} 
-                      className="p-4 hover:bg-blue-50 cursor-pointer transition-colors"
-                      onClick={() => onSelectRMA(rma)}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="flex items-center gap-3">
-                            <span className="font-mono font-bold text-[#00A651] text-lg">{rma.request_number}</span>
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
-                            <span className="text-xs text-blue-500">Cliquez pour ouvrir →</span>
-                          </div>
-                          <p className="text-gray-600 mt-1">{rma.companies?.name}</p>
-                          <p className="text-sm text-gray-400">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm text-gray-500">{devices.length} appareil(s)</p>
-                          {devices.slice(0, 3).map((d, i) => (
-                            <p key={i} className="text-xs text-gray-400">{d.model_name} - {d.serial_number}</p>
-                          ))}
-                          {devices.length > 3 && <p className="text-xs text-gray-400">+{devices.length - 3} autres</p>}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          
-          {/* Serial Number Results */}
-          {searchResults.serialDevices.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm">
-              <div className="px-6 py-4 border-b border-gray-100 bg-green-50">
-                <h2 className="font-bold text-green-800">🔧 Historique N° Série ({searchResults.serialDevices.length} RMA(s))</h2>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {/* Group by serial number */}
-                {(() => {
-                  const bySerial = {};
-                  searchResults.serialDevices.forEach(({ device, rma }) => {
-                    if (!bySerial[device.serial_number]) {
-                      bySerial[device.serial_number] = { device, rmas: [] };
-                    }
-                    bySerial[device.serial_number].rmas.push({ rma, device });
-                  });
-                  
-                  return Object.entries(bySerial).map(([serial, data]) => (
-                    <div key={serial} className="p-4">
-                      <div className="flex items-center gap-3 mb-3">
-                        <span className="font-mono font-bold text-gray-800 text-lg">{serial}</span>
-                        <span className="text-gray-500">{data.device.model_name}</span>
-                        <span className="px-2 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{data.rmas.length} intervention(s)</span>
-                      </div>
-                      <div className="ml-4 space-y-2">
-                        {data.rmas.sort((a, b) => new Date(b.rma.created_at) - new Date(a.rma.created_at)).map(({ rma, device }) => {
-                          const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
-                          return (
-                            <div 
-                              key={rma.id} 
-                              className="flex items-center justify-between bg-gray-50 hover:bg-green-50 rounded-lg p-3 cursor-pointer transition-colors"
-                              onClick={() => onSelectRMA(rma)}
-                            >
-                              <div className="flex items-center gap-3">
-                                <span className="font-mono text-[#00A651] font-medium">{rma.request_number}</span>
-                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
-                                <span className="text-sm text-gray-500">{device.service_type === 'repair' ? '🔧 Réparation' : '🔬 Étalonnage'}</span>
-                              </div>
-                              <div className="flex items-center gap-4">
-                                <div className="text-right">
-                                  <p className="text-sm text-gray-600">{rma.companies?.name}</p>
-                                  <p className="text-xs text-gray-400">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
-                                </div>
-                                <span className="text-green-500 text-sm">Ouvrir →</span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ));
-                })()}
-              </div>
-            </div>
-          )}
-          
-          {/* Equipment matches (devices registered but maybe no RMA yet) */}
-          {searchResults.equipment.length > 0 && searchResults.serialDevices.length === 0 && (
-            <div className="bg-white rounded-xl shadow-sm">
-              <div className="px-6 py-4 border-b border-gray-100 bg-amber-50">
-                <h2 className="font-bold text-amber-800">📦 Appareils enregistrés ({searchResults.equipment.length})</h2>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {searchResults.equipment.map(eq => (
-                  <div key={eq.id} className="p-4 flex justify-between items-center">
-                    <div>
-                      <p className="font-medium">{eq.model_name}</p>
-                      <p className="font-mono text-sm text-gray-600">SN: {eq.serial_number}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-gray-600">{eq.companies?.name || 'Client inconnu'}</p>
-                      <p className="text-xs text-gray-400">{eq.brand}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          {/* Client matches */}
-          {searchResults.clients.length > 0 && searchResults.rmas.length === 0 && searchResults.serialDevices.length === 0 && (
-            <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-              <div className="px-6 py-4 border-b border-gray-100">
-                <h2 className="font-bold text-gray-800">👥 Clients ({searchResults.clients.length})</h2>
-              </div>
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Entreprise</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Contact principal</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Ville</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMAs</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {searchResults.clients.map(client => { 
-                    const stats = getClientStats(client.id); 
-                    const mainContact = client.profiles?.find(p => p.role === 'admin') || client.profiles?.[0]; 
-                    return (
-                      <tr key={client.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedClient(client)}>
-                        <td className="px-4 py-3"><p className="font-medium text-gray-800">{client.name}</p></td>
-                        <td className="px-4 py-3">{mainContact ? <div><p className="text-sm">{mainContact.full_name}</p><p className="text-xs text-gray-400">{mainContact.email}</p></div> : <span className="text-gray-400">—</span>}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{client.billing_city || '—'}</td>
-                        <td className="px-4 py-3"><span className="text-sm">{stats.total} total{stats.active > 0 && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">{stats.active} actif(s)</span>}</span></td>
-                        <td className="px-4 py-3"><button onClick={e => { e.stopPropagation(); setSelectedClient(client); }} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button></td>
-                      </tr>
-                    ); 
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          
-          {/* No results */}
-          {searchResults.type === 'none' && (
-            <div className="bg-white rounded-xl shadow-sm p-8 text-center">
-              <p className="text-5xl mb-4">🔍</p>
-              <p className="text-gray-500">Aucun résultat pour "{search}"</p>
-              <p className="text-sm text-gray-400 mt-2">Essayez un numéro de série, un numéro RMA, ou un nom de client</p>
-            </div>
-          )}
-        </div>
-      ) : (
-        /* Default: Show all clients */
-        <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Entreprise</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Contact principal</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Ville</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMAs</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {(search ? filteredClients : clients).map(client => { 
-                const stats = getClientStats(client.id); 
-                const mainContact = client.profiles?.find(p => p.role === 'admin') || client.profiles?.[0]; 
-                return (
-                  <tr key={client.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedClient(client)}>
-                    <td className="px-4 py-3"><p className="font-medium text-gray-800">{client.name}</p></td>
-                    <td className="px-4 py-3">{mainContact ? <div><p className="text-sm">{mainContact.full_name}</p><p className="text-xs text-gray-400">{mainContact.email}</p></div> : <span className="text-gray-400">—</span>}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{client.billing_city || '—'}</td>
-                    <td className="px-4 py-3"><span className="text-sm">{stats.total} total{stats.active > 0 && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">{stats.active} actif(s)</span>}</span></td>
-                    <td className="px-4 py-3"><button onClick={e => { e.stopPropagation(); setSelectedClient(client); }} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button></td>
-                  </tr>
-                ); 
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      
-      {selectedClient && <ClientDetailModal client={selectedClient} requests={requests.filter(r => r.company_id === selectedClient.id)} equipment={equipment.filter(e => e.company_id === selectedClient.id)} onClose={() => setSelectedClient(null)} notify={notify} reload={reload} isAdmin={isAdmin} />}
-    </div>
-  );
-}
-
-function ClientDetailModal({ client, requests, equipment, onClose, notify, reload, isAdmin }) {
-  const [activeTab, setActiveTab] = useState('rmas');
-  const [editing, setEditing] = useState(false);
-  const [editData, setEditData] = useState({ name: client.name || '', billing_address: client.billing_address || '', billing_city: client.billing_city || '', billing_postal_code: client.billing_postal_code || '', siret: client.siret || '', vat_number: client.vat_number || '' });
-  const [saving, setSaving] = useState(false);
-  const tabs = [{ id: 'rmas', label: 'RMAs', icon: '📋', count: requests.length }, { id: 'devices', label: 'Appareils', icon: '🔧', count: equipment.length }, { id: 'info', label: 'Informations', icon: 'ℹ️' }, { id: 'contacts', label: 'Contacts', icon: '👤', count: client.profiles?.length || 0 }];
-  const saveClient = async () => { setSaving(true); const { error } = await supabase.from('companies').update(editData).eq('id', client.id); if (error) notify('Erreur: ' + error.message, 'error'); else { notify('Client mis à jour!'); setEditing(false); reload(); } setSaving(false); };
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div className="bg-white rounded-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b bg-gradient-to-r from-[#1a1a2e] to-[#2d2d44] text-white flex justify-between items-center"><div><h2 className="text-xl font-bold">{client.name}</h2><p className="text-sm text-gray-300">{client.billing_city}</p></div><button onClick={onClose} className="text-white/70 hover:text-white text-2xl">&times;</button></div>
-        <div className="border-b bg-gray-50 flex">{tabs.map(tab => <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-6 py-3 font-medium flex items-center gap-2 border-b-2 ${activeTab === tab.id ? 'border-[#00A651] text-[#00A651] bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><span>{tab.icon}</span>{tab.label}{tab.count !== undefined && <span className="px-2 py-0.5 bg-gray-200 rounded-full text-xs">{tab.count}</span>}</button>)}</div>
-        <div className="flex-1 overflow-y-auto p-6">
-          {activeTab === 'rmas' && <div className="space-y-3">{requests.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun RMA</p> : requests.map(req => { const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted; return <div key={req.id} className="bg-gray-50 rounded-lg p-4 flex justify-between items-center hover:bg-gray-100"><div className="flex items-center gap-4"><span className="font-mono font-bold text-[#00A651]">{req.request_number || 'En attente'}</span><div><p className="font-medium">{req.requested_service}</p><p className="text-sm text-gray-500">{req.request_devices?.length || 1} appareil(s)</p></div></div><div className="text-right"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span><p className="text-xs text-gray-400 mt-1">{new Date(req.created_at).toLocaleDateString('fr-FR')}</p></div></div>; })}</div>}
-          {activeTab === 'devices' && <div className="space-y-3">{equipment.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun appareil</p> : equipment.map(eq => <div key={eq.id} className="bg-gray-50 rounded-lg p-4 flex justify-between items-center"><div><p className="font-medium">{eq.model_name}</p><p className="text-sm text-gray-500">SN: {eq.serial_number}</p>{eq.nickname && <p className="text-xs text-gray-400">"{eq.nickname}"</p>}</div><span className="text-sm text-gray-400">{eq.brand}</span></div>)}</div>}
-          {activeTab === 'info' && <div className="space-y-4">{editing ? <div className="space-y-4 max-w-lg"><div><label className="block text-sm font-medium text-gray-700 mb-1">Nom</label><input type="text" value={editData.name} onChange={e => setEditData({ ...editData, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Adresse</label><input type="text" value={editData.billing_address} onChange={e => setEditData({ ...editData, billing_address: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">Code postal</label><input type="text" value={editData.billing_postal_code} onChange={e => setEditData({ ...editData, billing_postal_code: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Ville</label><input type="text" value={editData.billing_city} onChange={e => setEditData({ ...editData, billing_city: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label><input type="text" value={editData.siret} onChange={e => setEditData({ ...editData, siret: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">N° TVA</label><input type="text" value={editData.vat_number} onChange={e => setEditData({ ...editData, vat_number: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div></div><div className="flex gap-2 pt-2"><button onClick={() => setEditing(false)} className="px-4 py-2 bg-gray-200 rounded-lg">Annuler</button><button onClick={saveClient} disabled={saving} className="px-4 py-2 bg-[#00A651] text-white rounded-lg disabled:opacity-50">{saving ? 'Enregistrement...' : 'Enregistrer'}</button></div></div> : <div className="space-y-4">{isAdmin && <button onClick={() => setEditing(true)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">✏️ Modifier</button>}<div className="grid md:grid-cols-2 gap-4"><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">Nom</p><p className="font-medium">{client.name}</p></div><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">Adresse</p><p className="font-medium">{client.billing_address || '—'}</p><p className="text-sm text-gray-600">{client.billing_postal_code} {client.billing_city}</p></div><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">SIRET</p><p className="font-medium">{client.siret || '—'}</p></div><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">N° TVA</p><p className="font-medium">{client.vat_number || '—'}</p></div></div></div>}</div>}
-          {activeTab === 'contacts' && <div className="space-y-3">{client.profiles?.map(contact => <div key={contact.id} className="bg-gray-50 rounded-lg p-4 flex justify-between items-center"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-[#1a1a2e] text-white flex items-center justify-center font-bold">{contact.full_name?.charAt(0)?.toUpperCase()}</div><div><p className="font-medium">{contact.full_name}</p><p className="text-sm text-gray-500">{contact.email}</p>{contact.phone && <p className="text-sm text-gray-400">{contact.phone}</p>}</div></div><span className={`px-2 py-1 rounded-full text-xs ${contact.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-200 text-gray-600'}`}>{contact.role === 'admin' ? '👑 Admin' : '👤 Utilisateur'}</span></div>)}</div>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// QC Review Modal - View report, certificate, then approve
-function QCReviewModal({ device, rma, onBack, notify, profile }) {
-  const [saving, setSaving] = useState(false);
-  const [step, setStep] = useState(1); // 1: Report, 2: Certificate, 3: Approve
-  const [qcNotes, setQcNotes] = useState(device.qc_notes || '');
-  const today = new Date().toLocaleDateString('fr-FR');
-  
-  // Get checklist from device
-  const checklist = device.work_checklist || {};
-  const defaultChecklist = [
-    { id: 'visual', label: 'Inspection visuelle effectuée', checked: checklist.visual !== false },
-    { id: 'cleaning', label: 'Nettoyage effectué', checked: checklist.cleaning !== false },
-    { id: 'calibration', label: 'Étalonnage réalisé selon procédure', checked: checklist.calibration !== false },
-    { id: 'results', label: 'Résultats dans les spécifications', checked: checklist.results !== false },
-    { id: 'certificate', label: 'Certificat d\'étalonnage généré', checked: checklist.certificate !== false }
-  ];
-  
-  const serviceTypeText = device.service_type === 'calibration' ? 'Étalonnage' : device.service_type === 'repair' ? 'Réparation' : 'Étalonnage et Réparation';
-  const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
-  
-  const showCalType = device.cal_type && device.cal_type !== 'none';
-  const showReceptionResult = device.reception_result && device.reception_result !== 'none';
-  
-  const approveQC = async () => {
-    setSaving(true);
-    try {
-      const { error } = await supabase.from('request_devices').update({
-        qc_complete: true,
-        qc_completed_at: new Date().toISOString(),
-        qc_completed_by: profile?.id,
-        qc_notes: qcNotes,
-        status: 'ready_to_ship'
-      }).eq('id', device.id);
-      
-      if (error) throw error;
-      
-      // Check if all devices in this RMA are now ready to ship
-      const allDevices = rma.request_devices || [];
-      const otherDevices = allDevices.filter(d => d.id !== device.id);
-      const allOthersReady = otherDevices.every(d => d.qc_complete || d.status === 'ready_to_ship');
-      
-      // If all devices are ready (including this one we just updated), update RMA status
-      if (allOthersReady) {
-        await supabase.from('service_requests').update({
-          status: 'ready_to_ship',
-          updated_at: new Date().toISOString()
-        }).eq('id', rma.id);
-      }
-      
-      notify('✓ Contrôle qualité validé - Prêt pour expédition!');
-      onBack();
-    } catch (err) {
-      notify('Erreur: ' + err.message, 'error');
-    }
-    setSaving(false);
-  };
-  
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">← Retour</button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">CONTRÔLE QUALITÉ</h1>
-            <p className="text-gray-500">{device.model_name} • SN: {device.serial_number} • {rma.request_number}</p>
-          </div>
-        </div>
-        {device.qc_complete && (
-          <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">✓ Déjà validé</span>
-        )}
-      </div>
-      
-      {/* Progress Steps */}
-      <div className="bg-white rounded-xl shadow-sm border p-4">
-        <div className="flex items-center justify-between">
-          <button 
-            onClick={() => setStep(1)}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium ${step === 1 ? 'bg-blue-500 text-white' : step > 1 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
-          >
-            {step > 1 ? '✓' : '1.'} Rapport de Service
-          </button>
-          <div className="w-8 h-0.5 bg-gray-300"></div>
-          <button 
-            onClick={() => setStep(2)}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium ${step === 2 ? 'bg-blue-500 text-white' : step > 2 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
-          >
-            {step > 2 ? '✓' : '2.'} Certificat
-          </button>
-          <div className="w-8 h-0.5 bg-gray-300"></div>
-          <button 
-            onClick={() => setStep(3)}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium ${step === 3 ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500'}`}
-          >
-            3. Validation
-          </button>
-        </div>
-      </div>
-      
-      {/* Step 1: Service Report */}
-      {step === 1 && (
-        <div className="space-y-4">
-          <div className="bg-gray-400 p-8 min-h-full flex justify-center">
-            <div className="bg-white shadow-2xl w-full max-w-3xl relative" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '800px', display: 'flex', flexDirection: 'column' }}>
-              
-              {/* Logo */}
-              <div className="mb-8">
-                <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" className="h-12 w-auto" onError={(e) => { e.target.style.display = 'none'; }} />
-              </div>
-
-              {/* Info Table */}
-              <table className="w-full text-sm mb-6" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-                <colgroup>
-                  <col style={{ width: '150px' }} />
-                  <col style={{ width: '200px' }} />
-                  <col />
-                </colgroup>
-                <tbody>
-                  <tr>
-                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Date d'achèvement</td>
-                    <td className="py-1 text-gray-800">{device.report_completed_at ? new Date(device.report_completed_at).toLocaleDateString('fr-FR') : today}</td>
-                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">RMA # </span>{rma.request_number}</td>
-                  </tr>
-                  <tr>
-                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Client</td>
-                    <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.name}</td>
-                  </tr>
-                  <tr>
-                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Adresse</td>
-                    <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.billing_address || '—'}</td>
-                  </tr>
-                  <tr>
-                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Code postal / Ville</td>
-                    <td className="py-1 text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
-                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">Contact </span>{rma.companies?.contact_name || '—'}</td>
-                  </tr>
-                  <tr>
-                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Téléphone</td>
-                    <td className="py-1 text-gray-800">{rma.companies?.phone || '—'}</td>
-                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">Technicien(ne) de service</span></td>
-                  </tr>
-                  <tr>
-                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Modèle#</td>
-                    <td className="py-1 text-gray-800">{device.model_name}</td>
-                    <td className="py-1 text-gray-800">{device.technician_name || 'Lighthouse France'}</td>
-                  </tr>
-                  <tr>
-                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Numéro de série</td>
-                    <td className="py-1 text-gray-800" colSpan="2">{device.serial_number}</td>
-                  </tr>
-                </tbody>
-              </table>
-
-              {/* Content */}
-              <div className="flex-grow">
-                <table className="w-full text-sm" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-                  <colgroup>
-                    <col style={{ width: '170px' }} />
-                    <col />
-                  </colgroup>
-                  <tbody>
-                    <tr>
-                      <td className="pt-6 pb-2 font-bold text-[#003366] whitespace-nowrap">Motif de retour</td>
-                      <td className="pt-6 pb-2 text-gray-800">{motifText}</td>
-                    </tr>
-                    {showCalType && (
-                      <tr>
-                        <td className="py-2 font-bold text-[#003366] whitespace-nowrap">Étalonnage effectué</td>
-                        <td className="py-2 text-gray-800">{device.cal_type}</td>
-                      </tr>
-                    )}
-                    {showReceptionResult && (
-                      <tr>
-                        <td className="py-2 font-bold text-[#003366] whitespace-nowrap">Résultats à la réception</td>
-                        <td className="py-2 text-gray-800">{device.reception_result}</td>
-                      </tr>
-                    )}
-                    <tr>
-                      <td className="pt-6 pb-2 font-bold text-[#003366] whitespace-nowrap">Constatations</td>
-                      <td className="pt-6 pb-2 text-gray-800 whitespace-pre-wrap">{device.service_findings || '—'}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 font-bold text-[#003366] whitespace-nowrap">Actions effectuées</td>
-                      <td className="py-2 text-gray-800 whitespace-pre-wrap">{device.work_completed || '—'}</td>
-                    </tr>
-                    <tr>
-                      <td className="pt-8 pb-2 font-bold text-[#003366] whitespace-nowrap">Travaux réalisés</td>
-                      <td className="pt-8 pb-2">
-                        <div className="space-y-1">
-                          {defaultChecklist.filter(item => item.checked).map(item => (
-                            <div key={item.id} className="flex items-center gap-2">
-                              <span className="text-[#003366]">☑</span>
-                              <span className="text-gray-800">{item.label}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Footer */}
-              <div className="text-center text-sm text-gray-600 mt-auto pt-8">
-                <p className="font-bold text-[#003366]">Lighthouse Worldwide Solutions France</p>
-                <p>16 Rue Paul Séjourné 94000 Créteil France</p>
-                <p>01 43 77 28 07</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex justify-end">
-            <button onClick={() => setStep(2)} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
-              Rapport OK → Voir Certificat
-            </button>
-          </div>
-        </div>
-      )}
-      
-      {/* Step 2: Certificate */}
-      {step === 2 && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl shadow-sm border p-8">
-            <div className="text-center mb-6">
-              <p className="text-6xl mb-4">📜</p>
-              <h2 className="text-xl font-bold text-gray-800 mb-2">
-                {device.service_type === 'repair' ? 'Documents de Réparation' : 'Certificat d\'Étalonnage'}
-              </h2>
-              <p className="text-gray-500">Vérifiez que le document est correct et complet</p>
-            </div>
-            
-            {device.calibration_certificate_url ? (
-              <div className="space-y-4">
-                {/* PDF Embed */}
-                <div className="bg-gray-100 rounded-xl overflow-hidden" style={{ height: '600px' }}>
-                  <iframe 
-                    src={device.calibration_certificate_url} 
-                    className="w-full h-full"
-                    title="Certificat d'étalonnage"
-                  />
-                </div>
-                <div className="text-center">
-                  <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
-                    📄 Ouvrir dans un nouvel onglet
-                  </a>
-                </div>
-              </div>
-            ) : device.service_type === 'repair' ? (
-              <div className="bg-gray-100 rounded-xl p-12 text-center">
-                <p className="text-gray-600">Réparation - pas de certificat d'étalonnage requis</p>
-                <p className="text-sm text-gray-400 mt-2">Vérifiez le rapport de service à l'étape précédente</p>
-              </div>
-            ) : (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center">
-                <p className="text-red-600 font-medium">⚠️ Certificat non téléchargé</p>
-                <p className="text-sm text-red-500 mt-2">Le technicien doit télécharger le certificat avant validation QC</p>
-              </div>
-            )}
-            
-            <p className="text-sm text-gray-500 mt-4 text-center">
-              Vérifiez: Nom client, N° série, Date, Tolérances, Signatures
-            </p>
-          </div>
-          
-          <div className="flex justify-between">
-            <button onClick={() => setStep(1)} className="px-6 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
-              ← Retour au Rapport
-            </button>
-            <button onClick={() => setStep(3)} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
-              {device.calibration_certificate_url || device.service_type === 'repair' ? 'Document OK → Validation' : 'Continuer →'}
-            </button>
-          </div>
-        </div>
-      )}
-      
-      {/* Step 3: Approve */}
-      {step === 3 && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl shadow-sm border p-8">
-            <div className="text-center mb-8">
-              <p className="text-6xl mb-4">✅</p>
-              <h2 className="text-xl font-bold text-gray-800 mb-2">Validation Finale</h2>
-              <p className="text-gray-500">Confirmez que tous les documents sont corrects</p>
-            </div>
-            
-            {/* Summary */}
-            <div className="bg-gray-50 rounded-xl p-6 mb-6">
-              <h3 className="font-bold text-gray-700 mb-4">Résumé</h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div><span className="text-gray-500">Client:</span> <span className="font-medium">{rma.companies?.name}</span></div>
-                <div><span className="text-gray-500">RMA:</span> <span className="font-medium text-blue-600">{rma.request_number}</span></div>
-                <div><span className="text-gray-500">Appareil:</span> <span className="font-medium">{device.model_name}</span></div>
-                <div><span className="text-gray-500">N° Série:</span> <span className="font-medium font-mono">{device.serial_number}</span></div>
-                <div><span className="text-gray-500">Service:</span> <span className="font-medium">{serviceTypeText}</span></div>
-                <div><span className="text-gray-500">Technicien:</span> <span className="font-medium">{device.technician_name || '—'}</span></div>
-              </div>
-            </div>
-            
-            {/* Notes */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Notes QC (optionnel)</label>
-              <textarea 
-                value={qcNotes}
-                onChange={e => setQcNotes(e.target.value)}
-                placeholder="Remarques ou observations..."
-                className="w-full px-4 py-3 border rounded-xl h-20 resize-none"
-              />
-            </div>
-            
-            {/* Checkmarks */}
-            <div className="space-y-3 mb-8">
-              <div className="flex items-center gap-3 text-green-700">
-                <span className="text-xl">✓</span>
-                <span>Rapport de service vérifié</span>
-              </div>
-              <div className="flex items-center gap-3 text-green-700">
-                <span className="text-xl">✓</span>
-                <span>Certificat d'étalonnage vérifié</span>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex justify-between">
-            <button onClick={() => setStep(2)} className="px-6 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
-              ← Retour
-            </button>
-            {!device.qc_complete ? (
-              <button 
-                onClick={approveQC} 
-                disabled={saving}
-                className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium text-lg disabled:opacity-50"
-              >
-                {saving ? 'Validation...' : '✓ J\'approuve - Prêt pour expédition'}
-              </button>
-            ) : (
-              <span className="px-6 py-3 bg-green-100 text-green-700 rounded-lg font-medium">✓ Déjà validé</span>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================
-// CONTRACTS SHEET - Full Implementation
-// ============================================
-function ContractsSheet({ clients, notify, profile, reloadMain }) {
-  const [contracts, setContracts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedContract, setSelectedContract] = useState(null);
-  const [quoteContract, setQuoteContract] = useState(null); // For opening quote editor
-  const [reviewingContractBC, setReviewingContractBC] = useState(null); // For BC review modal
-  const [filter, setFilter] = useState('all');
-  const [showCreateModal, setShowCreateModal] = useState(false);
-
-  const loadContracts = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('contracts')
-      .select('*, companies(id, name), contract_devices(*)')
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      console.error('Error loading contracts:', error);
-      notify('Erreur de chargement des contrats', 'error');
-    } else {
-      setContracts(data || []);
-    }
-    setLoading(false);
-  }, [notify]);
-
-  useEffect(() => {
-    loadContracts();
-  }, [loadContracts]);
-
-  const CONTRACT_STATUS_STYLES = {
-    requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: '🆕 Nouvelle demande' },
-    quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: '📧 Devis envoyé' },
-    quote_approved: { bg: 'bg-purple-100', text: 'text-purple-700', label: '✅ Devis approuvé' },
-    bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: '📄 Attente BC' },
-    active: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Actif' },
-    expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: '⏰ Expiré' },
-    cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ Annulé' }
-  };
-
-  const getStatusBadge = (status) => {
-    const style = CONTRACT_STATUS_STYLES[status] || CONTRACT_STATUS_STYLES.requested;
-    return <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>;
-  };
-
-  // Separate new requests from processed contracts
-  const newRequests = contracts.filter(c => c.status === 'requested');
-  const processedContracts = contracts.filter(c => c.status !== 'requested');
-  
-  // Filter processed contracts
-  const filteredContracts = processedContracts.filter(c => {
-    if (filter === 'all') return true;
-    if (filter === 'active') return c.status === 'active';
-    if (filter === 'pending') return ['quote_sent', 'quote_approved', 'bc_pending'].includes(c.status);
-    if (filter === 'expired') return c.status === 'expired';
-    return true;
-  });
-
-  const stats = {
-    pending: processedContracts.filter(c => ['quote_sent', 'quote_approved', 'bc_pending'].includes(c.status)).length,
-    active: processedContracts.filter(c => c.status === 'active').length,
-    expired: processedContracts.filter(c => c.status === 'expired').length
-  };
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <div className="w-8 h-8 border-4 border-[#00A651] border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
-
-  // Contract Detail View
-  if (selectedContract) {
-    return (
-      <ContractDetailView 
-        contract={selectedContract}
-        clients={clients}
-        notify={notify}
-        onClose={() => setSelectedContract(null)}
-        onUpdate={() => { loadContracts(); if (reloadMain) reloadMain(); }}
-      />
-    );
   }
   
-  // Contract Quote Editor
-  if (quoteContract) {
-    return (
-      <ContractQuoteEditor
-        contract={quoteContract}
-        profile={profile}
-        notify={notify}
-        onClose={() => setQuoteContract(null)}
-        onSent={() => { setQuoteContract(null); loadContracts(); if (reloadMain) reloadMain(); }}
-      />
-    );
-  }
-  
-  // Contract BC Review Modal - render on top of main view
-  const contractBCModal = reviewingContractBC && (
-    <ContractBCReviewModal 
-      contract={reviewingContractBC}
-      onClose={() => setReviewingContractBC(null)}
-      notify={notify}
-      reload={() => { loadContracts(); if (reloadMain) reloadMain(); }}
-    />
-  );
-  
-  // Manual Contract Creation
-  if (showCreateModal) {
-    return (
-      <CreateContractModal
-        clients={clients}
-        notify={notify}
-        onClose={() => setShowCreateModal(false)}
-        onCreated={() => { setShowCreateModal(false); loadContracts(); if (reloadMain) reloadMain(); }}
-      />
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* BC Review Modal - renders on top */}
-      {contractBCModal}
-      
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">Contrats d'Étalonnage</h1>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium flex items-center gap-2"
-        >
-          <span>+</span> Créer Contrat Manuellement
-        </button>
-      </div>
-      
-      {/* ============================================ */}
-      {/* BC À VÉRIFIER - Top Priority */}
-      {/* ============================================ */}
-      {(() => {
-        const bcPendingContracts = contracts.filter(c => c.status === 'bc_pending');
-        if (bcPendingContracts.length === 0) return null;
-        return (
-          <div className="bg-red-50 border-2 border-red-300 rounded-xl shadow-lg">
-            <div className="px-6 py-4 border-b border-red-200 bg-red-100 rounded-t-xl">
-              <h2 className="font-bold text-red-800 text-lg">⚠️ BC Contrats à Vérifier ({bcPendingContracts.length})</h2>
-              <p className="text-sm text-red-600">Vérifiez le BC et activez le contrat</p>
-            </div>
-            <div className="p-4 space-y-3">
-              {bcPendingContracts.map(contract => (
-                <div key={contract.id} className="bg-white rounded-lg p-4 flex items-center justify-between shadow-sm border border-red-100">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
-                    <div>
-                      <span className="font-mono font-bold text-[#00A651]">{contract.contract_number}</span>
-                      <p className="font-medium text-gray-800">{contract.companies?.name || contract.company_name_manual}</p>
-                      <p className="text-sm text-gray-500">
-                        BC soumis le {contract.bc_submitted_at ? new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR') : '—'}
-                        {contract.bc_signed_by && <span className="ml-2">• Signé par: {contract.bc_signed_by}</span>}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setReviewingContractBC(contract)}
-                    className="px-6 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold"
-                  >
-                    📋 Vérifier BC & Activer
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
-      
-      {/* ============================================ */}
-      {/* NOUVELLES DEMANDES DE CONTRAT - Top Priority */}
-      {/* ============================================ */}
-      {newRequests.length > 0 && (
-        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl shadow-lg">
-          <div className="px-6 py-4 border-b border-amber-200 bg-amber-100 rounded-t-xl">
-            <h2 className="font-bold text-amber-800 text-lg">🆕 Nouvelles Demandes de Contrat ({newRequests.length})</h2>
-            <p className="text-sm text-amber-600">Cliquez sur "Créer Devis Contrat" pour établir le devis</p>
-          </div>
-          <div className="p-4 space-y-3">
-            {newRequests.map(contract => {
-              const devices = contract.contract_devices || [];
-              return (
-                <div key={contract.id} className="bg-white rounded-lg p-4 flex items-center justify-between shadow-sm border border-amber-100">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
-                    <div>
-                      <p className="font-medium text-gray-800">{contract.companies?.name || 'Client'}</p>
-                      <p className="text-sm text-gray-500">
-                        {devices.length} appareil(s) • Demandé le {new Date(contract.created_at).toLocaleDateString('fr-FR')}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        Période souhaitée: {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setSelectedContract(contract)}
-                      className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium"
-                    >
-                      Voir détails
-                    </button>
-                    <button
-                      onClick={() => setQuoteContract(contract)}
-                      className="px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium"
-                    >
-                      💰 Créer Devis Contrat
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-4 gap-4">
-        <div 
-          onClick={() => setFilter('pending')}
-          className={`bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${filter === 'pending' ? 'ring-2 ring-blue-400' : ''}`}
-        >
-          <div className="text-3xl font-bold text-blue-600">{stats.pending}</div>
-          <div className="text-sm text-gray-600">En cours</div>
-        </div>
-        <div 
-          onClick={() => setFilter('active')}
-          className={`bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${filter === 'active' ? 'ring-2 ring-green-400' : ''}`}
-        >
-          <div className="text-3xl font-bold text-green-600">{stats.active}</div>
-          <div className="text-sm text-gray-600">Actifs</div>
-        </div>
-        <div 
-          onClick={() => setFilter('expired')}
-          className={`bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${filter === 'expired' ? 'ring-2 ring-gray-400' : ''}`}
-        >
-          <div className="text-3xl font-bold text-gray-600">{stats.expired}</div>
-          <div className="text-sm text-gray-600">Expirés</div>
-        </div>
-        <div 
-          onClick={() => setFilter('all')}
-          className={`bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${filter === 'all' ? 'ring-2 ring-purple-400' : ''}`}
-        >
-          <div className="text-3xl font-bold text-purple-600">{processedContracts.length}</div>
-          <div className="text-sm text-gray-600">Total</div>
-        </div>
-      </div>
-
-      {/* Contracts Table */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b flex justify-between items-center">
-          <h2 className="font-bold text-gray-800">
-            {filter === 'all' ? 'Tous les contrats' : 
-             filter === 'pending' ? 'En cours de traitement' :
-             filter === 'active' ? 'Contrats actifs' : 'Contrats expirés'}
-          </h2>
-          {filter !== 'all' && (
-            <button onClick={() => setFilter('all')} className="text-sm text-gray-500 hover:text-gray-700">
-              Voir tout
-            </button>
-          )}
-        </div>
-        
-        {filteredContracts.length === 0 ? (
-          <div className="p-8 text-center text-gray-400">
-            <p className="text-4xl mb-2">📄</p>
-            <p>Aucun contrat trouvé</p>
-          </div>
-        ) : (
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">N° Contrat</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">Client</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">Période</th>
-                <th className="px-6 py-3 text-center text-xs font-bold text-gray-600">Appareils</th>
-                <th className="px-6 py-3 text-center text-xs font-bold text-gray-600">Tokens</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">Statut</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {filteredContracts.map(contract => {
-                const devices = contract.contract_devices || [];
-                const totalTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
-                const usedTokens = devices.reduce((sum, d) => sum + (d.tokens_used || 0), 0);
-                
-                return (
-                  <tr key={contract.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <span className="font-mono font-bold text-[#1E3A5F]">{contract.contract_number || '—'}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="font-medium">{contract.companies?.name || contract.company_name_manual || 'N/A'}</div>
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className="font-bold">{devices.length}</span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className={`font-bold ${usedTokens >= totalTokens ? 'text-red-600' : 'text-green-600'}`}>
-                        {totalTokens - usedTokens}/{totalTokens}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">{getStatusBadge(contract.status)}</td>
-                    <td className="px-6 py-4">
-                      <button
-                        onClick={() => setSelectedContract(contract)}
-                        className="px-3 py-1 bg-[#3B7AB4] text-white text-sm rounded hover:bg-[#1E3A5F]"
-                      >
-                        Voir
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </div>
-  );
-}
+  return null;
+};
 
 // ============================================
-// CONTRACT QUOTE EDITOR - Like RMA Quote Editor
-// ============================================
-function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
-  const [step, setStep] = useState(1); // 1=Edit, 2=Preview, 3=Confirm
-  const [saving, setSaving] = useState(false);
-  const [quoteRef, setQuoteRef] = useState('');
-  const today = new Date();
-  
-  // Signatory name from profile
-  const signatory = profile?.full_name || 'Lighthouse France';
-  
-  // Contract dates (editable)
-  const [contractDates, setContractDates] = useState({
-    start_date: contract.start_date || new Date().toISOString().split('T')[0],
-    end_date: contract.end_date || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0]
-  });
-  
-  // Initialize pricing for each device
-  const [devicePricing, setDevicePricing] = useState(
-    (contract.contract_devices || []).map(d => ({
-      id: d.id,
-      serial_number: d.serial_number,
-      model_name: d.model_name || '',
-      device_type: d.device_type || 'particle_counter',
-      tokens_total: d.tokens_total || 1,
-      unit_price: d.unit_price || 350
-    }))
-  );
-
-  useEffect(() => {
-    const year = today.getFullYear().toString().slice(-2);
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    setQuoteRef(`CTR/${year}${month}/XXX`);
-  }, []);
-
-  const updateDevice = (id, field, value) => {
-    setDevicePricing(prev => prev.map(d => d.id === id ? { ...d, [field]: value } : d));
-  };
-
-  const totalPrice = devicePricing.reduce((sum, d) => sum + (parseFloat(d.unit_price) || 0), 0);
-  const totalTokens = devicePricing.reduce((sum, d) => sum + (parseInt(d.tokens_total) || 0), 0);
-
-  const getDeviceTypeLabel = (type) => {
-    const labels = {
-      particle_counter: 'Compteur Particules Aéroportées',
-      bio_collector: 'Bio Collecteur',
-      liquid_counter: 'Compteur Particules Liquide',
-      temp_humidity: 'Capteur Temp/Humidité',
-      other: 'Autre Équipement'
-    };
-    return labels[type] || type;
-  };
-
-  // Get calibration descriptions by device type
-  const getCalibrationPrestations = (deviceType) => {
-    const templates = {
-      particle_counter: [
-        "Vérification des fonctionnalités du compteur",
-        "Vérification et réglage du débit",
-        "Vérification de la cellule de mesure",
-        "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
-        "Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4",
-        "Fourniture d'un rapport de test et de calibration"
-      ],
-      bio_collector: [
-        "Vérification des fonctionnalités de l'appareil",
-        "Vérification et réglage du débit",
-        "Vérification de la cellule d'impaction",
-        "Contrôle des paramètres de collecte",
-        "Fourniture d'un rapport de test et de calibration"
-      ],
-      liquid_counter: [
-        "Vérification des fonctionnalités du compteur",
-        "Vérification et réglage du débit",
-        "Vérification de la cellule de mesure optique",
-        "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
-        "Vérification en nombre par comparaison à un étalon",
-        "Fourniture d'un rapport de test et de calibration"
-      ],
-      temp_humidity: [
-        "Vérification des fonctionnalités du capteur",
-        "Étalonnage température sur points de référence certifiés",
-        "Étalonnage humidité relative",
-        "Vérification de la stabilité des mesures",
-        "Fourniture d'un certificat d'étalonnage"
-      ],
-      other: [
-        "Vérification des fonctionnalités de l'appareil",
-        "Étalonnage selon les spécifications du fabricant",
-        "Tests de fonctionnement",
-        "Fourniture d'un rapport de test"
-      ]
-    };
-    return templates[deviceType] || templates.other;
-  };
-
-  // Group devices by type for the quote
-  const devicesByType = devicePricing.reduce((acc, d) => {
-    const type = d.device_type || 'other';
-    if (!acc[type]) acc[type] = [];
-    acc[type].push(d);
-    return acc;
-  }, {});
-
-  const sendQuote = async () => {
-    setSaving(true);
-    try {
-      // Generate contract number if not exists
-      let contractNumber = contract.contract_number;
-      if (!contractNumber) {
-        const year = new Date().getFullYear();
-        const { data: existing } = await supabase
-          .from('contracts')
-          .select('contract_number')
-          .like('contract_number', `CTR-${year}-%`)
-          .order('contract_number', { ascending: false })
-          .limit(1);
-        const lastNum = existing?.[0]?.contract_number 
-          ? parseInt(existing[0].contract_number.split('-')[2]) 
-          : 0;
-        contractNumber = `CTR-${year}-${String(lastNum + 1).padStart(3, '0')}`;
-      }
-
-      // Update contract - only use columns that definitely exist
-      const { error: updateError } = await supabase.from('contracts').update({
-        contract_number: contractNumber,
-        start_date: contractDates.start_date,
-        end_date: contractDates.end_date,
-        status: 'quote_sent'
-      }).eq('id', contract.id);
-
-      if (updateError) {
-        console.error('Contract update error:', updateError);
-        throw updateError;
-      }
-
-      // Update device pricing
-      for (const d of devicePricing) {
-        const { error: deviceError } = await supabase.from('contract_devices').update({
-          tokens_total: d.tokens_total,
-          unit_price: d.unit_price
-        }).eq('id', d.id);
-        
-        if (deviceError) {
-          console.error('Device update error:', deviceError);
-        }
-      }
-
-      // Try to update optional quote fields (may not exist in schema)
-      try {
-        await supabase.from('contracts').update({
-          quote_total: totalPrice,
-          quote_data: { 
-            devices: devicePricing, 
-            totalPrice, 
-            totalTokens, 
-            createdBy: signatory,
-            createdAt: new Date().toISOString() 
-          },
-          quote_sent_at: new Date().toISOString()
-        }).eq('id', contract.id);
-      } catch (e) {
-        console.log('Optional quote fields not updated (columns may not exist)');
-      }
-
-      // Create notification for the client (optional - may not have notifications table)
-      try {
-        await supabase.from('notifications').insert({
-          company_id: contract.company_id,
-          type: 'contract_quote',
-          title: 'Nouveau Devis Contrat',
-          message: `Votre devis de contrat d'étalonnage ${contractNumber} est disponible. ${devicePricing.length} appareil(s) - ${totalPrice.toFixed(2)} € HT/an. Consultez votre portail pour approuver.`,
-          data: { contract_id: contract.id, contract_number: contractNumber },
-          read: false
-        });
-      } catch (notifErr) {
-        console.log('Notification not created (table may not exist):', notifErr);
-      }
-
-      notify(`✅ Devis contrat envoyé! N° ${contractNumber}`);
-      onSent();
-    } catch (err) {
-      notify('Erreur: ' + err.message, 'error');
-    }
-    setSaving(false);
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <button onClick={onClose} className="text-gray-500 hover:text-gray-700">← Retour</button>
-        <h1 className="text-2xl font-bold text-gray-800">Créer Devis Contrat</h1>
-        <div className="flex gap-1 ml-4">
-          {[1,2,3].map(s => (
-            <div key={s} className={`w-8 h-2 rounded-full ${step >= s ? 'bg-[#00A651]' : 'bg-gray-300'}`} />
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        {/* Header */}
-        <div className="px-6 py-4 bg-[#1a1a2e] text-white flex justify-between items-center">
-          <div>
-            <h2 className="text-xl font-bold">
-              {step === 1 && 'Tarification du Contrat'}
-              {step === 2 && 'Aperçu du Devis'}
-              {step === 3 && 'Confirmer l\'envoi'}
-            </h2>
-            <p className="text-gray-300">{contract.companies?.name} • {devicePricing.length} appareil(s)</p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-gray-400">Total HT / an</p>
-            <p className="text-2xl font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</p>
-          </div>
-        </div>
-
-        {/* Step 1: Pricing */}
-        {step === 1 && (
-          <div className="p-6 space-y-6">
-            {/* Contract Info & Dates */}
-            <div className="grid md:grid-cols-3 gap-4">
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-500">Client</p>
-                <p className="font-bold text-lg">{contract.companies?.name}</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <label className="text-sm text-gray-500 block mb-1">Date début</label>
-                <input
-                  type="date"
-                  value={contractDates.start_date}
-                  onChange={e => setContractDates({...contractDates, start_date: e.target.value})}
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <label className="text-sm text-gray-500 block mb-1">Date fin</label>
-                <input
-                  type="date"
-                  value={contractDates.end_date}
-                  onChange={e => setContractDates({...contractDates, end_date: e.target.value})}
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
-              </div>
-            </div>
-
-            {/* Devices Pricing */}
-            <div>
-              <h3 className="font-bold text-gray-800 mb-4">Tarification par Appareil</h3>
-              <div className="space-y-3">
-                {devicePricing.map((device, index) => (
-                  <div key={device.id} className="bg-gray-50 rounded-lg p-4 border">
-                    <div className="flex items-center gap-4">
-                      <span className="bg-[#1a1a2e] text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">{index + 1}</span>
-                      <div className="flex-1 grid md:grid-cols-5 gap-4 items-center">
-                        <div>
-                          <p className="font-medium">{device.model_name || 'Appareil'}</p>
-                          <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500">Type</p>
-                          <p className="text-sm">{getDeviceTypeLabel(device.device_type)}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500">Étalonnages/an</label>
-                          <input
-                            type="number"
-                            value={device.tokens_total}
-                            onChange={e => updateDevice(device.id, 'tokens_total', parseInt(e.target.value) || 1)}
-                            className="w-full px-3 py-2 border rounded-lg"
-                            min="1"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500">Prix unitaire € HT</label>
-                          <input
-                            type="number"
-                            value={device.unit_price}
-                            onChange={e => updateDevice(device.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                            className="w-full px-3 py-2 border rounded-lg"
-                            min="0"
-                            step="0.01"
-                          />
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs text-gray-500">Sous-total</p>
-                          <p className="font-bold text-[#00A651]">{(device.unit_price || 0).toFixed(2)} €</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Summary */}
-            <div className="bg-emerald-50 rounded-lg p-4 flex justify-between items-center border border-emerald-200">
-              <div>
-                <span className="text-emerald-800 font-medium">{devicePricing.length} appareil(s)</span>
-                <span className="text-emerald-600 mx-3">•</span>
-                <span className="text-emerald-800">{totalTokens} étalonnage(s) inclus</span>
-              </div>
-              <div className="text-right">
-                <p className="text-sm text-emerald-600">Total HT / an</p>
-                <p className="text-2xl font-bold text-emerald-800">{totalPrice.toFixed(2)} €</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Step 2: Preview - EXACTLY MATCHES CUSTOMER PORTAL */}
-        {step === 2 && (
-          <div className="p-6 bg-gray-200 min-h-full">
-            <div className="max-w-4xl mx-auto bg-white shadow-xl" style={{ fontFamily: 'Arial, sans-serif' }}>
-              
-              {/* Quote Header */}
-              <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <img 
-                      src="/images/logos/lighthouse-logo.png" 
-                      alt="Lighthouse France" 
-                      className="h-14 w-auto mb-1"
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                        e.target.nextSibling.style.display = 'block';
-                      }}
-                    />
-                    <div className="hidden">
-                      <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
-                      <p className="text-gray-500">Worldwide Solutions</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
-                    <p className="text-gray-500">N° {quoteRef}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Info Bar */}
-              <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
-                <div>
-                  <p className="text-xs text-gray-500 uppercase">Date</p>
-                  <p className="font-medium">{today.toLocaleDateString('fr-FR')}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 uppercase">Période du Contrat</p>
-                  <p className="font-medium">{new Date(contractDates.start_date).toLocaleDateString('fr-FR')} - {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 uppercase">Validité Devis</p>
-                  <p className="font-medium">30 jours</p>
-                </div>
-              </div>
-
-              {/* Client Info */}
-              <div className="px-8 py-4 border-b">
-                <p className="text-xs text-gray-500 uppercase">Client</p>
-                <p className="font-bold text-xl text-[#1a1a2e]">{contract.companies?.name}</p>
-                {contract.companies?.billing_address && <p className="text-gray-600">{contract.companies?.billing_address}</p>}
-                <p className="text-gray-600">{contract.companies?.billing_postal_code} {contract.companies?.billing_city}</p>
-              </div>
-
-              {/* SERVICE SECTIONS BY DEVICE TYPE - Green Headers like Customer Portal */}
-              {Object.entries(devicesByType).map(([type, typeDevices]) => {
-                const prestations = getCalibrationPrestations(type);
-                const typeTotal = typeDevices.reduce((sum, d) => sum + (d.unit_price || 0), 0);
-                const typeTokens = typeDevices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
-                
-                return (
-                  <div key={type} className="border-b">
-                    {/* Type Header with GREEN background - matching customer */}
-                    <div className="bg-[#00A651] text-white px-8 py-3">
-                      <h3 className="font-bold text-lg flex items-center gap-2">
-                        {type === 'particle_counter' && '🔬 '}
-                        {type === 'bio_collector' && '🧫 '}
-                        {type === 'liquid_counter' && '💧 '}
-                        {type === 'temp_humidity' && '🌡️ '}
-                        {type === 'other' && '📦 '}
-                        Étalonnage {getDeviceTypeLabel(type)}
-                      </h3>
-                    </div>
-                    
-                    {/* Prestations */}
-                    <div className="px-8 py-4 bg-gray-50">
-                      <p className="text-xs text-gray-500 uppercase mb-2">Prestations Incluses</p>
-                      <ul className="text-sm text-gray-700 space-y-1">
-                        {prestations.map((p, i) => (
-                          <li key={i} className="flex items-start gap-2">
-                            <span className="text-[#00A651]">✓</span>
-                            <span>{p}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    
-                    {/* Devices Table */}
-                    <table className="w-full">
-                      <thead className="bg-gray-100">
-                        <tr>
-                          <th className="px-8 py-2 text-left text-xs font-bold text-gray-600">Appareil</th>
-                          <th className="px-4 py-2 text-left text-xs font-bold text-gray-600">N° Série</th>
-                          <th className="px-4 py-2 text-center text-xs font-bold text-gray-600">Étal./an</th>
-                          <th className="px-8 py-2 text-right text-xs font-bold text-gray-600">Prix HT</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {typeDevices.map((d, i) => (
-                          <tr key={d.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                            <td className="px-8 py-2 font-medium">{d.model_name || getDeviceTypeLabel(d.device_type)}</td>
-                            <td className="px-4 py-2 font-mono text-sm">{d.serial_number}</td>
-                            <td className="px-4 py-2 text-center">{d.tokens_total}</td>
-                            <td className="px-8 py-2 text-right font-medium">{(d.unit_price || 0).toFixed(2)} €</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-green-50">
-                          <td className="px-8 py-2 font-bold" colSpan={2}>Sous-total Étalonnage {getDeviceTypeLabel(type)}</td>
-                          <td className="px-4 py-2 text-center font-medium">{typeTokens} étal.</td>
-                          <td className="px-8 py-2 text-right font-bold text-[#00A651]">{typeTotal.toFixed(2)} €</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                );
-              })}
-
-              {/* Grand Total */}
-              <div className="mx-8 my-6 bg-[#00A651] text-white rounded-lg p-4 flex justify-between items-center">
-                <div>
-                  <p className="text-lg font-bold">TOTAL CONTRAT ANNUEL HT</p>
-                  <p className="text-emerald-100 text-sm">{totalTokens} étalonnage(s) inclus pendant la période du contrat</p>
-                </div>
-                <p className="text-3xl font-bold">{totalPrice.toFixed(2)} €</p>
-              </div>
-
-              {/* Terms */}
-              <div className="px-8 py-4 border-t bg-gray-50">
-                <p className="text-xs text-gray-500 uppercase mb-2">Conditions du contrat</p>
-                <ul className="text-xs text-gray-600 space-y-1">
-                  <li>• Validité du contrat: {new Date(contractDates.start_date).toLocaleDateString('fr-FR')} au {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</li>
-                  <li>• {totalTokens} étalonnage(s) inclus à utiliser pendant la période contractuelle</li>
-                  <li>• Étalonnages supplémentaires facturés au tarif standard en vigueur</li>
-                  <li>• Frais de port inclus (France métropolitaine)</li>
-                  <li>• Paiement à 30 jours date de facture</li>
-                </ul>
-              </div>
-
-              {/* Signature Section - MATCHING CUSTOMER PORTAL */}
-              <div className="px-8 py-6 border-t flex justify-between items-end">
-                <div className="flex items-end gap-6">
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
-                    <p className="font-bold text-lg">{signatory}</p>
-                    <p className="text-gray-600">Lighthouse France</p>
-                  </div>
-                  <img 
-                    src="/images/logos/capcert-logo.png" 
-                    alt="Capcert Certification" 
-                    className="h-20 w-auto"
-                    onError={(e) => { e.target.style.display = 'none'; }}
-                  />
-                </div>
-                
-                <div className="text-right">
-                  <p className="text-xs text-gray-400 mb-1">Signature client</p>
-                  <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
-                  <p className="text-xs text-gray-400 mt-1">Lu et approuvé</p>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
-                <p className="font-medium">Lighthouse France SAS</p>
-                <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Confirm */}
-        {step === 3 && (
-          <div className="p-8 text-center max-w-lg mx-auto">
-            <div className="w-24 h-24 bg-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6">
-              <span className="text-5xl text-white">📧</span>
-            </div>
-            <h3 className="text-2xl font-bold text-gray-800 mb-2">Confirmer l'envoi du devis</h3>
-            <p className="text-gray-600 mb-6">Le devis de contrat sera envoyé au client et disponible sur son portail.</p>
-            
-            <div className="bg-gray-50 rounded-xl p-6 mb-6 text-left">
-              <p className="text-lg font-bold text-gray-800 mb-1">{contract.companies?.name}</p>
-              <p className="text-sm text-gray-500 mb-2">Période: {new Date(contractDates.start_date).toLocaleDateString('fr-FR')} - {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</p>
-              <p className="text-sm text-gray-500 mb-4">{devicePricing.length} appareil(s) • {totalTokens} étalonnage(s)/an</p>
-              <div className="border-t pt-3 flex justify-between font-bold text-lg">
-                <span>Total HT / an</span>
-                <span className="text-[#00A651]">{totalPrice.toFixed(2)} €</span>
-              </div>
-            </div>
-
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 text-left">
-              <p className="font-medium mb-2">Après envoi :</p>
-              <p className="mb-1">✓ Le client recevra une notification sur son portail</p>
-              <p className="mb-1">✓ Il pourra consulter et approuver le devis</p>
-              <p className="mb-1">✓ Après approbation, il soumettra son bon de commande</p>
-              <p>✓ Le contrat sera activé après validation du BC</p>
-            </div>
-          </div>
-        )}
-
-        {/* Footer */}
-        <div className="px-6 py-4 bg-gray-100 border-t flex justify-between">
-          <button 
-            onClick={step === 1 ? onClose : () => setStep(step - 1)} 
-            className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium"
-          >
-            {step === 1 ? 'Annuler' : '← Retour'}
-          </button>
-          <div className="flex gap-3">
-            {step < 3 && (
-              <button 
-                onClick={() => setStep(step + 1)} 
-                className="px-8 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium"
-              >
-                Suivant →
-              </button>
-            )}
-            {step === 3 && (
-              <button 
-                onClick={sendQuote} 
-                disabled={saving}
-                className="px-10 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold text-lg disabled:opacity-50"
-              >
-                {saving ? 'Envoi...' : '✅ Envoyer le Devis'}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-// ============================================
-// CONTRACT DETAIL VIEW
-// ============================================
-function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
-  const [editMode, setEditMode] = useState(contract.status === 'requested');
-  const [saving, setSaving] = useState(false);
-  const [devices, setDevices] = useState(contract.contract_devices || []);
-  const [contractData, setContractData] = useState({
-    start_date: contract.start_date || new Date().toISOString().split('T')[0],
-    end_date: contract.end_date || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
-    internal_notes: contract.internal_notes || ''
-  });
-  const [showQuoteModal, setShowQuoteModal] = useState(false);
-
-  // Check for existing active contracts for this client
-  const [existingContracts, setExistingContracts] = useState([]);
-  
-  useEffect(() => {
-    const checkExisting = async () => {
-      if (!contract.company_id) return;
-      const { data } = await supabase
-        .from('contracts')
-        .select('id, contract_number, start_date, end_date, status')
-        .eq('company_id', contract.company_id)
-        .eq('status', 'active')
-        .neq('id', contract.id);
-      setExistingContracts(data || []);
-    };
-    checkExisting();
-  }, [contract.company_id, contract.id]);
-
-  const updateDevice = (deviceId, field, value) => {
-    setDevices(devices.map(d => d.id === deviceId ? { ...d, [field]: value } : d));
-  };
-
-  const saveDeviceChanges = async () => {
-    setSaving(true);
-    try {
-      // Update contract dates and notes
-      const { error: contractError } = await supabase
-        .from('contracts')
-        .update({
-          start_date: contractData.start_date,
-          end_date: contractData.end_date,
-          internal_notes: contractData.internal_notes
-        })
-        .eq('id', contract.id);
-
-      if (contractError) throw contractError;
-
-      // Update each device
-      for (const device of devices) {
-        const { error } = await supabase
-          .from('contract_devices')
-          .update({
-            tokens_total: device.tokens_total,
-            unit_price: device.unit_price
-          })
-          .eq('id', device.id);
-        
-        if (error) throw error;
-      }
-
-      notify('Modifications enregistrées', 'success');
-      setEditMode(false);
-      onUpdate();
-    } catch (err) {
-      console.error('Error saving:', err);
-      notify('Erreur lors de la sauvegarde', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const updateContractStatus = async (newStatus) => {
-    setSaving(true);
-    try {
-      const updates = { status: newStatus };
-      
-      if (newStatus === 'active') {
-        updates.bc_approved_at = new Date().toISOString();
-      }
-
-      const { error } = await supabase
-        .from('contracts')
-        .update(updates)
-        .eq('id', contract.id);
-
-      if (error) throw error;
-
-      notify(`Statut mis à jour: ${newStatus}`, 'success');
-      onUpdate();
-      onClose();
-    } catch (err) {
-      console.error('Error updating status:', err);
-      notify('Erreur lors de la mise à jour', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const totalPrice = devices.reduce((sum, d) => sum + (parseFloat(d.unit_price) || 0), 0);
-  const totalTokens = devices.reduce((sum, d) => sum + (parseInt(d.tokens_total) || 0), 0);
-
-  const CONTRACT_STATUS_STYLES = {
-    requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: '🆕 Nouvelle demande' },
-    quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: '📧 Devis envoyé' },
-    quote_approved: { bg: 'bg-purple-100', text: 'text-purple-700', label: '✅ Devis approuvé' },
-    bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: '📄 Attente BC' },
-    active: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Actif' },
-    expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: '⏰ Expiré' },
-    cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ Annulé' }
-  };
-
-  const getStatusBadge = (status) => {
-    const style = CONTRACT_STATUS_STYLES[status] || CONTRACT_STATUS_STYLES.requested;
-    return (
-      <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>
-        {style.label}
-      </span>
-    );
-  };
-
-  return (
-    <div className="space-y-6">
-      <button 
-        onClick={onClose}
-        className="text-gray-500 hover:text-gray-700 flex items-center gap-2"
-      >
-        ← Retour aux contrats
-      </button>
-
-      {/* Warning for existing active contracts */}
-      {existingContracts.length > 0 && (
-        <div className="bg-amber-50 border-l-4 border-amber-400 p-4 rounded">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">⚠️</span>
-            <div>
-              <h3 className="font-bold text-amber-800">Contrat existant détecté</h3>
-              <p className="text-sm text-amber-700">
-                Ce client a déjà {existingContracts.length} contrat(s) actif(s):
-              </p>
-              <ul className="text-sm text-amber-700 mt-1">
-                {existingContracts.map(c => (
-                  <li key={c.id}>• {c.contract_number} ({new Date(c.start_date).toLocaleDateString('fr-FR')} - {new Date(c.end_date).toLocaleDateString('fr-FR')})</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* BC REVIEW SECTION - Shows when client has submitted BC */}
-      {contract.status === 'bc_pending' && (
-        <div className="bg-orange-50 border-2 border-orange-300 rounded-xl p-6">
-          <div className="flex items-start gap-4 mb-4">
-            <div className="w-14 h-14 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-2xl">📄</span>
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-orange-800">Bon de Commande à Vérifier</h2>
-              <p className="text-orange-700">
-                Le client a soumis son bon de commande. Vérifiez les documents et activez le contrat.
-              </p>
-              {contract.bc_submitted_at && (
-                <p className="text-sm text-orange-600 mt-1">
-                  Soumis le {new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(contract.bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                  {contract.bc_signed_by && ` par ${contract.bc_signed_by}`}
-                </p>
-              )}
-            </div>
-          </div>
-          
-          {/* Documents */}
-          <div className="grid md:grid-cols-2 gap-4 mb-4">
-            {/* Signed Quote PDF */}
-            {contract.signed_quote_url && (
-              <div className="bg-white rounded-lg p-4 border border-green-200">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                    <span className="text-green-600">✅</span>
-                  </div>
-                  <div>
-                    <p className="font-bold text-green-800">Devis Signé</p>
-                    <p className="text-xs text-green-600">PDF avec signature client</p>
-                  </div>
-                </div>
-                <a
-                  href={contract.signed_quote_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block w-full px-4 py-2 bg-green-600 text-white rounded-lg text-center font-medium hover:bg-green-700"
-                >
-                  📥 Voir le Devis Signé
-                </a>
-              </div>
-            )}
-            
-            {/* BC File */}
-            {contract.bc_file_url && (
-              <div className="bg-white rounded-lg p-4 border border-purple-200">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <span className="text-purple-600">📋</span>
-                  </div>
-                  <div>
-                    <p className="font-bold text-purple-800">Bon de Commande</p>
-                    <p className="text-xs text-purple-600">Document uploadé par le client</p>
-                  </div>
-                </div>
-                <a
-                  href={contract.bc_file_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block w-full px-4 py-2 bg-purple-600 text-white rounded-lg text-center font-medium hover:bg-purple-700"
-                >
-                  📥 Voir le BC
-                </a>
-              </div>
-            )}
-            
-            {/* No documents */}
-            {!contract.signed_quote_url && !contract.bc_file_url && (
-              <div className="col-span-2 bg-white rounded-lg p-4 border border-gray-200 text-center text-gray-500">
-                <p>Aucun document attaché (signature électronique uniquement)</p>
-              </div>
-            )}
-          </div>
-          
-          {/* Action Buttons */}
-          <div className="flex gap-3">
-            <button
-              onClick={() => updateContractStatus('active')}
-              disabled={saving}
-              className="flex-1 px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008c44] disabled:opacity-50"
-            >
-              ✅ Approuver et Activer le Contrat
-            </button>
-            <button
-              onClick={() => {
-                const reason = window.prompt('Raison du rejet:');
-                if (reason) {
-                  // Update with rejection
-                  supabase.from('contracts').update({
-                    status: 'bc_rejected',
-                    bc_rejection_reason: reason
-                  }).eq('id', contract.id).then(() => {
-                    notify('BC rejeté', 'success');
-                    onUpdate();
-                  });
-                }
-              }}
-              disabled={saving}
-              className="px-6 py-3 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 disabled:opacity-50"
-            >
-              ❌ Rejeter
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-[#1E3A5F]">
-              Contrat {contract.contract_number || '(En attente)'}
-            </h1>
-            <p className="text-gray-600">{contract.companies?.name}</p>
-          </div>
-          {getStatusBadge(contract.status)}
-        </div>
-
-        {/* Contract Period */}
-        <div className="grid md:grid-cols-3 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Date de début</label>
-            {editMode ? (
-              <input
-                type="date"
-                value={contractData.start_date}
-                onChange={e => setContractData({...contractData, start_date: e.target.value})}
-                className="w-full px-3 py-2 border rounded-lg"
-              />
-            ) : (
-              <p className="text-gray-900">{new Date(contract.start_date).toLocaleDateString('fr-FR')}</p>
-            )}
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Date de fin</label>
-            {editMode ? (
-              <input
-                type="date"
-                value={contractData.end_date}
-                onChange={e => setContractData({...contractData, end_date: e.target.value})}
-                className="w-full px-3 py-2 border rounded-lg"
-              />
-            ) : (
-              <p className="text-gray-900">{new Date(contract.end_date).toLocaleDateString('fr-FR')}</p>
-            )}
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Durée</label>
-            <p className="text-gray-900">
-              {Math.round((new Date(contractData.end_date) - new Date(contractData.start_date)) / (1000 * 60 * 60 * 24 * 30))} mois
-            </p>
-          </div>
-        </div>
-
-        {/* Customer Notes */}
-        {contract.customer_notes && (
-          <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-            <h4 className="font-bold text-blue-800 text-sm mb-1">Notes du client:</h4>
-            <p className="text-sm text-blue-700">{contract.customer_notes}</p>
-          </div>
-        )}
-
-        {/* Internal Notes */}
-        <div className="mb-4">
-          <label className="block text-sm font-bold text-gray-700 mb-1">Notes internes</label>
-          {editMode ? (
-            <textarea
-              value={contractData.internal_notes}
-              onChange={e => setContractData({...contractData, internal_notes: e.target.value})}
-              rows={2}
-              className="w-full px-3 py-2 border rounded-lg"
-              placeholder="Notes visibles uniquement par l'équipe..."
-            />
-          ) : (
-            <p className="text-gray-600 text-sm">{contract.internal_notes || '—'}</p>
-          )}
-        </div>
-
-        {/* Summary Stats */}
-        <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-[#1E3A5F]">{devices.length}</div>
-            <div className="text-sm text-gray-600">Appareils</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-green-600">{totalTokens}</div>
-            <div className="text-sm text-gray-600">Étalonnages inclus</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-[#3B7AB4]">{totalPrice.toFixed(2)} €</div>
-            <div className="text-sm text-gray-600">Total HT</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Devices Table */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b flex justify-between items-center">
-          <h2 className="font-bold text-gray-800">Appareils ({devices.length})</h2>
-          {!editMode && contract.status !== 'active' && (
-            <button
-              onClick={() => setEditMode(true)}
-              className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
-            >
-              ✏️ Modifier
-            </button>
-          )}
-        </div>
-        
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">#</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">Surnom</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">N° Série</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">Modèle</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">Type</th>
-                <th className="px-4 py-3 text-center text-xs font-bold text-gray-600">Tokens</th>
-                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600">Prix unitaire</th>
-                {contract.status === 'active' && (
-                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-600">Utilisés</th>
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {devices.map((device, idx) => (
-                <tr key={device.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                  <td className="px-4 py-3 text-sm text-gray-500">{idx + 1}</td>
-                  <td className="px-4 py-3 text-sm">{device.nickname || '—'}</td>
-                  <td className="px-4 py-3 text-sm font-mono">{device.serial_number}</td>
-                  <td className="px-4 py-3 text-sm font-medium">{device.model_name}</td>
-                  <td className="px-4 py-3 text-sm">
-                    {device.device_type === 'particle_counter' && '🔬 Compteur Air'}
-                    {device.device_type === 'bio_collector' && '🧫 Bio Collecteur'}
-                    {device.device_type === 'liquid_counter' && '💧 Compteur Liquide'}
-                    {device.device_type === 'temp_humidity' && '🌡️ Temp/Humidité'}
-                    {device.device_type === 'other' && '📦 Autre'}
-                    {!device.device_type && '—'}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {editMode ? (
-                      <input
-                        type="number"
-                        min="1"
-                        value={device.tokens_total || 2}
-                        onChange={e => updateDevice(device.id, 'tokens_total', parseInt(e.target.value) || 2)}
-                        className="w-16 px-2 py-1 border rounded text-center"
-                      />
-                    ) : (
-                      <span className="font-bold">{device.tokens_total || 2}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {editMode ? (
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={device.unit_price || ''}
-                        onChange={e => updateDevice(device.id, 'unit_price', e.target.value)}
-                        className="w-24 px-2 py-1 border rounded text-right"
-                        placeholder="0.00"
-                      />
-                    ) : (
-                      <span className="font-medium">{device.unit_price ? `${parseFloat(device.unit_price).toFixed(2)} €` : '—'}</span>
-                    )}
-                  </td>
-                  {contract.status === 'active' && (
-                    <td className="px-4 py-3 text-center">
-                      <span className={`font-bold ${(device.tokens_used || 0) >= (device.tokens_total || 2) ? 'text-red-600' : 'text-green-600'}`}>
-                        {device.tokens_used || 0}/{device.tokens_total || 2}
-                      </span>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-            <tfoot className="bg-gray-100">
-              <tr>
-                <td colSpan={5} className="px-4 py-3 text-right font-bold">Total:</td>
-                <td className="px-4 py-3 text-center font-bold text-green-600">{totalTokens}</td>
-                <td className="px-4 py-3 text-right font-bold text-[#1E3A5F]">{totalPrice.toFixed(2)} €</td>
-                {contract.status === 'active' && <td></td>}
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
-
-      {/* Action Buttons */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <div className="flex flex-wrap gap-3">
-          {editMode && (
-            <>
-              <button
-                onClick={() => setEditMode(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={saveDeviceChanges}
-                disabled={saving}
-                className="px-4 py-2 bg-[#00A651] text-white rounded-lg hover:bg-[#008c44] disabled:opacity-50"
-              >
-                {saving ? 'Enregistrement...' : 'Enregistrer les modifications'}
-              </button>
-            </>
-          )}
-
-          {!editMode && contract.status === 'requested' && (
-            <>
-              <button
-                onClick={() => setEditMode(true)}
-                className="px-4 py-2 border border-[#3B7AB4] text-[#3B7AB4] rounded-lg hover:bg-blue-50"
-              >
-                ✏️ Définir les prix et tokens
-              </button>
-              <button
-                onClick={() => updateContractStatus('quote_sent')}
-                disabled={saving || !devices.every(d => d.unit_price)}
-                className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg hover:bg-[#1E3A5F] disabled:opacity-50"
-              >
-                📧 Envoyer le devis
-              </button>
-            </>
-          )}
-
-          {contract.status === 'quote_sent' && (
-            <button
-              onClick={() => updateContractStatus('quote_approved')}
-              disabled={saving}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
-            >
-              ✅ Marquer devis approuvé
-            </button>
-          )}
-
-          {contract.status === 'quote_approved' && (
-            <button
-              onClick={() => updateContractStatus('bc_pending')}
-              disabled={saving}
-              className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50"
-            >
-              📄 En attente du BC
-            </button>
-          )}
-
-          {contract.status === 'bc_pending' && (
-            <button
-              onClick={() => updateContractStatus('active')}
-              disabled={saving}
-              className="px-4 py-2 bg-[#00A651] text-white rounded-lg hover:bg-[#008c44] disabled:opacity-50"
-            >
-              ✅ Activer le contrat
-            </button>
-          )}
-
-          {contract.status !== 'cancelled' && contract.status !== 'active' && !editMode && (
-            <button
-              onClick={() => {
-                if (window.confirm('Êtes-vous sûr de vouloir annuler ce contrat? Tapez "annuler contrat" pour confirmer.')) {
-                  const confirmation = window.prompt('Tapez "annuler contrat" pour confirmer:');
-                  if (confirmation?.toLowerCase() === 'annuler contrat') {
-                    updateContractStatus('cancelled');
-                  }
-                }
-              }}
-              disabled={saving}
-              className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50"
-            >
-              ❌ Annuler Contrat
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================
-// CREATE CONTRACT MODAL - Manual Contract Creation
-// ============================================
-// ============================================
-// BC FILE UPLOADER (Admin side)
-// ============================================
-function BCFileUploader({ onUploaded, currentUrl }) {
-  const [uploading, setUploading] = useState(false);
-  const [urlMode, setUrlMode] = useState(false);
-  const [urlInput, setUrlInput] = useState(currentUrl || '');
-
-  const handleFileUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    setUploading(true);
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `bc_manual_${Date.now()}.${fileExt}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('bc-documents')
-        .upload(fileName, file);
-      
-      if (uploadError) throw uploadError;
-      
-      const { data: { publicUrl } } = supabase.storage
-        .from('bc-documents')
-        .getPublicUrl(fileName);
-      
-      onUploaded(publicUrl);
-    } catch (err) {
-      console.error('Upload error:', err);
-      alert('Erreur upload: ' + err.message);
-    }
-    setUploading(false);
-  };
-
-  const handleUrlSubmit = () => {
-    if (urlInput.trim()) {
-      onUploaded(urlInput.trim());
-    }
-  };
-
-  if (currentUrl) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-green-600 text-sm">✅ BC ajouté</span>
-        <a href={currentUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 text-sm hover:underline">Voir</a>
-        <button 
-          onClick={() => onUploaded('')} 
-          className="text-red-500 text-sm hover:underline"
-        >
-          Supprimer
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => setUrlMode(false)}
-          className={`px-3 py-1 text-xs rounded ${!urlMode ? 'bg-[#00A651] text-white' : 'bg-gray-200 text-gray-700'}`}
-        >
-          📄 Fichier
-        </button>
-        <button
-          type="button"
-          onClick={() => setUrlMode(true)}
-          className={`px-3 py-1 text-xs rounded ${urlMode ? 'bg-[#00A651] text-white' : 'bg-gray-200 text-gray-700'}`}
-        >
-          🔗 Lien
-        </button>
-      </div>
-      
-      {urlMode ? (
-        <div className="flex gap-2">
-          <input
-            type="url"
-            value={urlInput}
-            onChange={e => setUrlInput(e.target.value)}
-            placeholder="https://drive.google.com/..."
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          />
-          <button
-            type="button"
-            onClick={handleUrlSubmit}
-            className="px-3 py-2 bg-[#00A651] text-white rounded-lg text-sm"
-          >
-            OK
-          </button>
-        </div>
-      ) : (
-        <label className="block cursor-pointer">
-          <input
-            type="file"
-            accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-            onChange={handleFileUpload}
-            disabled={uploading}
-            className="hidden"
-          />
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-[#00A651] hover:bg-green-50 transition-colors">
-            {uploading ? (
-              <div className="flex items-center justify-center gap-2">
-                <div className="w-4 h-4 border-2 border-[#00A651] border-t-transparent rounded-full animate-spin"></div>
-                <span className="text-sm text-gray-600">Upload...</span>
-              </div>
-            ) : (
-              <>
-                <div className="text-2xl mb-1">📄</div>
-                <p className="text-xs text-gray-600">Cliquez pour sélectionner</p>
-                <p className="text-xs text-gray-400">PDF, DOC, Image</p>
-              </>
-            )}
-          </div>
-        </label>
-      )}
-    </div>
-  );
-}
-
-function CreateContractModal({ clients, notify, onClose, onCreated }) {
-  const [step, setStep] = useState(1);
-  const [saving, setSaving] = useState(false);
-  const [contractData, setContractData] = useState({
-    company_id: '',
-    company_name: '', // For display when no company selected
-    contract_number: '',
-    start_date: new Date().toISOString().split('T')[0],
-    end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
-    status: 'active',
-    internal_notes: '',
-    bc_url: ''
-  });
-  const [devices, setDevices] = useState([
-    { id: Date.now(), serial_number: '', model_name: '', device_type: 'particle_counter', nickname: '', tokens_total: 1, unit_price: 0 }
-  ]);
-
-  const addDevice = () => {
-    setDevices([...devices, { id: Date.now(), serial_number: '', model_name: '', device_type: 'particle_counter', nickname: '', tokens_total: 1, unit_price: 0 }]);
-  };
-
-  const removeDevice = (id) => {
-    if (devices.length > 1) {
-      setDevices(devices.filter(d => d.id !== id));
-    }
-  };
-
-  const updateDevice = (id, field, value) => {
-    setDevices(devices.map(d => d.id === id ? { ...d, [field]: value } : d));
-  };
-
-  const generateContractNumber = () => {
-    const year = new Date().getFullYear();
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `CTR-${year}-${random}`;
-  };
-
-  useEffect(() => {
-    if (!contractData.contract_number) {
-      setContractData(prev => ({ ...prev, contract_number: generateContractNumber() }));
-    }
-  }, []);
-
-  const handleSubmit = async () => {
-    // Validate
-    if (!contractData.company_id && !contractData.company_name) {
-      notify('Veuillez sélectionner un client ou entrer un nom', 'error');
-      return;
-    }
-    if (devices.length === 0 || !devices.some(d => d.serial_number)) {
-      notify('Veuillez ajouter au moins un appareil avec un numéro de série', 'error');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      // Create contract
-      const { data: contract, error: contractError } = await supabase
-        .from('contracts')
-        .insert({
-          company_id: contractData.company_id || null,
-          company_name_manual: contractData.company_id ? null : contractData.company_name,
-          contract_number: contractData.contract_number,
-          start_date: contractData.start_date,
-          end_date: contractData.end_date,
-          status: contractData.status,
-          internal_notes: contractData.internal_notes,
-          bc_url: contractData.bc_url || null
-        })
-        .select()
-        .single();
-
-      if (contractError) throw contractError;
-
-      // Add devices
-      const deviceInserts = devices.filter(d => d.serial_number).map(d => ({
-        contract_id: contract.id,
-        serial_number: d.serial_number,
-        model_name: d.model_name,
-        device_type: d.device_type,
-        nickname: d.nickname,
-        tokens_total: d.tokens_total || 2,
-        tokens_used: 0,
-        unit_price: d.unit_price || 0
-      }));
-
-      const { error: devicesError } = await supabase
-        .from('contract_devices')
-        .insert(deviceInserts);
-
-      if (devicesError) throw devicesError;
-
-      notify('✅ Contrat créé avec succès!');
-      onCreated();
-    } catch (err) {
-      console.error('Error creating contract:', err);
-      notify('Erreur: ' + err.message, 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const totalPrice = devices.reduce((sum, d) => sum + (parseFloat(d.unit_price) || 0), 0);
-  const totalTokens = devices.reduce((sum, d) => sum + (parseInt(d.tokens_total) || 0), 0);
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">← Retour</button>
-          <h1 className="text-2xl font-bold text-gray-800">Créer un Contrat Manuellement</h1>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        {/* Header */}
-        <div className="px-6 py-4 bg-[#1a1a2e] text-white">
-          <h2 className="text-xl font-bold">Nouveau Contrat d'Étalonnage</h2>
-          <p className="text-gray-300 text-sm">Pour les contrats existants non créés par le client</p>
-        </div>
-
-        <div className="p-6 space-y-6">
-          {/* Client Selection */}
-          <div className="grid md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Client existant</label>
-              <select
-                value={contractData.company_id}
-                onChange={e => setContractData({ ...contractData, company_id: e.target.value, company_name: '' })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
-              >
-                <option value="">— Sélectionner un client —</option>
-                {clients.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Ou nom du client (si pas de compte)</label>
-              <input
-                type="text"
-                value={contractData.company_name}
-                onChange={e => setContractData({ ...contractData, company_name: e.target.value, company_id: '' })}
-                placeholder="Nom de l'entreprise..."
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
-                disabled={!!contractData.company_id}
-              />
-              <p className="text-xs text-gray-500 mt-1">Vous pourrez lier le contrat à un compte plus tard</p>
-            </div>
-          </div>
-
-          {/* Contract Details */}
-          <div className="grid md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">N° Contrat</label>
-              <input
-                type="text"
-                value={contractData.contract_number}
-                onChange={e => setContractData({ ...contractData, contract_number: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Date début</label>
-              <input
-                type="date"
-                value={contractData.start_date}
-                onChange={e => setContractData({ ...contractData, start_date: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Date fin</label>
-              <input
-                type="date"
-                value={contractData.end_date}
-                onChange={e => setContractData({ ...contractData, end_date: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Statut</label>
-              <select
-                value={contractData.status}
-                onChange={e => setContractData({ ...contractData, status: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-              >
-                <option value="active">✅ Actif</option>
-                <option value="bc_pending">📄 Attente BC</option>
-                <option value="quote_approved">✅ Devis approuvé</option>
-                <option value="expired">⏰ Expiré</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Bon de Commande (optionnel)</label>
-              <BCFileUploader 
-                onUploaded={(url) => setContractData({ ...contractData, bc_url: url })}
-                currentUrl={contractData.bc_url}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Notes internes</label>
-            <textarea
-              value={contractData.internal_notes}
-              onChange={e => setContractData({ ...contractData, internal_notes: e.target.value })}
-              rows={2}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-              placeholder="Notes sur ce contrat..."
-            />
-          </div>
-
-          {/* Devices Section */}
-          <div className="border-t pt-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-gray-800">Appareils sous contrat ({devices.length})</h3>
-              <button
-                onClick={addDevice}
-                className="px-4 py-2 bg-[#00A651] text-white rounded-lg text-sm hover:bg-[#008f45]"
-              >
-                + Ajouter appareil
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {devices.map((device, index) => (
-                <div key={device.id} className="bg-gray-50 rounded-lg p-4 border">
-                  <div className="flex items-start gap-4">
-                    <span className="bg-[#1a1a2e] text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">{index + 1}</span>
-                    <div className="flex-1 grid md:grid-cols-6 gap-3">
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">N° Série *</label>
-                        <input
-                          type="text"
-                          value={device.serial_number}
-                          onChange={e => updateDevice(device.id, 'serial_number', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm"
-                          placeholder="SN..."
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Modèle</label>
-                        <input
-                          type="text"
-                          value={device.model_name}
-                          onChange={e => updateDevice(device.id, 'model_name', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm"
-                          placeholder="Modèle..."
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Type</label>
-                        <select
-                          value={device.device_type}
-                          onChange={e => updateDevice(device.id, 'device_type', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm"
-                        >
-                          <option value="particle_counter">Compteur particules</option>
-                          <option value="bio_collector">Bio collecteur</option>
-                          <option value="liquid_counter">Compteur liquide</option>
-                          <option value="temp_humidity">Temp/Humidité</option>
-                          <option value="other">Autre</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Tokens/an</label>
-                        <input
-                          type="number"
-                          value={device.tokens_total}
-                          onChange={e => updateDevice(device.id, 'tokens_total', parseInt(e.target.value) || 2)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm"
-                          min="1"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Prix €</label>
-                        <input
-                          type="number"
-                          value={device.unit_price}
-                          onChange={e => updateDevice(device.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm"
-                          min="0"
-                          step="0.01"
-                        />
-                      </div>
-                      <div className="flex items-end">
-                        {devices.length > 1 && (
-                          <button
-                            onClick={() => removeDevice(device.id)}
-                            className="px-3 py-2 text-red-500 hover:bg-red-50 rounded-lg text-sm"
-                          >
-                            🗑️
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Summary */}
-            <div className="mt-4 bg-emerald-50 rounded-lg p-4 flex justify-between items-center">
-              <div>
-                <span className="text-emerald-800 font-medium">{devices.filter(d => d.serial_number).length} appareil(s)</span>
-                <span className="text-emerald-600 mx-3">•</span>
-                <span className="text-emerald-800">{totalTokens} tokens total</span>
-              </div>
-              <div className="text-right">
-                <span className="text-emerald-800 font-bold text-xl">{totalPrice.toFixed(2)} €</span>
-                <span className="text-emerald-600 text-sm ml-2">HT</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 bg-gray-100 border-t flex justify-between">
-          <button onClick={onClose} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
-            Annuler
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={saving}
-            className="px-8 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold disabled:opacity-50"
-          >
-            {saving ? 'Création...' : '✅ Créer le Contrat'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SettingsSheet({ profile, staffMembers, notify, reload }) { return <div className="space-y-6"><h1 className="text-2xl font-bold text-gray-800">Paramètres</h1><div className="bg-white rounded-xl shadow-sm"><div className="px-6 py-4 border-b"><h2 className="font-bold text-gray-800">Équipe Lighthouse</h2></div><div className="p-6 space-y-3">{staffMembers.map(member => <div key={member.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-[#00A651] text-white flex items-center justify-center font-bold">{member.full_name?.charAt(0)?.toUpperCase()}</div><div><p className="font-medium">{member.full_name}</p><p className="text-sm text-gray-500">{member.email}</p></div></div><span className={`px-3 py-1 rounded-full text-sm ${member.role === 'lh_admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>{member.role === 'lh_admin' ? '👑 Admin' : '👤 Employé'}</span></div>)}</div></div></div>; }
-
-function AdminSheet({ profile, staffMembers, notify, reload }) { return <div className="space-y-6"><h1 className="text-2xl font-bold text-gray-800">🔐 Administration</h1><div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4"><div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer"><div className="text-3xl mb-3">💰</div><h3 className="font-bold text-gray-800">Tarification</h3><p className="text-sm text-gray-500">Gérer les prix des services</p></div><div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer"><div className="text-3xl mb-3">🔑</div><h3 className="font-bold text-gray-800">Permissions</h3><p className="text-sm text-gray-500">Gérer les accès des employés</p></div><div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer"><div className="text-3xl mb-3">⚙️</div><h3 className="font-bold text-gray-800">Système</h3><p className="text-sm text-gray-500">Configuration avancée</p></div></div></div>; }
-
-// ============================================
-// QUOTE TEMPLATES - Calibration by Device Type
+// QUOTE DISPLAY TEMPLATES
 // ============================================
 const CALIBRATION_TEMPLATES = {
   particle_counter: {
@@ -6153,8 +266,7 @@ const CALIBRATION_TEMPLATES = {
       "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
       "Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4",
       "Fourniture d'un rapport de test et de calibration"
-    ],
-    defaultPrice: 630
+    ]
   },
   bio_collector: {
     icon: '🧫',
@@ -6165,8 +277,7 @@ const CALIBRATION_TEMPLATES = {
       "Vérification de la cellule d'impaction",
       "Contrôle des paramètres de collecte",
       "Fourniture d'un rapport de test et de calibration"
-    ],
-    defaultPrice: 330
+    ]
   },
   liquid_counter: {
     icon: '💧',
@@ -6178,8 +289,7 @@ const CALIBRATION_TEMPLATES = {
       "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
       "Vérification en nombre par comparaison à un étalon",
       "Fourniture d'un rapport de test et de calibration"
-    ],
-    defaultPrice: 750
+    ]
   },
   temp_humidity: {
     icon: '🌡️',
@@ -6190,8 +300,7 @@ const CALIBRATION_TEMPLATES = {
       "Étalonnage humidité relative",
       "Vérification de la stabilité des mesures",
       "Fourniture d'un certificat d'étalonnage"
-    ],
-    defaultPrice: 280
+    ]
   },
   other: {
     icon: '📦',
@@ -6201,14 +310,21 @@ const CALIBRATION_TEMPLATES = {
       "Étalonnage selon les spécifications du fabricant",
       "Tests de fonctionnement",
       "Fourniture d'un rapport de test"
-    ],
-    defaultPrice: 400
+    ]
+  },
+  diluter: {
+    icon: '🌀',
+    title: "Étalonnage Diluteur de Particules",
+    prestations: [
+      "Vérification des fonctionnalités du diluteur",
+      "Contrôle du taux de dilution",
+      "Vérification de l'étanchéité du système",
+      "Tests de performance",
+      "Fourniture d'un rapport de test et de calibration"
+    ]
   }
 };
 
-// ============================================
-// REPAIR TEMPLATE - Same for all device types
-// ============================================
 const REPAIR_TEMPLATE = {
   icon: '🔧',
   title: "Réparation",
@@ -6218,13 +334,9 @@ const REPAIR_TEMPLATE = {
     "Remplacement des pièces défectueuses (pièces facturées en sus)",
     "Tests de fonctionnement complets",
     "Vérification d'étalonnage post-réparation si applicable"
-  ],
-  defaultPrice: 200
+  ]
 };
 
-// ============================================
-// DISCLAIMERS
-// ============================================
 const QUOTE_DISCLAIMERS = [
   "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
   "Un devis complémentaire sera établi si des pièces sont trouvées défectueuses et nécessitent un remplacement.",
@@ -6232,744 +344,6636 @@ const QUOTE_DISCLAIMERS = [
   "Les équipements envoyés devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives."
 ];
 
-// France Metropolitan check for shipping
-const isFranceMetropolitan = (postalCode) => {
-  if (!postalCode) return false;
-  const cleaned = postalCode.toString().replace(/\s/g, '');
-  if (!/^\d{5}$/.test(cleaned)) return false;
-  const dept = parseInt(cleaned.substring(0, 2), 10);
-  return dept >= 1 && dept <= 95;
+// ============================================
+// PDF GENERATION - PROFESSIONAL BLOCK-BASED
+// No emojis, signature always at page bottom
+// ============================================
+
+const PDF_CALIBRATION_DATA = {
+  particle_counter: {
+    title: "Etalonnage Compteur de Particules Aeroportees",
+    prestations: [
+      "Verification des fonctionnalites du compteur",
+      "Verification et reglage du debit",
+      "Verification de la cellule de mesure",
+      "Controle et reglage des seuils de mesures granulometrique a l'aide de spheres de latex calibrees et certifiees",
+      "Verification en nombre par comparaison a un etalon etalonne selon la norme ISO 17025, conformement a la norme ISO 21501-4",
+      "Fourniture d'un rapport de test et de calibration"
+    ]
+  },
+  bio_collector: {
+    title: "Etalonnage Bio Collecteur",
+    prestations: [
+      "Verification des fonctionnalites de l'appareil",
+      "Verification et reglage du debit",
+      "Verification de la cellule d'impaction",
+      "Controle des parametres de collecte",
+      "Fourniture d'un rapport de test et de calibration"
+    ]
+  },
+  liquid_counter: {
+    title: "Etalonnage Compteur de Particules en Milieu Liquide",
+    prestations: [
+      "Verification des fonctionnalites du compteur",
+      "Verification et reglage du debit",
+      "Verification de la cellule de mesure optique",
+      "Controle et reglage des seuils de mesures granulometrique a l'aide de spheres de latex calibrees et certifiees",
+      "Verification en nombre par comparaison a un etalon",
+      "Fourniture d'un rapport de test et de calibration"
+    ]
+  },
+  temp_humidity: {
+    title: "Etalonnage Capteur Temperature/Humidite",
+    prestations: [
+      "Verification des fonctionnalites du capteur",
+      "Etalonnage temperature sur points de reference certifies",
+      "Etalonnage humidite relative",
+      "Verification de la stabilite des mesures",
+      "Fourniture d'un certificat d'etalonnage"
+    ]
+  },
+  other: {
+    title: "Etalonnage Equipement",
+    prestations: [
+      "Verification des fonctionnalites de l'appareil",
+      "Etalonnage selon les specifications du fabricant",
+      "Tests de fonctionnement",
+      "Fourniture d'un rapport de test"
+    ]
+  }
 };
 
-// ============================================
-// QUOTE EDITOR MODAL
-// ============================================
-function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
-  const [step, setStep] = useState(1); // 1=Edit Pricing, 2=Preview, 3=Confirm
-  const [devicePricing, setDevicePricing] = useState([]);
-  const [saving, setSaving] = useState(false);
-  const [quoteRef, setQuoteRef] = useState('');
-  const [contractInfo, setContractInfo] = useState(null); // Active contract data
-  const [loadingContract, setLoadingContract] = useState(true);
+const PDF_REPAIR_DATA = {
+  title: "Reparation",
+  prestations: [
+    "Diagnostic complet de l'appareil",
+    "Identification des composants defectueux",
+    "Remplacement des pieces defectueuses (pieces facturees en sus)",
+    "Tests de fonctionnement complets",
+    "Verification d'etalonnage post-reparation si applicable"
+  ]
+};
 
-  const devices = request?.request_devices || [];
-  const signatory = profile?.full_name || 'Lighthouse France';
-  const today = new Date();
+const PDF_DISCLAIMERS = [
+  "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables.",
+  "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses et necessitent un remplacement.",
+  "Les mesures stockees dans les appareils seront eventuellement perdues lors des operations de maintenance.",
+  "Les equipements envoyes devront etre decontamines de toutes substances chimiques, bacteriennes ou radioactives."
+];
+
+function getQuoteDataFromRequest(request) {
+  const quoteData = request.quote_data || {};
+  const devices = quoteData.devices || request.request_devices || [];
   
-  // Check if client is in France Metropolitan for shipping
-  const clientPostalCode = request?.companies?.billing_postal_code || 
-                           request?.companies?.postal_code || 
-                           '';
-  const isMetro = clientPostalCode ? isFranceMetropolitan(clientPostalCode) : true;
-  const defaultShipping = isMetro ? 45 : 0;
-
-  // ============================================
-  // CONTRACT DETECTION - Match by serial number
-  // ============================================
-  useEffect(() => {
-    const checkContract = async () => {
-      // Trim whitespace from serial numbers
-      const deviceSerials = devices.map(d => (d.serial_number || '').trim()).filter(Boolean);
-      console.log('🔍 Checking contracts for serial numbers:', deviceSerials);
-      
-      if (deviceSerials.length === 0) {
-        console.log('❌ No serial numbers to check');
-        setLoadingContract(false);
-        return;
-      }
-      
-      const todayStr = new Date().toISOString().split('T')[0];
-      console.log('📅 Today:', todayStr);
-      
-      try {
-        // First, get all active contracts (simplified query)
-        const { data: activeContracts, error: contractError } = await supabase
-          .from('contracts')
-          .select('id, contract_number, start_date, end_date, company_id')
-          .eq('status', 'active')
-          .lte('start_date', todayStr)
-          .gte('end_date', todayStr);
-        
-        console.log('📋 Active contracts:', activeContracts, 'Error:', contractError);
-        
-        if (contractError) {
-          console.error('Contract query error:', contractError);
-          setLoadingContract(false);
-          return;
-        }
-        
-        if (!activeContracts || activeContracts.length === 0) {
-          console.log('❌ No active contracts found');
-          setLoadingContract(false);
-          return;
-        }
-        
-        // Get contract IDs
-        const contractIds = activeContracts.map(c => c.id);
-        console.log('📋 Contract IDs:', contractIds);
-        
-        // Now get contract devices separately
-        const { data: contractDevicesData, error: devicesError } = await supabase
-          .from('contract_devices')
-          .select('*')
-          .in('contract_id', contractIds);
-        
-        console.log('📋 Contract devices:', contractDevicesData, 'Error:', devicesError);
-        
-        if (devicesError) {
-          console.error('Contract devices query error:', devicesError);
-          setLoadingContract(false);
-          return;
-        }
-        
-        // Build map of serial numbers to contract devices
-        const deviceMap = {};
-        let matchedContract = null;
-        
-        for (const cd of (contractDevicesData || [])) {
-          const contract = activeContracts.find(c => c.id === cd.contract_id);
-          if (!contract) continue;
-          
-          const tokensRemaining = (cd.tokens_total || 0) - (cd.tokens_used || 0);
-          const serialTrimmed = (cd.serial_number || '').trim();
-          
-          // Check if this contract device matches any RMA device
-          if (deviceSerials.includes(serialTrimmed)) {
-            console.log(`✅ MATCH! Serial "${serialTrimmed}" found in contract ${contract.contract_number}`);
-            matchedContract = contract;
-          }
-          
-          deviceMap[serialTrimmed] = {
-            contract_id: contract.id,
-            contract_number: contract.contract_number,
-            contract_device_id: cd.id,
-            tokens_remaining: tokensRemaining,
-            tokens_total: cd.tokens_total || 0,
-            unit_price: cd.unit_price || 0
-          };
-        }
-        
-        console.log('📋 Device map:', deviceMap);
-        
-        // Check which RMA devices are in the map
-        let hasMatch = false;
-        deviceSerials.forEach(sn => {
-          if (deviceMap[sn]) {
-            console.log(`✅ RMA device "${sn}" is covered by contract ${deviceMap[sn].contract_number}, tokens remaining: ${deviceMap[sn].tokens_remaining}`);
-            hasMatch = true;
-          } else {
-            console.log(`❌ RMA device "${sn}" is NOT in any contract`);
-          }
-        });
-        
-        if (hasMatch) {
-          setContractInfo({
-            contracts: activeContracts,
-            primaryContract: matchedContract || activeContracts[0],
-            deviceMap
-          });
-          console.log('✅ Contract info set!');
-        } else {
-          console.log('❌ No matching serial numbers found in contracts');
-        }
-      } catch (err) {
-        console.error('Contract check error:', err);
-      }
-      
-      setLoadingContract(false);
-    };
-    
-    checkContract();
-  }, [devices]);
-
-  // Determine which service sections are needed based on devices
-  const getRequiredSections = () => {
-    const sections = { calibration: new Set(), repair: false };
-    
+  let calibrationTypes = quoteData.requiredSections?.calibrationTypes || [];
+  let hasRepair = quoteData.requiredSections?.hasRepair || false;
+  
+  if (calibrationTypes.length === 0 && devices.length > 0) {
+    const calTypes = new Set();
     devices.forEach(d => {
-      const serviceType = d.service_type || '';
-      const deviceType = d.device_type || 'particle_counter';
-      
-      if (serviceType.includes('calibration') || serviceType === 'calibration_repair' || serviceType === 'cal_repair') {
-        sections.calibration.add(deviceType);
+      const deviceType = d.deviceType || d.device_type || 'particle_counter';
+      const serviceType = d.serviceType || d.service_type || 'calibration';
+      if (serviceType.includes('calibration') || serviceType === 'cal_repair' || serviceType === 'calibration_repair') {
+        calTypes.add(deviceType);
       }
-      if (serviceType.includes('repair') || serviceType === 'calibration_repair' || serviceType === 'cal_repair') {
-        sections.repair = true;
+      if (serviceType.includes('repair') || serviceType === 'cal_repair' || serviceType === 'calibration_repair') {
+        hasRepair = true;
       }
     });
-    
-    return {
-      calibrationTypes: Array.from(sections.calibration),
-      hasRepair: sections.repair
-    };
-  };
-
-  const requiredSections = getRequiredSections();
-
-  useEffect(() => {
-    if (loadingContract) return; // Wait for contract check
-    
-    console.log('📊 Initializing device pricing, contractInfo:', contractInfo);
-    
-    // Generate quote reference
-    const year = today.getFullYear().toString().slice(-2);
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    setQuoteRef(`LH/${year}${month}/XXX`);
-    
-    // Initialize device pricing from request
-    if (devices.length > 0) {
-      setDevicePricing(devices.map((d, i) => {
-        const deviceType = d.device_type || 'particle_counter';
-        const serviceType = d.service_type || 'calibration';
-        const needsCal = serviceType.includes('calibration') || serviceType === 'calibration_repair' || serviceType === 'cal_repair';
-        const needsRepair = serviceType.includes('repair') || serviceType === 'calibration_repair' || serviceType === 'cal_repair';
-        
-        const calTemplate = CALIBRATION_TEMPLATES[deviceType] || CALIBRATION_TEMPLATES.particle_counter;
-        
-        // Check contract coverage - trim serial number for matching
-        const serialTrimmed = (d.serial_number || '').trim();
-        const contractDevice = contractInfo?.deviceMap?.[serialTrimmed];
-        const isContractCovered = needsCal && contractDevice && contractDevice.tokens_remaining > 0;
-        const tokensExhausted = needsCal && contractDevice && contractDevice.tokens_remaining <= 0;
-        
-        console.log(`📊 Device ${serialTrimmed}: contractDevice=`, contractDevice, 'isContractCovered=', isContractCovered);
-        
-        return {
-          id: d.id || `device-${i}`,
-          model: d.model_name || '',
-          serial: serialTrimmed,
-          deviceType: deviceType,
-          serviceType: serviceType,
-          needsCalibration: needsCal,
-          needsRepair: needsRepair,
-          customerNotes: d.notes || d.problem_description || '',
-          // Contract coverage
-          isContractCovered: isContractCovered,
-          tokensExhausted: tokensExhausted,
-          contractDeviceId: contractDevice?.contract_device_id || null,
-          contractId: contractDevice?.contract_id || null,
-          tokensRemaining: contractDevice?.tokens_remaining || 0,
-          // Pricing - 0 for contract-covered calibrations
-          calibrationPrice: isContractCovered ? 0 : (needsCal ? calTemplate.defaultPrice : 0),
-          repairPrice: needsRepair ? REPAIR_TEMPLATE.defaultPrice : 0,
-          additionalParts: [],
-          shipping: isContractCovered ? 0 : defaultShipping
-        };
-      }));
-    }
-  }, [loadingContract, contractInfo]);
-
-  // Update device pricing
-  const updateDevice = (deviceId, field, value) => {
-    setDevicePricing(prev => prev.map(d => 
-      d.id === deviceId ? { ...d, [field]: value } : d
-    ));
-  };
-
-  // Add part to device
-  const addPart = (deviceId) => {
-    setDevicePricing(prev => prev.map(d => {
-      if (d.id === deviceId) {
-        return { ...d, additionalParts: [...d.additionalParts, { id: Date.now(), description: '', price: 0 }] };
-      }
-      return d;
-    }));
-  };
-
-  // Update part
-  const updatePart = (deviceId, partId, field, value) => {
-    setDevicePricing(prev => prev.map(d => {
-      if (d.id === deviceId) {
-        return { ...d, additionalParts: d.additionalParts.map(p => p.id === partId ? { ...p, [field]: value } : p) };
-      }
-      return d;
-    }));
-  };
-
-  // Remove part
-  const removePart = (deviceId, partId) => {
-    setDevicePricing(prev => prev.map(d => {
-      if (d.id === deviceId) {
-        return { ...d, additionalParts: d.additionalParts.filter(p => p.id !== partId) };
-      }
-      return d;
-    }));
-  };
-
-  // Calculate device subtotal (services only, no shipping)
-  const getDeviceServiceTotal = (d) => {
-    let total = 0;
-    if (d.needsCalibration) total += d.calibrationPrice;
-    if (d.needsRepair) total += d.repairPrice;
-    total += d.additionalParts.reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0);
-    return total;
-  };
-
-  // Calculate totals
-  const servicesSubtotal = devicePricing.reduce((sum, d) => sum + getDeviceServiceTotal(d), 0);
-  const shippingTotal = devicePricing.reduce((sum, d) => sum + (parseFloat(d.shipping) || 0), 0);
-  const grandTotal = servicesSubtotal + shippingTotal;
-
-  // Get device type label
-  const getDeviceTypeLabel = (type) => {
-    const labels = {
-      particle_counter: 'Compteur Particules (Air)',
-      bio_collector: 'Bio Collecteur',
-      liquid_counter: 'Compteur Particules (Liquide)',
-      temp_humidity: 'Capteur Temp/Humidité',
-      other: 'Autre'
-    };
-    return labels[type] || type;
-  };
-
-  // Check if fully covered by contract (all calibrations covered, no repairs)
-  const isFullyContractCovered = devicePricing.every(d => {
-    if (d.needsCalibration && !d.isContractCovered) return false;
-    if (d.needsRepair) return false; // Repairs are not covered
-    return true;
-  }) && devicePricing.some(d => d.isContractCovered);
+    calibrationTypes = Array.from(calTypes);
+  }
   
-  // Check if any device is contract covered
-  const hasContractCoveredDevices = devicePricing.some(d => d.isContractCovered);
+  if (calibrationTypes.length === 0) calibrationTypes = ['particle_counter'];
 
-  // Send quote (or auto-approve for contract)
-  const sendQuote = async () => {
+  return {
+    devices,
+    calibrationTypes,
+    hasRepair,
+    servicesSubtotal: quoteData.servicesSubtotal || request.quote_subtotal || 0,
+    shippingTotal: quoteData.shippingTotal || request.quote_shipping || 0,
+    grandTotal: quoteData.grandTotal || request.quote_total || 0,
+    createdBy: quoteData.createdBy || 'M. Meleney'
+  };
+}
+
+async function generateQuotePDF(options) {
+  const {
+    request, devices = [], servicesSubtotal = 0, shippingTotal = 0, grandTotal = 0,
+    calibrationTypes = ['particle_counter'], hasRepair = false, isSigned = false,
+    signatureName = '', signatureDate = '', signatureImage = null, createdBy = 'M. Meleney'
+  } = options;
+
+  await new Promise((resolve, reject) => {
+    if (window.jspdf) { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  
+  const pageWidth = 210, pageHeight = 297, margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  const footerHeight = 16;
+  const signatureBlockHeight = 42;
+  
+  const green = [0, 166, 81];
+  const darkBlue = [26, 26, 46];
+  const gray = [80, 80, 80];
+  const lightGray = [130, 130, 130];
+  const white = [255, 255, 255];
+  
+  let y = margin;
+  
+  // === LOGO LOADING ===
+  const loadImageAsBase64 = async (url) => {
+    try {
+      // First try fetch approach (works better with Next.js)
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.log('Logo fetch failed:', url, response.status);
+        return null;
+      }
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      console.log('Logo loading error:', url, e);
+      // Fallback to Image approach
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+      });
+    }
+  };
+  
+  // Load logos (with fallback if not available)
+  let lighthouseLogo = null;
+  let capcertLogo = null;
+  try {
+    const results = await Promise.all([
+      loadImageAsBase64('/images/logos/lighthouse-logo.png'),
+      loadImageAsBase64('/images/logos/capcert-logo.png')
+    ]);
+    lighthouseLogo = results[0];
+    capcertLogo = results[1];
+    console.log('Logos loaded:', !!lighthouseLogo, !!capcertLogo);
+  } catch (e) {
+    console.log('Logo loading skipped:', e);
+  }
+  
+  const addFooter = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+    pdf.setTextColor(...white);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(180, 180, 180);
+    pdf.setFontSize(8);
+    pdf.text('16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07', pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+  };
+  
+  const getUsableHeight = () => pageHeight - footerHeight - margin;
+  
+  const checkPageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) {
+      addFooter();
+      pdf.addPage();
+      y = margin;
+      return true;
+    }
+    return false;
+  };
+
+  // ===== HEADER =====
+  let logoAdded = false;
+  if (lighthouseLogo) {
+    try {
+      console.log('Attempting to add lighthouse logo, data length:', lighthouseLogo.length);
+      // Detect format from base64 header
+      const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+      logoAdded = true;
+      console.log('Lighthouse logo added successfully');
+    } catch (e) {
+      console.log('Lighthouse logo addImage failed:', e);
+      logoAdded = false;
+    }
+  }
+  
+  if (!logoAdded) {
+    // Fallback to text if image fails
+    pdf.setFontSize(26);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('LIGHTHOUSE', margin, y + 8);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Worldwide Solutions', margin, y + 14);
+  }
+  
+  pdf.setFontSize(18);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...green);
+  pdf.text(isSigned ? 'DEVIS SIGNE' : 'OFFRE DE PRIX', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('N. ' + (request.request_number || 'FR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
+  
+  y += 18;
+  pdf.setDrawColor(...green);
+  pdf.setLineWidth(1);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 7;
+
+
+  // ===== INFO BAR =====
+  pdf.setFillColor(245, 245, 245);
+  pdf.rect(margin, y, contentWidth, 16, 'F');
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('DATE', margin + 5, y + 5);
+  pdf.text('VALIDITE', margin + 60, y + 5);
+  pdf.text('CONDITIONS', margin + 115, y + 5);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  const qDate = request.quoted_at ? new Date(request.quoted_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
+  pdf.text(qDate, margin + 5, y + 12);
+  pdf.text('30 jours', margin + 60, y + 12);
+  pdf.text('A reception de facture', margin + 115, y + 12);
+  y += 20;
+
+  // ===== CLIENT =====
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CLIENT', margin, y);
+  y += 5;
+  pdf.setFontSize(14);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(request.companies?.name || 'Client', margin, y);
+  y += 6;
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  if (request.companies?.billing_address) {
+    pdf.text(request.companies.billing_address, margin, y);
+    y += 5;
+  }
+  const city = [request.companies?.billing_postal_code, request.companies?.billing_city].filter(Boolean).join(' ');
+  if (city) {
+    pdf.text(city, margin, y);
+    y += 5;
+  }
+  y += 3;
+
+  // ===== SERVICE SECTIONS =====
+  const drawServiceBlock = (data, color) => {
+    const lineH = 5;
+    let lines = [];
+    data.prestations.forEach(p => {
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
+      wrapped.forEach(l => lines.push(l));
+    });
+    const blockH = 12 + (lines.length * lineH);
+    checkPageBreak(blockH);
+    
+    pdf.setDrawColor(...color);
+    pdf.setLineWidth(1);
+    pdf.line(margin, y, margin, y + blockH - 3);
+    
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(data.title, margin + 5, y + 6);
+    y += 10;
+    
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    data.prestations.forEach(p => {
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
+      wrapped.forEach((line, i) => {
+        if (i === 0) {
+          pdf.text('-', margin + 5, y);
+        }
+        pdf.text(line, margin + 9, y);
+        y += lineH;
+      });
+    });
+    y += 3;
+  };
+
+  calibrationTypes.forEach(type => {
+    const data = PDF_CALIBRATION_DATA[type] || PDF_CALIBRATION_DATA.particle_counter;
+    drawServiceBlock(data, [59, 130, 246]);
+  });
+  
+  if (hasRepair) {
+    drawServiceBlock(PDF_REPAIR_DATA, [249, 115, 22]);
+  }
+
+  // ===== CONDITIONS (moved up - right after service descriptions) =====
+  const conditionsHeight = 22;
+  checkPageBreak(conditionsHeight);
+  
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS', margin, y);
+  y += 4;
+  pdf.setFontSize(8);
+  pdf.setTextColor(...gray);
+  PDF_DISCLAIMERS.forEach(d => {
+    pdf.text('- ' + d, margin, y);
+    y += 4;
+  });
+  y += 5;
+
+  // ===== PRICING TABLE (moved down - after conditions) =====
+  const rowH = 8;
+  let tableRows = devices.length;
+  devices.forEach(d => {
+    tableRows += (d.additionalParts || []).length + 1;
+  });
+  const tableH = 12 + (tableRows * rowH) + 32;
+  checkPageBreak(tableH);
+
+  pdf.setFontSize(13);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Recapitulatif des Prix', margin, y);
+  y += 7;
+
+  // Header row
+  pdf.setFillColor(...darkBlue);
+  pdf.rect(margin, y, contentWidth, 9, 'F');
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...white);
+  pdf.text('Appareil', margin + 3, y + 6);
+  pdf.text('N. Serie', margin + 55, y + 6);
+  pdf.text('Service', margin + 100, y + 6);
+  pdf.text('Prix HT', pageWidth - margin - 3, y + 6, { align: 'right' });
+  y += 9;
+
+  devices.forEach((device, idx) => {
+    const svc = [];
+    if (device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration')) svc.push('Etalonnage');
+    if (device.needsRepair || (device.serviceType || device.service_type || '').includes('repair')) svc.push('Reparation');
+    const total = device.serviceTotal || ((device.calibrationPrice || 0) + (device.repairPrice || 0) + (device.additionalParts || []).reduce((s, p) => s + (parseFloat(p.price) || 0), 0));
+    
+    pdf.setFillColor(idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(device.model || device.model_name || '-', margin + 3, y + 5.5);
+    pdf.setFont('courier', 'normal');
+    pdf.text(device.serial || device.serial_number || '-', margin + 55, y + 5.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(svc.join(' + ') || 'Service', margin + 100, y + 5.5);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(total.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+    y += rowH;
+
+    (device.additionalParts || []).forEach(part => {
+      pdf.setFillColor(250, 250, 250);
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(...gray);
+      pdf.text('    > ' + (part.description || 'Piece/Service'), margin + 3, y + 5.5);
+      pdf.text((parseFloat(part.price) || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+      y += rowH;
+    });
+
+    pdf.setFillColor(242, 242, 242);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.setTextColor(...gray);
+    pdf.text('    > Frais de port', margin + 3, y + 5.5);
+    pdf.text((device.shipping || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+    y += rowH;
+  });
+
+  // Totals
+  pdf.setDrawColor(200, 200, 200);
+  pdf.line(margin, y, pageWidth - margin, y);
+  
+  pdf.setFillColor(255, 255, 255);
+  pdf.rect(margin, y, contentWidth, rowH, 'F');
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(9);
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Sous-total services', margin + 3, y + 5.5);
+  pdf.text(servicesSubtotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+  y += rowH;
+
+  pdf.rect(margin, y, contentWidth, rowH, 'F');
+  pdf.text('Total frais de port', margin + 3, y + 5.5);
+  pdf.text(shippingTotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+  y += rowH;
+
+  pdf.setFillColor(...green);
+  pdf.rect(margin, y, contentWidth, 11, 'F');
+  pdf.setTextColor(...white);
+  pdf.setFontSize(11);
+  pdf.text('TOTAL HT', margin + 4, y + 7.5);
+  pdf.setFontSize(16);
+  pdf.text(grandTotal.toFixed(2) + ' EUR', pageWidth - margin - 4, y + 8, { align: 'right' });
+  y += 15;
+
+  // ===== SIGNATURE - AT BOTTOM OF CURRENT PAGE =====
+  const sigY = Math.max(y + 5, pageHeight - footerHeight - signatureBlockHeight - 3);
+  
+  pdf.setDrawColor(200, 200, 200);
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, sigY, pageWidth - margin, sigY);
+  
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('ETABLI PAR', margin, sigY + 7);
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(createdBy, margin, sigY + 14);
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('Lighthouse France', margin, sigY + 20);
+
+  // Add Capcert certification logo (bottom left, next to ETABLI PAR)
+  if (capcertLogo) {
+    try {
+      console.log('Attempting to add capcert logo');
+      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
+      console.log('Capcert logo added successfully');
+    } catch (e) {
+      console.log('Capcert logo failed:', e);
+    }
+  }
+
+  const sigBoxX = pageWidth - margin - 62;
+  
+  if (isSigned && signatureName) {
+    pdf.setFillColor(245, 255, 250);
+    pdf.setDrawColor(...green);
+    pdf.setLineWidth(0.5);
+    pdf.roundedRect(sigBoxX, sigY + 3, 62, 36, 2, 2, 'FD');
+    
+    pdf.setFontSize(8);
+    pdf.setTextColor(...green);
+    pdf.text('APPROUVE PAR', sigBoxX + 4, sigY + 10);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(signatureName, sigBoxX + 4, sigY + 17);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Date: ' + signatureDate, sigBoxX + 4, sigY + 24);
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(...green);
+    pdf.text('Lu et approuve', sigBoxX + 4, sigY + 30);
+    
+    if (signatureImage) {
+      try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 40, sigY + 9, 18, 16); } catch(e) {}
+    }
+  } else {
+    pdf.setFontSize(8);
+    pdf.setTextColor(...lightGray);
+    pdf.text('Signature client', sigBoxX + 16, sigY + 7);
+    pdf.setDrawColor(180, 180, 180);
+    pdf.setLineWidth(0.3);
+    pdf.setLineDashPattern([2, 2], 0);
+    pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 22, 2, 2, 'D');
+    pdf.setLineDashPattern([], 0);
+    pdf.text('Lu et approuve', sigBoxX + 18, sigY + 37);
+  }
+
+  addFooter();
+  return pdf.output('blob');
+}
+
+// Contract Quote PDF Generator - IDENTICAL structure to RMA
+async function generateContractQuotePDF(options) {
+  const {
+    contract, devices = [], totalPrice = 0, totalTokens = 0,
+    calibrationTypes = ['particle_counter'], isSigned = false,
+    signatureName = '', signatureDate = '', signatureImage = null
+  } = options;
+
+  await new Promise((resolve, reject) => {
+    if (window.jspdf) { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  
+  const pageWidth = 210, pageHeight = 297, margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  const footerHeight = 16;
+  const signatureBlockHeight = 42;
+  
+  const green = [0, 166, 81];
+  const darkBlue = [26, 26, 46];
+  const gray = [80, 80, 80];
+  const lightGray = [130, 130, 130];
+  const white = [255, 255, 255];
+  
+  let y = margin;
+  
+  // === LOGO LOADING (identical to RMA) ===
+  const loadImageAsBase64 = async (url) => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+      });
+    }
+  };
+  
+  let lighthouseLogo = null;
+  let capcertLogo = null;
+  try {
+    const results = await Promise.all([
+      loadImageAsBase64('/images/logos/lighthouse-logo.png'),
+      loadImageAsBase64('/images/logos/capcert-logo.png')
+    ]);
+    lighthouseLogo = results[0];
+    capcertLogo = results[1];
+  } catch (e) {}
+  
+  const addFooter = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+    pdf.setTextColor(...white);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(180, 180, 180);
+    pdf.setFontSize(8);
+    pdf.text('16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07', pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+  };
+  
+  const getUsableHeight = () => pageHeight - footerHeight - margin;
+  
+  const checkPageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) {
+      addFooter();
+      pdf.addPage();
+      y = margin;
+      return true;
+    }
+    return false;
+  };
+
+  // ===== HEADER =====
+  let logoAdded = false;
+  if (lighthouseLogo) {
+    try {
+      const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+      logoAdded = true;
+    } catch (e) {
+      logoAdded = false;
+    }
+  }
+  
+  if (!logoAdded) {
+    pdf.setFontSize(26);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('LIGHTHOUSE', margin, y + 8);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Worldwide Solutions', margin, y + 14);
+  }
+  
+  pdf.setFontSize(18);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...green);
+  pdf.text('OFFRE DE PRIX', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('N° ' + (contract.contract_number || 'CTR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
+  
+  y += 18;
+  pdf.setDrawColor(...green);
+  pdf.setLineWidth(1);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 7;
+
+  // ===== INFO BAR =====
+  pdf.setFillColor(245, 245, 245);
+  pdf.rect(margin, y, contentWidth, 16, 'F');
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('DATE', margin + 5, y + 5);
+  pdf.text('PERIODE DU CONTRAT', margin + 50, y + 5);
+  pdf.text('VALIDITE DEVIS', margin + 140, y + 5);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  const qDate = contract.quote_sent_at ? new Date(contract.quote_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
+  pdf.text(qDate, margin + 5, y + 12);
+  const startDate = new Date(contract.start_date).toLocaleDateString('fr-FR');
+  const endDate = new Date(contract.end_date).toLocaleDateString('fr-FR');
+  pdf.text(startDate + ' - ' + endDate, margin + 50, y + 12);
+  pdf.text('30 jours', margin + 140, y + 12);
+  y += 20;
+
+  // ===== CLIENT =====
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CLIENT', margin, y);
+  y += 5;
+  pdf.setFontSize(14);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(contract.companies?.name || 'Client', margin, y);
+  y += 6;
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  if (contract.companies?.billing_address) {
+    pdf.text(contract.companies.billing_address, margin, y);
+    y += 5;
+  }
+  const city = [contract.companies?.billing_postal_code, contract.companies?.billing_city].filter(Boolean).join(' ');
+  if (city) {
+    pdf.text(city, margin, y);
+    y += 5;
+  }
+  y += 3;
+
+  // ===== SERVICE SECTIONS BY TYPE =====
+  const drawServiceBlock = (data, color) => {
+    const lineH = 5.5; // Slightly more spacing between lines
+    let lines = [];
+    data.prestations.forEach(p => {
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 12); // More width available
+      wrapped.forEach(l => lines.push(l));
+    });
+    const blockH = 14 + (lines.length * lineH); // More padding
+    checkPageBreak(blockH);
+    
+    pdf.setDrawColor(...color);
+    pdf.setLineWidth(1);
+    pdf.line(margin, y, margin, y + blockH - 3);
+    
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(data.title, margin + 5, y + 7);
+    y += 12;
+    
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    data.prestations.forEach(p => {
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 12);
+      wrapped.forEach((line, i) => {
+        if (i === 0) {
+          pdf.text('-', margin + 5, y);
+        }
+        pdf.text(line, margin + 9, y);
+        y += lineH;
+      });
+    });
+    y += 4;
+  };
+
+  // Group devices by type
+  const devicesByType = {};
+  devices.forEach(d => {
+    const type = d.device_type || 'particle_counter';
+    if (!devicesByType[type]) devicesByType[type] = [];
+    devicesByType[type].push(d);
+  });
+
+  // Draw service block for each type
+  Object.keys(devicesByType).forEach(type => {
+    const data = PDF_CALIBRATION_DATA[type] || PDF_CALIBRATION_DATA.particle_counter;
+    drawServiceBlock(data, [59, 130, 246]);
+  });
+
+  // ===== CONDITIONS =====
+  const conditionsHeight = 28;
+  checkPageBreak(conditionsHeight);
+  
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS DU CONTRAT', margin + 3, y);
+  y += 4;
+  pdf.setFontSize(8);
+  pdf.setTextColor(...gray);
+  const contractConditions = [
+    'Validite du contrat: ' + startDate + ' au ' + endDate,
+    totalTokens + ' etalonnage(s) inclus a utiliser pendant la periode contractuelle',
+    'Etalonnages supplementaires factures au tarif standard en vigueur',
+    'Frais de port inclus (France metropolitaine)',
+    'Paiement a 30 jours date de facture'
+  ];
+  contractConditions.forEach(d => {
+    pdf.text('- ' + d, margin + 3, y);
+    y += 4;
+  });
+  y += 5;
+
+  // ===== PRICING TABLE =====
+  const rowH = 8;
+  const tableH = 12 + (devices.length * rowH) + 20;
+  checkPageBreak(tableH);
+
+  pdf.setFontSize(13);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Recapitulatif des Prix', margin, y);
+  y += 7;
+
+  // Header row
+  pdf.setFillColor(...darkBlue);
+  pdf.rect(margin, y, contentWidth, 9, 'F');
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...white);
+  pdf.text('Appareil', margin + 3, y + 6);
+  pdf.text('N° Serie', margin + 55, y + 6);
+  pdf.text('Etal./an', margin + 120, y + 6);
+  pdf.text('Prix HT', pageWidth - margin - 3, y + 6, { align: 'right' });
+  y += 9;
+
+  // Device rows
+  devices.forEach((device, idx) => {
+    pdf.setFillColor(idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(device.model_name || '-', margin + 3, y + 5.5);
+    pdf.setFont('courier', 'normal');
+    pdf.text(device.serial_number || '-', margin + 55, y + 5.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(String(device.tokens_total || 1), margin + 125, y + 5.5);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text((device.unit_price || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+    y += rowH;
+  });
+
+  // Total row
+  pdf.setFillColor(...green);
+  pdf.rect(margin, y, contentWidth, 14, 'F'); // Increased height
+  pdf.setTextColor(...white);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('TOTAL CONTRAT ANNUEL HT', margin + 4, y + 6);
+  pdf.setFontSize(7);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(totalTokens + ' etalonnage(s) inclus pendant la periode du contrat', margin + 4, y + 11);
+  pdf.setFontSize(16);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(totalPrice.toFixed(2) + ' EUR', pageWidth - margin - 4, y + 9, { align: 'right' });
+  y += 18;
+
+  // ===== SIGNATURE - AT BOTTOM =====
+  const sigY = Math.max(y + 5, pageHeight - footerHeight - signatureBlockHeight - 3);
+  
+  pdf.setDrawColor(200, 200, 200);
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, sigY, pageWidth - margin, sigY);
+  
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('ETABLI PAR', margin, sigY + 7);
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Lighthouse France', margin, sigY + 14);
+
+  // Capcert logo
+  if (capcertLogo) {
+    try {
+      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
+    } catch (e) {}
+  }
+
+  const sigBoxX = pageWidth - margin - 62;
+  
+  if (isSigned && signatureName) {
+    pdf.setFillColor(245, 255, 250);
+    pdf.setDrawColor(...green);
+    pdf.setLineWidth(0.5);
+    pdf.roundedRect(sigBoxX, sigY + 3, 62, 36, 2, 2, 'FD');
+    
+    pdf.setFontSize(8);
+    pdf.setTextColor(...green);
+    pdf.text('APPROUVE PAR', sigBoxX + 4, sigY + 10);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(signatureName, sigBoxX + 4, sigY + 17);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Date: ' + signatureDate, sigBoxX + 4, sigY + 24);
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(...green);
+    pdf.text('Lu et approuve', sigBoxX + 4, sigY + 30);
+    
+    if (signatureImage) {
+      try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 40, sigY + 9, 18, 16); } catch(e) {}
+    }
+  } else {
+    pdf.setFontSize(8);
+    pdf.setTextColor(...lightGray);
+    pdf.text('Signature client', sigBoxX + 16, sigY + 7);
+    pdf.setDrawColor(180, 180, 180);
+    pdf.setLineWidth(0.3);
+    pdf.setLineDashPattern([2, 2], 0);
+    pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 22, 2, 2, 'D');
+    pdf.setLineDashPattern([], 0);
+    pdf.text('Lu et approuve', sigBoxX + 18, sigY + 37);
+  }
+
+  addFooter();
+  return pdf.output('blob');
+}
+
+
+// Translations
+const T = {
+  fr: {
+    dashboard: 'Tableau de Bord', newRequest: 'Nouvelle Demande', myRequests: 'Mes Demandes',
+    myEquipment: 'Mes Équipements', settings: 'Paramètres', logout: 'Déconnexion',
+    welcome: 'Bienvenue', totalDevices: 'Appareils', inProgress: 'En cours', completed: 'Terminés',
+    submitRequest: 'Soumettre une Demande', viewAll: 'Voir tout',
+    // Request form
+    deviceInfo: 'Information Appareil', deviceNumber: 'Appareil', brand: 'Marque', deviceType: 'Type d\'appareil',
+    model: 'Modèle', serialNumber: 'N° Série', serviceType: 'Type de Service', 
+    notesForTech: 'Notes pour le Technicien', accessories: 'Accessoires Inclus',
+    charger: 'Chargeur', battery: 'Batterie', powerCable: 'Câble d\'alimentation', 
+    carryingCase: 'Mallette', otherAccessories: 'Autres accessoires',
+    uploadPhotos: 'Photos (optionnel)', addDevice: 'Ajouter un Appareil', removeDevice: 'Retirer',
+    // Shipping
+    shippingInfo: 'Information d\'Expédition', attention: 'À l\'attention de', selectAddress: 'Adresse d\'expédition',
+    addNewAddress: 'Ajouter une adresse',
+    // Actions
+    submit: 'Soumettre', cancel: 'Annuler', save: 'Enregistrer', edit: 'Modifier', delete: 'Supprimer',
+    loading: 'Chargement...', saving: 'Enregistrement...', saved: 'Enregistré!',
+    // Service types
+    repair: 'Réparation', calibration: 'Étalonnage', maintenance: 'Maintenance', inspection: 'Inspection',
+    // Device types
+    particle_counter: 'Compteur de particules', air_sampler: 'Échantillonneur d\'air', 
+    flow_meter: 'Débitmètre', temp_humidity: 'Capteur Temp/Humidité', other: 'Autre',
+    // Status
+    submitted: 'Soumise', quoted: 'Devis envoyé', approved: 'Approuvée', received: 'Reçue',
+    in_progress: 'En cours', quality_check: 'Contrôle qualité', shipped: 'Expédiée',
+    // Settings
+    accountInfo: 'Information du Compte', shippingAddresses: 'Adresses d\'Expédition',
+    billingAddresses: 'Adresses de Facturation', contact: 'Contact', company: 'Société',
+    email: 'Email', phone: 'Téléphone', address: 'Adresse', city: 'Ville', postalCode: 'Code Postal',
+    country: 'Pays', setDefault: 'Définir par défaut', default: 'Par défaut',
+    // Messages
+    noEquipment: 'Aucun équipement enregistré', noRequests: 'Aucune demande',
+    addEquipmentFirst: 'Ajoutez d\'abord vos équipements', charactersRemaining: 'caractères restants'
+  },
+  en: {
+    dashboard: 'Dashboard', newRequest: 'New Request', myRequests: 'My Requests',
+    myEquipment: 'My Equipment', settings: 'Settings', logout: 'Logout',
+    welcome: 'Welcome', totalDevices: 'Devices', inProgress: 'In Progress', completed: 'Completed',
+    submitRequest: 'Submit Request', viewAll: 'View all',
+    // Request form
+    deviceInfo: 'Device Information', deviceNumber: 'Device', brand: 'Brand', deviceType: 'Device Type',
+    model: 'Model', serialNumber: 'Serial #', serviceType: 'Service Type',
+    notesForTech: 'Notes for Technician', accessories: 'Accessories Included',
+    charger: 'Charger', battery: 'Battery', powerCable: 'Power Cable',
+    carryingCase: 'Carrying Case', otherAccessories: 'Other accessories',
+    uploadPhotos: 'Photos (optional)', addDevice: 'Add Device', removeDevice: 'Remove',
+    // Shipping
+    shippingInfo: 'Shipping Information', attention: 'Attention', selectAddress: 'Shipping Address',
+    addNewAddress: 'Add new address',
+    // Actions
+    submit: 'Submit', cancel: 'Cancel', save: 'Save', edit: 'Edit', delete: 'Delete',
+    loading: 'Loading...', saving: 'Saving...', saved: 'Saved!',
+    // Service types
+    repair: 'Repair', calibration: 'Calibration', maintenance: 'Maintenance', inspection: 'Inspection',
+    // Device types
+    particle_counter: 'Particle Counter', air_sampler: 'Air Sampler',
+    flow_meter: 'Flow Meter', temp_humidity: 'Temp/Humidity Monitor', other: 'Other',
+    // Status
+    submitted: 'Submitted', quoted: 'Quoted', approved: 'Approved', received: 'Received',
+    in_progress: 'In Progress', quality_check: 'Quality Check', shipped: 'Shipped',
+    // Settings
+    accountInfo: 'Account Information', shippingAddresses: 'Shipping Addresses',
+    billingAddresses: 'Billing Addresses', contact: 'Contact', company: 'Company',
+    email: 'Email', phone: 'Phone', address: 'Address', city: 'City', postalCode: 'Postal Code',
+    country: 'Country', setDefault: 'Set as default', default: 'Default',
+    // Messages
+    noEquipment: 'No equipment registered', noRequests: 'No requests',
+    addEquipmentFirst: 'Add your equipment first', charactersRemaining: 'characters remaining'
+  }
+};
+
+// Status styles
+const STATUS_STYLES = {
+  // === BOTH FLOWS - INITIAL ===
+  submitted: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Soumis', icon: '○', progress: 5 },
+  pending: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Soumis', icon: '○', progress: 5 },
+  
+  // === BOTH FLOWS - APPROVAL/BC ===
+  waiting_approval: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'En attente d\'approbation', icon: '◐', progress: 10 },
+  approved: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '◑', progress: 20 },
+  waiting_bc: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '◑', progress: 20 },
+  waiting_po: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Approuvé - En attente BC', icon: '◑', progress: 20 },
+  // BC SUBMITTED - PENDING REVIEW
+  bc_review: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'BC soumis - En vérification', icon: '📄', progress: 25 },
+  bc_rejected: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'BC rejeté - Action requise', icon: '❌', progress: 22 },
+  // CUSTOMER ACTION REQUIRED - RED
+  waiting_customer: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'Action client requise', icon: '!', progress: 20 },
+  
+  // === BOTH FLOWS - WAITING FOR DEVICE ===
+  waiting_device: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-300', label: 'En attente réception', icon: '◔', progress: 30 },
+  
+  // === CALIBRATION FLOW ===
+  received_calibration: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu - En attente étalonnage', icon: '◕', progress: 40 },
+  calibration_in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'Étalonnage en cours', icon: '◉', progress: 60 },
+  
+  // === REPAIR FLOW ===
+  received_repair: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu - En attente inspection', icon: '◕', progress: 35 },
+  inspection_complete: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Inspection terminée - En attente approbation client', icon: '◎', progress: 40 },
+  repair_declined: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'Réparation refusée par client', icon: '✕', progress: 45 },
+  order_received: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-300', label: 'Commande reçue', icon: '✓', progress: 50 },
+  waiting_parts: { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-300', label: 'En attente de pièces', icon: '◐', progress: 55 },
+  repair_in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'Réparation en cours', icon: '◉', progress: 65 },
+  repair_complete: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-300', label: 'Réparation terminée', icon: '●', progress: 75 },
+  
+  // === LEGACY (for backwards compatibility) ===
+  received: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu', icon: '◕', progress: 40 },
+  in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'En cours', icon: '◉', progress: 60 },
+  quote_sent: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé - Action requise', icon: '💰', progress: 45 },
+  quote_revision_requested: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-300', label: 'Modification demandée', icon: '✏️', progress: 40 },
+  quoted: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé', icon: '◎', progress: 45 },
+  
+  // === BOTH FLOWS - FINAL STAGES ===
+  final_qc: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-300', label: 'Contrôle qualité final', icon: '◈', progress: 85 },
+  quality_check: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-300', label: 'Contrôle qualité final', icon: '◈', progress: 85 },
+  ready_to_ship: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-300', label: 'Prêt pour expédition', icon: '◆', progress: 95 },
+  shipped: { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300', label: 'Expédié', icon: '▸', progress: 100 },
+  delivered: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400', label: 'Livré', icon: '●', progress: 100 },
+  completed: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400', label: 'Terminé', icon: '●', progress: 100 },
+  
+  // === HOLD/ISSUES ===
+  on_hold: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'En attente', icon: '!', progress: 0 },
+  cancelled: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-400', label: 'Annulé', icon: '✕', progress: 0 }
+};
+
+// Step Progress Tracker Component (Chevron Style)
+const StepProgress = ({ status, serviceType }) => {
+  // Define steps based on service type
+  // CALIBRATION: 10 steps
+  const calibrationSteps = [
+    { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
+    { id: 'rma_created', label: 'RMA/Devis Créé', shortLabel: 'Devis' },
+    { id: 'approved', label: 'Devis Approuvé', shortLabel: 'Approuvé' },
+    { id: 'waiting', label: 'En attente réception', shortLabel: 'Attente' },
+    { id: 'received', label: 'Reçu', shortLabel: 'Reçu' },
+    { id: 'queue', label: 'File d\'attente', shortLabel: 'File' },
+    { id: 'calibration', label: 'Étalonnage', shortLabel: 'Étal.' },
+    { id: 'qc', label: 'Contrôle QC', shortLabel: 'QC' },
+    { id: 'ready', label: 'Prêt', shortLabel: 'Prêt' },
+    { id: 'shipped', label: 'Expédié', shortLabel: 'Expédié' }
+  ];
+
+  // REPAIR: 11 steps
+  const repairSteps = [
+    { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
+    { id: 'rma_created', label: 'RMA/Devis Créé', shortLabel: 'Devis' },
+    { id: 'approved', label: 'Devis Approuvé', shortLabel: 'Approuvé' },
+    { id: 'waiting', label: 'En attente réception', shortLabel: 'Attente' },
+    { id: 'received', label: 'Reçu', shortLabel: 'Reçu' },
+    { id: 'inspection', label: 'Inspection', shortLabel: 'Insp.' },
+    { id: 'approval', label: 'Approbation', shortLabel: 'Appr.' },
+    { id: 'repair', label: 'Réparation', shortLabel: 'Rép.' },
+    { id: 'qc', label: 'Contrôle QC', shortLabel: 'QC' },
+    { id: 'ready', label: 'Prêt', shortLabel: 'Prêt' },
+    { id: 'shipped', label: 'Expédié', shortLabel: 'Expédié' }
+  ];
+
+  const isRepair = serviceType === 'repair' || serviceType === 'réparation';
+  const steps = isRepair ? repairSteps : calibrationSteps;
+
+  // Map current status to step index
+  const getStepIndex = (currentStatus) => {
+    if (!currentStatus) return 0;
+    
+    console.log('🔍 StepProgress - status:', currentStatus, 'isRepair:', isRepair);
+    
+    if (isRepair) {
+      // Repair flow mapping (11 steps: 0-10)
+      const repairMap = {
+        'submitted': 0, 'pending': 0,
+        'quote_sent': 1, 'quote_revision_requested': 1,
+        'bc_pending': 2, 'bc_review': 2, 'waiting_bc': 2,
+        'waiting_device': 3,
+        'received': 4, 'received_repair': 4,
+        'inspection': 5, 'inspection_complete': 5,
+        'customer_approval': 6, 'waiting_approval': 6,
+        'repair_in_progress': 7, 'in_progress': 7, 'waiting_parts': 7,
+        'final_qc': 8, 'quality_check': 8,
+        'ready_to_ship': 9,
+        'shipped': 10, 'delivered': 10, 'completed': 10
+      };
+      const index = repairMap[currentStatus] ?? 0;
+      console.log('🔍 Repair step index:', index);
+      return index;
+    } else {
+      // Calibration flow mapping (10 steps: 0-9)
+      const calibrationMap = {
+        'submitted': 0, 'pending': 0,
+        'quote_sent': 1, 'quote_revision_requested': 1,
+        'bc_pending': 2, 'bc_review': 2, 'waiting_bc': 2,
+        'waiting_device': 3,
+        'received': 4, 'received_calibration': 4,
+        'in_queue': 5, 'queued': 5,
+        'in_progress': 6, 'calibration_in_progress': 6,
+        'final_qc': 7, 'quality_check': 7,
+        'ready_to_ship': 8,
+        'shipped': 9, 'delivered': 9, 'completed': 9
+      };
+      const index = calibrationMap[currentStatus] ?? 0;
+      console.log('🔍 Calibration step index:', index);
+      return index;
+    }
+  };
+
+  const currentIndex = getStepIndex(status);
+
+  return (
+    <div className="w-full">
+      {/* Desktop version */}
+      <div className="hidden md:flex items-center">
+        {steps.map((step, index) => {
+          const isCompleted = index < currentIndex;
+          const isCurrent = index === currentIndex;
+          const isLast = index === steps.length - 1;
+          
+          return (
+            <div key={step.id} className="flex items-center flex-1">
+              <div 
+                className={`
+                  relative flex items-center justify-center flex-1 py-2 px-1 text-xs font-medium
+                  ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#1E3A5F] text-white' : 'bg-gray-200 text-gray-500'}
+                  ${index === 0 ? 'rounded-l-md' : ''}
+                  ${isLast ? 'rounded-r-md' : ''}
+                `}
+                style={{
+                  clipPath: isLast 
+                    ? 'polygon(0 0, 100% 0, 100% 100%, 0 100%, 8px 50%)' 
+                    : index === 0 
+                      ? 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)'
+                      : 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)'
+                }}
+              >
+                <span className="truncate px-1">{step.label}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      
+      {/* Mobile version - simplified */}
+      <div className="md:hidden">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium text-[#1E3A5F]">
+            Étape {currentIndex + 1} sur {steps.length}
+          </span>
+          <span className="text-sm text-gray-500">{steps[currentIndex]?.label}</span>
+        </div>
+        <div className="flex gap-1">
+          {steps.map((step, index) => (
+            <div 
+              key={step.id}
+              className={`h-2 flex-1 rounded-full ${
+                index < currentIndex ? 'bg-[#3B7AB4]' : 
+                index === currentIndex ? 'bg-[#1E3A5F]' : 'bg-gray-200'
+              }`}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Helper to get status label
+const getStatusLabel = (status) => {
+  return STATUS_STYLES[status]?.label || status || 'Inconnu';
+};
+
+// CALIBRATION FLOW (9 steps):
+// 1. submitted - Soumis
+// 2. waiting_approval - En attente d'approbation
+// 3. approved - Approuvé - En attente BC
+// 4. waiting_device - En attente réception
+// 5. received_calibration - Reçu - En attente étalonnage
+// 6. calibration_in_progress - Étalonnage en cours
+// 7. final_qc - Contrôle qualité final
+// 8. ready_to_ship - Prêt pour expédition
+// 9. shipped - Expédié
+
+// REPAIR FLOW (14 steps):
+// 1. submitted - Soumis
+// 2. waiting_approval - En attente d'approbation
+// 3. approved - Approuvé - En attente BC
+// 4. waiting_device - En attente réception
+// 5. received_repair - Reçu - En attente inspection
+// 6. inspection_complete - Inspection terminée - En attente approbation client
+// 6a. repair_declined - Réparation refusée par client (branch)
+// 7. order_received - Commande reçue
+// 8. waiting_parts - En attente de pièces (optional)
+// 9. repair_in_progress - Réparation en cours
+// 10. repair_complete - Réparation terminée
+// 11. final_qc - Contrôle qualité final
+// 12. ready_to_ship - Prêt pour expédition
+// 13. shipped - Expédié
+
+// Model options by device type
+const MODELS_BY_TYPE = {
+  particle_counter: ['Solair 3100', 'Solair 3200', 'Solair 1100', 'ApexZ', 'ApexR', 'Handheld 3016', 'Handheld 5016'],
+  air_sampler: ['SAS Super 180', 'SAS Super 360', 'MAS-100 NT', 'MAS-100 Eco'],
+  flow_meter: ['Gilibrator-2', 'Defender 520', 'Mini-Buck'],
+  temp_humidity: ['TR-72nw', 'TR-73U', 'Onset HOBO'],
+  other: ['Other - Specify in notes']
+};
+
+// Brands
+const BRANDS = ['Lighthouse', 'TSI', 'Particle Measuring Systems', 'Beckman Coulter', 'Other'];
+
+// Service types
+const SERVICE_TYPES = ['repair', 'calibration', 'maintenance', 'inspection'];
+
+// Device types
+const DEVICE_TYPES = ['particle_counter', 'air_sampler', 'flow_meter', 'temp_humidity', 'other'];
+
+// Accessories
+const ACCESSORIES = ['charger', 'battery', 'powerCable', 'carryingCase'];
+
+export default function CustomerPortal() {
+  const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [lang, setLang] = useState('fr');
+  const [page, setPage] = useState('dashboard');
+  const [previousPage, setPreviousPage] = useState('dashboard');
+  const [toast, setToast] = useState(null);
+  
+  // Data
+  const [requests, setRequests] = useState([]);
+  const [addresses, setAddresses] = useState([]);
+  const [contracts, setContracts] = useState([]);
+  const [selectedRequest, setSelectedRequest] = useState(null);
+
+  const t = useCallback((k) => T[lang]?.[k] || k, [lang]);
+  const notify = useCallback((msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  // Load data
+  const loadData = useCallback(async (p) => {
+    if (!p?.company_id) return;
+    
+    const [reqRes, addrRes, contractsRes] = await Promise.all([
+      supabase.from('service_requests')
+        .select('*, request_devices(*)')
+        .eq('company_id', p.company_id)
+        .order('created_at', { ascending: false }),
+      supabase.from('shipping_addresses')
+        .select('*')
+        .eq('company_id', p.company_id)
+        .order('is_default', { ascending: false }),
+      supabase.from('contracts')
+        .select('*, contract_devices(*), companies(*)')
+        .eq('company_id', p.company_id)
+        .order('created_at', { ascending: false })
+    ]);
+    
+    if (reqRes.data) setRequests(reqRes.data);
+    if (addrRes.data) setAddresses(addrRes.data);
+    if (contractsRes.data) setContracts(contractsRes.data);
+  }, []);
+
+  const refresh = useCallback(() => loadData(profile), [loadData, profile]);
+
+  // Auth check
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUser(session.user);
+        const { data: p } = await supabase.from('profiles')
+          .select('*, companies(*)')
+          .eq('id', session.user.id)
+          .single();
+        if (p) {
+          // Redirect Lighthouse staff to admin portal
+          if (p.role === 'lh_admin' || p.role === 'lh_employee') {
+            window.location.href = '/admin';
+            return;
+          }
+          setProfile(p);
+          await loadData(p);
+        }
+      }
+      setLoading(false);
+    };
+    checkAuth();
+  }, [loadData]);
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    window.location.href = '/';
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-10 h-10 border-4 border-[#3B7AB4] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Login function
+  const login = async (email, password) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return error.message;
+    
+    // Check if Lighthouse staff - redirect to admin
+    const { data: p } = await supabase.from('profiles')
+      .select('*, companies(*)')
+      .eq('id', data.user.id)
+      .single();
+    
+    if (p) {
+      if (p.role === 'lh_admin' || p.role === 'lh_employee') {
+        window.location.href = '/admin';
+        return null;
+      }
+      setUser(data.user);
+      setProfile(p);
+      setPage('dashboard');
+      await loadData(p);
+    }
+    return null;
+  };
+
+  // Register function
+  const register = async (formData) => {
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: formData.email,
+      password: formData.password
+    });
+    if (authError) return authError.message;
+    
+    // Create company
+    const { data: company, error: companyError } = await supabase.from('companies').insert({
+      name: formData.companyName,
+      billing_address: formData.address,
+      billing_city: formData.city,
+      billing_postal_code: formData.postalCode,
+      phone: formData.phone,
+      email: formData.email
+    }).select().single();
+    if (companyError) return companyError.message;
+    
+    // Create profile
+    await supabase.from('profiles').insert({
+      id: authData.user.id,
+      email: formData.email,
+      full_name: formData.contactName,
+      role: 'customer',
+      company_id: company.id,
+      phone: formData.phone
+    });
+    
+    // Create default shipping address
+    await supabase.from('shipping_addresses').insert({
+      company_id: company.id,
+      label: 'Principal',
+      address_line1: formData.address,
+      city: formData.city,
+      postal_code: formData.postalCode,
+      country: 'France',
+      is_default: true
+    });
+    
+    notify(t('saved'));
+    setPage('login');
+    return null;
+  };
+
+  // Show login/register if not authenticated
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-[#F9F9F9]">
+        {/* Toast */}
+        {toast && (
+          <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white font-medium ${
+            toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'
+          }`}>
+            {toast.msg}
+          </div>
+        )}
+        
+        {page === 'login' && <LoginPage t={t} login={login} setPage={setPage} />}
+        {page === 'register' && <RegisterPage t={t} register={register} setPage={setPage} />}
+        {(page !== 'login' && page !== 'register') && <HomePage t={t} setPage={setPage} />}
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#f0f2f5]">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white font-medium ${
+          toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'
+        }`}>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Header */}
+      <header className="bg-[#1a1a2e] shadow-lg sticky top-0 z-50 border-b border-white/10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="flex justify-between items-center h-16">
+            {/* Logo */}
+            <div className="flex items-center gap-3 cursor-pointer" onClick={() => setPage('dashboard')}>
+              <img 
+                src="/images/logos/lighthouse-logo.png" 
+                alt="Lighthouse France" 
+                className="h-10 w-auto invert brightness-0 invert"
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                  e.target.nextSibling.style.display = 'flex';
+                }}
+              />
+              <div className="items-center gap-2 hidden">
+                <span className="text-white font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                <span className="text-[#00A651] font-semibold text-sm">FRANCE</span>
+              </div>
+            </div>
+
+            {/* Nav */}
+            <nav className="hidden md:flex items-center gap-6">
+              <button onClick={() => setPage('dashboard')} className={`font-medium ${page === 'dashboard' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+                {t('dashboard')}
+              </button>
+              <button onClick={() => setPage('new-request')} className={`font-medium ${page === 'new-request' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+                {t('newRequest')}
+              </button>
+              <button onClick={() => setPage('contracts')} className={`font-medium ${page === 'contracts' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+                Contrats
+              </button>
+              <button onClick={() => setPage('equipment')} className={`font-medium ${page === 'equipment' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+                {t('myEquipment')}
+              </button>
+              <button onClick={() => setPage('settings')} className={`font-medium ${page === 'settings' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+                {t('settings')}
+              </button>
+              <button onClick={logout} className="text-white/50 hover:text-white/80">
+                {t('logout')}
+              </button>
+            </nav>
+
+            {/* Lang toggle */}
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setLang('fr')} 
+                className={`px-2 py-1 rounded text-sm font-bold ${lang === 'fr' ? 'bg-[#00A651] text-white' : 'text-white/50'}`}
+              >
+                FR
+              </button>
+              <button 
+                onClick={() => setLang('en')} 
+                className={`px-2 py-1 rounded text-sm font-bold ${lang === 'en' ? 'bg-[#00A651] text-white' : 'text-white/50'}`}
+              >
+                EN
+              </button>
+            </div>
+          </div>
+
+          {/* Mobile nav */}
+          <nav className="md:hidden flex gap-2 pb-3 overflow-x-auto">
+            {['dashboard', 'new-request', 'contracts', 'equipment', 'settings'].map(p => (
+              <button
+                key={p}
+                onClick={() => setPage(p)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap ${
+                  page === p ? 'bg-[#00A651] text-white' : 'bg-white/10 text-white/70'
+                }`}
+              >
+                {p === 'new-request' ? t('newRequest') : p === 'contracts' ? 'Contrats' : t(p)}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+        {page === 'dashboard' && (
+          <Dashboard 
+            profile={profile} 
+            requests={requests}
+            contracts={contracts}
+            t={t} 
+            setPage={setPage}
+            setSelectedRequest={setSelectedRequest}
+            setPreviousPage={setPreviousPage}
+          />
+        )}
+        
+        {page === 'new-request' && (
+          <NewRequestForm 
+            profile={profile}
+            addresses={addresses}
+            t={t} 
+            notify={notify}
+            refresh={refresh}
+            setPage={setPage}
+          />
+        )}
+        
+        {page === 'settings' && (
+          <SettingsPage 
+            profile={profile}
+            addresses={addresses}
+            t={t}
+            notify={notify}
+            refresh={refresh}
+          />
+        )}
+        
+        {page === 'equipment' && (
+          <EquipmentPage 
+            profile={profile}
+            t={t}
+            notify={notify}
+            refresh={refresh}
+            setPage={setPage}
+            setSelectedRequest={setSelectedRequest}
+            requests={requests}
+            setPreviousPage={setPreviousPage}
+          />
+        )}
+        
+        {page === 'request-detail' && selectedRequest && (
+          <RequestDetail 
+            request={selectedRequest}
+            profile={profile}
+            t={t}
+            setPage={setPage}
+            notify={notify}
+            previousPage={previousPage}
+          />
+        )}
+        
+        {page === 'device-history' && (
+          <DeviceHistoryPage 
+            profile={profile}
+            requests={requests}
+            t={t}
+            setPage={setPage}
+          />
+        )}
+        
+        {page === 'contracts' && (
+          <ContractsPage 
+            profile={profile}
+            t={t}
+            notify={notify}
+            setPage={setPage}
+          />
+        )}
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-[#1E3A5F] text-white py-8 mt-auto">
+        <div className="max-w-7xl mx-auto px-6 text-center">
+          <div className="font-bold text-xl mb-2">LIGHTHOUSE FRANCE</div>
+          <p className="text-white/60 text-sm">
+            16 Rue Paul Sejourne, 94000 Creteil - France@golighthouse.com
+          </p>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+// ============================================
+// DASHBOARD COMPONENT (Enhanced)
+// ============================================
+function Dashboard({ profile, requests, contracts, t, setPage, setSelectedRequest, setPreviousPage }) {
+  const [messages, setMessages] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'service', 'parts', 'messages'
+
+  // Load messages
+  useEffect(() => {
+    const loadMessages = async () => {
+      if (!profile?.company_id) return;
+      
+      const requestIds = requests.map(r => r.id);
+      if (requestIds.length === 0) return;
+      
+      const { data } = await supabase
+        .from('messages')
+        .select('*')
+        .in('request_id', requestIds)
+        .order('created_at', { ascending: false });
+      
+      if (data) {
+        setMessages(data);
+        setUnreadCount(data.filter(m => !m.is_read && m.sender_id !== profile.id).length);
+      }
+    };
+    loadMessages();
+  }, [profile, requests]);
+
+  // Separate service requests from parts orders
+  const serviceRequests = requests.filter(r => r.request_type !== 'parts' && r.requested_service !== 'parts_order');
+  const partsOrders = requests.filter(r => r.request_type === 'parts' || r.requested_service === 'parts_order');
+
+  // Get all devices from service requests
+  const allDevices = serviceRequests.flatMap(req => 
+    (req.request_devices || []).map(dev => ({
+      ...dev,
+      request_number: req.request_number,
+      request_id: req.id,
+      request_status: req.status,
+      request_date: req.created_at
+    }))
+  );
+
+  // Stats
+  const stats = [
+    { 
+      label: 'Demandes Service', 
+      value: serviceRequests.filter(r => !['shipped', 'completed', 'delivered'].includes(r.status)).length,
+      total: serviceRequests.length,
+      color: 'bg-[#3B7AB4]',
+      icon: '🔧',
+      tab: 'service'
+    },
+    { 
+      label: 'Commandes Pièces', 
+      value: partsOrders.filter(r => !['shipped', 'completed', 'delivered'].includes(r.status)).length,
+      total: partsOrders.length,
+      color: 'bg-amber-500',
+      icon: '📦',
+      tab: 'parts'
+    },
+    { 
+      label: 'Messages', 
+      value: unreadCount,
+      color: unreadCount > 0 ? 'bg-red-500' : 'bg-gray-400',
+      icon: '💬',
+      highlight: unreadCount > 0,
+      tab: 'messages'
+    }
+  ];
+
+  const viewRequest = (req) => {
+    if (setPreviousPage) setPreviousPage('dashboard');
+    setSelectedRequest(req);
+    setPage('request-detail');
+    // Scroll to top when opening detail page
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const viewDeviceHistory = (serialNumber) => {
+    setPage('device-history');
+    sessionStorage.setItem('viewDeviceSerial', serialNumber);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Filter by status
+  const pendingService = serviceRequests.filter(r => ['submitted', 'waiting_approval'].includes(r.status));
+  const inProgressService = serviceRequests.filter(r => !['submitted', 'waiting_approval', 'shipped', 'completed', 'delivered', 'repair_declined', 'cancelled'].includes(r.status));
+  const completedService = serviceRequests.filter(r => ['shipped', 'completed', 'delivered'].includes(r.status));
+
+  const pendingParts = partsOrders.filter(r => ['submitted', 'waiting_approval'].includes(r.status));
+  const inProgressParts = partsOrders.filter(r => !['submitted', 'waiting_approval', 'shipped', 'completed', 'delivered', 'cancelled'].includes(r.status));
+  const completedParts = partsOrders.filter(r => ['shipped', 'completed', 'delivered'].includes(r.status));
+
+  return (
+    <div>
+      {/* Welcome Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-[#1E3A5F]">Bonjour, {profile?.full_name?.split(' ')[0] || 'Client'}</h1>
+          <p className="text-gray-600">Bienvenue sur votre espace client Lighthouse France</p>
+        </div>
+        <button 
+          onClick={() => setPage('new-request')}
+          className="px-6 py-3 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F] transition-colors"
+        >
+          + Nouvelle Demande
+        </button>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        {stats.map((stat, i) => (
+          <div 
+            key={i} 
+            className={`bg-white rounded-lg p-4 shadow-sm border ${stat.highlight ? 'border-red-300 ring-2 ring-red-100' : 'border-gray-100'} cursor-pointer hover:shadow-md transition-shadow`}
+            onClick={() => stat.tab && setActiveTab(stat.tab)}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">{stat.icon}</span>
+              <div>
+                <div className="text-2xl font-bold text-gray-900">
+                  {stat.value}
+                  {stat.total !== undefined && <span className="text-sm text-gray-400 font-normal">/{stat.total}</span>}
+                </div>
+                <div className="text-sm text-gray-500">{stat.label}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-lg w-fit overflow-x-auto">
+        {[
+          { id: 'overview', label: 'Aperçu', icon: '📋' },
+          { id: 'service', label: 'Demandes Service', icon: '🔧', badge: pendingService.length },
+          { id: 'parts', label: 'Commandes Pièces', icon: '📦', badge: pendingParts.length },
+          { id: 'messages', label: 'Messages', icon: '💬', badge: unreadCount }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 rounded-md font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
+              activeTab === tab.id 
+                ? 'bg-white text-[#3B7AB4] shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <span>{tab.icon}</span>
+            {tab.label}
+            {tab.badge > 0 && (
+              <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">{tab.badge}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Overview Tab */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          {/* ACTION REQUIRED - Combined RMA and Contracts */}
+          {(serviceRequests.filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at).length > 0 || 
+            (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0)) && (
+            <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4">
+              <h3 className="font-bold text-red-800 mb-2 flex items-center gap-2">
+                <span className="animate-pulse">⚠</span> Action requise
+              </h3>
+              <p className="text-sm text-red-600 mb-3">Les demandes suivantes nécessitent votre attention</p>
+              <div className="space-y-2">
+                {/* RMA Requests */}
+                {serviceRequests
+                  .filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at)
+                  .map(req => (
+                  <div 
+                    key={req.id}
+                    onClick={() => viewRequest(req)}
+                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-100 border border-red-200"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono font-bold text-red-700">{req.request_number || 'En attente'}</span>
+                      <span className="text-sm text-red-600">
+                        {req.status === 'approved' || req.status === 'waiting_bc' || req.status === 'waiting_po' 
+                          ? 'Soumettre bon de commande' 
+                          : req.status === 'inspection_complete' || req.status === 'quote_sent'
+                          ? 'Approuver le devis'
+                          : 'Action requise'}
+                      </span>
+                    </div>
+                    <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
+                      Agir →
+                    </span>
+                  </div>
+                ))}
+                {/* Contract Quotes */}
+                {contracts && contracts
+                  .filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected')
+                  .map(contract => (
+                  <div 
+                    key={contract.id}
+                    onClick={() => setPage('contracts')}
+                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-100 border border-red-200"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-blue-500">📋</span>
+                      <span className="font-mono font-bold text-red-700">{contract.contract_number || 'Nouveau Contrat'}</span>
+                      <span className="text-sm text-red-600">
+                        {contract.status === 'quote_sent' ? 'Approuver le devis contrat' : 'Resoumettre BC contrat'}
+                      </span>
+                    </div>
+                    <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
+                      Agir →
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pending Service Requests */}
+          {pendingService.length > 0 && (
+            <div className="bg-amber-50 border-l-4 border-amber-400 rounded-lg p-4">
+              <h3 className="font-bold text-amber-800 mb-2">⏳ En attente de création RMA</h3>
+              <p className="text-xs text-amber-600 mb-3">Ces demandes sont en cours de traitement par notre équipe</p>
+              <div className="space-y-2">
+                {pendingService.map(req => (
+                  <div 
+                    key={req.id}
+                    onClick={() => viewRequest(req)}
+                    className="flex justify-between items-center p-2 bg-white rounded cursor-pointer hover:bg-amber-100"
+                  >
+                    <div>
+                      <span className="font-medium text-amber-700">En attente</span>
+                      <span className="ml-2 text-sm text-gray-500">
+                        {req.request_devices?.length || 0} appareil(s)
+                      </span>
+                    </div>
+                    <span className="text-sm text-gray-500">
+                      {new Date(req.created_at).toLocaleDateString('fr-FR')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pending Parts Orders */}
+          {pendingParts.length > 0 && (
+            <div className="bg-orange-50 border-l-4 border-orange-400 rounded-lg p-4">
+              <h3 className="font-bold text-orange-800 mb-2">📦 Commandes pièces en attente</h3>
+              <div className="space-y-2">
+                {pendingParts.map(req => (
+                  <div 
+                    key={req.id}
+                    onClick={() => viewRequest(req)}
+                    className="flex justify-between items-center p-2 bg-white rounded cursor-pointer hover:bg-orange-100"
+                  >
+                    <span className="font-mono font-medium">{req.request_number}</span>
+                    <span className="text-sm text-gray-500">
+                      {new Date(req.created_at).toLocaleDateString('fr-FR')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* In Progress Service */}
+          {inProgressService.length > 0 && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                <h2 className="font-bold text-[#1E3A5F] text-lg">🔧 Service en cours</h2>
+                <span className="text-sm text-gray-500">{inProgressService.length} demande(s)</span>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {inProgressService.slice(0, 5).map(req => {
+                  const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
+                  const needsAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(req.status);
+                  return (
+                    <div 
+                      key={req.id}
+                      onClick={() => viewRequest(req)}
+                      className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${needsAction ? 'bg-red-50/50' : ''}`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono font-bold text-[#3B7AB4]">{req.request_number || 'En attente'}</span>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                            {style.label}
+                          </span>
+                          {needsAction && (
+                            <span className="px-2 py-1 rounded-full text-xs font-bold bg-red-500 text-white animate-pulse">
+                              ⚠ Action requise
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-sm text-gray-500">
+                          {req.request_devices?.length || 0} appareil(s)
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {(req.request_devices || []).slice(0, 3).map((dev, i) => (
+                          <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
+                            {dev.model_name} - {dev.serial_number}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {inProgressService.length > 5 && (
+                <div className="px-6 py-3 bg-gray-50 text-center">
+                  <button onClick={() => setActiveTab('service')} className="text-[#3B7AB4] text-sm font-medium">
+                    Voir toutes les demandes service →
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* In Progress Parts */}
+          {inProgressParts.length > 0 && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                <h2 className="font-bold text-[#1E3A5F] text-lg">📦 Commandes pièces en cours</h2>
+                <span className="text-sm text-gray-500">{inProgressParts.length} commande(s)</span>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {inProgressParts.slice(0, 3).map(req => {
+                  const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
+                  return (
+                    <div 
+                      key={req.id}
+                      onClick={() => viewRequest(req)}
+                      className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                    >
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono font-bold text-amber-600">{req.request_number}</span>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                            {style.label}
+                          </span>
+                        </div>
+                        <span className="text-sm text-gray-500">
+                          {new Date(req.created_at).toLocaleDateString('fr-FR')}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Recent Completed */}
+          {(completedService.length > 0 || completedParts.length > 0) && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h2 className="font-bold text-[#1E3A5F] text-lg">✅ Récemment terminés</h2>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {[...completedService, ...completedParts]
+                  .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                  .slice(0, 5)
+                  .map(req => (
+                  <div 
+                    key={req.id}
+                    onClick={() => viewRequest(req)}
+                    className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-medium text-gray-700">{req.request_number}</span>
+                        <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">
+                          {req.request_type === 'parts' || req.requested_service === 'parts_order' ? 'Pièces' : 'Service'}
+                        </span>
+                      </div>
+                      <span className="text-green-600 text-sm font-medium">Terminé</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {requests.length === 0 && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-12 text-center">
+              <p className="text-4xl mb-3">📋</p>
+              <p className="text-gray-500 mb-4">Aucune demande pour le moment</p>
+              <button 
+                onClick={() => setPage('new-request')}
+                className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
+              >
+                Soumettre votre première demande
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Service Requests Tab */}
+      {activeTab === 'service' && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="font-bold text-[#1E3A5F] text-lg">Demandes de Service (Étalonnage / Réparation)</h2>
+            <p className="text-sm text-gray-500">{serviceRequests.length} demande(s) au total</p>
+          </div>
+          
+          {serviceRequests.length === 0 ? (
+            <div className="p-12 text-center">
+              <p className="text-4xl mb-3">🔧</p>
+              <p className="text-gray-500 mb-4">Aucune demande de service</p>
+              <button 
+                onClick={() => setPage('new-request')}
+                className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
+              >
+                Soumettre une demande
+              </button>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {serviceRequests.map(req => {
+                const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
+                return (
+                  <div 
+                    key={req.id}
+                    onClick={() => viewRequest(req)}
+                    className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono font-bold text-[#3B7AB4]">{req.request_number}</span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                          {style.label}
+                        </span>
+                      </div>
+                      <span className="text-sm text-gray-500">
+                        {new Date(req.created_at).toLocaleDateString('fr-FR')}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(req.request_devices || []).map((dev, i) => (
+                        <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
+                          {dev.model_name} - {dev.serial_number}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Parts Orders Tab */}
+      {activeTab === 'parts' && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="font-bold text-[#1E3A5F] text-lg">Commandes de Pièces</h2>
+            <p className="text-sm text-gray-500">{partsOrders.length} commande(s) au total</p>
+          </div>
+          
+          {partsOrders.length === 0 ? (
+            <div className="p-12 text-center">
+              <p className="text-4xl mb-3">📦</p>
+              <p className="text-gray-500 mb-4">Aucune commande de pièces</p>
+              <button 
+                onClick={() => setPage('new-request')}
+                className="px-6 py-2 bg-amber-500 text-white rounded-lg font-medium"
+              >
+                Commander des pièces
+              </button>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {partsOrders.map(req => {
+                const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
+                return (
+                  <div 
+                    key={req.id}
+                    onClick={() => viewRequest(req)}
+                    className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono font-bold text-amber-600">{req.request_number}</span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                          {style.label}
+                        </span>
+                      </div>
+                      <span className="text-sm text-gray-500">
+                        {new Date(req.created_at).toLocaleDateString('fr-FR')}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 line-clamp-2">{req.problem_description}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Devices Tab - Keep existing */}
+      {activeTab === 'devices' && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="font-bold text-[#1E3A5F] text-lg">Suivi de vos appareils</h2>
+            <p className="text-sm text-gray-500">Tous les appareils que vous avez envoyés en service</p>
+          </div>
+          
+          {allDevices.length === 0 ? (
+            <div className="p-12 text-center">
+              <p className="text-4xl mb-3">🔧</p>
+              <p className="text-gray-500">Aucun appareil en cours de traitement</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 text-left text-sm text-gray-600">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Appareil</th>
+                    <th className="px-4 py-3 font-medium">N° Série</th>
+                    <th className="px-4 py-3 font-medium">Demande</th>
+                    <th className="px-4 py-3 font-medium">Statut</th>
+                    <th className="px-4 py-3 font-medium">Date</th>
+                    <th className="px-4 py-3 font-medium"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {allDevices.map((dev, i) => {
+                    const status = dev.status || dev.request_status || 'pending';
+                    const style = STATUS_STYLES[status] || STATUS_STYLES.submitted;
+                    return (
+                      <tr key={i} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium text-[#1E3A5F]">{dev.model_name || 'N/A'}</td>
+                        <td className="px-4 py-3 font-mono text-sm">{dev.serial_number}</td>
+                        <td className="px-4 py-3">
+                          <span className="text-[#3B7AB4] font-mono text-sm">{dev.request_number}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                            {style.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {new Date(dev.request_date).toLocaleDateString('fr-FR')}
+                        </td>
+                        <td className="px-4 py-3">
+                          <button 
+                            onClick={() => viewDeviceHistory(dev.serial_number)}
+                            className="text-[#3B7AB4] text-sm hover:underline"
+                          >
+                            Historique →
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Messages Tab */}
+      {activeTab === 'messages' && (
+        <MessagesPanel 
+          messages={messages} 
+          requests={requests} 
+          profile={profile} 
+          setMessages={setMessages}
+          setUnreadCount={setUnreadCount}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// MESSAGES PANEL COMPONENT
+// ============================================
+function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCount }) {
+  const [selectedThread, setSelectedThread] = useState(null);
+  const [newMessage, setNewMessage] = useState('');
+  const [sending, setSending] = useState(false);
+
+  // Group messages by request
+  const messagesByRequest = requests.map(req => {
+    const reqMessages = messages.filter(m => m.request_id === req.id);
+    const unread = reqMessages.filter(m => !m.is_read && m.sender_id !== profile.id).length;
+    const lastMessage = reqMessages[0];
+    return {
+      request: req,
+      messages: reqMessages,
+      unreadCount: unread,
+      lastMessage
+    };
+  }).filter(t => t.messages.length > 0 || t.request.status !== 'completed')
+    .sort((a, b) => {
+      // Sort by unread first, then by last message date
+      if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
+      if (a.unreadCount === 0 && b.unreadCount > 0) return 1;
+      const dateA = a.lastMessage?.created_at || a.request.created_at;
+      const dateB = b.lastMessage?.created_at || b.request.created_at;
+      return new Date(dateB) - new Date(dateA);
+    });
+
+  const markAsRead = async (requestId) => {
+    const unreadMessages = messages.filter(m => 
+      m.request_id === requestId && !m.is_read && m.sender_id !== profile.id
+    );
+    
+    if (unreadMessages.length === 0) return;
+    
+    for (const msg of unreadMessages) {
+      await supabase
+        .from('messages')
+        .update({ is_read: true, read_at: new Date().toISOString() })
+        .eq('id', msg.id);
+    }
+    
+    // Update local state
+    setMessages(messages.map(m => 
+      unreadMessages.find(um => um.id === m.id) 
+        ? { ...m, is_read: true } 
+        : m
+    ));
+    setUnreadCount(prev => Math.max(0, prev - unreadMessages.length));
+  };
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !selectedThread) return;
+    
+    setSending(true);
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        request_id: selectedThread.request.id,
+        sender_id: profile.id,
+        sender_type: 'customer',
+        content: newMessage.trim()
+      })
+      .select()
+      .single();
+    
+    if (!error && data) {
+      setMessages([data, ...messages]);
+      setNewMessage('');
+    }
+    setSending(false);
+  };
+
+  const openThread = (thread) => {
+    setSelectedThread(thread);
+    markAsRead(thread.request.id);
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+      <div className="grid md:grid-cols-3 h-[600px]">
+        {/* Thread List */}
+        <div className="border-r border-gray-100 overflow-y-auto">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+            <h3 className="font-bold text-[#1E3A5F]">Conversations</h3>
+          </div>
+          
+          {messagesByRequest.length === 0 ? (
+            <div className="p-6 text-center text-gray-500">
+              <p className="text-3xl mb-2">💬</p>
+              <p className="text-sm">Aucune conversation</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {messagesByRequest.map(thread => (
+                <div
+                  key={thread.request.id}
+                  onClick={() => openThread(thread)}
+                  className={`p-4 cursor-pointer transition-colors ${
+                    selectedThread?.request.id === thread.request.id 
+                      ? 'bg-[#E8F2F8]' 
+                      : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex justify-between items-start mb-1">
+                    <span className="font-mono font-medium text-[#3B7AB4] text-sm">
+                      {thread.request.request_number}
+                    </span>
+                    {thread.unreadCount > 0 && (
+                      <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">
+                        {thread.unreadCount}
+                      </span>
+                    )}
+                  </div>
+                  {thread.lastMessage && (
+                    <p className="text-sm text-gray-600 truncate">
+                      {thread.lastMessage.content}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-1">
+                    {thread.lastMessage 
+                      ? new Date(thread.lastMessage.created_at).toLocaleDateString('fr-FR')
+                      : 'Pas de messages'
+                    }
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Message Thread */}
+        <div className="md:col-span-2 flex flex-col">
+          {selectedThread ? (
+            <>
+              {/* Thread Header */}
+              <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                <h3 className="font-bold text-[#1E3A5F]">
+                  Demande {selectedThread.request.request_number}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {selectedThread.request.request_devices?.length || 0} appareil(s) • 
+                  {new Date(selectedThread.request.created_at).toLocaleDateString('fr-FR')}
+                </p>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {selectedThread.messages.length === 0 ? (
+                  <div className="text-center text-gray-400 py-8">
+                    <p>Aucun message pour cette demande</p>
+                    <p className="text-sm">Envoyez un message pour démarrer la conversation</p>
+                  </div>
+                ) : (
+                  [...selectedThread.messages].reverse().map(msg => (
+                    <div 
+                      key={msg.id}
+                      className={`flex ${msg.sender_id === profile.id ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`max-w-[70%] rounded-lg p-3 ${
+                        msg.sender_id === profile.id 
+                          ? 'bg-[#3B7AB4] text-white' 
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        <p className="text-sm">{msg.content}</p>
+                        <p className={`text-xs mt-1 ${
+                          msg.sender_id === profile.id ? 'text-white/70' : 'text-gray-400'
+                        }`}>
+                          {new Date(msg.created_at).toLocaleString('fr-FR', {
+                            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Message Input */}
+              <form onSubmit={sendMessage} className="p-4 border-t border-gray-100">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={e => setNewMessage(e.target.value)}
+                    placeholder="Écrivez votre message..."
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B7AB4]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!newMessage.trim() || sending}
+                    className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                  >
+                    {sending ? '...' : 'Envoyer'}
+                  </button>
+                </div>
+              </form>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-gray-400">
+              <div className="text-center">
+                <p className="text-4xl mb-2">💬</p>
+                <p>Sélectionnez une conversation</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// NEW REQUEST FORM - Type Selection First
+// ============================================
+function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
+  const [requestType, setRequestType] = useState(null); // 'service', 'parts', or 'contract'
+  
+  // If no type selected, show selection screen
+  if (!requestType) {
+    return (
+      <div>
+        <h1 className="text-2xl font-bold text-[#1E3A5F] mb-6">Nouvelle Demande</h1>
+        
+        <p className="text-gray-600 mb-8">Quel type de demande souhaitez-vous soumettre?</p>
+        
+        <div className="grid md:grid-cols-3 gap-6">
+          {/* Service Request */}
+          <button
+            onClick={() => setRequestType('service')}
+            className="bg-white rounded-xl p-8 shadow-sm border-2 border-gray-200 hover:border-[#3B7AB4] transition-colors text-left group"
+          >
+            <div className="text-4xl mb-4">🔧</div>
+            <h2 className="text-xl font-bold text-[#1E3A5F] mb-2 group-hover:text-[#3B7AB4]">
+              Étalonnage / Réparation
+            </h2>
+            <p className="text-gray-600 text-sm">
+              Demande de calibration, réparation ou maintenance pour vos appareils de mesure
+            </p>
+          </button>
+          
+          {/* Parts Order */}
+          <button
+            onClick={() => setRequestType('parts')}
+            className="bg-white rounded-xl p-8 shadow-sm border-2 border-gray-200 hover:border-[#3B7AB4] transition-colors text-left group"
+          >
+            <div className="text-4xl mb-4">📦</div>
+            <h2 className="text-xl font-bold text-[#1E3A5F] mb-2 group-hover:text-[#3B7AB4]">
+              Commande de Pièces
+            </h2>
+            <p className="text-gray-600 text-sm">
+              Commander des pièces de rechange ou consommables pour vos équipements
+            </p>
+          </button>
+          
+          {/* Contract Request */}
+          <button
+            onClick={() => setRequestType('contract')}
+            className="bg-white rounded-xl p-8 shadow-sm border-2 border-gray-200 hover:border-[#00A651] transition-colors text-left group"
+          >
+            <div className="text-4xl mb-4">📋</div>
+            <h2 className="text-xl font-bold text-[#1E3A5F] mb-2 group-hover:text-[#00A651]">
+              Contrat d'Étalonnage
+            </h2>
+            <p className="text-gray-600 text-sm">
+              Demander un devis pour un contrat annuel d'étalonnage de votre parc d'appareils
+            </p>
+          </button>
+        </div>
+        
+        <button
+          onClick={() => setPage('dashboard')}
+          className="mt-8 text-gray-500 hover:text-gray-700"
+        >
+          ← Retour au tableau de bord
+        </button>
+      </div>
+    );
+  }
+  
+  // Show appropriate form based on type
+  if (requestType === 'parts') {
+    return (
+      <PartsOrderForm 
+        profile={profile}
+        addresses={addresses}
+        t={t}
+        notify={notify}
+        refresh={refresh}
+        setPage={setPage}
+        goBack={() => setRequestType(null)}
+      />
+    );
+  }
+  
+  if (requestType === 'contract') {
+    return (
+      <ContractRequestForm 
+        profile={profile}
+        addresses={addresses}
+        t={t}
+        notify={notify}
+        refresh={refresh}
+        setPage={setPage}
+        goBack={() => setRequestType(null)}
+      />
+    );
+  }
+  
+  return (
+    <ServiceRequestForm
+      profile={profile}
+      addresses={addresses}
+      t={t}
+      notify={notify}
+      refresh={refresh}
+      setPage={setPage}
+      goBack={() => setRequestType(null)}
+    />
+  );
+}
+
+// ============================================
+// SERVICE REQUEST FORM (Cal/Rep)
+// ============================================
+function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, goBack }) {
+  const [devices, setDevices] = useState([createNewDevice(1)]);
+  const [savedEquipment, setSavedEquipment] = useState([]);
+  const [shipping, setShipping] = useState({ 
+    address_id: addresses.find(a => a.is_default)?.id || '',
+    showNewForm: false,
+    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' },
+    parcels: 1 // Number of parcels/boxes for the shipment
+  });
+  const [saving, setSaving] = useState(false);
+
+  // Load saved equipment on mount
+  useEffect(() => {
+    const loadEquipment = async () => {
+      if (!profile?.company_id) return;
+      const { data } = await supabase
+        .from('equipment')
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      if (data) setSavedEquipment(data);
+    };
+    loadEquipment();
+  }, [profile?.company_id]);
+
+  function createNewDevice(num) {
+    return {
+      id: `device_${Date.now()}_${num}`,
+      num,
+      device_type: '', // particle_counter, bio_collector, liquid_counter, temp_humidity, other
+      brand: 'Lighthouse',
+      brand_other: '',
+      nickname: '',
+      model: '',
+      serial_number: '',
+      service_type: '',
+      service_other: '',
+      notes: '',
+      accessories: [],
+      other_accessories: '',
+      saveDevice: false, // Option to save this device
+      fromSaved: null, // ID if loaded from saved
+      shipping_address_id: null // Per-device return address (null = use default)
+    };
+  }
+
+  // Load from saved equipment
+  const loadFromSaved = (deviceId, equipmentId) => {
+    const equip = savedEquipment.find(e => e.id === equipmentId);
+    if (!equip) return;
+    
+    setDevices(devices.map(d => {
+      if (d.id !== deviceId) return d;
+      return {
+        ...d,
+        brand: equip.brand || 'Lighthouse',
+        brand_other: equip.brand_other || '',
+        nickname: equip.nickname || '',
+        model: equip.model_name || '',
+        serial_number: equip.serial_number || '',
+        fromSaved: equipmentId,
+        saveDevice: false // Already saved
+      };
+    }));
+  };
+
+  const addDevice = () => {
+    setDevices([...devices, createNewDevice(devices.length + 1)]);
+  };
+
+  const removeDevice = (id) => {
+    if (devices.length === 1) return;
+    setDevices(devices.filter(d => d.id !== id).map((d, i) => ({ ...d, num: i + 1 })));
+  };
+
+  const updateDevice = (id, field, value) => {
+    setDevices(devices.map(d => d.id === id ? { ...d, [field]: value } : d));
+  };
+
+  const updateDeviceMultiple = (id, updates) => {
+    setDevices(devices.map(d => d.id === id ? { ...d, ...updates } : d));
+  };
+
+  const toggleAccessory = (deviceId, accessory) => {
+    setDevices(devices.map(d => {
+      if (d.id !== deviceId) return d;
+      const acc = d.accessories.includes(accessory)
+        ? d.accessories.filter(a => a !== accessory)
+        : [...d.accessories, accessory];
+      return { ...d, accessories: acc };
+    }));
+  };
+
+  // Save new address
+  const saveNewAddress = async () => {
+    const addr = shipping.newAddress;
+    if (!addr.company_name || !addr.address_line1 || !addr.attention || !addr.city || !addr.postal_code) {
+      notify('Veuillez remplir tous les champs obligatoires de l\'adresse', 'error');
+      return null;
+    }
+    
+    const { data, error } = await supabase.from('shipping_addresses').insert({
+      company_id: profile.company_id,
+      label: addr.label || addr.company_name,
+      company_name: addr.company_name,
+      attention: addr.attention,
+      address_line1: addr.address_line1,
+      city: addr.city,
+      postal_code: addr.postal_code,
+      country: 'France',
+      is_default: false
+    }).select().single();
+    
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+      return null;
+    }
+    
+    notify('Adresse enregistrée!');
+    refresh();
+    return data.id;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Validate devices
+    for (const d of devices) {
+      if (!d.device_type || !d.model || !d.serial_number || !d.service_type) {
+        notify('Veuillez remplir tous les champs obligatoires pour chaque appareil (type, modèle, n° série, service)', 'error');
+        return;
+      }
+      // Notes required only for repair, calibration_repair, or other services
+      const needsNotes = d.service_type === 'repair' || d.service_type === 'calibration_repair' || d.service_type === 'other';
+      if (needsNotes && !d.notes) {
+        notify('Veuillez décrire le problème ou la demande dans les notes pour les réparations', 'error');
+        return;
+      }
+      if (d.brand === 'other' && !d.brand_other) {
+        notify('Veuillez préciser la marque', 'error');
+        return;
+      }
+      if (d.service_type === 'other' && !d.service_other) {
+        notify('Veuillez préciser le type de service', 'error');
+        return;
+      }
+    }
+
+    // Handle address
+    let addressId = shipping.address_id;
+    if (shipping.showNewForm) {
+      addressId = await saveNewAddress();
+      if (!addressId) return;
+    }
+    
+    if (!addressId) {
+      notify('Veuillez sélectionner ou ajouter une adresse', 'error');
+      return;
+    }
+
     setSaving(true);
     
-    let rmaNumber = request.request_number;
-    if (!rmaNumber) {
-      const { data } = await supabase.from('service_requests').select('request_number').like('request_number', 'FR-%').order('request_number', { ascending: false }).limit(1);
-      const lastNum = data?.[0]?.request_number ? parseInt(data[0].request_number.replace('FR-', '')) : 0;
-      rmaNumber = 'FR-' + String(lastNum + 1).padStart(5, '0');
-    }
-
-    // Save complete quote data
-    const quoteData = {
-      devices: devicePricing.map(d => ({
-        model: d.model,
-        serial: d.serial,
-        deviceType: d.deviceType,
-        serviceType: d.serviceType,
-        needsCalibration: d.needsCalibration,
-        needsRepair: d.needsRepair,
-        calibrationPrice: d.calibrationPrice,
-        repairPrice: d.repairPrice,
-        additionalParts: d.additionalParts,
-        shipping: d.shipping,
-        serviceTotal: getDeviceServiceTotal(d),
-        // Contract info
-        isContractCovered: d.isContractCovered,
-        contractDeviceId: d.contractDeviceId
-      })),
-      requiredSections,
-      servicesSubtotal,
-      shippingTotal,
-      grandTotal,
-      isMetro,
-      isContractRMA: hasContractCoveredDevices,
-      createdBy: signatory,
-      createdAt: new Date().toISOString()
-    };
-
     try {
-      // Determine status and whether to auto-approve
-      let newStatus = 'quote_sent';
-      let bcUrl = null;
-      
-      // If fully contract covered (calibration only, all covered), auto-approve
-      if (isFullyContractCovered) {
-        newStatus = 'waiting_device'; // Skip quote approval, go straight to waiting
-        bcUrl = contractInfo?.primaryContract?.bc_url; // Copy BC from contract
-      }
+      // No number assigned yet - will get FR-XXXXX after approval
+      // Contract detection happens on admin side when creating quote
+      const { data: request, error: reqErr } = await supabase
+        .from('service_requests')
+        .insert({
+          request_number: null, // No number until approved
+          company_id: profile.company_id,
+          submitted_by: profile.id,
+          request_type: 'service',
+          serial_number: devices[0].serial_number,
+          equipment_type: 'particle_counter',
+          requested_service: devices[0].service_type === 'other' ? devices[0].service_other : devices[0].service_type,
+          problem_description: devices.map(d => `[${d.brand === 'other' ? d.brand_other : 'Lighthouse'}] ${d.model} - ${d.serial_number}\nService: ${d.service_type === 'other' ? d.service_other : d.service_type}\nAccessoires: ${d.accessories.join(', ') || 'Aucun'}\nNotes: ${d.notes}`).join('\n\n---\n\n'),
+          urgency: 'normal',
+          shipping_address_id: addressId,
+          parcels_count: shipping.parcels || 1,
+          status: 'submitted',
+          submitted_at: new Date().toISOString()
+        })
+        .select()
+        .single();
 
-      const updateData = {
-        request_number: rmaNumber,
-        status: newStatus,
-        quoted_at: new Date().toISOString(),
-        quote_total: grandTotal,
-        quote_subtotal: servicesSubtotal,
-        quote_shipping: shippingTotal,
-        quote_data: quoteData,
-        quote_revision_notes: null,
-        // Contract fields
-        is_contract_rma: hasContractCoveredDevices,
-        contract_id: hasContractCoveredDevices ? contractInfo?.primaryContract?.id : null
-      };
-      
-      // Add BC URL if contract-covered
-      if (bcUrl) {
-        updateData.bc_url = bcUrl;
-        updateData.bc_approved_at = new Date().toISOString();
-      }
+      if (reqErr) throw reqErr;
 
-      const { error } = await supabase.from('service_requests').update(updateData).eq('id', request.id);
+      // Save devices with full details
+      for (const d of devices) {
+        await supabase.from('request_devices').insert({
+          request_id: request.id,
+          serial_number: d.serial_number,
+          model_name: d.model,
+          device_type: d.device_type,
+          equipment_type: d.brand === 'other' ? d.brand_other : 'Lighthouse',
+          service_type: d.service_type === 'other' ? d.service_other : d.service_type,
+          notes: d.notes,
+          accessories: d.accessories,
+          shipping_address_id: d.shipping_address_id || null
+        });
 
-      if (error) throw error;
-
-      // Update request_devices with contract info
-      for (const d of devicePricing) {
-        if (d.id && d.isContractCovered) {
-          await supabase.from('request_devices').update({
-            contract_device_id: d.contractDeviceId,
-            contract_covered: true
-          }).eq('id', d.id);
+        // Save to equipment if checkbox is checked and not already from saved
+        if (d.saveDevice && !d.fromSaved) {
+          await supabase.from('equipment').upsert({
+            company_id: profile.company_id,
+            serial_number: d.serial_number,
+            model_name: d.model,
+            nickname: d.nickname || null,
+            brand: d.brand === 'other' ? d.brand_other : 'Lighthouse',
+            equipment_type: d.device_type || 'particle_counter',
+            added_by: profile.id
+          }, { onConflict: 'serial_number' });
         }
       }
 
-      if (isFullyContractCovered) {
-        notify(`✅ Contrat! RMA ${rmaNumber} créé - En attente de réception (BC contrat copié)`);
-      } else if (hasContractCoveredDevices) {
-        notify(`✅ Devis envoyé! RMA: ${rmaNumber} (certains appareils sous contrat)`);
-      } else {
-        notify('✅ Devis envoyé! RMA: ' + rmaNumber);
-      }
-      
-      reload(); 
-      onClose();
+      notify('Demande soumise avec succès! Numéro FR attribué après validation.');
+      refresh();
+      setPage('dashboard');
     } catch (err) {
-      notify('Erreur: ' + err.message, 'error');
+      notify(`Erreur: ${err.message}`, 'error');
     }
     
     setSaving(false);
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={onClose}>
-      <div className="bg-white w-full h-full md:w-[98%] md:h-[98%] md:m-auto md:rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-        
-        {/* Header */}
-        <div className={`px-6 py-4 text-white flex justify-between items-center shrink-0 ${isFullyContractCovered ? 'bg-emerald-600' : 'bg-[#1a1a2e]'}`}>
-          <div className="flex items-center gap-6">
-            <div>
-              <h2 className="text-xl font-bold flex items-center gap-2">
-                {step === 1 && (isFullyContractCovered ? '📋 RMA Contrat' : 'Créer le Devis')}
-                {step === 2 && 'Aperçu du Devis'}
-                {step === 3 && (isFullyContractCovered ? 'Confirmer RMA Contrat' : 'Confirmer l\'envoi')}
-              </h2>
-              <p className="text-gray-300">{request.companies?.name} • {devicePricing.length} appareil(s)</p>
+    <div>
+      <div className="flex items-center gap-4 mb-6">
+        <button onClick={goBack} className="text-gray-500 hover:text-gray-700">←</button>
+        <h1 className="text-2xl font-bold text-[#1E3A5F]">Demande Étalonnage / Réparation</h1>
+      </div>
+      
+      <form onSubmit={handleSubmit}>
+        {/* Devices */}
+        <div className="space-y-6 mb-8">
+          {devices.map((device) => (
+            <DeviceCard
+              key={device.id}
+              device={device}
+              updateDevice={updateDevice}
+              updateDeviceMultiple={updateDeviceMultiple}
+              toggleAccessory={toggleAccessory}
+              removeDevice={removeDevice}
+              canRemove={devices.length > 1}
+              savedEquipment={savedEquipment}
+              loadFromSaved={loadFromSaved}
+              addresses={addresses}
+              defaultAddressId={shipping.address_id}
+            />
+          ))}
+        </div>
+
+        {/* Add Device Button */}
+        <button
+          type="button"
+          onClick={addDevice}
+          className="mb-8 px-4 py-2 border-2 border-[#3B7AB4] text-[#3B7AB4] rounded-lg font-medium hover:bg-[#E8F2F8] transition-colors"
+        >
+          + Ajouter un Appareil
+        </button>
+
+        {/* Shipping Section */}
+        <ShippingSection 
+          shipping={shipping}
+          setShipping={setShipping}
+          addresses={addresses}
+          profile={profile}
+          notify={notify}
+          refresh={refresh}
+        />
+
+        {/* Submit Buttons */}
+        <div className="flex gap-4 mt-8">
+          <button
+            type="button"
+            onClick={() => setPage('dashboard')}
+            className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+          >
+            Annuler
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex-1 py-3 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F] transition-colors disabled:opacity-50"
+          >
+            {saving ? 'Envoi en cours...' : 'Soumettre la Demande'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ============================================
+// PARTS ORDER FORM
+// ============================================
+function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBack }) {
+  const [parts, setParts] = useState([createNewPart(1)]);
+  const [shipping, setShipping] = useState({ 
+    address_id: addresses.find(a => a.is_default)?.id || '',
+    showNewForm: false,
+    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' }
+  });
+  const [saving, setSaving] = useState(false);
+
+  function createNewPart(num) {
+    return {
+      id: `part_${Date.now()}_${num}`,
+      num,
+      device_for: '',
+      part_number: '',
+      description: '',
+      quantity: 1
+    };
+  }
+
+  const addPart = () => {
+    setParts([...parts, createNewPart(parts.length + 1)]);
+  };
+
+  const removePart = (id) => {
+    if (parts.length === 1) return;
+    setParts(parts.filter(p => p.id !== id).map((p, i) => ({ ...p, num: i + 1 })));
+  };
+
+  const updatePart = (id, field, value) => {
+    setParts(parts.map(p => p.id === id ? { ...p, [field]: value } : p));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    for (const p of parts) {
+      if (!p.description) {
+        notify('Veuillez décrire la pièce demandée', 'error');
+        return;
+      }
+    }
+
+    let addressId = shipping.address_id;
+    if (shipping.showNewForm) {
+      const addr = shipping.newAddress;
+      if (!addr.company_name || !addr.address_line1 || !addr.attention || !addr.city || !addr.postal_code) {
+        notify('Veuillez remplir tous les champs obligatoires de l\'adresse', 'error');
+        return;
+      }
+      
+      const { data, error } = await supabase.from('shipping_addresses').insert({
+        company_id: profile.company_id,
+        label: addr.label || addr.company_name,
+        company_name: addr.company_name,
+        attention: addr.attention,
+        address_line1: addr.address_line1,
+        city: addr.city,
+        postal_code: addr.postal_code,
+        country: 'France',
+        is_default: false
+      }).select().single();
+      
+      if (error) {
+        notify(`Erreur: ${error.message}`, 'error');
+        return;
+      }
+      addressId = data.id;
+      refresh();
+    }
+    
+    if (!addressId) {
+      notify('Veuillez sélectionner ou ajouter une adresse', 'error');
+      return;
+    }
+
+    setSaving(true);
+    
+    try {
+      const partsDescription = parts.map(p => 
+        `Pièce ${p.num}: ${p.description}${p.part_number ? ` (Réf: ${p.part_number})` : ''}${p.device_for ? ` - Pour: ${p.device_for}` : ''} - Qté: ${p.quantity}`
+      ).join('\n');
+
+      await supabase
+        .from('service_requests')
+        .insert({
+          request_number: null, // No number until approved
+          company_id: profile.company_id,
+          submitted_by: profile.id,
+          request_type: 'parts',
+          requested_service: 'parts_order',
+          problem_description: partsDescription,
+          urgency: 'normal',
+          shipping_address_id: addressId,
+          status: 'submitted',
+          submitted_at: new Date().toISOString()
+        });
+
+      notify('Commande de pièces soumise! Numéro FR attribué après validation.');
+      refresh();
+      setPage('dashboard');
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+    
+    setSaving(false);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-4 mb-6">
+        <button onClick={goBack} className="text-gray-500 hover:text-gray-700">←</button>
+        <h1 className="text-2xl font-bold text-[#1E3A5F]">Commande de Pièces</h1>
+      </div>
+      
+      <form onSubmit={handleSubmit}>
+        {/* Parts List */}
+        <div className="space-y-6 mb-8">
+          {parts.map((part) => (
+            <div key={part.id} className="bg-[#F5F5F5] rounded-lg p-6 border-l-4 border-amber-500">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-[#1E3A5F]">Pièce #{part.num}</h3>
+                {parts.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removePart(part.id)}
+                    className="px-3 py-1 text-sm border border-gray-300 text-gray-600 rounded hover:bg-white"
+                  >
+                    Retirer
+                  </button>
+                )}
+              </div>
+              
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Pour quel appareil? (optionnel)</label>
+                  <input
+                    type="text"
+                    value={part.device_for}
+                    onChange={e => updatePart(part.id, 'device_for', e.target.value)}
+                    placeholder="ex: Solair 3100 - SN: LC-1234"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Numéro de Pièce (optionnel)</label>
+                  <input
+                    type="text"
+                    value={part.part_number}
+                    onChange={e => updatePart(part.id, 'part_number', e.target.value)}
+                    placeholder="ex: PN-12345"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Quantité *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={part.quantity}
+                    onChange={e => updatePart(part.id, 'quantity', parseInt(e.target.value) || 1)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Description de la Pièce *</label>
+                  <textarea
+                    value={part.description}
+                    onChange={e => updatePart(part.id, 'description', e.target.value)}
+                    placeholder="Décrivez la pièce que vous recherchez..."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
+                    required
+                  />
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Photos (optionnel)</label>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+                  />
+                  <p className="text-sm text-gray-500 mt-1">
+                    Ajoutez des photos de la pièce ou de son emplacement sur l'appareil
+                  </p>
+                </div>
+              </div>
             </div>
-            <div className="flex gap-1">
-              {[1,2,3].map(s => (
-                <div key={s} className={`w-8 h-2 rounded-full ${step >= s ? (isFullyContractCovered ? 'bg-white' : 'bg-[#00A651]') : 'bg-gray-600'}`} />
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-xs text-gray-300">Total HT</p>
-              {isFullyContractCovered ? (
-                <p className="text-2xl font-bold text-white">CONTRAT</p>
-              ) : (
-                <p className="text-2xl font-bold text-[#00A651]">{grandTotal.toFixed(2)} €</p>
-              )}
-            </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={addPart}
+          className="mb-8 px-4 py-2 border-2 border-amber-500 text-amber-600 rounded-lg font-medium hover:bg-amber-50 transition-colors"
+        >
+          + Ajouter une Pièce
+        </button>
+
+        {/* Shipping Section */}
+        <ShippingSection 
+          shipping={shipping}
+          setShipping={setShipping}
+          addresses={addresses}
+          profile={profile}
+          notify={notify}
+          refresh={refresh}
+        />
+
+        {/* Submit Buttons */}
+        <div className="flex gap-4 mt-8">
+          <button
+            type="button"
+            onClick={() => setPage('dashboard')}
+            className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200"
+          >
+            Annuler
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex-1 py-3 bg-amber-500 text-white rounded-lg font-medium hover:bg-amber-600 disabled:opacity-50"
+          >
+            {saving ? 'Envoi en cours...' : 'Soumettre la Commande'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ============================================
+// CONTRACT REQUEST FORM
+// ============================================
+function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, goBack }) {
+  const [devices, setDevices] = useState([createContractDevice(1)]);
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [savedEquipment, setSavedEquipment] = useState([]);
+
+  // Load saved equipment on mount
+  useEffect(() => {
+    const loadEquipment = async () => {
+      if (!profile?.company_id) return;
+      const { data } = await supabase
+        .from('equipment')
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      if (data) setSavedEquipment(data);
+    };
+    loadEquipment();
+  }, [profile?.company_id]);
+
+  function createContractDevice(num) {
+    return {
+      id: `contract_device_${Date.now()}_${num}`,
+      num,
+      nickname: '',
+      serial_number: '',
+      model_name: '',
+      device_type: ''
+    };
+  }
+
+  const addDevice = () => {
+    setDevices([...devices, createContractDevice(devices.length + 1)]);
+  };
+
+  const addMultipleDevices = (count) => {
+    const newDevices = [];
+    for (let i = 0; i < count; i++) {
+      newDevices.push(createContractDevice(devices.length + i + 1));
+    }
+    setDevices([...devices, ...newDevices]);
+  };
+
+  const removeDevice = (id) => {
+    if (devices.length === 1) return;
+    setDevices(devices.filter(d => d.id !== id).map((d, i) => ({ ...d, num: i + 1 })));
+  };
+
+  const updateDevice = (id, field, value) => {
+    setDevices(devices.map(d => d.id === id ? { ...d, [field]: value } : d));
+  };
+
+  const updateDeviceMultiple = (id, updates) => {
+    setDevices(devices.map(d => d.id === id ? { ...d, ...updates } : d));
+  };
+
+  // Handle serial number change with auto-decode
+  const handleSerialNumberChange = (deviceId, sn) => {
+    const decoded = decodeSerialNumber(sn);
+    if (decoded) {
+      updateDeviceMultiple(deviceId, {
+        serial_number: sn,
+        model_name: decoded.model,
+        device_type: decoded.category
+      });
+    } else {
+      updateDevice(deviceId, 'serial_number', sn);
+    }
+  };
+
+  // Load from saved equipment
+  const loadFromSaved = (deviceId, equipmentId) => {
+    const equip = savedEquipment.find(e => e.id === equipmentId);
+    if (!equip) return;
+    
+    updateDeviceMultiple(deviceId, {
+      nickname: equip.nickname || '',
+      serial_number: equip.serial_number || '',
+      model_name: equip.model_name || '',
+      device_type: equip.equipment_type || ''
+    });
+  };
+
+  // Load all saved equipment at once
+  const loadAllSavedEquipment = () => {
+    if (!savedEquipment || savedEquipment.length === 0) {
+      notify('Aucun appareil enregistré', 'error');
+      return;
+    }
+    
+    const newDevices = savedEquipment.map((equip, i) => ({
+      id: `contract_device_${Date.now()}_${i + 1}`,
+      num: i + 1,
+      nickname: equip.nickname || '',
+      serial_number: equip.serial_number || '',
+      model_name: equip.model_name || '',
+      device_type: equip.equipment_type || ''
+    }));
+    
+    setDevices(newDevices);
+    notify(`${newDevices.length} appareils chargés`, 'success');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Validate devices
+    for (const d of devices) {
+      if (!d.serial_number || !d.model_name) {
+        notify('Veuillez remplir le numéro de série et le modèle pour chaque appareil', 'error');
+        return;
+      }
+    }
+
+    if (devices.length === 0) {
+      notify('Veuillez ajouter au moins un appareil', 'error');
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      // Generate contract number manually (no RPC needed)
+      const year = new Date().getFullYear();
+      const timestamp = Date.now().toString().slice(-4);
+      const contractNum = `CTR-${year}-${timestamp}`;
+      
+      // Create contract with only columns that exist
+      const { data: contract, error: contractError } = await supabase
+        .from('contracts')
+        .insert({
+          company_id: profile.company_id,
+          status: 'requested',
+          start_date: new Date().toISOString().split('T')[0],
+          end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0]
+        })
+        .select()
+        .single();
+
+      if (contractError) {
+        console.error('Contract insert error:', contractError);
+        throw contractError;
+      }
+
+      // Add devices to contract
+      const deviceInserts = devices.map(d => ({
+        contract_id: contract.id,
+        serial_number: d.serial_number,
+        model_name: d.model_name,
+        device_type: d.device_type,
+        nickname: d.nickname || null,
+        tokens_total: 1,
+        tokens_used: 0
+      }));
+
+      const { error: devicesError } = await supabase
+        .from('contract_devices')
+        .insert(deviceInserts);
+
+      if (devicesError) {
+        console.error('Devices insert error:', devicesError);
+        throw devicesError;
+      }
+
+      notify('Demande de contrat envoyée avec succès!', 'success');
+      await refresh();
+      setPage('dashboard');
+    } catch (err) {
+      console.error('Error creating contract request:', err);
+      notify('Erreur lors de la création de la demande: ' + (err.message || 'Erreur inconnue'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <button 
+        onClick={goBack}
+        className="mb-4 text-gray-500 hover:text-gray-700 flex items-center gap-2"
+      >
+        ← Retour au choix du type
+      </button>
+
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="flex items-center gap-3 mb-6">
+          <span className="text-3xl">📋</span>
+          <div>
+            <h1 className="text-2xl font-bold text-[#1E3A5F]">Demande de Contrat d'Étalonnage</h1>
+            <p className="text-gray-600">Ajoutez tous les appareils que vous souhaitez inclure dans votre contrat annuel</p>
           </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto">
-          
-          {/* Loading Contract Check */}
-          {loadingContract && (
-            <div className="flex items-center justify-center py-12">
-              <div className="flex items-center gap-3">
-                <div className="w-6 h-6 border-2 border-[#00A651] border-t-transparent rounded-full animate-spin"></div>
-                <span className="text-gray-600">Vérification contrat en cours...</span>
+        {/* Quick Actions */}
+        <div className="mb-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/20">
+          <h3 className="font-bold text-[#1E3A5F] mb-3">Actions Rapides</h3>
+          <div className="flex flex-wrap gap-3">
+            {savedEquipment && savedEquipment.length > 0 && (
+              <button
+                type="button"
+                onClick={loadAllSavedEquipment}
+                className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg text-sm hover:bg-[#1E3A5F]"
+              >
+                📋 Charger tous mes appareils ({savedEquipment.length})
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => addMultipleDevices(5)}
+              className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+            >
+              + Ajouter 5 lignes
+            </button>
+            <button
+              type="button"
+              onClick={() => addMultipleDevices(10)}
+              className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+            >
+              + Ajouter 10 lignes
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          {/* Device Count Summary */}
+          <div className="mb-4 text-sm text-gray-600">
+            <span className="font-bold text-[#1E3A5F]">{devices.length}</span> appareil{devices.length > 1 ? 's' : ''} dans la demande
+          </div>
+
+          {/* Devices Table */}
+          <div className="overflow-x-auto mb-6">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">#</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">Surnom (optionnel)</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">N° de Série *</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">Modèle *</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">Type</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {devices.map((device, idx) => (
+                  <tr key={device.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-3 py-2 border text-center text-sm text-gray-500">{device.num}</td>
+                    <td className="px-2 py-1 border">
+                      <input
+                        type="text"
+                        value={device.nickname}
+                        onChange={e => updateDevice(device.id, 'nickname', e.target.value)}
+                        placeholder="ex: Salle Blanche 1"
+                        className="w-full px-2 py-1 text-sm border-0 focus:ring-1 focus:ring-[#3B7AB4] rounded"
+                      />
+                    </td>
+                    <td className="px-2 py-1 border">
+                      <input
+                        type="text"
+                        value={device.serial_number}
+                        onChange={e => handleSerialNumberChange(device.id, e.target.value)}
+                        placeholder="ex: 2101280015"
+                        className="w-full px-2 py-1 text-sm border-0 focus:ring-1 focus:ring-[#3B7AB4] rounded font-mono"
+                        required
+                      />
+                    </td>
+                    <td className="px-2 py-1 border">
+                      <input
+                        type="text"
+                        value={device.model_name}
+                        onChange={e => updateDevice(device.id, 'model_name', e.target.value)}
+                        placeholder="ex: ApexZ3"
+                        className={`w-full px-2 py-1 text-sm border-0 focus:ring-1 focus:ring-[#3B7AB4] rounded ${
+                          device.model_name ? 'bg-green-50' : ''
+                        }`}
+                        required
+                      />
+                    </td>
+                    <td className="px-2 py-1 border">
+                      <select
+                        value={device.device_type}
+                        onChange={e => updateDevice(device.id, 'device_type', e.target.value)}
+                        className={`w-full px-2 py-1 text-sm border-0 focus:ring-1 focus:ring-[#3B7AB4] rounded ${
+                          device.device_type ? 'bg-green-50' : ''
+                        }`}
+                      >
+                        <option value="">—</option>
+                        <option value="particle_counter">🔬 Compteur Air</option>
+                        <option value="bio_collector">🧫 Bio Collecteur</option>
+                        <option value="liquid_counter">💧 Compteur Liquide</option>
+                        <option value="temp_humidity">🌡️ Temp/Humidité</option>
+                        <option value="other">📦 Autre</option>
+                      </select>
+                    </td>
+                    <td className="px-2 py-1 border text-center">
+                      {devices.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeDevice(device.id)}
+                          className="text-red-500 hover:text-red-700 text-lg"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Add Device Button */}
+          <button
+            type="button"
+            onClick={addDevice}
+            className="mb-6 px-4 py-2 border-2 border-dashed border-gray-300 text-gray-600 rounded-lg w-full hover:border-[#3B7AB4] hover:text-[#3B7AB4]"
+          >
+            + Ajouter un appareil
+          </button>
+
+          {/* Notes */}
+          <div className="mb-6">
+            <label className="block text-sm font-bold text-gray-700 mb-2">
+              Notes / Commentaires (optionnel)
+            </label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Précisions sur votre demande de contrat (fréquence souhaitée, conditions particulières, etc.)"
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
+          </div>
+
+          {/* Info Box */}
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <h4 className="font-bold text-amber-800 mb-2">ℹ️ Comment ça marche?</h4>
+            <ol className="text-sm text-amber-700 list-decimal list-inside space-y-1">
+              <li>Soumettez votre liste d'appareils</li>
+              <li>Notre équipe prépare un devis personnalisé</li>
+              <li>Vous recevez et validez le devis</li>
+              <li>Signez le bon de commande</li>
+              <li>Votre contrat est activé!</li>
+            </ol>
+          </div>
+
+          {/* Submit Buttons */}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setPage('dashboard')}
+              className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008c44] disabled:opacity-50"
+            >
+              {saving ? 'Envoi en cours...' : `Soumettre la demande (${devices.length} appareil${devices.length > 1 ? 's' : ''})`}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// SHIPPING SECTION (Reusable)
+// ============================================
+function ShippingSection({ shipping, setShipping, addresses, profile, notify, refresh }) {
+  // Check if selected address is outside France Metropolitan
+  const selectedAddress = addresses.find(a => a.id === shipping.address_id);
+  const isOutsideMetro = selectedAddress ? isOutsideFranceMetropolitan(selectedAddress.postal_code) : false;
+  const newAddressIsOutsideMetro = shipping.showNewForm && shipping.newAddress.postal_code && isOutsideFranceMetropolitan(shipping.newAddress.postal_code);
+
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
+      <h2 className="text-xl font-bold text-[#1E3A5F] mb-4 pb-4 border-b-2 border-[#E8F2F8]">
+        Information de Livraison
+      </h2>
+
+      {/* Existing Addresses */}
+      <div className="mb-4">
+        <label className="block text-sm font-bold text-gray-700 mb-2">Adresse de Retour *</label>
+        
+        {addresses.length > 0 ? (
+          <div className="space-y-2 mb-4">
+            {addresses.map(addr => {
+              const addrIsOutsideMetro = isOutsideFranceMetropolitan(addr.postal_code);
+              return (
+                <label 
+                  key={addr.id}
+                  className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+                    shipping.address_id === addr.id && !shipping.showNewForm
+                      ? 'border-[#3B7AB4] bg-[#E8F2F8]' 
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="shipping_address"
+                    checked={shipping.address_id === addr.id && !shipping.showNewForm}
+                    onChange={() => setShipping({ ...shipping, address_id: addr.id, showNewForm: false })}
+                    className="mt-1"
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium text-[#1E3A5F]">
+                      {addr.company_name || addr.label}
+                      {addr.is_default && (
+                        <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
+                          Par défaut
+                        </span>
+                      )}
+                      {addrIsOutsideMetro && (
+                        <span className="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full">
+                          Hors France métropolitaine
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      {addr.address_line1}
+                    </div>
+                    {addr.attention && (
+                      <div className="text-sm text-gray-500">
+                        À l'attention de: {addr.attention}
+                      </div>
+                    )}
+                    <div className="text-sm text-gray-600">
+                      {addr.postal_code} {addr.city}, {addr.country || 'France'}
+                    </div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-gray-500 mb-4">Aucune adresse enregistrée</p>
+        )}
+
+        {/* Add New Address Option */}
+        <label 
+          className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+            shipping.showNewForm
+              ? 'border-[#3B7AB4] bg-[#E8F2F8]' 
+              : 'border-dashed border-gray-300 hover:border-gray-400'
+          }`}
+        >
+          <input
+            type="radio"
+            name="shipping_address"
+            checked={shipping.showNewForm}
+            onChange={() => setShipping({ ...shipping, showNewForm: true, address_id: '' })}
+            className="mt-1"
+          />
+          <div className="flex-1">
+            <div className="font-medium text-[#3B7AB4]">+ Ajouter une nouvelle adresse</div>
+            <div className="text-sm text-gray-500">Cette adresse sera enregistrée pour vos futures demandes</div>
+          </div>
+        </label>
+      </div>
+
+      {/* New Address Form */}
+      {shipping.showNewForm && (
+        <div className="mt-4 p-4 bg-[#F5F5F5] rounded-lg border-l-4 border-[#3B7AB4]">
+          <h3 className="font-bold text-[#1E3A5F] mb-4">Nouvelle Adresse</h3>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-gray-700 mb-1">Nom de la Société *</label>
+              <input
+                type="text"
+                value={shipping.newAddress.company_name || ''}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, company_name: e.target.value }
+                })}
+                placeholder="ex: Lighthouse France"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-gray-700 mb-1">Adresse *</label>
+              <input
+                type="text"
+                value={shipping.newAddress.address_line1}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, address_line1: e.target.value }
+                })}
+                placeholder="ex: 16 Rue Paul Séjourne"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-gray-700 mb-1">À l'attention de *</label>
+              <input
+                type="text"
+                value={shipping.newAddress.attention || ''}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, attention: e.target.value }
+                })}
+                placeholder="Nom du destinataire"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Code Postal *</label>
+              <input
+                type="text"
+                value={shipping.newAddress.postal_code}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, postal_code: e.target.value }
+                })}
+                placeholder="ex: 94000"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Ville *</label>
+              <input
+                type="text"
+                value={shipping.newAddress.city}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, city: e.target.value }
+                })}
+                placeholder="ex: Créteil"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-gray-700 mb-1">Nom de l'adresse (pour référence)</label>
+              <input
+                type="text"
+                value={shipping.newAddress.label}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, label: e.target.value }
+                })}
+                placeholder="ex: Bureau Principal, Labo 2, etc."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+
+            {/* Warning for outside France Metropolitan in new address form */}
+            {newAddressIsOutsideMetro && (
+              <div className="md:col-span-2 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+                <p className="text-amber-800 font-medium text-sm">⚠️ Adresse hors France métropolitaine</p>
+                <p className="text-amber-700 text-xs mt-1">
+                  Pour les adresses situées en dehors de la France métropolitaine, 
+                  les frais d'expédition sont à la charge du client. Vous serez contacté pour 
+                  organiser le transport.
+                </p>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Number of Parcels */}
+      <div className="mt-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
+        <label className="block text-sm font-bold text-[#1E3A5F] mb-2">
+          📦 Nombre de colis
+        </label>
+        <p className="text-sm text-gray-600 mb-3">
+          Indiquez le nombre de colis/boîtes dans lesquels vous enverrez vos appareils.
+        </p>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShipping({ ...shipping, parcels: Math.max(1, (shipping.parcels || 1) - 1) })}
+            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
+          >
+            −
+          </button>
+          <input
+            type="number"
+            min="1"
+            value={shipping.parcels || 1}
+            onChange={e => setShipping({ ...shipping, parcels: Math.max(1, parseInt(e.target.value) || 1) })}
+            className="w-20 px-3 py-2 text-center border border-gray-300 rounded-lg font-bold text-lg"
+          />
+          <button
+            type="button"
+            onClick={() => setShipping({ ...shipping, parcels: (shipping.parcels || 1) + 1 })}
+            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
+          >
+            +
+          </button>
+          <span className="text-gray-600 ml-2">colis</span>
+        </div>
+      </div>
+
+      {/* Warning for address outside France Metropolitan */}
+      {(isOutsideMetro || newAddressIsOutsideMetro) && (
+        <div className="mt-4 p-4 bg-amber-50 border-2 border-amber-300 rounded-lg">
+          <div className="flex gap-3">
+            <span className="text-2xl">🚢</span>
+            <div>
+              <p className="text-amber-800 font-bold">Expédition hors France métropolitaine</p>
+              <p className="text-amber-700 text-sm mt-1">
+                L'adresse sélectionnée est située en dehors de la France métropolitaine. 
+                Les frais d'expédition pour le retour de vos équipements seront à votre charge. 
+                Notre équipe vous contactera pour organiser le transport et vous communiquer les options disponibles.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// DEVICE CARD COMPONENT (Updated)
+// ============================================
+function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessory, removeDevice, canRemove, savedEquipment, loadFromSaved, addresses, defaultAddressId }) {
+  const [charCount, setCharCount] = useState(device.notes.length);
+  const [showDifferentAddress, setShowDifferentAddress] = useState(!!device.shipping_address_id);
+  const maxChars = 500;
+
+  const handleNotesChange = (e) => {
+    const value = e.target.value.slice(0, maxChars);
+    updateDevice(device.id, 'notes', value);
+    setCharCount(value.length);
+  };
+
+  // Handle serial number change with auto-decode
+  const handleSerialNumberChange = (e) => {
+    const sn = e.target.value;
+    
+    // Always update the serial number first
+    // Then try to decode if it's a valid Lighthouse serial
+    if (device.brand === 'Lighthouse') {
+      const decoded = decodeSerialNumber(sn);
+      if (decoded) {
+        // Update serial, model, and device_type together
+        updateDeviceMultiple(device.id, {
+          serial_number: sn,
+          model: decoded.model,
+          device_type: decoded.category
+        });
+        return;
+      }
+    }
+    
+    // Just update serial number if no decode
+    updateDevice(device.id, 'serial_number', sn);
+  };
+
+  return (
+    <div className="bg-[#F5F5F5] rounded-lg p-6 border-l-4 border-[#3B7AB4]">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-bold text-[#1E3A5F]">Appareil #{device.num}</h3>
+        {canRemove && (
+          <button
+            type="button"
+            onClick={() => removeDevice(device.id)}
+            className="px-3 py-1 text-sm border border-gray-300 text-gray-600 rounded hover:bg-white"
+          >
+            Retirer
+          </button>
+        )}
+      </div>
+
+      {/* Saved Equipment Dropdown */}
+      <div className="mb-4 p-3 bg-white rounded-lg border border-[#3B7AB4]/30">
+        <label className="block text-sm font-bold text-[#3B7AB4] mb-2">
+          📋 Charger un appareil enregistré
+        </label>
+        <select
+          value={device.fromSaved || ''}
+          onChange={e => {
+            if (e.target.value === 'manual') {
+              // Clear form for manual entry
+              updateDeviceMultiple(device.id, {
+                fromSaved: null,
+                brand: 'Lighthouse',
+                brand_other: '',
+                nickname: '',
+                model: '',
+                serial_number: '',
+                device_type: ''
+              });
+            } else if (e.target.value) {
+              loadFromSaved(device.id, e.target.value);
+            }
+          }}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+        >
+          <option value="manual">✏️ Entrer manuellement un nouvel appareil</option>
+          {savedEquipment && savedEquipment.length > 0 && (
+            <optgroup label="Mes appareils enregistrés">
+              {savedEquipment.map(eq => (
+                <option key={eq.id} value={eq.id}>
+                  {eq.nickname ? `${eq.nickname} - ` : ''}{eq.model_name} (SN: {eq.serial_number})
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        
+        {/* NICKNAME - FIRST */}
+        <div className="md:col-span-2">
+          <label className="block text-sm font-bold text-gray-700 mb-1">Surnom de l'appareil (optionnel)</label>
+          <input
+            type="text"
+            value={device.nickname || ''}
+            onChange={e => updateDevice(device.id, 'nickname', e.target.value)}
+            placeholder="ex: Compteur Salle Blanche 1, Portable Labo 3..."
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          />
+          <p className="text-xs text-gray-500 mt-1">Pour identifier facilement cet appareil dans vos futures demandes</p>
+        </div>
+
+        {/* SERIAL NUMBER - SECOND */}
+        <div className="md:col-span-2">
+          <label className="block text-sm font-bold text-gray-700 mb-1">N° de Série *</label>
+          <input
+            type="text"
+            value={device.serial_number}
+            onChange={handleSerialNumberChange}
+            placeholder="ex: 2101280015"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-lg font-mono"
+            required
+          />
+          {device.brand === 'Lighthouse' && device.serial_number && decodeSerialNumber(device.serial_number) && (
+            <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+              <span>✓</span> Détecté: {decodeSerialNumber(device.serial_number).model}
+            </p>
+          )}
+        </div>
+
+        {/* Brand */}
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-1">Marque *</label>
+          <select
+            value={device.brand}
+            onChange={e => {
+              updateDevice(device.id, 'brand', e.target.value);
+              // Re-decode if switching to Lighthouse
+              if (e.target.value === 'Lighthouse' && device.serial_number) {
+                const decoded = decodeSerialNumber(device.serial_number);
+                if (decoded) {
+                  updateDeviceMultiple(device.id, {
+                    brand: 'Lighthouse',
+                    model: decoded.model,
+                    device_type: decoded.category
+                  });
+                }
+              }
+            }}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+            required
+          >
+            <option value="Lighthouse">Lighthouse</option>
+            <option value="other">Autre</option>
+          </select>
+        </div>
+
+        {/* Other Brand - shown only when "other" selected */}
+        {device.brand === 'other' && (
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Préciser la Marque *</label>
+            <input
+              type="text"
+              value={device.brand_other}
+              onChange={e => updateDevice(device.id, 'brand_other', e.target.value)}
+              placeholder="Nom de la marque"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              required
+            />
+          </div>
+        )}
+
+        {/* Device Type */}
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-1">Type d'Appareil *</label>
+          <select
+            value={device.device_type}
+            onChange={e => updateDevice(device.id, 'device_type', e.target.value)}
+            className={`w-full px-3 py-2 border rounded-lg bg-white ${
+              device.device_type ? 'border-green-400 bg-green-50' : 'border-gray-300'
+            }`}
+            required
+          >
+            <option value="">Sélectionner le type</option>
+            <option value="particle_counter">🔬 Compteur de Particules (Air)</option>
+            <option value="bio_collector">🧫 Bio Collecteur</option>
+            <option value="liquid_counter">💧 Compteur de Particules (Liquide)</option>
+            <option value="temp_humidity">🌡️ Capteur Température/Humidité</option>
+            <option value="diluter">🌀 Diluteur de Particules</option>
+            <option value="other">📦 Autre</option>
+          </select>
+        </div>
+
+        {/* Model */}
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-1">Modèle *</label>
+          <input
+            type="text"
+            value={device.model}
+            onChange={e => updateDevice(device.id, 'model', e.target.value)}
+            placeholder="ex: Solair 3100, ApexZ3, etc."
+            className={`w-full px-3 py-2 border rounded-lg ${
+              device.model ? 'border-green-400 bg-green-50' : 'border-gray-300'
+            }`}
+            required
+          />
+        </div>
+
+        {/* Service Type */}
+        <div className={device.service_type === 'other' ? '' : 'md:col-span-2'}>
+          <label className="block text-sm font-bold text-gray-700 mb-1">Type de Service *</label>
+          <select
+            value={device.service_type}
+            onChange={e => updateDevice(device.id, 'service_type', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+            required
+          >
+            <option value="">Sélectionner le service</option>
+            <option value="calibration">Étalonnage</option>
+            <option value="repair">Réparation</option>
+            <option value="calibration_repair">Étalonnage + Réparation</option>
+            <option value="other">Autre</option>
+          </select>
+        </div>
+
+        {/* Other Service - shown only when "other" selected */}
+        {device.service_type === 'other' && (
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Préciser le Service *</label>
+            <input
+              type="text"
+              value={device.service_other}
+              onChange={e => updateDevice(device.id, 'service_other', e.target.value)}
+              placeholder="Type de service demandé"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              required
+            />
+          </div>
+        )}
+
+        {/* Notes - required only for repair */}
+        <div className="md:col-span-2">
+          <label className="block text-sm font-bold text-gray-700 mb-1">
+            Notes / Commentaires {(device.service_type === 'repair' || device.service_type === 'calibration_repair' || device.service_type === 'other') ? '*' : '(optionnel)'}
+          </label>
+          <textarea
+            value={device.notes}
+            onChange={handleNotesChange}
+            placeholder={device.service_type === 'repair' || device.service_type === 'calibration_repair' 
+              ? "Décrivez le problème rencontré avec cet appareil..." 
+              : "Informations complémentaires (optionnel)..."}
+            rows={4}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
+            required={device.service_type === 'repair' || device.service_type === 'calibration_repair' || device.service_type === 'other'}
+          />
+          <p className="text-sm text-gray-500 mt-1">
+            {charCount}/{maxChars} caractères
+          </p>
+        </div>
+
+        {/* Accessories */}
+        <div className="md:col-span-2">
+          <label className="block text-sm font-bold text-gray-700 mb-2">Accessoires Inclus</label>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { key: 'charger', label: 'Chargeur' },
+              { key: 'battery', label: 'Batterie' },
+              { key: 'powerCable', label: 'Câble d\'alimentation' },
+              { key: 'carryingCase', label: 'Mallette' }
+            ].map(acc => (
+              <label key={acc.key} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={device.accessories.includes(acc.key)}
+                  onChange={() => toggleAccessory(device.id, acc.key)}
+                  className="w-4 h-4 rounded border-gray-300 text-[#3B7AB4]"
+                />
+                <span className="text-sm">{acc.label}</span>
+              </label>
+            ))}
+          </div>
+          <input
+            type="text"
+            value={device.other_accessories}
+            onChange={e => updateDevice(device.id, 'other_accessories', e.target.value)}
+            placeholder="Autres accessoires (préciser)"
+            className="w-full mt-3 px-3 py-2 border border-gray-300 rounded-lg"
+          />
+        </div>
+
+        {/* Photo Upload */}
+        <div className="md:col-span-2">
+          <label className="block text-sm font-bold text-gray-700 mb-1">Photos (optionnel)</label>
+          <input
+            type="file"
+            multiple
+            accept="image/*"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+          />
+          <p className="text-sm text-gray-500 mt-1">
+            Ajoutez des photos de l'appareil montrant les problèmes ou son état
+          </p>
+        </div>
+
+        {/* Save Device Option */}
+        {!device.fromSaved && (
+          <div className="md:col-span-2 mt-2 p-3 bg-green-50 rounded-lg border border-green-200">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={device.saveDevice || false}
+                onChange={e => updateDevice(device.id, 'saveDevice', e.target.checked)}
+                className="w-5 h-5 rounded border-green-400 text-green-600"
+              />
+              <div>
+                <span className="font-medium text-green-800">💾 Enregistrer cet appareil</span>
+                <p className="text-xs text-green-600">Pour le retrouver facilement lors de vos prochaines demandes</p>
+              </div>
+            </label>
+          </div>
+        )}
+
+        {device.fromSaved && (
+          <div className="md:col-span-2 mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <p className="text-sm text-blue-700">✓ Appareil chargé depuis vos équipements enregistrés</p>
+          </div>
+        )}
+
+        {/* Per-Device Shipping Address */}
+        {addresses && addresses.length > 1 && (
+          <div className="md:col-span-2 mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
+            <label className="flex items-center gap-3 cursor-pointer mb-2">
+              <input
+                type="checkbox"
+                checked={showDifferentAddress}
+                onChange={e => {
+                  setShowDifferentAddress(e.target.checked);
+                  if (!e.target.checked) {
+                    updateDevice(device.id, 'shipping_address_id', null);
+                  }
+                }}
+                className="w-5 h-5 rounded border-amber-400 text-amber-600"
+              />
+              <div>
+                <span className="font-medium text-amber-800">📍 Envoyer à une adresse différente</span>
+                <p className="text-xs text-amber-600">Cet appareil sera retourné à une autre adresse</p>
+              </div>
+            </label>
+            
+            {showDifferentAddress && (
+              <select
+                value={device.shipping_address_id || ''}
+                onChange={e => updateDevice(device.id, 'shipping_address_id', e.target.value || null)}
+                className="w-full px-3 py-2 border border-amber-300 rounded-lg bg-white mt-2"
+              >
+                <option value="">-- Sélectionner une adresse --</option>
+                {addresses.map(addr => (
+                  <option key={addr.id} value={addr.id}>
+                    {addr.label} - {addr.city} {addr.is_default ? '(Par défaut)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// SETTINGS PAGE
+// ============================================
+function SettingsPage({ profile, addresses, t, notify, refresh }) {
+  const [activeSection, setActiveSection] = useState('profile');
+  
+  // Profile editing
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileData, setProfileData] = useState({
+    full_name: profile?.full_name || '',
+    email: profile?.email || '',
+    phone: profile?.phone || ''
+  });
+  
+  // Company editing
+  const [editingCompany, setEditingCompany] = useState(false);
+  const [companyData, setCompanyData] = useState({
+    name: profile?.companies?.name || '',
+    billing_address: profile?.companies?.billing_address || '',
+    billing_city: profile?.companies?.billing_city || '',
+    billing_postal_code: profile?.companies?.billing_postal_code || '',
+    siret: profile?.companies?.siret || '',
+    vat_number: profile?.companies?.vat_number || ''
+  });
+  
+  // Password change
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordData, setPasswordData] = useState({
+    current: '', new: '', confirm: ''
+  });
+  
+  // Address management
+  const [showAddAddress, setShowAddAddress] = useState(false);
+  const [editingAddress, setEditingAddress] = useState(null);
+  const [newAddress, setNewAddress] = useState({
+    label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false
+  });
+  
+  // Notification preferences
+  const [notifications, setNotifications] = useState({
+    email_status_updates: true,
+    email_quotes: true,
+    email_shipping: true,
+    email_marketing: false
+  });
+  
+  // Team management
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [pendingInvites, setPendingInvites] = useState([]);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteData, setInviteData] = useState({ email: '', role: 'customer' });
+  const [loadingTeam, setLoadingTeam] = useState(false);
+  
+  const [saving, setSaving] = useState(false);
+  
+  // Check if user is admin
+  const isAdmin = profile?.role === 'admin';
+  
+  // Load team members
+  useEffect(() => {
+    const loadTeam = async () => {
+      if (!profile?.company_id || !isAdmin) return;
+      setLoadingTeam(true);
+      
+      // Load team members
+      const { data: members } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, role, invitation_status, created_at')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: true });
+      
+      if (members) setTeamMembers(members);
+      
+      // Load pending invites
+      const { data: invites } = await supabase
+        .from('team_invitations')
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .is('accepted_at', null)
+        .gt('expires_at', new Date().toISOString());
+      
+      if (invites) setPendingInvites(invites);
+      setLoadingTeam(false);
+    };
+    loadTeam();
+  }, [profile?.company_id, isAdmin]);
+
+  // Invite team member
+  const inviteTeamMember = async (e) => {
+    e.preventDefault();
+    if (!inviteData.email) {
+      notify('Veuillez entrer un email', 'error');
+      return;
+    }
+    
+    setSaving(true);
+    
+    // Generate invite token
+    const token = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36);
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
+    
+    const { error } = await supabase.from('team_invitations').insert({
+      company_id: profile.company_id,
+      email: inviteData.email.toLowerCase(),
+      role: inviteData.role,
+      invited_by: profile.id,
+      token,
+      expires_at: expiresAt.toISOString()
+    });
+    
+    setSaving(false);
+    
+    if (error) {
+      if (error.code === '23505') {
+        notify('Une invitation pour cet email existe déjà', 'error');
+      } else {
+        notify(`Erreur: ${error.message}`, 'error');
+      }
+      return;
+    }
+    
+    notify(`Invitation envoyée à ${inviteData.email}!`);
+    setShowInviteModal(false);
+    setInviteData({ email: '', role: 'customer' });
+    
+    // Reload invites
+    const { data: invites } = await supabase
+      .from('team_invitations')
+      .select('*')
+      .eq('company_id', profile.company_id)
+      .is('accepted_at', null);
+    if (invites) setPendingInvites(invites);
+  };
+
+  // Change team member role
+  const changeRole = async (memberId, newRole) => {
+    if (memberId === profile.id) {
+      notify('Vous ne pouvez pas modifier votre propre rôle', 'error');
+      return;
+    }
+    
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: newRole })
+      .eq('id', memberId);
+    
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Rôle modifié!');
+      setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, role: newRole } : m));
+    }
+  };
+
+  // Deactivate/reactivate team member
+  const toggleMemberStatus = async (memberId, currentStatus) => {
+    if (memberId === profile.id) {
+      notify('Vous ne pouvez pas désactiver votre propre compte', 'error');
+      return;
+    }
+    
+    const newStatus = currentStatus === 'active' ? 'deactivated' : 'active';
+    const { error } = await supabase
+      .from('profiles')
+      .update({ invitation_status: newStatus })
+      .eq('id', memberId);
+    
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify(newStatus === 'active' ? 'Compte réactivé!' : 'Compte désactivé!');
+      setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, invitation_status: newStatus } : m));
+    }
+  };
+
+  // Cancel pending invite
+  const cancelInvite = async (inviteId) => {
+    const { error } = await supabase.from('team_invitations').delete().eq('id', inviteId);
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Invitation annulée');
+      setPendingInvites(pendingInvites.filter(i => i.id !== inviteId));
+    }
+  };
+
+  // Save profile
+  const saveProfile = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        full_name: profileData.full_name,
+        phone: profileData.phone
+      })
+      .eq('id', profile.id);
+    
+    setSaving(false);
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Profil mis à jour!');
+      setEditingProfile(false);
+      refresh();
+    }
+  };
+
+  // Save company
+  const saveCompany = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from('companies')
+      .update(companyData)
+      .eq('id', profile.company_id);
+    
+    setSaving(false);
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Entreprise mise à jour!');
+      setEditingCompany(false);
+      refresh();
+    }
+  };
+
+  // Change password
+  const changePassword = async (e) => {
+    e.preventDefault();
+    if (passwordData.new !== passwordData.confirm) {
+      notify('Les mots de passe ne correspondent pas', 'error');
+      return;
+    }
+    if (passwordData.new.length < 6) {
+      notify('Le mot de passe doit contenir au moins 6 caractères', 'error');
+      return;
+    }
+    
+    setSaving(true);
+    const { error } = await supabase.auth.updateUser({
+      password: passwordData.new
+    });
+    
+    setSaving(false);
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Mot de passe modifié!');
+      setShowPasswordModal(false);
+      setPasswordData({ current: '', new: '', confirm: '' });
+    }
+  };
+
+  // Save address
+  const saveAddress = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    
+    // If setting as default, unset others first
+    if (newAddress.is_default) {
+      await supabase
+        .from('shipping_addresses')
+        .update({ is_default: false })
+        .eq('company_id', profile.company_id);
+    }
+    
+    let error;
+    if (editingAddress) {
+      const result = await supabase
+        .from('shipping_addresses')
+        .update({ ...newAddress })
+        .eq('id', editingAddress.id);
+      error = result.error;
+    } else {
+      const result = await supabase.from('shipping_addresses').insert({
+        ...newAddress,
+        company_id: profile.company_id
+      });
+      error = result.error;
+    }
+    
+    setSaving(false);
+    
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+      return;
+    }
+    
+    notify(editingAddress ? 'Adresse modifiée!' : 'Adresse ajoutée!');
+    setShowAddAddress(false);
+    setEditingAddress(null);
+    setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false });
+    refresh();
+  };
+
+  const deleteAddress = async (id) => {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cette adresse?')) return;
+    await supabase.from('shipping_addresses').delete().eq('id', id);
+    notify('Adresse supprimée');
+    refresh();
+  };
+
+  const setDefault = async (id) => {
+    await supabase.from('shipping_addresses').update({ is_default: false }).eq('company_id', profile.company_id);
+    await supabase.from('shipping_addresses').update({ is_default: true }).eq('id', id);
+    notify('Adresse par défaut mise à jour');
+    refresh();
+  };
+
+  const openEditAddress = (addr) => {
+    setEditingAddress(addr);
+    setNewAddress({
+      label: addr.label || '',
+      attention: addr.attention || '',
+      address_line1: addr.address_line1 || '',
+      address_line2: addr.address_line2 || '',
+      city: addr.city || '',
+      postal_code: addr.postal_code || '',
+      country: addr.country || 'France',
+      phone: addr.phone || '',
+      is_default: addr.is_default || false
+    });
+    setShowAddAddress(true);
+  };
+
+  const sections = [
+    { id: 'profile', label: 'Profil', icon: '👤' },
+    { id: 'company', label: 'Entreprise', icon: '🏢' },
+    ...(isAdmin ? [{ id: 'team', label: 'Équipe', icon: '👥' }] : []),
+    { id: 'addresses', label: 'Adresses', icon: '📍' },
+    { id: 'notifications', label: 'Notifications', icon: '🔔' },
+    { id: 'security', label: 'Sécurité', icon: '🔒' }
+  ];
+
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-[#1E3A5F]">Paramètres</h1>
+
+      {/* Section Tabs */}
+      <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-4">
+        {sections.map(section => (
+          <button
+            key={section.id}
+            onClick={() => setActiveSection(section.id)}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+              activeSection === section.id
+                ? 'bg-[#1E3A5F] text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <span>{section.icon}</span>
+            {section.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Profile Section */}
+      {activeSection === 'profile' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <h2 className="text-lg font-bold text-[#1E3A5F]">Informations personnelles</h2>
+            {!editingProfile && (
+              <button
+                onClick={() => setEditingProfile(true)}
+                className="px-4 py-2 text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]"
+              >
+                ✏️ Modifier
+              </button>
+            )}
+          </div>
+          <div className="p-6">
+            {editingProfile ? (
+              <div className="space-y-4 max-w-md">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nom complet *</label>
+                  <input
+                    type="text"
+                    value={profileData.full_name}
+                    onChange={e => setProfileData({ ...profileData, full_name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={profileData.email}
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">L'email ne peut pas être modifié</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
+                  <input
+                    type="tel"
+                    value={profileData.phone}
+                    onChange={e => setProfileData({ ...profileData, phone: e.target.value })}
+                    placeholder="+33 1 23 45 67 89"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setEditingProfile(false);
+                      setProfileData({
+                        full_name: profile?.full_name || '',
+                        email: profile?.email || '',
+                        phone: profile?.phone || ''
+                      });
+                    }}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={saveProfile}
+                    disabled={saving}
+                    className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                  >
+                    {saving ? 'Enregistrement...' : 'Enregistrer'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <p className="text-sm text-gray-500">Nom complet</p>
+                  <p className="font-medium text-[#1E3A5F]">{profile?.full_name || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Email</p>
+                  <p className="font-medium text-[#1E3A5F]">{profile?.email || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Téléphone</p>
+                  <p className="font-medium text-[#1E3A5F]">{profile?.phone || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Membre depuis</p>
+                  <p className="font-medium text-[#1E3A5F]">
+                    {profile?.created_at ? new Date(profile.created_at).toLocaleDateString('fr-FR') : '—'}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Company Section */}
+      {activeSection === 'company' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <h2 className="text-lg font-bold text-[#1E3A5F]">Informations entreprise</h2>
+            {!editingCompany && (
+              <button
+                onClick={() => setEditingCompany(true)}
+                className="px-4 py-2 text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]"
+              >
+                ✏️ Modifier
+              </button>
+            )}
+          </div>
+          <div className="p-6">
+            {editingCompany ? (
+              <div className="space-y-4 max-w-lg">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nom de l'entreprise *</label>
+                  <input
+                    type="text"
+                    value={companyData.name}
+                    onChange={e => setCompanyData({ ...companyData, name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Adresse de facturation</label>
+                  <input
+                    type="text"
+                    value={companyData.billing_address}
+                    onChange={e => setCompanyData({ ...companyData, billing_address: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Code postal</label>
+                    <input
+                      type="text"
+                      value={companyData.billing_postal_code}
+                      onChange={e => setCompanyData({ ...companyData, billing_postal_code: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Ville</label>
+                    <input
+                      type="text"
+                      value={companyData.billing_city}
+                      onChange={e => setCompanyData({ ...companyData, billing_city: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label>
+                    <input
+                      type="text"
+                      value={companyData.siret}
+                      onChange={e => setCompanyData({ ...companyData, siret: e.target.value })}
+                      placeholder="123 456 789 00012"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">N° TVA</label>
+                    <input
+                      type="text"
+                      value={companyData.vat_number}
+                      onChange={e => setCompanyData({ ...companyData, vat_number: e.target.value })}
+                      placeholder="FR12345678901"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setEditingCompany(false);
+                      setCompanyData({
+                        name: profile?.companies?.name || '',
+                        billing_address: profile?.companies?.billing_address || '',
+                        billing_city: profile?.companies?.billing_city || '',
+                        billing_postal_code: profile?.companies?.billing_postal_code || '',
+                        siret: profile?.companies?.siret || '',
+                        vat_number: profile?.companies?.vat_number || ''
+                      });
+                    }}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={saveCompany}
+                    disabled={saving}
+                    className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                  >
+                    {saving ? 'Enregistrement...' : 'Enregistrer'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <p className="text-sm text-gray-500">Nom de l'entreprise</p>
+                  <p className="font-medium text-[#1E3A5F]">{profile?.companies?.name || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Adresse de facturation</p>
+                  <p className="font-medium text-[#1E3A5F]">
+                    {profile?.companies?.billing_address || '—'}
+                    {profile?.companies?.billing_postal_code && `, ${profile?.companies?.billing_postal_code}`}
+                    {profile?.companies?.billing_city && ` ${profile?.companies?.billing_city}`}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">SIRET</p>
+                  <p className="font-medium text-[#1E3A5F]">{profile?.companies?.siret || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">N° TVA</p>
+                  <p className="font-medium text-[#1E3A5F]">{profile?.companies?.vat_number || '—'}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Team Section - Admin Only */}
+      {activeSection === 'team' && isAdmin && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <div>
+              <h2 className="text-lg font-bold text-[#1E3A5F]">Gestion de l'équipe</h2>
+              <p className="text-sm text-gray-500">Invitez des membres et gérez leurs accès</p>
+            </div>
+            <button
+              onClick={() => setShowInviteModal(true)}
+              className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
+            >
+              + Inviter un membre
+            </button>
+          </div>
+          
+          <div className="p-6">
+            {loadingTeam ? (
+              <div className="flex justify-center py-8">
+                <div className="w-8 h-8 border-4 border-[#3B7AB4] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Current Team Members */}
+                <div>
+                  <h3 className="font-medium text-[#1E3A5F] mb-3">Membres actifs ({teamMembers.filter(m => m.invitation_status !== 'deactivated').length})</h3>
+                  <div className="space-y-3">
+                    {teamMembers.filter(m => m.invitation_status !== 'deactivated').map(member => (
+                      <div key={member.id} className={`p-4 rounded-xl border-2 ${member.id === profile.id ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 bg-gray-50'}`}>
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-[#1E3A5F] text-white flex items-center justify-center font-bold">
+                              {member.full_name?.charAt(0)?.toUpperCase() || '?'}
+                            </div>
+                            <div>
+                              <p className="font-medium text-[#1E3A5F]">
+                                {member.full_name}
+                                {member.id === profile.id && <span className="ml-2 text-xs text-gray-400">(vous)</span>}
+                              </p>
+                              <p className="text-sm text-gray-500">{member.email}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <select
+                              value={member.role || 'customer'}
+                              onChange={e => changeRole(member.id, e.target.value)}
+                              disabled={member.id === profile.id}
+                              className={`px-3 py-1.5 border rounded-lg text-sm ${
+                                member.role === 'admin' ? 'bg-purple-50 border-purple-300 text-purple-700' :
+                                member.role === 'technician' ? 'bg-blue-50 border-blue-300 text-blue-700' :
+                                'bg-gray-50 border-gray-300 text-gray-700'
+                              } ${member.id === profile.id ? 'opacity-50' : ''}`}
+                            >
+                              <option value="admin">👑 Admin</option>
+                              <option value="technician">📋 Technicien</option>
+                              <option value="customer">👤 Utilisateur</option>
+                            </select>
+                            {member.id !== profile.id && (
+                              <button
+                                onClick={() => toggleMemberStatus(member.id, member.invitation_status)}
+                                className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                              >
+                                Désactiver
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Deactivated Members */}
+                {teamMembers.filter(m => m.invitation_status === 'deactivated').length > 0 && (
+                  <div>
+                    <h3 className="font-medium text-gray-500 mb-3">Comptes désactivés</h3>
+                    <div className="space-y-2">
+                      {teamMembers.filter(m => m.invitation_status === 'deactivated').map(member => (
+                        <div key={member.id} className="p-3 rounded-lg bg-gray-100 border border-gray-200 flex justify-between items-center">
+                          <div>
+                            <p className="font-medium text-gray-500">{member.full_name}</p>
+                            <p className="text-sm text-gray-400">{member.email}</p>
+                          </div>
+                          <button
+                            onClick={() => toggleMemberStatus(member.id, member.invitation_status)}
+                            className="px-3 py-1.5 text-sm text-green-600 border border-green-200 rounded-lg hover:bg-green-50"
+                          >
+                            Réactiver
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Pending Invitations */}
+                {pendingInvites.length > 0 && (
+                  <div>
+                    <h3 className="font-medium text-amber-600 mb-3">Invitations en attente ({pendingInvites.length})</h3>
+                    <div className="space-y-2">
+                      {pendingInvites.map(invite => (
+                        <div key={invite.id} className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex justify-between items-center">
+                          <div>
+                            <p className="font-medium text-amber-800">{invite.email}</p>
+                            <p className="text-xs text-amber-600">
+                              Rôle: {invite.role === 'admin' ? 'Admin' : invite.role === 'technician' ? 'Technicien' : 'Utilisateur'}
+                              {' • '}Expire: {new Date(invite.expires_at).toLocaleDateString('fr-FR')}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => cancelInvite(invite.id)}
+                            className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                          >
+                            Annuler
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Role Explanation */}
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <h4 className="font-medium text-gray-700 mb-2">Niveaux d'accès</h4>
+                  <div className="grid md:grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <p className="font-medium text-purple-700">👑 Admin</p>
+                      <p className="text-gray-500">Accès complet, gestion des utilisateurs et paramètres</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-blue-700">📋 Technicien</p>
+                      <p className="text-gray-500">Voir toutes les demandes, créer des demandes</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">👤 Utilisateur</p>
+                      <p className="text-gray-500">Voir uniquement ses propres demandes</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Addresses Section */}
+      {activeSection === 'addresses' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <div>
+              <h2 className="text-lg font-bold text-[#1E3A5F]">Adresses de livraison</h2>
+              <p className="text-sm text-gray-500">Gérez vos adresses pour la réception et le retour des équipements</p>
+            </div>
+            <button
+              onClick={() => {
+                setEditingAddress(null);
+                setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false });
+                setShowAddAddress(true);
+              }}
+              className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
+            >
+              + Ajouter une adresse
+            </button>
+          </div>
+          
+          <div className="p-6">
+            {addresses.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                <p className="text-4xl mb-2">📍</p>
+                <p>Aucune adresse enregistrée</p>
+                <p className="text-sm">Ajoutez une adresse pour vos livraisons</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {addresses.map(addr => (
+                  <div 
+                    key={addr.id}
+                    className={`p-4 rounded-xl border-2 ${addr.is_default ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 bg-gray-50'}`}
+                  >
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-bold text-[#1E3A5F]">{addr.label}</h3>
+                          {addr.is_default && (
+                            <span className="px-2 py-0.5 bg-[#3B7AB4] text-white text-xs rounded-full">
+                              Par défaut
+                            </span>
+                          )}
+                        </div>
+                        {addr.attention && <p className="text-sm text-gray-600">À l'attention de: {addr.attention}</p>}
+                        <p className="text-sm text-gray-700">{addr.address_line1}</p>
+                        {addr.address_line2 && <p className="text-sm text-gray-700">{addr.address_line2}</p>}
+                        <p className="text-sm text-gray-700">{addr.postal_code} {addr.city}, {addr.country || 'France'}</p>
+                        {addr.phone && <p className="text-sm text-gray-500 mt-1">📞 {addr.phone}</p>}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <button
+                          onClick={() => openEditAddress(addr)}
+                          className="px-3 py-1.5 text-sm text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]"
+                        >
+                          ✏️ Modifier
+                        </button>
+                        {!addr.is_default && (
+                          <button
+                            onClick={() => setDefault(addr.id)}
+                            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
+                          >
+                            ⭐ Par défaut
+                          </button>
+                        )}
+                        <button
+                          onClick={() => deleteAddress(addr.id)}
+                          className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                        >
+                          🗑️ Supprimer
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Notifications Section */}
+      {activeSection === 'notifications' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="text-lg font-bold text-[#1E3A5F]">Préférences de notification</h2>
+            <p className="text-sm text-gray-500">Choisissez les notifications que vous souhaitez recevoir</p>
+          </div>
+          <div className="p-6 space-y-4">
+            <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
+              <div>
+                <p className="font-medium text-[#1E3A5F]">Mises à jour de statut</p>
+                <p className="text-sm text-gray-500">Recevoir un email quand le statut d'une demande change</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifications.email_status_updates}
+                onChange={e => setNotifications({ ...notifications, email_status_updates: e.target.checked })}
+                className="w-5 h-5 text-[#3B7AB4] rounded"
+              />
+            </label>
+            
+            <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
+              <div>
+                <p className="font-medium text-[#1E3A5F]">Devis et factures</p>
+                <p className="text-sm text-gray-500">Recevoir un email quand un devis ou une facture est disponible</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifications.email_quotes}
+                onChange={e => setNotifications({ ...notifications, email_quotes: e.target.checked })}
+                className="w-5 h-5 text-[#3B7AB4] rounded"
+              />
+            </label>
+            
+            <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
+              <div>
+                <p className="font-medium text-[#1E3A5F]">Notifications d'expédition</p>
+                <p className="text-sm text-gray-500">Recevoir un email avec le numéro de suivi lors de l'expédition</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifications.email_shipping}
+                onChange={e => setNotifications({ ...notifications, email_shipping: e.target.checked })}
+                className="w-5 h-5 text-[#3B7AB4] rounded"
+              />
+            </label>
+            
+            <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
+              <div>
+                <p className="font-medium text-[#1E3A5F]">Communications marketing</p>
+                <p className="text-sm text-gray-500">Recevoir des informations sur nos nouveaux produits et services</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifications.email_marketing}
+                onChange={e => setNotifications({ ...notifications, email_marketing: e.target.checked })}
+                className="w-5 h-5 text-[#3B7AB4] rounded"
+              />
+            </label>
+            
+            <div className="pt-4">
+              <button
+                onClick={() => notify('Préférences enregistrées!')}
+                className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
+              >
+                Enregistrer les préférences
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Security Section */}
+      {activeSection === 'security' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="text-lg font-bold text-[#1E3A5F]">Sécurité du compte</h2>
+          </div>
+          <div className="p-6 space-y-6">
+            {/* Password Change */}
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div>
+                <p className="font-medium text-[#1E3A5F]">Mot de passe</p>
+                <p className="text-sm text-gray-500">Modifiez votre mot de passe régulièrement pour plus de sécurité</p>
+              </div>
+              <button
+                onClick={() => setShowPasswordModal(true)}
+                className="px-4 py-2 text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]"
+              >
+                Modifier
+              </button>
+            </div>
+            
+            {/* Last Login */}
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <p className="font-medium text-[#1E3A5F]">Dernière connexion</p>
+              <p className="text-sm text-gray-500">
+                {new Date().toLocaleDateString('fr-FR')} à {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            </div>
+            
+            {/* Danger Zone */}
+            <div className="border-t border-gray-200 pt-6">
+              <h3 className="font-medium text-red-600 mb-4">Zone de danger</h3>
+              <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+                <p className="font-medium text-red-700">Supprimer le compte</p>
+                <p className="text-sm text-red-600 mb-3">Cette action est irréversible. Toutes vos données seront supprimées.</p>
+                <button className="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-100">
+                  Supprimer mon compte
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit Address Modal */}
+      {showAddAddress && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowAddAddress(false)}>
+          <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b sticky top-0 bg-white">
+              <h3 className="font-bold text-lg text-[#1E3A5F]">
+                {editingAddress ? 'Modifier l\'adresse' : 'Ajouter une adresse'}
+              </h3>
+            </div>
+            <form onSubmit={saveAddress} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nom de l'adresse *</label>
+                <input
+                  type="text"
+                  value={newAddress.label}
+                  onChange={e => setNewAddress({ ...newAddress, label: e.target.value })}
+                  placeholder="ex: Bureau principal, Laboratoire, Entrepôt"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">À l'attention de</label>
+                <input
+                  type="text"
+                  value={newAddress.attention}
+                  onChange={e => setNewAddress({ ...newAddress, attention: e.target.value })}
+                  placeholder="Nom du contact"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Adresse ligne 1 *</label>
+                <input
+                  type="text"
+                  value={newAddress.address_line1}
+                  onChange={e => setNewAddress({ ...newAddress, address_line1: e.target.value })}
+                  placeholder="Numéro et nom de rue"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Adresse ligne 2</label>
+                <input
+                  type="text"
+                  value={newAddress.address_line2}
+                  onChange={e => setNewAddress({ ...newAddress, address_line2: e.target.value })}
+                  placeholder="Bâtiment, étage, etc."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Code postal *</label>
+                  <input
+                    type="text"
+                    value={newAddress.postal_code}
+                    onChange={e => setNewAddress({ ...newAddress, postal_code: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ville *</label>
+                  <input
+                    type="text"
+                    value={newAddress.city}
+                    onChange={e => setNewAddress({ ...newAddress, city: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    required
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Pays</label>
+                <select
+                  value={newAddress.country}
+                  onChange={e => setNewAddress({ ...newAddress, country: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                >
+                  <option value="France">France</option>
+                  <option value="Belgium">Belgique</option>
+                  <option value="Switzerland">Suisse</option>
+                  <option value="Luxembourg">Luxembourg</option>
+                  <option value="Germany">Allemagne</option>
+                  <option value="Spain">Espagne</option>
+                  <option value="Italy">Italie</option>
+                  <option value="United Kingdom">Royaume-Uni</option>
+                  <option value="Other">Autre</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
+                <input
+                  type="tel"
+                  value={newAddress.phone}
+                  onChange={e => setNewAddress({ ...newAddress, phone: e.target.value })}
+                  placeholder="+33 1 23 45 67 89"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                />
+              </div>
+              <label className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                <input
+                  type="checkbox"
+                  checked={newAddress.is_default}
+                  onChange={e => setNewAddress({ ...newAddress, is_default: e.target.checked })}
+                  className="w-4 h-4 text-[#3B7AB4]"
+                />
+                <span className="text-sm">Définir comme adresse par défaut</span>
+              </label>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddAddress(false);
+                    setEditingAddress(null);
+                  }}
+                  className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                >
+                  {saving ? 'Enregistrement...' : (editingAddress ? 'Modifier' : 'Ajouter')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Password Change Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowPasswordModal(false)}>
+          <div className="bg-white rounded-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b">
+              <h3 className="font-bold text-lg text-[#1E3A5F]">Modifier le mot de passe</h3>
+            </div>
+            <form onSubmit={changePassword} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nouveau mot de passe *</label>
+                <input
+                  type="password"
+                  value={passwordData.new}
+                  onChange={e => setPasswordData({ ...passwordData, new: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  required
+                  minLength={6}
+                />
+                <p className="text-xs text-gray-400 mt-1">Minimum 6 caractères</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Confirmer le mot de passe *</label>
+                <input
+                  type="password"
+                  value={passwordData.confirm}
+                  onChange={e => setPasswordData({ ...passwordData, confirm: e.target.value })}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B7AB4] ${
+                    passwordData.confirm && passwordData.new !== passwordData.confirm 
+                      ? 'border-red-300 bg-red-50' 
+                      : 'border-gray-300'
+                  }`}
+                  required
+                />
+                {passwordData.confirm && passwordData.new !== passwordData.confirm && (
+                  <p className="text-xs text-red-500 mt-1">Les mots de passe ne correspondent pas</p>
+                )}
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordModal(false);
+                    setPasswordData({ current: '', new: '', confirm: '' });
+                  }}
+                  className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving || passwordData.new !== passwordData.confirm}
+                  className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                >
+                  {saving ? 'Modification...' : 'Modifier'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Invite Team Member Modal */}
+      {showInviteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowInviteModal(false)}>
+          <div className="bg-white rounded-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b">
+              <h3 className="font-bold text-lg text-[#1E3A5F]">Inviter un membre</h3>
+            </div>
+            <form onSubmit={inviteTeamMember} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Adresse email *</label>
+                <input
+                  type="email"
+                  value={inviteData.email}
+                  onChange={e => setInviteData({ ...inviteData, email: e.target.value })}
+                  placeholder="collegue@entreprise.com"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  required
+                />
+                <p className="text-xs text-gray-400 mt-1">Un email d'invitation sera envoyé à cette adresse</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Rôle *</label>
+                <select
+                  value={inviteData.role}
+                  onChange={e => setInviteData({ ...inviteData, role: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                >
+                  <option value="customer">👤 Utilisateur - Voir ses propres demandes</option>
+                  <option value="technician">📋 Technicien - Voir toutes les demandes</option>
+                  <option value="admin">👑 Admin - Accès complet</option>
+                </select>
+              </div>
+              
+              <div className="p-3 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-700">
+                  <strong>Note:</strong> L'utilisateur recevra un email avec un lien pour créer son compte et rejoindre votre entreprise.
+                </p>
+              </div>
+              
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowInviteModal(false);
+                    setInviteData({ email: '', role: 'customer' });
+                  }}
+                  className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                >
+                  {saving ? 'Envoi...' : 'Envoyer l\'invitation'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// EQUIPMENT PAGE
+// ============================================
+function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedRequest, requests, setPreviousPage }) {
+  const [equipment, setEquipment] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editingEquipment, setEditingEquipment] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [selectedDevice, setSelectedDevice] = useState(null);
+  const [deviceRMAs, setDeviceRMAs] = useState([]);
+  const [loadingRMAs, setLoadingRMAs] = useState(false);
+  const [newEquipment, setNewEquipment] = useState({
+    nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '', notes: ''
+  });
+
+  // Load equipment
+  useEffect(() => {
+    const loadEquipment = async () => {
+      if (!profile?.company_id) return;
+      const { data } = await supabase
+        .from('equipment')
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      if (data) setEquipment(data);
+      setLoading(false);
+    };
+    loadEquipment();
+  }, [profile?.company_id]);
+
+  // Load RMAs for selected device
+  useEffect(() => {
+    const loadDeviceRMAs = async () => {
+      if (!selectedDevice || !profile?.company_id) return;
+      setLoadingRMAs(true);
+      
+      // Get RMAs for this device from this company only
+      const { data } = await supabase
+        .from('service_requests')
+        .select(`
+          *,
+          request_devices(*)
+        `)
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      
+      // Filter to only requests containing this serial number
+      const filteredRMAs = (data || []).filter(req => 
+        req.request_devices?.some(d => d.serial_number === selectedDevice.serial_number) ||
+        req.serial_number === selectedDevice.serial_number
+      );
+      
+      // Sort: open RMAs first, then by date
+      const sortedRMAs = filteredRMAs.sort((a, b) => {
+        const aOpen = !['shipped', 'delivered', 'completed', 'cancelled'].includes(a.status);
+        const bOpen = !['shipped', 'delivered', 'completed', 'cancelled'].includes(b.status);
+        if (aOpen && !bOpen) return -1;
+        if (!aOpen && bOpen) return 1;
+        return new Date(b.created_at) - new Date(a.created_at);
+      });
+      
+      setDeviceRMAs(sortedRMAs);
+      setLoadingRMAs(false);
+    };
+    loadDeviceRMAs();
+  }, [selectedDevice, profile?.company_id]);
+
+  const reloadEquipment = async () => {
+    const { data } = await supabase
+      .from('equipment')
+      .select('*')
+      .eq('company_id', profile.company_id)
+      .order('created_at', { ascending: false });
+    if (data) setEquipment(data);
+  };
+
+  const saveEquipment = async (e) => {
+    e.preventDefault();
+    if (!newEquipment.serial_number || !newEquipment.model_name) {
+      notify('Veuillez remplir le modèle et le numéro de série', 'error');
+      return;
+    }
+    
+    setSaving(true);
+    const equipData = {
+      company_id: profile.company_id,
+      nickname: newEquipment.nickname || null,
+      brand: newEquipment.brand === 'other' ? newEquipment.brand_other : 'Lighthouse',
+      model_name: newEquipment.model_name,
+      serial_number: newEquipment.serial_number,
+      notes: newEquipment.notes || null,
+      equipment_type: 'particle_counter',
+      added_by: profile.id
+    };
+
+    let error;
+    if (editingEquipment) {
+      const result = await supabase.from('equipment').update(equipData).eq('id', editingEquipment.id);
+      error = result.error;
+    } else {
+      const result = await supabase.from('equipment').insert(equipData);
+      error = result.error;
+    }
+
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify(editingEquipment ? 'Équipement modifié!' : 'Équipement ajouté!');
+      setShowAddModal(false);
+      
+      // Update selectedDevice if we were editing the currently viewed device
+      if (editingEquipment && selectedDevice && editingEquipment.id === selectedDevice.id) {
+        setSelectedDevice({ ...selectedDevice, ...equipData, id: editingEquipment.id });
+      }
+      
+      setEditingEquipment(null);
+      setNewEquipment({ nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '', notes: '' });
+      await reloadEquipment();
+    }
+    setSaving(false);
+  };
+
+  const deleteEquipment = async (id) => {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cet équipement?')) return;
+    const { error } = await supabase.from('equipment').delete().eq('id', id);
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Équipement supprimé');
+      await reloadEquipment();
+    }
+  };
+
+  const openEditModal = (equip, e) => {
+    e?.stopPropagation();
+    setEditingEquipment(equip);
+    setNewEquipment({
+      nickname: equip.nickname || '',
+      brand: equip.brand === 'Lighthouse' ? 'Lighthouse' : 'other',
+      brand_other: equip.brand !== 'Lighthouse' ? equip.brand : '',
+      model_name: equip.model_name || '',
+      serial_number: equip.serial_number || '',
+      notes: equip.notes || ''
+    });
+    setShowAddModal(true);
+  };
+
+  const viewDeviceDetail = (equip) => {
+    setSelectedDevice(equip);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const viewRMA = (rma) => {
+    if (setSelectedRequest && setPage) {
+      if (setPreviousPage) setPreviousPage('equipment');
+      setSelectedRequest(rma);
+      setPage('request-detail');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="w-8 h-8 border-4 border-[#3B7AB4] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Device Detail View
+  if (selectedDevice) {
+    const isOpen = (status) => !['shipped', 'delivered', 'completed', 'cancelled'].includes(status);
+    
+    return (
+      <>
+        <div>
+          {/* Back Button */}
+          <button
+            onClick={() => setSelectedDevice(null)}
+            className="flex items-center gap-2 text-[#3B7AB4] font-medium mb-4 hover:underline"
+          >
+            ← Retour à mes équipements
+          </button>
+
+          {/* Device Info Card */}
+          <div className="bg-gradient-to-r from-[#1E3A5F] to-[#3B7AB4] rounded-xl p-6 text-white mb-6">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-white/70 text-sm uppercase tracking-wide mb-1">Équipement</p>
+                <p className="text-2xl font-bold">{selectedDevice.model_name}</p>
+                <p className="font-mono text-lg mt-1">{selectedDevice.serial_number}</p>
+              </div>
+            <div className="flex flex-col items-end gap-2">
+              <span className="px-3 py-1 bg-white/20 rounded-full text-sm">
+                {selectedDevice.brand || 'Lighthouse'}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => openEditModal(selectedDevice)}
+                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                >
+                  ✏️ Modifier
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm('Êtes-vous sûr de vouloir supprimer cet équipement?')) {
+                      deleteEquipment(selectedDevice.id);
+                      setSelectedDevice(null);
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-red-500/50 hover:bg-red-500/70 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                >
+                  🗑️ Supprimer
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          {selectedDevice.nickname && (
+            <div className="mt-4 pt-4 border-t border-white/20">
+              <p className="text-white/70 text-sm">Surnom</p>
+              <p className="font-medium">{selectedDevice.nickname}</p>
             </div>
           )}
           
-          {/* ==================== STEP 1: PRICING EDITOR ==================== */}
-          {step === 1 && !loadingContract && (
-            <div className="flex h-full">
-              {/* LEFT SIDE - Customer Info & Devices */}
-              <div className="flex-1 p-6 overflow-y-auto">
+          {selectedDevice.notes && (
+            <div className="mt-4 pt-4 border-t border-white/20">
+              <p className="text-white/70 text-sm">Notes</p>
+              <p className="text-sm">{selectedDevice.notes}</p>
+            </div>
+          )}
+          
+          <div className="mt-4 pt-4 border-t border-white/20 flex gap-4 text-sm">
+            <div>
+              <p className="text-white/70">Ajouté le</p>
+              <p>{new Date(selectedDevice.created_at).toLocaleDateString('fr-FR')}</p>
+            </div>
+            <div>
+              <p className="text-white/70">Total RMAs</p>
+              <p>{deviceRMAs.length}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* RMA History */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <h2 className="font-bold text-[#1E3A5F] text-lg">Historique des RMAs</h2>
+            <span className="text-sm text-gray-500">{deviceRMAs.length} demande(s)</span>
+          </div>
+          
+          {loadingRMAs ? (
+            <div className="flex justify-center py-12">
+              <div className="w-8 h-8 border-4 border-[#3B7AB4] border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : deviceRMAs.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">
+              <p className="text-4xl mb-2">📋</p>
+              <p>Aucune demande pour cet appareil</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {deviceRMAs.map(rma => {
+                const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
+                const open = isOpen(rma.status);
+                const shipDate = rma.shipped_at || (rma.status === 'shipped' ? rma.updated_at : null);
                 
-                {/* CONTRACT CUSTOMER BANNER */}
-                {hasContractCoveredDevices && (
-                  <div className="mb-6 p-4 rounded-xl border-2 bg-emerald-50 border-emerald-300">
-                    <div className="flex items-start gap-3">
-                      <span className="text-3xl">📋</span>
-                      <div className="flex-1">
-                        <p className="font-bold text-emerald-800">
-                          Contrat détecté
+                return (
+                  <div 
+                    key={rma.id}
+                    onClick={() => viewRMA(rma)}
+                    className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${open ? 'bg-blue-50/30' : ''}`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono font-bold text-[#3B7AB4]">
+                          {rma.request_number || 'En attente'}
+                        </span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                          {style.label}
+                        </span>
+                        {open && (
+                          <span className="px-2 py-1 rounded-full text-xs font-bold bg-green-500 text-white">
+                            En cours
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-right text-sm">
+                        <p className="text-gray-500">
+                          Soumis: {new Date(rma.created_at).toLocaleDateString('fr-FR')}
                         </p>
-                        <p className="text-emerald-700 text-sm mt-1">
-                          {isFullyContractCovered 
-                            ? 'Étalonnage(s) couvert(s) par contrat. Le RMA sera créé directement en "Attente Appareil" avec le BC du contrat.'
-                            : `${devicePricing.filter(d => d.isContractCovered).length} appareil(s) couvert(s) par contrat. Les réparations ou appareils non couverts seront facturés normalement.`
-                          }
-                        </p>
-                        {contractInfo?.primaryContract && (
-                          <p className="text-xs text-emerald-600 mt-2">
-                            Contrat: {contractInfo.primaryContract.contract_number} • 
-                            Valide jusqu'au {new Date(contractInfo.primaryContract.end_date).toLocaleDateString('fr-FR')}
+                        {shipDate && (
+                          <p className="text-green-600 font-medium">
+                            Expédié: {new Date(shipDate).toLocaleDateString('fr-FR')}
                           </p>
                         )}
                       </div>
                     </div>
-                  </div>
-                )}
-                
-                {/* Revision Request Alert */}
-                {request.status === 'quote_revision_requested' && (
-                  <div className="mb-6 p-4 bg-red-100 border-2 border-red-300 rounded-xl">
-                    <p className="font-bold text-red-800">🔴 Modification demandée par le client</p>
-                    <p className="text-red-700 mt-1">{request.quote_revision_notes}</p>
-                  </div>
-                )}
-
-                {/* Non-Metro Warning */}
-                {!isMetro && (
-                  <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl">
-                    <p className="font-bold text-amber-800">⚠️ Client hors France métropolitaine</p>
-                    <p className="text-amber-700 text-sm">Les frais de retour sont à 0€ par défaut. Le client gère son propre transport.</p>
-                  </div>
-                )}
-
-                {/* Customer Info Card */}
-                <div className="bg-gray-50 rounded-xl p-4 mb-6">
-                  <h3 className="font-bold text-gray-800 mb-3">Client</h3>
-                  <p className="text-lg font-bold text-[#1E3A5F]">{request.companies?.name}</p>
-                  {request.companies?.billing_address && (
-                    <p className="text-sm text-gray-600">{request.companies?.billing_address}</p>
-                  )}
-                  <p className="text-sm text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
-                </div>
-
-                {/* Detected Service Sections */}
-                <div className="bg-blue-50 rounded-xl p-4 mb-6">
-                  <h3 className="font-bold text-blue-800 mb-2">Sections du devis (auto-détectées)</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {requiredSections.calibrationTypes.map(type => (
-                      <span key={type} className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
-                        {CALIBRATION_TEMPLATES[type]?.icon} Étal. {getDeviceTypeLabel(type)}
+                    <div className="mt-2 flex items-center gap-4 text-sm text-gray-500">
+                      <span>
+                        {rma.requested_service === 'calibration' ? '🔬 Étalonnage' : 
+                         rma.requested_service === 'repair' ? '🔧 Réparation' :
+                         rma.requested_service === 'calibration_repair' ? '🔬🔧 Étal. + Rép.' :
+                         rma.requested_service}
                       </span>
-                    ))}
-                    {requiredSections.hasRepair && (
-                      <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-sm">
-                        🔧 Réparation
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Device Pricing Cards */}
-                <h3 className="font-bold text-gray-800 mb-3">Tarification par Appareil</h3>
-                <div className="space-y-4">
-                  {devicePricing.map((device, index) => {
-                    const calTemplate = CALIBRATION_TEMPLATES[device.deviceType] || CALIBRATION_TEMPLATES.particle_counter;
-                    return (
-                      <div key={device.id} className={`border-2 rounded-xl overflow-hidden ${device.isContractCovered ? 'bg-emerald-50 border-emerald-300' : 'bg-white border-gray-200'}`}>
-                        {/* Device Header */}
-                        <div className={`px-4 py-3 flex items-center justify-between ${device.isContractCovered ? 'bg-emerald-600' : 'bg-[#1a1a2e]'} text-white`}>
-                          <div className="flex items-center gap-3">
-                            <span className="bg-white/20 px-2 py-1 rounded text-sm font-bold">#{index + 1}</span>
-                            <div>
-                              <p className="font-bold">{device.model || 'Appareil'}</p>
-                              <p className="text-sm text-gray-300">SN: {device.serial} • {getDeviceTypeLabel(device.deviceType)}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {device.isContractCovered && (
-                              <span className="bg-white text-emerald-600 px-2 py-1 rounded text-xs font-bold">📋 CONTRAT</span>
-                            )}
-                            {device.tokensExhausted && (
-                              <span className="bg-amber-500 px-2 py-1 rounded text-xs font-bold">⚠️ Tokens épuisés</span>
-                            )}
-                            {device.needsCalibration && !device.isContractCovered && <span className="bg-blue-500 px-2 py-1 rounded text-xs">🔬 Cal</span>}
-                            {device.needsRepair && <span className="bg-orange-500 px-2 py-1 rounded text-xs">🔧 Rép</span>}
-                          </div>
-                        </div>
-
-                        {/* Customer Notes (Internal) */}
-                        {device.customerNotes && (
-                          <div className="bg-yellow-50 px-4 py-2 border-b border-yellow-200">
-                            <p className="text-xs text-yellow-700 font-medium">💬 Note client (interne) :</p>
-                            <p className="text-sm text-yellow-800">{device.customerNotes}</p>
-                          </div>
-                        )}
-                        
-                        {/* Contract Coverage Info */}
-                        {device.isContractCovered && (
-                          <div className="bg-emerald-100 px-4 py-2 border-b border-emerald-200">
-                            <p className="text-sm text-emerald-800">
-                              <span className="font-bold">📋 Couvert par contrat</span> 
-                              <span className="ml-2">• Tokens restants: {device.tokensRemaining}</span>
-                            </p>
-                          </div>
-                        )}
-                        {device.tokensExhausted && (
-                          <div className="bg-amber-100 px-4 py-2 border-b border-amber-200">
-                            <p className="text-sm text-amber-800">
-                              <span className="font-bold">⚠️ Tokens épuisés</span> - Facturation au tarif normal
-                            </p>
-                          </div>
-                        )}
-
-                        {/* Pricing Inputs */}
-                        <div className="p-4 space-y-3">
-                          {device.needsCalibration && (
-                            <div className={`flex items-center justify-between p-3 rounded-lg ${device.isContractCovered ? 'bg-emerald-100' : 'bg-blue-50'}`}>
-                              <div>
-                                <span className={`font-medium ${device.isContractCovered ? 'text-emerald-800' : 'text-blue-800'}`}>Main d'œuvre étalonnage</span>
-                                <span className={`text-xs ml-2 ${device.isContractCovered ? 'text-emerald-600' : 'text-blue-600'}`}>({calTemplate.icon} {getDeviceTypeLabel(device.deviceType)})</span>
-                              </div>
-                              {device.isContractCovered ? (
-                                <div className="flex items-center gap-2">
-                                  <span className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg">
-                                    CONTRAT
-                                  </span>
-                                  <span className="text-emerald-600 font-medium">0,00 €</span>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    type="number"
-                                    value={device.calibrationPrice}
-                                    onChange={e => updateDevice(device.id, 'calibrationPrice', parseFloat(e.target.value) || 0)}
-                                    className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
-                                  />
-                                  <span className="text-gray-500 font-medium">€</span>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          
-                          {device.needsRepair && (
-                            <div className="flex items-center justify-between bg-orange-50 p-3 rounded-lg">
-                              <span className="font-medium text-orange-800">Main d'œuvre réparation</span>
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  value={device.repairPrice}
-                                  onChange={e => updateDevice(device.id, 'repairPrice', parseFloat(e.target.value) || 0)}
-                                  className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
-                                />
-                                <span className="text-gray-500 font-medium">€</span>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Additional Parts */}
-                          {device.additionalParts.map(part => (
-                            <div key={part.id} className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg">
-                              <input
-                                type="text"
-                                value={part.description}
-                                onChange={e => updatePart(device.id, part.id, 'description', e.target.value)}
-                                placeholder="Pièce ou service supplémentaire..."
-                                className="flex-1 px-3 py-2 border rounded-lg"
-                              />
-                              <input
-                                type="number"
-                                value={part.price}
-                                onChange={e => updatePart(device.id, part.id, 'price', e.target.value)}
-                                className="w-24 px-3 py-2 border rounded-lg text-right"
-                                placeholder="0"
-                              />
-                              <span className="text-gray-500">€</span>
-                              <button onClick={() => removePart(device.id, part.id)} className="text-red-500 hover:text-red-700 text-xl px-2">×</button>
-                            </div>
-                          ))}
-                          
-                          <button onClick={() => addPart(device.id)} className="text-sm text-[#00A651] font-medium hover:underline">
-                            + Ajouter pièce/service
-                          </button>
-
-                          {/* Shipping */}
-                          <div className={`flex items-center justify-between p-3 rounded-lg border-t mt-3 ${device.isContractCovered ? 'bg-emerald-100' : 'bg-gray-100'}`}>
-                            <span className={`font-medium ${device.isContractCovered ? 'text-emerald-700' : 'text-gray-700'}`}>
-                              {device.isContractCovered ? 'Frais de port (inclus contrat)' : isMetro ? 'Frais de port' : 'Transport (géré par client)'}
-                            </span>
-                            {device.isContractCovered ? (
-                              <div className="flex items-center gap-2">
-                                <span className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg">
-                                  CONTRAT
-                                </span>
-                                <span className="text-emerald-600 font-medium">0,00 €</span>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  value={device.shipping}
-                                  onChange={e => updateDevice(device.id, 'shipping', parseFloat(e.target.value) || 0)}
-                                  className="w-20 px-3 py-2 border rounded-lg text-right"
-                                />
-                                <span className="text-gray-500">€</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* RIGHT SIDE - Pricing Summary */}
-              <div className="w-80 bg-gray-50 border-l p-6 overflow-y-auto shrink-0">
-                <h3 className="font-bold text-gray-800 mb-4 text-lg">💰 Récapitulatif</h3>
-                
-                {/* Per-device totals */}
-                <div className="space-y-3 mb-6">
-                  {devicePricing.map((device, i) => (
-                    <div key={device.id} className={`rounded-lg p-3 border ${device.isContractCovered ? 'bg-emerald-50 border-emerald-200' : 'bg-white'}`}>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-medium text-sm">{device.model}</p>
-                          <p className="text-xs text-gray-500">SN: {device.serial}</p>
-                        </div>
-                        <div className="text-right">
-                          {device.isContractCovered ? (
-                            <>
-                              <p className="font-bold text-emerald-600">CONTRAT</p>
-                              <p className="text-xs text-emerald-500">Inclus dans le contrat</p>
-                            </>
-                          ) : (
-                            <>
-                              <p className="font-bold text-[#00A651]">{(getDeviceServiceTotal(device) + device.shipping).toFixed(2)} €</p>
-                              <p className="text-xs text-gray-400">dont port: {device.shipping}€</p>
-                            </>
-                          )}
-                        </div>
-                      </div>
+                      <span>→</span>
                     </div>
-                  ))}
-                </div>
-
-                {/* Totals */}
-                <div className="border-t pt-4 space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Sous-total services</span>
-                    <span className="font-medium">{servicesSubtotal.toFixed(2)} €</span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Frais de port total</span>
-                    <span className="font-medium">{shippingTotal.toFixed(2)} €</span>
-                  </div>
-                  <div className="flex justify-between items-center bg-[#00A651] text-white px-4 py-3 rounded-lg mt-4">
-                    <span className="font-bold">TOTAL HT</span>
-                    <span className="font-bold text-xl">{grandTotal.toFixed(2)} €</span>
-                  </div>
-                </div>
-
-                {/* Signatory */}
-                <div className="mt-6 pt-4 border-t">
-                  <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
-                  <p className="font-medium">{signatory}</p>
-                </div>
-              </div>
+                );
+              })}
             </div>
           )}
-
-          {/* ==================== STEP 2: QUOTE PREVIEW ==================== */}
-          {step === 2 && (
-            <div className="p-6 bg-gray-200 min-h-full">
-              <div className="max-w-4xl mx-auto bg-white shadow-xl" style={{ fontFamily: 'Arial, sans-serif' }}>
+        </div>
+        </div>
+        
+        {/* Add/Edit Equipment Modal - Also available in device detail */}
+        {showAddModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowAddModal(false)}>
+            <div className="bg-white rounded-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+              <div className="px-6 py-4 border-b">
+                <h3 className="font-bold text-lg text-[#1E3A5F]">
+                  {editingEquipment ? 'Modifier l\'équipement' : 'Ajouter un équipement'}
+                </h3>
+              </div>
+              <form onSubmit={saveEquipment} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Surnom (optionnel)</label>
+                  <input
+                    type="text"
+                    value={newEquipment.nickname}
+                    onChange={e => setNewEquipment({ ...newEquipment, nickname: e.target.value })}
+                    placeholder="ex: Compteur Salle Blanche 1"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
                 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Marque *</label>
+                  <select
+                    value={newEquipment.brand}
+                    onChange={e => setNewEquipment({ ...newEquipment, brand: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="Lighthouse">Lighthouse</option>
+                    <option value="other">Autre</option>
+                  </select>
+                </div>
+                
+                {newEquipment.brand === 'other' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Préciser la marque *</label>
+                    <input
+                      type="text"
+                      value={newEquipment.brand_other}
+                      onChange={e => setNewEquipment({ ...newEquipment, brand_other: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      required
+                    />
+                  </div>
+                )}
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Modèle *</label>
+                  <input
+                    type="text"
+                    value={newEquipment.model_name}
+                    onChange={e => setNewEquipment({ ...newEquipment, model_name: e.target.value })}
+                    placeholder="ex: Solair 3100"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">N° de Série *</label>
+                  <input
+                    type="text"
+                    value={newEquipment.serial_number}
+                    onChange={e => setNewEquipment({ ...newEquipment, serial_number: e.target.value })}
+                    placeholder="ex: 205482857"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optionnel)</label>
+                  <textarea
+                    value={newEquipment.notes}
+                    onChange={e => setNewEquipment({ ...newEquipment, notes: e.target.value })}
+                    placeholder="Informations supplémentaires, emplacement, etc."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddModal(false);
+                      setEditingEquipment(null);
+                    }}
+                    className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                  >
+                    {saving ? 'Enregistrement...' : (editingEquipment ? 'Modifier' : 'Ajouter')}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  // Equipment List View
+  return (
+    <>
+      <div>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold text-[#1E3A5F]">{t('myEquipment')}</h1>
+          <button
+            onClick={() => {
+              setEditingEquipment(null);
+              setNewEquipment({ nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '', notes: '' });
+              setShowAddModal(true);
+            }}
+            className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
+          >
+            + Ajouter un Équipement
+          </button>
+      </div>
+
+      {equipment.length === 0 ? (
+        <div className="bg-white rounded-xl p-12 text-center shadow-sm border border-gray-100">
+          <p className="text-4xl mb-4">⚙️</p>
+          <p className="text-gray-500 mb-4">Aucun équipement enregistré</p>
+          <p className="text-gray-400 text-sm mb-6">
+            Ajoutez vos appareils pour les retrouver facilement lors de vos prochaines demandes
+          </p>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
+          >
+            + Ajouter votre premier équipement
+          </button>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          {/* Table Header */}
+          <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-gray-50 border-b text-sm font-bold text-gray-600">
+            <div className="col-span-2">Marque</div>
+            <div className="col-span-4">Modèle</div>
+            <div className="col-span-3">N° de Série</div>
+            <div className="col-span-3">Surnom</div>
+          </div>
+          
+          {/* Table Rows - sorted alphabetically by model */}
+          {[...equipment]
+            .sort((a, b) => (a.model_name || '').localeCompare(b.model_name || ''))
+            .map((equip, index) => (
+            <div 
+              key={equip.id} 
+              onClick={() => viewDeviceDetail(equip)}
+              className={`grid grid-cols-12 gap-4 px-4 py-3 items-center cursor-pointer ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-[#E8F2F8] transition-colors border-b border-gray-100 last:border-b-0 group`}
+            >
+              <div className="col-span-2">
+                <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded font-medium">
+                  {equip.brand || 'Lighthouse'}
+                </span>
+              </div>
+              <div className="col-span-4 font-medium text-[#1E3A5F] flex items-center gap-2">
+                {equip.model_name || 'Modèle inconnu'}
+                <span className="text-gray-300 group-hover:text-[#3B7AB4] transition-colors">→</span>
+              </div>
+              <div className="col-span-3 font-mono text-gray-600 text-sm">
+                {equip.serial_number}
+              </div>
+              <div className="col-span-3 text-gray-500 text-sm">
+                {equip.nickname || '-'}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add/Edit Equipment Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowAddModal(false)}>
+          <div className="bg-white rounded-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b">
+              <h3 className="font-bold text-lg text-[#1E3A5F]">
+                {editingEquipment ? 'Modifier l\'équipement' : 'Ajouter un équipement'}
+              </h3>
+            </div>
+            <form onSubmit={saveEquipment} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Surnom (optionnel)</label>
+                <input
+                  type="text"
+                  value={newEquipment.nickname}
+                  onChange={e => setNewEquipment({ ...newEquipment, nickname: e.target.value })}
+                  placeholder="ex: Compteur Salle Blanche 1"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Marque *</label>
+                <select
+                  value={newEquipment.brand}
+                  onChange={e => setNewEquipment({ ...newEquipment, brand: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="Lighthouse">Lighthouse</option>
+                  <option value="other">Autre</option>
+                </select>
+              </div>
+              
+              {newEquipment.brand === 'other' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Préciser la marque *</label>
+                  <input
+                    type="text"
+                    value={newEquipment.brand_other}
+                    onChange={e => setNewEquipment({ ...newEquipment, brand_other: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    required
+                  />
+                </div>
+              )}
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Modèle *</label>
+                <input
+                  type="text"
+                  value={newEquipment.model_name}
+                  onChange={e => setNewEquipment({ ...newEquipment, model_name: e.target.value })}
+                  placeholder="ex: Solair 3100"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">N° de Série *</label>
+                <input
+                  type="text"
+                  value={newEquipment.serial_number}
+                  onChange={e => setNewEquipment({ ...newEquipment, serial_number: e.target.value })}
+                  placeholder="ex: 205482857"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optionnel)</label>
+                <textarea
+                  value={newEquipment.notes}
+                  onChange={e => setNewEquipment({ ...newEquipment, notes: e.target.value })}
+                  placeholder="Informations supplémentaires, emplacement, etc."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddModal(false);
+                    setEditingEquipment(null);
+                  }}
+                  className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                >
+                  {saving ? 'Enregistrement...' : (editingEquipment ? 'Modifier' : 'Ajouter')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      </div>
+    </>
+  );
+}
+
+// ============================================
+// REQUEST DETAIL PAGE (Enhanced)
+// ============================================
+function RequestDetail({ request, profile, t, setPage, notify, refresh, previousPage = 'dashboard' }) {
+  const [messages, setMessages] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [activeTab, setActiveTab] = useState('details');
+  const [shippingAddress, setShippingAddress] = useState(null);
+  const [attachments, setAttachments] = useState([]);
+  
+  // BC Submission state
+  const [showBCModal, setShowBCModal] = useState(false);
+  const [bcFile, setBcFile] = useState(null);
+  const [signatureName, setSignatureName] = useState(profile?.full_name || '');
+  const [signatureDateDisplay, setSignatureDateDisplay] = useState(new Date().toLocaleDateString('fr-FR'));
+  const [signatureDateISO, setSignatureDateISO] = useState(new Date().toISOString().split('T')[0]);
+  const [luEtApprouve, setLuEtApprouve] = useState('');
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [submittingBC, setSubmittingBC] = useState(false);
+  const [signatureData, setSignatureData] = useState(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const canvasRef = useRef(null);
+  
+  // Quote review state
+  const [showQuoteModal, setShowQuoteModal] = useState(false);
+  const [showRevisionModal, setShowRevisionModal] = useState(false);
+  const [revisionNotes, setRevisionNotes] = useState('');
+  const [approvingQuote, setApprovingQuote] = useState(false);
+  
+  const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
+  const isPartsOrder = request.request_type === 'parts' || request.requested_service === 'parts_order';
+  const isQuoteSent = request.status === 'quote_sent';
+  const needsQuoteAction = isQuoteSent && !request.bc_submitted_at;
+  const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
+  
+  // Check if submission is valid - need EITHER file OR signature (not both required)
+  const hasFile = bcFile !== null;
+  const hasSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
+  const isSubmissionValid = signatureName.trim().length > 0 && acceptTerms && (hasFile || hasSignature);
+
+  // Quote approval/revision handlers
+  const handleApproveQuote = async () => {
+    setApprovingQuote(true);
+    const { error } = await supabase.from('service_requests').update({
+      status: 'waiting_bc',
+      quote_approved_at: new Date().toISOString()
+    }).eq('id', request.id);
+    
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('✅ Devis approuvé! Veuillez soumettre votre bon de commande.', 'success');
+      setShowQuoteModal(false);
+      refresh();
+    }
+    setApprovingQuote(false);
+  };
+  
+  const handleRequestRevision = async () => {
+    if (!revisionNotes.trim()) {
+      notify('Veuillez indiquer les modifications souhaitées.', 'error');
+      return;
+    }
+    
+    setApprovingQuote(true);
+    const { error } = await supabase.from('service_requests').update({
+      status: 'quote_revision_requested',
+      quote_revision_notes: revisionNotes,
+      quote_revision_requested_at: new Date().toISOString()
+    }).eq('id', request.id);
+    
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('✅ Demande de modification envoyée!', 'success');
+      setShowRevisionModal(false);
+      setShowQuoteModal(false);
+      refresh();
+    }
+    setApprovingQuote(false);
+  };
+
+  // Signature pad functions
+  const startDrawing = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setIsDrawing(true);
+  };
+
+  const draw = (e) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#1E3A5F';
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    if (isDrawing) {
+      setIsDrawing(false);
+      const canvas = canvasRef.current;
+      if (canvas) {
+        setSignatureData(canvas.toDataURL());
+      }
+    }
+  };
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      setSignatureData(null);
+    }
+  };
+
+  // Load messages, history, attachments, and shipping address
+  useEffect(() => {
+    const loadData = async () => {
+      // Load messages
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('request_id', request.id)
+        .order('created_at', { ascending: true });
+      if (msgs) setMessages(msgs);
+      
+      // Load device history
+      const { data: hist } = await supabase
+        .from('device_history')
+        .select('*')
+        .eq('request_id', request.id)
+        .order('event_date', { ascending: false });
+      if (hist) setHistory(hist);
+      
+      // Load attachments
+      const { data: files } = await supabase
+        .from('request_attachments')
+        .select('*')
+        .eq('request_id', request.id);
+      if (files) setAttachments(files);
+      
+      // Load shipping address
+      if (request.shipping_address_id) {
+        const { data: addr } = await supabase
+          .from('shipping_addresses')
+          .select('*')
+          .eq('id', request.shipping_address_id)
+          .single();
+        if (addr) setShippingAddress(addr);
+      }
+    };
+    loadData();
+  }, [request.id, request.shipping_address_id]);
+
+  // Submit BC / Approval
+  const submitBonCommande = async () => {
+    if (!acceptTerms) {
+      notify('Veuillez accepter les conditions générales', 'error');
+      return;
+    }
+    if (!signatureName.trim()) {
+      notify('Veuillez entrer votre nom', 'error');
+      return;
+    }
+    
+    // Need either file OR signature
+    const hasValidSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
+    if (!bcFile && !hasValidSignature) {
+      notify('Veuillez télécharger un bon de commande OU signer électroniquement', 'error');
+      return;
+    }
+    
+    setSubmittingBC(true);
+    
+    try {
+      // Try to upload BC file if provided (may fail if storage not configured)
+      let fileUrl = null;
+      if (bcFile) {
+        try {
+          const fileName = `bc_${request.id}_${Date.now()}.${bcFile.name.split('.').pop()}`;
+          const { error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(fileName, bcFile);
+          
+          if (!uploadError) {
+            const { data: publicUrl } = supabase.storage
+              .from('documents')
+              .getPublicUrl(fileName);
+            fileUrl = publicUrl?.publicUrl;
+          }
+        } catch (e) {
+          console.log('File upload skipped - storage not configured');
+        }
+      }
+      
+      // Try to upload signature image (may fail if storage not configured)
+      let signatureUrl = null;
+      if (signatureData) {
+        try {
+          const signatureBlob = await fetch(signatureData).then(r => r.blob());
+          const signatureFileName = `signature_${request.id}_${Date.now()}.png`;
+          const { error: sigError } = await supabase.storage
+            .from('documents')
+            .upload(signatureFileName, signatureBlob);
+          
+          if (!sigError) {
+            const { data: sigUrl } = supabase.storage
+              .from('documents')
+              .getPublicUrl(signatureFileName);
+            signatureUrl = sigUrl?.publicUrl;
+          }
+        } catch (e) {
+          console.log('Signature upload skipped - storage not configured');
+        }
+      }
+      
+      // Generate signed quote PDF
+      let signedQuotePdfUrl = null;
+      if (hasValidSignature) {
+        try {
+          const quoteInfo = getQuoteDataFromRequest(request);
+          const pdfBlob = await generateQuotePDF({
+            request,
+            ...quoteInfo,
+            isSigned: true,
+            signatureName: signatureName,
+            signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+            signatureImage: signatureData
+          });
+          
+          const pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
+          const { error: pdfUploadError } = await supabase.storage
+            .from('documents')
+            .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
+          
+          if (!pdfUploadError) {
+            const { data: pdfUrl } = supabase.storage
+              .from('documents')
+              .getPublicUrl(pdfFileName);
+            signedQuotePdfUrl = pdfUrl?.publicUrl;
+            console.log('Signed quote PDF uploaded:', signedQuotePdfUrl);
+          } else {
+            console.log('PDF upload error:', pdfUploadError);
+          }
+        } catch (e) {
+          console.log('Signed quote PDF generation error:', e);
+        }
+      }
+      
+      // Update request status - set to bc_review so admin can verify
+      // Also record quote approval if coming from quote_sent status
+      const { error: updateError } = await supabase
+        .from('service_requests')
+        .update({ 
+          status: 'bc_review',
+          bc_submitted_at: new Date().toISOString(),
+          bc_signed_by: signatureName,
+          bc_signature_date: signatureDateISO,
+          bc_file_url: fileUrl,
+          bc_signature_url: signatureUrl,
+          quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
+        })
+        .eq('id', request.id);
+      
+      if (updateError) throw updateError;
+      
+      // Save documents to request_attachments
+      if (fileUrl) {
+        await supabase.from('request_attachments').insert({
+          request_id: request.id,
+          file_name: bcFile?.name || 'Bon de Commande.pdf',
+          file_url: fileUrl,
+          file_type: bcFile?.type || 'application/pdf',
+          file_size: bcFile?.size || 0,
+          uploaded_by: profile.id,
+          category: 'bon_commande'
+        });
+      }
+      
+      // Save signed quote PDF to attachments (this is the main document)
+      if (signedQuotePdfUrl) {
+        await supabase.from('request_attachments').insert({
+          request_id: request.id,
+          file_name: `Devis_Signé_${request.request_number}.pdf`,
+          file_url: signedQuotePdfUrl,
+          file_type: 'application/pdf',
+          file_size: 0,
+          uploaded_by: profile.id,
+          category: 'devis_signe'
+        });
+      }
+      
+      notify('Bon de commande soumis avec succès!');
+      setShowBCModal(false);
+      
+      // Force full page reload to ensure fresh data
+      window.location.reload();
+      
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+    
+    setSubmittingBC(false);
+  };
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim()) return;
+    
+    setSending(true);
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        request_id: request.id,
+        sender_id: profile.id,
+        sender_type: 'customer',
+        content: newMessage.trim()
+      })
+      .select()
+      .single();
+    
+    if (!error && data) {
+      setMessages([...messages, data]);
+      setNewMessage('');
+      notify('Message envoyé!');
+    }
+    setSending(false);
+  };
+
+  // Generate history from status if no history in DB
+  const getStatusHistory = () => {
+    const statusHistory = [];
+    
+    // Always add submission
+    statusHistory.push({
+      id: 'submitted',
+      event_type: 'submitted',
+      event_description: 'Demande soumise',
+      event_date: request.submitted_at || request.created_at
+    });
+    
+    // Add current status if different from submitted
+    if (request.status !== 'submitted') {
+      statusHistory.push({
+        id: 'current',
+        event_type: request.status,
+        event_description: style.label,
+        event_date: request.updated_at || request.created_at
+      });
+    }
+    
+    return statusHistory;
+  };
+
+  const displayHistory = history.length > 0 ? history : getStatusHistory();
+
+  return (
+    <div>
+      <button
+        onClick={() => setPage(previousPage)}
+        className="mb-6 text-[#3B7AB4] hover:text-[#1E3A5F] font-medium"
+      >
+        ← {previousPage === 'equipment' ? 'Retour à mes équipements' : 'Retour au tableau de bord'}
+      </button>
+
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+        {/* Header */}
+        <div className="p-6 border-b border-gray-100">
+          <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                {request.request_number ? (
+                  <h1 className="text-2xl font-bold text-[#1E3A5F]">{request.request_number}</h1>
+                ) : (
+                  <h1 className="text-2xl font-bold text-amber-600">En attente de validation</h1>
+                )}
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>
+                  {style.label}
+                </span>
+              </div>
+              <p className="text-sm text-gray-500">
+                {isPartsOrder ? 'Commande de pièces' : 'Demande de service'} • Soumis le {new Date(request.created_at).toLocaleDateString('fr-FR')}
+              </p>
+            </div>
+            {request.quote_total && (
+              <div className="text-right">
+                <p className="text-sm text-gray-500">Total</p>
+                <p className="text-2xl font-bold text-[#1E3A5F]">{request.quote_total.toFixed(2)} €</p>
+              </div>
+            )}
+          </div>
+          
+          {/* Per-Device Progress Bars */}
+          {!isPartsOrder && (request.request_devices || []).length > 0 && (
+            <div className="mt-4 space-y-3">
+              <p className="text-xs text-gray-500 uppercase font-medium">Suivi par appareil</p>
+              {(request.request_devices || []).map((device, idx) => {
+                const deviceServiceType = device.service_type || request.requested_service;
+                
+                // For early steps (before received), use RMA status
+                // For later steps (received onwards), use device status independently
+                const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 
+                                       'bc_pending', 'bc_review', 'waiting_bc', 'waiting_device'];
+                const rmaIsEarly = earlyStatuses.includes(request.status);
+                
+                // If RMA is still in early stages, all devices show RMA status
+                // Once RMA moves past waiting_device, each device tracks independently
+                const effectiveStatus = rmaIsEarly ? request.status : (device.status || request.status);
+                
+                return (
+                  <div key={device.id || idx} className="bg-gray-50 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-800">{device.model_name || device.model || 'Appareil'}</span>
+                        <span className="text-xs text-gray-500 font-mono">SN: {device.serial_number || '—'}</span>
+                      </div>
+                      <span className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-600">
+                        {deviceServiceType === 'calibration' ? '🔬 Étalonnage' : 
+                         deviceServiceType === 'repair' ? '🔧 Réparation' : 
+                         deviceServiceType === 'calibration_repair' || deviceServiceType === 'cal_repair' ? '🔬+🔧 Étal. & Rép.' :
+                         deviceServiceType}
+                      </span>
+                    </div>
+                    <StepProgress status={effectiveStatus} serviceType={deviceServiceType} />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          
+          {/* Fallback: Single progress bar if no devices */}
+          {!isPartsOrder && (request.request_devices || []).length === 0 && (
+            <div className="mt-4">
+              <StepProgress status={request.status} serviceType={request.requested_service} />
+            </div>
+          )}
+        </div>
+
+        {/* Quote Sent - Review Required */}
+        {needsQuoteAction && (
+          <div className="bg-blue-50 border-b border-blue-300 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center">
+                  <span className="text-white text-2xl">💰</span>
+                </div>
+                <div>
+                  <p className="font-bold text-blue-800 text-lg">Devis reçu - Action requise</p>
+                  <p className="text-sm text-blue-600">
+                    Examinez le devis, puis approuvez et soumettez votre bon de commande
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowQuoteModal(true)}
+                  className="px-4 py-2 bg-white border border-blue-300 text-blue-700 rounded-lg font-medium hover:bg-blue-50 transition-colors"
+                >
+                  👁️ Voir le Devis
+                </button>
+                <button
+                  onClick={() => setShowBCModal(true)}
+                  className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors"
+                >
+                  ✅ Approuver et soumettre BC
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Quote Revision Requested */}
+        {request.status === 'quote_revision_requested' && (
+          <div className="bg-orange-50 border-b border-orange-300 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center">
+                <span className="text-orange-600 text-2xl">✏️</span>
+              </div>
+              <div>
+                <p className="font-bold text-orange-800">Modification en cours</p>
+                <p className="text-sm text-orange-600">
+                  Votre demande de modification a été envoyée. Vous recevrez un nouveau devis sous peu.
+                </p>
+                {request.quote_revision_notes && (
+                  <div className="mt-2 p-2 bg-white rounded border border-orange-200">
+                    <p className="text-xs text-gray-500">Votre demande :</p>
+                    <p className="text-sm text-gray-700">{request.quote_revision_notes}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Customer Action Required Alert */}
+        {needsCustomerAction && (
+          <div className="bg-red-50 border-b border-red-200 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <span className="text-red-600 font-bold text-lg">!</span>
+                </div>
+                <div>
+                  <p className="font-semibold text-red-800">Action requise</p>
+                  <p className="text-sm text-red-600">
+                    {request.status === 'inspection_complete' || request.status === 'quote_sent' 
+                      ? 'Veuillez approuver le devis ou soumettre votre bon de commande'
+                      : 'Veuillez soumettre votre bon de commande pour continuer'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowBCModal(true)}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+              >
+                Soumettre BC / Approuver
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* BC Rejected - Customer Must Resubmit */}
+        {request.status === 'bc_rejected' && (
+          <div className="bg-red-50 border-b border-red-300 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center">
+                  <span className="text-white text-2xl">❌</span>
+                </div>
+                <div>
+                  <p className="font-bold text-red-800 text-lg">Bon de commande rejeté - Action requise</p>
+                  <p className="text-sm text-red-600">
+                    Votre bon de commande a été rejeté. Veuillez corriger et soumettre à nouveau.
+                  </p>
+                  {request.bc_rejection_reason && (
+                    <div className="mt-2 p-3 bg-white rounded-lg border-2 border-red-300">
+                      <p className="text-xs text-red-600 font-medium uppercase">Raison du rejet :</p>
+                      <p className="text-sm text-red-800 font-medium mt-1">{request.bc_rejection_reason}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setShowBCModal(true)}
+                className="px-6 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors"
+              >
+                📄 Resoumettre BC
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* BC Submitted - Pending Review */}
+        {(request.status === 'bc_review' || request.bc_submitted_at) && request.status !== 'waiting_device' && !['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'shipped', 'completed'].includes(request.status) && (
+          <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                <span className="text-blue-600 text-lg">📄</span>
+              </div>
+              <div>
+                <p className="font-semibold text-blue-800">Bon de commande soumis</p>
+                <p className="text-sm text-blue-600">
+                  Votre BC est en cours de vérification par notre équipe. Vous serez notifié une fois approuvé.
+                </p>
+                {request.bc_submitted_at && (
+                  <p className="text-xs text-blue-500 mt-1">
+                    Soumis le {new Date(request.bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(request.bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* BC Submission Modal */}
+        {showBCModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold text-[#1E3A5F]">Soumettre Bon de Commande</h2>
+                  <button onClick={() => setShowBCModal(false)} className="text-gray-400 hover:text-gray-600">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                {/* Reference */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-500">Référence demande</p>
+                  <p className="font-mono font-bold text-[#1E3A5F]">{request.request_number || 'En attente'}</p>
+                </div>
+
+                {/* File Upload */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Télécharger votre Bon de Commande (optionnel)
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#3B7AB4] transition-colors">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      onChange={(e) => setBcFile(e.target.files?.[0] || null)}
+                      className="hidden"
+                      id="bc-file-input"
+                    />
+                    <label htmlFor="bc-file-input" className="cursor-pointer">
+                      {bcFile ? (
+                        <div className="flex items-center justify-center gap-2 text-[#3B7AB4]">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="font-medium">{bcFile.name}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <svg className="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                          <p className="text-sm text-gray-600">Cliquez pour télécharger ou glissez-déposez</p>
+                          <p className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX, JPG, PNG (max 10MB)</p>
+                        </>
+                      )}
+                    </label>
+                  </div>
+                </div>
+
+                {/* OR Divider */}
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 h-px bg-gray-200"></div>
+                  <span className="text-sm text-gray-500">ou</span>
+                  <div className="flex-1 h-px bg-gray-200"></div>
+                </div>
+
+                {/* Electronic Signature */}
+                <div className="bg-[#F5F9FC] rounded-lg p-4 border border-[#3B7AB4]/20">
+                  <h3 className="font-semibold text-[#1E3A5F] mb-4">Signature électronique</h3>
+                  
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Nom complet du signataire *
+                        </label>
+                        <input
+                          type="text"
+                          value={signatureName}
+                          onChange={(e) => setSignatureName(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
+                          placeholder="Prénom et Nom"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Date
+                        </label>
+                        <input
+                          type="text"
+                          value={signatureDateDisplay}
+                          readOnly
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Tapez "Lu et approuvé" *
+                      </label>
+                      <input
+                        type="text"
+                        value={luEtApprouve}
+                        onChange={(e) => setLuEtApprouve(e.target.value)}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent font-medium ${
+                          luEtApprouve.toLowerCase().trim() === 'lu et approuvé' 
+                            ? 'border-green-500 bg-green-50 text-green-800' 
+                            : 'border-gray-300'
+                        }`}
+                        placeholder="Lu et approuvé"
+                      />
+                    </div>
+                    
+                    {/* Signature Pad */}
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Signature manuscrite *
+                        </label>
+                        <button
+                          type="button"
+                          onClick={clearSignature}
+                          className="text-xs text-red-600 hover:text-red-700"
+                        >
+                          Effacer
+                        </button>
+                      </div>
+                      <div className={`border-2 rounded-lg bg-white ${signatureData ? 'border-green-500' : 'border-gray-300 border-dashed'}`}>
+                        <canvas
+                          ref={canvasRef}
+                          width={400}
+                          height={150}
+                          className="w-full cursor-crosshair touch-none"
+                          onMouseDown={startDrawing}
+                          onMouseMove={draw}
+                          onMouseUp={stopDrawing}
+                          onMouseLeave={stopDrawing}
+                          onTouchStart={startDrawing}
+                          onTouchMove={draw}
+                          onTouchEnd={stopDrawing}
+                        />
+                      </div>
+                      {!signatureData && (
+                        <p className="text-xs text-gray-500 mt-1">Dessinez votre signature ci-dessus</p>
+                      )}
+                      {signatureData && (
+                        <p className="text-xs text-green-600 mt-1">✓ Signature enregistrée</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Legal Terms */}
+                <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={acceptTerms}
+                      onChange={(e) => setAcceptTerms(e.target.checked)}
+                      className="mt-1 w-4 h-4 text-[#3B7AB4] border-gray-300 rounded focus:ring-[#3B7AB4]"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Je soussigné(e), <strong>{signatureName || '[Nom]'}</strong>, 
+                      certifie avoir pris connaissance et accepter les conditions générales de vente de Lighthouse France. 
+                      Je m'engage à régler la facture correspondante selon les modalités convenues. 
+                      Cette validation électronique a valeur de signature manuscrite conformément aux articles 1366 et 1367 du Code civil français.
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-6 border-t border-gray-200 bg-gray-50 flex gap-3">
+                <button
+                  onClick={() => setShowBCModal(false)}
+                  className="flex-1 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={submitBonCommande}
+                  disabled={submittingBC || !isSubmissionValid}
+                  className={`flex-1 py-3 rounded-lg font-medium transition-colors ${
+                    isSubmissionValid 
+                      ? 'bg-[#1E3A5F] text-white hover:bg-[#2a4a6f]' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  {submittingBC ? 'Envoi en cours...' : 'Valider et soumettre'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Quote Review Modal */}
+        {showQuoteModal && (() => {
+          const quoteData = request.quote_data || {};
+          const devices = quoteData.devices || request.request_devices || [];
+          
+          // Detect required sections from quote_data or devices
+          let calibrationTypes = quoteData.requiredSections?.calibrationTypes || [];
+          let hasRepair = quoteData.requiredSections?.hasRepair || false;
+          
+          if (calibrationTypes.length === 0 && devices.length > 0) {
+            const calTypes = new Set();
+            devices.forEach(d => {
+              const deviceType = d.deviceType || d.device_type || 'particle_counter';
+              const serviceType = d.serviceType || d.service_type || 'calibration';
+              if (serviceType.includes('calibration') || serviceType === 'cal_repair' || serviceType === 'calibration_repair') {
+                calTypes.add(deviceType);
+              }
+              if (serviceType.includes('repair') || serviceType === 'cal_repair' || serviceType === 'calibration_repair') {
+                hasRepair = true;
+              }
+            });
+            calibrationTypes = Array.from(calTypes);
+          }
+
+          const servicesSubtotal = quoteData.servicesSubtotal || request.quote_subtotal || 0;
+          const shippingTotal = quoteData.shippingTotal || request.quote_shipping || 0;
+          const grandTotal = quoteData.grandTotal || request.quote_total || 0;
+
+          return (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
+                <div>
+                  <h2 className="text-xl font-bold">Offre de Prix</h2>
+                  <p className="text-gray-400">{request.request_number}</p>
+                </div>
+                <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
+              </div>
+
+              {/* Quote Document - This prints */}
+              <div id="quote-print-content">
                 {/* Quote Header */}
                 <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
                   <div className="flex justify-between items-start">
@@ -6990,7 +6994,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
-                      <p className="text-gray-500">Ref: {quoteRef}</p>
+                      <p className="text-gray-500">N° {request.request_number}</p>
                     </div>
                   </div>
                 </div>
@@ -6999,7 +7003,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                 <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
                   <div>
                     <p className="text-xs text-gray-500 uppercase">Date</p>
-                    <p className="font-medium">{today.toLocaleDateString('fr-FR')}</p>
+                    <p className="font-medium">{request.quoted_at ? new Date(request.quoted_at).toLocaleDateString('fr-FR') : '—'}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 uppercase">Validité</p>
@@ -7019,12 +7023,10 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                   <p className="text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
                 </div>
 
-                {/* ===== SERVICE DESCRIPTION SECTIONS ===== */}
+                {/* SERVICE DESCRIPTION SECTIONS */}
                 <div className="px-8 py-6 space-y-6">
-                  
-                  {/* Calibration Sections - One per device type */}
-                  {requiredSections.calibrationTypes.map(type => {
-                    const template = CALIBRATION_TEMPLATES[type];
+                  {calibrationTypes.map(type => {
+                    const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.particle_counter;
                     return (
                       <div key={type} className="border-l-4 border-blue-500 pl-4">
                         <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
@@ -7042,8 +7044,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                     );
                   })}
 
-                  {/* Repair Section */}
-                  {requiredSections.hasRepair && (
+                  {hasRepair && (
                     <div className="border-l-4 border-orange-500 pl-4">
                       <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
                         <span>{REPAIR_TEMPLATE.icon}</span> {REPAIR_TEMPLATE.title}
@@ -7060,7 +7061,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                   )}
                 </div>
 
-                {/* ===== PRICING BREAKDOWN TABLE ===== */}
+                {/* PRICING BREAKDOWN TABLE */}
                 <div className="px-8 py-6 bg-gray-50">
                   <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
                   
@@ -7074,75 +7075,50 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {devicePricing.map((device, i) => {
+                      {devices.map((device, i) => {
                         const services = [];
-                        if (device.needsCalibration) services.push('Étalonnage');
-                        if (device.needsRepair) services.push('Réparation');
-                        const deviceTotal = getDeviceServiceTotal(device);
+                        const needsCal = device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration');
+                        const needsRep = device.needsRepair || (device.serviceType || device.service_type || '').includes('repair');
+                        if (needsCal) services.push('Étalonnage');
+                        if (needsRep) services.push('Réparation');
                         
-                        console.log('📄 Preview device:', device.serial, 'isContractCovered:', device.isContractCovered, 'shipping:', device.shipping);
+                        const serviceTotal = device.serviceTotal || 
+                          ((device.calibrationPrice || 0) + (device.repairPrice || 0) + 
+                           (device.additionalParts || []).reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0));
+                        const shipping = device.shipping || 0;
                         
-                        const rows = [
-                          <tr key={`${device.id}-main`} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-100'} ${device.isContractCovered ? 'bg-emerald-50' : ''}`}>
-                            <td className="px-4 py-3 font-medium">
-                              {device.model}
-                              {device.isContractCovered && <span className="ml-2 px-2 py-0.5 bg-emerald-500 text-white text-xs rounded">CONTRAT</span>}
-                            </td>
-                            <td className="px-4 py-3 font-mono text-xs">{device.serial}</td>
-                            <td className="px-4 py-3">{services.join(' + ')}</td>
-                            <td className="px-4 py-3 text-right font-medium">
-                              {device.isContractCovered ? (
-                                <span className="text-emerald-600 font-bold">Contrat</span>
-                              ) : (
-                                `${deviceTotal.toFixed(2)} €`
-                              )}
-                            </td>
-                          </tr>
-                        ];
-                        
-                        device.additionalParts.forEach(part => {
-                          rows.push(
-                            <tr key={`${device.id}-part-${part.id}`} className="bg-gray-50 text-gray-600">
+                        return [
+                          <tr key={`${i}-main`} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-100'}>
+                            <td className="px-4 py-3 font-medium">{device.model || device.model_name || '—'}</td>
+                            <td className="px-4 py-3 font-mono text-xs">{device.serial || device.serial_number || '—'}</td>
+                            <td className="px-4 py-3">{services.join(' + ') || 'Service'}</td>
+                            <td className="px-4 py-3 text-right font-medium">{serviceTotal.toFixed(2)} €</td>
+                          </tr>,
+                          ...(device.additionalParts || []).map(part => (
+                            <tr key={`${i}-part-${part.id}`} className="bg-gray-50 text-gray-600">
                               <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ {part.description || 'Pièce/Service'}</td>
                               <td className="px-4 py-2 text-right text-sm">{parseFloat(part.price || 0).toFixed(2)} €</td>
                             </tr>
-                          );
-                        });
-                        
-                        rows.push(
-                          <tr key={`${device.id}-shipping`} className={`${device.isContractCovered ? 'bg-emerald-100' : 'bg-gray-200'} text-gray-600`}>
+                          )),
+                          <tr key={`${i}-shipping`} className="bg-gray-200 text-gray-600">
                             <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ Frais de port</td>
-                            <td className="px-4 py-2 text-right text-sm">
-                              {device.isContractCovered ? (
-                                <span className="text-emerald-600 font-medium">Contrat</span>
-                              ) : (
-                                `${device.shipping.toFixed(2)} €`
-                              )}
-                            </td>
+                            <td className="px-4 py-2 text-right text-sm">{shipping.toFixed(2)} €</td>
                           </tr>
-                        );
-                        
-                        return rows;
+                        ];
                       })}
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 border-gray-300">
                         <td className="px-4 py-3 font-medium" colSpan={3}>Sous-total services</td>
-                        <td className="px-4 py-3 text-right font-medium">
-                          {isFullyContractCovered ? <span className="text-emerald-600 font-bold">Contrat</span> : `${servicesSubtotal.toFixed(2)} €`}
-                        </td>
+                        <td className="px-4 py-3 text-right font-medium">{servicesSubtotal.toFixed(2)} €</td>
                       </tr>
                       <tr>
                         <td className="px-4 py-3 font-medium" colSpan={3}>Total frais de port</td>
-                        <td className="px-4 py-3 text-right font-medium">
-                          {isFullyContractCovered ? <span className="text-emerald-600 font-bold">Contrat</span> : `${shippingTotal.toFixed(2)} €`}
-                        </td>
+                        <td className="px-4 py-3 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
                       </tr>
-                      <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#00A651] text-white"}>
+                      <tr className="bg-[#00A651] text-white">
                         <td className="px-4 py-4 font-bold text-lg" colSpan={3}>TOTAL HT</td>
-                        <td className="px-4 py-4 text-right font-bold text-2xl">
-                          {isFullyContractCovered ? 'Contrat' : `${grandTotal.toFixed(2)} €`}
-                        </td>
+                        <td className="px-4 py-4 text-right font-bold text-2xl">{grandTotal.toFixed(2)} €</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -7162,11 +7138,2024 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                 <div className="px-8 py-6 border-t flex justify-between items-end">
                   <div className="flex items-end gap-6">
                     <div>
-                      <p className="text-xs text-gray-500 uppercase mb-1">Etabli par</p>
-                      <p className="font-bold text-lg">{signatory}</p>
+                      <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
+                      <p className="font-bold text-lg">{quoteData.createdBy || 'Lighthouse France'}</p>
                       <p className="text-gray-600">Lighthouse France</p>
                     </div>
                     {/* Capcert Logo */}
+                    <img 
+                      src="/images/logos/capcert-logo.png" 
+                      alt="Capcert Certification" 
+                      className="h-14 w-auto"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  </div>
+                  
+                  {request.bc_submitted_at ? (
+                    <div className="text-right">
+                      <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+                        <p className="text-xs text-green-600 uppercase mb-1">Approuve</p>
+                        <p className="font-bold text-green-800">{request.bc_signed_by || 'Client'}</p>
+                        <p className="text-sm text-green-700">
+                          {request.bc_signature_date 
+                            ? new Date(request.bc_signature_date).toLocaleDateString('fr-FR')
+                            : new Date(request.bc_submitted_at).toLocaleDateString('fr-FR')}
+                        </p>
+                        {request.bc_signature_url && (
+                          <img src={request.bc_signature_url} alt="Signature" className="max-h-16 mt-2" />
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-right">
+                      <p className="text-xs text-gray-400 mb-1">Signature client</p>
+                      <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+                      <p className="text-xs text-gray-400 mt-1">Lu et approuvé</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
+                  <p className="font-medium">Lighthouse France SAS</p>
+                  <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+                </div>
+              </div>
+
+              {/* Action Buttons - Hidden on print */}
+              <div className="print-hide sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex flex-wrap gap-3 justify-between items-center">
+                <div className="flex gap-2">
+                  <button onClick={() => {
+                    const content = document.getElementById('quote-print-content');
+                    const printWindow = window.open('', '_blank');
+                    printWindow.document.write(`
+                      <!DOCTYPE html>
+                      <html>
+                      <head>
+                        <title>Devis - ${request.request_number}</title>
+                        <style>
+                          * { margin: 0; padding: 0; box-sizing: border-box; }
+                          body { font-family: Arial, sans-serif; }
+                          .border-b { border-bottom: 1px solid #e5e7eb; }
+                          .border-b-4 { border-bottom: 4px solid; }
+                          .border-t { border-top: 1px solid #e5e7eb; }
+                          .border-t-2 { border-top: 2px solid #d1d5db; }
+                          .border-l-4 { border-left: 4px solid; }
+                          .border-blue-500 { border-color: #3b82f6; }
+                          .border-orange-500 { border-color: #f97316; }
+                          .border-green-200 { border-color: #bbf7d0; }
+                          .border-\\[\\#00A651\\] { border-color: #00A651; }
+                          .bg-gray-50 { background: #f9fafb; }
+                          .bg-gray-100 { background: #f3f4f6; }
+                          .bg-gray-200 { background: #e5e7eb; }
+                          .bg-white { background: white; }
+                          .bg-green-50 { background: #f0fdf4; }
+                          .bg-\\[\\#1a1a2e\\] { background: #1a1a2e; }
+                          .bg-\\[\\#00A651\\] { background: #00A651; }
+                          .text-white { color: white; }
+                          .text-gray-400 { color: #9ca3af; }
+                          .text-gray-500 { color: #6b7280; }
+                          .text-gray-600 { color: #4b5563; }
+                          .text-gray-700 { color: #374151; }
+                          .text-green-600 { color: #16a34a; }
+                          .text-green-700 { color: #15803d; }
+                          .text-green-800 { color: #166534; }
+                          .text-\\[\\#1a1a2e\\] { color: #1a1a2e; }
+                          .text-\\[\\#00A651\\] { color: #00A651; }
+                          .text-orange-500 { color: #f97316; }
+                          .text-xs { font-size: 0.75rem; }
+                          .text-sm { font-size: 0.875rem; }
+                          .text-lg { font-size: 1.125rem; }
+                          .text-xl { font-size: 1.25rem; }
+                          .text-2xl { font-size: 1.5rem; }
+                          .text-3xl { font-size: 1.875rem; }
+                          .font-medium { font-weight: 500; }
+                          .font-bold { font-weight: 700; }
+                          .font-mono { font-family: monospace; }
+                          .uppercase { text-transform: uppercase; }
+                          .text-left { text-align: left; }
+                          .text-right { text-align: right; }
+                          .text-center { text-align: center; }
+                          .px-4 { padding-left: 1rem; padding-right: 1rem; }
+                          .px-8 { padding-left: 2rem; padding-right: 2rem; }
+                          .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+                          .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+                          .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
+                          .py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+                          .pt-8 { padding-top: 2rem; }
+                          .pb-4 { padding-bottom: 1rem; }
+                          .pl-4 { padding-left: 1rem; }
+                          .pl-8 { padding-left: 2rem; }
+                          .p-4 { padding: 1rem; }
+                          .mb-1 { margin-bottom: 0.25rem; }
+                          .mb-2 { margin-bottom: 0.5rem; }
+                          .mb-3 { margin-bottom: 0.75rem; }
+                          .mb-4 { margin-bottom: 1rem; }
+                          .mt-1 { margin-top: 0.25rem; }
+                          .mt-2 { margin-top: 0.5rem; }
+                          .space-y-1 > * + * { margin-top: 0.25rem; }
+                          .space-y-6 > * + * { margin-top: 1.5rem; }
+                          .gap-2 { gap: 0.5rem; }
+                          .flex { display: flex; }
+                          .items-start { align-items: flex-start; }
+                          .items-end { align-items: flex-end; }
+                          .justify-between { justify-content: space-between; }
+                          .rounded-lg { border-radius: 0.5rem; }
+                          .w-full { width: 100%; }
+                          .w-48 { width: 12rem; }
+                          .h-20 { height: 5rem; }
+                          .max-h-16 { max-height: 4rem; }
+                          .border-2 { border-width: 2px; }
+                          .border-dashed { border-style: dashed; }
+                          .border-gray-300 { border-color: #d1d5db; }
+                          table { width: 100%; border-collapse: collapse; }
+                          th, td { padding: 0.75rem 1rem; }
+                          @media print {
+                            body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+                          }
+                        </style>
+                      </head>
+                      <body>${content.innerHTML}</body>
+                      </html>
+                    `);
+                    printWindow.document.close();
+                    printWindow.focus();
+                    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+                  }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
+                    Imprimer
+                  </button>
+                  <button onClick={async () => {
+                    try {
+                      const quoteInfo = getQuoteDataFromRequest(request);
+                      const pdfBlob = await generateQuotePDF({
+                        request,
+                        ...quoteInfo,
+                        isSigned: false
+                      });
+                      const url = URL.createObjectURL(pdfBlob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `Devis_${request.request_number}.pdf`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    } catch (err) {
+                      console.error('PDF error:', err);
+                    }
+                  }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
+                    Telecharger PDF
+                  </button>
+                </div>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => setShowRevisionModal(true)}
+                    className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium"
+                  >
+                    Demander modification
+                  </button>
+                  <button 
+                    onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
+                    className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold"
+                  >
+                    ✅ Approuver et soumettre BC
+                  </button>
+                </div>
+              </div>
+
+              {/* Revision Request Sub-Modal */}
+              {showRevisionModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
+                  <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-xl font-bold text-gray-800 mb-4">Demander une modification</h3>
+                    <p className="text-gray-600 mb-4">Décrivez les modifications que vous souhaitez apporter au devis :</p>
+                    <textarea
+                      value={revisionNotes}
+                      onChange={e => setRevisionNotes(e.target.value)}
+                      className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                      placeholder="Ex: Veuillez ajouter un appareil supplémentaire, modifier le prix, retirer les frais de transport, etc."
+                    />
+                    <div className="mt-4 flex justify-end gap-3">
+                      <button onClick={() => setShowRevisionModal(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+                        Annuler
+                      </button>
+                      <button 
+                        onClick={handleRequestRevision}
+                        disabled={approvingQuote || !revisionNotes.trim()}
+                        className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50"
+                      >
+                        {approvingQuote ? 'Envoi...' : 'Envoyer la demande'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          );
+        })()}
+
+        {/* Tabs */}
+        <div className="flex border-b border-gray-100 overflow-x-auto">
+          {[
+            { id: 'details', label: 'Détails', icon: '📋' },
+            { id: 'messages', label: 'Messages', icon: '💬', count: messages.filter(m => !m.is_read && m.sender_id !== profile?.id).length },
+            { id: 'history', label: 'Historique', icon: '📜' },
+            { id: 'documents', label: 'Documents', icon: '📄', count: attachments.length }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-6 py-3 font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
+                activeTab === tab.id 
+                  ? 'text-[#3B7AB4] border-b-2 border-[#3B7AB4] -mb-px' 
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <span>{tab.icon}</span>
+              {tab.label}
+              {tab.count > 0 && (
+                <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">{tab.count}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab Content */}
+        <div className="p-6">
+          {/* Details Tab */}
+          {activeTab === 'details' && (
+            <div className="space-y-8">
+              {/* Service Summary Card */}
+              <div className="bg-gradient-to-r from-[#1E3A5F] to-[#3B7AB4] rounded-xl p-6 text-white">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-white/70 text-sm uppercase tracking-wide mb-1">Type de service</p>
+                    <p className="text-2xl font-bold">
+                      {isPartsOrder ? 'Commande de Pièces' : 
+                       request.requested_service === 'calibration' ? 'Étalonnage' :
+                       request.requested_service === 'repair' ? 'Réparation' :
+                       request.requested_service === 'calibration_repair' ? 'Étalonnage + Réparation' :
+                       request.requested_service || 'Service'}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-white/70 text-sm uppercase tracking-wide mb-1">Référence</p>
+                    <p className="text-xl font-mono font-bold">
+                      {request.request_number || 'En attente'}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-white/20 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <p className="text-white/70">Date de soumission</p>
+                    <p className="font-medium">{new Date(request.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/70">Statut actuel</p>
+                    <p className="font-medium">{style.label}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/70">Appareils</p>
+                    <p className="font-medium">{request.request_devices?.length || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/70">Urgence</p>
+                    <p className="font-medium">{request.urgency === 'high' ? 'Haute' : request.urgency === 'low' ? 'Basse' : 'Normale'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Devices Section */}
+              {!isPartsOrder && (
+                <div>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-[#E8F2F8] flex items-center justify-center">
+                      <span className="text-lg">🔧</span>
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-[#1E3A5F]">Appareils</h2>
+                      <p className="text-sm text-gray-500">{request.request_devices?.length || 0} appareil(s) enregistré(s)</p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid gap-4">
+                    {request.request_devices?.map((device, idx) => (
+                      <div key={device.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                        <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                          <span className="text-sm font-medium text-gray-500">Appareil #{idx + 1}</span>
+                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            device.service_type === 'calibration' ? 'bg-blue-100 text-blue-700' : 
+                            device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' :
+                            device.service_type === 'calibration_repair' ? 'bg-purple-100 text-purple-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {device.service_type === 'calibration' ? '🔬 Étalonnage' : 
+                             device.service_type === 'repair' ? '🔧 Réparation' :
+                             device.service_type === 'calibration_repair' ? '🔬🔧 Étal. + Rép.' :
+                             device.service_type}
+                          </span>
+                        </div>
+                        <div className="p-4">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase tracking-wide">Modèle</p>
+                              <p className="font-semibold text-[#1E3A5F]">{device.model_name || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase tracking-wide">N° de série</p>
+                              <p className="font-mono font-semibold text-[#3B7AB4]">{device.serial_number}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase tracking-wide">Marque</p>
+                              <p className="font-medium">{device.equipment_type || 'Lighthouse'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase tracking-wide">Statut</p>
+                              <p className="font-medium">{STATUS_STYLES[device.status]?.label || 'En attente'}</p>
+                            </div>
+                          </div>
+                          {device.notes && (
+                            <div className="mt-4 pt-4 border-t border-gray-100">
+                              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Notes / Description du problème</p>
+                              <p className="text-gray-700 text-sm">{device.notes}</p>
+                            </div>
+                          )}
+                          {device.accessories && device.accessories.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <span className="text-xs text-gray-500">Accessoires:</span>
+                              {device.accessories.map((acc, i) => (
+                                <span key={i} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
+                                  {acc === 'charger' ? 'Chargeur' : 
+                                   acc === 'battery' ? 'Batterie' : 
+                                   acc === 'powerCable' ? 'Câble' : 
+                                   acc === 'carryingCase' ? 'Mallette' : acc}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {/* Photos for this device */}
+                          {attachments.filter(a => 
+                            a.file_type?.startsWith('image/') && 
+                            (a.device_serial === device.serial_number || !a.device_serial)
+                          ).length > 0 && (
+                            <div className="mt-4 pt-4 border-t border-gray-100">
+                              <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Photos</p>
+                              <div className="flex gap-2 flex-wrap">
+                                {attachments
+                                  .filter(a => a.file_type?.startsWith('image/') && (a.device_serial === device.serial_number || !a.device_serial))
+                                  .slice(0, 4)
+                                  .map((img) => (
+                                    <a 
+                                      key={img.id}
+                                      href={img.file_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 hover:opacity-80 transition-opacity border border-gray-200"
+                                    >
+                                      <img src={img.file_url} alt="" className="w-full h-full object-cover" />
+                                    </a>
+                                  ))
+                                }
+                                {attachments.filter(a => a.file_type?.startsWith('image/')).length > 4 && (
+                                  <button
+                                    onClick={() => setActiveTab('documents')}
+                                    className="w-16 h-16 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-500 text-xs hover:bg-gray-200"
+                                  >
+                                    +{attachments.filter(a => a.file_type?.startsWith('image/')).length - 4}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {/* Tracking info if shipped */}
+                        {device.tracking_number && (
+                          <div className="bg-green-50 px-4 py-3 border-t border-green-100">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                                </svg>
+                                <span className="text-sm font-medium text-green-800">Expédié</span>
+                              </div>
+                              <a 
+                                href={device.tracking_url || `https://www.google.com/search?q=${device.tracking_number}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm text-green-700 font-mono hover:underline"
+                              >
+                                {device.tracking_number} →
+                              </a>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Parts Order Details */}
+              {isPartsOrder && request.problem_description && (
+                <div>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                      <span className="text-lg">📦</span>
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-[#1E3A5F]">Détails de la commande</h2>
+                      <p className="text-sm text-gray-500">Pièces demandées</p>
+                    </div>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-4">
+                    {request.problem_description.split('\n').map((line, i) => (
+                      <div key={i} className="py-2 border-b border-gray-100 last:border-0">
+                        <p className="text-gray-700">{line}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Shipping Address */}
+              {shippingAddress && (
+                <div>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                      <span className="text-lg">📍</span>
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-[#1E3A5F]">Adresse de retour</h2>
+                      <p className="text-sm text-gray-500">L'appareil sera renvoyé à cette adresse</p>
+                    </div>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-4">
+                    <p className="font-semibold text-[#1E3A5F]">{shippingAddress.company_name}</p>
+                    {shippingAddress.attention && <p className="text-gray-600">À l'attention de: {shippingAddress.attention}</p>}
+                    <p className="text-gray-600">{shippingAddress.address_line1}</p>
+                    <p className="text-gray-600">{shippingAddress.postal_code} {shippingAddress.city}</p>
+                    <p className="text-gray-600">{shippingAddress.country || 'France'}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Notes from request */}
+            </div>
+          )}
+
+          {/* Messages Tab */}
+          {activeTab === 'messages' && (
+            <div>
+              <div className="h-[400px] overflow-y-auto mb-4 space-y-4">
+                {messages.length === 0 ? (
+                  <div className="text-center text-gray-400 py-12">
+                    <p className="text-4xl mb-2">💬</p>
+                    <p>Aucun message</p>
+                    <p className="text-sm">Envoyez un message à notre équipe</p>
+                  </div>
+                ) : (
+                  messages.map(msg => (
+                    <div 
+                      key={msg.id}
+                      className={`flex ${msg.sender_id === profile?.id ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`max-w-[70%] rounded-lg p-3 ${
+                        msg.sender_id === profile?.id 
+                          ? 'bg-[#3B7AB4] text-white' 
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {msg.sender_type !== 'customer' && (
+                          <p className={`text-xs font-medium mb-1 ${
+                            msg.sender_id === profile?.id ? 'text-white/70' : 'text-[#3B7AB4]'
+                          }`}>
+                            Lighthouse France
+                          </p>
+                        )}
+                        <p className="text-sm">{msg.content}</p>
+                        <p className={`text-xs mt-1 ${
+                          msg.sender_id === profile?.id ? 'text-white/70' : 'text-gray-400'
+                        }`}>
+                          {new Date(msg.created_at).toLocaleString('fr-FR', {
+                            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              
+              <form onSubmit={sendMessage} className="flex gap-2">
+                <input
+                  type="text"
+                  value={newMessage}
+                  onChange={e => setNewMessage(e.target.value)}
+                  placeholder="Écrivez votre message..."
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B7AB4]"
+                />
+                <button
+                  type="submit"
+                  disabled={!newMessage.trim() || sending}
+                  className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                >
+                  {sending ? '...' : 'Envoyer'}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* History Tab */}
+          {activeTab === 'history' && (
+            <div>
+              {displayHistory.length === 0 ? (
+                <div className="text-center text-gray-400 py-12">
+                  <p className="text-4xl mb-2">📜</p>
+                  <p>Aucun historique disponible</p>
+                </div>
+              ) : (
+                <div className="relative">
+                  <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
+                  <div className="space-y-6">
+                    {displayHistory.map((event, i) => {
+                      const eventStyle = STATUS_STYLES[event.event_type] || {};
+                      return (
+                        <div key={event.id || i} className="flex gap-4 ml-4">
+                          <div className={`w-3 h-3 rounded-full border-2 border-white shadow -ml-[7px] mt-1.5 z-10 ${
+                            i === 0 ? 'bg-[#3B7AB4]' : 'bg-gray-400'
+                          }`}></div>
+                          <div className="flex-1 pb-4">
+                            <div className="flex items-center gap-2">
+                              {eventStyle.icon && <span>{eventStyle.icon}</span>}
+                              <p className="font-medium text-[#1E3A5F]">{event.event_description}</p>
+                            </div>
+                            <p className="text-sm text-gray-500">
+                              {new Date(event.event_date).toLocaleString('fr-FR', {
+                                day: '2-digit',
+                                month: 'long',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Documents Tab */}
+          {activeTab === 'documents' && (
+            <div className="space-y-6">
+              {/* Photos from request */}
+              {attachments.filter(a => a.file_type?.startsWith('image/')).length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Photos soumises
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {attachments.filter(a => a.file_type?.startsWith('image/')).map((img) => (
+                      <a 
+                        key={img.id}
+                        href={img.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition-opacity border border-gray-200"
+                      >
+                        <img 
+                          src={img.file_url} 
+                          alt={img.file_name}
+                          className="w-full h-full object-cover"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Other documents */}
+              {attachments.filter(a => !a.file_type?.startsWith('image/')).length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Documents
+                  </h3>
+                  <div className="space-y-2">
+                    {attachments.filter(a => !a.file_type?.startsWith('image/')).map((doc) => (
+                      <a 
+                        key={doc.id}
+                        href={doc.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
+                      >
+                        <div className="w-10 h-10 bg-[#3B7AB4] rounded flex items-center justify-center text-white font-bold text-xs">
+                          {doc.file_name?.split('.').pop()?.toUpperCase() || 'DOC'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-[#1E3A5F] truncate">{doc.file_name}</p>
+                          <p className="text-xs text-gray-500">
+                            Ajouté le {new Date(doc.created_at).toLocaleDateString('fr-FR')}
+                          </p>
+                        </div>
+                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Certificates and Quotes - from Lighthouse */}
+              <div>
+                <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                  </svg>
+                  Certificats et Devis
+                </h3>
+                {request.quote_url || request.certificate_url ? (
+                  <div className="space-y-2">
+                    {request.quote_url && (
+                      <a 
+                        href={request.quote_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200"
+                      >
+                        <div className="w-10 h-10 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                          PDF
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-blue-900">Devis</p>
+                          <p className="text-xs text-blue-600">Télécharger le devis</p>
+                        </div>
+                        <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </a>
+                    )}
+                    {request.certificate_url && (
+                      <a 
+                        href={request.certificate_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-green-50 rounded-lg hover:bg-green-100 transition-colors border border-green-200"
+                      >
+                        <div className="w-10 h-10 bg-green-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                          PDF
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-green-900">Certificat d'étalonnage</p>
+                          <p className="text-xs text-green-600">Télécharger le certificat</p>
+                        </div>
+                        <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+                    <svg className="w-12 h-12 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p className="text-gray-500">Les certificats et devis apparaîtront ici une fois disponibles</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Empty state if no attachments at all */}
+              {attachments.length === 0 && !request.quote_url && !request.certificate_url && (
+                <div className="text-center py-12">
+                  <svg className="w-16 h-16 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-gray-500">Aucun document disponible</p>
+                  <p className="text-sm text-gray-400">Les photos, devis et certificats apparaîtront ici</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        
+        {/* Contact Support */}
+        <div className="p-4 border-t border-gray-100 flex justify-between items-center">
+          <p className="text-sm text-gray-500">Besoin d'aide?</p>
+          <a 
+            href="mailto:france@golighthouse.com?subject=Question sur demande"
+            className="text-[#3B7AB4] text-sm font-medium hover:underline"
+          >
+            Contacter le support →
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// DEVICE HISTORY PAGE
+// ============================================
+function DeviceHistoryPage({ profile, requests, t, setPage }) {
+  const [serialNumber, setSerialNumber] = useState('');
+  const [history, setHistory] = useState([]);
+  const [allRequests, setAllRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Get serial from sessionStorage
+    const storedSerial = sessionStorage.getItem('viewDeviceSerial');
+    if (storedSerial) {
+      setSerialNumber(storedSerial);
+      sessionStorage.removeItem('viewDeviceSerial');
+    }
+  }, []);
+
+  useEffect(() => {
+    const loadHistory = async () => {
+      if (!serialNumber) {
+        setLoading(false);
+        return;
+      }
+      
+      setLoading(true);
+      
+      // Find all requests containing this serial number
+      const matchingRequests = requests.filter(req => 
+        req.request_devices?.some(d => d.serial_number === serialNumber)
+      );
+      setAllRequests(matchingRequests);
+      
+      // Load device history
+      const { data } = await supabase
+        .from('device_history')
+        .select('*')
+        .eq('serial_number', serialNumber)
+        .order('event_date', { ascending: false });
+      
+      if (data) setHistory(data);
+      setLoading(false);
+    };
+    loadHistory();
+  }, [serialNumber, requests]);
+
+  // Get device info from first request
+  const deviceInfo = allRequests[0]?.request_devices?.find(d => d.serial_number === serialNumber);
+
+  return (
+    <div>
+      <button
+        onClick={() => setPage('dashboard')}
+        className="mb-6 text-[#3B7AB4] hover:text-[#1E3A5F] font-medium"
+      >
+        ← Retour au tableau de bord
+      </button>
+
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
+        <div className="mb-6 pb-6 border-b border-gray-100">
+          <h1 className="text-2xl font-bold text-[#1E3A5F]">Historique de l'appareil</h1>
+          {deviceInfo && (
+            <div className="mt-2">
+              <p className="text-lg font-medium">{deviceInfo.model_name}</p>
+              <p className="font-mono text-[#3B7AB4]">SN: {serialNumber}</p>
+            </div>
+          )}
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="w-8 h-8 border-4 border-[#3B7AB4] border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {/* Service History from Requests */}
+            <div>
+              <h2 className="font-bold text-[#1E3A5F] mb-4">Historique des services</h2>
+              {allRequests.length === 0 ? (
+                <p className="text-gray-500">Aucun historique de service trouvé</p>
+              ) : (
+                <div className="space-y-4">
+                  {allRequests.map(req => {
+                    const device = req.request_devices?.find(d => d.serial_number === serialNumber);
+                    const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
+                    return (
+                      <div 
+                        key={req.id}
+                        className="p-4 border border-gray-200 rounded-lg hover:border-[#3B7AB4] cursor-pointer transition-colors"
+                        onClick={() => {
+                          setPage('request-detail');
+                          // Would need to pass the request somehow
+                        }}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className="font-mono font-bold text-[#3B7AB4]">{req.request_number}</span>
+                            <p className="text-sm text-gray-600 mt-1">
+                              {device?.service_type === 'calibration' ? 'Étalonnage' : 
+                               device?.service_type === 'repair' ? 'Réparation' :
+                               device?.service_type === 'calibration_repair' ? 'Étalonnage + Réparation' :
+                               device?.service_type}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                              {style.label}
+                            </span>
+                            <p className="text-sm text-gray-400 mt-2">
+                              {new Date(req.created_at).toLocaleDateString('fr-FR')}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Event Timeline */}
+            {history.length > 0 && (
+              <div>
+                <h2 className="font-bold text-[#1E3A5F] mb-4">Événements</h2>
+                <div className="relative">
+                  <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
+                  <div className="space-y-4">
+                    {history.map(event => (
+                      <div key={event.id} className="flex gap-4 ml-4">
+                        <div className="w-3 h-3 rounded-full bg-[#3B7AB4] border-2 border-white shadow -ml-[7px] mt-1.5 z-10"></div>
+                        <div className="flex-1 pb-2">
+                          <p className="font-medium text-[#1E3A5F]">{event.event_description}</p>
+                          <p className="text-sm text-gray-500">
+                            {new Date(event.event_date).toLocaleString('fr-FR')}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// CONTRACTS PAGE (Customer View)
+// ============================================
+function ContractsPage({ profile, t, notify, setPage }) {
+  const [contracts, setContracts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedContract, setSelectedContract] = useState(null);
+  const [contractTab, setContractTab] = useState('details');
+  
+  // IDENTICAL to RMA - Quote and BC state
+  const [showQuoteModal, setShowQuoteModal] = useState(false);
+  const [showRevisionModal, setShowRevisionModal] = useState(false);
+  const [revisionNotes, setRevisionNotes] = useState('');
+  const [showBCModal, setShowBCModal] = useState(false);
+  const [bcFile, setBcFile] = useState(null);
+  const [signatureName, setSignatureName] = useState(profile?.full_name || `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || '');
+  const [luEtApprouve, setLuEtApprouve] = useState('');
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [signatureData, setSignatureData] = useState(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [submittingBC, setSubmittingBC] = useState(false);
+  const [approvingQuote, setApprovingQuote] = useState(false);
+  const canvasRef = useRef(null);
+  
+  const signatureDateDisplay = new Date().toLocaleDateString('fr-FR');
+  
+  // Validation - IDENTICAL to RMA
+  const hasFile = bcFile !== null;
+  const hasSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
+  const isSubmissionValid = signatureName.trim().length > 0 && acceptTerms && (hasFile || hasSignature);
+
+  // Load contracts
+  const loadContracts = useCallback(async () => {
+    if (!profile?.company_id) return;
+    
+    const { data, error } = await supabase
+      .from('contracts')
+      .select('*, contract_devices(*), companies(*)')
+      .eq('company_id', profile.company_id)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error loading contracts:', error);
+    } else {
+      setContracts(data || []);
+    }
+    setLoading(false);
+  }, [profile?.company_id]);
+
+  useEffect(() => {
+    loadContracts();
+  }, [loadContracts]);
+
+  // Signature pad functions - IDENTICAL to RMA
+  const startDrawing = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setIsDrawing(true);
+  };
+
+  const draw = (e) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#1E3A5F';
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    if (isDrawing && canvasRef.current) {
+      setSignatureData(canvasRef.current.toDataURL());
+    }
+    setIsDrawing(false);
+  };
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    setSignatureData(null);
+  };
+
+  // Request revision - IDENTICAL to RMA
+  const handleRequestRevision = async () => {
+    if (!revisionNotes.trim() || !selectedContract) return;
+    
+    setApprovingQuote(true);
+    const { error } = await supabase.from('contracts').update({
+      status: 'quote_revision_requested',
+      quote_revision_notes: revisionNotes,
+      quote_revision_requested_at: new Date().toISOString()
+    }).eq('id', selectedContract.id);
+    
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('✅ Demande de modification envoyée!', 'success');
+      setShowRevisionModal(false);
+      setShowQuoteModal(false);
+      setRevisionNotes('');
+      loadContracts();
+    }
+    setApprovingQuote(false);
+  };
+
+  // Submit BC - COPIED FROM RMA (working version)
+  const submitBonCommande = async () => {
+    // Validation first - exactly like RMA
+    if (!acceptTerms) {
+      notify('Veuillez accepter les conditions générales', 'error');
+      return;
+    }
+    if (!signatureName.trim()) {
+      notify('Veuillez entrer votre nom', 'error');
+      return;
+    }
+    
+    // Need either file OR signature
+    const hasValidSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
+    if (!bcFile && !hasValidSignature) {
+      notify('Veuillez télécharger un bon de commande OU signer électroniquement', 'error');
+      return;
+    }
+    
+    if (!selectedContract) return;
+    
+    setSubmittingBC(true);
+    const signatureDateISO = new Date().toISOString();
+    
+    try {
+      // Try to upload BC file if provided (may fail if storage not configured)
+      let fileUrl = null;
+      if (bcFile) {
+        try {
+          const fileName = `bc_contract_${selectedContract.id}_${Date.now()}.${bcFile.name.split('.').pop()}`;
+          const { error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(fileName, bcFile);
+          
+          if (!uploadError) {
+            const { data: publicUrl } = supabase.storage
+              .from('documents')
+              .getPublicUrl(fileName);
+            fileUrl = publicUrl?.publicUrl;
+          }
+        } catch (e) {
+          console.log('File upload skipped - storage not configured');
+        }
+      }
+      
+      // Try to upload signature image (may fail if storage not configured)
+      let signatureUrl = null;
+      if (signatureData) {
+        try {
+          const signatureBlob = await fetch(signatureData).then(r => r.blob());
+          const signatureFileName = `signature_contract_${selectedContract.id}_${Date.now()}.png`;
+          const { error: sigError } = await supabase.storage
+            .from('documents')
+            .upload(signatureFileName, signatureBlob);
+          
+          if (!sigError) {
+            const { data: sigUrl } = supabase.storage
+              .from('documents')
+              .getPublicUrl(signatureFileName);
+            signatureUrl = sigUrl?.publicUrl;
+          }
+        } catch (e) {
+          console.log('Signature upload skipped - storage not configured');
+        }
+      }
+      
+      // Generate signed quote PDF
+      let signedQuotePdfUrl = null;
+      if (hasValidSignature) {
+        try {
+          const pdfBlob = await generateContractQuotePDF({
+            contract: selectedContract,
+            devices: selectedContract.contract_devices || [],
+            totalPrice: (selectedContract.contract_devices || []).reduce((sum, d) => sum + (d.unit_price || 0), 0),
+            totalTokens: (selectedContract.contract_devices || []).reduce((sum, d) => sum + (d.tokens_total || 0), 0),
+            calibrationTypes: [...new Set((selectedContract.contract_devices || []).map(d => d.device_type || 'particle_counter'))],
+            isSigned: true,
+            signatureName: signatureName,
+            signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+            signatureImage: signatureData
+          });
+          
+          const pdfFileName = `devis_signe_contrat_${selectedContract.contract_number}_${Date.now()}.pdf`;
+          const { error: pdfUploadError } = await supabase.storage
+            .from('documents')
+            .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
+          
+          if (!pdfUploadError) {
+            const { data: pdfUrl } = supabase.storage
+              .from('documents')
+              .getPublicUrl(pdfFileName);
+            signedQuotePdfUrl = pdfUrl?.publicUrl;
+            console.log('Signed quote PDF uploaded:', signedQuotePdfUrl);
+          } else {
+            console.log('PDF upload error:', pdfUploadError);
+          }
+        } catch (e) {
+          console.log('Signed quote PDF generation error:', e);
+        }
+      }
+      
+      // Update contract status - exactly like RMA updates service_requests
+      const { error: updateError } = await supabase
+        .from('contracts')
+        .update({ 
+          status: 'bc_pending',
+          bc_submitted_at: new Date().toISOString(),
+          bc_signed_by: signatureName,
+          bc_file_url: fileUrl,
+          signed_quote_url: signedQuotePdfUrl
+        })
+        .eq('id', selectedContract.id);
+      
+      if (updateError) throw updateError;
+      
+      notify('Bon de commande soumis avec succès!');
+      setShowBCModal(false);
+      
+      // Force full page reload to ensure fresh data - exactly like RMA
+      window.location.reload();
+      
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+    
+    setSubmittingBC(false);
+  };
+
+  const getStatusBadge = (status) => {
+    const styles = {
+      requested: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'En attente de devis' },
+      quote_sent: { bg: 'bg-blue-50', text: 'text-blue-700', label: 'Devis envoyé - Action requise' },
+      quote_revision_requested: { bg: 'bg-orange-50', text: 'text-orange-700', label: 'Modification demandée' },
+      bc_pending: { bg: 'bg-blue-50', text: 'text-blue-700', label: 'BC soumis - En vérification' },
+      bc_rejected: { bg: 'bg-red-50', text: 'text-red-700', label: 'BC rejeté - Action requise' },
+      active: { bg: 'bg-green-100', text: 'text-green-700', label: 'Actif' },
+      expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Expiré' },
+      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
+    };
+    const style = styles[status] || styles.requested;
+    return <span className={`px-3 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="w-8 h-8 border-4 border-[#00A651] border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  // ========================================
+  // CONTRACT DETAIL VIEW - IDENTICAL TO RMA
+  // ========================================
+  if (selectedContract) {
+    const contract = selectedContract;
+    const devices = contract.contract_devices || [];
+    const isQuoteSent = contract.status === 'quote_sent';
+    const needsQuoteAction = isQuoteSent && !contract.bc_submitted_at;
+    const totalPrice = devices.reduce((sum, d) => sum + (d.unit_price || 0), 0);
+    const totalTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
+    const usedTokens = devices.reduce((sum, d) => sum + (d.tokens_used || 0), 0);
+    const isActive = contract.status === 'active';
+    
+    // Detect calibration types from devices
+    const calibrationTypes = [...new Set(devices.map(d => d.device_type || 'particle_counter'))];
+    
+    return (
+      <div>
+        <button onClick={() => setSelectedContract(null)} className="mb-4 text-gray-500 hover:text-gray-700 flex items-center gap-2">
+          ← Retour aux contrats
+        </button>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          {/* Header */}
+          <div className="px-6 py-4 bg-[#1E3A5F] text-white">
+            <div className="flex justify-between items-start">
+              <div>
+                <h1 className="text-2xl font-bold">
+                  {contract.contract_number ? `Contrat ${contract.contract_number}` : 'Demande de Contrat'}
+                </h1>
+                <p className="text-white/70">
+                  Période: {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
+                </p>
+              </div>
+              {getStatusBadge(contract.status)}
+            </div>
+          </div>
+          
+          {/* QUOTE ACTION BANNER - Single button to review and approve */}
+          {needsQuoteAction && (
+            <div className="bg-blue-50 border-b border-blue-300 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center">
+                    <span className="text-white text-2xl">💰</span>
+                  </div>
+                  <div>
+                    <p className="font-bold text-blue-800 text-lg">Devis reçu - Action requise</p>
+                    <p className="text-sm text-blue-600">
+                      Consultez le devis et approuvez pour soumettre votre bon de commande
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowQuoteModal(true)}
+                  className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors"
+                >
+                  📋 Consulter et Approuver le Devis
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Quote Revision Requested - IDENTICAL TO RMA */}
+          {contract.status === 'quote_revision_requested' && (
+            <div className="bg-orange-50 border-b border-orange-300 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center">
+                  <span className="text-orange-600 text-2xl">✏️</span>
+                </div>
+                <div>
+                  <p className="font-bold text-orange-800">Modification en cours</p>
+                  <p className="text-sm text-orange-600">
+                    Votre demande de modification a été envoyée. Vous recevrez un nouveau devis sous peu.
+                  </p>
+                  {contract.quote_revision_notes && (
+                    <div className="mt-2 p-2 bg-white rounded border border-orange-200">
+                      <p className="text-xs text-gray-500">Votre demande :</p>
+                      <p className="text-sm text-gray-700">{contract.quote_revision_notes}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* BC Submitted - IDENTICAL TO RMA */}
+          {contract.status === 'bc_pending' && (
+            <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                  <span className="text-blue-600 text-lg">📄</span>
+                </div>
+                <div>
+                  <p className="font-semibold text-blue-800">Bon de commande soumis</p>
+                  <p className="text-sm text-blue-600">
+                    Votre BC est en cours de vérification par notre équipe. Vous serez notifié une fois approuvé.
+                  </p>
+                  {contract.bc_submitted_at && (
+                    <p className="text-xs text-blue-500 mt-1">
+                      Soumis le {new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(contract.bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* BC Rejected - IDENTICAL TO RMA */}
+          {contract.status === 'bc_rejected' && (
+            <div className="bg-red-50 border-b border-red-300 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center">
+                    <span className="text-white text-2xl">❌</span>
+                  </div>
+                  <div>
+                    <p className="font-bold text-red-800 text-lg">Bon de commande rejeté - Action requise</p>
+                    <p className="text-sm text-red-600">
+                      Votre bon de commande a été rejeté. Veuillez corriger et soumettre à nouveau.
+                    </p>
+                    {contract.bc_rejection_reason && (
+                      <div className="mt-2 p-3 bg-white rounded-lg border-2 border-red-300">
+                        <p className="text-xs text-red-600 font-medium uppercase">Raison du rejet :</p>
+                        <p className="text-sm text-red-800 font-medium mt-1">{contract.bc_rejection_reason}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowBCModal(true)}
+                  className="px-6 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors"
+                >
+                  📄 Resoumettre BC
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* TABS - Like RMA */}
+          <div className="border-b border-gray-200">
+            <div className="flex">
+              {[
+                { id: 'details', label: 'Détails', icon: '📋' },
+                { id: 'devices', label: 'Appareils', icon: '🔬' },
+                { id: 'documents', label: 'Documents', icon: '📄' },
+                { id: 'history', label: 'Historique', icon: '📜' }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setContractTab(tab.id)}
+                  className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${
+                    contractTab === tab.id
+                      ? 'border-[#00A651] text-[#00A651]'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {tab.icon} {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* TAB CONTENT */}
+          <div className="p-6">
+            {/* DETAILS TAB */}
+            {contractTab === 'details' && (
+              <>
+                {/* Contract Info Card */}
+                <div className="bg-white border rounded-xl p-6 mb-6">
+                  <h3 className="font-bold text-[#1E3A5F] mb-4 text-lg">📋 Informations du Contrat</h3>
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Numéro de contrat</span>
+                        <span className="font-mono font-bold text-[#00A651]">{contract.contract_number || '—'}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Date de début</span>
+                        <span className="font-medium">{new Date(contract.start_date).toLocaleDateString('fr-FR')}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Date de fin</span>
+                        <span className="font-medium">{new Date(contract.end_date).toLocaleDateString('fr-FR')}</span>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Durée</span>
+                        <span className="font-medium">
+                          {Math.round((new Date(contract.end_date) - new Date(contract.start_date)) / (1000 * 60 * 60 * 24 * 30))} mois
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Prix annuel HT</span>
+                        <span className="font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Statut</span>
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                          contract.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {contract.status === 'active' ? '✅ Actif' : contract.status === 'quote_sent' ? '📋 Devis envoyé' : contract.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Devices with their calibration status */}
+                <div className="bg-white border rounded-xl p-6 mb-6">
+                  <h3 className="font-bold text-[#1E3A5F] mb-4 text-lg">🔬 Appareils sous contrat ({devices.length})</h3>
+                  <div className="space-y-4">
+                    {devices.map((device, idx) => {
+                      const deviceUsed = device.tokens_used || 0;
+                      const deviceTotal = device.tokens_total || 1;
+                      const deviceRemaining = deviceTotal - deviceUsed;
+                      const isComplete = deviceUsed >= deviceTotal;
+                      const progressPercent = (deviceUsed / deviceTotal) * 100;
+                      
+                      return (
+                        <div key={device.id} className={`p-4 rounded-xl border-2 ${isComplete ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-white'}`}>
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl ${
+                                isComplete ? 'bg-green-500 text-white' : 'bg-[#1E3A5F] text-white'
+                              }`}>
+                                {device.device_type === 'particle_counter' && '🔬'}
+                                {device.device_type === 'bio_collector' && '🧫'}
+                                {device.device_type === 'liquid_counter' && '💧'}
+                                {device.device_type === 'temp_humidity' && '🌡️'}
+                                {(!device.device_type || device.device_type === 'other') && '📦'}
+                              </div>
+                              <div>
+                                <p className="font-bold text-[#1E3A5F]">{device.model_name || 'Appareil'}</p>
+                                <p className="text-sm text-gray-500">N° Série: {device.serial_number}</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              {isComplete ? (
+                                <span className="px-3 py-1 bg-green-500 text-white rounded-full text-sm font-medium">
+                                  ✅ Étalonnages complets
+                                </span>
+                              ) : (
+                                <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                                  {deviceRemaining} étalonnage{deviceRemaining > 1 ? 's' : ''} restant{deviceRemaining > 1 ? 's' : ''}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* Progress bar for this device */}
+                          <div className="mt-3">
+                            <div className="flex justify-between text-sm mb-1">
+                              <span className="text-gray-600">
+                                {deviceUsed} / {deviceTotal} étalonnage{deviceTotal > 1 ? 's' : ''} effectué{deviceUsed > 1 ? 's' : ''}
+                              </span>
+                              <span className="font-medium">{Math.round(progressPercent)}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div 
+                                className={`h-2 rounded-full transition-all ${isComplete ? 'bg-green-500' : 'bg-[#00A651]'}`}
+                                style={{ width: `${Math.min(progressPercent, 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                          
+                          {/* Price info */}
+                          <div className="mt-3 pt-3 border-t border-gray-200 flex justify-between text-sm">
+                            <span className="text-gray-500">Prix annuel pour cet appareil</span>
+                            <span className="font-bold text-[#00A651]">{(device.unit_price || 0).toFixed(2)} € HT</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                
+                {/* Actions */}
+                {isActive && (
+                  <div className="flex justify-center">
+                    <button
+                      onClick={() => setPage('new-request')}
+                      className="px-8 py-4 bg-[#00A651] text-white rounded-xl font-bold hover:bg-[#008f45] text-lg shadow-lg hover:shadow-xl transition-all"
+                    >
+                      🔬 Créer une demande d'étalonnage
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* DEVICES TAB */}
+            {contractTab === 'devices' && (
+              <>
+                <h3 className="font-bold text-[#1E3A5F] mb-3">Appareils sous contrat ({devices.length})</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="bg-[#1E3A5F] text-white">
+                        <th className="px-4 py-3 text-left text-xs font-bold">Modèle</th>
+                        <th className="px-4 py-3 text-left text-xs font-bold">N° Série</th>
+                        <th className="px-4 py-3 text-left text-xs font-bold">Type</th>
+                        <th className="px-4 py-3 text-center text-xs font-bold">Étal. inclus/an</th>
+                        <th className="px-4 py-3 text-center text-xs font-bold">Effectués</th>
+                        <th className="px-4 py-3 text-center text-xs font-bold">Restants</th>
+                        <th className="px-4 py-3 text-center text-xs font-bold">Statut</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {devices.map((device, idx) => {
+                        const deviceUsed = device.tokens_used || 0;
+                        const deviceTotal = device.tokens_total || 1;
+                        const deviceRemaining = deviceTotal - deviceUsed;
+                        const isComplete = deviceUsed >= deviceTotal;
+                        
+                        return (
+                          <tr key={device.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="px-4 py-3 font-medium">{device.model_name || '—'}</td>
+                            <td className="px-4 py-3 font-mono text-xs">{device.serial_number}</td>
+                            <td className="px-4 py-3 text-sm">
+                              {device.device_type === 'particle_counter' && '🔬 Compteur Particules'}
+                              {device.device_type === 'bio_collector' && '🧫 Bio Collecteur'}
+                              {device.device_type === 'liquid_counter' && '💧 Compteur Liquide'}
+                              {device.device_type === 'temp_humidity' && '🌡️ Temp/Humidité'}
+                              {(!device.device_type || device.device_type === 'other') && '📦 Autre'}
+                            </td>
+                            <td className="px-4 py-3 text-center font-bold">{deviceTotal}</td>
+                            <td className="px-4 py-3 text-center">
+                              <span className="text-green-600 font-bold">{deviceUsed}</span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={`font-bold ${deviceRemaining > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                                {deviceRemaining}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              {isComplete ? (
+                                <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                  ✅ Complet
+                                </span>
+                              ) : (
+                                <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">
+                                  ⏳ En cours
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                
+                {/* Summary */}
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg flex justify-between items-center">
+                  <span className="text-gray-600">Total pour cette période:</span>
+                  <div className="flex gap-6">
+                    <span><strong className="text-green-600">{usedTokens}</strong> effectués</span>
+                    <span><strong className="text-blue-600">{totalTokens - usedTokens}</strong> restants</span>
+                    <span><strong className="text-gray-800">{totalTokens}</strong> inclus</span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* DOCUMENTS TAB */}
+            {contractTab === 'documents' && (
+              <>
+                <h3 className="font-bold text-[#1E3A5F] mb-3">Documents</h3>
+                <div className="space-y-3">
+                  {/* Original Quote - viewable */}
+                  {contract.quote_sent_at && (
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                          <span className="text-blue-600">📄</span>
+                        </div>
+                        <div>
+                          <p className="font-medium">Devis Contrat</p>
+                          <p className="text-xs text-gray-500">
+                            Envoyé le {new Date(contract.quote_sent_at).toLocaleDateString('fr-FR')}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setShowQuoteModal(true)}
+                        className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600"
+                      >
+                        👁️ Voir
+                      </button>
+                    </div>
+                  )}
+                  
+                  {/* Signed Quote PDF */}
+                  {contract.signed_quote_url && (
+                    <a 
+                      href={contract.signed_quote_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors border border-green-200"
+                    >
+                      <div className="w-12 h-12 bg-green-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                        PDF
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-green-800">Devis Signé</p>
+                        <p className="text-xs text-green-600">
+                          Signé le {contract.bc_submitted_at ? new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR') : '—'}
+                          {contract.bc_signed_by && ` par ${contract.bc_signed_by}`}
+                        </p>
+                      </div>
+                      <div className="text-green-500">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </div>
+                    </a>
+                  )}
+                  
+                  {/* BC File (uploaded purchase order) */}
+                  {contract.bc_file_url && (
+                    <a 
+                      href={contract.bc_file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors border border-purple-200"
+                    >
+                      <div className="w-12 h-12 bg-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                        BC
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-purple-800">Bon de Commande</p>
+                        <p className="text-xs text-purple-600">Document uploadé</p>
+                      </div>
+                      <div className="text-purple-500">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </div>
+                    </a>
+                  )}
+                  
+                  {/* No documents message */}
+                  {!contract.quote_sent_at && !contract.bc_submitted_at && (
+                    <div className="text-center py-8 text-gray-500">
+                      <p className="text-4xl mb-2">📭</p>
+                      <p>Aucun document disponible</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* HISTORY TAB */}
+            {contractTab === 'history' && (
+              <>
+                <h3 className="font-bold text-[#1E3A5F] mb-3">Historique</h3>
+                <div className="space-y-3">
+                  {/* Build history from contract data */}
+                  {contract.bc_approved_at && (
+                    <div className="flex items-start gap-3 p-3 bg-green-50 rounded-lg">
+                      <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-sm">✓</span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-green-800">Contrat activé</p>
+                        <p className="text-xs text-green-600">{new Date(contract.bc_approved_at).toLocaleString('fr-FR')}</p>
+                      </div>
+                    </div>
+                  )}
+                  {contract.bc_submitted_at && (
+                    <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
+                      <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-sm">📄</span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-blue-800">BC soumis</p>
+                        <p className="text-xs text-blue-600">{new Date(contract.bc_submitted_at).toLocaleString('fr-FR')}</p>
+                      </div>
+                    </div>
+                  )}
+                  {contract.quote_sent_at && (
+                    <div className="flex items-start gap-3 p-3 bg-purple-50 rounded-lg">
+                      <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-sm">📧</span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-purple-800">Devis envoyé</p>
+                        <p className="text-xs text-purple-600">{new Date(contract.quote_sent_at).toLocaleString('fr-FR')}</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                    <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <span className="text-white text-sm">🆕</span>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-800">Demande créée</p>
+                      <p className="text-xs text-gray-600">{new Date(contract.created_at).toLocaleString('fr-FR')}</p>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+        
+        {/* ========================================
+            BC SUBMISSION MODAL - IDENTICAL TO RMA
+            ======================================== */}
+        {showBCModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold text-[#1E3A5F]">Soumettre Bon de Commande</h2>
+                  <button onClick={() => setShowBCModal(false)} className="text-gray-400 hover:text-gray-600">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                {/* Reference */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-500">Référence contrat</p>
+                  <p className="font-mono font-bold text-[#1E3A5F]">{contract.contract_number || 'En attente'}</p>
+                </div>
+
+                {/* File Upload */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Télécharger votre Bon de Commande (optionnel)
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#3B7AB4] transition-colors">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      onChange={(e) => setBcFile(e.target.files?.[0] || null)}
+                      className="hidden"
+                      id="contract-bc-file-input"
+                    />
+                    <label htmlFor="contract-bc-file-input" className="cursor-pointer">
+                      {bcFile ? (
+                        <div className="flex items-center justify-center gap-2 text-[#3B7AB4]">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="font-medium">{bcFile.name}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <svg className="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                          <p className="text-sm text-gray-600">Cliquez pour télécharger ou glissez-déposez</p>
+                          <p className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX, JPG, PNG (max 10MB)</p>
+                        </>
+                      )}
+                    </label>
+                  </div>
+                </div>
+
+                {/* OR Divider */}
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 h-px bg-gray-200"></div>
+                  <span className="text-sm text-gray-500">ou</span>
+                  <div className="flex-1 h-px bg-gray-200"></div>
+                </div>
+
+                {/* Electronic Signature */}
+                <div className="bg-[#F5F9FC] rounded-lg p-4 border border-[#3B7AB4]/20">
+                  <h3 className="font-semibold text-[#1E3A5F] mb-4">Signature électronique</h3>
+                  
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Nom complet du signataire *
+                        </label>
+                        <input
+                          type="text"
+                          value={signatureName}
+                          onChange={(e) => setSignatureName(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
+                          placeholder="Prénom et Nom"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Date
+                        </label>
+                        <input
+                          type="text"
+                          value={signatureDateDisplay}
+                          readOnly
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Tapez "Lu et approuvé" *
+                      </label>
+                      <input
+                        type="text"
+                        value={luEtApprouve}
+                        onChange={(e) => setLuEtApprouve(e.target.value)}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent font-medium ${
+                          luEtApprouve.toLowerCase().trim() === 'lu et approuvé' 
+                            ? 'border-green-500 bg-green-50 text-green-800' 
+                            : 'border-gray-300'
+                        }`}
+                        placeholder="Lu et approuvé"
+                      />
+                    </div>
+                    
+                    {/* Signature Pad */}
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Signature manuscrite *
+                        </label>
+                        <button
+                          type="button"
+                          onClick={clearSignature}
+                          className="text-xs text-red-600 hover:text-red-700"
+                        >
+                          Effacer
+                        </button>
+                      </div>
+                      <div className={`border-2 rounded-lg bg-white ${signatureData ? 'border-green-500' : 'border-gray-300 border-dashed'}`}>
+                        <canvas
+                          ref={canvasRef}
+                          width={400}
+                          height={150}
+                          className="w-full cursor-crosshair touch-none"
+                          onMouseDown={startDrawing}
+                          onMouseMove={draw}
+                          onMouseUp={stopDrawing}
+                          onMouseLeave={stopDrawing}
+                          onTouchStart={startDrawing}
+                          onTouchMove={draw}
+                          onTouchEnd={stopDrawing}
+                        />
+                      </div>
+                      {!signatureData && (
+                        <p className="text-xs text-gray-500 mt-1">Dessinez votre signature ci-dessus</p>
+                      )}
+                      {signatureData && (
+                        <p className="text-xs text-green-600 mt-1">✓ Signature enregistrée</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Legal Terms */}
+                <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={acceptTerms}
+                      onChange={(e) => setAcceptTerms(e.target.checked)}
+                      className="mt-1 w-4 h-4 text-[#3B7AB4] border-gray-300 rounded focus:ring-[#3B7AB4]"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Je soussigné(e), <strong>{signatureName || '[Nom]'}</strong>, 
+                      certifie avoir pris connaissance et accepter les conditions générales de vente de Lighthouse France. 
+                      Je m'engage à régler la facture correspondante selon les modalités convenues. 
+                      Cette validation électronique a valeur de signature manuscrite conformément aux articles 1366 et 1367 du Code civil français.
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-6 border-t border-gray-200 bg-gray-50 flex gap-3">
+                <button
+                  onClick={() => setShowBCModal(false)}
+                  className="flex-1 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={submitBonCommande}
+                  disabled={submittingBC || !isSubmissionValid}
+                  className={`flex-1 py-3 rounded-lg font-medium transition-colors ${
+                    isSubmissionValid 
+                      ? 'bg-[#1E3A5F] text-white hover:bg-[#2a4a6f]' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  {submittingBC ? 'Envoi en cours...' : 'Valider et soumettre'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================
+            QUOTE REVIEW MODAL - Contract Style matching Admin
+            ======================================== */}
+        {showQuoteModal && (() => {
+          // Group devices by type for proper layout
+          const devicesByType = {};
+          devices.forEach(d => {
+            const type = d.device_type || 'particle_counter';
+            if (!devicesByType[type]) devicesByType[type] = [];
+            devicesByType[type].push(d);
+          });
+          
+          return (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
+                <div>
+                  <h2 className="text-xl font-bold">Offre de Prix - Contrat d'Étalonnage</h2>
+                  <p className="text-gray-400">{contract.contract_number}</p>
+                </div>
+                <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
+              </div>
+
+              {/* Quote Document - This prints */}
+              <div id="contract-quote-print-content">
+                {/* Quote Header */}
+                <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <img 
+                        src="/images/logos/lighthouse-logo.png" 
+                        alt="Lighthouse France" 
+                        className="h-14 w-auto mb-1"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'block';
+                        }}
+                      />
+                      <div className="hidden">
+                        <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
+                        <p className="text-gray-500">Worldwide Solutions</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
+                      <p className="text-gray-500">N° {contract.contract_number}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Info Bar */}
+                <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Date</p>
+                    <p className="font-medium">{contract.quote_sent_at ? new Date(contract.quote_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Période du Contrat</p>
+                    <p className="font-medium">{new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Validité Devis</p>
+                    <p className="font-medium">30 jours</p>
+                  </div>
+                </div>
+
+                {/* Client Info */}
+                <div className="px-8 py-4 border-b">
+                  <p className="text-xs text-gray-500 uppercase">Client</p>
+                  <p className="font-bold text-xl text-[#1a1a2e]">{contract.companies?.name}</p>
+                  {contract.companies?.billing_address && <p className="text-gray-600">{contract.companies?.billing_address}</p>}
+                  <p className="text-gray-600">{contract.companies?.billing_postal_code} {contract.companies?.billing_city}</p>
+                </div>
+
+                {/* SERVICE SECTIONS BY DEVICE TYPE - Matching Admin Layout */}
+                {Object.entries(devicesByType).map(([type, typeDevices]) => {
+                  const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.particle_counter;
+                  const typeSubtotal = typeDevices.reduce((sum, d) => sum + (d.unit_price || 0), 0);
+                  const typeTokens = typeDevices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
+                  
+                  return (
+                    <div key={type} className="border-b">
+                      {/* Type Header with green background */}
+                      <div className="bg-[#00A651] text-white px-8 py-3">
+                        <h3 className="font-bold text-lg flex items-center gap-2">
+                          <span>{template.icon}</span> {template.title}
+                        </h3>
+                      </div>
+                      
+                      {/* Prestations */}
+                      <div className="px-8 py-4 bg-gray-50">
+                        <p className="text-xs text-gray-500 uppercase mb-2">Prestations Incluses</p>
+                        <ul className="space-y-1">
+                          {template.prestations.map((p, i) => (
+                            <li key={i} className="text-gray-700 flex items-start gap-2 text-sm">
+                              <span className="text-green-600 mt-0.5">✓</span>
+                              <span>{p}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      
+                      {/* Devices Table for this type */}
+                      <div className="px-8 py-4">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b-2 border-gray-300">
+                              <th className="px-2 py-2 text-left font-bold text-gray-700">Appareil</th>
+                              <th className="px-2 py-2 text-left font-bold text-gray-700">N° Série</th>
+                              <th className="px-2 py-2 text-center font-bold text-gray-700">Étal./an</th>
+                              <th className="px-2 py-2 text-right font-bold text-gray-700">Prix HT</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {typeDevices.map((device, i) => (
+                              <tr key={device.id} className="border-b border-gray-100">
+                                <td className="px-2 py-2 font-medium">{device.model_name || '—'}</td>
+                                <td className="px-2 py-2 font-mono text-xs">{device.serial_number || '—'}</td>
+                                <td className="px-2 py-2 text-center">{device.tokens_total || 1}</td>
+                                <td className="px-2 py-2 text-right font-medium">{(device.unit_price || 0).toFixed(2)} €</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t-2 border-gray-300 bg-gray-50">
+                              <td colSpan={2} className="px-2 py-2 font-bold">Sous-total {template.title}</td>
+                              <td className="px-2 py-2 text-center font-bold">{typeTokens} étal.</td>
+                              <td className="px-2 py-2 text-right font-bold text-[#00A651]">{typeSubtotal.toFixed(2)} €</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* TOTAL CONTRACT */}
+                <div className="px-8 py-6 bg-[#1E3A5F]">
+                  <div className="flex justify-between items-center text-white">
+                    <div>
+                      <p className="text-xl font-bold">TOTAL CONTRAT ANNUEL HT</p>
+                      <p className="text-sm text-white/70">{totalTokens} étalonnage(s) inclus pendant la période du contrat</p>
+                    </div>
+                    <p className="text-4xl font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</p>
+                  </div>
+                </div>
+
+                {/* Contract Conditions */}
+                <div className="px-8 py-4 border-t">
+                  <p className="text-xs text-gray-500 uppercase mb-2">Conditions du Contrat</p>
+                  <ul className="text-xs text-gray-600 space-y-1">
+                    <li>• Validité du contrat: {new Date(contract.start_date).toLocaleDateString('fr-FR')} au {new Date(contract.end_date).toLocaleDateString('fr-FR')}</li>
+                    <li>• {totalTokens} étalonnage(s) inclus à utiliser pendant la période contractuelle</li>
+                    <li>• Étalonnages supplémentaires facturés au tarif standard en vigueur</li>
+                    <li>• Frais de port inclus (France métropolitaine)</li>
+                    <li>• Paiement à 30 jours date de facture</li>
+                  </ul>
+                </div>
+
+                {/* Signature Section */}
+                <div className="px-8 py-6 border-t flex justify-between items-end">
+                  <div className="flex items-end gap-6">
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
+                      <p className="font-bold text-lg">{contract.quote_data?.createdBy || 'Lighthouse France'}</p>
+                      <p className="text-gray-600">Lighthouse France</p>
+                    </div>
                     <img 
                       src="/images/logos/capcert-logo.png" 
                       alt="Capcert Certification" 
@@ -7174,835 +9163,916 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                       onError={(e) => { e.target.style.display = 'none'; }}
                     />
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-400 mb-1">Signature client</p>
-                    <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
-                    <p className="text-xs text-gray-400 mt-1">Lu et approuve</p>
-                  </div>
+                  
+                  {contract.bc_submitted_at ? (
+                    <div className="text-right">
+                      <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+                        <p className="text-xs text-green-600 uppercase mb-1">Approuvé</p>
+                        <p className="font-bold text-green-800">{contract.bc_signed_by || 'Client'}</p>
+                        <p className="text-sm text-green-700">
+                          {contract.bc_signature_date 
+                            ? new Date(contract.bc_signature_date).toLocaleDateString('fr-FR')
+                            : new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR')}
+                        </p>
+                        {contract.bc_signature_url && (
+                          <img src={contract.bc_signature_url} alt="Signature" className="max-h-16 mt-2" />
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-right">
+                      <p className="text-xs text-gray-400 mb-1">Signature client</p>
+                      <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+                      <p className="text-xs text-gray-400 mt-1">Lu et approuvé</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Footer */}
                 <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
                   <p className="font-medium">Lighthouse France SAS</p>
-                  <p className="text-gray-400">16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07</p>
+                  <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* ==================== STEP 3: CONFIRM ==================== */}
-          {step === 3 && (
-            <div className="flex items-center justify-center min-h-full p-8">
-              <div className="text-center max-w-lg">
-                <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 ${isFullyContractCovered ? 'bg-emerald-500' : 'bg-[#00A651]'}`}>
-                  <span className="text-5xl text-white">{isFullyContractCovered ? '📋' : '📧'}</span>
+              {/* Action Buttons - IDENTICAL TO RMA */}
+              <div className="print-hide sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex flex-wrap gap-3 justify-between items-center">
+                <div className="flex gap-2">
+                  <button onClick={async () => {
+                    try {
+                      const pdfBlob = await generateContractQuotePDF({
+                        contract,
+                        devices,
+                        totalPrice,
+                        totalTokens,
+                        calibrationTypes: Object.keys(devicesByType),
+                        isSigned: false
+                      });
+                      const url = URL.createObjectURL(pdfBlob);
+                      const printWindow = window.open(url, '_blank');
+                      printWindow.onload = () => {
+                        printWindow.print();
+                      };
+                    } catch (err) {
+                      console.error('Print error:', err);
+                    }
+                  }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
+                    🖨️ Imprimer
+                  </button>
+                  <button onClick={async () => {
+                    try {
+                      const pdfBlob = await generateContractQuotePDF({
+                        contract,
+                        devices,
+                        totalPrice,
+                        totalTokens,
+                        calibrationTypes: Object.keys(devicesByType),
+                        isSigned: false
+                      });
+                      const url = URL.createObjectURL(pdfBlob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `Devis_Contrat_${contract.contract_number}.pdf`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    } catch (err) {
+                      console.error('PDF error:', err);
+                    }
+                  }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
+                    📥 Télécharger PDF
+                  </button>
                 </div>
-                <h3 className="text-2xl font-bold text-gray-800 mb-2">
-                  {isFullyContractCovered ? 'Créer le RMA (Contrat)' : 'Confirmer l\'envoi du devis'}
-                </h3>
-                <p className="text-gray-600 mb-6">
-                  {isFullyContractCovered 
-                    ? 'Le RMA sera créé directement en "Attente Appareil" avec le BC du contrat.'
-                    : 'Le devis sera envoyé au client et disponible sur son portail.'
-                  }
-                </p>
-                
-                <div className={`rounded-xl p-6 mb-6 text-left ${isFullyContractCovered ? 'bg-emerald-50 border border-emerald-200' : 'bg-gray-50'}`}>
-                  <p className="text-lg font-bold text-gray-800 mb-1">{request.companies?.name}</p>
-                  <p className="text-sm text-gray-500 mb-4">{devicePricing.length} appareil(s)</p>
-                  
-                  <div className="space-y-2 text-sm border-t pt-3">
-                    {devicePricing.map(d => (
-                      <div key={d.id} className="flex justify-between items-center">
-                        <span>
-                          {d.model} <span className="text-gray-400">({d.serial})</span>
-                          {d.isContractCovered && <span className="ml-2 px-2 py-0.5 bg-emerald-200 text-emerald-700 rounded text-xs font-bold">CONTRAT</span>}
-                        </span>
-                        <span className="font-medium">
-                          {d.isContractCovered ? '0,00 €' : `${(getDeviceServiceTotal(d) + d.shipping).toFixed(2)} €`}
-                        </span>
-                      </div>
-                    ))}
-                    <div className="border-t pt-2 mt-2 flex justify-between font-bold text-lg">
-                      <span>Total HT</span>
-                      <span className={isFullyContractCovered ? 'text-emerald-600' : 'text-[#00A651]'}>
-                        {grandTotal.toFixed(2)} €
-                      </span>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => setShowRevisionModal(true)}
+                    className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium"
+                  >
+                    ✏️ Demander modification
+                  </button>
+                  <button 
+                    onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
+                    className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold"
+                  >
+                    ✅ Approuver et soumettre BC
+                  </button>
+                </div>
+              </div>
+
+              {/* Revision Request Sub-Modal */}
+              {showRevisionModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
+                  <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-xl font-bold text-gray-800 mb-4">Demander une modification</h3>
+                    <p className="text-gray-600 mb-4">Décrivez les modifications que vous souhaitez apporter au devis :</p>
+                    <textarea
+                      value={revisionNotes}
+                      onChange={e => setRevisionNotes(e.target.value)}
+                      className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                      placeholder="Ex: Veuillez ajouter un appareil supplémentaire, modifier le prix, retirer les frais de transport, etc."
+                    />
+                    <div className="mt-4 flex justify-end gap-3">
+                      <button onClick={() => setShowRevisionModal(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+                        Annuler
+                      </button>
+                      <button 
+                        onClick={handleRequestRevision}
+                        disabled={approvingQuote || !revisionNotes.trim()}
+                        className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50"
+                      >
+                        {approvingQuote ? 'Envoi...' : 'Envoyer la demande'}
+                      </button>
                     </div>
                   </div>
-                </div>
-
-                {isFullyContractCovered ? (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-800 text-left">
-                    <p className="font-medium mb-2">🎯 Workflow contrat :</p>
-                    <p className="mb-1">✓ Un numéro RMA sera attribué automatiquement</p>
-                    <p className="mb-1">✓ Le BC du contrat sera copié dans le RMA</p>
-                    <p className="mb-1">✓ Statut directement "Attente Appareil"</p>
-                    <p>✓ Pas d'approbation client nécessaire</p>
-                  </div>
-                ) : (
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 text-left">
-                    <p className="font-medium mb-2">Après envoi :</p>
-                    <p className="mb-1">✓ Un numéro RMA sera attribué automatiquement</p>
-                    <p className="mb-1">✓ Le client recevra une notification</p>
-                    <p>✓ Le devis sera disponible sur son portail</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer Navigation */}
-        <div className="px-6 py-4 bg-gray-100 border-t flex justify-between items-center shrink-0">
-          <button onClick={step === 1 ? onClose : () => setStep(step - 1)} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
-            {step === 1 ? 'Annuler' : '← Retour'}
-          </button>
-          <div className="flex gap-3">
-            {step < 3 && !loadingContract && (
-              <button onClick={() => setStep(step + 1)} className="px-8 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">
-                Suivant →
-              </button>
-            )}
-            {step === 3 && (
-              <button 
-                onClick={sendQuote} 
-                disabled={saving} 
-                className={`px-10 py-3 text-white rounded-lg font-bold text-lg disabled:opacity-50 ${isFullyContractCovered ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}
-              >
-                {saving ? 'Envoi en cours...' : isFullyContractCovered ? '📋 Créer RMA Contrat' : '✅ Confirmer et Envoyer'}
-              </button>
-            )}
-            {loadingContract && step === 1 && (
-              <div className="px-8 py-2 bg-gray-300 text-gray-500 rounded-lg font-medium">
-                Chargement...
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================
-// PRICING SHEET COMPONENT
-// ============================================
-function PricingSheet({ notify, isAdmin }) {
-  const [parts, setParts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [uploading, setUploading] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [editingPart, setEditingPart] = useState(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-
-  // Load parts from database
-  const loadParts = useCallback(async () => {
-    setLoading(true);
-    
-    // Load all parts using pagination (Supabase has 1000 row limit per request)
-    let allParts = [];
-    let offset = 0;
-    const pageSize = 1000;
-    let hasMore = true;
-    
-    while (hasMore) {
-      const { data, error } = await supabase
-        .from('parts_pricing')
-        .select('*')
-        .order('part_number', { ascending: true })
-        .range(offset, offset + pageSize - 1);
-      
-      if (error) {
-        console.error('Error loading parts:', error);
-        notify('Erreur de chargement des pièces', 'error');
-        break;
-      }
-      
-      if (data && data.length > 0) {
-        allParts = [...allParts, ...data];
-        offset += pageSize;
-        hasMore = data.length === pageSize; // If we got less than pageSize, we're done
-      } else {
-        hasMore = false;
-      }
-    }
-    
-    setParts(allParts);
-    console.log(`Loaded ${allParts.length} parts total`);
-    setLoading(false);
-  }, [notify]);
-
-  useEffect(() => {
-    loadParts();
-  }, [loadParts]);
-
-  // Get unique categories for filter
-  const categories = [...new Set(parts.map(p => p.category).filter(Boolean))];
-
-  // Filter parts based on search and category
-  const filteredParts = parts.filter(part => {
-    const matchesSearch = !searchTerm || 
-      part.part_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      part.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      part.description_fr?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesCategory = categoryFilter === 'all' || part.category === categoryFilter;
-    
-    return matchesSearch && matchesCategory;
-  });
-
-  // Handle Excel file upload
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setUploading(true);
-    
-    try {
-      // Load SheetJS library dynamically
-      if (!window.XLSX) {
-        await new Promise((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-          script.onload = resolve;
-          script.onerror = reject;
-          document.head.appendChild(script);
-        });
-      }
-
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        try {
-          const data = new Uint8Array(event.target.result);
-          const workbook = window.XLSX.read(data, { type: 'array' });
-          const sheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
-          const jsonData = window.XLSX.utils.sheet_to_json(worksheet);
-
-          if (jsonData.length === 0) {
-            notify('Le fichier est vide', 'error');
-            setUploading(false);
-            return;
-          }
-
-          // OPTIMIZED BULK IMPORT
-          const partsToUpsert = [];
-          let skipped = 0;
-
-          // Get all column names from first row and normalize them
-          const originalColumns = Object.keys(jsonData[0]);
-          console.log('=== EXCEL COLUMN DEBUG ===');
-          console.log('Raw columns:', originalColumns);
-          originalColumns.forEach((col, i) => {
-            console.log(`Column ${i}: "${col}" (length: ${col.length}, chars: ${[...col].map(c => c.charCodeAt(0)).join(',')})`);
-          });
-          console.log('First row values:', jsonData[0]);
-
-          // Create a normalized column map (strip all whitespace, lowercase, remove accents)
-          const normalizeKey = (str) => {
-            return str.toString()
-              .toLowerCase()
-              .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove accents
-              .replace(/[^a-z0-9]/g, ''); // Remove all non-alphanumeric
-          };
-
-          const columnMap = {};
-          originalColumns.forEach(col => {
-            columnMap[normalizeKey(col)] = col;
-          });
-          console.log('Normalized column map:', columnMap);
-
-          // Smart column finder - finds best match
-          const findColumn = (row, ...searchTerms) => {
-            // First: try direct match on original columns
-            for (const term of searchTerms) {
-              if (row[term] !== undefined && row[term] !== null && row[term] !== '') {
-                return row[term];
-              }
-            }
-            // Second: try normalized match
-            for (const term of searchTerms) {
-              const normalizedTerm = normalizeKey(term);
-              const matchedOriginal = columnMap[normalizedTerm];
-              if (matchedOriginal && row[matchedOriginal] !== undefined && row[matchedOriginal] !== null && row[matchedOriginal] !== '') {
-                return row[matchedOriginal];
-              }
-            }
-            // Third: try partial match (column contains search term)
-            const rowKeys = Object.keys(row);
-            for (const term of searchTerms) {
-              const normalizedTerm = normalizeKey(term);
-              for (const key of rowKeys) {
-                if (normalizeKey(key).includes(normalizedTerm) || normalizedTerm.includes(normalizeKey(key))) {
-                  if (row[key] !== undefined && row[key] !== null && row[key] !== '') {
-                    return row[key];
-                  }
-                }
-              }
-            }
-            return null;
-          };
-
-          // Parse each row
-          for (const row of jsonData) {
-            const partNumber = findColumn(row, 'Part Number', 'PartNumber', 'part_number', 'Ref', 'Reference', 'SKU', 'PN', 'Part No', 'Numéro', 'N° Pièce');
-            const description = findColumn(row, 'Description', 'Desc', 'Name', 'Nom', 'Désignation', 'Designation', 'Libellé', 'Libelle', 'Label');
-            const descriptionFr = findColumn(row, 'Description FR', 'description_fr', 'Nom FR');
-            const category = findColumn(row, 'Category', 'Categorie', 'Catégorie', 'Type', 'Cat', 'Famille');
-            const rawPrice = findColumn(row, 'Price', 'Prix', 'Unit Price', 'Prix Unitaire', 'Cost', 'Tarif', 'PU', 'Prix HT', 'Montant');
-            const rawQuantity = findColumn(row, 'Quantity', 'Stock', 'Qty', 'QTY', 'Qté', 'Quantité');
-            const location = findColumn(row, 'Location', 'Emplacement', 'Loc', 'Lieu');
-            const supplier = findColumn(row, 'Supplier', 'Fournisseur', 'Vendor', 'Source');
-
-            if (!partNumber) {
-              skipped++;
-              continue;
-            }
-
-            const price = parseFloat(rawPrice) || null;
-            const quantity = parseInt(rawQuantity) || 0;
-
-            partsToUpsert.push({
-              part_number: partNumber.toString().trim(),
-              description: description ? description.toString().trim() : null,
-              description_fr: descriptionFr ? descriptionFr.toString().trim() : null,
-              category: category ? category.toString().trim() : null,
-              unit_price: price,
-              quantity_in_stock: quantity,
-              location: location ? location.toString().trim() : null,
-              supplier: supplier ? supplier.toString().trim() : null,
-              last_price_update: new Date().toISOString()
-            });
-          }
-
-          // DEDUPLICATE - keep last occurrence of each part number (in case Excel has duplicates)
-          const partsMap = new Map();
-          for (const part of partsToUpsert) {
-            partsMap.set(part.part_number, part); // Later entries overwrite earlier ones
-          }
-          const uniqueParts = Array.from(partsMap.values());
-          const duplicatesRemoved = partsToUpsert.length - uniqueParts.length;
-          
-          console.log('=== DEDUPLICATION ===');
-          console.log(`Original: ${partsToUpsert.length}, Unique: ${uniqueParts.length}, Duplicates removed: ${duplicatesRemoved}`);
-
-          // Log sample
-          if (uniqueParts.length > 0) {
-            console.log('=== PARSED DATA SAMPLE ===');
-            console.log('First part:', uniqueParts[0]);
-            console.log('Second part:', uniqueParts[1]);
-            const withDesc = uniqueParts.filter(p => p.description);
-            console.log(`Parts with description: ${withDesc.length}/${uniqueParts.length}`);
-          }
-
-          if (uniqueParts.length === 0) {
-            notify('Aucune pièce valide trouvée dans le fichier', 'error');
-            setUploading(false);
-            return;
-          }
-          
-          // Replace partsToUpsert with deduplicated list
-          const partsToImport = uniqueParts;
-
-          // Step 2: Get ALL existing part numbers
-          const { data: existingParts, error: fetchError } = await supabase
-            .from('parts_pricing')
-            .select('part_number');
-          
-          if (fetchError) {
-            console.error('Error fetching existing parts:', fetchError);
-          }
-          
-          const existingPartNumbers = new Set((existingParts || []).map(p => p.part_number));
-          
-          // Separate into inserts and updates
-          const toInsert = partsToImport.filter(p => !existingPartNumbers.has(p.part_number));
-          const toUpdate = partsToImport.filter(p => existingPartNumbers.has(p.part_number));
-
-          console.log(`=== IMPORT PLAN ===`);
-          console.log(`Total unique parts: ${partsToImport.length}`);
-          console.log(`New (INSERT): ${toInsert.length}`);
-          console.log(`Existing (UPDATE): ${toUpdate.length}`);
-          console.log(`Skipped (no part number): ${skipped}`);
-          console.log(`Duplicates in Excel: ${duplicatesRemoved}`);
-
-          // Step 3: Process inserts in batches
-          const batchSize = 200; // Smaller batches for reliability
-          let insertErrors = 0;
-          let updateErrors = 0;
-          
-          // INSERT new parts
-          for (let i = 0; i < toInsert.length; i += batchSize) {
-            const batch = toInsert.slice(i, i + batchSize);
-            const batchNum = Math.floor(i / batchSize) + 1;
-            const totalBatches = Math.ceil(toInsert.length / batchSize);
-            
-            console.log(`INSERT batch ${batchNum}/${totalBatches} (${batch.length} parts)`);
-            
-            const { error } = await supabase
-              .from('parts_pricing')
-              .insert(batch);
-            
-            if (error) {
-              console.error(`INSERT batch ${batchNum} error:`, error);
-              insertErrors += batch.length;
-            }
-          }
-
-          // UPDATE existing parts (one by one to avoid conflicts)
-          let updateCount = 0;
-          for (const part of toUpdate) {
-            const { error } = await supabase
-              .from('parts_pricing')
-              .update({
-                description: part.description,
-                description_fr: part.description_fr,
-                category: part.category,
-                unit_price: part.unit_price,
-                quantity_in_stock: part.quantity_in_stock,
-                location: part.location,
-                supplier: part.supplier,
-                last_price_update: part.last_price_update
-              })
-              .eq('part_number', part.part_number);
-            
-            if (error) {
-              updateErrors++;
-              if (updateErrors <= 3) console.error(`UPDATE error for ${part.part_number}:`, error);
-            } else {
-              updateCount++;
-            }
-            
-            // Progress log every 100
-            if (updateCount % 100 === 0) {
-              console.log(`Updated ${updateCount}/${toUpdate.length}...`);
-            }
-          }
-
-          const totalErrors = insertErrors + updateErrors;
-          const message = `Import terminé: ${toInsert.length - insertErrors} créés, ${toUpdate.length - updateErrors} mis à jour${skipped > 0 ? `, ${skipped} ignorés` : ''}${totalErrors > 0 ? `, ${totalErrors} erreurs` : ''}`;
-          
-          notify(message, totalErrors > 0 ? 'error' : 'success');
-          loadParts();
-          setShowUploadModal(false);
-        } catch (err) {
-          console.error('Parse error:', err);
-          notify('Erreur lors de la lecture du fichier Excel', 'error');
-        }
-        setUploading(false);
-      };
-      reader.readAsArrayBuffer(file);
-    } catch (err) {
-      console.error('Upload error:', err);
-      notify('Erreur lors du chargement du fichier', 'error');
-      setUploading(false);
-    }
-  };
-
-  // Save part (create or update)
-  const savePart = async (partData) => {
-    try {
-      if (editingPart?.id) {
-        // Update
-        const { error } = await supabase
-          .from('parts_pricing')
-          .update({ ...partData, last_price_update: new Date().toISOString() })
-          .eq('id', editingPart.id);
-        
-        if (error) throw error;
-        notify('Pièce mise à jour');
-      } else {
-        // Create
-        const { error } = await supabase
-          .from('parts_pricing')
-          .insert({ ...partData, last_price_update: new Date().toISOString() });
-        
-        if (error) throw error;
-        notify('Pièce créée');
-      }
-      loadParts();
-      setEditingPart(null);
-      setShowAddModal(false);
-    } catch (err) {
-      console.error('Save error:', err);
-      notify('Erreur lors de la sauvegarde', 'error');
-    }
-  };
-
-  // Delete part
-  const deletePart = async (id) => {
-    if (!confirm('Supprimer cette pièce ?')) return;
-    
-    const { error } = await supabase.from('parts_pricing').delete().eq('id', id);
-    if (error) {
-      notify('Erreur lors de la suppression', 'error');
-    } else {
-      notify('Pièce supprimée');
-      loadParts();
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">Tarifs & Pièces</h1>
-          <p className="text-gray-500">{parts.length} pièces au catalogue</p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => setShowUploadModal(true)}
-            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2"
-          >
-            📤 Importer Excel
-          </button>
-          {isAdmin && (
-            <button
-              onClick={() => { setEditingPart(null); setShowAddModal(true); }}
-              className="px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium flex items-center gap-2"
-            >
-              + Ajouter Pièce
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Search & Filters */}
-      <div className="bg-white rounded-xl shadow-sm p-4 flex flex-col md:flex-row gap-4">
-        <div className="flex-1 relative">
-          <input
-            type="text"
-            placeholder="Rechercher par numéro de pièce ou description..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-          />
-          <span className="absolute left-3 top-2.5 text-gray-400">🔍</span>
-        </div>
-        <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
-        >
-          <option value="all">Toutes catégories</option>
-          {categories.map(cat => (
-            <option key={cat} value={cat}>{cat}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Parts Table */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="p-12 text-center">
-            <div className="w-8 h-8 border-4 border-[#00A651] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-gray-500">Chargement...</p>
-          </div>
-        ) : filteredParts.length === 0 ? (
-          <div className="p-12 text-center">
-            <p className="text-4xl mb-4">📦</p>
-            <p className="text-gray-500">
-              {searchTerm || categoryFilter !== 'all' 
-                ? 'Aucune pièce ne correspond à votre recherche' 
-                : 'Aucune pièce au catalogue. Importez un fichier Excel pour commencer.'}
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">N° Pièce</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Description</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Catégorie</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-600">Prix Unit.</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600">Stock</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Emplacement</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {filteredParts.map(part => (
-                  <tr key={part.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-mono text-sm font-medium text-[#1a1a2e]">{part.part_number}</td>
-                    <td className="px-4 py-3">
-                      <p className="text-sm text-gray-800">{part.description || '-'}</p>
-                      {part.description_fr && part.description_fr !== part.description && (
-                        <p className="text-xs text-gray-500">{part.description_fr}</p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {part.category && (
-                        <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">{part.category}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium text-[#00A651]">
-                      {part.unit_price ? `${part.unit_price.toFixed(2)} €` : '-'}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        part.quantity_in_stock === 0 ? 'bg-red-100 text-red-700' :
-                        part.quantity_in_stock <= (part.reorder_level || 5) ? 'bg-amber-100 text-amber-700' :
-                        'bg-green-100 text-green-700'
-                      }`}>
-                        {part.quantity_in_stock || 0}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{part.location || '-'}</td>
-                    <td className="px-4 py-3 text-center">
-                      <div className="flex justify-center gap-2">
-                        <button
-                          onClick={() => { setEditingPart(part); setShowAddModal(true); }}
-                          className="p-1 text-blue-500 hover:bg-blue-50 rounded"
-                          title="Modifier"
-                        >
-                          ✏️
-                        </button>
-                        {isAdmin && (
-                          <button
-                            onClick={() => deletePart(part.id)}
-                            className="p-1 text-red-500 hover:bg-red-50 rounded"
-                            title="Supprimer"
-                          >
-                            🗑️
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Upload Modal */}
-      {showUploadModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold">Importer un fichier Excel</h2>
-              <button onClick={() => setShowUploadModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center">
-                <p className="text-4xl mb-4">📁</p>
-                <p className="text-gray-600 mb-4">
-                  Glissez-déposez votre fichier Excel ici ou
-                </p>
-                <label className="cursor-pointer inline-block px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-                  Sélectionner un fichier
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls,.csv"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    disabled={uploading}
-                  />
-                </label>
-              </div>
-              
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm">
-                <p className="font-medium text-blue-800 mb-2">Colonnes attendues :</p>
-                <ul className="text-blue-700 text-xs space-y-1">
-                  <li>• <strong>Part Number</strong> (obligatoire) - Numéro de pièce unique</li>
-                  <li>• <strong>Description</strong> - Description en anglais</li>
-                  <li>• <strong>Description FR</strong> - Description en français</li>
-                  <li>• <strong>Category</strong> - Catégorie (ex: Filtres, Capteurs...)</li>
-                  <li>• <strong>Price</strong> - Prix unitaire HT</li>
-                  <li>• <strong>Quantity</strong> - Quantité en stock</li>
-                  <li>• <strong>Location</strong> - Emplacement de stockage</li>
-                  <li>• <strong>Supplier</strong> - Fournisseur</li>
-                </ul>
-              </div>
-
-              {uploading && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-6 h-6 border-4 border-green-500 border-t-transparent rounded-full animate-spin"></div>
-                    <span className="text-green-800 font-medium">Import en cours...</span>
-                  </div>
-                  <p className="text-green-700 text-sm">
-                    Traitement par lots de 500 pièces. Pour 3000 pièces, comptez environ 30 secondes à 2 minutes.
-                  </p>
                 </div>
               )}
             </div>
           </div>
+          );
+        })()}
+      </div>
+    );
+  }
+
+  // ========================================
+  // CONTRACTS LIST VIEW
+  // ========================================
+  const pendingQuotes = contracts.filter(c => c.status === 'quote_sent');
+  
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-[#1E3A5F]">Mes Contrats</h1>
+        <button 
+          onClick={() => setPage('new-request')}
+          className="px-4 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008c44]"
+        >
+          + Nouveau Contrat
+        </button>
+      </div>
+      
+      {/* Pending Quotes Alert - IDENTICAL styling to RMA */}
+      {pendingQuotes.length > 0 && (
+        <div className="mb-6 p-4 bg-blue-50 border-2 border-blue-300 rounded-xl">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center text-2xl text-white">💰</div>
+            <div>
+              <h3 className="font-bold text-blue-800">{pendingQuotes.length} devis en attente d'approbation</h3>
+              <p className="text-blue-600 text-sm">Cliquez sur un contrat pour voir et approuver le devis</p>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Add/Edit Modal */}
-      {showAddModal && (
-        <PartEditModal
-          part={editingPart}
-          onSave={savePart}
-          onClose={() => { setShowAddModal(false); setEditingPart(null); }}
-        />
+      {contracts.length === 0 ? (
+        <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-100 text-center">
+          <div className="text-4xl mb-4">📋</div>
+          <h2 className="text-xl font-bold text-[#1E3A5F] mb-2">Aucun contrat</h2>
+          <p className="text-gray-600 mb-4">
+            Vous n'avez pas encore de contrat d'étalonnage. Demandez un devis pour bénéficier de tarifs préférentiels.
+          </p>
+          <button 
+            onClick={() => setPage('new-request')}
+            className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008c44]"
+          >
+            Demander un devis contrat
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {contracts.map(contract => {
+            const devices = contract.contract_devices || [];
+            const totalTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
+            const usedTokens = devices.reduce((sum, d) => sum + (d.tokens_used || 0), 0);
+            const remainingTokens = totalTokens - usedTokens;
+            const needsAction = contract.status === 'quote_sent' || contract.status === 'bc_rejected';
+            
+            return (
+              <div 
+                key={contract.id}
+                onClick={() => setSelectedContract(contract)}
+                className={`bg-white rounded-xl p-6 shadow-sm border-2 cursor-pointer transition-colors ${
+                  needsAction 
+                    ? 'border-blue-400 bg-blue-50/30 hover:border-blue-500' 
+                    : 'border-gray-100 hover:border-[#3B7AB4]'
+                }`}
+              >
+                {needsAction && (
+                  <div className="mb-3 flex items-center gap-2 text-blue-600">
+                    <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                    <span className="text-sm font-bold">
+                      <span className="animate-pulse">⚠</span> Action requise
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="font-bold text-[#1E3A5F] text-lg">{contract.contract_number || 'Demande en cours'}</h3>
+                    <p className="text-sm text-gray-600">
+                      {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
+                    </p>
+                  </div>
+                  {getStatusBadge(contract.status)}
+                </div>
+                
+                <div className="flex gap-6 text-sm">
+                  <div>
+                    <span className="text-gray-500">Appareils:</span>{' '}
+                    <span className="font-bold">{devices.length}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Étalonnages:</span>{' '}
+                    <span className={`font-bold ${remainingTokens <= 0 ? 'text-red-600' : remainingTokens <= devices.length ? 'text-amber-600' : 'text-green-600'}`}>
+                      {remainingTokens}/{totalTokens}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
 }
 
 // ============================================
-// PART EDIT MODAL
+// HOME PAGE (Public Landing)
 // ============================================
-function PartEditModal({ part, onSave, onClose }) {
-  const [formData, setFormData] = useState({
-    part_number: part?.part_number || '',
-    description: part?.description || '',
-    description_fr: part?.description_fr || '',
-    category: part?.category || '',
-    unit_price: part?.unit_price || '',
-    quantity_in_stock: part?.quantity_in_stock || 0,
-    reorder_level: part?.reorder_level || 5,
-    location: part?.location || '',
-    supplier: part?.supplier || ''
-  });
+function HomePage({ t, setPage }) {
+  return (
+    <div className="min-h-screen">
+      {/* Fixed Background - stays in place while content scrolls */}
+      <div className="fixed inset-0 z-0">
+        <img 
+          src="/images/products/hero-background.png" 
+          alt="" 
+          className="w-full h-full object-cover"
+          onError={(e) => { e.target.style.display = 'none'; }}
+        />
+        {/* Dark overlay */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e]/90 via-[#1a1a2e]/80 to-[#1a1a2e]/70"></div>
+        {/* Subtle color overlay */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#00A651]/5 via-transparent to-[#3B7AB4]/5"></div>
+      </div>
 
-  const handleSubmit = (e) => {
+      {/* Scrollable Content */}
+      <div className="relative z-10">
+        {/* Header */}
+        <header className="sticky top-0 z-50 bg-[#1a1a2e]/80 backdrop-blur-md border-b border-white/10">
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-10 w-auto invert brightness-0 invert"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+                <div className="items-center gap-2 text-white hidden">
+                  <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                  <span className="font-semibold text-lg text-[#00A651]">FRANCE</span>
+                </div>
+              </div>
+              <div></div>
+            </div>
+          </div>
+        </header>
+        
+        {/* Hero Section */}
+        <div className="min-h-[90vh] flex items-center">
+          <div className="max-w-7xl mx-auto px-6 py-12">
+            <div className="grid lg:grid-cols-2 gap-8 items-center">
+              {/* Left: Text Content */}
+              <div className="text-white">
+                <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full mb-6 border border-white/10">
+                  <span className="w-2 h-2 bg-[#00A651] rounded-full animate-pulse"></span>
+                  <span className="text-sm font-medium">Portail Service Lighthouse France</span>
+                </div>
+                <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
+                  Portail de<br/>
+                  <span className="text-[#00A651]">Service</span> & Pieces
+                </h1>
+                <p className="text-lg md:text-xl text-white/70 mb-8 max-w-lg leading-relaxed">
+                  Gerez vos demandes de calibration et reparation d'equipements de mesure de contamination en temps reel.
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  <button onClick={() => setPage('register')} className="px-8 py-4 bg-[#00A651] text-white rounded-xl font-bold text-lg hover:bg-[#008f45] transition-all hover:scale-105 shadow-lg shadow-[#00A651]/25">
+                    Creer un compte
+                  </button>
+                  <button onClick={() => setPage('login')} className="px-8 py-4 bg-white/10 backdrop-blur-sm border border-white/20 text-white rounded-xl font-bold text-lg hover:bg-white/20 transition-all">
+                    Se connecter
+                  </button>
+                </div>
+                
+                {/* Trust indicators */}
+                <div className="flex flex-wrap items-center gap-6 mt-10 pt-8 border-t border-white/10">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-white/70 text-sm">Certifie ISO 9001</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-white/70 text-sm">40+ ans d'expertise</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-white/70 text-sm">Support mondial</span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Right: Equipment Showcase */}
+              <div className="relative hidden lg:block">
+                <div className="bg-white/5 backdrop-blur-md rounded-3xl p-5 border border-white/10">
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Airborne Particle Counter */}
+                    <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
+                        <img 
+                          src="/images/products/particle-counter.png" 
+                          alt="Airborne Particle Counter" 
+                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
+                        />
+                      </div>
+                      <p className="text-white font-bold text-sm">Compteurs de Particules</p>
+                      <p className="text-white/60 text-xs">Aeroportees</p>
+                    </div>
+                    
+                    {/* Bio Collector */}
+                    <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
+                        <img 
+                          src="/images/products/bio-collector.png" 
+                          alt="Bio Collector" 
+                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
+                        />
+                      </div>
+                      <p className="text-white font-bold text-sm">Bio Collecteurs</p>
+                      <p className="text-white/60 text-xs">Echantillonneurs Microbiens</p>
+                    </div>
+                    
+                    {/* Liquid Particle Counter */}
+                    <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
+                        <img 
+                          src="/images/products/liquid-counter.png" 
+                          alt="Liquid Particle Counter" 
+                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
+                        />
+                      </div>
+                      <p className="text-white font-bold text-sm">Compteurs de Particules</p>
+                      <p className="text-white/60 text-xs">Liquides</p>
+                    </div>
+                    
+                    {/* Temperature & Humidity Probe */}
+                    <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
+                        <img 
+                          src="/images/products/temp-probe.png" 
+                          alt="Temperature & Humidity Probe" 
+                          className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
+                        />
+                      </div>
+                      <p className="text-white font-bold text-sm">Sondes Temperature</p>
+                      <p className="text-white/60 text-xs">& Humidite</p>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-4 text-center">
+                    <span className="text-white/50 text-sm">+ Systemes de monitoring, capteurs de pression, et plus...</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Scroll indicator */}
+        <div className="flex justify-center pb-8">
+          <div className="w-6 h-10 border-2 border-white/30 rounded-full flex justify-center">
+            <div className="w-1.5 h-3 bg-white/50 rounded-full mt-2 animate-bounce"></div>
+          </div>
+        </div>
+
+        {/* How It Works - Glassmorphism */}
+        <div className="py-20 px-6">
+          <div className="max-w-6xl mx-auto">
+            <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-10 border border-white/20">
+              <div className="text-center mb-12">
+                <span className="text-[#00A651] font-semibold text-sm uppercase tracking-wider">Processus simple</span>
+                <h2 className="text-3xl md:text-4xl font-bold text-white mt-2">Comment ca marche</h2>
+              </div>
+              <div className="grid md:grid-cols-4 gap-8 relative">
+                {/* Connection lines - positioned between each circle */}
+                <div className="hidden md:block absolute top-10 h-0.5 bg-gradient-to-r from-[#00A651] to-[#3B7AB4]" style={{ left: 'calc(12.5% + 40px)', width: 'calc(25% - 80px)' }}></div>
+                <div className="hidden md:block absolute top-10 h-0.5 bg-[#3B7AB4]" style={{ left: 'calc(37.5% + 40px)', width: 'calc(25% - 80px)' }}></div>
+                <div className="hidden md:block absolute top-10 h-0.5 bg-gradient-to-r from-[#3B7AB4] to-[#00A651]" style={{ left: 'calc(62.5% + 40px)', width: 'calc(25% - 80px)' }}></div>
+                
+                {[
+                  { num: '1', title: 'Creer un compte', desc: 'Enregistrez votre societe et vos coordonnees en quelques minutes' },
+                  { num: '2', title: 'Soumettre une demande', desc: 'Detaillez vos equipements et besoins de service' },
+                  { num: '3', title: 'Recevoir le devis', desc: 'Obtenez votre devis et numero RMA rapidement' },
+                  { num: '4', title: 'Suivre le progres', desc: 'Surveillez l\'etat de vos demandes en temps reel' }
+                ].map((step, i) => (
+                  <div key={i} className="text-center relative z-10 group">
+                    <div className="w-20 h-20 bg-white/10 backdrop-blur-sm border-4 border-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg group-hover:scale-110 transition-transform group-hover:bg-[#00A651]/20">
+                      <span className="text-2xl font-bold text-[#00A651]">{step.num}</span>
+                    </div>
+                    <h3 className="font-bold text-white text-lg mb-2">{step.title}</h3>
+                    <p className="text-white/60 text-sm leading-relaxed">{step.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Services Section - Glassmorphism */}
+        <div className="py-20 px-6">
+          <div className="max-w-6xl mx-auto">
+            <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-10 border border-white/20">
+              <div className="text-center mb-12">
+                <span className="text-[#00A651] font-semibold text-sm uppercase tracking-wider">Nos expertises</span>
+                <h2 className="text-3xl md:text-4xl font-bold text-white mt-2">Services proposes</h2>
+              </div>
+              <div className="grid md:grid-cols-3 gap-6">
+                {[
+                  { 
+                    icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
+                    icon2: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z',
+                    title: 'Reparation', 
+                    desc: 'Reparation experte de compteurs de particules, echantillonneurs microbiens et equipements de monitoring environnemental.'
+                  },
+                  { 
+                    icon: 'M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3',
+                    title: 'Etalonnage', 
+                    desc: 'Calibration selon ISO 21501-4 avec certificats traceables pour garantir precision et conformite reglementaire.'
+                  },
+                  { 
+                    icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
+                    title: 'Maintenance', 
+                    desc: 'Programmes de maintenance preventive pour optimiser la duree de vie et les performances de vos equipements.'
+                  }
+                ].map((svc, i) => (
+                  <div key={i} className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-all hover:-translate-y-1 group">
+                    <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-5 bg-[#00A651]/20 group-hover:bg-[#00A651]/30 transition-colors">
+                      <svg className="w-7 h-7 text-[#00A651]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={svc.icon} />
+                        {svc.icon2 && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={svc.icon2} />}
+                      </svg>
+                    </div>
+                    <h3 className="font-bold text-white text-xl mb-3">{svc.title}</h3>
+                    <p className="text-white/60 leading-relaxed text-sm">{svc.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* CTA Section - Glassmorphism */}
+        <div className="py-20 px-6">
+          <div className="max-w-4xl mx-auto">
+            <div className="bg-gradient-to-r from-[#00A651]/20 to-[#3B7AB4]/20 backdrop-blur-lg rounded-3xl p-12 border border-white/20 text-center">
+              <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
+                Pret a demarrer ?
+              </h2>
+              <p className="text-xl text-white/70 mb-8 max-w-2xl mx-auto">
+                Rejoignez les entreprises qui font confiance a Lighthouse France pour la maintenance de leurs equipements critiques.
+              </p>
+              <div className="flex flex-wrap gap-4 justify-center">
+                <button onClick={() => setPage('register')} className="px-8 py-4 bg-[#00A651] text-white rounded-xl font-bold text-lg hover:bg-[#008f45] transition-all hover:scale-105 shadow-lg shadow-[#00A651]/25">
+                  Creer mon compte gratuitement
+                </button>
+                <button onClick={() => setPage('login')} className="px-8 py-4 bg-white/10 border border-white/30 text-white rounded-xl font-bold text-lg hover:bg-white/20 transition-all">
+                  J'ai deja un compte
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <footer className="bg-[#0a0a12]/80 backdrop-blur-lg text-white py-12 border-t border-white/10">
+          <div className="max-w-6xl mx-auto px-6">
+            <div className="grid md:grid-cols-3 gap-8 mb-8">
+              <div>
+                <h4 className="font-bold text-lg mb-4">LIGHTHOUSE FRANCE</h4>
+                <p className="text-white/60 text-sm leading-relaxed">
+                  Filiale francaise de Lighthouse Worldwide Solutions, leader mondial des solutions de monitoring de contamination.
+                </p>
+              </div>
+              <div>
+                <h4 className="font-bold text-lg mb-4">Contact</h4>
+                <p className="text-white/60 text-sm">16 Rue Paul Sejourne</p>
+                <p className="text-white/60 text-sm">94000 Creteil, France</p>
+                <p className="text-white/60 text-sm mt-2">Tel: +33 (1) 43 77 28 07</p>
+                <p className="text-white/60 text-sm">France@golighthouse.com</p>
+              </div>
+              <div>
+                <h4 className="font-bold text-lg mb-4">Liens rapides</h4>
+                <div className="space-y-2">
+                  <button onClick={() => setPage('login')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Connexion</button>
+                  <button onClick={() => setPage('register')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Creer un compte</button>
+                  <a href="https://www.golighthouse.com" target="_blank" rel="noopener noreferrer" className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Lighthouse Worldwide</a>
+                </div>
+              </div>
+            </div>
+            <div className="border-t border-white/10 pt-8 text-center">
+              <p className="text-white/40 text-sm">© 2025 Lighthouse France SAS. Tous droits reserves.</p>
+            </div>
+          </div>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// LOGIN PAGE
+// ============================================
+function LoginPage({ t, login, setPage }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.part_number.trim()) {
-      alert('Le numéro de pièce est obligatoire');
-      return;
-    }
-    onSave({
-      ...formData,
-      unit_price: formData.unit_price ? parseFloat(formData.unit_price) : null,
-      quantity_in_stock: parseInt(formData.quantity_in_stock) || 0,
-      reorder_level: parseInt(formData.reorder_level) || 5
-    });
+    setLoading(true);
+    setError('');
+    const result = await login(email, password);
+    if (result) setError(result);
+    setLoading(false);
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white px-6 py-4 border-b flex justify-between items-center">
-          <h2 className="text-xl font-bold">{part ? 'Modifier la pièce' : 'Ajouter une pièce'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+    <div className="min-h-screen">
+      {/* Fixed Background */}
+      <div className="fixed inset-0 z-0">
+        <img 
+          src="/images/products/hero-background.png" 
+          alt="" 
+          className="w-full h-full object-cover"
+          onError={(e) => { e.target.style.display = 'none'; }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e]/90 via-[#1a1a2e]/85 to-[#1a1a2e]/80"></div>
+      </div>
+
+      {/* Content */}
+      <div className="relative z-10">
+        {/* Header */}
+        <header className="bg-[#1a1a2e]/50 backdrop-blur-md border-b border-white/10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="flex justify-between items-center h-16">
+              <button onClick={() => setPage('home')} className="flex items-center gap-3">
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-10 w-auto invert brightness-0 invert"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+                <div className="items-center gap-2 hidden text-white">
+                  <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                  <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
+                </div>
+              </button>
+              <button onClick={() => setPage('home')} className="text-white/70 hover:text-white font-medium transition-colors">
+                ← Retour
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Login Form */}
+        <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
+          <div className="w-full max-w-md">
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden">
+              <div className="px-6 py-8 text-center border-b border-white/10">
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-14 w-auto mx-auto mb-3 invert brightness-0 invert"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'block';
+                  }}
+                />
+                <h1 className="text-2xl font-bold text-white hidden">LIGHTHOUSE FRANCE</h1>
+                <p className="text-white/60 mt-2">Portail de Service</p>
+              </div>
+              
+              <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-white/80 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                    placeholder="votre@email.com"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-white/80 mb-1">Mot de passe</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+                
+                {error && (
+                  <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
+                    {error}
+                  </div>
+                )}
+                
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50"
+                >
+                  {loading ? 'Connexion...' : 'Se connecter'}
+                </button>
+              </form>
+              
+              <div className="px-6 pb-6 text-center">
+                <p className="text-white/60">
+                  Pas de compte?{' '}
+                  <button onClick={() => setPage('register')} className="text-[#00A651] font-semibold hover:text-[#00c564]">
+                    Créer un compte
+                  </button>
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
-        
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">N° Pièce *</label>
-              <input
-                type="text"
-                value={formData.part_number}
-                onChange={(e) => setFormData({ ...formData, part_number: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
-                required
-                disabled={!!part}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Catégorie</label>
-              <input
-                type="text"
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
-                placeholder="ex: Filtres, Capteurs, Pompes..."
-              />
-            </div>
-          </div>
+      </div>
+    </div>
+  );
+}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description (EN)</label>
-            <input
-              type="text"
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
-            />
-          </div>
+// ============================================
+// REGISTER PAGE
+// ============================================
+function RegisterPage({ t, register, setPage }) {
+  const [formData, setFormData] = useState({
+    email: '', password: '', confirmPassword: '',
+    companyName: '', contactName: '', phone: '',
+    address: '', city: '', postalCode: ''
+  });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description (FR)</label>
-            <input
-              type="text"
-              value={formData.description_fr}
-              onChange={(e) => setFormData({ ...formData, description_fr: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
-            />
-          </div>
+  const updateField = (field, value) => setFormData({ ...formData, [field]: value });
 
-          <div className="grid md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Prix Unitaire (€)</label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.unit_price}
-                onChange={(e) => setFormData({ ...formData, unit_price: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
-                placeholder="0.00"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Stock</label>
-              <input
-                type="number"
-                value={formData.quantity_in_stock}
-                onChange={(e) => setFormData({ ...formData, quantity_in_stock: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Seuil réapprovisionnement</label>
-              <input
-                type="number"
-                value={formData.reorder_level}
-                onChange={(e) => setFormData({ ...formData, reorder_level: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
-              />
-            </div>
-          </div>
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (formData.password !== formData.confirmPassword) {
+      setError('Les mots de passe ne correspondent pas');
+      return;
+    }
+    
+    if (formData.password.length < 6) {
+      setError('Le mot de passe doit contenir au moins 6 caractères');
+      return;
+    }
+    
+    setLoading(true);
+    setError('');
+    const result = await register(formData);
+    if (result) setError(result);
+    setLoading(false);
+  };
 
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Emplacement</label>
-              <input
-                type="text"
-                value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
-                placeholder="ex: Étagère A3, Tiroir 12..."
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Fournisseur</label>
-              <input
-                type="text"
-                value={formData.supplier}
-                onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
-              />
-            </div>
-          </div>
+  return (
+    <div className="min-h-screen">
+      {/* Fixed Background */}
+      <div className="fixed inset-0 z-0">
+        <img 
+          src="/images/products/hero-background.png" 
+          alt="" 
+          className="w-full h-full object-cover"
+          onError={(e) => { e.target.style.display = 'none'; }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e]/90 via-[#1a1a2e]/85 to-[#1a1a2e]/80"></div>
+      </div>
 
-          <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium"
-            >
-              Annuler
-            </button>
-            <button
-              type="submit"
-              className="flex-1 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium"
-            >
-              {part ? 'Enregistrer' : 'Créer'}
-            </button>
+      {/* Content */}
+      <div className="relative z-10">
+        {/* Header */}
+        <header className="bg-[#1a1a2e]/50 backdrop-blur-md border-b border-white/10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="flex justify-between items-center h-16">
+              <button onClick={() => setPage('home')} className="flex items-center gap-3">
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-10 w-auto invert brightness-0 invert"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+                <div className="items-center gap-2 hidden text-white">
+                  <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                  <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
+                </div>
+              </button>
+              <button onClick={() => setPage('home')} className="text-white/70 hover:text-white font-medium transition-colors">
+                ← Retour
+              </button>
+            </div>
           </div>
-        </form>
+        </header>
+
+        {/* Register Form */}
+        <div className="py-12 px-4">
+          <div className="max-w-2xl mx-auto">
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden">
+              <div className="bg-[#00A651]/20 backdrop-blur-sm px-6 py-6 border-b border-white/10">
+                <h1 className="text-xl font-bold text-white">Créer un compte</h1>
+                <p className="text-white/60 text-sm mt-1">Enregistrez votre société pour accéder au portail</p>
+              </div>
+              
+              <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                {/* Company Section */}
+                <div>
+                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
+                    Information Société
+                  </h2>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-white/80 mb-1">Nom de la société *</label>
+                      <input
+                        type="text"
+                        value={formData.companyName}
+                        onChange={(e) => updateField('companyName', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Nom du contact *</label>
+                      <input
+                        type="text"
+                        value={formData.contactName}
+                        onChange={(e) => updateField('contactName', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Téléphone</label>
+                      <input
+                        type="tel"
+                        value={formData.phone}
+                        onChange={(e) => updateField('phone', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="+33 1 23 45 67 89"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Address Section */}
+                <div>
+                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
+                    Adresse
+                  </h2>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-white/80 mb-1">Adresse *</label>
+                      <input
+                        type="text"
+                        value={formData.address}
+                        onChange={(e) => updateField('address', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="16 Rue de la République"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Code Postal *</label>
+                      <input
+                        type="text"
+                        value={formData.postalCode}
+                        onChange={(e) => updateField('postalCode', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="75001"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Ville *</label>
+                      <input
+                        type="text"
+                        value={formData.city}
+                        onChange={(e) => updateField('city', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="Paris"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Account Section */}
+                <div>
+                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
+                    Identifiants
+                  </h2>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-white/80 mb-1">Email *</label>
+                      <input
+                        type="email"
+                        value={formData.email}
+                        onChange={(e) => updateField('email', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Mot de passe *</label>
+                      <input
+                        type="password"
+                        value={formData.password}
+                        onChange={(e) => updateField('password', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="Minimum 6 caractères"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Confirmer *</label>
+                      <input
+                        type="password"
+                        value={formData.confirmPassword}
+                        onChange={(e) => updateField('confirmPassword', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                {error && (
+                  <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
+                    {error}
+                  </div>
+                )}
+                
+                <div className="flex gap-4 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setPage('login')}
+                    className="flex-1 py-3 bg-white/10 border border-white/20 text-white rounded-lg font-medium hover:bg-white/20 transition-colors"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50"
+                  >
+                    {loading ? 'Création...' : 'Créer le compte'}
+                  </button>
+                </div>
+              </form>
+              
+              <div className="px-6 pb-6 text-center">
+                <p className="text-white/60">
+                  Déjà un compte?{' '}
+                  <button onClick={() => setPage('login')} className="text-[#00A651] font-semibold hover:text-[#00c564]">
+                    Se connecter
+                  </button>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
