@@ -216,7 +216,7 @@ export default function AdminPortal() {
               setFilter={setDashboardFilter} 
             />}
             {activeSheet === 'requests' && <RequestsSheet requests={requests} notify={notify} reload={loadData} profile={profile} />}
-            {activeSheet === 'clients' && <ClientsSheet clients={clients} requests={requests} equipment={equipment} notify={notify} reload={loadData} isAdmin={isAdmin} />}
+            {activeSheet === 'clients' && <ClientsSheet clients={clients} requests={requests} equipment={equipment} notify={notify} reload={loadData} isAdmin={isAdmin} onSelectRMA={setSelectedRMA} />}
             {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} />}
             {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} reloadMain={loadData} />}
             {activeSheet === 'settings' && <SettingsSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
@@ -2820,7 +2820,7 @@ function RequestDetailModal({ request, onClose, onCreateQuote }) {
   );
 }
 
-function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin }) {
+function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, onSelectRMA }) {
   const [selectedClient, setSelectedClient] = useState(null);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState(null); // null = show clients, object = show search results
@@ -2961,12 +2961,17 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin })
                   const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
                   const devices = rma.request_devices || [];
                   return (
-                    <div key={rma.id} className="p-4 hover:bg-gray-50">
+                    <div 
+                      key={rma.id} 
+                      className="p-4 hover:bg-blue-50 cursor-pointer transition-colors"
+                      onClick={() => onSelectRMA(rma)}
+                    >
                       <div className="flex justify-between items-start">
                         <div>
                           <div className="flex items-center gap-3">
                             <span className="font-mono font-bold text-[#00A651] text-lg">{rma.request_number}</span>
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+                            <span className="text-xs text-blue-500">Cliquez pour ouvrir →</span>
                           </div>
                           <p className="text-gray-600 mt-1">{rma.companies?.name}</p>
                           <p className="text-sm text-gray-400">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
@@ -3014,15 +3019,22 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin })
                         {data.rmas.sort((a, b) => new Date(b.rma.created_at) - new Date(a.rma.created_at)).map(({ rma, device }) => {
                           const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
                           return (
-                            <div key={rma.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                            <div 
+                              key={rma.id} 
+                              className="flex items-center justify-between bg-gray-50 hover:bg-green-50 rounded-lg p-3 cursor-pointer transition-colors"
+                              onClick={() => onSelectRMA(rma)}
+                            >
                               <div className="flex items-center gap-3">
                                 <span className="font-mono text-[#00A651] font-medium">{rma.request_number}</span>
                                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
                                 <span className="text-sm text-gray-500">{device.service_type === 'repair' ? '🔧 Réparation' : '🔬 Étalonnage'}</span>
                               </div>
-                              <div className="text-right">
-                                <p className="text-sm text-gray-600">{rma.companies?.name}</p>
-                                <p className="text-xs text-gray-400">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
+                              <div className="flex items-center gap-4">
+                                <div className="text-right">
+                                  <p className="text-sm text-gray-600">{rma.companies?.name}</p>
+                                  <p className="text-xs text-gray-400">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
+                                </div>
+                                <span className="text-green-500 text-sm">Ouvrir →</span>
                               </div>
                             </div>
                           );
