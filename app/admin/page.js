@@ -696,8 +696,16 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                 }
               };
               
-              // Get the actual status to use - prioritize rma.status as it's more reliably updated
-              const effectiveStatus = rma.status || device.status;
+              // Get the actual status to use - prioritize device.status as it's updated per-device
+              // Also check report_complete flag to determine if in QC
+              const effectiveStatus = (() => {
+                // If report is complete but QC not done, device is in QC
+                if (device.report_complete && !device.qc_complete) return 'final_qc';
+                // If QC is complete, device is ready
+                if (device.qc_complete) return 'ready_to_ship';
+                // Otherwise use device status, falling back to RMA status
+                return device.status || rma.status;
+              })();
               const currentIndex = getStepIndex(effectiveStatus);
               
               return (
