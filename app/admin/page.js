@@ -1311,6 +1311,137 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
 }
 
 // ============================================
+// RMA ACTIONS COMPONENT - RMA-level action buttons
+// ============================================
+function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenant, saving, setSaving }) {
+  // Determine what actions are available based on RMA/device state
+  const isWaitingForDevice = ['approved', 'waiting_bc', 'waiting_device', 'waiting_po', 'bc_review', 'bc_approved'].includes(rma.status) && 
+    !devices.some(d => d.status === 'received' || d.status === 'in_queue');
+  
+  const isReceived = rma.status === 'received' || rma.status === 'in_queue' || 
+    devices.some(d => ['received', 'in_queue'].includes(d.status));
+  
+  const allQCComplete = devices.length > 0 && devices.every(d => d.qc_complete);
+  const allReadyToShip = devices.length > 0 && devices.every(d => d.status === 'ready_to_ship' || d.qc_complete);
+  const isReadyToShip = allQCComplete && allReadyToShip;
+  
+  const hasAdditionalWork = devices.some(d => d.additional_work_needed && !rma.avenant_sent_at);
+  const totalAdditionalWork = devices.reduce((sum, d) => {
+    if (!d.additional_work_needed || !d.additional_work_items) return sum;
+    return sum + d.additional_work_items.reduce((s, item) => s + (parseFloat(item.price) || 0), 0);
+  }, 0);
+  
+  // Mark RMA as received
+  const markAsReceived = async () => {
+    setSaving(true);
+    try {
+      await supabase.from('service_requests').update({ 
+        status: 'received', 
+        received_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }).eq('id', rma.id);
+      
+      // Also update all devices
+      for (const device of devices) {
+        await supabase.from('request_devices').update({ 
+          status: 'received'
+        }).eq('id', device.id);
+      }
+      
+      notify('✅ RMA marqué comme reçu!');
+      reload();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSaving(false);
+  };
+  
+  // Start service on RMA
+  const startService = async () => {
+    setSaving(true);
+    try {
+      await supabase.from('service_requests').update({ 
+        status: 'calibration_in_progress',
+        updated_at: new Date().toISOString()
+      }).eq('id', rma.id);
+      
+      notify('✅ Service démarré!');
+      reload();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSaving(false);
+  };
+  
+  // No actions needed if RMA is closed
+  if (['shipped', 'completed', 'delivered'].includes(rma.status)) {
+    return null;
+  }
+  
+  return (
+    <div className="bg-white rounded-xl shadow-sm border p-4">
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Waiting for device - show receive button */}
+        {isWaitingForDevice && (
+          <button
+            onClick={markAsReceived}
+            disabled={saving}
+            className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving ? '⏳' : '📦'} Marquer comme Reçu
+          </button>
+        )}
+        
+        {/* Received - show start service button */}
+        {isReceived && !devices.some(d => d.service_findings || d.report_complete) && (
+          <button
+            onClick={startService}
+            disabled={saving}
+            className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving ? '⏳' : '🔧'} Démarrer Service
+          </button>
+        )}
+        
+        {/* Additional work found - show avenant button */}
+        {hasAdditionalWork && (
+          <button
+            onClick={onOpenAvenant}
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium flex items-center gap-2"
+          >
+            📄 Créer Avenant (€{totalAdditionalWork.toFixed(2)})
+          </button>
+        )}
+        
+        {/* Avenant sent indicator */}
+        {rma.avenant_sent_at && (
+          <span className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium">
+            📄 Avenant envoyé {rma.avenant_approved_at ? '✓ Approuvé' : '⏳ En attente'}
+          </span>
+        )}
+        
+        {/* Ready to ship - show shipping button */}
+        {isReadyToShip && (
+          <button
+            onClick={onOpenShipping}
+            className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium flex items-center gap-2"
+          >
+            🚚 Préparer Expédition
+          </button>
+        )}
+        
+        {/* Status indicator when no actions available */}
+        {!isWaitingForDevice && !isReceived && !isReadyToShip && !hasAdditionalWork && devices.length > 0 && (
+          <span className="text-sm text-gray-500">
+            Service en cours... Cliquez sur un appareil pour voir/modifier les détails.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
 // RMA FULL PAGE VIEW - Adaptive workflow interface
 // ============================================
 function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, businessSettings }) {
@@ -1326,6 +1457,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   const [showAvenantPreview, setShowAvenantPreview] = useState(false);
   const [showQCReview, setShowQCReview] = useState(null);
   const [showShippingModal, setShowShippingModal] = useState(false);
+  const [showServiceModal, setShowServiceModal] = useState(null); // Device to show service modal for
   
   // Safety check
   if (!rma) {
@@ -1481,6 +1613,13 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   if (viewMode === 'device' && selectedDevice) {
     const device = devices.find(d => d.id === selectedDevice.id) || selectedDevice;
     
+    // Device action conditions
+    const isDeviceShipped = device.status === 'shipped';
+    const isDeviceReadyToShip = device.status === 'ready_to_ship' || device.qc_complete;
+    const needsQC = device.report_complete && !device.qc_complete;
+    const canStartService = ['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress'].includes(device.status || rma.status) || 
+      (!device.report_complete && !isDeviceShipped);
+    
     return (
       <div className="space-y-6">
         {/* Back to RMA Overview */}
@@ -1528,6 +1667,47 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             </p>
           </div>
         </div>
+        
+        {/* Device-Level Actions */}
+        {!isDeviceShipped && (
+          <div className="bg-white rounded-xl shadow-sm border p-4">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Service button - Edit or Start */}
+              {canStartService && (
+                <button
+                  onClick={() => setShowServiceModal(device)}
+                  className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium flex items-center gap-2"
+                >
+                  🔧 {device.report_complete ? 'Modifier Service' : device.service_findings ? 'Continuer Service' : 'Traiter Appareil'}
+                </button>
+              )}
+              
+              {/* QC button */}
+              {needsQC && (
+                <button
+                  onClick={() => setShowQCReview(device)}
+                  className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-medium flex items-center gap-2"
+                >
+                  ✅ Contrôle Qualité
+                </button>
+              )}
+              
+              {/* QC Complete indicator */}
+              {device.qc_complete && !isDeviceShipped && (
+                <span className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium">
+                  ✅ QC Validé - Prêt pour expédition
+                </span>
+              )}
+              
+              {/* Report complete but no QC yet */}
+              {device.report_complete && !device.qc_complete && (
+                <span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm font-medium">
+                  📋 Rapport terminé - En attente QC
+                </span>
+              )}
+            </div>
+          </div>
+        )}
         
         {/* Device Tabs */}
         <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
@@ -1764,6 +1944,28 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             )}
           </div>
         </div>
+        
+        {/* Modals for device view */}
+        {showServiceModal && (
+          <DeviceServiceModal
+            device={showServiceModal}
+            rma={rma}
+            onBack={() => { setShowServiceModal(null); reload(); }}
+            notify={notify}
+            reload={reload}
+            profile={profile}
+          />
+        )}
+        
+        {showQCReview && (
+          <QCReviewModal
+            device={showQCReview}
+            rma={rma}
+            onBack={() => { setShowQCReview(null); reload(); }}
+            notify={notify}
+            profile={profile}
+          />
+        )}
       </div>
     );
   }
@@ -1828,6 +2030,20 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           </p>
         </div>
       </div>
+
+      {/* RMA-Level Actions */}
+      {!isRMAClosed && (
+        <RMAActions 
+          rma={rma} 
+          devices={devices} 
+          notify={notify} 
+          reload={reload}
+          onOpenShipping={() => setShowShippingModal(true)}
+          onOpenAvenant={() => setShowAvenantPreview(true)}
+          saving={saving}
+          setSaving={setSaving}
+        />
+      )}
 
       {/* Messages Section - Collapsible */}
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
@@ -1926,7 +2142,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         </div>
       </div>
 
-      {/* Legacy Modals - Will be reorganized in Stage 3 */}
+      {/* Modals */}
       {showShippingModal && (
         <ShippingModal
           rma={rma}
@@ -1956,6 +2172,17 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           rma={rma}
           onBack={() => { setShowQCReview(null); reload(); }}
           notify={notify}
+          profile={profile}
+        />
+      )}
+      
+      {showServiceModal && (
+        <DeviceServiceModal
+          device={showServiceModal}
+          rma={rma}
+          onBack={() => { setShowServiceModal(null); reload(); }}
+          notify={notify}
+          reload={reload}
           profile={profile}
         />
       )}
