@@ -5477,7 +5477,7 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
     if (badWords.some(w => englishInput.toLowerCase().includes(w))) { notify('⚠️ Please remove inappropriate language.', 'error'); return; }
     setProcessingMessage(true);
     try {
-      const res = await fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: `Improve this for professional business communication, fix errors, translate to French. Add signature: "${getUserSignature()}". Message: ${englishInput}`, direction: 'en-to-fr' }) });
+      const res = await fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: `Improve this English message for professional business communication, fix any grammar or spelling errors, then translate it to French. Only return the French translation, nothing else. Message: ${englishInput}`, direction: 'en-to-fr' }) });
       if (res.ok) { const d = await res.json(); setFrenchOutput(d.translation); }
     } catch (e) { notify('Translation error', 'error'); }
     setProcessingMessage(false);
