@@ -1639,7 +1639,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
   const [viewMode, setViewMode] = useState('rma'); // 'rma' or 'device'
   
   const archivedRMAs = requests.filter(r => r.status === 'archived');
-  const activeRMAs = requests.filter(r => r.request_number && !['completed', 'cancelled', 'archived'].includes(r.status));
+  const activeRMAs = requests.filter(r => r.request_number && !['completed', 'cancelled', 'archived', 'shipped'].includes(r.status));
   
   // BC needs review
   const needsReview = requests.filter(r => 
