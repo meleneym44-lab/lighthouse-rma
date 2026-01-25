@@ -2670,60 +2670,64 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
         {/* Message Thread */}
         <div className="md:col-span-2 flex flex-col h-full overflow-hidden">
           {selectedThread ? (
-            <>
-              {/* Thread Header */}
-              <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex-shrink-0">
-                <h3 className="font-bold text-[#1E3A5F]">
-                  Demande {selectedThread.request.request_number}
-                </h3>
-                <p className="text-sm text-gray-500">
-                  {selectedThread.request.request_devices?.length || 0} appareil(s) • 
-                  {new Date(selectedThread.request.created_at).toLocaleDateString('fr-FR')}
-                </p>
-              </div>
-
-              {/* Messages - scrollable area */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
-                {selectedThread.messages.length === 0 ? (
-                  <div className="text-center text-gray-400 py-8">
-                    <p>Aucun message pour cette demande</p>
-                    <p className="text-sm">Envoyez un message pour démarrer la conversation</p>
+            (() => {
+              // Get current messages for selected thread from state (not from cached selectedThread)
+              const currentMessages = messages.filter(m => m.request_id === selectedThread.request.id);
+              return (
+                <>
+                  {/* Thread Header */}
+                  <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex-shrink-0">
+                    <h3 className="font-bold text-[#1E3A5F]">
+                      Demande {selectedThread.request.request_number}
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      {selectedThread.request.request_devices?.length || 0} appareil(s) • 
+                      {new Date(selectedThread.request.created_at).toLocaleDateString('fr-FR')}
+                    </p>
                   </div>
-                ) : (
-                  [...selectedThread.messages].reverse().map(msg => {
-                    const isMe = msg.sender_id === profile.id;
-                    return (
-                      <div 
-                        key={msg.id}
-                        className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div className={`max-w-[70%] rounded-lg p-3 ${
-                          isMe 
-                            ? 'bg-[#3B7AB4] text-white' 
-                            : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          <div className={`text-xs mb-1 font-medium ${isMe ? 'text-white/70' : 'text-gray-500'}`}>
-                            {isMe ? 'Vous' : (msg.sender_name || 'Lighthouse France')}
-                          </div>
-                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                          {msg.attachment_url && (
-                            <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isMe ? 'text-white/80 hover:text-white' : 'text-blue-600 hover:underline'}`}>
-                              📎 {msg.attachment_name || 'Télécharger le fichier'}
-                            </a>
-                          )}
-                          <p className={`text-xs mt-1 ${isMe ? 'text-white/60' : 'text-gray-400'}`}>
-                            {new Date(msg.created_at).toLocaleString('fr-FR', {
-                              day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
-                            })}
-                          </p>
-                        </div>
+
+                  {/* Messages - scrollable area */}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+                    {currentMessages.length === 0 ? (
+                      <div className="text-center text-gray-400 py-8">
+                        <p>Aucun message pour cette demande</p>
+                        <p className="text-sm">Envoyez un message pour démarrer la conversation</p>
                       </div>
-                    );
-                  })
-                )}
-                {/* Scroll anchor */}
-                <div ref={messagesEndRef} />
-              </div>
+                    ) : (
+                      [...currentMessages].reverse().map(msg => {
+                        const isMe = msg.sender_id === profile.id;
+                        return (
+                          <div 
+                            key={msg.id}
+                            className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+                          >
+                            <div className={`max-w-[70%] rounded-lg p-3 ${
+                              isMe 
+                                ? 'bg-[#3B7AB4] text-white' 
+                                : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              <div className={`text-xs mb-1 font-medium ${isMe ? 'text-white/70' : 'text-gray-500'}`}>
+                                {isMe ? 'Vous' : (msg.sender_name || 'Lighthouse France')}
+                              </div>
+                              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                              {msg.attachment_url && (
+                                <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isMe ? 'text-white/80 hover:text-white' : 'text-blue-600 hover:underline'}`}>
+                                  📎 {msg.attachment_name || 'Télécharger le fichier'}
+                                </a>
+                              )}
+                              <p className={`text-xs mt-1 ${isMe ? 'text-white/60' : 'text-gray-400'}`}>
+                                {new Date(msg.created_at).toLocaleString('fr-FR', {
+                                  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+                                })}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                    {/* Scroll anchor */}
+                    <div ref={messagesEndRef} />
+                  </div>
 
               {/* Message Input - fixed at bottom */}
               <form onSubmit={sendMessage} className="p-4 border-t border-gray-100 flex-shrink-0 bg-white">
@@ -2745,6 +2749,8 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
                 </div>
               </form>
             </>
+              );
+            })()
           ) : (
             <div className="flex-1 flex items-center justify-center text-gray-400">
               <div className="text-center">
