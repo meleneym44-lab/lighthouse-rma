@@ -6194,7 +6194,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
             </div>
           </div>
           
-          <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
               <button 
                 onClick={saveReportPDF}
@@ -6211,7 +6211,6 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
               Rapport OK → Voir Certificat
             </button>
           </div>
-        </div>
       </div>
       
       {/* Step 2: Certificate */}
