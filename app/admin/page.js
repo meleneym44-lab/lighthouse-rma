@@ -6002,9 +6002,9 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
   const approveQC = async () => {
     setSaving(true);
     try {
-      // If no report saved yet, save it now (must be on step 1)
+      // Always save report PDF by capturing the preview element (always in DOM now)
       let reportUrl = savedReportUrl;
-      if (!reportUrl && step === 1) {
+      if (!reportUrl) {
         reportUrl = await saveReportPDF();
       }
       
@@ -6083,15 +6083,14 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
         </div>
       </div>
       
-      {/* Step 1: Service Report */}
-      {step === 1 && (
-        <div className="space-y-4">
-          <div className="bg-gray-400 p-8 min-h-full flex justify-center">
-            <div id="qc-report-preview" className="bg-white shadow-2xl w-full max-w-3xl relative" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '297mm', display: 'flex', flexDirection: 'column' }}>
-              
-              {/* Logo */}
-              <div className="mb-8">
-                <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" className="h-12 w-auto" onError={(e) => { e.target.style.display = 'none'; }} />
+      {/* Step 1: Service Report - Preview always in DOM for PDF capture */}
+      <div className="space-y-4" style={{ display: step === 1 ? 'block' : 'none' }}>
+        <div className="bg-gray-400 p-8 min-h-full flex justify-center">
+          <div id="qc-report-preview" className="bg-white shadow-2xl w-full max-w-3xl relative" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '297mm', display: 'flex', flexDirection: 'column' }}>
+            
+            {/* Logo */}
+            <div className="mb-8">
+              <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" className="h-12 w-auto" onError={(e) => { e.target.style.display = 'none'; }} />
               </div>
 
               {/* Info Table */}
@@ -6213,7 +6212,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
             </button>
           </div>
         </div>
-      )}
+      </div>
       
       {/* Step 2: Certificate */}
       {step === 2 && (
@@ -6318,7 +6317,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
             </div>
           </div>
           
-          <div className="flex justify-between">
+          <div className="flex justify-between items-center">
             <button onClick={() => setStep(2)} className="px-6 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
               ← Retour
             </button>
