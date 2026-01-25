@@ -4845,10 +4845,103 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
         const s = shipments[i], bl = generateBLContent(s, i);
         blData.push(bl);
         
-        // Generate BL PDF using HTML capture (matches print preview exactly)
+        // Generate BL PDF using html2canvas (Method 2)
         let blUrl = null;
         try {
-          const blPdfBlob = await generateBLPDFFromHTML(bl, employeeName, businessSettings);
+          // Load html2canvas if needed
+          if (!window.html2canvas) {
+            await new Promise((resolve, reject) => {
+              const script = document.createElement('script');
+              script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+              script.onload = resolve;
+              script.onerror = reject;
+              document.head.appendChild(script);
+            });
+          }
+          
+          const container = document.createElement('div');
+          container.style.cssText = 'position:fixed;left:0;top:0;width:794px;min-height:1123px;background:white;font-family:Arial,sans-serif;font-size:11pt;color:#333;padding:15px 25px;box-sizing:border-box;display:flex;flex-direction:column;z-index:99999;';
+          
+          container.innerHTML = `
+            <div style="flex:1 0 auto;">
+              <div style="margin-bottom:15px;padding-bottom:12px;border-bottom:2px solid #333;">
+                <div style="font-size:24px;font-weight:bold;color:#333;">LIGHTHOUSE<div style="font-size:10px;color:#666;">FRANCE</div></div>
+              </div>
+              <div style="text-align:center;margin:20px 0;">
+                <h1 style="font-size:20pt;font-weight:bold;color:#333;margin:0;">BON DE LIVRAISON</h1>
+                <div style="font-size:14pt;color:#333;font-weight:bold;margin-top:8px;">${bl.blNumber}</div>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin:12px 0;">
+                <div><span style="color:#666;">${businessSettings?.city || 'Créteil'}, le</span> <strong>${bl.date}</strong></div>
+                <div><span style="color:#666;">RMA:</span> <strong>${bl.rmaNumber}</strong></div>
+              </div>
+              <div style="background:#f8f9fa;border:1px solid #ddd;padding:15px;margin:12px 0;">
+                <div style="font-size:9pt;color:#666;text-transform:uppercase;font-weight:600;margin-bottom:5px;">Destinataire</div>
+                <div style="font-size:12pt;font-weight:bold;margin-bottom:5px;">${bl.client.name}</div>
+                ${bl.client.attention ? `<div>À l'attention de: <strong>${bl.client.attention}</strong></div>` : ''}
+                <div>${bl.client.street}</div>
+                <div>${bl.client.city}</div>
+                <div>${bl.client.country}</div>
+              </div>
+              <table style="width:100%;border-collapse:collapse;margin:12px 0;">
+                <thead>
+                  <tr>
+                    <th style="background:rgba(51,51,51,0.35);color:#333;padding:10px 12px;text-align:left;font-size:10pt;font-weight:bold;border-bottom:2px solid #333;width:50px;">Qté</th>
+                    <th style="background:rgba(51,51,51,0.35);color:#333;padding:10px 12px;text-align:left;font-size:10pt;font-weight:bold;border-bottom:2px solid #333;">Désignation</th>
+                    <th style="background:rgba(51,51,51,0.35);color:#333;padding:10px 12px;text-align:left;font-size:10pt;font-weight:bold;border-bottom:2px solid #333;width:120px;">N° Série</th>
+                    <th style="background:rgba(51,51,51,0.35);color:#333;padding:10px 12px;text-align:left;font-size:10pt;font-weight:bold;border-bottom:2px solid #333;width:100px;">Service</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${bl.devices.map((d, idx) => `
+                    <tr>
+                      <td style="padding:10px 12px;border-bottom:1px solid #ddd;font-size:10pt;${idx % 2 === 1 ? 'background:#f9f9f9;' : ''}text-align:center;font-weight:600;">1</td>
+                      <td style="padding:10px 12px;border-bottom:1px solid #ddd;font-size:10pt;${idx % 2 === 1 ? 'background:#f9f9f9;' : ''}">Compteur de particules LIGHTHOUSE ${d.model}</td>
+                      <td style="padding:10px 12px;border-bottom:1px solid #ddd;font-size:10pt;${idx % 2 === 1 ? 'background:#f9f9f9;' : ''}font-family:monospace;">${d.serial}</td>
+                      <td style="padding:10px 12px;border-bottom:1px solid #ddd;font-size:10pt;${idx % 2 === 1 ? 'background:#f9f9f9;' : ''}">${d.service}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+              <div style="margin:15px 0;">
+                <div style="font-weight:bold;font-size:11pt;margin-bottom:10px;border-bottom:1px solid #333;padding-bottom:5px;">Informations d'expédition</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                  <div style="display:flex;padding:6px 0;"><span style="color:#666;width:130px;">Transporteur:</span><span style="font-weight:600;">${bl.shipping.carrier}</span></div>
+                  <div style="display:flex;padding:6px 0;"><span style="color:#666;width:130px;">N° de suivi:</span><span style="font-weight:600;font-family:monospace;">${bl.shipping.tracking}</span></div>
+                  <div style="display:flex;padding:6px 0;"><span style="color:#666;width:130px;">Nombre de colis:</span><span style="font-weight:600;">${bl.shipping.parcels}</span></div>
+                  <div style="display:flex;padding:6px 0;"><span style="color:#666;width:130px;">Poids:</span><span style="font-weight:600;">${bl.shipping.weight} kg</span></div>
+                </div>
+              </div>
+              <div style="font-size:10pt;margin-top:12px;color:#666;">Préparé par: <strong style="color:#333;">${employeeName}</strong></div>
+            </div>
+            <div style="flex-shrink:0;margin-top:auto;padding-top:15px;border-top:2px solid #333;">
+              <div style="display:flex;align-items:center;justify-content:center;gap:30px;">
+                <div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center;"><strong>CAPCERT</strong><br>ISO 9001</div>
+                <div style="font-size:8pt;color:#555;text-align:center;line-height:1.8;">
+                  <strong style="color:#333;font-size:9pt;">${businessSettings?.company_name || 'Lighthouse France SAS'}</strong> au capital de ${businessSettings?.capital || '10 000'} €<br>
+                  ${businessSettings?.address || '16 rue Paul Séjourné'}, ${businessSettings?.postal_code || '94000'} ${businessSettings?.city || 'CRÉTEIL'}<br>
+                  SIRET ${businessSettings?.siret || '50178134800013'} | TVA ${businessSettings?.tva || 'FR 86501781348'}<br>
+                  ${businessSettings?.email || 'France@golighthouse.com'} | ${businessSettings?.website || 'www.golighthouse.fr'}
+                </div>
+              </div>
+            </div>
+          `;
+          
+          document.body.appendChild(container);
+          await new Promise(r => setTimeout(r, 100));
+          
+          const canvas = await window.html2canvas(container, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+          document.body.removeChild(container);
+          
+          const jsPDF = await loadJsPDF();
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          const imgData = canvas.toDataURL('image/png');
+          const pdfWidth = 210;
+          const imgRatio = canvas.height / canvas.width;
+          const imgHeight = pdfWidth * imgRatio;
+          pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
+          
+          const blPdfBlob = pdf.output('blob');
           const blFileName = `${rma.request_number}_BL_${bl.blNumber}_${Date.now()}.pdf`;
           blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${rma.request_number}`, blFileName);
         } catch (pdfErr) {
@@ -5931,28 +6024,87 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
   const approveQC = async () => {
     setSaving(true);
     try {
-      // Generate Report PDF using HTML capture (matches preview exactly)
+      // Generate Report PDF using html2canvas (Method 2 from testing)
       let reportUrl = null;
       try {
-        const checklistArr = device.work_checklist ? Object.entries(device.work_checklist).map(([key, val]) => ({ id: key, label: key, checked: val })) : [];
-        console.log('Generating report PDF...');
-        const pdfBlob = await generateReportPDFFromHTML(
-          device, rma, 
-          device.technician_name, 
-          device.cal_type, 
-          device.reception_result,
-          device.service_findings, 
-          device.work_completed, 
-          checklistArr
-        );
-        console.log('PDF generated, blob size:', pdfBlob.size);
+        // Load html2canvas if needed
+        if (!window.html2canvas) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+        }
+        
+        // Build report HTML in a visible container temporarily
+        const serviceTypeText = device.service_type === 'calibration' ? 'Étalonnage' : device.service_type === 'repair' ? 'Réparation' : 'Étalonnage et Réparation';
+        const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
+        const showCalType = device.cal_type && device.cal_type !== 'none';
+        const showReceptionResult = device.reception_result && device.reception_result !== 'none';
+        const reportDate = device.report_completed_at ? new Date(device.report_completed_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
+        const checklistItems = device.work_checklist ? Object.entries(device.work_checklist).filter(([k, v]) => v).map(([k]) => k) : [];
+        
+        const container = document.createElement('div');
+        container.style.cssText = 'position:fixed;left:0;top:0;width:794px;min-height:1123px;background:white;font-family:Arial,sans-serif;padding:40px 50px;box-sizing:border-box;display:flex;flex-direction:column;z-index:99999;';
+        
+        container.innerHTML = `
+          <div style="margin-bottom:40px;display:flex;align-items:center;gap:8px;">
+            <div style="display:flex;flex-direction:column;gap:2px;margin-right:8px;">
+              <div style="width:48px;height:8px;background:#FFD200;"></div>
+              <div style="width:48px;height:8px;background:#003366;"></div>
+            </div>
+            <div>
+              <div style="font-size:24px;font-weight:bold;letter-spacing:2px;color:#003366;">LIGHTHOUSE</div>
+              <div style="font-size:10px;letter-spacing:3px;color:#666;margin-top:-4px;">WORLDWIDE SOLUTIONS</div>
+            </div>
+          </div>
+          <table style="width:100%;font-size:12px;margin-bottom:24px;border-collapse:collapse;">
+            <tr><td style="padding:4px 0;font-weight:bold;color:#003366;width:150px;">Date d'achèvement</td><td style="padding:4px 0;color:#333;width:200px;">${reportDate}</td><td style="padding:4px 0;"><span style="font-weight:bold;color:#003366;">RMA # </span><span style="color:#333;">${rma.request_number}</span></td></tr>
+            <tr><td style="padding:4px 0;font-weight:bold;color:#003366;">Client</td><td style="padding:4px 0;color:#333;" colspan="2">${rma.companies?.name || ''}</td></tr>
+            <tr><td style="padding:4px 0;font-weight:bold;color:#003366;">Adresse</td><td style="padding:4px 0;color:#333;" colspan="2">${rma.companies?.billing_address || '—'}</td></tr>
+            <tr><td style="padding:4px 0;font-weight:bold;color:#003366;">Code postal / Ville</td><td style="padding:4px 0;color:#333;">${rma.companies?.billing_postal_code || ''} ${rma.companies?.billing_city || ''}</td><td style="padding:4px 0;"><span style="font-weight:bold;color:#003366;">Contact </span><span style="color:#333;">${rma.companies?.contact_name || '—'}</span></td></tr>
+            <tr><td style="padding:4px 0;font-weight:bold;color:#003366;">Téléphone</td><td style="padding:4px 0;color:#333;">${rma.companies?.phone || '—'}</td><td style="padding:4px 0;font-weight:bold;color:#003366;">Technicien(ne) de service</td></tr>
+            <tr><td style="padding:4px 0;font-weight:bold;color:#003366;">Modèle#</td><td style="padding:4px 0;color:#333;">${device.model_name}</td><td style="padding:4px 0;color:#333;">${device.technician_name || 'Lighthouse France'}</td></tr>
+            <tr><td style="padding:4px 0;font-weight:bold;color:#003366;">Numéro de série</td><td style="padding:4px 0;color:#333;" colspan="2">${device.serial_number}</td></tr>
+          </table>
+          <div style="flex-grow:1;">
+            <table style="width:100%;font-size:12px;border-collapse:collapse;">
+              <tr><td style="padding:20px 0 8px;font-weight:bold;color:#003366;width:170px;vertical-align:top;">Motif de retour</td><td style="padding:20px 0 8px;color:#333;">${motifText}</td></tr>
+              ${showCalType ? `<tr><td style="padding:8px 0;font-weight:bold;color:#003366;vertical-align:top;">Étalonnage effectué</td><td style="padding:8px 0;color:#333;">${device.cal_type}</td></tr>` : ''}
+              ${showReceptionResult ? `<tr><td style="padding:8px 0;font-weight:bold;color:#003366;vertical-align:top;">Résultats à la réception</td><td style="padding:8px 0;color:#333;">${device.reception_result}</td></tr>` : ''}
+              <tr><td style="padding:20px 0 8px;font-weight:bold;color:#003366;vertical-align:top;">Constatations</td><td style="padding:20px 0 8px;color:#333;white-space:pre-wrap;">${device.service_findings || '—'}</td></tr>
+              <tr><td style="padding:8px 0;font-weight:bold;color:#003366;vertical-align:top;">Actions effectuées</td><td style="padding:8px 0;color:#333;white-space:pre-wrap;">${device.work_completed || '—'}</td></tr>
+              <tr><td style="padding:30px 0 8px;font-weight:bold;color:#003366;vertical-align:top;">Travaux réalisés</td><td style="padding:30px 0 8px;">${checklistItems.map(item => `<div style="margin-bottom:4px;"><span style="color:#003366;">☑</span><span style="color:#333;margin-left:8px;">${item}</span></div>`).join('')}</td></tr>
+            </table>
+          </div>
+          <div style="text-align:center;font-size:12px;color:#666;padding-top:32px;margin-top:auto;">
+            <div style="font-weight:bold;color:#003366;">Lighthouse Worldwide Solutions France</div>
+            <div>16 Rue Paul Séjourné 94000 Créteil France</div>
+            <div>01 43 77 28 07</div>
+          </div>
+        `;
+        
+        document.body.appendChild(container);
+        await new Promise(r => setTimeout(r, 100)); // Let it render
+        
+        const canvas = await window.html2canvas(container, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+        document.body.removeChild(container);
+        
+        const jsPDF = await loadJsPDF();
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const imgData = canvas.toDataURL('image/png');
+        const pdfWidth = 210;
+        const imgRatio = canvas.height / canvas.width;
+        const imgHeight = pdfWidth * imgRatio;
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
+        
+        const pdfBlob = pdf.output('blob');
         const fileName = `${rma.request_number}_${device.serial_number}_rapport_${Date.now()}.pdf`;
-        console.log('Uploading to storage...', fileName);
         reportUrl = await uploadPDFToStorage(pdfBlob, `reports/${rma.request_number}`, fileName);
-        console.log('Upload complete, URL:', reportUrl);
       } catch (pdfErr) {
-        console.error('Report PDF generation/upload error:', pdfErr);
-        notify('⚠️ PDF error: ' + pdfErr.message, 'error');
+        console.error('Report PDF error:', pdfErr);
       }
       
       const updateData = {
@@ -5963,26 +6115,15 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
         status: 'ready_to_ship'
       };
       
-      // Add report URL if generated
-      if (reportUrl) {
-        updateData.report_url = reportUrl;
-        console.log('Adding report_url to update:', reportUrl);
-      }
+      if (reportUrl) updateData.report_url = reportUrl;
       
-      console.log('Updating device with:', updateData);
       const { error } = await supabase.from('request_devices').update(updateData).eq('id', device.id);
+      if (error) throw error;
       
-      if (error) {
-        console.error('Database update error:', error);
-        throw error;
-      }
-      
-      // Check if all devices in this RMA are now ready to ship
       const allDevices = rma.request_devices || [];
       const otherDevices = allDevices.filter(d => d.id !== device.id);
       const allOthersReady = otherDevices.every(d => d.qc_complete || d.status === 'ready_to_ship');
       
-      // If all devices are ready (including this one we just updated), update RMA status
       if (allOthersReady) {
         await supabase.from('service_requests').update({
           status: 'ready_to_ship',
@@ -5990,7 +6131,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
         }).eq('id', rma.id);
       }
       
-      notify(reportUrl ? '✓ QC validé + Rapport PDF enregistré!' : '✓ QC validé (PDF non généré)');
+      notify(reportUrl ? '✓ QC validé + Rapport enregistré!' : '✓ QC validé');
       onBack();
     } catch (err) {
       console.error('approveQC error:', err);
@@ -6157,187 +6298,6 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
             <button onClick={() => setStep(2)} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
               Rapport OK → Voir Certificat
             </button>
-          </div>
-          
-          {/* PDF TEST BUTTONS - TEMPORARY */}
-          <div className="bg-yellow-50 border-2 border-yellow-400 rounded-xl p-4">
-            <p className="font-bold text-yellow-800 mb-3">🧪 PDF Test - Click to download different methods:</p>
-            <div className="flex flex-wrap gap-2">
-              <button 
-                onClick={async () => {
-                  try {
-                    // Method 2: html2canvas + jsPDF
-                    const element = document.getElementById('qc-report-preview');
-                    if (!element) { alert('Element not found!'); return; }
-                    
-                    // Load html2canvas if needed
-                    if (!window.html2canvas) {
-                      await new Promise((resolve, reject) => {
-                        const script = document.createElement('script');
-                        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-                        script.onload = resolve;
-                        script.onerror = reject;
-                        document.head.appendChild(script);
-                      });
-                    }
-                    
-                    const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-                    const jsPDF = await loadJsPDF();
-                    const pdf = new jsPDF('p', 'mm', 'a4');
-                    const imgData = canvas.toDataURL('image/png');
-                    const pdfWidth = 210;
-                    const imgRatio = canvas.height / canvas.width;
-                    const imgHeight = pdfWidth * imgRatio;
-                    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
-                    pdf.save('Test2_html2canvas.pdf');
-                    notify('✓ Method 2 downloaded!');
-                  } catch (err) {
-                    notify('Error: ' + err.message, 'error');
-                    console.error(err);
-                  }
-                }}
-                className="px-3 py-2 bg-green-500 hover:bg-green-600 text-white rounded text-sm font-medium"
-              >
-                Method 2: html2canvas
-              </button>
-              
-              <button 
-                onClick={async () => {
-                  try {
-                    // Method 3: html2pdf.js
-                    const element = document.getElementById('qc-report-preview');
-                    if (!element) { alert('Element not found!'); return; }
-                    
-                    // Load html2pdf if needed
-                    if (!window.html2pdf) {
-                      await new Promise((resolve, reject) => {
-                        const script = document.createElement('script');
-                        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-                        script.onload = resolve;
-                        script.onerror = reject;
-                        document.head.appendChild(script);
-                      });
-                    }
-                    
-                    const opt = {
-                      margin: 0,
-                      filename: 'Test3_html2pdf.pdf',
-                      image: { type: 'jpeg', quality: 0.98 },
-                      html2canvas: { scale: 2, useCORS: true },
-                      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-                    };
-                    await window.html2pdf().set(opt).from(element).save();
-                    notify('✓ Method 3 downloaded!');
-                  } catch (err) {
-                    notify('Error: ' + err.message, 'error');
-                    console.error(err);
-                  }
-                }}
-                className="px-3 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded text-sm font-medium"
-              >
-                Method 3: html2pdf.js
-              </button>
-              
-              <button 
-                onClick={() => {
-                  // Method 4: Print dialog
-                  const element = document.getElementById('qc-report-preview');
-                  if (!element) { alert('Element not found!'); return; }
-                  
-                  const printWindow = window.open('', '_blank');
-                  printWindow.document.write(`<!DOCTYPE html><html><head><title>Report PDF</title>
-                    <style>
-                      @page { margin: 10mm; size: A4; }
-                      body { margin: 0; font-family: Arial, sans-serif; }
-                      .report { padding: 40px 50px; }
-                      table { width: 100%; border-collapse: collapse; }
-                      td { padding: 4px 0; }
-                      .label { font-weight: bold; color: #003366; }
-                      .check { color: #003366; }
-                    </style>
-                  </head><body>`);
-                  printWindow.document.write(element.innerHTML);
-                  printWindow.document.write('</body></html>');
-                  printWindow.document.close();
-                  printWindow.onload = () => printWindow.print();
-                  notify('Print dialog opened - save as PDF');
-                }}
-                className="px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded text-sm font-medium"
-              >
-                Method 4: Print Dialog
-              </button>
-              
-              <button 
-                onClick={async () => {
-                  try {
-                    // Method 5: High-res canvas
-                    const element = document.getElementById('qc-report-preview');
-                    if (!element) { alert('Element not found!'); return; }
-                    
-                    if (!window.html2canvas) {
-                      await new Promise((resolve, reject) => {
-                        const script = document.createElement('script');
-                        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-                        script.onload = resolve;
-                        script.onerror = reject;
-                        document.head.appendChild(script);
-                      });
-                    }
-                    
-                    const canvas = await window.html2canvas(element, { 
-                      scale: 3, 
-                      useCORS: true, 
-                      backgroundColor: '#ffffff',
-                      logging: false
-                    });
-                    const jsPDF = await loadJsPDF();
-                    const pdf = new jsPDF('p', 'mm', 'a4');
-                    const imgData = canvas.toDataURL('image/jpeg', 1.0);
-                    pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
-                    pdf.save('Test5_highres.pdf');
-                    notify('✓ Method 5 downloaded!');
-                  } catch (err) {
-                    notify('Error: ' + err.message, 'error');
-                    console.error(err);
-                  }
-                }}
-                className="px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded text-sm font-medium"
-              >
-                Method 5: High-Res
-              </button>
-              
-              <button 
-                onClick={async () => {
-                  try {
-                    // Current method (jsPDF drawing)
-                    const checklistArr = device.work_checklist ? Object.entries(device.work_checklist).map(([key, val]) => ({ id: key, label: key, checked: val })) : [];
-                    const pdfBlob = await generateReportPDFFromHTML(
-                      device, rma, 
-                      device.technician_name, 
-                      device.cal_type, 
-                      device.reception_result,
-                      device.service_findings, 
-                      device.work_completed, 
-                      checklistArr
-                    );
-                    const url = URL.createObjectURL(pdfBlob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'Test1_current_jsPDF.pdf';
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    notify('✓ Current method downloaded!');
-                  } catch (err) {
-                    notify('Error: ' + err.message, 'error');
-                    console.error(err);
-                  }
-                }}
-                className="px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded text-sm font-medium"
-              >
-                Current: jsPDF Draw
-              </button>
-            </div>
-            <p className="text-xs text-yellow-700 mt-2">Compare which PDF looks closest to the preview above, then tell me which works best.</p>
           </div>
         </div>
       )}
