@@ -1402,6 +1402,12 @@ export default function AdminPortal() {
     const { data: contractsData } = await supabase.from('contracts').select('id, status').order('created_at', { ascending: false });
     if (contractsData) setContracts(contractsData);
     
+    // Load rental requests
+    const { data: rentalsData } = await supabase.from('rental_requests')
+      .select('*, companies(*), rental_request_items(*), shipping_addresses(*)')
+      .order('created_at', { ascending: false });
+    if (rentalsData) setRentalRequests(rentalsData);
+    
     // Load business settings
     const { data: settings } = await supabase.from('business_settings').select('*').eq('id', 1).single();
     if (settings) {
@@ -1456,6 +1462,13 @@ export default function AdminPortal() {
   // Dashboard filter state
   const [dashboardFilter, setDashboardFilter] = useState(null);
   
+  // Rental requests count
+  const [rentalRequests, setRentalRequests] = useState([]);
+  const rentalActionCount = rentalRequests.filter(r => 
+    r.status === 'requested' || 
+    r.status === 'bc_review'
+  ).length;
+  
   const sheets = [
     { id: 'dashboard', label: 'Tableau de Bord', icon: '📊' },
     { id: 'requests', label: 'Demandes', icon: '📋', badge: totalBadge > 0 ? totalBadge : null },
@@ -1463,6 +1476,7 @@ export default function AdminPortal() {
     { id: 'messages', label: 'Messages', icon: '💬', badge: totalUnreadMessages > 0 ? totalUnreadMessages : (openChatsCount > 0 ? openChatsCount : null) },
     { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
     { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
+    { id: 'rentals', label: 'Locations', icon: '📅', badge: rentalActionCount > 0 ? rentalActionCount : null },
     { id: 'settings', label: 'Paramètres', icon: '⚙️' },
     ...(isAdmin ? [{ id: 'admin', label: 'Admin', icon: '🔐' }] : [])
   ];
@@ -1567,6 +1581,14 @@ export default function AdminPortal() {
             />}
             {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} />}
             {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} reloadMain={loadData} />}
+            {activeSheet === 'rentals' && <RentalsSheet 
+              rentals={rentalRequests} 
+              clients={clients}
+              notify={notify} 
+              reload={loadData}
+              profile={profile}
+              businessSettings={businessSettings}
+            />}
             {activeSheet === 'settings' && <SettingsSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
             {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} />}
           </>
@@ -10645,6 +10667,648 @@ function PartEditModal({ part, onSave, onClose }) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// RENTALS SHEET - Admin Management
+// ============================================
+function RentalsSheet({ rentals, clients, notify, reload, profile, businessSettings }) {
+  const [activeTab, setActiveTab] = useState('requests'); // 'requests', 'inventory', 'bundles', 'calendar'
+  const [selectedRental, setSelectedRental] = useState(null);
+  const [inventory, setInventory] = useState([]);
+  const [bundles, setBundles] = useState([]);
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddDevice, setShowAddDevice] = useState(false);
+  const [showAddBundle, setShowAddBundle] = useState(false);
+  const [editingDevice, setEditingDevice] = useState(null);
+  const [editingBundle, setEditingBundle] = useState(null);
+
+  useEffect(() => {
+    const loadInventory = async () => {
+      setLoading(true);
+      const { data: inv } = await supabase.from('rental_inventory').select('*').order('model_name');
+      const { data: bun } = await supabase.from('rental_bundles').select('*, rental_bundle_items(*, rental_inventory(*))').order('bundle_name');
+      const { data: book } = await supabase.from('rental_bookings').select('*, rental_requests(rental_number, companies(name))').order('start_date', { ascending: false });
+      if (inv) setInventory(inv);
+      if (bun) setBundles(bun);
+      if (book) setBookings(book);
+      setLoading(false);
+    };
+    loadInventory();
+  }, []);
+
+  const getStatusStyle = (status) => {
+    const styles = {
+      requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Nouvelle demande' },
+      quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Devis envoyé' },
+      waiting_bc: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Attente BC' },
+      bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: '⚠️ BC à vérifier' },
+      bc_approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'BC approuvé' },
+      shipped: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Expédié' },
+      in_rental: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'En location' },
+      return_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Retour attendu' },
+      returned: { bg: 'bg-teal-100', text: 'text-teal-700', label: 'Retourné' },
+      completed: { bg: 'bg-green-100', text: 'text-green-700', label: 'Terminé' },
+      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
+    };
+    return styles[status] || { bg: 'bg-gray-100', text: 'text-gray-700', label: status };
+  };
+
+  const pendingRequests = rentals.filter(r => r.status === 'requested');
+  const bcReviewRequests = rentals.filter(r => r.status === 'bc_review');
+  const activeRentals = rentals.filter(r => ['bc_approved', 'shipped', 'in_rental', 'return_pending'].includes(r.status));
+
+  // Save device
+  const saveDevice = async (deviceData) => {
+    try {
+      if (editingDevice) {
+        await supabase.from('rental_inventory').update(deviceData).eq('id', editingDevice.id);
+        notify('Appareil mis à jour!');
+      } else {
+        await supabase.from('rental_inventory').insert(deviceData);
+        notify('Appareil ajouté!');
+      }
+      const { data } = await supabase.from('rental_inventory').select('*').order('model_name');
+      if (data) setInventory(data);
+      setShowAddDevice(false);
+      setEditingDevice(null);
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+  };
+
+  // Delete device
+  const deleteDevice = async (id) => {
+    if (!confirm('Supprimer cet appareil?')) return;
+    try {
+      await supabase.from('rental_inventory').delete().eq('id', id);
+      setInventory(inventory.filter(d => d.id !== id));
+      notify('Appareil supprimé');
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+  };
+
+  // Save bundle
+  const saveBundle = async (bundleData, deviceIds) => {
+    try {
+      let bundleId;
+      if (editingBundle) {
+        await supabase.from('rental_bundles').update(bundleData).eq('id', editingBundle.id);
+        bundleId = editingBundle.id;
+        await supabase.from('rental_bundle_items').delete().eq('bundle_id', bundleId);
+      } else {
+        const { data } = await supabase.from('rental_bundles').insert(bundleData).select().single();
+        bundleId = data.id;
+      }
+      for (const invId of deviceIds) {
+        await supabase.from('rental_bundle_items').insert({ bundle_id: bundleId, inventory_id: invId });
+      }
+      notify(editingBundle ? 'Kit mis à jour!' : 'Kit créé!');
+      const { data: bun } = await supabase.from('rental_bundles').select('*, rental_bundle_items(*, rental_inventory(*))').order('bundle_name');
+      if (bun) setBundles(bun);
+      setShowAddBundle(false);
+      setEditingBundle(null);
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-800">Locations</h1>
+        <div className="flex gap-2">
+          <button onClick={() => setShowAddDevice(true)} className="px-4 py-2 bg-[#8B5CF6] text-white rounded-lg font-medium hover:bg-[#7C3AED]">+ Ajouter Appareil</button>
+          <button onClick={() => setShowAddBundle(true)} className="px-4 py-2 bg-[#8B5CF6]/80 text-white rounded-lg font-medium hover:bg-[#7C3AED]">+ Créer Kit</button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl p-4 shadow-sm border"><p className="text-3xl font-bold text-amber-600">{pendingRequests.length}</p><p className="text-gray-500 text-sm">Nouvelles demandes</p></div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border"><p className="text-3xl font-bold text-orange-600">{bcReviewRequests.length}</p><p className="text-gray-500 text-sm">BC à vérifier</p></div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border"><p className="text-3xl font-bold text-purple-600">{activeRentals.length}</p><p className="text-gray-500 text-sm">Locations actives</p></div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border"><p className="text-3xl font-bold text-[#8B5CF6]">{inventory.length}</p><p className="text-gray-500 text-sm">Appareils en parc</p></div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 border-b">
+        {[
+          { id: 'requests', label: 'Demandes', badge: pendingRequests.length + bcReviewRequests.length },
+          { id: 'inventory', label: 'Inventaire', badge: inventory.length },
+          { id: 'bundles', label: 'Kits', badge: bundles.length },
+          { id: 'calendar', label: 'Calendrier' }
+        ].map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 py-2 font-medium border-b-2 -mb-px transition-colors ${activeTab === tab.id ? 'border-[#8B5CF6] text-[#8B5CF6]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {tab.label} {tab.badge > 0 && <span className="ml-1 px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">{tab.badge}</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* Requests Tab */}
+      {activeTab === 'requests' && (
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">N° Location</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Client</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Période</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Équipement</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Statut</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {rentals.length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Aucune demande de location</td></tr>
+              ) : rentals.map(rental => {
+                const style = getStatusStyle(rental.status);
+                const days = Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1;
+                return (
+                  <tr key={rental.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3"><span className="font-bold text-[#8B5CF6]">{rental.rental_number}</span><p className="text-xs text-gray-400">{new Date(rental.created_at).toLocaleDateString('fr-FR')}</p></td>
+                    <td className="px-4 py-3"><span className="font-medium">{rental.companies?.name}</span></td>
+                    <td className="px-4 py-3"><span className="text-sm">{new Date(rental.start_date).toLocaleDateString('fr-FR')} → {new Date(rental.end_date).toLocaleDateString('fr-FR')}</span><p className="text-xs text-gray-400">{days} jours</p></td>
+                    <td className="px-4 py-3"><span className="text-sm">{rental.rental_request_items?.length || 0} appareil(s)</span></td>
+                    <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span></td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => setSelectedRental(rental)} className="px-3 py-1 bg-[#8B5CF6] text-white text-sm rounded hover:bg-[#7C3AED]">Gérer</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Inventory Tab */}
+      {activeTab === 'inventory' && (
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Modèle</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">N° Série</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Prix/Jour</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Prix/Semaine</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Prix/Mois</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Statut</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {inventory.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Aucun appareil dans l'inventaire de location</td></tr>
+              ) : inventory.map(device => (
+                <tr key={device.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3"><span className="font-medium">{device.model_name}</span><p className="text-xs text-gray-400">{device.device_type}</p></td>
+                  <td className="px-4 py-3"><span className="font-mono text-sm">{device.serial_number}</span></td>
+                  <td className="px-4 py-3"><span className="font-medium">€{device.price_per_day}</span></td>
+                  <td className="px-4 py-3">{device.price_per_week ? `€${device.price_per_week}` : <span className="text-gray-400">—</span>}</td>
+                  <td className="px-4 py-3">{device.price_per_month ? `€${device.price_per_month}` : <span className="text-gray-400">—</span>}</td>
+                  <td className="px-4 py-3">{device.is_available ? <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">Disponible</span> : <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">Indisponible</span>}</td>
+                  <td className="px-4 py-3 flex gap-2">
+                    <button onClick={() => { setEditingDevice(device); setShowAddDevice(true); }} className="px-2 py-1 bg-gray-100 text-gray-600 text-sm rounded hover:bg-gray-200">✏️</button>
+                    <button onClick={() => deleteDevice(device.id)} className="px-2 py-1 bg-red-100 text-red-600 text-sm rounded hover:bg-red-200">🗑️</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Bundles Tab */}
+      {activeTab === 'bundles' && (
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {bundles.length === 0 ? (
+            <div className="col-span-full bg-white rounded-xl p-8 text-center text-gray-400">Aucun kit créé</div>
+          ) : bundles.map(bundle => (
+            <div key={bundle.id} className="bg-white rounded-xl p-6 shadow-sm border">
+              <div className="flex justify-between items-start mb-4">
+                <div><h3 className="font-bold text-gray-800">{bundle.bundle_name}</h3><p className="text-sm text-gray-500">{bundle.bundle_code}</p></div>
+                <div className="flex gap-1">
+                  <button onClick={() => { setEditingBundle(bundle); setShowAddBundle(true); }} className="p-1 hover:bg-gray-100 rounded">✏️</button>
+                </div>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">{bundle.description_fr || bundle.description || '—'}</p>
+              <div className="text-xs text-gray-400 mb-4">Contient: {bundle.rental_bundle_items?.map(bi => bi.rental_inventory?.model_name).join(', ')}</div>
+              <div className="flex justify-between items-end">
+                <div><p className="text-2xl font-bold text-[#8B5CF6]">€{bundle.price_per_day}</p><p className="text-xs text-gray-500">/jour</p></div>
+                {bundle.is_active ? <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">Actif</span> : <span className="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full">Inactif</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Calendar Tab */}
+      {activeTab === 'calendar' && <RentalCalendarView bookings={bookings} inventory={inventory} />}
+
+      {/* Add/Edit Device Modal */}
+      {showAddDevice && <RentalDeviceModal device={editingDevice} onSave={saveDevice} onClose={() => { setShowAddDevice(false); setEditingDevice(null); }} />}
+
+      {/* Add/Edit Bundle Modal */}
+      {showAddBundle && <RentalBundleModal bundle={editingBundle} inventory={inventory} onSave={saveBundle} onClose={() => { setShowAddBundle(false); setEditingBundle(null); }} />}
+
+      {/* Rental Detail Modal */}
+      {selectedRental && <RentalAdminModal rental={selectedRental} onClose={() => setSelectedRental(null)} notify={notify} reload={reload} businessSettings={businessSettings} />}
+    </div>
+  );
+}
+, inventory, onSave, onClose }) {
+  const [formData, setFormData] = useState({
+    bundle_name: bundle?.bundle_name || '',
+    bundle_code: bundle?.bundle_code || '',
+    description: bundle?.description || '',
+    description_fr: bundle?.description_fr || '',
+    price_per_day: bundle?.price_per_day || '',
+    price_per_week: bundle?.price_per_week || '',
+    price_per_month: bundle?.price_per_month || '',
+    min_rental_days: bundle?.min_rental_days || 1,
+    is_active: bundle?.is_active !== false
+  });
+  const [selectedDevices, setSelectedDevices] = useState(bundle?.rental_bundle_items?.map(bi => bi.inventory_id) || []);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!formData.bundle_name || !formData.price_per_day || selectedDevices.length === 0) {
+      alert('Veuillez remplir les champs obligatoires et sélectionner au moins un appareil');
+      return;
+    }
+    onSave({
+      bundle_name: formData.bundle_name,
+      bundle_code: formData.bundle_code || null,
+      description: formData.description,
+      description_fr: formData.description_fr,
+      price_per_day: parseFloat(formData.price_per_day),
+      price_per_week: formData.price_per_week ? parseFloat(formData.price_per_week) : null,
+      price_per_month: formData.price_per_month ? parseFloat(formData.price_per_month) : null,
+      min_rental_days: parseInt(formData.min_rental_days) || 1,
+      is_active: formData.is_active
+    }, selectedDevices);
+  };
+
+  const toggleDevice = (id) => {
+    setSelectedDevices(prev => prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white px-6 py-4 border-b flex justify-between items-center">
+          <h2 className="text-xl font-bold">{bundle ? 'Modifier le kit' : 'Créer un kit'}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div className="grid md:grid-cols-2 gap-4">
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Nom du kit *</label><input type="text" value={formData.bundle_name} onChange={e => setFormData({...formData, bundle_name: e.target.value})} className="w-full px-3 py-2 border rounded-lg" required placeholder="Ex: Kit Comptage Complet" /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Code</label><input type="text" value={formData.bundle_code} onChange={e => setFormData({...formData, bundle_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Ex: KIT-001" /></div>
+          </div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Description (FR)</label><textarea value={formData.description_fr} onChange={e => setFormData({...formData, description_fr: e.target.value})} className="w-full px-3 py-2 border rounded-lg h-20 resize-none" /></div>
+          <div className="grid md:grid-cols-3 gap-4">
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Prix/Jour (€) *</label><input type="number" step="0.01" value={formData.price_per_day} onChange={e => setFormData({...formData, price_per_day: e.target.value})} className="w-full px-3 py-2 border rounded-lg" required /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Prix/Semaine (€)</label><input type="number" step="0.01" value={formData.price_per_week} onChange={e => setFormData({...formData, price_per_week: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Prix/Mois (€)</label><input type="number" step="0.01" value={formData.price_per_month} onChange={e => setFormData({...formData, price_per_month: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Appareils inclus *</label>
+            <div className="grid md:grid-cols-2 gap-2 max-h-48 overflow-y-auto border rounded-lg p-3">
+              {inventory.map(device => (
+                <label key={device.id} className={`flex items-center gap-2 p-2 rounded cursor-pointer ${selectedDevices.includes(device.id) ? 'bg-[#8B5CF6]/10' : 'hover:bg-gray-50'}`}>
+                  <input type="checkbox" checked={selectedDevices.includes(device.id)} onChange={() => toggleDevice(device.id)} className="w-4 h-4 rounded" />
+                  <span className="text-sm">{device.model_name} <span className="text-gray-400">({device.serial_number})</span></span>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">{selectedDevices.length} appareil(s) sélectionné(s)</p>
+          </div>
+          <div className="flex items-center gap-2"><input type="checkbox" checked={formData.is_active} onChange={e => setFormData({...formData, is_active: e.target.checked})} className="w-5 h-5 rounded" /><label className="text-sm font-medium text-gray-700">Kit actif (visible par les clients)</label></div>
+          <div className="flex gap-3 pt-4">
+            <button type="button" onClick={onClose} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium">Annuler</button>
+            <button type="submit" className="flex-1 py-2 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white rounded-lg font-medium">{bundle ? 'Enregistrer' : 'Créer'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Rental Calendar View
+function RentalCalendarView({ bookings, inventory }) {
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const year = currentMonth.getFullYear();
+  const month = currentMonth.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const getBookingsForDay = (day) => {
+    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    return bookings.filter(b => b.start_date <= dateStr && b.end_date >= dateStr);
+  };
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border p-6">
+      <div className="flex items-center justify-between mb-6">
+        <button onClick={() => setCurrentMonth(new Date(year, month - 1, 1))} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">←</button>
+        <h3 className="text-lg font-bold">{currentMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</h3>
+        <button onClick={() => setCurrentMonth(new Date(year, month + 1, 1))} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">→</button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 mb-2">
+        {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map(d => <div key={d} className="text-center text-sm font-medium text-gray-500 py-2">{d}</div>)}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {Array.from({ length: (new Date(year, month, 1).getDay() + 6) % 7 }, (_, i) => <div key={`pad-${i}`} className="h-24" />)}
+        {Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1;
+          const dayBookings = getBookingsForDay(day);
+          return (
+            <div key={day} className="h-24 border rounded p-1 text-xs overflow-hidden">
+              <div className="font-medium text-gray-700 mb-1">{day}</div>
+              {dayBookings.slice(0, 3).map((b, idx) => {
+                const device = inventory.find(d => d.id === b.inventory_id);
+                return (
+                  <div key={idx} className="bg-[#8B5CF6]/20 text-[#8B5CF6] px-1 rounded truncate mb-0.5" title={`${device?.model_name || 'Device'} - ${b.rental_requests?.companies?.name || ''}`}>
+                    {device?.model_name?.slice(0, 10) || '?'}
+                  </div>
+                );
+              })}
+              {dayBookings.length > 3 && <div className="text-gray-400">+{dayBookings.length - 3}</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Rental Admin Modal - Full management
+function RentalAdminModal({ rental, onClose, notify, reload, businessSettings }) {
+  const [status, setStatus] = useState(rental.status);
+  const [saving, setSaving] = useState(false);
+  const [quoteShipping, setQuoteShipping] = useState(rental.quote_shipping || 0);
+  const [quoteNotes, setQuoteNotes] = useState(rental.quote_notes || '');
+  const [trackingNumber, setTrackingNumber] = useState(rental.outbound_tracking || '');
+  const [returnCondition, setReturnCondition] = useState(rental.return_condition || 'good');
+  const [returnNotes, setReturnNotes] = useState(rental.return_notes || '');
+
+  const subtotal = rental.quote_subtotal || rental.rental_request_items?.reduce((s, i) => s + (i.line_total || 0), 0) || 0;
+  const taxRate = rental.quote_tax_rate || 20;
+  const totalHT = subtotal + parseFloat(quoteShipping || 0);
+  const tax = totalHT * (taxRate / 100);
+  const totalTTC = totalHT + tax;
+
+  const updateStatus = async (newStatus, additionalData = {}) => {
+    setSaving(true);
+    try {
+      await supabase.from('rental_requests').update({ status: newStatus, ...additionalData }).eq('id', rental.id);
+      notify('Statut mis à jour!');
+      setStatus(newStatus);
+      reload();
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+    setSaving(false);
+  };
+
+  const sendQuote = async () => {
+    setSaving(true);
+    try {
+      // Generate quote PDF URL (would be actual PDF generation in production)
+      const quoteUrl = `https://your-domain.com/quotes/rental_${rental.rental_number}.pdf`;
+      await supabase.from('rental_requests').update({
+        status: 'quote_sent',
+        quote_shipping: parseFloat(quoteShipping) || 0,
+        quote_tax_rate: taxRate,
+        quote_tax: tax,
+        quote_total_ht: totalHT,
+        quote_total_ttc: totalTTC,
+        quote_notes: quoteNotes,
+        quote_url: quoteUrl,
+        quoted_at: new Date().toISOString(),
+        quote_valid_until: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0]
+      }).eq('id', rental.id);
+      notify('Devis envoyé!');
+      setStatus('quote_sent');
+      reload();
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+    setSaving(false);
+  };
+
+  const approveBC = async () => {
+    await updateStatus('bc_approved', { bc_approved_at: new Date().toISOString() });
+  };
+
+  const rejectBC = async () => {
+    const reason = prompt('Raison du rejet:');
+    if (!reason) return;
+    await updateStatus('waiting_bc', { bc_rejected_at: new Date().toISOString(), bc_rejection_reason: reason, bc_file_url: null });
+  };
+
+  const markShipped = async () => {
+    if (!trackingNumber) { notify('Entrez le numéro de suivi', 'error'); return; }
+    await updateStatus('shipped', { 
+      outbound_tracking: trackingNumber, 
+      outbound_shipped_at: new Date().toISOString(),
+      rental_started_at: new Date(rental.start_date).toISOString()
+    });
+  };
+
+  const markInRental = async () => {
+    await updateStatus('in_rental');
+  };
+
+  const markReturnPending = async () => {
+    await updateStatus('return_pending', { rental_ended_at: new Date(rental.end_date).toISOString() });
+  };
+
+  const markReturned = async () => {
+    await updateStatus('returned', { 
+      returned_at: new Date().toISOString(),
+      return_condition: returnCondition,
+      return_notes: returnNotes
+    });
+    // Release bookings
+    await supabase.from('rental_bookings').delete().eq('rental_request_id', rental.id);
+  };
+
+  const completeRental = async () => {
+    await updateStatus('completed', { completed_at: new Date().toISOString() });
+  };
+
+  const getStatusStyle = (s) => {
+    const styles = {
+      requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Nouvelle demande' },
+      quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Devis envoyé' },
+      waiting_bc: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Attente BC' },
+      bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'BC à vérifier' },
+      bc_approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'BC approuvé' },
+      shipped: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Expédié' },
+      in_rental: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'En location' },
+      return_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Retour attendu' },
+      returned: { bg: 'bg-teal-100', text: 'text-teal-700', label: 'Retourné' },
+      completed: { bg: 'bg-green-100', text: 'text-green-700', label: 'Terminé' },
+      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
+    };
+    return styles[s] || { bg: 'bg-gray-100', text: 'text-gray-700', label: s };
+  };
+  const style = getStatusStyle(status);
+  const days = Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-[#8B5CF6] text-white px-6 py-4 flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold">{rental.rental_number}</h2>
+            <p className="text-sm text-white/70">{rental.companies?.name}</p>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white text-2xl">&times;</button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Status & Period */}
+          <div className="flex items-center justify-between">
+            <span className={`px-4 py-2 rounded-full font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+            <div className="text-right">
+              <p className="font-bold">{new Date(rental.start_date).toLocaleDateString('fr-FR')} → {new Date(rental.end_date).toLocaleDateString('fr-FR')}</p>
+              <p className="text-sm text-gray-500">{days} jours de location</p>
+            </div>
+          </div>
+
+          {/* Equipment */}
+          <div>
+            <h3 className="font-bold text-gray-700 mb-3">Équipement</h3>
+            <div className="bg-gray-50 rounded-lg divide-y">
+              {rental.rental_request_items?.map((item, idx) => (
+                <div key={idx} className="p-4 flex justify-between items-center">
+                  <div>
+                    <p className="font-medium">{item.item_name}</p>
+                    <p className="text-sm text-gray-500">{item.rental_days} jours × €{item.applied_rate} ({item.rate_type})</p>
+                  </div>
+                  <p className="font-bold">€{item.line_total?.toFixed(2)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Quote Section (for requested status) */}
+          {status === 'requested' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <h3 className="font-bold text-amber-800 mb-4">Créer le devis</h3>
+              <div className="grid md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Frais de port (€)</label>
+                  <input type="number" step="0.01" value={quoteShipping} onChange={e => setQuoteShipping(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Notes devis</label>
+                  <input type="text" value={quoteNotes} onChange={e => setQuoteNotes(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+                </div>
+              </div>
+              <div className="bg-white rounded-lg p-4 mb-4">
+                <div className="flex justify-between mb-1"><span>Sous-total</span><span>€{subtotal.toFixed(2)}</span></div>
+                <div className="flex justify-between mb-1"><span>Frais de port</span><span>€{parseFloat(quoteShipping || 0).toFixed(2)}</span></div>
+                <div className="flex justify-between mb-1 font-bold"><span>Total HT</span><span>€{totalHT.toFixed(2)}</span></div>
+                <div className="flex justify-between mb-1 text-sm text-gray-500"><span>TVA ({taxRate}%)</span><span>€{tax.toFixed(2)}</span></div>
+                <div className="flex justify-between font-bold text-lg border-t pt-2"><span>Total TTC</span><span className="text-[#8B5CF6]">€{totalTTC.toFixed(2)}</span></div>
+              </div>
+              <button onClick={sendQuote} disabled={saving} className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold disabled:opacity-50">{saving ? 'Envoi...' : 'Envoyer le devis'}</button>
+            </div>
+          )}
+
+          {/* BC Review Section */}
+          {status === 'bc_review' && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <h3 className="font-bold text-orange-800 mb-4">Vérifier le BC</h3>
+              {rental.bc_file_url && (
+                <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-white rounded-lg mb-4 hover:bg-gray-50">
+                  <span className="text-2xl">📄</span>
+                  <div><p className="font-medium">BC soumis par {rental.bc_signed_by}</p><p className="text-sm text-gray-500">Le {new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR')}</p></div>
+                </a>
+              )}
+              <div className="flex gap-3">
+                <button onClick={rejectBC} disabled={saving} className="flex-1 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-medium">Rejeter</button>
+                <button onClick={approveBC} disabled={saving} className="flex-1 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium">Approuver</button>
+              </div>
+            </div>
+          )}
+
+          {/* Ship Section */}
+          {status === 'bc_approved' && (
+            <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-4">
+              <h3 className="font-bold text-cyan-800 mb-4">Expédition</h3>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">N° de suivi</label>
+                <input type="text" value={trackingNumber} onChange={e => setTrackingNumber(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="1Z..." />
+              </div>
+              <button onClick={markShipped} disabled={saving || !trackingNumber} className="w-full py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-bold disabled:opacity-50">Marquer comme expédié</button>
+            </div>
+          )}
+
+          {/* In Rental Actions */}
+          {status === 'shipped' && (
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <button onClick={markInRental} disabled={saving} className="w-full py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-bold">Client a reçu → En location</button>
+            </div>
+          )}
+
+          {status === 'in_rental' && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <p className="text-orange-700 mb-4">Fin de location prévue: <strong>{new Date(rental.end_date).toLocaleDateString('fr-FR')}</strong></p>
+              <button onClick={markReturnPending} disabled={saving} className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold">Période terminée → Attente retour</button>
+            </div>
+          )}
+
+          {status === 'return_pending' && (
+            <div className="bg-teal-50 border border-teal-200 rounded-lg p-4">
+              <h3 className="font-bold text-teal-800 mb-4">Réception retour</h3>
+              <div className="grid md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">État du matériel</label>
+                  <select value={returnCondition} onChange={e => setReturnCondition(e.target.value)} className="w-full px-3 py-2 border rounded-lg">
+                    <option value="good">Bon état</option>
+                    <option value="damaged">Endommagé</option>
+                    <option value="missing_items">Éléments manquants</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Notes</label>
+                  <input type="text" value={returnNotes} onChange={e => setReturnNotes(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+                </div>
+              </div>
+              <button onClick={markReturned} disabled={saving} className="w-full py-3 bg-teal-500 hover:bg-teal-600 text-white rounded-lg font-bold">Confirmer la réception</button>
+            </div>
+          )}
+
+          {status === 'returned' && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <p className="text-green-700 mb-4">Matériel retourné. État: <strong>{returnCondition === 'good' ? 'Bon état' : returnCondition === 'damaged' ? 'Endommagé' : 'Éléments manquants'}</strong></p>
+              <button onClick={completeRental} disabled={saving} className="w-full py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold">Clôturer la location</button>
+            </div>
+          )}
+
+          {/* Tracking Info */}
+          {rental.outbound_tracking && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="font-bold text-gray-700 mb-2">Suivi expédition</h3>
+              <p className="font-mono">{rental.outbound_tracking}</p>
+            </div>
+          )}
+
+          {/* Shipping Address */}
+          {rental.shipping_addresses && (
+            <div>
+              <h3 className="font-bold text-gray-700 mb-2">Adresse de livraison</h3>
+              <p className="text-gray-600">{rental.shipping_addresses.company_name}</p>
+              {rental.shipping_addresses.attention && <p className="text-gray-600">À l'att. {rental.shipping_addresses.attention}</p>}
+              <p className="text-gray-600">{rental.shipping_addresses.address_line1}</p>
+              <p className="text-gray-600">{rental.shipping_addresses.postal_code} {rental.shipping_addresses.city}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t bg-gray-50 flex justify-end">
+          <button onClick={onClose} className="px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Fermer</button>
+        </div>
       </div>
     </div>
   );
