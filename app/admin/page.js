@@ -6228,16 +6228,16 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
                       </tr>
                     )}
                     <tr>
-                      <td className="pt-8 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Constatations</td>
-                      <td className="pt-8 pb-2 text-gray-800 whitespace-pre-wrap">{device.service_findings || '—'}</td>
+                      <td className="pt-10 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Constatations</td>
+                      <td className="pt-10 pb-2 text-gray-800 whitespace-pre-wrap">{device.service_findings || '—'}</td>
                     </tr>
                     <tr>
-                      <td className="pt-6 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Actions effectuées</td>
-                      <td className="pt-6 pb-2 text-gray-800 whitespace-pre-wrap">{device.work_completed || '—'}</td>
+                      <td className="pt-8 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Actions effectuées</td>
+                      <td className="pt-8 pb-2 text-gray-800 whitespace-pre-wrap">{device.work_completed || '—'}</td>
                     </tr>
                     <tr>
-                      <td className="pt-12 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Travaux réalisés</td>
-                      <td className="pt-12 pb-2">
+                      <td className="pt-16 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Travaux réalisés</td>
+                      <td className="pt-16 pb-2">
                         <div className="space-y-1">
                           {defaultChecklist.filter(item => item.checked).map(item => (
                             <div key={item.id} className="flex items-center gap-2">
