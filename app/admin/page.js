@@ -6138,8 +6138,9 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
         </div>
       </div>
       
-      {/* Step 1: Service Report - Preview always in DOM for PDF capture */}
-      <div className="space-y-4" style={{ display: step === 1 ? 'block' : 'none' }}>
+      {/* Step 1: Service Report - Preview always rendered for PDF capture */}
+      <div style={step === 1 ? {} : { position: 'absolute', left: '-9999px', top: 0 }}>
+        <div className="space-y-4">
         <div className="bg-gray-400 p-8 min-h-full flex justify-center">
           <div id="qc-report-preview" className="bg-white shadow-2xl w-full max-w-3xl relative" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '297mm', display: 'flex', flexDirection: 'column' }}>
             
@@ -6271,6 +6272,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
               Rapport OK → Voir Certificat
             </button>
           </div>
+        </div>
       </div>
       
       {/* Step 2: Certificate */}
