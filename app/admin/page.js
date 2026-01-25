@@ -10918,6 +10918,115 @@ function RentalsSheet({ rentals, clients, notify, reload, profile, businessSetti
   );
 }
 
+// Rental Device Modal
+function RentalDeviceModal({ device, onSave, onClose }) {
+  const [formData, setFormData] = useState({
+    serial_number: device?.serial_number || '',
+    model_name: device?.model_name || '',
+    device_type: device?.device_type || 'particle_counter',
+    brand: device?.brand || 'Lighthouse',
+    description: device?.description || '',
+    description_fr: device?.description_fr || '',
+    price_per_day: device?.price_per_day || '',
+    price_per_week: device?.price_per_week || '',
+    price_per_month: device?.price_per_month || '',
+    min_rental_days: device?.min_rental_days || 1,
+    is_available: device?.is_available !== false,
+    availability_notes: device?.availability_notes || ''
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!formData.serial_number || !formData.model_name || !formData.price_per_day) {
+      alert('Veuillez remplir les champs obligatoires (N° Série, Modèle, Prix/Jour)');
+      return;
+    }
+    onSave({
+      ...formData,
+      price_per_day: parseFloat(formData.price_per_day),
+      price_per_week: formData.price_per_week ? parseFloat(formData.price_per_week) : null,
+      price_per_month: formData.price_per_month ? parseFloat(formData.price_per_month) : null,
+      min_rental_days: parseInt(formData.min_rental_days) || 1
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white px-6 py-4 border-b flex justify-between items-center">
+          <h2 className="text-xl font-bold">{device ? 'Modifier l\'appareil' : 'Ajouter un appareil'}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">N° Série *</label>
+              <input type="text" value={formData.serial_number} onChange={e => setFormData({...formData, serial_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" required disabled={!!device} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Modèle *</label>
+              <input type="text" value={formData.model_name} onChange={e => setFormData({...formData, model_name: e.target.value})} className="w-full px-3 py-2 border rounded-lg" required />
+            </div>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+              <select value={formData.device_type} onChange={e => setFormData({...formData, device_type: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                <option value="particle_counter">Compteur de particules</option>
+                <option value="bio_collector">Bio collecteur</option>
+                <option value="liquid_counter">Compteur liquide</option>
+                <option value="other">Autre</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Marque</label>
+              <input type="text" value={formData.brand} onChange={e => setFormData({...formData, brand: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description (FR)</label>
+            <textarea value={formData.description_fr} onChange={e => setFormData({...formData, description_fr: e.target.value})} className="w-full px-3 py-2 border rounded-lg h-20 resize-none" placeholder="Description visible par les clients" />
+          </div>
+          <div className="grid md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Prix/Jour (€) *</label>
+              <input type="number" step="0.01" value={formData.price_per_day} onChange={e => setFormData({...formData, price_per_day: e.target.value})} className="w-full px-3 py-2 border rounded-lg" required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Prix/Semaine (€)</label>
+              <input type="number" step="0.01" value={formData.price_per_week} onChange={e => setFormData({...formData, price_per_week: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Auto: 7x jour" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Prix/Mois (€)</label>
+              <input type="number" step="0.01" value={formData.price_per_month} onChange={e => setFormData({...formData, price_per_month: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Auto: 30x jour" />
+            </div>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Durée min. (jours)</label>
+              <input type="number" value={formData.min_rental_days} onChange={e => setFormData({...formData, min_rental_days: e.target.value})} className="w-full px-3 py-2 border rounded-lg" min="1" />
+            </div>
+            <div className="flex items-center gap-2 pt-6">
+              <input type="checkbox" id="is_available" checked={formData.is_available} onChange={e => setFormData({...formData, is_available: e.target.checked})} className="w-5 h-5 rounded" />
+              <label htmlFor="is_available" className="text-sm font-medium text-gray-700">Disponible à la location</label>
+            </div>
+          </div>
+          {!formData.is_available && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Raison d'indisponibilité</label>
+              <input type="text" value={formData.availability_notes} onChange={e => setFormData({...formData, availability_notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Ex: En maintenance jusqu'au 15/02" />
+            </div>
+          )}
+          <div className="flex gap-3 pt-4">
+            <button type="button" onClick={onClose} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium">Annuler</button>
+            <button type="submit" className="flex-1 py-2 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white rounded-lg font-medium">{device ? 'Enregistrer' : 'Créer'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // Rental Bundle Modal
 function RentalBundleModal({ bundle, inventory, onSave, onClose }) {
   const [formData, setFormData] = useState({
