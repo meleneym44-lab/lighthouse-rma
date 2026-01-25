@@ -4845,7 +4845,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
         const s = shipments[i], bl = generateBLContent(s, i);
         blData.push(bl);
         
-        // Generate BL PDF using html2canvas (Method 2)
+        // Generate BL PDF by capturing the visible preview element
         let blUrl = null;
         try {
           // Load html2canvas if needed
@@ -4859,93 +4859,22 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
             });
           }
           
-          // Create container OFFSCREEN (not visible)
-          const container = document.createElement('div');
-          container.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;min-height:1123px;background:white;font-family:Arial,sans-serif;font-size:11pt;color:#333;padding:15px 25px;box-sizing:border-box;display:flex;flex-direction:column;';
-          
-          container.innerHTML = `
-            <div style="flex:1 0 auto;">
-              <div style="margin-bottom:15px;padding-bottom:12px;border-bottom:2px solid #333;">
-                <div style="font-size:24px;font-weight:bold;color:#333;">LIGHTHOUSE<div style="font-size:10px;color:#666;">FRANCE</div></div>
-              </div>
-              <div style="text-align:center;margin:20px 0;">
-                <h1 style="font-size:20pt;font-weight:bold;color:#333;margin:0;">BON DE LIVRAISON</h1>
-                <div style="font-size:14pt;color:#333;font-weight:bold;margin-top:8px;">${bl.blNumber}</div>
-              </div>
-              <div style="display:flex;justify-content:space-between;margin:12px 0;">
-                <div><span style="color:#666;">${businessSettings?.city || 'Créteil'}, le</span> <strong>${bl.date}</strong></div>
-                <div><span style="color:#666;">RMA:</span> <strong>${bl.rmaNumber}</strong></div>
-              </div>
-              <div style="background:#f8f9fa;border:1px solid #ddd;padding:15px;margin:12px 0;">
-                <div style="font-size:9pt;color:#666;text-transform:uppercase;font-weight:600;margin-bottom:5px;">Destinataire</div>
-                <div style="font-size:12pt;font-weight:bold;margin-bottom:5px;">${bl.client.name}</div>
-                ${bl.client.attention ? `<div>À l'attention de: <strong>${bl.client.attention}</strong></div>` : ''}
-                <div>${bl.client.street}</div>
-                <div>${bl.client.city}</div>
-                <div>${bl.client.country}</div>
-              </div>
-              <table style="width:100%;border-collapse:collapse;margin:12px 0;">
-                <thead>
-                  <tr>
-                    <th style="background:rgba(51,51,51,0.35);color:#333;padding:10px 12px;text-align:left;font-size:10pt;font-weight:bold;border-bottom:2px solid #333;width:50px;">Qté</th>
-                    <th style="background:rgba(51,51,51,0.35);color:#333;padding:10px 12px;text-align:left;font-size:10pt;font-weight:bold;border-bottom:2px solid #333;">Désignation</th>
-                    <th style="background:rgba(51,51,51,0.35);color:#333;padding:10px 12px;text-align:left;font-size:10pt;font-weight:bold;border-bottom:2px solid #333;width:120px;">N° Série</th>
-                    <th style="background:rgba(51,51,51,0.35);color:#333;padding:10px 12px;text-align:left;font-size:10pt;font-weight:bold;border-bottom:2px solid #333;width:100px;">Service</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${bl.devices.map((d, idx) => `
-                    <tr>
-                      <td style="padding:10px 12px;border-bottom:1px solid #ddd;font-size:10pt;${idx % 2 === 1 ? 'background:#f9f9f9;' : ''}text-align:center;font-weight:600;">1</td>
-                      <td style="padding:10px 12px;border-bottom:1px solid #ddd;font-size:10pt;${idx % 2 === 1 ? 'background:#f9f9f9;' : ''}">Compteur de particules LIGHTHOUSE ${d.model}</td>
-                      <td style="padding:10px 12px;border-bottom:1px solid #ddd;font-size:10pt;${idx % 2 === 1 ? 'background:#f9f9f9;' : ''}font-family:monospace;">${d.serial}</td>
-                      <td style="padding:10px 12px;border-bottom:1px solid #ddd;font-size:10pt;${idx % 2 === 1 ? 'background:#f9f9f9;' : ''}">${d.service}</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-              <div style="margin:15px 0;">
-                <div style="font-weight:bold;font-size:11pt;margin-bottom:10px;border-bottom:1px solid #333;padding-bottom:5px;">Informations d'expédition</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                  <div style="display:flex;padding:6px 0;"><span style="color:#666;width:130px;">Transporteur:</span><span style="font-weight:600;">${bl.shipping.carrier}</span></div>
-                  <div style="display:flex;padding:6px 0;"><span style="color:#666;width:130px;">N° de suivi:</span><span style="font-weight:600;font-family:monospace;">${bl.shipping.tracking}</span></div>
-                  <div style="display:flex;padding:6px 0;"><span style="color:#666;width:130px;">Nombre de colis:</span><span style="font-weight:600;">${bl.shipping.parcels}</span></div>
-                  <div style="display:flex;padding:6px 0;"><span style="color:#666;width:130px;">Poids:</span><span style="font-weight:600;">${bl.shipping.weight} kg</span></div>
-                </div>
-              </div>
-              <div style="font-size:10pt;margin-top:12px;color:#666;">Préparé par: <strong style="color:#333;">${employeeName}</strong></div>
-            </div>
-            <div style="flex-shrink:0;margin-top:auto;padding-top:15px;border-top:2px solid #333;">
-              <div style="display:flex;align-items:center;justify-content:center;gap:30px;">
-                <div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center;"><strong>CAPCERT</strong><br>ISO 9001</div>
-                <div style="font-size:8pt;color:#555;text-align:center;line-height:1.8;">
-                  <strong style="color:#333;font-size:9pt;">${businessSettings?.company_name || 'Lighthouse France SAS'}</strong> au capital de ${businessSettings?.capital || '10 000'} €<br>
-                  ${businessSettings?.address || '16 rue Paul Séjourné'}, ${businessSettings?.postal_code || '94000'} ${businessSettings?.city || 'CRÉTEIL'}<br>
-                  SIRET ${businessSettings?.siret || '50178134800013'} | TVA ${businessSettings?.tva || 'FR 86501781348'}<br>
-                  ${businessSettings?.email || 'France@golighthouse.com'} | ${businessSettings?.website || 'www.golighthouse.fr'}
-                </div>
-              </div>
-            </div>
-          `;
-          
-          document.body.appendChild(container);
-          await new Promise(r => setTimeout(r, 100));
-          
-          const canvas = await window.html2canvas(container, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-          document.body.removeChild(container);
-          
-          const jsPDF = await loadJsPDF();
-          const pdf = new jsPDF('p', 'mm', 'a4');
-          // Use JPEG with compression for smaller file
-          const imgData = canvas.toDataURL('image/jpeg', 0.8);
-          const pdfWidth = 210;
-          const imgRatio = canvas.height / canvas.width;
-          const imgHeight = pdfWidth * imgRatio;
-          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
-          
-          const blPdfBlob = pdf.output('blob');
-          const blFileName = `${rma.request_number}_BL_${bl.blNumber}_${Date.now()}.pdf`;
-          blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${rma.request_number}`, blFileName);
+          // Capture the visible BL preview element
+          const element = document.getElementById(`bl-preview-${i}`);
+          if (element) {
+            const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+            const jsPDF = await loadJsPDF();
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const imgData = canvas.toDataURL('image/jpeg', 0.8);
+            const pdfWidth = 210;
+            const imgRatio = canvas.height / canvas.width;
+            const imgHeight = pdfWidth * imgRatio;
+            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
+            
+            const blPdfBlob = pdf.output('blob');
+            const blFileName = `${rma.request_number}_BL_${bl.blNumber}_${Date.now()}.pdf`;
+            blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${rma.request_number}`, blFileName);
+          }
         } catch (pdfErr) {
           console.error('BL PDF generation error:', pdfErr);
         }
@@ -5192,7 +5121,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                 
                 {/* Clean PDF Preview with Watermark */}
                 <div className="bg-white border-2 border-t-0 rounded-b-xl overflow-hidden shadow-lg">
-                  <div style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', minHeight: '270mm', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+                  <div id={`bl-preview-${idx}`} style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', minHeight: '270mm', display: 'flex', flexDirection: 'column', position: 'relative' }}>
                     {/* Watermark - on top of everything */}
                     <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.12, pointerEvents: 'none', zIndex: 999 }}>
                       <img src="/images/logos/Lighthouse-Square-logo.png" alt="" style={{ width: '500px', height: 'auto' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:150px;font-weight:bold;color:#000">LWS</div>'; }} />
@@ -6005,6 +5934,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState(1); // 1: Report, 2: Certificate, 3: Approve
   const [qcNotes, setQcNotes] = useState(device.qc_notes || '');
+  const [savedReportUrl, setSavedReportUrl] = useState(device.report_url || null);
   const today = new Date().toLocaleDateString('fr-FR');
   
   // Get checklist from device
@@ -6023,10 +5953,61 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
   const showCalType = device.cal_type && device.cal_type !== 'none';
   const showReceptionResult = device.reception_result && device.reception_result !== 'none';
   
+  // Save report PDF by capturing the visible preview
+  const saveReportPDF = async () => {
+    try {
+      if (!window.html2canvas) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+      }
+      
+      const element = document.getElementById('qc-report-preview');
+      if (!element) { notify('Element not found!', 'error'); return null; }
+      
+      notify('Génération du PDF...');
+      const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const jsPDF = await loadJsPDF();
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgData = canvas.toDataURL('image/jpeg', 0.8);
+      const pdfWidth = 210;
+      const imgRatio = canvas.height / canvas.width;
+      const imgHeight = pdfWidth * imgRatio;
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
+      
+      const pdfBlob = pdf.output('blob');
+      const fileName = `${rma.request_number}_${device.serial_number}_rapport_${Date.now()}.pdf`;
+      const reportUrl = await uploadPDFToStorage(pdfBlob, `reports/${rma.request_number}`, fileName);
+      
+      if (reportUrl) {
+        await supabase.from('request_devices').update({ report_url: reportUrl }).eq('id', device.id);
+        setSavedReportUrl(reportUrl);
+        notify('✓ Rapport PDF enregistré!');
+        return reportUrl;
+      } else {
+        notify('Erreur upload', 'error');
+        return null;
+      }
+    } catch (err) {
+      console.error(err);
+      notify('Erreur: ' + err.message, 'error');
+      return null;
+    }
+  };
+  
   const approveQC = async () => {
     setSaving(true);
     try {
-      // PDF is saved from Step 1 button, this just updates the QC status
+      // If no report saved yet, save it now (must be on step 1)
+      let reportUrl = savedReportUrl;
+      if (!reportUrl && step === 1) {
+        reportUrl = await saveReportPDF();
+      }
+      
       const updateData = {
         qc_complete: true,
         qc_completed_at: new Date().toISOString(),
@@ -6034,6 +6015,8 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
         qc_notes: qcNotes,
         status: 'ready_to_ship'
       };
+      
+      if (reportUrl) updateData.report_url = reportUrl;
       
       const { error } = await supabase.from('request_devices').update(updateData).eq('id', device.id);
       if (error) throw error;
@@ -6049,7 +6032,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
         }).eq('id', rma.id);
       }
       
-      notify('✓ QC validé');
+      notify(reportUrl ? '✓ QC validé + Rapport enregistré!' : '✓ QC validé');
       onBack();
     } catch (err) {
       console.error('approveQC error:', err);
@@ -6212,55 +6195,19 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
             </div>
           </div>
           
-          <div className="flex justify-between">
-            <button 
-              onClick={async () => {
-                try {
-                  // Load html2canvas if needed
-                  if (!window.html2canvas) {
-                    await new Promise((resolve, reject) => {
-                      const script = document.createElement('script');
-                      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-                      script.onload = resolve;
-                      script.onerror = reject;
-                      document.head.appendChild(script);
-                    });
-                  }
-                  
-                  const element = document.getElementById('qc-report-preview');
-                  if (!element) { notify('Element not found!', 'error'); return; }
-                  
-                  notify('Génération du PDF...');
-                  const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-                  const jsPDF = await loadJsPDF();
-                  const pdf = new jsPDF('p', 'mm', 'a4');
-                  // Use JPEG with 0.8 quality for smaller file size
-                  const imgData = canvas.toDataURL('image/jpeg', 0.8);
-                  const pdfWidth = 210;
-                  const imgRatio = canvas.height / canvas.width;
-                  const imgHeight = pdfWidth * imgRatio;
-                  pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
-                  
-                  const pdfBlob = pdf.output('blob');
-                  console.log('PDF blob size:', pdfBlob.size, 'bytes');
-                  const fileName = `${rma.request_number}_${device.serial_number}_rapport_${Date.now()}.pdf`;
-                  const reportUrl = await uploadPDFToStorage(pdfBlob, `reports/${rma.request_number}`, fileName);
-                  
-                  if (reportUrl) {
-                    await supabase.from('request_devices').update({ report_url: reportUrl }).eq('id', device.id);
-                    notify('✓ Rapport PDF enregistré!');
-                  } else {
-                    notify('Erreur upload', 'error');
-                  }
-                } catch (err) {
-                  console.error(err);
-                  notify('Erreur: ' + err.message, 'error');
-                }
-              }}
-              className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium"
-            >
-              💾 Enregistrer le Rapport PDF
-            </button>
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={saveReportPDF}
+                disabled={savedReportUrl}
+                className={`px-6 py-3 rounded-lg font-medium ${savedReportUrl ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`}
+              >
+                {savedReportUrl ? '✓ Rapport enregistré' : '💾 Enregistrer le Rapport PDF'}
+              </button>
+              {savedReportUrl && (
+                <a href={savedReportUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm">📄 Voir PDF</a>
+              )}
+            </div>
             <button onClick={() => setStep(2)} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
               Rapport OK → Voir Certificat
             </button>
