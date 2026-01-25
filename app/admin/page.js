@@ -5726,6 +5726,7 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
       )}
     </div>
   );
+}
 
 function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, onSelectRMA, onSelectDevice }) {
   const [selectedClient, setSelectedClient] = useState(null);
