@@ -3206,11 +3206,16 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                   <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
                   <div className="space-y-4">
                     {[
-                      { date: rma.created_at, label: 'RMA créé', icon: '📝', color: 'gray' },
+                      { date: rma.created_at, label: 'Soumis', icon: '📝', color: 'gray' },
+                      rma.request_number && { date: rma.created_at, label: 'RMA créé', icon: '📋', color: 'blue' },
+                      rma.quote_sent_at && { date: rma.quote_sent_at, label: 'Devis envoyé', icon: '💰', color: 'amber' },
+                      rma.bc_submitted_at && { date: rma.bc_submitted_at, label: 'BC soumis', icon: '📄', color: 'purple' },
+                      rma.bc_approved_at && { date: rma.bc_approved_at, label: 'BC approuvé - Attente appareil', icon: '✅', color: 'green' },
                       rma.received_at && { date: rma.received_at, label: 'Appareil reçu', icon: '📦', color: 'cyan' },
-                      device.service_started_at && { date: device.service_started_at, label: 'Service démarré', icon: '🔧', color: 'indigo' },
+                      device.service_started_at && { date: device.service_started_at, label: device.service_type === 'repair' ? 'Réparation démarrée' : 'Étalonnage démarré', icon: '🔧', color: 'indigo' },
                       device.report_completed_at && { date: device.report_completed_at, label: 'Rapport complété', icon: '📋', color: 'blue' },
-                      device.qc_completed_at && { date: device.qc_completed_at, label: 'QC validé', icon: '✅', color: 'purple' },
+                      device.qc_completed_at && { date: device.qc_completed_at, label: 'QC validé - Prêt à expédier', icon: '✅', color: 'purple' },
+                      device.qc_rejected_at && { date: device.qc_rejected_at, label: 'QC rejeté', icon: '❌', color: 'red' },
                       device.shipped_at && { date: device.shipped_at, label: 'Expédié', icon: '🚚', color: 'green' }
                     ].filter(Boolean).sort((a, b) => new Date(a.date) - new Date(b.date)).map((event, idx) => (
                       <div key={idx} className="relative pl-10">
@@ -3220,6 +3225,8 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                           event.color === 'indigo' ? 'bg-indigo-500' :
                           event.color === 'purple' ? 'bg-purple-500' :
                           event.color === 'cyan' ? 'bg-cyan-500' :
+                          event.color === 'amber' ? 'bg-amber-500' :
+                          event.color === 'red' ? 'bg-red-500' :
                           'bg-gray-400'
                         }`}>
                         </div>
@@ -4877,10 +4884,13 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
         // Generate UPS Label PDF
         let upsLabelUrl = null;
         try {
+          console.log('Generating UPS label for shipment:', i, s.trackingNumber);
           const upsPdfBlob = await generateUPSLabelPDF(rma, s);
+          console.log('UPS PDF blob generated:', upsPdfBlob?.size);
           const safeTracking = (s.trackingNumber || String(i)).replace(/[^a-zA-Z0-9-_]/g, '');
           const upsFileName = `${rma.request_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
           upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
+          console.log('UPS label uploaded:', upsLabelUrl);
         } catch (pdfErr) {
           console.error('UPS Label PDF generation error:', pdfErr);
         }
