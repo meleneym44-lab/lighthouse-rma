@@ -2841,13 +2841,13 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
       const repairMap = {
         'submitted': 0, 'pending': 0, 'waiting_approval': 0,
         'approved': 1, 'rma_created': 1, 'quote_sent': 1,
-        'waiting_bc': 2, 'bc_submitted': 2, 'bc_review': 2, 'bc_approved': 2,
-        'waiting_device': 3, 'waiting_po': 3,
+        'waiting_bc': 2, 'bc_submitted': 2, 'bc_review': 2,
+        'bc_approved': 3, 'waiting_device': 3, 'waiting_po': 3, 'waiting_reception': 3,
         'received': 4, 'in_queue': 4,
         'inspection': 5, 'inspection_complete': 5,
         'customer_approval': 6, 'waiting_customer': 6,
         'repair_in_progress': 7, 'repair': 7,
-        'final_qc': 8, 'qc_complete': 8,
+        'final_qc': 8, 'qc_complete': 8, 'qc_rejected': 7,
         'ready_to_ship': 9,
         'shipped': 10, 'delivered': 10, 'completed': 10
       };
@@ -2856,11 +2856,11 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
       const calMap = {
         'submitted': 0, 'pending': 0, 'waiting_approval': 0,
         'approved': 1, 'rma_created': 1, 'quote_sent': 1,
-        'waiting_bc': 2, 'bc_submitted': 2, 'bc_review': 2, 'bc_approved': 2,
-        'waiting_device': 3, 'waiting_po': 3,
+        'waiting_bc': 2, 'bc_submitted': 2, 'bc_review': 2,
+        'bc_approved': 3, 'waiting_device': 3, 'waiting_po': 3, 'waiting_reception': 3,
         'received': 4, 'in_queue': 5,
         'calibration_in_progress': 6, 'calibration': 6,
-        'final_qc': 7, 'qc_complete': 7,
+        'final_qc': 7, 'qc_complete': 7, 'qc_rejected': 6,
         'ready_to_ship': 8,
         'shipped': 9, 'delivered': 9, 'completed': 9
       };
