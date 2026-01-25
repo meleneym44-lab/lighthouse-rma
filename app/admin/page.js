@@ -6147,6 +6147,14 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
         <div className="bg-gray-400 p-8 min-h-full flex justify-center">
           <div id="qc-report-preview" className="bg-white shadow-2xl w-full max-w-3xl relative" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '297mm', display: 'flex', flexDirection: 'column' }}>
             
+            {/* Watermark */}
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.08, pointerEvents: 'none', zIndex: 1 }}>
+              <img src="/images/logos/Lighthouse-Square-logo.png" alt="" style={{ width: '400px', height: 'auto' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:120px;font-weight:bold;color:#000">LWS</div>'; }} />
+            </div>
+            
+            {/* Content wrapper - above watermark */}
+            <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', flex: 1 }}>
+            
             {/* Logo */}
             <div className="mb-8">
               <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" className="h-12 w-auto" onError={(e) => { e.target.style.display = 'none'; }} />
@@ -6204,32 +6212,32 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
                   </colgroup>
                   <tbody>
                     <tr>
-                      <td className="pt-6 pb-2 font-bold text-[#003366] whitespace-nowrap">Motif de retour</td>
+                      <td className="pt-6 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Motif de retour</td>
                       <td className="pt-6 pb-2 text-gray-800">{motifText}</td>
                     </tr>
                     {showCalType && (
                       <tr>
-                        <td className="py-2 font-bold text-[#003366] whitespace-nowrap">Étalonnage effectué</td>
+                        <td className="py-2 font-bold text-[#003366] whitespace-nowrap align-top">Étalonnage effectué</td>
                         <td className="py-2 text-gray-800">{device.cal_type}</td>
                       </tr>
                     )}
                     {showReceptionResult && (
                       <tr>
-                        <td className="py-2 font-bold text-[#003366] whitespace-nowrap">Résultats à la réception</td>
+                        <td className="py-2 font-bold text-[#003366] whitespace-nowrap align-top">Résultats à la réception</td>
                         <td className="py-2 text-gray-800">{device.reception_result}</td>
                       </tr>
                     )}
                     <tr>
-                      <td className="pt-6 pb-2 font-bold text-[#003366] whitespace-nowrap">Constatations</td>
-                      <td className="pt-6 pb-2 text-gray-800 whitespace-pre-wrap">{device.service_findings || '—'}</td>
+                      <td className="pt-8 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Constatations</td>
+                      <td className="pt-8 pb-2 text-gray-800 whitespace-pre-wrap">{device.service_findings || '—'}</td>
                     </tr>
                     <tr>
-                      <td className="py-2 font-bold text-[#003366] whitespace-nowrap">Actions effectuées</td>
-                      <td className="py-2 text-gray-800 whitespace-pre-wrap">{device.work_completed || '—'}</td>
+                      <td className="pt-6 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Actions effectuées</td>
+                      <td className="pt-6 pb-2 text-gray-800 whitespace-pre-wrap">{device.work_completed || '—'}</td>
                     </tr>
                     <tr>
-                      <td className="pt-8 pb-2 font-bold text-[#003366] whitespace-nowrap">Travaux réalisés</td>
-                      <td className="pt-8 pb-2">
+                      <td className="pt-12 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Travaux réalisés</td>
+                      <td className="pt-12 pb-2">
                         <div className="space-y-1">
                           {defaultChecklist.filter(item => item.checked).map(item => (
                             <div key={item.id} className="flex items-center gap-2">
@@ -6250,6 +6258,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
                 <p>16 Rue Paul Séjourné 94000 Créteil France</p>
                 <p>01 43 77 28 07</p>
               </div>
+            </div>
             </div>
           </div>
           
