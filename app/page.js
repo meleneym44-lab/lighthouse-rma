@@ -2523,7 +2523,7 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
   const [selectedThread, setSelectedThread] = useState(null);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
-  const messagesEndRef = React.useRef(null);
+  const messagesEndRef = useRef(null);
 
   // Scroll to bottom of messages
   const scrollToBottom = () => {
@@ -2607,8 +2607,8 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
     setTimeout(scrollToBottom, 100);
   };
 
-  // Scroll to bottom when selected thread changes or messages update
-  React.useEffect(() => {
+  // Scroll to bottom when selected thread changes
+  useEffect(() => {
     if (selectedThread) {
       setTimeout(scrollToBottom, 100);
     }
