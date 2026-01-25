@@ -2770,21 +2770,36 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
                 if (!confirm('Marquer tous les appareils comme expédiés et fermer le RMA?')) return;
                 setSaving(true);
                 try {
+                  console.log('Marking devices as shipped...');
                   for (const device of devices) {
-                    await supabase.from('request_devices').update({ 
+                    const { error: deviceError } = await supabase.from('request_devices').update({ 
                       status: 'shipped', 
                       shipped_at: new Date().toISOString()
                     }).eq('id', device.id);
+                    if (deviceError) {
+                      console.error('Device update error:', deviceError);
+                      throw deviceError;
+                    }
+                    console.log('Device', device.id, 'marked as shipped');
                   }
-                  await supabase.from('service_requests').update({ 
+                  
+                  console.log('Marking RMA as shipped...');
+                  const { error: rmaError } = await supabase.from('service_requests').update({ 
                     status: 'shipped', 
                     shipped_at: new Date().toISOString(), 
                     updated_at: new Date().toISOString() 
                   }).eq('id', rma.id);
+                  if (rmaError) {
+                    console.error('RMA update error:', rmaError);
+                    throw rmaError;
+                  }
+                  console.log('RMA', rma.id, 'marked as shipped');
+                  
                   notify('🚚 RMA marqué comme expédié!');
                   reload();
                 } catch (err) {
-                  notify('Erreur: ' + err.message, 'error');
+                  console.error('Mark shipped error:', err);
+                  notify('Erreur: ' + (err.message || JSON.stringify(err)), 'error');
                 }
                 setSaving(false);
               }}
@@ -3357,10 +3372,22 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       </div>
                     </div>
                   )}
+                  
+                  {/* UPS Label PDF */}
+                  {device.ups_label_url && (
+                    <a href={device.ups_label_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">🏷️</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Étiquette UPS</p>
+                        <p className="text-sm text-gray-500">Label d'expédition</p>
+                      </div>
+                    </a>
+                  )}
                 </div>
                 
                 {/* No documents message */}
-                {!device.calibration_certificate_url && !device.report_url && !rma.quote_url && !rma.bc_file_url && !device.bl_number && !device.bl_url && !rma.avenant_sent_at && (
+                {!device.calibration_certificate_url && !device.report_url && !rma.quote_url && !rma.bc_file_url && !device.bl_number && !device.bl_url && !device.ups_label_url && !rma.avenant_sent_at && (
                   <p className="text-gray-400 text-center py-8">Aucun document disponible</p>
                 )}
               </div>
