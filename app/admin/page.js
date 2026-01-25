@@ -6294,7 +6294,53 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
             </div>
           </div>
           
-          <div className="flex justify-end">
+          <div className="flex justify-between">
+            <button 
+              onClick={async () => {
+                try {
+                  // Load html2canvas if needed
+                  if (!window.html2canvas) {
+                    await new Promise((resolve, reject) => {
+                      const script = document.createElement('script');
+                      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+                      script.onload = resolve;
+                      script.onerror = reject;
+                      document.head.appendChild(script);
+                    });
+                  }
+                  
+                  const element = document.getElementById('qc-report-preview');
+                  if (!element) { notify('Element not found!', 'error'); return; }
+                  
+                  notify('Génération du PDF...');
+                  const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+                  const jsPDF = await loadJsPDF();
+                  const pdf = new jsPDF('p', 'mm', 'a4');
+                  const imgData = canvas.toDataURL('image/png');
+                  const pdfWidth = 210;
+                  const imgRatio = canvas.height / canvas.width;
+                  const imgHeight = pdfWidth * imgRatio;
+                  pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
+                  
+                  const pdfBlob = pdf.output('blob');
+                  const fileName = `${rma.request_number}_${device.serial_number}_rapport_${Date.now()}.pdf`;
+                  const reportUrl = await uploadPDFToStorage(pdfBlob, `reports/${rma.request_number}`, fileName);
+                  
+                  if (reportUrl) {
+                    await supabase.from('request_devices').update({ report_url: reportUrl }).eq('id', device.id);
+                    notify('✓ Rapport PDF enregistré!');
+                  } else {
+                    notify('Erreur upload', 'error');
+                  }
+                } catch (err) {
+                  console.error(err);
+                  notify('Erreur: ' + err.message, 'error');
+                }
+              }}
+              className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium"
+            >
+              💾 Enregistrer le Rapport PDF
+            </button>
             <button onClick={() => setStep(2)} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
               Rapport OK → Voir Certificat
             </button>
