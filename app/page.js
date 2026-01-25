@@ -2673,27 +2673,36 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
                     <p className="text-sm">Envoyez un message pour démarrer la conversation</p>
                   </div>
                 ) : (
-                  [...selectedThread.messages].reverse().map(msg => (
-                    <div 
-                      key={msg.id}
-                      className={`flex ${msg.sender_id === profile.id ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div className={`max-w-[70%] rounded-lg p-3 ${
-                        msg.sender_id === profile.id 
-                          ? 'bg-[#3B7AB4] text-white' 
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        <p className="text-sm">{msg.content}</p>
-                        <p className={`text-xs mt-1 ${
-                          msg.sender_id === profile.id ? 'text-white/70' : 'text-gray-400'
+                  [...selectedThread.messages].reverse().map(msg => {
+                    const isMe = msg.sender_id === profile.id;
+                    return (
+                      <div 
+                        key={msg.id}
+                        className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div className={`max-w-[70%] rounded-lg p-3 ${
+                          isMe 
+                            ? 'bg-[#3B7AB4] text-white' 
+                            : 'bg-gray-100 text-gray-800'
                         }`}>
-                          {new Date(msg.created_at).toLocaleString('fr-FR', {
-                            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
-                          })}
-                        </p>
+                          <div className={`text-xs mb-1 font-medium ${isMe ? 'text-white/70' : 'text-gray-500'}`}>
+                            {isMe ? 'Vous' : (msg.sender_name || 'Lighthouse France')}
+                          </div>
+                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                          {msg.attachment_url && (
+                            <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isMe ? 'text-white/80 hover:text-white' : 'text-blue-600 hover:underline'}`}>
+                              📎 {msg.attachment_name || 'Télécharger le fichier'}
+                            </a>
+                          )}
+                          <p className={`text-xs mt-1 ${isMe ? 'text-white/60' : 'text-gray-400'}`}>
+                            {new Date(msg.created_at).toLocaleString('fr-FR', {
+                              day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
 
@@ -7619,34 +7628,36 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     <p className="text-sm">Envoyez un message à notre équipe</p>
                   </div>
                 ) : (
-                  messages.map(msg => (
-                    <div 
-                      key={msg.id}
-                      className={`flex ${msg.sender_id === profile?.id ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div className={`max-w-[70%] rounded-lg p-3 ${
-                        msg.sender_id === profile?.id 
-                          ? 'bg-[#3B7AB4] text-white' 
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {msg.sender_type !== 'customer' && (
-                          <p className={`text-xs font-medium mb-1 ${
-                            msg.sender_id === profile?.id ? 'text-white/70' : 'text-[#3B7AB4]'
-                          }`}>
-                            Lighthouse France
-                          </p>
-                        )}
-                        <p className="text-sm">{msg.content}</p>
-                        <p className={`text-xs mt-1 ${
-                          msg.sender_id === profile?.id ? 'text-white/70' : 'text-gray-400'
+                  messages.map(msg => {
+                    const isMe = msg.sender_id === profile?.id;
+                    return (
+                      <div 
+                        key={msg.id}
+                        className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div className={`max-w-[70%] rounded-lg p-3 ${
+                          isMe 
+                            ? 'bg-[#3B7AB4] text-white' 
+                            : 'bg-gray-100 text-gray-800'
                         }`}>
-                          {new Date(msg.created_at).toLocaleString('fr-FR', {
-                            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
-                          })}
-                        </p>
+                          <p className={`text-xs font-medium mb-1 ${isMe ? 'text-white/70' : 'text-[#3B7AB4]'}`}>
+                            {isMe ? 'Vous' : (msg.sender_name || 'Lighthouse France')}
+                          </p>
+                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                          {msg.attachment_url && (
+                            <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isMe ? 'text-white/80 hover:text-white' : 'text-blue-600 hover:underline'}`}>
+                              📎 {msg.attachment_name || 'Télécharger le fichier'}
+                            </a>
+                          )}
+                          <p className={`text-xs mt-1 ${isMe ? 'text-white/60' : 'text-gray-400'}`}>
+                            {new Date(msg.created_at).toLocaleString('fr-FR', {
+                              day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
               
