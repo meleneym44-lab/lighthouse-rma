@@ -4859,8 +4859,9 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
             });
           }
           
+          // Create container OFFSCREEN (not visible)
           const container = document.createElement('div');
-          container.style.cssText = 'position:fixed;left:0;top:0;width:794px;min-height:1123px;background:white;font-family:Arial,sans-serif;font-size:11pt;color:#333;padding:15px 25px;box-sizing:border-box;display:flex;flex-direction:column;z-index:99999;';
+          container.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;min-height:1123px;background:white;font-family:Arial,sans-serif;font-size:11pt;color:#333;padding:15px 25px;box-sizing:border-box;display:flex;flex-direction:column;';
           
           container.innerHTML = `
             <div style="flex:1 0 auto;">
@@ -4935,11 +4936,12 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           
           const jsPDF = await loadJsPDF();
           const pdf = new jsPDF('p', 'mm', 'a4');
-          const imgData = canvas.toDataURL('image/png');
+          // Use JPEG with compression for smaller file
+          const imgData = canvas.toDataURL('image/jpeg', 0.8);
           const pdfWidth = 210;
           const imgRatio = canvas.height / canvas.width;
           const imgHeight = pdfWidth * imgRatio;
-          pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
+          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
           
           const blPdfBlob = pdf.output('blob');
           const blFileName = `${rma.request_number}_BL_${bl.blNumber}_${Date.now()}.pdf`;
@@ -6024,89 +6026,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
   const approveQC = async () => {
     setSaving(true);
     try {
-      // Generate Report PDF using html2canvas (Method 2 from testing)
-      let reportUrl = null;
-      try {
-        // Load html2canvas if needed
-        if (!window.html2canvas) {
-          await new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-            script.onload = resolve;
-            script.onerror = reject;
-            document.head.appendChild(script);
-          });
-        }
-        
-        // Build report HTML in a visible container temporarily
-        const serviceTypeText = device.service_type === 'calibration' ? 'Étalonnage' : device.service_type === 'repair' ? 'Réparation' : 'Étalonnage et Réparation';
-        const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
-        const showCalType = device.cal_type && device.cal_type !== 'none';
-        const showReceptionResult = device.reception_result && device.reception_result !== 'none';
-        const reportDate = device.report_completed_at ? new Date(device.report_completed_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
-        const checklistItems = device.work_checklist ? Object.entries(device.work_checklist).filter(([k, v]) => v).map(([k]) => k) : [];
-        
-        const container = document.createElement('div');
-        container.style.cssText = 'position:fixed;left:0;top:0;width:794px;min-height:1123px;background:white;font-family:Arial,sans-serif;padding:40px 50px;box-sizing:border-box;display:flex;flex-direction:column;z-index:99999;';
-        
-        container.innerHTML = `
-          <div style="margin-bottom:40px;display:flex;align-items:center;gap:8px;">
-            <div style="display:flex;flex-direction:column;gap:2px;margin-right:8px;">
-              <div style="width:48px;height:8px;background:#FFD200;"></div>
-              <div style="width:48px;height:8px;background:#003366;"></div>
-            </div>
-            <div>
-              <div style="font-size:24px;font-weight:bold;letter-spacing:2px;color:#003366;">LIGHTHOUSE</div>
-              <div style="font-size:10px;letter-spacing:3px;color:#666;margin-top:-4px;">WORLDWIDE SOLUTIONS</div>
-            </div>
-          </div>
-          <table style="width:100%;font-size:12px;margin-bottom:24px;border-collapse:collapse;">
-            <tr><td style="padding:4px 0;font-weight:bold;color:#003366;width:150px;">Date d'achèvement</td><td style="padding:4px 0;color:#333;width:200px;">${reportDate}</td><td style="padding:4px 0;"><span style="font-weight:bold;color:#003366;">RMA # </span><span style="color:#333;">${rma.request_number}</span></td></tr>
-            <tr><td style="padding:4px 0;font-weight:bold;color:#003366;">Client</td><td style="padding:4px 0;color:#333;" colspan="2">${rma.companies?.name || ''}</td></tr>
-            <tr><td style="padding:4px 0;font-weight:bold;color:#003366;">Adresse</td><td style="padding:4px 0;color:#333;" colspan="2">${rma.companies?.billing_address || '—'}</td></tr>
-            <tr><td style="padding:4px 0;font-weight:bold;color:#003366;">Code postal / Ville</td><td style="padding:4px 0;color:#333;">${rma.companies?.billing_postal_code || ''} ${rma.companies?.billing_city || ''}</td><td style="padding:4px 0;"><span style="font-weight:bold;color:#003366;">Contact </span><span style="color:#333;">${rma.companies?.contact_name || '—'}</span></td></tr>
-            <tr><td style="padding:4px 0;font-weight:bold;color:#003366;">Téléphone</td><td style="padding:4px 0;color:#333;">${rma.companies?.phone || '—'}</td><td style="padding:4px 0;font-weight:bold;color:#003366;">Technicien(ne) de service</td></tr>
-            <tr><td style="padding:4px 0;font-weight:bold;color:#003366;">Modèle#</td><td style="padding:4px 0;color:#333;">${device.model_name}</td><td style="padding:4px 0;color:#333;">${device.technician_name || 'Lighthouse France'}</td></tr>
-            <tr><td style="padding:4px 0;font-weight:bold;color:#003366;">Numéro de série</td><td style="padding:4px 0;color:#333;" colspan="2">${device.serial_number}</td></tr>
-          </table>
-          <div style="flex-grow:1;">
-            <table style="width:100%;font-size:12px;border-collapse:collapse;">
-              <tr><td style="padding:20px 0 8px;font-weight:bold;color:#003366;width:170px;vertical-align:top;">Motif de retour</td><td style="padding:20px 0 8px;color:#333;">${motifText}</td></tr>
-              ${showCalType ? `<tr><td style="padding:8px 0;font-weight:bold;color:#003366;vertical-align:top;">Étalonnage effectué</td><td style="padding:8px 0;color:#333;">${device.cal_type}</td></tr>` : ''}
-              ${showReceptionResult ? `<tr><td style="padding:8px 0;font-weight:bold;color:#003366;vertical-align:top;">Résultats à la réception</td><td style="padding:8px 0;color:#333;">${device.reception_result}</td></tr>` : ''}
-              <tr><td style="padding:20px 0 8px;font-weight:bold;color:#003366;vertical-align:top;">Constatations</td><td style="padding:20px 0 8px;color:#333;white-space:pre-wrap;">${device.service_findings || '—'}</td></tr>
-              <tr><td style="padding:8px 0;font-weight:bold;color:#003366;vertical-align:top;">Actions effectuées</td><td style="padding:8px 0;color:#333;white-space:pre-wrap;">${device.work_completed || '—'}</td></tr>
-              <tr><td style="padding:30px 0 8px;font-weight:bold;color:#003366;vertical-align:top;">Travaux réalisés</td><td style="padding:30px 0 8px;">${checklistItems.map(item => `<div style="margin-bottom:4px;"><span style="color:#003366;">☑</span><span style="color:#333;margin-left:8px;">${item}</span></div>`).join('')}</td></tr>
-            </table>
-          </div>
-          <div style="text-align:center;font-size:12px;color:#666;padding-top:32px;margin-top:auto;">
-            <div style="font-weight:bold;color:#003366;">Lighthouse Worldwide Solutions France</div>
-            <div>16 Rue Paul Séjourné 94000 Créteil France</div>
-            <div>01 43 77 28 07</div>
-          </div>
-        `;
-        
-        document.body.appendChild(container);
-        await new Promise(r => setTimeout(r, 100)); // Let it render
-        
-        const canvas = await window.html2canvas(container, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-        document.body.removeChild(container);
-        
-        const jsPDF = await loadJsPDF();
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const imgData = canvas.toDataURL('image/png');
-        const pdfWidth = 210;
-        const imgRatio = canvas.height / canvas.width;
-        const imgHeight = pdfWidth * imgRatio;
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
-        
-        const pdfBlob = pdf.output('blob');
-        const fileName = `${rma.request_number}_${device.serial_number}_rapport_${Date.now()}.pdf`;
-        reportUrl = await uploadPDFToStorage(pdfBlob, `reports/${rma.request_number}`, fileName);
-      } catch (pdfErr) {
-        console.error('Report PDF error:', pdfErr);
-      }
-      
+      // PDF is saved from Step 1 button, this just updates the QC status
       const updateData = {
         qc_complete: true,
         qc_completed_at: new Date().toISOString(),
@@ -6114,8 +6034,6 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
         qc_notes: qcNotes,
         status: 'ready_to_ship'
       };
-      
-      if (reportUrl) updateData.report_url = reportUrl;
       
       const { error } = await supabase.from('request_devices').update(updateData).eq('id', device.id);
       if (error) throw error;
@@ -6131,7 +6049,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
         }).eq('id', rma.id);
       }
       
-      notify(reportUrl ? '✓ QC validé + Rapport enregistré!' : '✓ QC validé');
+      notify('✓ QC validé');
       onBack();
     } catch (err) {
       console.error('approveQC error:', err);
@@ -6316,13 +6234,15 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
                   const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
                   const jsPDF = await loadJsPDF();
                   const pdf = new jsPDF('p', 'mm', 'a4');
-                  const imgData = canvas.toDataURL('image/png');
+                  // Use JPEG with 0.8 quality for smaller file size
+                  const imgData = canvas.toDataURL('image/jpeg', 0.8);
                   const pdfWidth = 210;
                   const imgRatio = canvas.height / canvas.width;
                   const imgHeight = pdfWidth * imgRatio;
-                  pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
+                  pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
                   
                   const pdfBlob = pdf.output('blob');
+                  console.log('PDF blob size:', pdfBlob.size, 'bytes');
                   const fileName = `${rma.request_number}_${device.serial_number}_rapport_${Date.now()}.pdf`;
                   const reportUrl = await uploadPDFToStorage(pdfBlob, `reports/${rma.request_number}`, fileName);
                   
