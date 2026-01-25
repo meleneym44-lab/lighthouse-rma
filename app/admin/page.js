@@ -1449,8 +1449,9 @@ export default function AdminPortal() {
     c.status === 'bc_pending' || 
     c.status === 'quote_revision_requested'
   ).length;
-  // Open chats count
-  const openChatsCount = requests.filter(r => r.chat_status === 'open').length;
+  // Open chats count - includes unread messages
+  const openChatsCount = requests.filter(r => r.chat_status === 'open' || (r.unread_admin_count || 0) > 0).length;
+  const totalUnreadMessages = requests.reduce((sum, r) => sum + (r.unread_admin_count || 0), 0);
   
   // Dashboard filter state
   const [dashboardFilter, setDashboardFilter] = useState(null);
@@ -1459,7 +1460,7 @@ export default function AdminPortal() {
     { id: 'dashboard', label: 'Tableau de Bord', icon: '📊' },
     { id: 'requests', label: 'Demandes', icon: '📋', badge: totalBadge > 0 ? totalBadge : null },
     { id: 'clients', label: 'Clients', icon: '👥' },
-    { id: 'messages', label: 'Messages', icon: '💬', badge: openChatsCount > 0 ? openChatsCount : null },
+    { id: 'messages', label: 'Messages', icon: '💬', badge: totalUnreadMessages > 0 ? totalUnreadMessages : (openChatsCount > 0 ? openChatsCount : null) },
     { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
     { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
     { id: 'settings', label: 'Paramètres', icon: '⚙️' },
@@ -5367,6 +5368,15 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
   const [search, setSearch] = useState('');
   const [profile, setProfile] = useState(null);
   
+  // Translation & AI states
+  const [translationMode, setTranslationMode] = useState(false); // Toggle for translation panel
+  const [englishInput, setEnglishInput] = useState('');
+  const [frenchOutput, setFrenchOutput] = useState('');
+  const [translating, setTranslating] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState({ french: '', english: '' });
+  const [generatingAI, setGeneratingAI] = useState(false);
+  const [translatedMessages, setTranslatedMessages] = useState({}); // Cache for translated customer messages
+  
   // Load profile
   useEffect(() => {
     const loadProfile = async () => {
@@ -5381,26 +5391,24 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
   
   // Filter RMAs based on chat status AND search
   const filteredRMAs = requests.filter(r => {
+    // Only show RMAs that have unread messages OR open chat status
+    const hasUnreadMessages = (r.unread_admin_count || 0) > 0;
+    const isOpen = r.chat_status === 'open';
+    
     // Apply status filter
-    if (filter === 'open' && r.chat_status !== 'open') return false;
-    if (filter === 'closed' && r.chat_status === 'open') return false;
+    if (filter === 'open' && !isOpen && !hasUnreadMessages) return false;
+    if (filter === 'closed' && (isOpen || hasUnreadMessages)) return false;
     
     // Apply search filter
     if (search.trim()) {
       const searchLower = search.trim().toLowerCase();
       const searchUpper = search.trim().toUpperCase();
       
-      // Search in RMA number
       if (r.request_number?.toUpperCase().includes(searchUpper)) return true;
-      
-      // Search in company name
       if (r.companies?.name?.toLowerCase().includes(searchLower)) return true;
       
-      // Search in device serial numbers
       const devices = r.request_devices || [];
       if (devices.some(d => d.serial_number?.toUpperCase().includes(searchUpper))) return true;
-      
-      // Search in device models
       if (devices.some(d => d.model_name?.toLowerCase().includes(searchLower))) return true;
       
       return false;
@@ -5408,9 +5416,22 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
     
     return true;
   }).sort((a, b) => {
-    // Open chats first, then by most recent message
-    if (a.chat_status === 'open' && b.chat_status !== 'open') return -1;
-    if (b.chat_status === 'open' && a.chat_status !== 'open') return 1;
+    // Sort: Open with unread first (oldest first = FIFO), then other open, then closed
+    const aUnread = (a.unread_admin_count || 0) > 0;
+    const bUnread = (b.unread_admin_count || 0) > 0;
+    const aOpen = a.chat_status === 'open' || aUnread;
+    const bOpen = b.chat_status === 'open' || bUnread;
+    
+    if (aOpen && !bOpen) return -1;
+    if (bOpen && !aOpen) return 1;
+    
+    // Both open - oldest first (FIFO queue)
+    if (aOpen && bOpen) {
+      return new Date(a.last_message_at || a.chat_opened_at || a.updated_at) - 
+             new Date(b.last_message_at || b.chat_opened_at || b.updated_at);
+    }
+    
+    // Both closed - newest first
     return new Date(b.updated_at) - new Date(a.updated_at);
   });
   
@@ -5428,13 +5449,35 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
         .eq('request_id', selectedRMA.id)
         .order('created_at', { ascending: true });
       if (data) setMessages(data);
+      
+      // Mark messages as read
+      if (selectedRMA.unread_admin_count > 0) {
+        await supabase.from('messages')
+          .update({ is_read: true, read_at: new Date().toISOString() })
+          .eq('request_id', selectedRMA.id)
+          .eq('sender_type', 'customer')
+          .eq('is_read', false);
+        
+        await supabase.from('service_requests')
+          .update({ unread_admin_count: 0 })
+          .eq('id', selectedRMA.id);
+        
+        reload();
+      }
     };
     loadMessages();
+    
+    // Clear translation states when changing RMA
+    setEnglishInput('');
+    setFrenchOutput('');
+    setAiSuggestion({ french: '', english: '' });
+    setTranslatedMessages({});
   }, [selectedRMA?.id]);
   
-  // Send message
-  const sendMessage = async () => {
-    if (!newMessage.trim() || sendingMessage || !selectedRMA) return;
+  // Send message (French version)
+  const sendMessage = async (messageToSend = null) => {
+    const content = messageToSend || newMessage;
+    if (!content.trim() || sendingMessage || !selectedRMA) return;
     
     setSendingMessage(true);
     try {
@@ -5445,7 +5488,7 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
           sender_id: profile?.id,
           sender_type: 'admin',
           sender_name: profile?.full_name || 'Admin',
-          content: newMessage.trim()
+          content: content.trim()
         })
         .select()
         .single();
@@ -5454,6 +5497,9 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
       
       setMessages(prev => [...prev, data]);
       setNewMessage('');
+      setFrenchOutput('');
+      setEnglishInput('');
+      setAiSuggestion({ french: '', english: '' });
       
       // Auto-open chat if it was closed
       if (selectedRMA.chat_status !== 'open') {
@@ -5465,6 +5511,7 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
       }
       
       notify('✅ Message envoyé!');
+      reload();
     } catch (err) {
       notify('Erreur: ' + err.message, 'error');
     }
@@ -5487,13 +5534,119 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
     reload();
   };
   
+  // === AI FUNCTIONS ===
+  
+  // Translate English to French
+  const translateToFrench = async () => {
+    if (!englishInput.trim()) return;
+    
+    setTranslating(true);
+    try {
+      const response = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: englishInput,
+          direction: 'en-to-fr'
+        })
+      });
+      
+      if (!response.ok) throw new Error('Translation failed');
+      
+      const data = await response.json();
+      setFrenchOutput(data.translation);
+    } catch (err) {
+      notify('Erreur de traduction: ' + err.message, 'error');
+    }
+    setTranslating(false);
+  };
+  
+  // Translate customer message to English
+  const translateCustomerMessage = async (msgId, text) => {
+    if (translatedMessages[msgId]) return; // Already translated
+    
+    setTranslatedMessages(prev => ({ ...prev, [msgId]: 'Translating...' }));
+    
+    try {
+      const response = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: text,
+          direction: 'fr-to-en'
+        })
+      });
+      
+      if (!response.ok) throw new Error('Translation failed');
+      
+      const data = await response.json();
+      setTranslatedMessages(prev => ({ ...prev, [msgId]: data.translation }));
+    } catch (err) {
+      setTranslatedMessages(prev => ({ ...prev, [msgId]: 'Translation error' }));
+    }
+  };
+  
+  // Generate AI suggestion based on RMA and chat context
+  const generateAISuggestion = async () => {
+    if (!selectedRMA) return;
+    
+    setGeneratingAI(true);
+    try {
+      const response = await fetch('/api/chat-suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rma: {
+            request_number: selectedRMA.request_number,
+            status: selectedRMA.status,
+            requested_service: selectedRMA.requested_service,
+            company_name: selectedRMA.companies?.name,
+            devices: selectedRMA.request_devices?.map(d => ({
+              model: d.model_name,
+              serial: d.serial_number,
+              status: d.status,
+              service_type: d.service_type
+            }))
+          },
+          messages: messages.slice(-10).map(m => ({
+            sender: m.sender_type,
+            content: m.content,
+            date: m.created_at
+          }))
+        })
+      });
+      
+      if (!response.ok) throw new Error('AI generation failed');
+      
+      const data = await response.json();
+      setAiSuggestion({
+        french: data.french,
+        english: data.english
+      });
+    } catch (err) {
+      notify('Erreur AI: ' + err.message, 'error');
+    }
+    setGeneratingAI(false);
+  };
+  
+  // Count total unread messages
+  const totalUnread = requests.reduce((sum, r) => sum + (r.unread_admin_count || 0), 0);
+  const openCount = requests.filter(r => r.chat_status === 'open' || (r.unread_admin_count || 0) > 0).length;
+  
   return (
     <div className="p-6">
       <div className="flex gap-6 h-[calc(100vh-200px)]">
         {/* Left Panel - RMA List */}
         <div className="w-1/3 bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col">
           <div className="p-4 border-b bg-gray-50">
-            <h2 className="font-bold text-gray-800 mb-3">💬 Conversations</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-bold text-gray-800">💬 Conversations</h2>
+              {totalUnread > 0 && (
+                <span className="px-2 py-1 bg-red-500 text-white rounded-full text-xs font-bold animate-pulse">
+                  {totalUnread} non lu{totalUnread > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
             
             {/* Search Input */}
             <div className="mb-3">
@@ -5508,7 +5661,7 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
             
             <div className="flex gap-2">
               {[
-                { id: 'open', label: 'Ouverts', count: requests.filter(r => r.chat_status === 'open').length },
+                { id: 'open', label: 'Ouverts', count: openCount },
                 { id: 'closed', label: 'Fermés' },
                 { id: 'all', label: 'Tous' }
               ].map(f => (
@@ -5523,7 +5676,7 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
                 >
                   {f.label}
                   {f.count > 0 && (
-                    <span className={`px-1.5 py-0.5 rounded-full text-xs ${filter === f.id ? 'bg-white/20' : 'bg-amber-500 text-white'}`}>
+                    <span className={`px-1.5 py-0.5 rounded-full text-xs ${filter === f.id ? 'bg-white/20' : 'bg-red-500 text-white'}`}>
                       {f.count}
                     </span>
                   )}
@@ -5538,28 +5691,38 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
                 {search.trim() ? 'Aucun résultat pour cette recherche' : 'Aucune conversation'}
               </p>
             ) : (
-              filteredRMAs.map(rma => (
-                <div
-                  key={rma.id}
-                  onClick={() => setSelectedRMA(rma)}
-                  className={`p-4 cursor-pointer transition-colors ${
-                    selectedRMA?.id === rma.id 
-                      ? 'bg-blue-50 border-l-4 border-blue-500' 
-                      : 'hover:bg-gray-50'
-                  }`}
-                >
-                  <div className="flex items-start justify-between mb-1">
-                    <span className="font-mono font-bold text-sm text-[#00A651]">{rma.request_number}</span>
-                    {rma.chat_status === 'open' && (
-                      <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
-                    )}
+              filteredRMAs.map(rma => {
+                const unread = rma.unread_admin_count || 0;
+                return (
+                  <div
+                    key={rma.id}
+                    onClick={() => setSelectedRMA(rma)}
+                    className={`p-4 cursor-pointer transition-colors ${
+                      selectedRMA?.id === rma.id 
+                        ? 'bg-blue-50 border-l-4 border-blue-500' 
+                        : unread > 0 ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between mb-1">
+                      <span className="font-mono font-bold text-sm text-[#00A651]">{rma.request_number}</span>
+                      <div className="flex items-center gap-2">
+                        {unread > 0 && (
+                          <span className="px-2 py-0.5 bg-red-500 text-white rounded-full text-xs font-bold">
+                            {unread}
+                          </span>
+                        )}
+                        {rma.chat_status === 'open' && (
+                          <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
+                        )}
+                      </div>
+                    </div>
+                    <p className="font-medium text-gray-800 text-sm truncate">{rma.companies?.name}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {rma.request_devices?.length || 0} appareil(s) • {new Date(rma.last_message_at || rma.updated_at).toLocaleDateString('fr-FR')}
+                    </p>
                   </div>
-                  <p className="font-medium text-gray-800 text-sm truncate">{rma.companies?.name}</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {rma.request_devices?.length || 0} appareil(s) • {new Date(rma.updated_at).toLocaleDateString('fr-FR')}
-                  </p>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -5587,6 +5750,14 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
                   <p className="text-sm text-gray-600">{selectedRMA.companies?.name}</p>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setTranslationMode(!translationMode)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                      translationMode ? 'bg-purple-500 text-white' : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                    }`}
+                  >
+                    🌐 {translationMode ? 'Mode Normal' : 'Traduction'}
+                  </button>
                   <button
                     onClick={toggleChatStatus}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -5620,45 +5791,139 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
                       }`}>
                         <div className="flex justify-between items-start mb-1 gap-4">
                           <span className={`text-xs font-medium ${msg.sender_type === 'admin' ? 'text-blue-100' : 'text-gray-500'}`}>
-                            {msg.sender_type === 'admin' ? (msg.sender_name || 'Admin') : 'Client'}
+                            {msg.sender_type === 'admin' ? (msg.sender_name || 'Admin') : (msg.sender_name || 'Client')}
                           </span>
                           <span className={`text-xs ${msg.sender_type === 'admin' ? 'text-blue-200' : 'text-gray-400'}`}>
                             {new Date(msg.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
                         <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                        
+                        {/* Translation for customer messages */}
+                        {translationMode && msg.sender_type === 'customer' && (
+                          <div className="mt-2 pt-2 border-t border-gray-200">
+                            {translatedMessages[msg.id] ? (
+                              <p className="text-xs text-blue-600 italic">🇬🇧 {translatedMessages[msg.id]}</p>
+                            ) : (
+                              <button
+                                onClick={() => translateCustomerMessage(msg.id, msg.content)}
+                                className="text-xs text-blue-500 hover:underline"
+                              >
+                                🇬🇧 Translate to English
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))
                 )}
               </div>
               
-              {/* Message Input */}
-              <div className="p-4 border-t bg-gray-50">
-                <div className="flex gap-2">
-                  <textarea
-                    value={newMessage}
-                    onChange={e => setNewMessage(e.target.value)}
-                    placeholder="Tapez votre message..."
-                    className="flex-1 px-4 py-2 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    rows={2}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        sendMessage();
-                      }
-                    }}
-                  />
-                  <button
-                    onClick={sendMessage}
-                    disabled={sendingMessage || !newMessage.trim()}
-                    className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed self-end"
-                  >
-                    {sendingMessage ? '⏳' : '📤'}
-                  </button>
+              {/* Translation Mode Panel */}
+              {translationMode && (
+                <div className="border-t bg-purple-50 p-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Left: Write in English */}
+                    <div>
+                      <label className="text-sm font-medium text-purple-800 mb-2 block">🇬🇧 Write in English</label>
+                      <textarea
+                        value={englishInput}
+                        onChange={e => setEnglishInput(e.target.value)}
+                        placeholder="Type your message in English..."
+                        className="w-full px-3 py-2 border border-purple-200 rounded-lg text-sm h-24 resize-none focus:ring-2 focus:ring-purple-500"
+                      />
+                      <button
+                        onClick={translateToFrench}
+                        disabled={translating || !englishInput.trim()}
+                        className="mt-2 px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+                      >
+                        {translating ? '⏳ Translating...' : '🔄 Translate to French'}
+                      </button>
+                    </div>
+                    
+                    {/* Right: French output */}
+                    <div>
+                      <label className="text-sm font-medium text-purple-800 mb-2 block">🇫🇷 French Version (to send)</label>
+                      <textarea
+                        value={frenchOutput}
+                        onChange={e => setFrenchOutput(e.target.value)}
+                        placeholder="French translation will appear here..."
+                        className="w-full px-3 py-2 border border-purple-200 rounded-lg text-sm h-24 resize-none bg-white focus:ring-2 focus:ring-purple-500"
+                      />
+                      <button
+                        onClick={() => sendMessage(frenchOutput)}
+                        disabled={sendingMessage || !frenchOutput.trim()}
+                        className="mt-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+                      >
+                        {sendingMessage ? '⏳ Sending...' : '📤 Send French Message'}
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* AI Suggestion Section */}
+                  <div className="mt-4 pt-4 border-t border-purple-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium text-purple-800">🤖 AI Suggested Response</label>
+                      <button
+                        onClick={generateAISuggestion}
+                        disabled={generatingAI}
+                        className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-medium disabled:opacity-50"
+                      >
+                        {generatingAI ? '⏳ Generating...' : '✨ Generate Suggestion'}
+                      </button>
+                    </div>
+                    
+                    {aiSuggestion.french && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-white rounded-lg p-3 border border-purple-200">
+                          <p className="text-xs font-medium text-gray-500 mb-1">🇬🇧 English</p>
+                          <p className="text-sm text-gray-700">{aiSuggestion.english}</p>
+                        </div>
+                        <div className="bg-white rounded-lg p-3 border border-purple-200">
+                          <p className="text-xs font-medium text-gray-500 mb-1">🇫🇷 French</p>
+                          <p className="text-sm text-gray-700">{aiSuggestion.french}</p>
+                          <button
+                            onClick={() => setFrenchOutput(aiSuggestion.french)}
+                            className="mt-2 text-xs text-purple-600 hover:underline"
+                          >
+                            Use this response →
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Entrée pour envoyer • Shift+Entrée pour nouvelle ligne</p>
-              </div>
+              )}
+              
+              {/* Normal Message Input (when not in translation mode) */}
+              {!translationMode && (
+                <div className="p-4 border-t bg-gray-50">
+                  <div className="flex gap-2">
+                    <textarea
+                      value={newMessage}
+                      onChange={e => setNewMessage(e.target.value)}
+                      placeholder="Tapez votre message..."
+                      className="flex-1 px-4 py-2 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      rows={2}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          sendMessage();
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={() => sendMessage()}
+                      disabled={sendingMessage || !newMessage.trim()}
+                      className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed self-end"
+                    >
+                      {sendingMessage ? '⏳' : '📤'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">Entrée pour envoyer • Shift+Entrée pour nouvelle ligne</p>
+                </div>
+              )}
             </>
           )}
         </div>
