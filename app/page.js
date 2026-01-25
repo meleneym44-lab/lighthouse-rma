@@ -2579,6 +2579,7 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
         request_id: selectedThread.request.id,
         sender_id: profile.id,
         sender_type: 'customer',
+        sender_name: profile.full_name || 'Client',
         content: newMessage.trim()
       })
       .select()
@@ -6480,6 +6481,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         request_id: request.id,
         sender_id: profile.id,
         sender_type: 'customer',
+        sender_name: profile.full_name || 'Client',
         content: newMessage.trim()
       })
       .select()
@@ -6489,6 +6491,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       setMessages([...messages, data]);
       setNewMessage('');
       notify('Message envoyé!');
+    } else if (error) {
+      notify('Erreur: ' + error.message, 'error');
     }
     setSending(false);
   };
