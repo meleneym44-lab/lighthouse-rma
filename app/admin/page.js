@@ -2758,12 +2758,42 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
         
         {/* Ready to ship - show shipping button */}
         {isReadyToShip && (
-          <button
-            onClick={onOpenShipping}
-            className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium flex items-center gap-2"
-          >
-            🚚 Préparer Expédition
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onOpenShipping}
+              className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium flex items-center gap-2"
+            >
+              🚚 Préparer Expédition
+            </button>
+            <button
+              onClick={async () => {
+                if (!confirm('Marquer tous les appareils comme expédiés et fermer le RMA?')) return;
+                setSaving(true);
+                try {
+                  for (const device of devices) {
+                    await supabase.from('request_devices').update({ 
+                      status: 'shipped', 
+                      shipped_at: new Date().toISOString()
+                    }).eq('id', device.id);
+                  }
+                  await supabase.from('service_requests').update({ 
+                    status: 'shipped', 
+                    shipped_at: new Date().toISOString(), 
+                    updated_at: new Date().toISOString() 
+                  }).eq('id', rma.id);
+                  notify('🚚 RMA marqué comme expédié!');
+                  reload();
+                } catch (err) {
+                  notify('Erreur: ' + err.message, 'error');
+                }
+                setSaving(false);
+              }}
+              disabled={saving}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center gap-2 disabled:opacity-50"
+            >
+              {saving ? '⏳...' : '📦 Marquer Expédié'}
+            </button>
+          </div>
         )}
         
         {/* Status indicator when no actions available */}
@@ -4836,7 +4866,8 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     setBlsPrinted(prev => ({ ...prev, [index]: true }));
   };
   
-  const completeShipping = async () => {
+  // Save shipping documents (BL, UPS labels) but don't mark as shipped yet
+  const saveShippingDocs = async () => {
     setSaving(true);
     try {
       const blData = [];
@@ -4895,10 +4926,9 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           console.error('UPS Label PDF generation error:', pdfErr);
         }
         
+        // Update devices with docs but keep ready_to_ship status
         for (const d of s.devices) {
           const updateData = { 
-            status: 'shipped', 
-            shipped_at: new Date().toISOString(), 
             tracking_number: s.trackingNumber || null, 
             bl_number: bl.blNumber
           };
@@ -4910,14 +4940,10 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           await supabase.from('request_devices').update(updateData).eq('id', d.id);
         }
       }
-      await supabase.from('service_requests').update({ 
-        status: 'shipped', 
-        shipped_at: new Date().toISOString(), 
-        updated_at: new Date().toISOString() 
-      }).eq('id', rma.id);
+      
       setGeneratedBLs(blData);
-      setStep(4);
-      notify('✅ Expédition complétée!');
+      setStep(4); // Move to final step
+      notify('✅ Documents d\'expédition enregistrés! Prêt pour scan UPS.');
       reload();
     } catch (err) { 
       notify('Erreur: ' + (err.message || 'Erreur'), 'error'); 
@@ -4925,7 +4951,35 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     setSaving(false);
   };
   
-  const stepLabels = ['Vérification', 'Étiquette UPS', 'Bon de Livraison', 'Terminé'];
+  // Mark as shipped - closes the RMA (will be triggered by barcode scan later)
+  const markAsShipped = async () => {
+    setSaving(true);
+    try {
+      // Update all devices to shipped
+      for (const device of devices) {
+        await supabase.from('request_devices').update({ 
+          status: 'shipped', 
+          shipped_at: new Date().toISOString()
+        }).eq('id', device.id);
+      }
+      
+      // Update RMA to shipped (closes it)
+      await supabase.from('service_requests').update({ 
+        status: 'shipped', 
+        shipped_at: new Date().toISOString(), 
+        updated_at: new Date().toISOString() 
+      }).eq('id', rma.id);
+      
+      notify('🚚 RMA marqué comme expédié et fermé!');
+      reload();
+      onBack(); // Go back to dashboard since RMA is now closed
+    } catch (err) { 
+      notify('Erreur: ' + (err.message || 'Erreur'), 'error'); 
+    }
+    setSaving(false);
+  };
+  
+  const stepLabels = ['Vérification', 'Étiquette UPS', 'Bon de Livraison', 'Expédier'];
   
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
@@ -5257,11 +5311,16 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           {step === 3 && (
             <>
               <button onClick={() => setStep(2)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">← Retour</button>
-              <button onClick={completeShipping} disabled={saving} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">{saving ? '⏳ Traitement...' : '✅ Finaliser Expédition'}</button>
+              <button onClick={saveShippingDocs} disabled={saving} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">{saving ? '⏳ Traitement...' : '💾 Enregistrer Documents'}</button>
             </>
           )}
           {step === 4 && (
-            <button onClick={onClose} className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium ml-auto">📋 Voir le RMA Complété</button>
+            <div className="flex gap-3 ml-auto">
+              <button onClick={onClose} className="px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">📋 Voir le RMA</button>
+              <button onClick={markAsShipped} disabled={saving} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50">
+                {saving ? '⏳...' : '🚚 Marquer Expédié (Fermer RMA)'}
+              </button>
+            </div>
           )}
         </div>
       </div>
