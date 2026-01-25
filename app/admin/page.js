@@ -10917,7 +10917,9 @@ function RentalsSheet({ rentals, clients, notify, reload, profile, businessSetti
     </div>
   );
 }
-, inventory, onSave, onClose }) {
+
+// Rental Bundle Modal
+function RentalBundleModal({ bundle, inventory, onSave, onClose }) {
   const [formData, setFormData] = useState({
     bundle_name: bundle?.bundle_name || '',
     bundle_code: bundle?.bundle_code || '',
