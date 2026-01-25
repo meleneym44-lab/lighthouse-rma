@@ -4010,7 +4010,7 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
 
       {/* Report Document - Exact replica of PDF */}
       <div className="bg-gray-400 p-8 min-h-full flex justify-center">
-        <div className="bg-white shadow-2xl w-full max-w-3xl relative" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '1000px', display: 'flex', flexDirection: 'column' }}>
+        <div className="bg-white shadow-2xl w-full max-w-3xl relative" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '297mm', display: 'flex', flexDirection: 'column' }}>
           
           {/* Logo Header - Using actual logo image */}
           <div className="mb-10">
@@ -5934,7 +5934,8 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
       // Generate Report PDF using HTML capture (matches preview exactly)
       let reportUrl = null;
       try {
-        const checklist = device.work_checklist ? Object.entries(device.work_checklist).map(([key, val]) => ({ id: key, label: key, checked: val })) : [];
+        const checklistArr = device.work_checklist ? Object.entries(device.work_checklist).map(([key, val]) => ({ id: key, label: key, checked: val })) : [];
+        console.log('Generating report PDF...');
         const pdfBlob = await generateReportPDFFromHTML(
           device, rma, 
           device.technician_name, 
@@ -5942,12 +5943,16 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
           device.reception_result,
           device.service_findings, 
           device.work_completed, 
-          checklist
+          checklistArr
         );
+        console.log('PDF generated, blob size:', pdfBlob.size);
         const fileName = `${rma.request_number}_${device.serial_number}_rapport_${Date.now()}.pdf`;
+        console.log('Uploading to storage...', fileName);
         reportUrl = await uploadPDFToStorage(pdfBlob, `reports/${rma.request_number}`, fileName);
+        console.log('Upload complete, URL:', reportUrl);
       } catch (pdfErr) {
-        console.error('Report PDF generation error:', pdfErr);
+        console.error('Report PDF generation/upload error:', pdfErr);
+        notify('⚠️ PDF error: ' + pdfErr.message, 'error');
       }
       
       const updateData = {
@@ -5959,11 +5964,18 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
       };
       
       // Add report URL if generated
-      if (reportUrl) updateData.report_url = reportUrl;
+      if (reportUrl) {
+        updateData.report_url = reportUrl;
+        console.log('Adding report_url to update:', reportUrl);
+      }
       
+      console.log('Updating device with:', updateData);
       const { error } = await supabase.from('request_devices').update(updateData).eq('id', device.id);
       
-      if (error) throw error;
+      if (error) {
+        console.error('Database update error:', error);
+        throw error;
+      }
       
       // Check if all devices in this RMA are now ready to ship
       const allDevices = rma.request_devices || [];
@@ -5978,9 +5990,10 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
         }).eq('id', rma.id);
       }
       
-      notify('✓ Contrôle qualité validé - Rapport PDF enregistré!');
+      notify(reportUrl ? '✓ QC validé + Rapport PDF enregistré!' : '✓ QC validé (PDF non généré)');
       onBack();
     } catch (err) {
+      console.error('approveQC error:', err);
       notify('Erreur: ' + err.message, 'error');
     }
     setSaving(false);
@@ -6032,7 +6045,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
       {step === 1 && (
         <div className="space-y-4">
           <div className="bg-gray-400 p-8 min-h-full flex justify-center">
-            <div id="qc-report-preview" className="bg-white shadow-2xl w-full max-w-3xl relative" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '800px', display: 'flex', flexDirection: 'column' }}>
+            <div id="qc-report-preview" className="bg-white shadow-2xl w-full max-w-3xl relative" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '297mm', display: 'flex', flexDirection: 'column' }}>
               
               {/* Logo */}
               <div className="mb-8">
