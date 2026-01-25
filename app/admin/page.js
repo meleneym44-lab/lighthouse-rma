@@ -2256,10 +2256,10 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
   const devices = rma.request_devices || [];
   
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex" onClick={onClose}>
-      <div className="bg-white w-full max-w-6xl m-auto rounded-xl overflow-hidden flex flex-col max-h-[95vh]" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={onClose}>
+      <div className="bg-white w-full h-full max-w-[98vw] max-h-[98vh] m-auto rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="px-6 py-4 bg-gradient-to-r from-red-500 to-red-600 text-white flex justify-between items-center">
+        <div className="px-6 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white flex justify-between items-center flex-shrink-0">
           <div>
             <h2 className="text-xl font-bold">Vérification du Bon de Commande</h2>
             <p className="text-red-100">{rma.request_number} • {rma.companies?.name}</p>
@@ -2268,142 +2268,139 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
         </div>
         
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="grid lg:grid-cols-2 gap-6">
-            {/* Left: Document Preview */}
-            <div className="space-y-4">
-              <h3 className="font-bold text-gray-800 text-lg">📄 Document BC</h3>
-              
-              {/* BC File */}
-              {rma.bc_file_url ? (
-                <div className="border-2 border-gray-200 rounded-lg overflow-hidden">
-                  <div className="bg-gray-100 px-4 py-2 flex justify-between items-center">
-                    <span className="font-medium">Fichier BC uploadé</span>
-                    <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
-                      Ouvrir dans nouvel onglet ↗
-                    </a>
-                  </div>
-                  {rma.bc_file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                    <img src={rma.bc_file_url} alt="BC Document" className="w-full" />
-                  ) : rma.bc_file_url.match(/\.pdf$/i) ? (
-                    <iframe src={rma.bc_file_url} className="w-full h-96" title="BC PDF" />
-                  ) : (
-                    <div className="p-8 text-center">
-                      <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-6 py-3 bg-blue-500 text-white rounded-lg inline-block">
-                        📥 Télécharger le fichier
-                      </a>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center text-gray-400">
-                  Aucun fichier BC uploadé
-                </div>
-              )}
-              
-              {/* Signature */}
-              {rma.bc_signature_url && (
-                <div className="border-2 border-gray-200 rounded-lg overflow-hidden">
-                  <div className="bg-gray-100 px-4 py-2">
-                    <span className="font-medium">Signature électronique</span>
-                  </div>
-                  <div className="p-4 bg-white">
-                    <img src={rma.bc_signature_url} alt="Signature" className="max-h-32 mx-auto" />
-                    <p className="text-center text-sm text-gray-500 mt-2">
-                      Signé par: <strong>{rma.bc_signed_by || '—'}</strong>
-                      {rma.bc_signature_date && <span> le {new Date(rma.bc_signature_date).toLocaleDateString('fr-FR')}</span>}
-                    </p>
-                  </div>
-                </div>
+        <div className="flex-1 overflow-hidden flex">
+          {/* Left: Document Preview - Takes most of the space */}
+          <div className="flex-1 flex flex-col bg-gray-800 p-4">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-bold text-white text-lg">📄 Document BC</h3>
+              {rma.bc_file_url && (
+                <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">
+                  Ouvrir dans nouvel onglet ↗
+                </a>
               )}
             </div>
             
-            {/* Right: Order Details */}
-            <div className="space-y-4">
-              <h3 className="font-bold text-gray-800 text-lg">📋 Détails de la Commande</h3>
-              
-              {/* RMA Info */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-500">N° RMA</p>
-                    <p className="font-mono font-bold text-[#00A651]">{rma.request_number}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Service demandé</p>
-                    <p className="font-medium">{rma.requested_service}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Date soumission BC</p>
-                    <p className="font-medium">{rma.bc_submitted_at ? new Date(rma.bc_submitted_at).toLocaleString('fr-FR') : '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Client</p>
-                    <p className="font-medium">{rma.companies?.name}</p>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Devices */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="font-medium text-gray-700 mb-3">Appareils ({devices.length})</h4>
-                <div className="space-y-2">
-                  {devices.map((d, i) => (
-                    <div key={i} className="bg-white rounded p-3 border">
-                      <p className="font-medium">{d.model_name}</p>
-                      <p className="text-sm text-gray-500">SN: {d.serial_number} • {d.service_type}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Quote Info (if available) */}
-              {(rma.quote_total || rma.quote_url) && (
-                <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                  <h4 className="font-medium text-blue-800 mb-2">💰 Devis envoyé</h4>
-                  {rma.quote_total && <p className="text-2xl font-bold text-blue-700">{rma.quote_total.toFixed(2)} €</p>}
-                  {rma.quote_url && (
-                    <a href={rma.quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
-                      Voir le devis ↗
+            {/* BC File - Full height PDF viewer */}
+            {rma.bc_file_url ? (
+              <div className="flex-1 rounded-lg overflow-hidden bg-white">
+                {rma.bc_file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                  <img src={rma.bc_file_url} alt="BC Document" className="w-full h-full object-contain" />
+                ) : rma.bc_file_url.match(/\.pdf$/i) ? (
+                  <iframe 
+                    src={`${rma.bc_file_url}#toolbar=1&navpanes=1&scrollbar=1&view=FitH`} 
+                    className="w-full h-full" 
+                    title="BC PDF"
+                    style={{ minHeight: '100%' }}
+                  />
+                ) : (
+                  <div className="h-full flex items-center justify-center">
+                    <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-8 py-4 bg-blue-500 text-white rounded-lg text-lg font-medium">
+                      📥 Télécharger le fichier
                     </a>
-                  )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex-1 border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center text-gray-400 text-lg">
+                Aucun fichier BC uploadé
+              </div>
+            )}
+          </div>
+          
+          {/* Right: Order Details - Sidebar */}
+          <div className="w-96 flex-shrink-0 bg-gray-50 overflow-y-auto p-4 space-y-4">
+            <h3 className="font-bold text-gray-800 text-lg">📋 Détails de la Commande</h3>
+            
+            {/* RMA Info */}
+            <div className="bg-white rounded-lg p-4 border">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-gray-500">N° RMA</p>
+                  <p className="font-mono font-bold text-[#00A651]">{rma.request_number}</p>
                 </div>
-              )}
-              
-              {/* Reject Reason Input */}
-              <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-                <h4 className="font-medium text-red-800 mb-2">Refuser le BC?</h4>
-                <textarea
-                  value={rejectReason}
-                  onChange={e => setRejectReason(e.target.value)}
-                  placeholder="Indiquez la raison du refus (document illisible, montant incorrect, etc.)..."
-                  className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm h-20 resize-none"
-                />
+                <div>
+                  <p className="text-gray-500">Service</p>
+                  <p className="font-medium">{rma.requested_service}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Soumission BC</p>
+                  <p className="font-medium">{rma.bc_submitted_at ? new Date(rma.bc_submitted_at).toLocaleString('fr-FR') : '—'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Client</p>
+                  <p className="font-medium">{rma.companies?.name}</p>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-        
-        {/* Footer Actions */}
-        <div className="px-6 py-4 bg-gray-100 border-t flex justify-between items-center">
-          <button onClick={onClose} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
-            Annuler
-          </button>
-          <div className="flex gap-3">
-            <button
-              onClick={rejectBC}
-              disabled={rejecting}
-              className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50"
-            >
-              {rejecting ? 'Refus...' : '❌ Refuser BC'}
-            </button>
-            <button
-              onClick={approveBC}
-              disabled={approving}
-              className="px-8 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50"
-            >
-              {approving ? 'Approbation...' : '✅ Approuver BC'}
-            </button>
+            
+            {/* Signature */}
+            {rma.bc_signature_url && (
+              <div className="bg-white rounded-lg p-4 border">
+                <h4 className="font-medium text-gray-700 mb-2">✍️ Signature</h4>
+                <img src={rma.bc_signature_url} alt="Signature" className="max-h-20 mx-auto bg-gray-50 rounded p-2" />
+                <p className="text-center text-xs text-gray-500 mt-1">
+                  {rma.bc_signed_by || '—'} {rma.bc_signature_date && `• ${new Date(rma.bc_signature_date).toLocaleDateString('fr-FR')}`}
+                </p>
+              </div>
+            )}
+            
+            {/* Devices */}
+            <div className="bg-white rounded-lg p-4 border">
+              <h4 className="font-medium text-gray-700 mb-2">📦 Appareils ({devices.length})</h4>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {devices.map((d, i) => (
+                  <div key={i} className="bg-gray-50 rounded p-2 text-sm">
+                    <p className="font-medium">{d.model_name}</p>
+                    <p className="text-gray-500">SN: {d.serial_number}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            {/* Quote Info */}
+            {(rma.quote_total || rma.quote_url) && (
+              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                <h4 className="font-medium text-blue-800 mb-1">💰 Devis</h4>
+                {rma.quote_total && <p className="text-xl font-bold text-blue-700">{rma.quote_total.toFixed(2)} €</p>}
+                {rma.quote_url && (
+                  <a href={rma.quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
+                    Voir le devis ↗
+                  </a>
+                )}
+              </div>
+            )}
+            
+            {/* Reject Reason */}
+            <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+              <h4 className="font-medium text-red-800 mb-2">Refuser le BC?</h4>
+              <textarea
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+                placeholder="Raison du refus..."
+                className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm h-20 resize-none"
+              />
+            </div>
+            
+            {/* Actions */}
+            <div className="space-y-2 pt-2">
+              <button
+                onClick={approveBC}
+                disabled={approving}
+                className="w-full px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50"
+              >
+                {approving ? 'Approbation...' : '✅ Approuver BC'}
+              </button>
+              <button
+                onClick={rejectBC}
+                disabled={rejecting}
+                className="w-full px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                {rejecting ? 'Refus...' : '❌ Refuser BC'}
+              </button>
+              <button onClick={onClose} className="w-full px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
+                Annuler
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -2873,7 +2870,13 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     const deviceServiceType = device.service_type || rma.requested_service || 'calibration';
     const isRepair = deviceServiceType === 'repair';
     const steps = isRepair ? repairSteps : calibrationSteps;
-    const currentIndex = getStepIndex(device.status || rma.status, isRepair);
+    
+    // Smart status: use device.status only if it's a "real" device status (received onwards)
+    // For early stages (before device arrives), use RMA status
+    const deviceSpecificStatuses = ['received', 'in_queue', 'inspection', 'calibration', 'calibration_in_progress', 
+      'repair', 'repair_in_progress', 'final_qc', 'qc_complete', 'qc_rejected', 'ready_to_ship', 'shipped', 'completed'];
+    const effectiveStatus = deviceSpecificStatuses.includes(device.status) ? device.status : rma.status;
+    const currentIndex = getStepIndex(effectiveStatus, isRepair);
     
     return (
       <div className="flex items-center w-full">
