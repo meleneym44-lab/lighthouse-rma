@@ -1295,7 +1295,17 @@ const T = {
     country: 'Pays', setDefault: 'Définir par défaut', default: 'Par défaut',
     // Messages
     noEquipment: 'Aucun équipement enregistré', noRequests: 'Aucune demande',
-    addEquipmentFirst: 'Ajoutez d\'abord vos équipements', charactersRemaining: 'caractères restants'
+    addEquipmentFirst: 'Ajoutez d\'abord vos équipements', charactersRemaining: 'caractères restants',
+    // Rentals
+    rentals: 'Locations', rental: 'Location', rentalRequest: 'Demande de Location',
+    rentalHistory: 'Historique des Locations', selectDates: 'Sélectionner les dates',
+    startDate: 'Date de début', endDate: 'Date de fin', rentalPeriod: 'Période de location',
+    days: 'jours', perDay: 'par jour', perWeek: 'par semaine', perMonth: 'par mois',
+    availableDevices: 'Appareils disponibles', unavailable: 'Indisponible',
+    selectDevice: 'Sélectionner un appareil', bundle: 'Kit', deviceBundle: 'Kit d\'appareils',
+    rentalTotal: 'Total location', submitRentalRequest: 'Soumettre la demande de location',
+    noRentals: 'Aucune location', inRental: 'En location', returnPending: 'Retour en attente',
+    returned: 'Retourné'
   },
   en: {
     dashboard: 'Dashboard', newRequest: 'New Request', myRequests: 'My Requests',
@@ -1330,7 +1340,17 @@ const T = {
     country: 'Country', setDefault: 'Set as default', default: 'Default',
     // Messages
     noEquipment: 'No equipment registered', noRequests: 'No requests',
-    addEquipmentFirst: 'Add your equipment first', charactersRemaining: 'characters remaining'
+    addEquipmentFirst: 'Add your equipment first', charactersRemaining: 'characters remaining',
+    // Rentals
+    rentals: 'Rentals', rental: 'Rental', rentalRequest: 'Rental Request',
+    rentalHistory: 'Rental History', selectDates: 'Select dates',
+    startDate: 'Start date', endDate: 'End date', rentalPeriod: 'Rental period',
+    days: 'days', perDay: 'per day', perWeek: 'per week', perMonth: 'per month',
+    availableDevices: 'Available devices', unavailable: 'Unavailable',
+    selectDevice: 'Select a device', bundle: 'Bundle', deviceBundle: 'Device bundle',
+    rentalTotal: 'Rental total', submitRentalRequest: 'Submit rental request',
+    noRentals: 'No rentals', inRental: 'In rental', returnPending: 'Return pending',
+    returned: 'Returned'
   }
 };
 
@@ -1384,7 +1404,19 @@ const STATUS_STYLES = {
   
   // === HOLD/ISSUES ===
   on_hold: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'En attente', icon: '!', progress: 0 },
-  cancelled: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-400', label: 'Annulé', icon: '✕', progress: 0 }
+  cancelled: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-400', label: 'Annulé', icon: '✕', progress: 0 },
+  
+  // === RENTAL FLOW ===
+  rental_requested: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'Demande soumise', icon: '○', progress: 10 },
+  rental_quote_sent: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé', icon: '💰', progress: 20 },
+  rental_waiting_bc: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', label: 'En attente BC', icon: '◑', progress: 30 },
+  rental_bc_review: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'BC en vérification', icon: '📄', progress: 35 },
+  rental_bc_approved: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-300', label: 'BC approuvé', icon: '✓', progress: 40 },
+  rental_shipped: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'Expédié', icon: '📦', progress: 50 },
+  in_rental: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'En location', icon: '◉', progress: 70 },
+  return_pending: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-300', label: 'Retour en attente', icon: '◐', progress: 85 },
+  rental_returned: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-300', label: 'Retourné', icon: '◕', progress: 95 },
+  rental_completed: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400', label: 'Location terminée', icon: '●', progress: 100 }
 };
 
 // Step Progress Tracker Component (Chevron Style)
@@ -1795,6 +1827,9 @@ export default function CustomerPortal() {
               <button onClick={() => setPage('contracts')} className={`font-medium ${page === 'contracts' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 Contrats
               </button>
+              <button onClick={() => setPage('rentals')} className={`font-medium ${page === 'rentals' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+                {t('rentals')}
+              </button>
               <button onClick={() => setPage('equipment')} className={`font-medium ${page === 'equipment' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('myEquipment')}
               </button>
@@ -1825,7 +1860,7 @@ export default function CustomerPortal() {
 
           {/* Mobile nav */}
           <nav className="md:hidden flex gap-2 pb-3 overflow-x-auto">
-            {['dashboard', 'new-request', 'contracts', 'equipment', 'settings'].map(p => (
+            {['dashboard', 'new-request', 'contracts', 'rentals', 'equipment', 'settings'].map(p => (
               <button
                 key={p}
                 onClick={() => setPage(p)}
@@ -1833,7 +1868,7 @@ export default function CustomerPortal() {
                   page === p ? 'bg-[#00A651] text-white' : 'bg-white/10 text-white/70'
                 }`}
               >
-                {p === 'new-request' ? t('newRequest') : p === 'contracts' ? 'Contrats' : t(p)}
+                {p === 'new-request' ? t('newRequest') : p === 'contracts' ? 'Contrats' : p === 'rentals' ? t('rentals') : t(p)}
               </button>
             ))}
           </nav>
@@ -1910,6 +1945,26 @@ export default function CustomerPortal() {
         
         {page === 'contracts' && (
           <ContractsPage 
+            profile={profile}
+            t={t}
+            notify={notify}
+            setPage={setPage}
+          />
+        )}
+        
+        {page === 'rentals' && (
+          <RentalsPage 
+            profile={profile}
+            t={t}
+            notify={notify}
+            setPage={setPage}
+            addresses={addresses}
+          />
+        )}
+        
+        {page === 'rental-detail' && selectedRequest && (
+          <RentalDetailPage 
+            rental={selectedRequest}
             profile={profile}
             t={t}
             notify={notify}
@@ -2592,7 +2647,7 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
       .single();
     
     if (!error && data) {
-      setMessages([data, ...messages]);
+      setMessages(prevMessages => [data, ...prevMessages]);
       setNewMessage('');
       // Scroll to bottom after sending
       setTimeout(scrollToBottom, 100);
@@ -2769,7 +2824,7 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
 // NEW REQUEST FORM - Type Selection First
 // ============================================
 function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
-  const [requestType, setRequestType] = useState(null); // 'service', 'parts', or 'contract'
+  const [requestType, setRequestType] = useState(null); // 'service', 'parts', 'contract', or 'rental'
   
   // If no type selected, show selection screen
   if (!requestType) {
@@ -2779,7 +2834,7 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
         
         <p className="text-gray-600 mb-8">Quel type de demande souhaitez-vous soumettre?</p>
         
-        <div className="grid md:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
           {/* Service Request */}
           <button
             onClick={() => setRequestType('service')}
@@ -2821,6 +2876,20 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
               Demander un devis pour un contrat annuel d'étalonnage de votre parc d'appareils
             </p>
           </button>
+          
+          {/* Rental Request */}
+          <button
+            onClick={() => setRequestType('rental')}
+            className="bg-white rounded-xl p-8 shadow-sm border-2 border-gray-200 hover:border-[#8B5CF6] transition-colors text-left group"
+          >
+            <div className="text-4xl mb-4">📅</div>
+            <h2 className="text-xl font-bold text-[#1E3A5F] mb-2 group-hover:text-[#8B5CF6]">
+              Location d'Équipement
+            </h2>
+            <p className="text-gray-600 text-sm">
+              Louer un compteur de particules ou autre équipement pour une durée déterminée
+            </p>
+          </button>
         </div>
         
         <button
@@ -2851,6 +2920,20 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
   if (requestType === 'contract') {
     return (
       <ContractRequestForm 
+        profile={profile}
+        addresses={addresses}
+        t={t}
+        notify={notify}
+        refresh={refresh}
+        setPage={setPage}
+        goBack={() => setRequestType(null)}
+      />
+    );
+  }
+  
+  if (requestType === 'rental') {
+    return (
+      <RentalRequestForm 
         profile={profile}
         addresses={addresses}
         t={t}
@@ -10116,4 +10199,594 @@ function RegisterPage({ t, register, setPage }) {
       </div>
     </div>
   );
+}
+
+// ============================================
+// RENTAL REQUEST FORM - Calendar Selection
+// ============================================
+function RentalRequestForm({ profile, addresses, t, notify, refresh, setPage, goBack }) {
+  const [step, setStep] = useState(1);
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [inventory, setInventory] = useState([]);
+  const [bundles, setBundles] = useState([]);
+  const [bookings, setBookings] = useState([]);
+  const [selectedItems, setSelectedItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [shipping, setShipping] = useState({ 
+    address_id: addresses.find(a => a.is_default)?.id || '',
+    showNewForm: false,
+    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' }
+  });
+  const [customerNotes, setCustomerNotes] = useState('');
+
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      const { data: inv } = await supabase.from('rental_inventory').select('*').eq('is_available', true).order('model_name');
+      const { data: bun } = await supabase.from('rental_bundles').select('*, rental_bundle_items(*, rental_inventory(*))').eq('is_active', true).order('bundle_name');
+      const fromDate = new Date();
+      const toDate = new Date();
+      toDate.setMonth(toDate.getMonth() + 6);
+      const { data: book } = await supabase.from('rental_bookings').select('*').gte('end_date', fromDate.toISOString().split('T')[0]).lte('start_date', toDate.toISOString().split('T')[0]);
+      if (inv) setInventory(inv);
+      if (bun) setBundles(bun);
+      if (book) setBookings(book);
+      setLoading(false);
+    };
+    loadData();
+  }, []);
+
+  const rentalDays = startDate && endDate ? Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1 : 0;
+
+  const isDeviceAvailable = (inventoryId) => {
+    if (!startDate || !endDate) return true;
+    const start = startDate.toISOString().split('T')[0];
+    const end = endDate.toISOString().split('T')[0];
+    return !bookings.some(b => b.inventory_id === inventoryId && b.start_date <= end && b.end_date >= start);
+  };
+
+  const isBundleAvailable = (bundle) => {
+    if (!bundle.rental_bundle_items) return false;
+    return bundle.rental_bundle_items.every(item => isDeviceAvailable(item.inventory_id));
+  };
+
+  const calculatePrice = (dailyRate, weeklyRate, monthlyRate, days) => {
+    const weekly = weeklyRate || dailyRate * 7;
+    const monthly = monthlyRate || dailyRate * 30;
+    const dailyTotal = dailyRate * days;
+    const weeklyTotal = Math.floor(days / 7) * weekly + (days % 7) * dailyRate;
+    const monthlyTotal = Math.floor(days / 30) * monthly + (days % 30) * dailyRate;
+    let best = { total: dailyTotal, rate: dailyRate, type: 'daily' };
+    if (days >= 7 && weeklyTotal < best.total) best = { total: weeklyTotal, rate: weekly, type: 'weekly' };
+    if (days >= 30 && monthlyTotal < best.total) best = { total: monthlyTotal, rate: monthly, type: 'monthly' };
+    return best;
+  };
+
+  const toggleSelection = (type, item) => {
+    const exists = selectedItems.find(s => s.type === type && s.id === item.id);
+    if (exists) {
+      setSelectedItems(selectedItems.filter(s => !(s.type === type && s.id === item.id)));
+    } else {
+      const pricing = calculatePrice(item.price_per_day, item.price_per_week, item.price_per_month, rentalDays);
+      let serialNumbers = [];
+      if (type === 'device') serialNumbers = [item.serial_number];
+      else if (type === 'bundle' && item.rental_bundle_items) serialNumbers = item.rental_bundle_items.map(bi => bi.rental_inventory?.serial_number).filter(Boolean);
+      setSelectedItems([...selectedItems, {
+        type, id: item.id,
+        name: type === 'device' ? item.model_name + ' (' + item.serial_number + ')' : item.bundle_name,
+        serialNumbers, dailyRate: item.price_per_day, appliedRate: pricing.rate,
+        rateType: pricing.type, rentalDays, total: pricing.total
+      }]);
+    }
+  };
+
+  useEffect(() => {
+    if (rentalDays > 0 && selectedItems.length > 0) {
+      setSelectedItems(prev => prev.map(item => {
+        const device = item.type === 'device' ? inventory.find(i => i.id === item.id) : bundles.find(b => b.id === item.id);
+        if (!device) return item;
+        const pricing = calculatePrice(device.price_per_day, device.price_per_week, device.price_per_month, rentalDays);
+        return { ...item, appliedRate: pricing.rate, rateType: pricing.type, rentalDays, total: pricing.total };
+      }));
+    }
+  }, [rentalDays]);
+
+  const subtotal = selectedItems.reduce((sum, item) => sum + item.total, 0);
+
+  const isDateBlocked = (date) => {
+    const dateStr = date.toISOString().split('T')[0];
+    if (selectedItems.length > 0) {
+      for (const item of selectedItems) {
+        if (item.type === 'device') {
+          const blocked = bookings.some(b => b.inventory_id === item.id && b.start_date <= dateStr && b.end_date >= dateStr);
+          if (blocked) return true;
+        } else {
+          const bundle = bundles.find(b => b.id === item.id);
+          if (bundle?.rental_bundle_items) {
+            for (const bi of bundle.rental_bundle_items) {
+              const blocked = bookings.some(b => b.inventory_id === bi.inventory_id && b.start_date <= dateStr && b.end_date >= dateStr);
+              if (blocked) return true;
+            }
+          }
+        }
+      }
+    }
+    return false;
+  };
+
+  const handleSubmit = async () => {
+    if (!startDate || !endDate) { notify('Veuillez sélectionner les dates de location', 'error'); return; }
+    if (selectedItems.length === 0) { notify('Veuillez sélectionner au moins un appareil', 'error'); return; }
+    let addressId = shipping.address_id;
+    if (!addressId) { notify('Veuillez sélectionner une adresse de livraison', 'error'); return; }
+    setSaving(true);
+    try {
+      const { data: numberData } = await supabase.rpc('generate_rental_number');
+      const rentalNumber = numberData || 'LOC-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-5);
+      const { data: rental, error: rentalErr } = await supabase.from('rental_requests').insert({
+        rental_number: rentalNumber, company_id: profile.company_id, submitted_by: profile.id,
+        start_date: startDate.toISOString().split('T')[0], end_date: endDate.toISOString().split('T')[0],
+        shipping_address_id: addressId, status: 'requested', quote_subtotal: subtotal,
+        customer_notes: customerNotes, submitted_at: new Date().toISOString()
+      }).select().single();
+      if (rentalErr) throw rentalErr;
+      for (const item of selectedItems) {
+        await supabase.from('rental_request_items').insert({
+          request_id: rental.id, item_type: item.type,
+          inventory_id: item.type === 'device' ? item.id : null,
+          bundle_id: item.type === 'bundle' ? item.id : null,
+          item_name: item.name, serial_numbers: item.serialNumbers,
+          daily_rate: item.dailyRate, applied_rate: item.appliedRate,
+          rate_type: item.rateType, rental_days: item.rentalDays, line_total: item.total
+        });
+        if (item.type === 'device') {
+          await supabase.from('rental_bookings').insert({
+            inventory_id: item.id, start_date: startDate.toISOString().split('T')[0],
+            end_date: endDate.toISOString().split('T')[0], rental_request_id: rental.id,
+            booking_type: 'rental', created_by: profile.id
+          });
+        } else {
+          const bundle = bundles.find(b => b.id === item.id);
+          if (bundle?.rental_bundle_items) {
+            for (const bi of bundle.rental_bundle_items) {
+              await supabase.from('rental_bookings').insert({
+                inventory_id: bi.inventory_id, start_date: startDate.toISOString().split('T')[0],
+                end_date: endDate.toISOString().split('T')[0], rental_request_id: rental.id,
+                booking_type: 'rental', created_by: profile.id
+              });
+            }
+          }
+        }
+      }
+      notify('Demande de location soumise avec succès!');
+      refresh(); setPage('rentals');
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+    setSaving(false);
+  };
+
+  if (loading) return <div className="flex items-center justify-center py-12"><div className="w-8 h-8 border-4 border-[#8B5CF6] border-t-transparent rounded-full animate-spin" /></div>;
+
+  const Calendar = () => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const startPadding = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const days = [];
+    for (let i = 0; i < startPadding; i++) days.push(<div key={'pad-'+i} className="h-10" />);
+    for (let d = 1; d <= lastDay.getDate(); d++) {
+      const date = new Date(year, month, d);
+      const isPast = date < today;
+      const isBlocked = isDateBlocked(date);
+      const isSelected = startDate && endDate && date >= startDate && date <= endDate;
+      const isStart = startDate && date.getTime() === startDate.getTime();
+      const isEnd = endDate && date.getTime() === endDate.getTime();
+      let className = 'h-10 flex items-center justify-center rounded-lg text-sm font-medium transition-colors ';
+      if (isPast) className += 'text-gray-300 cursor-not-allowed';
+      else if (isBlocked) className += 'bg-red-100 text-red-400 cursor-not-allowed line-through';
+      else if (isStart || isEnd) className += 'bg-[#8B5CF6] text-white';
+      else if (isSelected) className += 'bg-[#8B5CF6]/20 text-[#8B5CF6]';
+      else className += 'hover:bg-gray-100 cursor-pointer text-gray-700';
+      days.push(
+        <div key={d} className={className} onClick={() => {
+          if (isPast || isBlocked) return;
+          if (!startDate || (startDate && endDate)) { setStartDate(date); setEndDate(null); }
+          else if (date < startDate) setStartDate(date);
+          else setEndDate(date);
+        }}>{d}</div>
+      );
+    }
+    return (
+      <div className="bg-white rounded-xl p-6 shadow-sm border">
+        <div className="flex items-center justify-between mb-4">
+          <button type="button" onClick={() => setCurrentMonth(new Date(year, month - 1, 1))} className="p-2 hover:bg-gray-100 rounded-lg">←</button>
+          <h3 className="font-bold text-gray-800">{currentMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</h3>
+          <button type="button" onClick={() => setCurrentMonth(new Date(year, month + 1, 1))} className="p-2 hover:bg-gray-100 rounded-lg">→</button>
+        </div>
+        <div className="grid grid-cols-7 gap-1 mb-2">{['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map(day => <div key={day} className="h-8 flex items-center justify-center text-xs font-medium text-gray-500">{day}</div>)}</div>
+        <div className="grid grid-cols-7 gap-1">{days}</div>
+        <div className="mt-4 flex gap-4 text-xs text-gray-500">
+          <div className="flex items-center gap-2"><div className="w-4 h-4 bg-[#8B5CF6] rounded" /><span>Sélectionné</span></div>
+          <div className="flex items-center gap-2"><div className="w-4 h-4 bg-red-100 rounded" /><span>Indisponible</span></div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-4 mb-6">
+        <button onClick={goBack} className="text-gray-500 hover:text-gray-700">←</button>
+        <h1 className="text-2xl font-bold text-[#1E3A5F]">Location d'Équipement</h1>
+      </div>
+      <div className="flex items-center gap-2 mb-8">
+        {[{ num: 1, label: 'Dates' }, { num: 2, label: 'Équipement' }, { num: 3, label: 'Confirmation' }].map((s, idx) => (
+          <div key={s.num} className="flex items-center">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${step >= s.num ? 'bg-[#8B5CF6] text-white' : 'bg-gray-200 text-gray-500'}`}>{s.num}</div>
+            <span className={`ml-2 text-sm font-medium ${step >= s.num ? 'text-[#8B5CF6]' : 'text-gray-400'}`}>{s.label}</span>
+            {idx < 2 && <div className={`w-12 h-0.5 mx-4 ${step > s.num ? 'bg-[#8B5CF6]' : 'bg-gray-200'}`} />}
+          </div>
+        ))}
+      </div>
+
+      {step === 1 && (
+        <div className="grid lg:grid-cols-2 gap-8">
+          <div>
+            <h2 className="text-lg font-bold text-gray-800 mb-4">Sélectionnez vos dates de location</h2>
+            <p className="text-gray-600 mb-6">Cliquez sur la date de début, puis sur la date de fin.</p>
+            <Calendar />
+          </div>
+          <div>
+            <div className="bg-[#8B5CF6]/10 rounded-xl p-6 border border-[#8B5CF6]/20">
+              <h3 className="font-bold text-[#8B5CF6] mb-4">📅 Période sélectionnée</h3>
+              {startDate && endDate ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><p className="text-sm text-gray-500">Date de début</p><p className="font-bold text-gray-800">{startDate.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'long' })}</p></div>
+                    <div><p className="text-sm text-gray-500">Date de fin</p><p className="font-bold text-gray-800">{endDate.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'long' })}</p></div>
+                  </div>
+                  <div className="bg-white rounded-lg p-4"><p className="text-3xl font-bold text-[#8B5CF6]">{rentalDays} jour{rentalDays > 1 ? 's' : ''}</p><p className="text-sm text-gray-500">de location</p></div>
+                  <button onClick={() => setStep(2)} className="w-full py-3 bg-[#8B5CF6] text-white rounded-lg font-bold hover:bg-[#7C3AED]">Continuer → Choisir l'équipement</button>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-400"><p className="text-4xl mb-2">📅</p><p>Sélectionnez une période sur le calendrier</p></div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div>
+          <div className="flex items-center justify-between mb-6">
+            <div><h2 className="text-lg font-bold text-gray-800">Choisissez votre équipement</h2><p className="text-gray-600">Location du {startDate?.toLocaleDateString('fr-FR')} au {endDate?.toLocaleDateString('fr-FR')} ({rentalDays} jours)</p></div>
+            <button onClick={() => setStep(1)} className="text-[#8B5CF6] hover:underline">← Modifier les dates</button>
+          </div>
+          <div className="grid lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-6">
+              {bundles.length > 0 && (
+                <div>
+                  <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><span className="text-xl">📦</span> Kits complets</h3>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {bundles.map(bundle => {
+                      const available = isBundleAvailable(bundle);
+                      const selected = selectedItems.find(s => s.type === 'bundle' && s.id === bundle.id);
+                      const pricing = calculatePrice(bundle.price_per_day, bundle.price_per_week, bundle.price_per_month, rentalDays);
+                      return (
+                        <div key={bundle.id} onClick={() => available && toggleSelection('bundle', bundle)} className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${!available ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed' : selected ? 'bg-[#8B5CF6]/10 border-[#8B5CF6]' : 'bg-white border-gray-200 hover:border-[#8B5CF6]/50'}`}>
+                          <div className="flex items-start justify-between mb-2"><div><h4 className="font-bold text-gray-800">{bundle.bundle_name}</h4><p className="text-sm text-gray-500">{bundle.description_fr || bundle.description}</p></div>{selected && <span className="text-[#8B5CF6] text-xl">✓</span>}</div>
+                          <div className="text-xs text-gray-400 mb-3">{bundle.rental_bundle_items?.map(bi => bi.rental_inventory?.model_name).join(' + ')}</div>
+                          <div className="flex items-end justify-between"><div><p className="text-2xl font-bold text-[#8B5CF6]">€{pricing.total.toFixed(2)}</p><p className="text-xs text-gray-500">{pricing.type === 'daily' ? '€'+bundle.price_per_day+'/jour' : pricing.type === 'weekly' ? '€'+bundle.price_per_week+'/semaine' : '€'+bundle.price_per_month+'/mois'}</p></div>{!available && <span className="px-2 py-1 bg-red-100 text-red-600 text-xs rounded-full">Indisponible</span>}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <div>
+                <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><span className="text-xl">🔬</span> Appareils individuels</h3>
+                <div className="grid md:grid-cols-2 gap-4">
+                  {inventory.map(device => {
+                    const available = isDeviceAvailable(device.id);
+                    const selected = selectedItems.find(s => s.type === 'device' && s.id === device.id);
+                    const pricing = calculatePrice(device.price_per_day, device.price_per_week, device.price_per_month, rentalDays);
+                    return (
+                      <div key={device.id} onClick={() => available && toggleSelection('device', device)} className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${!available ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed' : selected ? 'bg-[#8B5CF6]/10 border-[#8B5CF6]' : 'bg-white border-gray-200 hover:border-[#8B5CF6]/50'}`}>
+                        <div className="flex items-start justify-between mb-2"><div><h4 className="font-bold text-gray-800">{device.model_name}</h4><p className="text-sm text-gray-500 font-mono">SN: {device.serial_number}</p></div>{selected && <span className="text-[#8B5CF6] text-xl">✓</span>}</div>
+                        {device.description_fr && <p className="text-xs text-gray-400 mb-3">{device.description_fr}</p>}
+                        <div className="flex items-end justify-between"><div><p className="text-2xl font-bold text-[#8B5CF6]">€{pricing.total.toFixed(2)}</p><p className="text-xs text-gray-500">{pricing.type === 'daily' ? '€'+device.price_per_day+'/jour' : pricing.type === 'weekly' ? '€'+(device.price_per_week||device.price_per_day*7)+'/semaine' : '€'+(device.price_per_month||device.price_per_day*30)+'/mois'}</p></div>{!available && <span className="px-2 py-1 bg-red-100 text-red-600 text-xs rounded-full">Indisponible</span>}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <div>
+              <div className="bg-white rounded-xl p-6 shadow-sm border sticky top-4">
+                <h3 className="font-bold text-gray-800 mb-4">🛒 Votre sélection</h3>
+                {selectedItems.length === 0 ? <p className="text-gray-400 text-center py-8">Aucun équipement sélectionné</p> : (
+                  <div className="space-y-3 mb-6">
+                    {selectedItems.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div><p className="font-medium text-gray-800 text-sm">{item.name}</p><p className="text-xs text-gray-500">{item.rentalDays} jours</p></div>
+                        <div className="text-right"><p className="font-bold text-[#8B5CF6]">€{item.total.toFixed(2)}</p><button onClick={() => setSelectedItems(selectedItems.filter((_, i) => i !== idx))} className="text-xs text-red-500 hover:underline">Retirer</button></div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="border-t pt-4">
+                  <div className="flex justify-between mb-2"><span className="text-gray-600">Sous-total</span><span className="font-bold">€{subtotal.toFixed(2)}</span></div>
+                  <div className="flex justify-between mb-4 text-sm text-gray-500"><span>Frais de port</span><span>À définir</span></div>
+                  <div className="flex justify-between text-lg font-bold"><span>Total estimé</span><span className="text-[#8B5CF6]">€{subtotal.toFixed(2)} HT</span></div>
+                </div>
+                <button onClick={() => setStep(3)} disabled={selectedItems.length === 0} className="w-full mt-6 py-3 bg-[#8B5CF6] text-white rounded-lg font-bold hover:bg-[#7C3AED] disabled:opacity-50 disabled:cursor-not-allowed">Continuer → Confirmation</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className="max-w-3xl mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-bold text-gray-800">Confirmez votre demande</h2>
+            <button onClick={() => setStep(2)} className="text-[#8B5CF6] hover:underline">← Modifier la sélection</button>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border overflow-hidden mb-6">
+            <div className="bg-[#8B5CF6] text-white p-6">
+              <h3 className="text-xl font-bold mb-2">Demande de Location</h3>
+              <p>Du {startDate?.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} au {endDate?.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+              <p className="text-[#8B5CF6]/70 text-sm mt-1">{rentalDays} jour{rentalDays > 1 ? 's' : ''} de location</p>
+            </div>
+            <div className="p-6 border-b">
+              <h4 className="font-bold text-gray-700 mb-4">Équipement sélectionné</h4>
+              {selectedItems.map((item, idx) => (
+                <div key={idx} className="flex items-center justify-between py-3 border-b last:border-0">
+                  <div><p className="font-medium text-gray-800">{item.name}</p><p className="text-sm text-gray-500">{item.rateType === 'daily' ? 'Tarif journalier' : item.rateType === 'weekly' ? 'Tarif hebdomadaire' : 'Tarif mensuel'}</p></div>
+                  <p className="font-bold text-gray-800">€{item.total.toFixed(2)}</p>
+                </div>
+              ))}
+              <div className="flex justify-between pt-4 text-lg font-bold"><span>Total HT (estimation)</span><span className="text-[#8B5CF6]">€{subtotal.toFixed(2)}</span></div>
+              <p className="text-xs text-gray-500 mt-2">* Le devis final incluant les frais de port vous sera envoyé pour validation</p>
+            </div>
+            <div className="p-6 border-b">
+              <h4 className="font-bold text-gray-700 mb-4">Adresse de livraison</h4>
+              <div className="space-y-3">
+                {addresses.map(addr => (
+                  <label key={addr.id} className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-colors ${shipping.address_id === addr.id ? 'border-[#8B5CF6] bg-[#8B5CF6]/5' : 'border-gray-200 hover:border-gray-300'}`}>
+                    <input type="radio" name="shipping_address" checked={shipping.address_id === addr.id} onChange={() => setShipping({ ...shipping, address_id: addr.id })} className="mt-1" />
+                    <div><p className="font-medium text-gray-800">{addr.label || addr.company_name}</p>{addr.attention && <p className="text-sm text-gray-600">À l'att. de {addr.attention}</p>}<p className="text-sm text-gray-600">{addr.address_line1}</p><p className="text-sm text-gray-600">{addr.postal_code} {addr.city}</p></div>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="p-6">
+              <h4 className="font-bold text-gray-700 mb-4">Notes (optionnel)</h4>
+              <textarea value={customerNotes} onChange={e => setCustomerNotes(e.target.value)} placeholder="Instructions particulières, horaires de livraison préférés..." className="w-full px-4 py-3 border rounded-lg h-24 resize-none focus:ring-2 focus:ring-[#8B5CF6]" />
+            </div>
+          </div>
+          <div className="flex gap-4">
+            <button onClick={() => setPage('dashboard')} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200">Annuler</button>
+            <button onClick={handleSubmit} disabled={saving || !shipping.address_id} className="flex-1 py-3 bg-[#8B5CF6] text-white rounded-lg font-bold hover:bg-[#7C3AED] disabled:opacity-50">{saving ? 'Envoi en cours...' : 'Soumettre la demande'}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// RENTALS PAGE - History & Active Rentals
+// ============================================
+function RentalsPage({ profile, t, notify, setPage, addresses }) {
+  const [rentals, setRentals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedRental, setSelectedRental] = useState(null);
+
+  useEffect(() => {
+    const loadRentals = async () => {
+      if (!profile?.company_id) return;
+      const { data } = await supabase.from('rental_requests').select('*, rental_request_items(*), shipping_addresses(*)').eq('company_id', profile.company_id).order('created_at', { ascending: false });
+      if (data) setRentals(data);
+      setLoading(false);
+    };
+    loadRentals();
+  }, [profile?.company_id]);
+
+  const getStatusStyle = (status) => {
+    const styles = {
+      requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Demande soumise' },
+      quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Devis envoyé' },
+      waiting_bc: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'En attente BC' },
+      bc_review: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'BC en vérification' },
+      bc_approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'BC approuvé' },
+      shipped: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Expédié' },
+      in_rental: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'En location' },
+      return_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Retour en attente' },
+      returned: { bg: 'bg-teal-100', text: 'text-teal-700', label: 'Retourné' },
+      completed: { bg: 'bg-green-100', text: 'text-green-700', label: 'Terminé' },
+      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
+    };
+    return styles[status] || { bg: 'bg-gray-100', text: 'text-gray-700', label: status };
+  };
+
+  if (loading) return <div className="flex items-center justify-center py-12"><div className="w-8 h-8 border-4 border-[#8B5CF6] border-t-transparent rounded-full animate-spin" /></div>;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-[#1E3A5F]">Mes Locations</h1>
+        <button onClick={() => setPage('new-request')} className="px-6 py-3 bg-[#8B5CF6] text-white rounded-lg font-medium hover:bg-[#7C3AED]">+ Nouvelle Location</button>
+      </div>
+
+      {rentals.length === 0 ? (
+        <div className="bg-white rounded-xl p-12 text-center">
+          <p className="text-4xl mb-4">📅</p>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Aucune location</h2>
+          <p className="text-gray-600 mb-6">Vous n'avez pas encore effectué de demande de location d'équipement.</p>
+          <button onClick={() => setPage('new-request')} className="px-6 py-3 bg-[#8B5CF6] text-white rounded-lg font-medium hover:bg-[#7C3AED]">Faire une demande de location</button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {rentals.map(rental => {
+            const style = getStatusStyle(rental.status);
+            return (
+              <div key={rental.id} className="bg-white rounded-xl p-6 shadow-sm border hover:shadow-md transition-shadow cursor-pointer" onClick={() => setSelectedRental(rental)}>
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <p className="font-bold text-[#8B5CF6] text-lg">{rental.rental_number}</p>
+                    <p className="text-sm text-gray-500">Soumis le {new Date(rental.created_at).toLocaleDateString('fr-FR')}</p>
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+                </div>
+                <div className="grid md:grid-cols-3 gap-4 mb-4">
+                  <div><p className="text-xs text-gray-500">Période</p><p className="font-medium">{new Date(rental.start_date).toLocaleDateString('fr-FR')} → {new Date(rental.end_date).toLocaleDateString('fr-FR')}</p></div>
+                  <div><p className="text-xs text-gray-500">Durée</p><p className="font-medium">{Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1} jours</p></div>
+                  <div><p className="text-xs text-gray-500">Total estimé</p><p className="font-medium text-[#8B5CF6]">€{(rental.quote_total_ht || rental.quote_subtotal || 0).toFixed(2)} HT</p></div>
+                </div>
+                <div className="text-sm text-gray-600">{rental.rental_request_items?.length || 0} appareil(s): {rental.rental_request_items?.map(i => i.item_name).join(', ')}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {selectedRental && <RentalDetailModal rental={selectedRental} onClose={() => setSelectedRental(null)} notify={notify} />}
+    </div>
+  );
+}
+
+// ============================================
+// RENTAL DETAIL MODAL
+// ============================================
+function RentalDetailModal({ rental, onClose, notify }) {
+  const [uploading, setUploading] = useState(false);
+  const [bcFile, setBcFile] = useState(null);
+  const [bcSignedBy, setBcSignedBy] = useState('');
+
+  const getStatusStyle = (status) => {
+    const styles = {
+      requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Demande soumise' },
+      quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Devis envoyé - Action requise' },
+      waiting_bc: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'En attente BC' },
+      bc_review: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'BC en vérification' },
+      bc_approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'BC approuvé' },
+      shipped: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Expédié' },
+      in_rental: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'En location' },
+      return_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Retour en attente' },
+      returned: { bg: 'bg-teal-100', text: 'text-teal-700', label: 'Retourné' },
+      completed: { bg: 'bg-green-100', text: 'text-green-700', label: 'Terminé' },
+      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
+    };
+    return styles[status] || { bg: 'bg-gray-100', text: 'text-gray-700', label: status };
+  };
+  const style = getStatusStyle(rental.status);
+
+  const handleBCUpload = async () => {
+    if (!bcFile || !bcSignedBy) { notify('Veuillez remplir tous les champs', 'error'); return; }
+    setUploading(true);
+    try {
+      const fileName = `bc/rental_${rental.rental_number}_${Date.now()}.pdf`;
+      const { error: uploadError } = await supabase.storage.from('documents').upload(fileName, bcFile);
+      if (uploadError) throw uploadError;
+      const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(fileName);
+      await supabase.from('rental_requests').update({
+        bc_file_url: publicUrl, bc_signed_by: bcSignedBy, bc_signature_date: new Date().toISOString().split('T')[0],
+        bc_submitted_at: new Date().toISOString(), status: 'bc_review'
+      }).eq('id', rental.id);
+      notify('BC soumis avec succès!'); onClose();
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+    setUploading(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-[#8B5CF6] text-white px-6 py-4 flex justify-between items-center">
+          <div><h2 className="text-xl font-bold">{rental.rental_number}</h2><p className="text-sm text-white/70">Location du {new Date(rental.start_date).toLocaleDateString('fr-FR')} au {new Date(rental.end_date).toLocaleDateString('fr-FR')}</p></div>
+          <button onClick={onClose} className="text-white/70 hover:text-white text-2xl">&times;</button>
+        </div>
+        
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <span className={`px-4 py-2 rounded-full font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+            <p className="text-gray-500">Créé le {new Date(rental.created_at).toLocaleDateString('fr-FR')}</p>
+          </div>
+
+          <div className="space-y-6">
+            <div>
+              <h3 className="font-bold text-gray-700 mb-3">Équipement</h3>
+              <div className="bg-gray-50 rounded-lg divide-y">
+                {rental.rental_request_items?.map((item, idx) => (
+                  <div key={idx} className="p-4 flex justify-between items-center">
+                    <div><p className="font-medium text-gray-800">{item.item_name}</p><p className="text-sm text-gray-500">{item.rental_days} jours - Tarif {item.rate_type === 'daily' ? 'journalier' : item.rate_type === 'weekly' ? 'hebdomadaire' : 'mensuel'}</p></div>
+                    <p className="font-bold text-[#8B5CF6]">€{item.line_total?.toFixed(2)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-[#8B5CF6]/10 rounded-lg p-4">
+              <div className="flex justify-between mb-2"><span>Sous-total</span><span>€{(rental.quote_subtotal || 0).toFixed(2)}</span></div>
+              {rental.quote_shipping > 0 && <div className="flex justify-between mb-2"><span>Frais de port</span><span>€{rental.quote_shipping.toFixed(2)}</span></div>}
+              <div className="flex justify-between text-lg font-bold pt-2 border-t border-[#8B5CF6]/20"><span>Total HT</span><span className="text-[#8B5CF6]">€{(rental.quote_total_ht || rental.quote_subtotal || 0).toFixed(2)}</span></div>
+            </div>
+
+            {rental.quote_url && (
+              <div>
+                <h3 className="font-bold text-gray-700 mb-3">Documents</h3>
+                <a href={rental.quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors">
+                  <span className="text-2xl">📄</span>
+                  <div><p className="font-medium text-blue-800">Devis</p><p className="text-sm text-blue-600">Cliquez pour télécharger</p></div>
+                </a>
+              </div>
+            )}
+
+            {(rental.status === 'quote_sent' || rental.status === 'waiting_bc') && !rental.bc_submitted_at && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-6">
+                <h3 className="font-bold text-amber-800 mb-4">📋 Soumettre votre Bon de Commande</h3>
+                <p className="text-amber-700 text-sm mb-4">Pour confirmer votre location, veuillez télécharger votre BC signé.</p>
+                <div className="space-y-4">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Signé par *</label><input type="text" value={bcSignedBy} onChange={e => setBcSignedBy(e.target.value)} className="w-full px-4 py-2 border rounded-lg" placeholder="Nom du signataire" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Fichier BC (PDF) *</label><input type="file" accept=".pdf" onChange={e => setBcFile(e.target.files?.[0])} className="w-full" /></div>
+                  <button onClick={handleBCUpload} disabled={uploading || !bcFile || !bcSignedBy} className="w-full py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600 disabled:opacity-50">{uploading ? 'Envoi...' : 'Soumettre le BC'}</button>
+                </div>
+              </div>
+            )}
+
+            {rental.outbound_tracking && (
+              <div className="bg-cyan-50 rounded-lg p-4">
+                <h3 className="font-bold text-cyan-800 mb-2">📦 Expédition</h3>
+                <p className="text-cyan-700">Transporteur: {rental.outbound_carrier || 'UPS'}</p>
+                <p className="text-cyan-700 font-mono">N° suivi: {rental.outbound_tracking}</p>
+              </div>
+            )}
+
+            {rental.shipping_addresses && (
+              <div>
+                <h3 className="font-bold text-gray-700 mb-2">Adresse de livraison</h3>
+                <p className="text-gray-600">{rental.shipping_addresses.company_name || rental.shipping_addresses.label}</p>
+                {rental.shipping_addresses.attention && <p className="text-gray-600">À l'att. de {rental.shipping_addresses.attention}</p>}
+                <p className="text-gray-600">{rental.shipping_addresses.address_line1}</p>
+                <p className="text-gray-600">{rental.shipping_addresses.postal_code} {rental.shipping_addresses.city}</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="px-6 py-4 border-t bg-gray-50">
+          <button onClick={onClose} className="w-full py-3 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300">Fermer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Placeholder for RentalDetailPage (full page version if needed)
+function RentalDetailPage({ rental, profile, t, notify, setPage }) {
+  return <RentalDetailModal rental={rental} onClose={() => setPage('rentals')} notify={notify} />;
 }
