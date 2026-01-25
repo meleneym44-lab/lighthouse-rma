@@ -1328,6 +1328,7 @@ const STATUS_STYLES = {
   
   // QC step
   qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Contrôle QC' },
+  qc_rejected: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ QC Rejeté' },
   
   // Final Admin steps (Prêt → Expédié)
   ready: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Prêt' },
@@ -3154,6 +3155,24 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     <h3 className="font-bold text-gray-800 mb-3">Notes internes</h3>
                     <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
                       <p className="text-gray-700 whitespace-pre-wrap">{device.internal_notes}</p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* QC Rejection Warning */}
+                {device.qc_rejected && device.qc_rejection_reason && (
+                  <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl">❌</span>
+                      <div>
+                        <h3 className="font-bold text-red-800 mb-1">QC Rejeté - Corrections Requises</h3>
+                        <p className="text-red-700 whitespace-pre-wrap">{device.qc_rejection_reason}</p>
+                        {device.qc_rejected_at && (
+                          <p className="text-red-500 text-sm mt-2">
+                            Rejeté le {new Date(device.qc_rejected_at).toLocaleDateString('fr-FR')} à {new Date(device.qc_rejected_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'})}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -5935,6 +5954,8 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
   const [step, setStep] = useState(1); // 1: Report, 2: Certificate, 3: Approve
   const [qcNotes, setQcNotes] = useState(device.qc_notes || '');
   const [savedReportUrl, setSavedReportUrl] = useState(device.report_url || null);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
   const today = new Date().toLocaleDateString('fr-FR');
   
   // Get checklist from device
@@ -5952,6 +5973,40 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
   
   const showCalType = device.cal_type && device.cal_type !== 'none';
   const showReceptionResult = device.reception_result && device.reception_result !== 'none';
+  
+  // Reject QC - send back to tech with notes
+  const rejectQC = async () => {
+    if (!rejectionReason.trim()) {
+      notify('Veuillez indiquer la raison du rejet', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      // Delete existing report PDF if any (will be regenerated after fixes)
+      if (savedReportUrl) {
+        try {
+          const path = savedReportUrl.split('/documents/')[1];
+          if (path) await supabase.storage.from('documents').remove([path]);
+        } catch (e) { console.error('Could not delete old PDF:', e); }
+      }
+      
+      await supabase.from('request_devices').update({
+        status: 'qc_rejected',
+        qc_rejected: true,
+        qc_rejected_at: new Date().toISOString(),
+        qc_rejected_by: profile?.id,
+        qc_rejection_reason: rejectionReason,
+        report_url: null // Clear the report URL since it needs to be redone
+      }).eq('id', device.id);
+      
+      notify('❌ QC rejeté - Renvoyé au technicien');
+      setShowRejectModal(false);
+      onBack();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSaving(false);
+  };
   
   // Save report PDF by capturing the visible preview
   const saveReportPDF = async () => {
@@ -6197,9 +6252,14 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
         <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
               <button 
+                onClick={() => setShowRejectModal(true)}
+                className="px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium"
+              >
+                ❌ Rejeter
+              </button>
+              <button 
                 onClick={saveReportPDF}
-                disabled={savedReportUrl}
-                className={`px-6 py-3 rounded-lg font-medium ${savedReportUrl ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`}
+                className={`px-6 py-3 rounded-lg font-medium ${savedReportUrl ? 'bg-green-100 text-green-700' : 'bg-green-600 hover:bg-green-700 text-white'}`}
               >
                 {savedReportUrl ? '✓ Rapport enregistré' : '💾 Enregistrer le Rapport PDF'}
               </button>
@@ -6259,9 +6319,17 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
           </div>
           
           <div className="flex justify-between">
-            <button onClick={() => setStep(1)} className="px-6 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
-              ← Retour au Rapport
-            </button>
+            <div className="flex items-center gap-3">
+              <button onClick={() => setStep(1)} className="px-6 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
+                ← Retour au Rapport
+              </button>
+              <button 
+                onClick={() => setShowRejectModal(true)}
+                className="px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium"
+              >
+                ❌ Rejeter
+              </button>
+            </div>
             <button onClick={() => setStep(3)} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
               {device.calibration_certificate_url || device.service_type === 'repair' ? 'Document OK → Validation' : 'Continuer →'}
             </button>
@@ -6317,9 +6385,17 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
           </div>
           
           <div className="flex justify-between items-center">
-            <button onClick={() => setStep(2)} className="px-6 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
-              ← Retour
-            </button>
+            <div className="flex items-center gap-3">
+              <button onClick={() => setStep(2)} className="px-6 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
+                ← Retour
+              </button>
+              <button 
+                onClick={() => setShowRejectModal(true)}
+                className="px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium"
+              >
+                ❌ Rejeter
+              </button>
+            </div>
             {!device.qc_complete ? (
               <button 
                 onClick={approveQC} 
@@ -6331,6 +6407,39 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
             ) : (
               <span className="px-6 py-3 bg-green-100 text-green-700 rounded-lg font-medium">✓ Déjà validé</span>
             )}
+          </div>
+        </div>
+      )}
+      
+      {/* Rejection Modal */}
+      {showRejectModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">❌ Rejeter le Contrôle Qualité</h3>
+            <p className="text-gray-600 mb-4">
+              Indiquez la raison du rejet. Le technicien verra ces notes et devra corriger le problème.
+            </p>
+            <textarea 
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="Décrivez les problèmes à corriger..."
+              className="w-full border rounded-lg p-3 h-32 mb-4"
+            />
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => { setShowRejectModal(false); setRejectionReason(''); }}
+                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
+              >
+                Annuler
+              </button>
+              <button 
+                onClick={rejectQC}
+                disabled={saving || !rejectionReason.trim()}
+                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg disabled:opacity-50"
+              >
+                {saving ? 'Rejet...' : 'Confirmer le Rejet'}
+              </button>
+            </div>
           </div>
         </div>
       )}
