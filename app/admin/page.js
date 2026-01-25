@@ -4891,7 +4891,8 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
             pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
             
             const blPdfBlob = pdf.output('blob');
-            const blFileName = `${rma.request_number}_BL_${bl.blNumber}_${Date.now()}.pdf`;
+            const safeBLNumber = (bl.blNumber || 'BL').replace(/[^a-zA-Z0-9-_]/g, '');
+            const blFileName = `${rma.request_number}_BL_${safeBLNumber}_${Date.now()}.pdf`;
             blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${rma.request_number}`, blFileName);
           }
         } catch (pdfErr) {
@@ -4902,7 +4903,8 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
         let upsLabelUrl = null;
         try {
           const upsPdfBlob = await generateUPSLabelPDF(rma, s);
-          const upsFileName = `${rma.request_number}_UPS_${s.trackingNumber || i}_${Date.now()}.pdf`;
+          const safeTracking = (s.trackingNumber || String(i)).replace(/[^a-zA-Z0-9-_]/g, '');
+          const upsFileName = `${rma.request_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
           upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
         } catch (pdfErr) {
           console.error('UPS Label PDF generation error:', pdfErr);
@@ -6035,7 +6037,8 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
       pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
       
       const pdfBlob = pdf.output('blob');
-      const fileName = `${rma.request_number}_${device.serial_number}_rapport_${Date.now()}.pdf`;
+      const safeSerial = (device.serial_number || 'unknown').replace(/[^a-zA-Z0-9-_]/g, '');
+      const fileName = `${rma.request_number}_${safeSerial}_rapport_${Date.now()}.pdf`;
       const reportUrl = await uploadPDFToStorage(pdfBlob, `reports/${rma.request_number}`, fileName);
       
       if (reportUrl) {
