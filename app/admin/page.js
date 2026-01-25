@@ -5359,25 +5359,28 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
 // ============================================
 // MESSAGES SHEET - All chats with clients
 // ============================================
+
 function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
   const [selectedRMA, setSelectedRMA] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
-  const [filter, setFilter] = useState('open'); // 'open', 'closed', 'all'
+  const [filter, setFilter] = useState('open');
   const [search, setSearch] = useState('');
   const [profile, setProfile] = useState(null);
-  
-  // Translation & AI states
-  const [translationMode, setTranslationMode] = useState(false); // Toggle for translation panel
+  const [englishMode, setEnglishMode] = useState(true);
   const [englishInput, setEnglishInput] = useState('');
   const [frenchOutput, setFrenchOutput] = useState('');
-  const [translating, setTranslating] = useState(false);
-  const [aiSuggestion, setAiSuggestion] = useState({ french: '', english: '' });
-  const [generatingAI, setGeneratingAI] = useState(false);
-  const [translatedMessages, setTranslatedMessages] = useState({}); // Cache for translated customer messages
+  const [processingMessage, setProcessingMessage] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [translatedMessages, setTranslatedMessages] = useState({});
+  const [translatingMessages, setTranslatingMessages] = useState({});
+  const [showRMASidebar, setShowRMASidebar] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [showEnglishConfirm, setShowEnglishConfirm] = useState(false);
   
-  // Load profile
+  const badWords = ['fuck', 'shit', 'bitch', 'ass', 'crap'];
+  
   useEffect(() => {
     const loadProfile = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -5389,548 +5392,340 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA }) {
     loadProfile();
   }, []);
   
-  // Filter RMAs based on chat status AND search
+  const getUserSignature = () => {
+    if (!profile?.full_name) return 'Lighthouse France';
+    const names = profile.full_name.split(' ');
+    if (names.length >= 2) {
+      return `${names[0]} ${names[1].charAt(0)}. - Lighthouse France`;
+    }
+    return `${profile.full_name} - Lighthouse France`;
+  };
+  
+  const isWithin48Hours = (dateStr) => {
+    const msgDate = new Date(dateStr);
+    const now = new Date();
+    return (now - msgDate) / (1000 * 60 * 60) <= 48;
+  };
+  
   const filteredRMAs = requests.filter(r => {
-    // Only show RMAs that have unread messages OR open chat status
-    const hasUnreadMessages = (r.unread_admin_count || 0) > 0;
+    const hasUnread = (r.unread_admin_count || 0) > 0;
     const isOpen = r.chat_status === 'open';
-    
-    // Apply status filter
-    if (filter === 'open' && !isOpen && !hasUnreadMessages) return false;
-    if (filter === 'closed' && (isOpen || hasUnreadMessages)) return false;
-    
-    // Apply search filter
+    if (filter === 'open' && !isOpen && !hasUnread) return false;
+    if (filter === 'closed' && (isOpen || hasUnread)) return false;
     if (search.trim()) {
-      const searchLower = search.trim().toLowerCase();
-      const searchUpper = search.trim().toUpperCase();
-      
-      if (r.request_number?.toUpperCase().includes(searchUpper)) return true;
-      if (r.companies?.name?.toLowerCase().includes(searchLower)) return true;
-      
-      const devices = r.request_devices || [];
-      if (devices.some(d => d.serial_number?.toUpperCase().includes(searchUpper))) return true;
-      if (devices.some(d => d.model_name?.toLowerCase().includes(searchLower))) return true;
-      
+      const s = search.toLowerCase();
+      if (r.request_number?.toLowerCase().includes(s)) return true;
+      if (r.companies?.name?.toLowerCase().includes(s)) return true;
       return false;
     }
-    
     return true;
   }).sort((a, b) => {
-    // Sort: Open with unread first (oldest first = FIFO), then other open, then closed
-    const aUnread = (a.unread_admin_count || 0) > 0;
-    const bUnread = (b.unread_admin_count || 0) > 0;
-    const aOpen = a.chat_status === 'open' || aUnread;
-    const bOpen = b.chat_status === 'open' || bUnread;
-    
+    const aOpen = a.chat_status === 'open' || (a.unread_admin_count || 0) > 0;
+    const bOpen = b.chat_status === 'open' || (b.unread_admin_count || 0) > 0;
     if (aOpen && !bOpen) return -1;
     if (bOpen && !aOpen) return 1;
-    
-    // Both open - oldest first (FIFO queue)
-    if (aOpen && bOpen) {
-      return new Date(a.last_message_at || a.chat_opened_at || a.updated_at) - 
-             new Date(b.last_message_at || b.chat_opened_at || b.updated_at);
-    }
-    
-    // Both closed - newest first
+    if (aOpen && bOpen) return new Date(a.last_message_at || a.updated_at) - new Date(b.last_message_at || b.updated_at);
     return new Date(b.updated_at) - new Date(a.updated_at);
   });
   
-  // Load messages when RMA is selected
   useEffect(() => {
-    if (!selectedRMA) {
-      setMessages([]);
-      return;
-    }
-    
-    const loadMessages = async () => {
-      const { data } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('request_id', selectedRMA.id)
-        .order('created_at', { ascending: true });
-      if (data) setMessages(data);
-      
-      // Mark messages as read
+    if (!selectedRMA) { setMessages([]); setAiSuggestions([]); return; }
+    const load = async () => {
+      const { data } = await supabase.from('messages').select('*').eq('request_id', selectedRMA.id).order('created_at', { ascending: true });
+      if (data) {
+        setMessages(data);
+        if (englishMode) {
+          data.filter(m => m.sender_type === 'customer' && isWithin48Hours(m.created_at)).forEach(m => translateMsg(m.id, m.content));
+        }
+        generateSuggestions(data);
+      }
       if (selectedRMA.unread_admin_count > 0) {
-        await supabase.from('messages')
-          .update({ is_read: true, read_at: new Date().toISOString() })
-          .eq('request_id', selectedRMA.id)
-          .eq('sender_type', 'customer')
-          .eq('is_read', false);
-        
-        await supabase.from('service_requests')
-          .update({ unread_admin_count: 0 })
-          .eq('id', selectedRMA.id);
-        
+        await supabase.from('messages').update({ is_read: true }).eq('request_id', selectedRMA.id).eq('sender_type', 'customer');
+        await supabase.from('service_requests').update({ unread_admin_count: 0 }).eq('id', selectedRMA.id);
         reload();
       }
     };
-    loadMessages();
-    
-    // Clear translation states when changing RMA
-    setEnglishInput('');
-    setFrenchOutput('');
-    setAiSuggestion({ french: '', english: '' });
-    setTranslatedMessages({});
+    load();
+    setEnglishInput(''); setFrenchOutput('');
   }, [selectedRMA?.id]);
   
-  // Send message (French version)
-  const sendMessage = async (messageToSend = null) => {
-    const content = messageToSend || newMessage;
-    if (!content.trim() || sendingMessage || !selectedRMA) return;
-    
+  const translateMsg = async (id, text) => {
+    if (translatedMessages[id] || translatingMessages[id]) return;
+    setTranslatingMessages(p => ({ ...p, [id]: true }));
+    try {
+      const res = await fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, direction: 'fr-to-en' }) });
+      if (res.ok) { const d = await res.json(); setTranslatedMessages(p => ({ ...p, [id]: d.translation })); }
+    } catch (e) { console.error(e); }
+    setTranslatingMessages(p => ({ ...p, [id]: false }));
+  };
+  
+  const generateSuggestions = async (msgs) => {
+    if (!selectedRMA) return;
+    setLoadingSuggestions(true);
+    try {
+      const res = await fetch('/api/chat-suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        rma: { request_number: selectedRMA.request_number, status: selectedRMA.status, requested_service: selectedRMA.requested_service, company_name: selectedRMA.companies?.name, devices: selectedRMA.request_devices?.map(d => ({ model: d.model_name, serial: d.serial_number, status: d.status })) },
+        messages: msgs.slice(-10).map(m => ({ sender: m.sender_type, content: m.content }))
+      })});
+      if (res.ok) { const d = await res.json(); if (d.french) setAiSuggestions([d]); }
+    } catch (e) { console.error(e); }
+    setLoadingSuggestions(false);
+  };
+  
+  const processAndTranslate = async () => {
+    if (!englishInput.trim()) return;
+    if (badWords.some(w => englishInput.toLowerCase().includes(w))) { notify('⚠️ Please remove inappropriate language.', 'error'); return; }
+    setProcessingMessage(true);
+    try {
+      const res = await fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: `Improve this for professional business communication, fix errors, translate to French. Add signature: "${getUserSignature()}". Message: ${englishInput}`, direction: 'en-to-fr' }) });
+      if (res.ok) { const d = await res.json(); setFrenchOutput(d.translation); }
+    } catch (e) { notify('Translation error', 'error'); }
+    setProcessingMessage(false);
+  };
+  
+  const sendMessage = async () => {
+    if (!frenchOutput.trim() || sendingMessage || !selectedRMA) return;
+    const frW = ['le','la','les','de','est','sont','nous','vous'];
+    const enW = ['the','is','are','we','you','your','have','will'];
+    const lm = frenchOutput.toLowerCase();
+    const frC = frW.filter(w => lm.includes(` ${w} `)).length;
+    const enC = enW.filter(w => lm.includes(` ${w} `)).length;
+    if (enC > frC && !showEnglishConfirm) { setShowEnglishConfirm(true); return; }
+    setShowEnglishConfirm(false);
     setSendingMessage(true);
     try {
-      const { data, error } = await supabase
-        .from('messages')
-        .insert({
-          request_id: selectedRMA.id,
-          sender_id: profile?.id,
-          sender_type: 'admin',
-          sender_name: profile?.full_name || 'Admin',
-          content: content.trim()
-        })
-        .select()
-        .single();
-      
+      const { data, error } = await supabase.from('messages').insert({ request_id: selectedRMA.id, sender_id: profile?.id, sender_type: 'admin', sender_name: profile?.full_name || 'Admin', content: frenchOutput.trim() }).select().single();
       if (error) throw error;
-      
-      setMessages(prev => [...prev, data]);
-      setNewMessage('');
-      setFrenchOutput('');
-      setEnglishInput('');
-      setAiSuggestion({ french: '', english: '' });
-      
-      // Auto-open chat if it was closed
+      setMessages(p => [...p, data]);
+      setEnglishInput(''); setFrenchOutput('');
       if (selectedRMA.chat_status !== 'open') {
-        await supabase.from('service_requests').update({ 
-          chat_status: 'open',
-          chat_opened_at: new Date().toISOString()
-        }).eq('id', selectedRMA.id);
-        setSelectedRMA(prev => ({ ...prev, chat_status: 'open' }));
+        await supabase.from('service_requests').update({ chat_status: 'open' }).eq('id', selectedRMA.id);
+        setSelectedRMA(p => ({ ...p, chat_status: 'open' }));
       }
-      
-      notify('✅ Message envoyé!');
+      notify('✅ Sent!');
       reload();
-    } catch (err) {
-      notify('Erreur: ' + err.message, 'error');
-    }
+    } catch (e) { notify('Error: ' + e.message, 'error'); }
     setSendingMessage(false);
   };
   
-  // Toggle chat status
-  const toggleChatStatus = async () => {
+  const toggleChat = async () => {
     if (!selectedRMA) return;
-    
-    const newStatus = selectedRMA.chat_status === 'open' ? 'closed' : 'open';
-    await supabase.from('service_requests').update({ 
-      chat_status: newStatus,
-      chat_opened_at: newStatus === 'open' ? new Date().toISOString() : selectedRMA.chat_opened_at,
-      chat_closed_at: newStatus === 'closed' ? new Date().toISOString() : null
-    }).eq('id', selectedRMA.id);
-    
-    setSelectedRMA(prev => ({ ...prev, chat_status: newStatus }));
-    notify(newStatus === 'open' ? '🔔 Chat ouvert' : '✅ Chat fermé');
+    const ns = selectedRMA.chat_status === 'open' ? 'closed' : 'open';
+    await supabase.from('service_requests').update({ chat_status: ns }).eq('id', selectedRMA.id);
+    setSelectedRMA(p => ({ ...p, chat_status: ns }));
+    notify(ns === 'open' ? '🔔 Opened' : '✅ Closed');
     reload();
   };
   
-  // === AI FUNCTIONS ===
-  
-  // Translate English to French
-  const translateToFrench = async () => {
-    if (!englishInput.trim()) return;
-    
-    setTranslating(true);
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedRMA) return;
+    setUploadingFile(true);
     try {
-      const response = await fetch('/api/translate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: englishInput,
-          direction: 'en-to-fr'
-        })
-      });
-      
-      if (!response.ok) throw new Error('Translation failed');
-      
-      const data = await response.json();
-      setFrenchOutput(data.translation);
-    } catch (err) {
-      notify('Erreur de traduction: ' + err.message, 'error');
-    }
-    setTranslating(false);
+      const path = `chat/${selectedRMA.id}/${Date.now()}_${file.name}`;
+      const { error: ue } = await supabase.storage.from('documents').upload(path, file);
+      if (ue) throw ue;
+      const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(path);
+      const { data } = await supabase.from('messages').insert({ request_id: selectedRMA.id, sender_id: profile?.id, sender_type: 'admin', sender_name: profile?.full_name, content: `📎 ${file.name}`, attachment_url: publicUrl, attachment_name: file.name }).select().single();
+      if (data) setMessages(p => [...p, data]);
+      notify('✅ Uploaded!');
+    } catch (e) { notify('Error: ' + e.message, 'error'); }
+    setUploadingFile(false);
+    e.target.value = '';
   };
   
-  // Translate customer message to English
-  const translateCustomerMessage = async (msgId, text) => {
-    if (translatedMessages[msgId]) return; // Already translated
-    
-    setTranslatedMessages(prev => ({ ...prev, [msgId]: 'Translating...' }));
-    
-    try {
-      const response = await fetch('/api/translate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: text,
-          direction: 'fr-to-en'
-        })
-      });
-      
-      if (!response.ok) throw new Error('Translation failed');
-      
-      const data = await response.json();
-      setTranslatedMessages(prev => ({ ...prev, [msgId]: data.translation }));
-    } catch (err) {
-      setTranslatedMessages(prev => ({ ...prev, [msgId]: 'Translation error' }));
-    }
-  };
-  
-  // Generate AI suggestion based on RMA and chat context
-  const generateAISuggestion = async () => {
-    if (!selectedRMA) return;
-    
-    setGeneratingAI(true);
-    try {
-      const response = await fetch('/api/chat-suggest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rma: {
-            request_number: selectedRMA.request_number,
-            status: selectedRMA.status,
-            requested_service: selectedRMA.requested_service,
-            company_name: selectedRMA.companies?.name,
-            devices: selectedRMA.request_devices?.map(d => ({
-              model: d.model_name,
-              serial: d.serial_number,
-              status: d.status,
-              service_type: d.service_type
-            }))
-          },
-          messages: messages.slice(-10).map(m => ({
-            sender: m.sender_type,
-            content: m.content,
-            date: m.created_at
-          }))
-        })
-      });
-      
-      if (!response.ok) throw new Error('AI generation failed');
-      
-      const data = await response.json();
-      setAiSuggestion({
-        french: data.french,
-        english: data.english
-      });
-    } catch (err) {
-      notify('Erreur AI: ' + err.message, 'error');
-    }
-    setGeneratingAI(false);
-  };
-  
-  // Count total unread messages
-  const totalUnread = requests.reduce((sum, r) => sum + (r.unread_admin_count || 0), 0);
+  const totalUnread = requests.reduce((s, r) => s + (r.unread_admin_count || 0), 0);
   const openCount = requests.filter(r => r.chat_status === 'open' || (r.unread_admin_count || 0) > 0).length;
   
   return (
     <div className="p-6">
-      <div className="flex gap-6 h-[calc(100vh-200px)]">
-        {/* Left Panel - RMA List */}
-        <div className="w-1/3 bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col">
-          <div className="p-4 border-b bg-gray-50">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-bold text-gray-800">💬 Conversations</h2>
-              {totalUnread > 0 && (
-                <span className="px-2 py-1 bg-red-500 text-white rounded-full text-xs font-bold animate-pulse">
-                  {totalUnread} non lu{totalUnread > 1 ? 's' : ''}
-                </span>
-              )}
+      <div className="flex gap-4 h-[calc(100vh-180px)]">
+        {/* Chat List */}
+        <div className="w-72 bg-white rounded-xl shadow-sm border flex flex-col flex-shrink-0">
+          <div className="p-3 border-b bg-gray-50">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-bold text-gray-800">💬 Messages</span>
+              {totalUnread > 0 && <span className="px-2 py-0.5 bg-red-500 text-white rounded-full text-xs font-bold">{totalUnread}</span>}
             </div>
-            
-            {/* Search Input */}
-            <div className="mb-3">
-              <input
-                type="text"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="🔍 Rechercher RMA, N° série, client..."
-                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            
-            <div className="flex gap-2">
-              {[
-                { id: 'open', label: 'Ouverts', count: openCount },
-                { id: 'closed', label: 'Fermés' },
-                { id: 'all', label: 'Tous' }
-              ].map(f => (
-                <button
-                  key={f.id}
-                  onClick={() => setFilter(f.id)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
-                    filter === f.id 
-                      ? 'bg-blue-500 text-white' 
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  {f.label}
-                  {f.count > 0 && (
-                    <span className={`px-1.5 py-0.5 rounded-full text-xs ${filter === f.id ? 'bg-white/20' : 'bg-red-500 text-white'}`}>
-                      {f.count}
-                    </span>
-                  )}
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search..." className="w-full px-3 py-1.5 border rounded text-sm mb-2" />
+            <div className="flex gap-1">
+              {[{id:'open',l:'Open',c:openCount},{id:'closed',l:'Closed'},{id:'all',l:'All'}].map(f => (
+                <button key={f.id} onClick={() => setFilter(f.id)} className={`flex-1 py-1 rounded text-xs font-medium ${filter === f.id ? 'bg-blue-500 text-white' : 'bg-gray-100'}`}>
+                  {f.l}{f.c > 0 ? ` (${f.c})` : ''}
                 </button>
               ))}
             </div>
           </div>
-          
           <div className="flex-1 overflow-y-auto divide-y">
-            {filteredRMAs.length === 0 ? (
-              <p className="text-gray-400 text-center py-8">
-                {search.trim() ? 'Aucun résultat pour cette recherche' : 'Aucune conversation'}
-              </p>
-            ) : (
-              filteredRMAs.map(rma => {
-                const unread = rma.unread_admin_count || 0;
-                return (
-                  <div
-                    key={rma.id}
-                    onClick={() => setSelectedRMA(rma)}
-                    className={`p-4 cursor-pointer transition-colors ${
-                      selectedRMA?.id === rma.id 
-                        ? 'bg-blue-50 border-l-4 border-blue-500' 
-                        : unread > 0 ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between mb-1">
-                      <span className="font-mono font-bold text-sm text-[#00A651]">{rma.request_number}</span>
-                      <div className="flex items-center gap-2">
-                        {unread > 0 && (
-                          <span className="px-2 py-0.5 bg-red-500 text-white rounded-full text-xs font-bold">
-                            {unread}
-                          </span>
-                        )}
-                        {rma.chat_status === 'open' && (
-                          <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
-                        )}
-                      </div>
-                    </div>
-                    <p className="font-medium text-gray-800 text-sm truncate">{rma.companies?.name}</p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {rma.request_devices?.length || 0} appareil(s) • {new Date(rma.last_message_at || rma.updated_at).toLocaleDateString('fr-FR')}
-                    </p>
-                  </div>
-                );
-              })
-            )}
+            {filteredRMAs.map(rma => (
+              <div key={rma.id} onClick={() => setSelectedRMA(rma)} className={`p-3 cursor-pointer ${selectedRMA?.id === rma.id ? 'bg-blue-50 border-l-4 border-blue-500' : (rma.unread_admin_count || 0) > 0 ? 'bg-amber-50' : 'hover:bg-gray-50'}`}>
+                <div className="flex justify-between mb-1">
+                  <span className="font-mono text-xs font-bold text-[#00A651]">{rma.request_number}</span>
+                  {(rma.unread_admin_count || 0) > 0 && <span className="px-1.5 bg-red-500 text-white rounded-full text-xs">{rma.unread_admin_count}</span>}
+                </div>
+                <p className="text-sm font-medium truncate">{rma.companies?.name}</p>
+              </div>
+            ))}
           </div>
         </div>
         
-        {/* Right Panel - Chat */}
-        <div className="flex-1 bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col">
+        {/* Chat Area */}
+        <div className="flex-1 bg-white rounded-xl shadow-sm border flex flex-col">
           {!selectedRMA ? (
             <div className="flex-1 flex items-center justify-center text-gray-400">
-              <div className="text-center">
-                <p className="text-5xl mb-4">💬</p>
-                <p>Sélectionnez une conversation</p>
-              </div>
+              <div className="text-center"><p className="text-4xl mb-2">💬</p><p>Select a conversation</p></div>
             </div>
           ) : (
             <>
-              {/* Chat Header */}
-              <div className={`p-4 border-b flex items-center justify-between ${selectedRMA.chat_status === 'open' ? 'bg-amber-50' : 'bg-gray-50'}`}>
+              {/* Header */}
+              <div className={`p-3 border-b flex justify-between items-center ${selectedRMA.chat_status === 'open' ? 'bg-amber-50' : 'bg-gray-50'}`}>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-[#00A651]">{selectedRMA.request_number}</span>
-                    {selectedRMA.chat_status === 'open' && (
-                      <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">🔔 Ouvert</span>
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-600">{selectedRMA.companies?.name}</p>
+                  <span className="font-mono font-bold text-[#00A651]">{selectedRMA.request_number}</span>
+                  <span className="text-sm text-gray-500 ml-2">{selectedRMA.companies?.name}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setTranslationMode(!translationMode)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                      translationMode ? 'bg-purple-500 text-white' : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
-                    }`}
-                  >
-                    🌐 {translationMode ? 'Mode Normal' : 'Traduction'}
+                <div className="flex gap-2">
+                  <button onClick={() => setEnglishMode(!englishMode)} className={`px-2 py-1 rounded text-xs font-medium ${englishMode ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
+                    {englishMode ? '🇬🇧 EN' : '🇫🇷 FR'}
                   </button>
-                  <button
-                    onClick={toggleChatStatus}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                      selectedRMA.chat_status === 'open'
-                        ? 'bg-green-500 hover:bg-green-600 text-white'
-                        : 'bg-amber-500 hover:bg-amber-600 text-white'
-                    }`}
-                  >
-                    {selectedRMA.chat_status === 'open' ? '✓ Fermer' : '+ Ouvrir'}
-                  </button>
-                  <button
-                    onClick={() => onSelectRMA(selectedRMA)}
-                    className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium"
-                  >
-                    Voir RMA →
+                  <button onClick={() => setShowRMASidebar(!showRMASidebar)} className={`px-2 py-1 rounded text-xs font-medium ${showRMASidebar ? 'bg-purple-500 text-white' : 'bg-purple-100'}`}>📋 RMA</button>
+                  <button onClick={toggleChat} className={`px-2 py-1 rounded text-xs font-medium ${selectedRMA.chat_status === 'open' ? 'bg-green-500 text-white' : 'bg-amber-500 text-white'}`}>
+                    {selectedRMA.chat_status === 'open' ? '✓ Close' : '+ Open'}
                   </button>
                 </div>
               </div>
               
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {messages.length === 0 ? (
-                  <p className="text-gray-400 text-center py-8">Aucun message dans cette conversation</p>
-                ) : (
-                  messages.map(msg => (
-                    <div key={msg.id} className={`flex ${msg.sender_type === 'admin' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[70%] p-3 rounded-lg ${
-                        msg.sender_type === 'admin' 
-                          ? 'bg-blue-500 text-white' 
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        <div className="flex justify-between items-start mb-1 gap-4">
-                          <span className={`text-xs font-medium ${msg.sender_type === 'admin' ? 'text-blue-100' : 'text-gray-500'}`}>
-                            {msg.sender_type === 'admin' ? (msg.sender_name || 'Admin') : (msg.sender_name || 'Client')}
-                          </span>
-                          <span className={`text-xs ${msg.sender_type === 'admin' ? 'text-blue-200' : 'text-gray-400'}`}>
-                            {new Date(msg.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                        
-                        {/* Translation for customer messages */}
-                        {translationMode && msg.sender_type === 'customer' && (
-                          <div className="mt-2 pt-2 border-t border-gray-200">
-                            {translatedMessages[msg.id] ? (
-                              <p className="text-xs text-blue-600 italic">🇬🇧 {translatedMessages[msg.id]}</p>
+              <div className="flex-1 flex overflow-hidden">
+                {/* Messages */}
+                <div className="flex-1 flex flex-col">
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    {messages.map(msg => {
+                      const isAdmin = msg.sender_type === 'admin';
+                      const trans = translatedMessages[msg.id];
+                      const recent = isWithin48Hours(msg.created_at);
+                      return (
+                        <div key={msg.id} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-[70%] p-3 rounded-lg ${isAdmin ? 'bg-blue-500 text-white' : 'bg-gray-100'}`}>
+                            <div className="flex justify-between text-xs mb-1 gap-2">
+                              <span className={isAdmin ? 'text-blue-200' : 'text-gray-500'}>{msg.sender_name || (isAdmin ? 'Admin' : 'Client')}</span>
+                              <span className={isAdmin ? 'text-blue-200' : 'text-gray-400'}>{new Date(msg.created_at).toLocaleString('fr-FR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+                            </div>
+                            {englishMode && !isAdmin && trans ? (
+                              <><p className="text-sm">{trans}</p><p className="text-xs mt-1 pt-1 border-t border-gray-200 text-gray-400 italic">🇫🇷 {msg.content}</p></>
+                            ) : englishMode && !isAdmin && recent && translatingMessages[msg.id] ? (
+                              <p className="text-sm text-gray-400 italic">Translating...</p>
                             ) : (
-                              <button
-                                onClick={() => translateCustomerMessage(msg.id, msg.content)}
-                                className="text-xs text-blue-500 hover:underline"
-                              >
-                                🇬🇧 Translate to English
-                              </button>
+                              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                            )}
+                            {englishMode && !isAdmin && !recent && !trans && (
+                              <button onClick={() => translateMsg(msg.id, msg.content)} className="text-xs text-blue-500 mt-1">🇬🇧 Translate</button>
+                            )}
+                            {msg.attachment_url && (
+                              <a href={msg.attachment_url} target="_blank" className={`text-xs mt-2 block ${isAdmin ? 'text-blue-200' : 'text-blue-600'}`}>📎 {msg.attachment_name || 'Download'}</a>
                             )}
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-              
-              {/* Translation Mode Panel */}
-              {translationMode && (
-                <div className="border-t bg-purple-50 p-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    {/* Left: Write in English */}
-                    <div>
-                      <label className="text-sm font-medium text-purple-800 mb-2 block">🇬🇧 Write in English</label>
-                      <textarea
-                        value={englishInput}
-                        onChange={e => setEnglishInput(e.target.value)}
-                        placeholder="Type your message in English..."
-                        className="w-full px-3 py-2 border border-purple-200 rounded-lg text-sm h-24 resize-none focus:ring-2 focus:ring-purple-500"
-                      />
-                      <button
-                        onClick={translateToFrench}
-                        disabled={translating || !englishInput.trim()}
-                        className="mt-2 px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium disabled:opacity-50"
-                      >
-                        {translating ? '⏳ Translating...' : '🔄 Translate to French'}
-                      </button>
-                    </div>
-                    
-                    {/* Right: French output */}
-                    <div>
-                      <label className="text-sm font-medium text-purple-800 mb-2 block">🇫🇷 French Version (to send)</label>
-                      <textarea
-                        value={frenchOutput}
-                        onChange={e => setFrenchOutput(e.target.value)}
-                        placeholder="French translation will appear here..."
-                        className="w-full px-3 py-2 border border-purple-200 rounded-lg text-sm h-24 resize-none bg-white focus:ring-2 focus:ring-purple-500"
-                      />
-                      <button
-                        onClick={() => sendMessage(frenchOutput)}
-                        disabled={sendingMessage || !frenchOutput.trim()}
-                        className="mt-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium disabled:opacity-50"
-                      >
-                        {sendingMessage ? '⏳ Sending...' : '📤 Send French Message'}
-                      </button>
-                    </div>
+                        </div>
+                      );
+                    })}
                   </div>
                   
-                  {/* AI Suggestion Section */}
-                  <div className="mt-4 pt-4 border-t border-purple-200">
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="text-sm font-medium text-purple-800">🤖 AI Suggested Response</label>
-                      <button
-                        onClick={generateAISuggestion}
-                        disabled={generatingAI}
-                        className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-medium disabled:opacity-50"
-                      >
-                        {generatingAI ? '⏳ Generating...' : '✨ Generate Suggestion'}
-                      </button>
-                    </div>
-                    
-                    {aiSuggestion.french && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-white rounded-lg p-3 border border-purple-200">
-                          <p className="text-xs font-medium text-gray-500 mb-1">🇬🇧 English</p>
-                          <p className="text-sm text-gray-700">{aiSuggestion.english}</p>
+                  {/* AI Suggestions */}
+                  {(loadingSuggestions || aiSuggestions.length > 0) && (
+                    <div className="border-t bg-purple-50 p-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium text-purple-700">🤖 AI Suggestion</span>
+                        <button onClick={() => generateSuggestions(messages)} className="text-xs text-purple-600">🔄 Refresh</button>
+                      </div>
+                      {loadingSuggestions ? <p className="text-xs text-purple-500">Loading...</p> : aiSuggestions.map((s, i) => (
+                        <div key={i} onClick={() => { setEnglishInput(s.english); setFrenchOutput(s.french); }} className="p-2 bg-white rounded border border-purple-200 cursor-pointer hover:border-purple-400 text-xs">
+                          <p className="text-gray-600">{englishMode ? s.english : s.french}</p>
                         </div>
-                        <div className="bg-white rounded-lg p-3 border border-purple-200">
-                          <p className="text-xs font-medium text-gray-500 mb-1">🇫🇷 French</p>
-                          <p className="text-sm text-gray-700">{aiSuggestion.french}</p>
-                          <button
-                            onClick={() => setFrenchOutput(aiSuggestion.french)}
-                            className="mt-2 text-xs text-purple-600 hover:underline"
-                          >
-                            Use this response →
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* Input */}
+                  <div className="border-t bg-gray-50 p-3">
+                    {englishMode ? (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-xs text-gray-500 mb-1 block">🇬🇧 Your message (English)</label>
+                            <textarea value={englishInput} onChange={e => setEnglishInput(e.target.value)} placeholder="Type in English..." className="w-full px-2 py-1.5 border rounded text-sm h-16 resize-none" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 mb-1 block">🇫🇷 French (will be sent)</label>
+                            <textarea value={frenchOutput} onChange={e => setFrenchOutput(e.target.value)} placeholder="French here..." className="w-full px-2 py-1.5 border rounded text-sm h-16 resize-none bg-white" />
+                          </div>
+                        </div>
+                        <div className="flex justify-between">
+                          <div className="flex gap-2">
+                            <button onClick={processAndTranslate} disabled={processingMessage || !englishInput.trim()} className="px-3 py-1.5 bg-purple-500 text-white rounded text-xs font-medium disabled:opacity-50">
+                              {processingMessage ? '⏳...' : '🔄 Translate'}
+                            </button>
+                            <label className="px-3 py-1.5 bg-gray-200 rounded text-xs font-medium cursor-pointer">
+                              📎 File<input type="file" className="hidden" onChange={handleFile} disabled={uploadingFile} />
+                            </label>
+                          </div>
+                          <button onClick={sendMessage} disabled={sendingMessage || !frenchOutput.trim()} className="px-4 py-1.5 bg-green-500 text-white rounded text-xs font-medium disabled:opacity-50">
+                            {sendingMessage ? '⏳...' : '📤 Send French'}
                           </button>
                         </div>
                       </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <textarea value={frenchOutput} onChange={e => setFrenchOutput(e.target.value)} placeholder="Message en français..." className="flex-1 px-2 py-1.5 border rounded text-sm resize-none" rows={2} />
+                        <div className="flex flex-col gap-1">
+                          <label className="px-2 py-1.5 bg-gray-200 rounded text-xs cursor-pointer text-center">📎<input type="file" className="hidden" onChange={handleFile} /></label>
+                          <button onClick={sendMessage} disabled={sendingMessage || !frenchOutput.trim()} className="px-3 py-1.5 bg-blue-500 text-white rounded text-xs disabled:opacity-50">📤</button>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
-              )}
-              
-              {/* Normal Message Input (when not in translation mode) */}
-              {!translationMode && (
-                <div className="p-4 border-t bg-gray-50">
-                  <div className="flex gap-2">
-                    <textarea
-                      value={newMessage}
-                      onChange={e => setNewMessage(e.target.value)}
-                      placeholder="Tapez votre message..."
-                      className="flex-1 px-4 py-2 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      rows={2}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          sendMessage();
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => sendMessage()}
-                      disabled={sendingMessage || !newMessage.trim()}
-                      className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed self-end"
-                    >
-                      {sendingMessage ? '⏳' : '📤'}
-                    </button>
+                
+                {/* RMA Sidebar */}
+                {showRMASidebar && (
+                  <div className="w-72 border-l bg-gray-50 p-3 overflow-y-auto flex-shrink-0">
+                    <h3 className="font-bold text-gray-700 mb-3">📋 RMA Info</h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">RMA</span><p className="font-mono font-bold text-[#00A651]">{selectedRMA.request_number}</p></div>
+                      <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Status</span><p>{selectedRMA.status}</p></div>
+                      <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Service</span><p>{selectedRMA.requested_service}</p></div>
+                      <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Company</span><p>{selectedRMA.companies?.name}</p></div>
+                      <div className="bg-white p-2 rounded border">
+                        <span className="text-gray-500 text-xs">Devices ({selectedRMA.request_devices?.length || 0})</span>
+                        {selectedRMA.request_devices?.map((d, i) => (
+                          <div key={i} className="mt-1 pt-1 border-t text-xs">
+                            <p className="font-medium">{d.model_name}</p>
+                            <p className="text-gray-400">SN: {d.serial_number}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <button onClick={() => onSelectRMA(selectedRMA)} className="w-full py-2 bg-blue-500 text-white rounded text-sm font-medium">Open Full RMA →</button>
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">Entrée pour envoyer • Shift+Entrée pour nouvelle ligne</p>
-                </div>
-              )}
+                )}
+              </div>
             </>
           )}
         </div>
       </div>
+      
+      {/* English Confirm Modal */}
+      {showEnglishConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-md">
+            <h3 className="font-bold text-lg mb-2">⚠️ Message appears to be in English</h3>
+            <p className="text-gray-600 mb-4">Are you sure you want to send this? It looks like English, not French.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowEnglishConfirm(false)} className="flex-1 py-2 bg-gray-200 rounded font-medium">Cancel</button>
+              <button onClick={sendMessage} className="flex-1 py-2 bg-amber-500 text-white rounded font-medium">Send Anyway</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
 
 function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, onSelectRMA, onSelectDevice }) {
   const [selectedClient, setSelectedClient] = useState(null);
