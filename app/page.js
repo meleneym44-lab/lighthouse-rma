@@ -2523,6 +2523,12 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
   const [selectedThread, setSelectedThread] = useState(null);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const messagesEndRef = React.useRef(null);
+
+  // Scroll to bottom of messages
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   // Group messages by request
   const messagesByRequest = requests.map(req => {
@@ -2588,6 +2594,8 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
     if (!error && data) {
       setMessages([data, ...messages]);
       setNewMessage('');
+      // Scroll to bottom after sending
+      setTimeout(scrollToBottom, 100);
     }
     setSending(false);
   };
@@ -2595,14 +2603,23 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
   const openThread = (thread) => {
     setSelectedThread(thread);
     markAsRead(thread.request.id);
+    // Scroll to bottom when opening thread
+    setTimeout(scrollToBottom, 100);
   };
+
+  // Scroll to bottom when selected thread changes or messages update
+  React.useEffect(() => {
+    if (selectedThread) {
+      setTimeout(scrollToBottom, 100);
+    }
+  }, [selectedThread?.request.id]);
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
       <div className="grid md:grid-cols-3 h-[600px]">
         {/* Thread List */}
         <div className="border-r border-gray-100 overflow-y-auto">
-          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 sticky top-0">
             <h3 className="font-bold text-[#1E3A5F]">Conversations</h3>
           </div>
           
@@ -2651,11 +2668,11 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
         </div>
 
         {/* Message Thread */}
-        <div className="md:col-span-2 flex flex-col">
+        <div className="md:col-span-2 flex flex-col h-full overflow-hidden">
           {selectedThread ? (
             <>
               {/* Thread Header */}
-              <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+              <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex-shrink-0">
                 <h3 className="font-bold text-[#1E3A5F]">
                   Demande {selectedThread.request.request_number}
                 </h3>
@@ -2665,8 +2682,8 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
                 </p>
               </div>
 
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Messages - scrollable area */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
                 {selectedThread.messages.length === 0 ? (
                   <div className="text-center text-gray-400 py-8">
                     <p>Aucun message pour cette demande</p>
@@ -2704,10 +2721,12 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
                     );
                   })
                 )}
+                {/* Scroll anchor */}
+                <div ref={messagesEndRef} />
               </div>
 
-              {/* Message Input */}
-              <form onSubmit={sendMessage} className="p-4 border-t border-gray-100">
+              {/* Message Input - fixed at bottom */}
+              <form onSubmit={sendMessage} className="p-4 border-t border-gray-100 flex-shrink-0 bg-white">
                 <div className="flex gap-2">
                   <input
                     type="text"
