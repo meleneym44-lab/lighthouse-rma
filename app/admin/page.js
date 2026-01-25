@@ -6236,8 +6236,8 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
                       <td className="pt-8 pb-2 text-gray-800 whitespace-pre-wrap">{device.work_completed || '—'}</td>
                     </tr>
                     <tr>
-                      <td className="pt-16 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Travaux réalisés</td>
-                      <td className="pt-16 pb-2">
+                      <td style={{ paddingTop: '6.5rem' }} className="pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Travaux réalisés</td>
+                      <td style={{ paddingTop: '6.5rem' }} className="pb-2">
                         <div className="space-y-1">
                           {defaultChecklist.filter(item => item.checked).map(item => (
                             <div key={item.id} className="flex items-center gap-2">
