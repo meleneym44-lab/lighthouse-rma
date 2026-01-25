@@ -2286,12 +2286,18 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
                 {rma.bc_file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
                   <img src={rma.bc_file_url} alt="BC Document" className="w-full h-full object-contain" />
                 ) : rma.bc_file_url.match(/\.pdf$/i) ? (
-                  <iframe 
-                    src={`${rma.bc_file_url}#toolbar=1&navpanes=1&scrollbar=1&view=FitH`} 
-                    className="w-full h-full" 
-                    title="BC PDF"
+                  <object
+                    data={`${rma.bc_file_url}#view=Fit`}
+                    type="application/pdf"
+                    className="w-full h-full"
                     style={{ minHeight: '100%' }}
-                  />
+                  >
+                    <iframe 
+                      src={`${rma.bc_file_url}#view=Fit`} 
+                      className="w-full h-full" 
+                      title="BC PDF"
+                    />
+                  </object>
                 ) : (
                   <div className="h-full flex items-center justify-center">
                     <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-8 py-4 bg-blue-500 text-white rounded-lg text-lg font-medium">
@@ -3314,44 +3320,10 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       </div>
                     </div>
                   )}
-                  
-                  {/* UPS Label PDF */}
-                  {device.ups_label_url && (
-                    <a href={device.ups_label_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">🏷️</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Étiquette UPS</p>
-                        <p className="text-sm text-gray-500">Label d'expédition</p>
-                      </div>
-                    </a>
-                  )}
-                  
-                  {/* UPS Tracking Link */}
-                  {device.tracking_number && (
-                    <a href={`https://www.ups.com/track?tracknum=${device.tracking_number}`} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">📦</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Suivi UPS</p>
-                        <p className="text-sm text-blue-600 font-mono">{device.tracking_number}</p>
-                      </div>
-                    </a>
-                  )}
-                  
-                  {device.shipped_at && (
-                    <div className="flex items-center gap-4 p-4 border rounded-lg bg-green-50">
-                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">🚚</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Expédié</p>
-                        <p className="text-sm text-gray-600">{new Date(device.shipped_at).toLocaleDateString('fr-FR')}</p>
-                      </div>
-                    </div>
-                  )}
                 </div>
                 
                 {/* No documents message */}
-                {!device.calibration_certificate_url && !device.report_url && !rma.quote_url && !rma.bc_file_url && !device.bl_number && !device.bl_url && !device.tracking_number && !rma.avenant_sent_at && (
+                {!device.calibration_certificate_url && !device.report_url && !rma.quote_url && !rma.bc_file_url && !device.bl_number && !device.bl_url && !rma.avenant_sent_at && (
                   <p className="text-gray-400 text-center py-8">Aucun document disponible</p>
                 )}
               </div>
