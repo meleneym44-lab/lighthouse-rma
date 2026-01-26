@@ -10709,13 +10709,21 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                     </tbody>
                     <tfoot>
                       <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#00A651] text-white"}>
-                        <td colSpan={3} className="px-4 py-4 text-right font-bold text-lg">TOTAL HT</td>
-                        <td className="px-4 py-4 text-right font-bold text-xl">
+                        <td colSpan={2} className="px-4 py-4"></td>
+                        <td className="px-4 py-4 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
+                        <td className="px-4 py-4 text-right font-bold text-xl whitespace-nowrap">
                           {isFullyContractCovered ? 'Contrat' : `${grandTotal.toFixed(2)} €`}
                         </td>
                       </tr>
                     </tfoot>
                   </table>
+                  
+                  {/* Nettoyage disclaimer if applicable */}
+                  {devicePricing.some(d => d.needsNettoyage && !d.isContractCovered) && (
+                    <p className="text-xs text-gray-500 mt-3 italic">
+                      * Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.
+                    </p>
+                  )}
                 </div>
 
                 {/* Disclaimers */}
