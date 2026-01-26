@@ -10075,16 +10075,28 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                         )}
 
                         {/* Pricing Inputs */}
-                        <div className="p-4 space-y-3">
+                        <div className="p-4 space-y-2">
+                          {/* Column Headers */}
+                          <div className="flex items-center gap-2 text-xs text-gray-500 font-medium px-1 pb-1 border-b">
+                            <div className="w-14 text-center">Qté</div>
+                            <div className="w-28">N° Pièce</div>
+                            <div className="flex-1">Désignation</div>
+                            <div className="w-24 text-right">Prix Unit.</div>
+                            <div className="w-24 text-right">Total</div>
+                            <div className="w-8"></div>
+                          </div>
+                          
                           {device.needsCalibration && (
-                            <div className={`p-3 rounded-lg ${
+                            <div className={`p-2 rounded-lg ${
                               device.calPartNumber && partsCache[device.calPartNumber] 
                                 ? 'bg-blue-50' 
                                 : 'bg-orange-50 border-2 border-orange-300'
                             }`}>
                               <div className="flex items-center gap-2">
+                                {/* Quantity - always 1 for calibration */}
+                                <div className="w-14 text-center text-sm font-medium">1</div>
                                 {/* Part Number */}
-                                <div className="w-32">
+                                <div className="w-28">
                                   <input
                                     type="text"
                                     value={device.calPartNumber || ''}
@@ -10097,7 +10109,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                                       }
                                     }}
                                     placeholder="Cal-XXXX"
-                                    className={`w-full px-2 py-2 border rounded-lg text-sm font-mono ${
+                                    className={`w-full px-2 py-1.5 border rounded text-xs font-mono ${
                                       device.calPartNumber && partsCache[device.calPartNumber] 
                                         ? 'border-green-400 bg-green-50' 
                                         : 'border-orange-300'
@@ -10107,46 +10119,49 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                                 </div>
                                 {/* Description */}
                                 <div className="flex-1">
-                                  <span className={`text-sm font-medium ${
+                                  <span className={`text-sm ${
                                     device.calPartNumber && partsCache[device.calPartNumber] 
                                       ? 'text-blue-800' 
                                       : 'text-orange-800'
                                   }`}>
-                                    Main d'œuvre étalonnage
+                                    Étalonnage {device.model}
                                     {device.calPartNumber && partsCache[device.calPartNumber] && (
-                                      <span className="ml-2 text-green-600">✓</span>
-                                    )}
-                                    {!device.calPartNumber && !device.isContractCovered && (
-                                      <span className="ml-2 text-orange-600 text-xs">⚠️ PN requis</span>
+                                      <span className="ml-1 text-green-600">✓</span>
                                     )}
                                   </span>
                                 </div>
                                 {/* Price */}
                                 {device.isContractCovered ? (
-                                  <span className="px-3 py-2 bg-emerald-600 text-white font-bold rounded-lg text-sm">
-                                    Contrat N° {contractNumber}
-                                  </span>
+                                  <div className="w-24 text-right">
+                                    <span className="px-2 py-1 bg-emerald-600 text-white text-xs rounded">Contrat</span>
+                                  </div>
                                 ) : (
-                                  <div className="flex items-center gap-1">
+                                  <div className="w-24">
                                     <input
                                       type="number"
                                       value={device.calibrationPrice}
                                       onChange={e => updateDevice(device.id, 'calibrationPrice', parseFloat(e.target.value) || 0)}
-                                      className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
+                                      className="w-full px-2 py-1.5 border rounded text-sm text-right"
                                     />
-                                    <span className="text-gray-500 font-medium">€</span>
                                   </div>
                                 )}
+                                {/* Total */}
+                                <div className="w-24 text-right font-medium text-sm">
+                                  {device.isContractCovered ? '' : `${(device.calibrationPrice || 0).toFixed(2)} €`}
+                                </div>
+                                <div className="w-8"></div>
                               </div>
                             </div>
                           )}
                           
                           {/* Nettoyage Cellule - Air particle counters only */}
                           {device.needsNettoyage && (
-                            <div className="bg-cyan-50 p-3 rounded-lg">
+                            <div className="bg-cyan-50 p-2 rounded-lg">
                               <div className="flex items-center gap-2">
+                                {/* Quantity */}
+                                <div className="w-14 text-center text-sm text-cyan-600">*</div>
                                 {/* Part Number */}
-                                <div className="w-32">
+                                <div className="w-28">
                                   <input
                                     type="text"
                                     value={device.nettoyagePartNumber || ''}
@@ -10158,7 +10173,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                                       }
                                     }}
                                     placeholder="cell1/cell2"
-                                    className={`w-full px-2 py-2 border rounded-lg text-sm font-mono ${
+                                    className={`w-full px-2 py-1.5 border rounded text-xs font-mono ${
                                       device.nettoyagePartNumber && partsCache[device.nettoyagePartNumber]
                                         ? 'border-green-400 bg-green-50'
                                         : 'border-cyan-300'
@@ -10168,53 +10183,44 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                                 </div>
                                 {/* Description */}
                                 <div className="flex-1">
-                                  <span className="text-sm font-medium text-cyan-800">
-                                    ✨ Nettoyage cellule
+                                  <span className="text-sm text-cyan-800">
+                                    Nettoyage cellule <span className="text-cyan-600 text-xs italic">(si requis)</span>
                                     {device.nettoyagePartNumber && partsCache[device.nettoyagePartNumber] && (
-                                      <span className="ml-2 text-green-600">✓</span>
+                                      <span className="ml-1 text-green-600">✓</span>
                                     )}
-                                    <span className="ml-2 text-cyan-600 text-xs">
-                                      ({device.nettoyageCellType === 'cell2' ? 'LD Sensor' : 'Standard'})
-                                    </span>
                                   </span>
                                 </div>
                                 {/* Price */}
                                 {device.isContractCovered ? (
-                                  <span className="px-3 py-2 bg-emerald-600 text-white font-bold rounded-lg text-sm">
-                                    Contrat N° {contractNumber}
-                                  </span>
+                                  <div className="w-24 text-right">
+                                    <span className="px-2 py-1 bg-emerald-600 text-white text-xs rounded">Contrat</span>
+                                  </div>
                                 ) : (
-                                  <div className="flex items-center gap-1">
+                                  <div className="w-24">
                                     <input
                                       type="number"
                                       value={device.nettoyagePrice}
                                       onChange={e => updateDevice(device.id, 'nettoyagePrice', parseFloat(e.target.value) || 0)}
-                                      className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
+                                      className="w-full px-2 py-1.5 border rounded text-sm text-right"
                                     />
-                                    <span className="text-gray-500 font-medium">€</span>
                                   </div>
                                 )}
-                                {/* Hide on quote checkbox */}
-                                {!device.isContractCovered && (
-                                  <label className="flex items-center gap-1 ml-2 cursor-pointer" title="Masquer sur le devis (prix inclus dans le total)">
-                                    <input
-                                      type="checkbox"
-                                      checked={device.hideNettoyageOnQuote || false}
-                                      onChange={e => updateDevice(device.id, 'hideNettoyageOnQuote', e.target.checked)}
-                                      className="w-4 h-4 rounded border-gray-300"
-                                    />
-                                    <span className="text-xs text-gray-500">Masquer</span>
-                                  </label>
-                                )}
+                                {/* Total */}
+                                <div className="w-24 text-right text-sm text-cyan-700">
+                                  {device.isContractCovered ? '' : `${(device.nettoyagePrice || 0).toFixed(2)} €`}
+                                </div>
+                                <div className="w-8"></div>
                               </div>
                             </div>
                           )}
                           
                           {device.needsRepair && (
-                            <div className="bg-orange-50 p-3 rounded-lg">
+                            <div className="bg-orange-50 p-2 rounded-lg">
                               <div className="flex items-center gap-2">
+                                {/* Quantity */}
+                                <div className="w-14 text-center text-sm font-medium">1</div>
                                 {/* Part Number */}
-                                <div className="w-32">
+                                <div className="w-28">
                                   <input
                                     type="text"
                                     value={device.repairPartNumber || ''}
@@ -10226,45 +10232,48 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                                       }
                                     }}
                                     placeholder="PN réparation"
-                                    className="w-full px-2 py-2 border rounded-lg text-sm font-mono border-orange-300"
+                                    className="w-full px-2 py-1.5 border rounded text-xs font-mono border-orange-300"
                                   />
                                 </div>
                                 {/* Description */}
                                 <div className="flex-1">
-                                  <span className="text-sm font-medium text-orange-800">
-                                    🔧 Main d'œuvre réparation
+                                  <span className="text-sm text-orange-800">
+                                    Réparation {device.model}
                                     {device.repairPartNumber && partsCache[device.repairPartNumber] && (
-                                      <span className="ml-2 text-green-600">✓</span>
+                                      <span className="ml-1 text-green-600">✓</span>
                                     )}
                                   </span>
                                 </div>
                                 {/* Price */}
-                                <div className="flex items-center gap-1">
+                                <div className="w-24">
                                   <input
                                     type="number"
                                     value={device.repairPrice}
                                     onChange={e => updateDevice(device.id, 'repairPrice', parseFloat(e.target.value) || 0)}
-                                    className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
+                                    className="w-full px-2 py-1.5 border rounded text-sm text-right"
                                   />
-                                  <span className="text-gray-500 font-medium">€</span>
                                 </div>
+                                {/* Total */}
+                                <div className="w-24 text-right font-medium text-sm">
+                                  {(device.repairPrice || 0).toFixed(2)} €
+                                </div>
+                                <div className="w-8"></div>
                               </div>
                             </div>
                           )}
 
                           {/* Additional Parts */}
                           {device.additionalParts.map(part => (
-                            <div key={part.id} className="bg-gray-50 p-3 rounded-lg">
+                            <div key={part.id} className="bg-gray-50 p-2 rounded-lg">
                               <div className="flex items-center gap-2">
                                 {/* Quantity */}
-                                <div className="w-16">
+                                <div className="w-14">
                                   <input
                                     type="number"
                                     min="1"
                                     value={part.quantity || 1}
                                     onChange={e => updatePart(device.id, part.id, 'quantity', Math.max(1, parseInt(e.target.value) || 1))}
-                                    className="w-full px-2 py-2 border rounded-lg text-sm text-center"
-                                    title="Quantité"
+                                    className="w-full px-2 py-1.5 border rounded text-sm text-center"
                                   />
                                 </div>
                                 {/* Part Number */}
@@ -10275,7 +10284,6 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                                     onChange={e => {
                                       const pn = e.target.value;
                                       updatePart(device.id, part.id, 'partNumber', pn);
-                                      // Auto-fill description and price from parts cache
                                       if (partsCache[pn]) {
                                         updatePart(device.id, part.id, 'price', partsCache[pn]);
                                       }
@@ -10284,7 +10292,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                                       }
                                     }}
                                     placeholder="N° pièce"
-                                    className={`w-full px-2 py-2 border rounded-lg text-sm font-mono ${
+                                    className={`w-full px-2 py-1.5 border rounded text-xs font-mono ${
                                       part.partNumber && partsCache[part.partNumber]
                                         ? 'border-green-400 bg-green-50'
                                         : 'border-gray-300'
@@ -10297,32 +10305,30 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                                     type="text"
                                     value={part.description}
                                     onChange={e => updatePart(device.id, part.id, 'description', e.target.value)}
-                                    placeholder="Description pièce/service..."
-                                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                                    placeholder="Description..."
+                                    className="w-full px-2 py-1.5 border rounded text-sm"
                                   />
                                 </div>
                                 {/* Unit Price */}
-                                <div className="flex items-center gap-1">
+                                <div className="w-24">
                                   <input
                                     type="number"
                                     value={part.price}
                                     onChange={e => updatePart(device.id, part.id, 'price', e.target.value)}
-                                    className="w-20 px-2 py-2 border rounded-lg text-right text-sm"
+                                    className="w-full px-2 py-1.5 border rounded text-sm text-right"
                                     placeholder="0"
-                                    title="Prix unitaire"
                                   />
-                                  <span className="text-gray-500 text-sm">€</span>
                                 </div>
-                                {/* Line Total (read-only) */}
-                                <div className="w-24 text-right font-medium text-gray-700">
+                                {/* Line Total */}
+                                <div className="w-24 text-right font-medium text-sm">
                                   {((parseInt(part.quantity) || 1) * (parseFloat(part.price) || 0)).toFixed(2)} €
                                 </div>
-                                <button onClick={() => removePart(device.id, part.id)} className="text-red-500 hover:text-red-700 text-xl px-1">×</button>
+                                <button onClick={() => removePart(device.id, part.id)} className="w-8 text-red-500 hover:text-red-700 text-lg">×</button>
                               </div>
                             </div>
                           ))}
                           
-                          <button onClick={() => addPart(device.id)} className="text-sm text-[#00A651] font-medium hover:underline">
+                          <button onClick={() => addPart(device.id)} className="text-sm text-[#00A651] font-medium hover:underline ml-16">
                             + Ajouter pièce/service
                           </button>
                         </div>
@@ -10595,14 +10601,13 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                 <div className="px-8 py-6 bg-gray-50">
                   <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
                   
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr className="bg-[#1a1a2e] text-white">
-                        <th className="px-3 py-3 text-center w-12">Qté</th>
+                        <th className="px-3 py-3 text-center w-14">Qté</th>
                         <th className="px-3 py-3 text-left">Désignation</th>
-                        <th className="px-3 py-3 text-left w-28">N° Série</th>
-                        <th className="px-3 py-3 text-right w-24">Prix Unit.</th>
-                        <th className="px-3 py-3 text-right w-24">Total HT</th>
+                        <th className="px-3 py-3 text-right w-28">Prix Unit.</th>
+                        <th className="px-3 py-3 text-right w-28">Total HT</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -10610,15 +10615,10 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                         const services = [];
                         if (device.needsCalibration) services.push('Étalonnage');
                         if (device.needsRepair) services.push('Réparation');
-                        const serviceLabel = `${services.join(' + ')} ${device.model}`;
+                        const serviceLabel = `${services.join(' + ')} ${device.model} (SN: ${device.serial})`;
                         
-                        // Calculate device total without nettoyage (nettoyage shown separately as note)
                         const calibrationTotal = device.needsCalibration ? (parseFloat(device.calibrationPrice) || 0) : 0;
                         const repairTotal = device.needsRepair ? (parseFloat(device.repairPrice) || 0) : 0;
-                        const partsTotal = device.additionalParts.reduce((sum, p) => sum + ((parseFloat(p.price) || 0) * (parseInt(p.quantity) || 1)), 0);
-                        const deviceBaseTotal = calibrationTotal + repairTotal + partsTotal;
-                        
-                        console.log('📄 Preview device:', device.serial, 'nettoyage:', device.needsNettoyage);
                         
                         const rows = [];
                         
@@ -10626,26 +10626,17 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                         if (device.needsCalibration || device.needsRepair) {
                           const mainPrice = calibrationTotal + repairTotal;
                           rows.push(
-                            <tr key={`${device.id}-main`} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-100'} ${device.isContractCovered ? 'bg-emerald-50' : ''}`}>
+                            <tr key={`${device.id}-main`} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${device.isContractCovered ? 'bg-emerald-50' : ''} border-b`}>
                               <td className="px-3 py-3 text-center">1</td>
-                              <td className="px-3 py-3 font-medium">
-                                {serviceLabel}
+                              <td className="px-3 py-3">
+                                <span className="font-medium">{serviceLabel}</span>
                                 {device.isContractCovered && <span className="ml-2 px-2 py-0.5 bg-emerald-500 text-white text-xs rounded">CONTRAT</span>}
                               </td>
-                              <td className="px-3 py-3 font-mono text-xs">{device.serial}</td>
                               <td className="px-3 py-3 text-right">
-                                {device.isContractCovered ? (
-                                  <span className="text-emerald-600 font-bold">Contrat</span>
-                                ) : (
-                                  `${mainPrice.toFixed(2)} €`
-                                )}
+                                {device.isContractCovered ? <span className="text-emerald-600">Contrat</span> : `${mainPrice.toFixed(2)} €`}
                               </td>
                               <td className="px-3 py-3 text-right font-medium">
-                                {device.isContractCovered ? (
-                                  <span className="text-emerald-600 font-bold">Contrat</span>
-                                ) : (
-                                  `${mainPrice.toFixed(2)} €`
-                                )}
+                                {device.isContractCovered ? <span className="text-emerald-600">Contrat</span> : `${mainPrice.toFixed(2)} €`}
                               </td>
                             </tr>
                           );
@@ -10657,53 +10648,53 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                           const unitPrice = parseFloat(part.price) || 0;
                           const lineTotal = qty * unitPrice;
                           rows.push(
-                            <tr key={`${device.id}-part-${part.id}`} className="bg-gray-50 text-gray-700">
+                            <tr key={`${device.id}-part-${part.id}`} className="bg-white border-b">
                               <td className="px-3 py-2 text-center">{qty}</td>
-                              <td className="px-3 py-2 text-sm">
-                                {part.partNumber && <span className="font-mono text-xs text-gray-500 mr-2">[{part.partNumber}]</span>}
+                              <td className="px-3 py-2">
+                                {part.partNumber && <span className="font-mono text-xs text-gray-500 mr-1">[{part.partNumber}]</span>}
                                 {part.description || 'Pièce/Service'}
                               </td>
-                              <td className="px-3 py-2"></td>
-                              <td className="px-3 py-2 text-right text-sm">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-3 py-2 text-right text-sm font-medium">{lineTotal.toFixed(2)} €</td>
+                              <td className="px-3 py-2 text-right">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-3 py-2 text-right font-medium">{lineTotal.toFixed(2)} €</td>
                             </tr>
                           );
                         });
                         
                         return rows;
                       })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-gray-100 border-t-2 border-gray-300">
-                        <td className="px-3 py-3" colSpan={2}></td>
-                        <td className="px-3 py-3 text-right font-medium" colSpan={2}>Frais de port ({shippingData.parcels} colis)</td>
+                      
+                      {/* Nettoyage Cellule disclaimer row - if any device needs it */}
+                      {devicePricing.some(d => d.needsNettoyage && !d.isContractCovered) && (
+                        <tr className="bg-cyan-50 border-b">
+                          <td className="px-3 py-2 text-center text-cyan-600">*</td>
+                          <td className="px-3 py-2 text-cyan-700 italic" colSpan={2}>
+                            Nettoyage cellule - si requis selon l'état du capteur
+                          </td>
+                          <td className="px-3 py-2 text-right text-cyan-700">
+                            {devicePricing.find(d => d.needsNettoyage)?.nettoyagePrice || 150} € /app.
+                          </td>
+                        </tr>
+                      )}
+                      
+                      {/* Shipping row */}
+                      <tr className="bg-gray-100 border-b">
+                        <td className="px-3 py-3 text-center">{shippingData.parcels}</td>
+                        <td className="px-3 py-3">Frais de port</td>
+                        <td className="px-3 py-3 text-right">{shippingData.unitPrice.toFixed(2)} €</td>
                         <td className="px-3 py-3 text-right font-medium">
-                          {isFullyContractCovered ? <span className="text-emerald-600 font-bold">Contrat</span> : `${shippingTotal.toFixed(2)} €`}
+                          {isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${shippingTotal.toFixed(2)} €`}
                         </td>
                       </tr>
+                    </tbody>
+                    <tfoot>
                       <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#00A651] text-white"}>
-                        <td className="px-3 py-4" colSpan={2}></td>
-                        <td className="px-3 py-4 font-bold text-lg text-right" colSpan={2}>TOTAL HT</td>
+                        <td colSpan={3} className="px-3 py-4 font-bold text-lg text-right">TOTAL HT</td>
                         <td className="px-3 py-4 text-right font-bold text-xl">
                           {isFullyContractCovered ? 'Contrat' : `${grandTotal.toFixed(2)} €`}
                         </td>
                       </tr>
                     </tfoot>
                   </table>
-                  
-                  {/* Nettoyage Cellule Disclaimer - if any device needs nettoyage */}
-                  {devicePricing.some(d => d.needsNettoyage && !d.isContractCovered) && (
-                    <div className="mt-4 p-3 bg-cyan-50 border border-cyan-200 rounded-lg text-sm text-cyan-800">
-                      <p className="italic">
-                        Selon l'état de votre compteur lors de son arrivée dans nos locaux, il peut être nécessaire de 
-                        réaliser un nettoyage cellule avant d'effectuer la calibration annuelle.
-                      </p>
-                      <p className="mt-2 font-medium">
-                        Prix nettoyage cellule : {devicePricing.find(d => d.needsNettoyage)?.nettoyagePrice || 150} € HT par appareil
-                        <span className="font-normal text-cyan-600 ml-1">(si nécessaire)</span>
-                      </p>
-                    </div>
-                  )}
                 </div>
 
                 {/* Disclaimers */}
