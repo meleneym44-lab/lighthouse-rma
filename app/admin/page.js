@@ -1403,9 +1403,10 @@ export default function AdminPortal() {
     if (contractsData) setContracts(contractsData);
     
     // Load rental requests
-    const { data: rentalsData } = await supabase.from('rental_requests')
+    const { data: rentalsData, error: rentalsError } = await supabase.from('rental_requests')
       .select('*, companies(*), rental_request_items(*), shipping_addresses(*)')
       .order('created_at', { ascending: false });
+    console.log('Main loadData - rental_requests:', { rentalsData, rentalsError });
     if (rentalsData) setRentalRequests(rentalsData);
     
     // Load business settings
@@ -10675,7 +10676,7 @@ function PartEditModal({ part, onSave, onClose }) {
 // ============================================
 // RENTALS SHEET - Admin Management
 // ============================================
-function RentalsSheet({ rentals, clients, notify, reload, profile, businessSettings }) {
+function RentalsSheet({ rentals = [], clients, notify, reload, profile, businessSettings }) {
   const [activeTab, setActiveTab] = useState('requests'); // 'requests', 'inventory', 'bundles', 'calendar'
   const [selectedRental, setSelectedRental] = useState(null);
   const [inventory, setInventory] = useState([]);
@@ -10690,9 +10691,10 @@ function RentalsSheet({ rentals, clients, notify, reload, profile, businessSetti
   useEffect(() => {
     const loadInventory = async () => {
       setLoading(true);
-      const { data: inv } = await supabase.from('rental_inventory').select('*').order('model_name');
-      const { data: bun } = await supabase.from('rental_bundles').select('*, rental_bundle_items(*, rental_inventory(*))').order('bundle_name');
-      const { data: book } = await supabase.from('rental_bookings').select('*, rental_requests(rental_number, companies(name))').order('start_date', { ascending: false });
+      const { data: inv, error: invErr } = await supabase.from('rental_inventory').select('*').order('model_name');
+      const { data: bun, error: bunErr } = await supabase.from('rental_bundles').select('*, rental_bundle_items(*, rental_inventory(*))').order('bundle_name');
+      const { data: book, error: bookErr } = await supabase.from('rental_bookings').select('*, rental_requests(rental_number, companies(name))').order('start_date', { ascending: false });
+      console.log('Rental inventory load:', { inv, invErr, bun, bunErr, book, bookErr });
       if (inv) setInventory(inv);
       if (bun) setBundles(bun);
       if (book) setBookings(book);
@@ -10700,6 +10702,11 @@ function RentalsSheet({ rentals, clients, notify, reload, profile, businessSetti
     };
     loadInventory();
   }, []);
+
+  // Debug log
+  useEffect(() => {
+    console.log('RentalsSheet received rentals:', rentals);
+  }, [rentals]);
 
   const getStatusStyle = (status) => {
     const styles = {
