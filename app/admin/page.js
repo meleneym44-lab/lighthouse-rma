@@ -9220,38 +9220,43 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
     const loadCalibrationParts = async () => {
       setLoadingParts(true);
       try {
-        // Load all Cal-% parts and cell1/cell2
-        const { data, error } = await supabase
+        // First try to load ALL parts to debug
+        const { data: allParts, error: allError } = await supabase
           .from('parts_pricing')
           .select('part_number, price')
-          .like('part_number', 'Cal-%');
+          .limit(500);
         
-        if (error) {
-          console.error('Error loading calibration parts:', error);
+        console.log('📦 All parts query result:', allParts?.length, 'parts, error:', allError);
+        
+        if (allError) {
+          console.error('Error loading all parts:', allError);
           setLoadingParts(false);
           return;
         }
         
-        // Also load cell1 and cell2 separately
-        const { data: cellData, error: cellError } = await supabase
-          .from('parts_pricing')
-          .select('part_number, price')
-          .in('part_number', ['cell1', 'cell2']);
-        
-        if (cellError) {
-          console.error('Error loading cell parts:', cellError);
-        }
-        
-        // Build cache: { 'Cal-ApexZ3': 920, 'cell1': 150, ... }
+        // Filter for calibration parts in JavaScript instead of SQL
         const cache = {};
-        (data || []).forEach(p => {
-          cache[p.part_number] = p.price;
+        (allParts || []).forEach(p => {
+          const pn = p.part_number || '';
+          // Include Cal-% parts and cell1/cell2
+          if (pn.startsWith('Cal-') || pn === 'cell1' || pn === 'cell2') {
+            cache[pn] = p.price;
+          }
         });
-        (cellData || []).forEach(p => {
-          cache[p.part_number] = p.price;
-        });
+        
         setPartsCache(cache);
-        console.log('📦 Loaded calibration parts cache:', Object.keys(cache).length, 'parts', cache);
+        console.log('📦 Calibration parts cache:', Object.keys(cache).length, 'parts');
+        console.log('📦 Cache contents:', cache);
+        
+        // Check specifically for Cal-S3200
+        if (cache['Cal-S3200']) {
+          console.log('✅ Cal-S3200 found in cache:', cache['Cal-S3200']);
+        } else {
+          console.log('❌ Cal-S3200 NOT found in cache');
+          // Show what Cal- parts we do have
+          const calParts = Object.keys(cache).filter(k => k.startsWith('Cal-'));
+          console.log('📋 Available Cal- parts:', calParts.slice(0, 20));
+        }
       } catch (err) {
         console.error('Parts cache error:', err);
       }
