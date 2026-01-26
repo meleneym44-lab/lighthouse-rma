@@ -8863,17 +8863,295 @@ const REPAIR_TEMPLATE = {
 // NETTOYAGE CELLULE - Air particle counters only
 // Cell2 models use LD sensor cleaning (different price)
 // ============================================
+
+// Models that require cell2 (LD sensor) cleaning - 180€
 const CELL2_MODELS = [
-  'remote 1104', '1104', 'remote1104',
-  'remote 1102', '1102', 'remote1102', 
-  'hh solair 1100', 'solair 1100', 'hh1100', 'handheld 1100'
+  // Solair 1100 series
+  'solair 1100', 's1100', 'solair 1100+', 's1100+', 'solair 1100ld', 's1100ld',
+  // Solair 1200
+  'solair 1200', 's1200',
+  // Remote 1100 series  
+  'remote 1100', 'r1100', 'remote 1104', 'r1104', 'remote 1102', 'r1102',
+  'remote 1100ld', 'r1100ld', 'remote 1104ld', 'r1104ld',
+  // Apex 1100
+  'apex 1100', 'apex1100'
 ];
 
 // Check if a model requires cell2 (LD sensor) cleaning
 const isCell2Model = (modelName) => {
   if (!modelName) return false;
-  const normalized = modelName.toLowerCase().trim();
+  const normalized = modelName.toLowerCase().trim().replace(/[\/\-\s]+/g, ' ');
   return CELL2_MODELS.some(m => normalized.includes(m));
+};
+
+// ============================================
+// MODEL TO CALIBRATION PART NUMBER MAPPING
+// Maps detected model names to Cal-XXX part numbers
+// ============================================
+const MODEL_TO_CAL_PART = {
+  // Bio Collectors
+  'ac100': 'Cal-AC100',
+  'ac100h': 'Cal-AC100H', 
+  'ac90': 'Cal-AC90',
+  'aes samplair': 'Cal-AESSamplair',
+  'airideal': 'Cal-Airideal',
+  'airtest': 'Cal-AirTest',
+  'mas100': 'Cal-MAS100',
+  'mas-100': 'Cal-MAS100',
+  'microflow': 'Cal-Microflow',
+  'triobas': 'Cal-Triobas',
+  'activecount 25h': 'Cal-ActiveCount25H',
+  'activecount25h': 'Cal-ActiveCount25H',
+  'activecount 100': 'Cal-ActiveCount100',
+  'activecount100': 'Cal-ActiveCount100',
+  'activecount 100h': 'Cal-ActiveCount100H',
+  'activecount100h': 'Cal-ActiveCount100H',
+  'remote active count': 'Cal-RemoteActiveCount',
+  'scanair': 'Cal-ScanAir',
+  'scanair pro': 'Cal-ScanAir',
+  
+  // Apex Portables
+  'apexp3': 'Cal-ApexP3',
+  'apex p3': 'Cal-ApexP3',
+  'apexp5': 'Cal-ApexP5',
+  'apex p5': 'Cal-ApexP5',
+  'apexz3': 'Cal-ApexZ3',
+  'apex z3': 'Cal-ApexZ3',
+  'apexz5': 'Cal-ApexZ5',
+  'apex z5': 'Cal-ApexZ5',
+  'apexz30': 'Cal-ApexZ30',
+  'apex z30': 'Cal-ApexZ30',
+  'apexz50': 'Cal-ApexZ50',
+  'apex z50': 'Cal-ApexZ50',
+  'apex 1100': 'Cal-Apex1100',
+  'apex1100': 'Cal-Apex1100',
+  
+  // Apex Remotes
+  'apexr3': 'Cal-ApexR3',
+  'apex r3': 'Cal-ApexR3',
+  'apexr5': 'Cal-ApexR5',
+  'apex r5': 'Cal-ApexR5',
+  'apexr03': 'Cal-ApexR03',
+  'apex r03': 'Cal-ApexR03',
+  'apexr05': 'Cal-ApexR05',
+  'apex r05': 'Cal-ApexR05',
+  'apexr02': 'Cal-ApexR02',
+  'apex r02': 'Cal-ApexR02',
+  
+  // Apex Remotes + Pump
+  'apexr3p': 'Cal-ApexR3P',
+  'apex r3p': 'Cal-ApexR3P',
+  'apex r3 p': 'Cal-ApexR3P',
+  'apexr5p': 'Cal-ApexR5P',
+  'apex r5p': 'Cal-ApexR5P',
+  'apex r5 p': 'Cal-ApexR5P',
+  'apexr03p': 'Cal-ApexR03P',
+  'apex r03p': 'Cal-ApexR03P',
+  'apex r03 p': 'Cal-ApexR03P',
+  'apexr05p': 'Cal-ApexR05P',
+  'apex r05p': 'Cal-ApexR05P',
+  'apex r05 p': 'Cal-ApexR05P',
+  'apexr02p': 'Cal-ApexR02P',
+  'apex r02p': 'Cal-ApexR02P',
+  'apex r02 p': 'Cal-ApexR02P',
+  
+  // Handhelds
+  'handheld 2016': 'Cal-HH2016',
+  'hh 2016': 'Cal-HH2016',
+  'hh2016': 'Cal-HH2016',
+  'handheld 3013': 'Cal-HH3013',
+  'hh 3013': 'Cal-HH3013',
+  'hh3013': 'Cal-HH3013',
+  'handheld 3016': 'Cal-HH3016',
+  'hh 3016': 'Cal-HH3016',
+  'hh3016': 'Cal-HH3016',
+  'handheld 5016': 'Cal-HH5016',
+  'hh 5016': 'Cal-HH5016',
+  'hh5016': 'Cal-HH5016',
+  'iaq handheld': 'Cal-IAQHH',
+  'iaq': 'Cal-IAQHH',
+  
+  // Solair Standard
+  'solair 3100': 'Cal-S3100',
+  'solair 3100+': 'Cal-S3100',
+  's3100': 'Cal-S3100',
+  'solair 3200': 'Cal-S3200',
+  'solair 3200+': 'Cal-S3200',
+  's3200': 'Cal-S3200',
+  'solair 5100': 'Cal-S5100',
+  'solair 5100+': 'Cal-S5100',
+  's5100': 'Cal-S5100',
+  'solair 5200': 'Cal-S5200',
+  'solair 5200+': 'Cal-S5200',
+  's5200': 'Cal-S5200',
+  'solair 3100rx': 'Cal-S3100Rx',
+  's3100rx': 'Cal-S3100Rx',
+  'solair 5100rx': 'Cal-S5100Rx',
+  's5100rx': 'Cal-S5100Rx',
+  'solair 3200rx': 'Cal-S3200Rx',
+  's3200rx': 'Cal-S3200Rx',
+  'solair 5200rx': 'Cal-S5200Rx',
+  's5200rx': 'Cal-S5200Rx',
+  'solair 3350': 'Cal-S3350',
+  's3350': 'Cal-S3350',
+  'solair 3350rx': 'Cal-S3350',
+  'solair 5350': 'Cal-S5350',
+  's5350': 'Cal-S5350',
+  'solair 5350rx': 'Cal-S5350',
+  'solair 3010': 'Cal-S3010',
+  'solair 3010+': 'Cal-S3010',
+  's3010': 'Cal-S3010',
+  'solair 2010': 'Cal-S2010',
+  'solair 2010+': 'Cal-S2010',
+  's2010': 'Cal-S2010',
+  'solair 1001': 'Cal-S1001',
+  'solair 1001+': 'Cal-S1001',
+  's1001': 'Cal-S1001',
+  
+  // Solair Cell2
+  'solair 1100': 'Cal-S1100',
+  'solair 1100+': 'Cal-S1100',
+  's1100': 'Cal-S1100',
+  'solair 1100ld': 'Cal-S1100LD',
+  's1100ld': 'Cal-S1100LD',
+  'solair 1200': 'Cal-S1200',
+  's1200': 'Cal-S1200',
+  
+  // Remote Standard
+  'remote 3014': 'Cal-R3014',
+  'r3014': 'Cal-R3014',
+  'remote 5014': 'Cal-R5014',
+  'r5014': 'Cal-R5014',
+  'remote 3012': 'Cal-R3012',
+  'r3012': 'Cal-R3012',
+  'remote 5012': 'Cal-R5012',
+  'r5012': 'Cal-R5012',
+  'remote 3016': 'Cal-R3016',
+  'r3016': 'Cal-R3016',
+  'remote 3102': 'Cal-R3102',
+  'r3102': 'Cal-R3102',
+  'remote 5102': 'Cal-R5102',
+  'r5102': 'Cal-R5102',
+  'remote 3104': 'Cal-R3104',
+  'r3104': 'Cal-R3104',
+  'remote 5104': 'Cal-R5104',
+  'r5104': 'Cal-R5104',
+  'remote 3010': 'Cal-R3010',
+  'r3010': 'Cal-R3010',
+  'remote 5010': 'Cal-R5010',
+  'r5010': 'Cal-R5010',
+  'remote 2010': 'Cal-R2010',
+  'r2010': 'Cal-R2010',
+  'remote 2012': 'Cal-R2012',
+  'r2012': 'Cal-R2012',
+  'remote 3014i': 'Cal-R3014i',
+  'r3014i': 'Cal-R3014i',
+  'remote 5014i': 'Cal-R5014i',
+  'r5014i': 'Cal-R5014i',
+  'remote 2014i': 'Cal-R2014i',
+  'r2014i': 'Cal-R2014i',
+  'remote 5104v': 'Cal-R5104V',
+  'r5104v': 'Cal-R5104V',
+  'remote 3104v': 'Cal-R3104V',
+  'r3104v': 'Cal-R3104V',
+  'remote 5102v': 'Cal-R5102V',
+  'r5102v': 'Cal-R5102V',
+  'remote 50104v': 'Cal-R50104V',
+  'r50104v': 'Cal-R50104V',
+  'remote 50104': 'Cal-R50104',
+  'r50104': 'Cal-R50104',
+  'remote 5100': 'Cal-R5100',
+  'r5100': 'Cal-R5100',
+  'remote cems': 'Cal-RCEMS',
+  
+  // Remote + Pump
+  'remote 3014p': 'Cal-R3014P',
+  'r3014p': 'Cal-R3014P',
+  'remote 5014p': 'Cal-R5014P',
+  'r5014p': 'Cal-R5014P',
+  'remote 2014p': 'Cal-R2014P',
+  'r2014p': 'Cal-R2014P',
+  'remote 5104p': 'Cal-R5104P',
+  'r5104p': 'Cal-R5104P',
+  'remote 3104p': 'Cal-R3104P',
+  'r3104p': 'Cal-R3104P',
+  
+  // Remote Cell2
+  'remote 1100': 'Cal-R1100',
+  'r1100': 'Cal-R1100',
+  'remote 1104': 'Cal-R1104',
+  'r1104': 'Cal-R1104',
+  'remote 1102': 'Cal-R1102',
+  'r1102': 'Cal-R1102',
+  'remote 1100ld': 'Cal-R1100LD',
+  'r1100ld': 'Cal-R1100LD',
+  'remote 1104ld': 'Cal-R1104LD',
+  'r1104ld': 'Cal-R1104LD',
+  'remote 2014': 'Cal-R2014',
+  'r2014': 'Cal-R2014',
+  
+  // Boulder
+  'boulder': 'Cal-Boulder',
+  'boulder counter': 'Cal-Boulder',
+  
+  // Liquid Counters
+  'ls-20': 'Cal-LS20',
+  'ls20': 'Cal-LS20',
+  'ls-60': 'Cal-LS60',
+  'ls60': 'Cal-LS60',
+  'vertex 50': 'Cal-Vertex50',
+  'vertex50': 'Cal-Vertex50',
+  'vertex 50c': 'Cal-Vertex50C',
+  'vertex50c': 'Cal-Vertex50C',
+  'vertex 100': 'Cal-Vertex100',
+  'vertex100': 'Cal-Vertex100',
+  'nanocount': 'Cal-NanoCount',
+  'nc50': 'Cal-NanoCount',
+  'nc50+': 'Cal-NanoCount',
+  'nc65c': 'Cal-NanoCount',
+  'nc65c+': 'Cal-NanoCount',
+  'nc25': 'Cal-NanoCount',
+  'nc25+': 'Cal-NanoCount',
+  'nc30': 'Cal-NanoCount',
+  'nc30+': 'Cal-NanoCount',
+  'remote lpc': 'Cal-RemoteLPC',
+  
+  // Temp/Humidity
+  'trh sensor': 'Cal-TRHSensor',
+  'trh probe': 'Cal-TRHProbe',
+  'trh wand': 'Cal-TRHWand',
+  
+  // Other
+  'diluter': 'Cal-Diluter',
+  'particle diluter': 'Cal-Diluter',
+  'hpc1100': 'Cal-HPC1100',
+  'hpc 1100': 'Cal-HPC1100',
+  'rac': 'Cal-RAC'
+};
+
+// Get calibration part number from model name
+const getCalibrationPartNumber = (modelName) => {
+  if (!modelName) return null;
+  const normalized = modelName.toLowerCase().trim().replace(/[\/\-]+/g, ' ').replace(/\s+/g, ' ');
+  
+  // Try exact match first
+  if (MODEL_TO_CAL_PART[normalized]) {
+    return MODEL_TO_CAL_PART[normalized];
+  }
+  
+  // Try partial matches
+  for (const [key, partNumber] of Object.entries(MODEL_TO_CAL_PART)) {
+    if (normalized.includes(key) || key.includes(normalized)) {
+      return partNumber;
+    }
+  }
+  
+  return null;
+};
+
+// Get cell cleaning part number based on model
+const getCellCleaningPartNumber = (modelName) => {
+  return isCell2Model(modelName) ? 'cell2' : 'cell1';
 };
 
 const NETTOYAGE_TEMPLATE = {
@@ -8886,14 +9164,9 @@ const NETTOYAGE_TEMPLATE = {
     "Vérification de l'état des joints et connexions",
     "Remontage et test d'étanchéité"
   ],
-  // Pricing will be pulled from parts database (cell1 or cell2)
-  // For now using placeholder - will be replaced by parts lookup
-  getPrice: (modelName) => {
-    // TODO: Pull from parts database based on cell1/cell2 part numbers
-    // cell1 = standard particle counters
-    // cell2 = Remote 1104, Remote 1102, HH Solair 1100 (LD sensor)
-    return isCell2Model(modelName) ? 'cell2' : 'cell1';
-  }
+  // Get cell type for pricing lookup
+  getCellType: (modelName) => isCell2Model(modelName) ? 'cell2' : 'cell1',
+  getPartNumber: (modelName) => getCellCleaningPartNumber(modelName)
 };
 
 // ============================================
@@ -8926,6 +9199,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   const [contractInfo, setContractInfo] = useState(null); // Active contract data
   const [loadingContract, setLoadingContract] = useState(true);
   const [editingDeviceIndex, setEditingDeviceIndex] = useState(null); // For editing device details
+  const [partsCache, setPartsCache] = useState({}); // Cache of Cal-XXX part prices
+  const [loadingParts, setLoadingParts] = useState(true); // Loading state for parts
 
   const devices = request?.request_devices || [];
   const signatory = profile?.full_name || 'Lighthouse France';
@@ -8937,6 +9212,44 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                            '';
   const isMetro = clientPostalCode ? isFranceMetropolitan(clientPostalCode) : true;
   const defaultShipping = isMetro ? 45 : 0;
+
+  // ============================================
+  // LOAD CALIBRATION PARTS PRICES FROM DATABASE
+  // ============================================
+  useEffect(() => {
+    const loadCalibrationParts = async () => {
+      setLoadingParts(true);
+      try {
+        const { data, error } = await supabase
+          .from('parts_pricing')
+          .select('part_number, price')
+          .or('part_number.ilike.Cal-%,part_number.eq.cell1,part_number.eq.cell2');
+        
+        if (error) {
+          console.error('Error loading calibration parts:', error);
+          setLoadingParts(false);
+          return;
+        }
+        
+        // Build cache: { 'Cal-ApexZ3': 920, 'cell1': 150, ... }
+        const cache = {};
+        (data || []).forEach(p => {
+          cache[p.part_number] = p.price;
+        });
+        setPartsCache(cache);
+        console.log('📦 Loaded calibration parts cache:', Object.keys(cache).length, 'parts');
+      } catch (err) {
+        console.error('Parts cache error:', err);
+      }
+      setLoadingParts(false);
+    };
+    loadCalibrationParts();
+  }, []);
+
+  // Helper to get price from parts cache
+  const getPartPrice = (partNumber, fallback = 0) => {
+    return partsCache[partNumber] ?? fallback;
+  };
 
   // ============================================
   // CONTRACT DETECTION - Match by serial number
@@ -9084,9 +9397,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   const requiredSections = getRequiredSections(devicePricing);
 
   useEffect(() => {
-    if (loadingContract) return; // Wait for contract check
+    if (loadingContract || loadingParts) return; // Wait for contract check AND parts loading
     
-    console.log('📊 Initializing device pricing, contractInfo:', contractInfo);
+    console.log('📊 Initializing device pricing, contractInfo:', contractInfo, 'partsCache:', Object.keys(partsCache).length, 'parts');
     
     // Generate quote reference
     const year = today.getFullYear().toString().slice(-2);
@@ -9104,12 +9417,20 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         const calTemplate = CALIBRATION_TEMPLATES[deviceType] || CALIBRATION_TEMPLATES.particle_counter;
         const modelName = d.model_name || '';
         
+        // Get calibration part number and price from parts database
+        const calPartNumber = getCalibrationPartNumber(modelName);
+        const calPrice = calPartNumber && partsCache[calPartNumber] 
+          ? partsCache[calPartNumber] 
+          : calTemplate.defaultPrice;
+        
         // Determine nettoyage cell type for air particle counters
         const needsNettoyage = needsCal && deviceType === 'particle_counter';
-        const nettoyageCellType = needsNettoyage ? NETTOYAGE_TEMPLATE.getPrice(modelName) : null;
-        // TODO: Pull actual price from parts database using cell1/cell2 part numbers
-        // For now using placeholder prices - replace with parts lookup
-        const nettoyagePrice = needsNettoyage ? (nettoyageCellType === 'cell2' ? 180 : 150) : 0;
+        const nettoyageCellType = needsNettoyage ? NETTOYAGE_TEMPLATE.getCellType(modelName) : null;
+        const nettoyagePartNumber = needsNettoyage ? NETTOYAGE_TEMPLATE.getPartNumber(modelName) : null;
+        // Get nettoyage price from parts cache (cell1 or cell2)
+        const nettoyagePrice = needsNettoyage 
+          ? (partsCache[nettoyagePartNumber] ?? (nettoyageCellType === 'cell2' ? 180 : 150))
+          : 0;
         
         // Check contract coverage - trim serial number for matching
         const serialTrimmed = (d.serial_number || '').trim();
@@ -9117,7 +9438,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         const isContractCovered = needsCal && contractDevice && contractDevice.tokens_remaining > 0;
         const tokensExhausted = needsCal && contractDevice && contractDevice.tokens_remaining <= 0;
         
-        console.log(`📊 Device ${serialTrimmed}: contractDevice=`, contractDevice, 'isContractCovered=', isContractCovered, 'nettoyage:', nettoyageCellType);
+        console.log(`📊 Device ${serialTrimmed}: model="${modelName}", calPart=${calPartNumber}, price=${calPrice}, nettoyage=${nettoyageCellType}`);
         
         return {
           id: d.id || `device-${i}`,
@@ -9134,19 +9455,22 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           contractDeviceId: contractDevice?.contract_device_id || null,
           contractId: contractDevice?.contract_id || null,
           tokensRemaining: contractDevice?.tokens_remaining || 0,
+          // Calibration part number for reference
+          calPartNumber: calPartNumber,
           // Nettoyage cellule (air particle counters only)
           needsNettoyage: needsNettoyage,
           nettoyageCellType: nettoyageCellType,
+          nettoyagePartNumber: nettoyagePartNumber,
           nettoyagePrice: isContractCovered ? 0 : nettoyagePrice,
           // Pricing - 0 for contract-covered calibrations
-          calibrationPrice: isContractCovered ? 0 : (needsCal ? calTemplate.defaultPrice : 0),
+          calibrationPrice: isContractCovered ? 0 : (needsCal ? calPrice : 0),
           repairPrice: needsRepair ? REPAIR_TEMPLATE.defaultPrice : 0,
           additionalParts: [],
           shipping: isContractCovered ? 0 : defaultShipping
         };
       }));
     }
-  }, [loadingContract, contractInfo]);
+  }, [loadingContract, loadingParts, contractInfo, partsCache]);
 
   // Update device pricing with automatic recalculation for type/service changes
   const updateDevice = (deviceId, field, value) => {
@@ -9157,27 +9481,43 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       
       // Helper to calculate nettoyage price
       const calcNettoyagePrice = (model, deviceType, needsCal, isContractCovered) => {
-        if (!needsCal || deviceType !== 'particle_counter') return { needsNettoyage: false, nettoyageCellType: null, nettoyagePrice: 0 };
-        const cellType = NETTOYAGE_TEMPLATE.getPrice(model);
-        // TODO: Pull from parts database
-        const price = isContractCovered ? 0 : (cellType === 'cell2' ? 180 : 150);
-        return { needsNettoyage: true, nettoyageCellType: cellType, nettoyagePrice: price };
+        if (!needsCal || deviceType !== 'particle_counter') return { needsNettoyage: false, nettoyageCellType: null, nettoyagePartNumber: null, nettoyagePrice: 0 };
+        const cellType = NETTOYAGE_TEMPLATE.getCellType(model);
+        const partNumber = NETTOYAGE_TEMPLATE.getPartNumber(model);
+        const price = isContractCovered ? 0 : (partsCache[partNumber] ?? (cellType === 'cell2' ? 180 : 150));
+        return { needsNettoyage: true, nettoyageCellType: cellType, nettoyagePartNumber: partNumber, nettoyagePrice: price };
+      };
+      
+      // Helper to get calibration price from parts cache
+      const getCalPrice = (model, deviceType) => {
+        const calPartNumber = getCalibrationPartNumber(model);
+        if (calPartNumber && partsCache[calPartNumber]) {
+          return { calPartNumber, price: partsCache[calPartNumber] };
+        }
+        const template = CALIBRATION_TEMPLATES[deviceType] || CALIBRATION_TEMPLATES.particle_counter;
+        return { calPartNumber, price: template.defaultPrice };
       };
       
       // If device type changed, update calibration and nettoyage pricing
       if (field === 'deviceType') {
-        const newTemplate = CALIBRATION_TEMPLATES[value] || CALIBRATION_TEMPLATES.particle_counter;
         // Only update price if not contract covered
         if (!d.isContractCovered && d.needsCalibration) {
-          updated.calibrationPrice = newTemplate.defaultPrice;
+          const { calPartNumber, price } = getCalPrice(d.model, value);
+          updated.calPartNumber = calPartNumber;
+          updated.calibrationPrice = price;
         }
         // Update nettoyage based on new device type
         const nettoyage = calcNettoyagePrice(d.model, value, d.needsCalibration, d.isContractCovered);
         Object.assign(updated, nettoyage);
       }
       
-      // If model changed, update nettoyage cell type
+      // If model changed, update calibration price and nettoyage cell type
       if (field === 'model') {
+        if (!d.isContractCovered && d.needsCalibration) {
+          const { calPartNumber, price } = getCalPrice(value, d.deviceType);
+          updated.calPartNumber = calPartNumber;
+          updated.calibrationPrice = price;
+        }
         const nettoyage = calcNettoyagePrice(value, d.deviceType, d.needsCalibration, d.isContractCovered);
         Object.assign(updated, nettoyage);
       }
@@ -9192,8 +9532,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         
         // Update calibration prices
         if (newNeedsCal && !d.needsCalibration && !d.isContractCovered) {
-          const calTemplate = CALIBRATION_TEMPLATES[d.deviceType] || CALIBRATION_TEMPLATES.particle_counter;
-          updated.calibrationPrice = calTemplate.defaultPrice;
+          const { calPartNumber, price } = getCalPrice(d.model, d.deviceType);
+          updated.calPartNumber = calPartNumber;
+          updated.calibrationPrice = price;
         } else if (!newNeedsCal) {
           updated.calibrationPrice = 0;
         }
@@ -9453,18 +9794,20 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
           
-          {/* Loading Contract Check */}
-          {loadingContract && (
+          {/* Loading Contract & Parts Check */}
+          {(loadingContract || loadingParts) && (
             <div className="flex items-center justify-center py-12">
               <div className="flex items-center gap-3">
                 <div className="w-6 h-6 border-2 border-[#00A651] border-t-transparent rounded-full animate-spin"></div>
-                <span className="text-gray-600">Vérification contrat en cours...</span>
+                <span className="text-gray-600">
+                  {loadingParts ? 'Chargement tarifs...' : 'Vérification contrat en cours...'}
+                </span>
               </div>
             </div>
           )}
           
           {/* ==================== STEP 1: PRICING EDITOR ==================== */}
-          {step === 1 && !loadingContract && (
+          {step === 1 && !loadingContract && !loadingParts && (
             <div className="flex h-full">
               {/* LEFT SIDE - Customer Info & Devices */}
               <div className="flex-1 p-6 overflow-y-auto">
@@ -9658,7 +10001,13 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                             <div className="flex items-center justify-between bg-blue-50 p-3 rounded-lg">
                               <div>
                                 <span className="font-medium text-blue-800">Main d'œuvre étalonnage</span>
-                                <span className="text-xs ml-2 text-blue-600">({calTemplate.icon} {getDeviceTypeLabel(device.deviceType)})</span>
+                                {device.calPartNumber && partsCache[device.calPartNumber] ? (
+                                  <span className="text-xs ml-2 text-green-600 font-medium">
+                                    ✓ {device.calPartNumber}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs ml-2 text-blue-600">({calTemplate.icon} {getDeviceTypeLabel(device.deviceType)})</span>
+                                )}
                               </div>
                               {device.isContractCovered ? (
                                 <div className="flex items-center gap-2">
@@ -9685,9 +10034,15 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                             <div className="flex items-center justify-between bg-cyan-50 p-3 rounded-lg">
                               <div>
                                 <span className="font-medium text-cyan-800">✨ Nettoyage cellule</span>
-                                <span className="text-xs ml-2 text-cyan-600">
-                                  ({device.nettoyageCellType === 'cell2' ? 'LD Sensor' : 'Standard'})
-                                </span>
+                                {device.nettoyagePartNumber && partsCache[device.nettoyagePartNumber] ? (
+                                  <span className="text-xs ml-2 text-green-600 font-medium">
+                                    ✓ {device.nettoyagePartNumber}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs ml-2 text-cyan-600">
+                                    ({device.nettoyageCellType === 'cell2' ? 'LD Sensor' : 'Standard'})
+                                  </span>
+                                )}
                               </div>
                               {device.isContractCovered ? (
                                 <span className="px-3 py-2 bg-emerald-600 text-white font-bold rounded-lg text-sm">
@@ -10154,7 +10509,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
             {step === 1 ? 'Annuler' : '← Retour'}
           </button>
           <div className="flex gap-3">
-            {step < 3 && !loadingContract && (
+            {step < 3 && !loadingContract && !loadingParts && (
               <button onClick={() => setStep(step + 1)} className="px-8 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">
                 Suivant →
               </button>
@@ -10168,7 +10523,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                 {saving ? 'Envoi en cours...' : isFullyContractCovered ? '📋 Créer RMA Contrat' : '✅ Confirmer et Envoyer'}
               </button>
             )}
-            {loadingContract && step === 1 && (
+            {(loadingContract || loadingParts) && step === 1 && (
               <div className="px-8 py-2 bg-gray-300 text-gray-500 rounded-lg font-medium">
                 Chargement...
               </div>
