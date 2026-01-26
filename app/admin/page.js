@@ -10640,12 +10640,6 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                       })}
                     </tbody>
                     <tfoot>
-                      <tr className="border-t-2 border-gray-300">
-                        <td className="px-4 py-3 font-medium" colSpan={3}>Sous-total services</td>
-                        <td className="px-4 py-3 text-right font-medium">
-                          {isFullyContractCovered ? <span className="text-emerald-600 font-bold">Contrat</span> : `${servicesSubtotal.toFixed(2)} €`}
-                        </td>
-                      </tr>
                       <tr className="bg-gray-100">
                         <td className="px-4 py-3 font-medium" colSpan={3}>
                           Frais de port
