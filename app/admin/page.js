@@ -52,11 +52,12 @@ const PDF_COLORS = {
 };
 
 // Generate Quote/Devis PDF - PROFESSIONAL FORMAT
-const generateQuotePDF = async (rma, devices, businessSettings) => {
+const generateQuotePDF = async (rma, devices, options = {}) => {
   const jsPDF = await loadJsPDF();
   const pdf = new jsPDF('p', 'mm', 'a4');
   const company = rma.companies || {};
-  const biz = businessSettings || {};
+  const biz = options.businessSettings || {};
+  const shippingInfo = options.shipping || { parcels: 1, unitPrice: 45, total: 45 };
   
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
@@ -331,13 +332,10 @@ const generateQuotePDF = async (rma, devices, businessSettings) => {
   y += 9;
 
   let servicesSubtotal = 0;
-  let shippingTotal = 0;
   
   devices.forEach((device, idx) => {
     const price = parseFloat(device.quoted_price) || 0;
     servicesSubtotal += price;
-    const shipping = parseFloat(device.shipping) || 0;
-    shippingTotal += shipping;
     
     const serviceType = device.service_type === 'calibration' ? 'Etalonnage' : 
                         device.service_type === 'repair' ? 'Reparation' : 'Service';
@@ -357,7 +355,8 @@ const generateQuotePDF = async (rma, devices, businessSettings) => {
     y += rowH;
   });
 
-  // Totals
+  // Use global shipping data
+  const shippingTotal = shippingInfo.total || 0;
   const grandTotal = servicesSubtotal + shippingTotal;
   
   pdf.setDrawColor(200, 200, 200);
@@ -372,8 +371,12 @@ const generateQuotePDF = async (rma, devices, businessSettings) => {
   pdf.text(servicesSubtotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
   y += rowH;
 
+  // Shipping with parcels info
   pdf.rect(margin, y, contentWidth, rowH, 'F');
-  pdf.text('Total frais de port', margin + 3, y + 5.5);
+  const shippingLabel = shippingInfo.parcels > 1 
+    ? `Frais de port (${shippingInfo.parcels} colis x ${shippingInfo.unitPrice.toFixed(2)} EUR)`
+    : 'Frais de port';
+  pdf.text(shippingLabel, margin + 3, y + 5.5);
   pdf.text(shippingTotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
   y += rowH;
 
@@ -9745,7 +9748,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           quoted_price: getDeviceServiceTotal(d)
         }));
         
-        const pdfBlob = await generateQuotePDF(rmaForPDF, devicesForPDF, {});
+        const pdfBlob = await generateQuotePDF(rmaForPDF, devicesForPDF, {
+          shipping: shippingData
+        });
         const fileName = `${rmaNumber}_devis_${Date.now()}.pdf`;
         quoteUrl = await uploadPDFToStorage(pdfBlob, `quotes/${rmaNumber}`, fileName);
       } catch (pdfErr) {
@@ -10599,24 +10604,11 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                         device.additionalParts.forEach(part => {
                           rows.push(
                             <tr key={`${device.id}-part-${part.id}`} className="bg-gray-50 text-gray-600">
-                              <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ {part.description || 'Pièce/Service'}</td>
+                              <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ {part.partNumber ? `[${part.partNumber}] ` : ''}{part.description || 'Pièce/Service'}</td>
                               <td className="px-4 py-2 text-right text-sm">{parseFloat(part.price || 0).toFixed(2)} €</td>
                             </tr>
                           );
                         });
-                        
-                        rows.push(
-                          <tr key={`${device.id}-shipping`} className={`${device.isContractCovered ? 'bg-emerald-100' : 'bg-gray-200'} text-gray-600`}>
-                            <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ Frais de port</td>
-                            <td className="px-4 py-2 text-right text-sm">
-                              {device.isContractCovered ? (
-                                <span className="text-emerald-600 font-medium">Contrat</span>
-                              ) : (
-                                `${device.shipping.toFixed(2)} €`
-                              )}
-                            </td>
-                          </tr>
-                        );
                         
                         return rows;
                       })}
@@ -10628,8 +10620,13 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                           {isFullyContractCovered ? <span className="text-emerald-600 font-bold">Contrat</span> : `${servicesSubtotal.toFixed(2)} €`}
                         </td>
                       </tr>
-                      <tr>
-                        <td className="px-4 py-3 font-medium" colSpan={3}>Total frais de port</td>
+                      <tr className="bg-gray-100">
+                        <td className="px-4 py-3 font-medium" colSpan={3}>
+                          Frais de port
+                          <span className="text-gray-500 font-normal text-sm ml-2">
+                            ({shippingData.parcels} colis × {shippingData.unitPrice.toFixed(2)} €)
+                          </span>
+                        </td>
                         <td className="px-4 py-3 text-right font-medium">
                           {isFullyContractCovered ? <span className="text-emerald-600 font-bold">Contrat</span> : `${shippingTotal.toFixed(2)} €`}
                         </td>
