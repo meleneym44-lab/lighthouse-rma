@@ -9199,7 +9199,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   const [contractInfo, setContractInfo] = useState(null); // Active contract data
   const [loadingContract, setLoadingContract] = useState(true);
   const [editingDeviceIndex, setEditingDeviceIndex] = useState(null); // For editing device details
-  const [partsCache, setPartsCache] = useState({}); // Cache of Cal-XXX part prices
+  const [partsCache, setPartsCache] = useState({}); // Cache of part prices
+  const [partsDescriptionCache, setPartsDescriptionCache] = useState({}); // Cache of part descriptions
   const [loadingParts, setLoadingParts] = useState(true); // Loading state for parts
 
   const devices = request?.request_devices || [];
@@ -9229,7 +9230,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         while (hasMore) {
           const { data, error } = await supabase
             .from('parts_pricing')
-            .select('part_number, unit_price')
+            .select('part_number, unit_price, description, description_fr')
             .range(offset, offset + batchSize - 1);
           
           if (error) {
@@ -9238,36 +9239,37 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           }
           
           if (data && data.length > 0) {
-            // Filter for Cal- and cell parts
-            const calParts = data.filter(p => {
-              const pn = p.part_number || '';
-              return pn.startsWith('Cal-') || pn === 'cell1' || pn === 'cell2';
-            });
-            allCalParts = [...allCalParts, ...calParts];
+            allCalParts = [...allCalParts, ...data];
             offset += batchSize;
             hasMore = data.length === batchSize;
-            console.log(`📦 Loaded batch: ${data.length} parts, found ${calParts.length} Cal- parts`);
+            console.log(`📦 Loaded batch: ${data.length} parts`);
           } else {
             hasMore = false;
           }
         }
         
-        // Build cache
+        // Build cache with price AND description
         const cache = {};
+        const descCache = {};
         allCalParts.forEach(p => {
-          cache[p.part_number] = p.unit_price;
+          const pn = p.part_number || '';
+          cache[pn] = p.unit_price;
+          descCache[pn] = p.description_fr || p.description || '';
         });
         
         setPartsCache(cache);
-        console.log('📦 Total calibration parts loaded:', Object.keys(cache).length);
-        console.log('📦 Cache contents:', cache);
+        setPartsDescriptionCache(descCache);
+        
+        // Filter for Cal- parts for logging
+        const calParts = Object.keys(cache).filter(k => k.startsWith('Cal-') || k === 'cell1' || k === 'cell2');
+        console.log('📦 Total parts loaded:', Object.keys(cache).length);
+        console.log('📦 Calibration parts:', calParts.length);
         
         // Check specifically for Cal-S3200
         if (cache['Cal-S3200']) {
           console.log('✅ Cal-S3200 found in cache:', cache['Cal-S3200']);
         } else {
           console.log('❌ Cal-S3200 NOT found in cache');
-          const calParts = Object.keys(cache).filter(k => k.startsWith('Cal-'));
           console.log('📋 Available Cal- parts:', calParts);
         }
       } catch (err) {
@@ -9498,7 +9500,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           // Pricing - 0 for contract-covered calibrations
           calibrationPrice: isContractCovered ? 0 : (needsCal ? calPrice : 0),
           repairPrice: needsRepair ? REPAIR_TEMPLATE.defaultPrice : 0,
+          repairPartNumber: '',
           additionalParts: [],
+          shippingPartNumber: 'Shipping1',
           shipping: isContractCovered ? 0 : defaultShipping
         };
       }));
@@ -9592,7 +9596,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   const addPart = (deviceId) => {
     setDevicePricing(prev => prev.map(d => {
       if (d.id === deviceId) {
-        return { ...d, additionalParts: [...d.additionalParts, { id: Date.now(), description: '', price: 0 }] };
+        return { ...d, additionalParts: [...d.additionalParts, { id: Date.now(), partNumber: '', description: '', price: 0 }] };
       }
       return d;
     }));
@@ -10040,112 +10044,220 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                         {/* Pricing Inputs */}
                         <div className="p-4 space-y-3">
                           {device.needsCalibration && (
-                            <div className={`flex items-center justify-between p-3 rounded-lg ${
+                            <div className={`p-3 rounded-lg ${
                               device.calPartNumber && partsCache[device.calPartNumber] 
                                 ? 'bg-blue-50' 
                                 : 'bg-orange-50 border-2 border-orange-300'
                             }`}>
-                              <div>
-                                <span className={`font-medium ${device.calPartNumber && partsCache[device.calPartNumber] ? 'text-blue-800' : 'text-orange-800'}`}>
-                                  Main d'œuvre étalonnage
-                                </span>
-                                {device.calPartNumber && partsCache[device.calPartNumber] ? (
-                                  <span className="text-xs ml-2 text-green-600 font-medium">
-                                    ✓ {device.calPartNumber}
+                              <div className="flex items-center gap-2">
+                                {/* Part Number */}
+                                <div className="w-32">
+                                  <input
+                                    type="text"
+                                    value={device.calPartNumber || ''}
+                                    onChange={e => {
+                                      const pn = e.target.value;
+                                      updateDevice(device.id, 'calPartNumber', pn);
+                                      // Auto-fill price from parts cache
+                                      if (partsCache[pn]) {
+                                        updateDevice(device.id, 'calibrationPrice', partsCache[pn]);
+                                      }
+                                    }}
+                                    placeholder="Cal-XXXX"
+                                    className={`w-full px-2 py-2 border rounded-lg text-sm font-mono ${
+                                      device.calPartNumber && partsCache[device.calPartNumber] 
+                                        ? 'border-green-400 bg-green-50' 
+                                        : 'border-orange-300'
+                                    }`}
+                                    disabled={device.isContractCovered}
+                                  />
+                                </div>
+                                {/* Description */}
+                                <div className="flex-1">
+                                  <span className={`text-sm font-medium ${
+                                    device.calPartNumber && partsCache[device.calPartNumber] 
+                                      ? 'text-blue-800' 
+                                      : 'text-orange-800'
+                                  }`}>
+                                    Main d'œuvre étalonnage
+                                    {device.calPartNumber && partsCache[device.calPartNumber] && (
+                                      <span className="ml-2 text-green-600">✓</span>
+                                    )}
+                                    {!device.calPartNumber && !device.isContractCovered && (
+                                      <span className="ml-2 text-orange-600 text-xs">⚠️ PN requis</span>
+                                    )}
                                   </span>
-                                ) : (
-                                  <span className="text-xs ml-2 text-orange-600 font-medium">
-                                    ⚠️ Saisie manuelle requise
-                                  </span>
-                                )}
-                              </div>
-                              {device.isContractCovered ? (
-                                <div className="flex items-center gap-2">
+                                </div>
+                                {/* Price */}
+                                {device.isContractCovered ? (
                                   <span className="px-3 py-2 bg-emerald-600 text-white font-bold rounded-lg text-sm">
                                     Contrat N° {contractNumber}
                                   </span>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    type="number"
-                                    value={device.calibrationPrice}
-                                    onChange={e => updateDevice(device.id, 'calibrationPrice', parseFloat(e.target.value) || 0)}
-                                    className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
-                                  />
-                                  <span className="text-gray-500 font-medium">€</span>
-                                </div>
-                              )}
+                                ) : (
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      value={device.calibrationPrice}
+                                      onChange={e => updateDevice(device.id, 'calibrationPrice', parseFloat(e.target.value) || 0)}
+                                      className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
+                                    />
+                                    <span className="text-gray-500 font-medium">€</span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           )}
                           
                           {/* Nettoyage Cellule - Air particle counters only */}
                           {device.needsNettoyage && (
-                            <div className="flex items-center justify-between bg-cyan-50 p-3 rounded-lg">
-                              <div>
-                                <span className="font-medium text-cyan-800">✨ Nettoyage cellule</span>
-                                {device.nettoyagePartNumber && partsCache[device.nettoyagePartNumber] ? (
-                                  <span className="text-xs ml-2 text-green-600 font-medium">
-                                    ✓ {device.nettoyagePartNumber}
+                            <div className="bg-cyan-50 p-3 rounded-lg">
+                              <div className="flex items-center gap-2">
+                                {/* Part Number */}
+                                <div className="w-32">
+                                  <input
+                                    type="text"
+                                    value={device.nettoyagePartNumber || ''}
+                                    onChange={e => {
+                                      const pn = e.target.value;
+                                      updateDevice(device.id, 'nettoyagePartNumber', pn);
+                                      if (partsCache[pn]) {
+                                        updateDevice(device.id, 'nettoyagePrice', partsCache[pn]);
+                                      }
+                                    }}
+                                    placeholder="cell1/cell2"
+                                    className={`w-full px-2 py-2 border rounded-lg text-sm font-mono ${
+                                      device.nettoyagePartNumber && partsCache[device.nettoyagePartNumber]
+                                        ? 'border-green-400 bg-green-50'
+                                        : 'border-cyan-300'
+                                    }`}
+                                    disabled={device.isContractCovered}
+                                  />
+                                </div>
+                                {/* Description */}
+                                <div className="flex-1">
+                                  <span className="text-sm font-medium text-cyan-800">
+                                    ✨ Nettoyage cellule
+                                    {device.nettoyagePartNumber && partsCache[device.nettoyagePartNumber] && (
+                                      <span className="ml-2 text-green-600">✓</span>
+                                    )}
+                                    <span className="ml-2 text-cyan-600 text-xs">
+                                      ({device.nettoyageCellType === 'cell2' ? 'LD Sensor' : 'Standard'})
+                                    </span>
+                                  </span>
+                                </div>
+                                {/* Price */}
+                                {device.isContractCovered ? (
+                                  <span className="px-3 py-2 bg-emerald-600 text-white font-bold rounded-lg text-sm">
+                                    Contrat N° {contractNumber}
                                   </span>
                                 ) : (
-                                  <span className="text-xs ml-2 text-cyan-600">
-                                    ({device.nettoyageCellType === 'cell2' ? 'LD Sensor' : 'Standard'})
-                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      value={device.nettoyagePrice}
+                                      onChange={e => updateDevice(device.id, 'nettoyagePrice', parseFloat(e.target.value) || 0)}
+                                      className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
+                                    />
+                                    <span className="text-gray-500 font-medium">€</span>
+                                  </div>
                                 )}
                               </div>
-                              {device.isContractCovered ? (
-                                <span className="px-3 py-2 bg-emerald-600 text-white font-bold rounded-lg text-sm">
-                                  Contrat N° {contractNumber}
-                                </span>
-                              ) : (
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    type="number"
-                                    value={device.nettoyagePrice}
-                                    onChange={e => updateDevice(device.id, 'nettoyagePrice', parseFloat(e.target.value) || 0)}
-                                    className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
-                                  />
-                                  <span className="text-gray-500 font-medium">€</span>
-                                </div>
-                              )}
                             </div>
                           )}
                           
                           {device.needsRepair && (
-                            <div className="flex items-center justify-between bg-orange-50 p-3 rounded-lg">
-                              <span className="font-medium text-orange-800">Main d'œuvre réparation</span>
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  value={device.repairPrice}
-                                  onChange={e => updateDevice(device.id, 'repairPrice', parseFloat(e.target.value) || 0)}
-                                  className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
-                                />
-                                <span className="text-gray-500 font-medium">€</span>
+                            <div className="bg-orange-50 p-3 rounded-lg">
+                              <div className="flex items-center gap-2">
+                                {/* Part Number */}
+                                <div className="w-32">
+                                  <input
+                                    type="text"
+                                    value={device.repairPartNumber || ''}
+                                    onChange={e => {
+                                      const pn = e.target.value;
+                                      updateDevice(device.id, 'repairPartNumber', pn);
+                                      if (partsCache[pn]) {
+                                        updateDevice(device.id, 'repairPrice', partsCache[pn]);
+                                      }
+                                    }}
+                                    placeholder="PN réparation"
+                                    className="w-full px-2 py-2 border rounded-lg text-sm font-mono border-orange-300"
+                                  />
+                                </div>
+                                {/* Description */}
+                                <div className="flex-1">
+                                  <span className="text-sm font-medium text-orange-800">
+                                    🔧 Main d'œuvre réparation
+                                    {device.repairPartNumber && partsCache[device.repairPartNumber] && (
+                                      <span className="ml-2 text-green-600">✓</span>
+                                    )}
+                                  </span>
+                                </div>
+                                {/* Price */}
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    value={device.repairPrice}
+                                    onChange={e => updateDevice(device.id, 'repairPrice', parseFloat(e.target.value) || 0)}
+                                    className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
+                                  />
+                                  <span className="text-gray-500 font-medium">€</span>
+                                </div>
                               </div>
                             </div>
                           )}
 
                           {/* Additional Parts */}
                           {device.additionalParts.map(part => (
-                            <div key={part.id} className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg">
-                              <input
-                                type="text"
-                                value={part.description}
-                                onChange={e => updatePart(device.id, part.id, 'description', e.target.value)}
-                                placeholder="Pièce ou service supplémentaire..."
-                                className="flex-1 px-3 py-2 border rounded-lg"
-                              />
-                              <input
-                                type="number"
-                                value={part.price}
-                                onChange={e => updatePart(device.id, part.id, 'price', e.target.value)}
-                                className="w-24 px-3 py-2 border rounded-lg text-right"
-                                placeholder="0"
-                              />
-                              <span className="text-gray-500">€</span>
-                              <button onClick={() => removePart(device.id, part.id)} className="text-red-500 hover:text-red-700 text-xl px-2">×</button>
+                            <div key={part.id} className="bg-gray-50 p-3 rounded-lg">
+                              <div className="flex items-center gap-2">
+                                {/* Part Number */}
+                                <div className="w-32">
+                                  <input
+                                    type="text"
+                                    value={part.partNumber || ''}
+                                    onChange={e => {
+                                      const pn = e.target.value;
+                                      updatePart(device.id, part.id, 'partNumber', pn);
+                                      // Auto-fill description and price from parts cache
+                                      if (partsCache[pn]) {
+                                        updatePart(device.id, part.id, 'price', partsCache[pn]);
+                                      }
+                                      if (partsDescriptionCache[pn]) {
+                                        updatePart(device.id, part.id, 'description', partsDescriptionCache[pn]);
+                                      }
+                                    }}
+                                    placeholder="N° pièce"
+                                    className={`w-full px-2 py-2 border rounded-lg text-sm font-mono ${
+                                      part.partNumber && partsCache[part.partNumber]
+                                        ? 'border-green-400 bg-green-50'
+                                        : 'border-gray-300'
+                                    }`}
+                                  />
+                                </div>
+                                {/* Description */}
+                                <div className="flex-1">
+                                  <input
+                                    type="text"
+                                    value={part.description}
+                                    onChange={e => updatePart(device.id, part.id, 'description', e.target.value)}
+                                    placeholder="Description pièce/service..."
+                                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                                  />
+                                </div>
+                                {/* Price */}
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    value={part.price}
+                                    onChange={e => updatePart(device.id, part.id, 'price', e.target.value)}
+                                    className="w-24 px-3 py-2 border rounded-lg text-right"
+                                    placeholder="0"
+                                  />
+                                  <span className="text-gray-500">€</span>
+                                </div>
+                                <button onClick={() => removePart(device.id, part.id)} className="text-red-500 hover:text-red-700 text-xl px-2">×</button>
+                              </div>
                             </div>
                           ))}
                           
@@ -10154,21 +10266,50 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                           </button>
 
                           {/* Shipping */}
-                          <div className="flex items-center justify-between p-3 rounded-lg border-t mt-3 bg-gray-100">
-                            <span className="font-medium text-gray-700">
-                              {device.isContractCovered ? 'Frais de port (inclus contrat)' : isMetro ? 'Frais de port' : 'Transport (géré par client)'}
-                            </span>
-                            {device.isContractCovered ? (
-                              <span className="px-3 py-2 bg-emerald-600 text-white font-bold rounded-lg text-sm">
-                                Contrat N° {contractNumber}
-                              </span>
-                            ) : (
-                              <div className="flex items-center gap-1">
+                          <div className="p-3 rounded-lg border-t mt-3 bg-gray-100">
+                            <div className="flex items-center gap-2">
+                              {/* Part Number */}
+                              <div className="w-32">
                                 <input
-                                  type="number"
-                                  value={device.shipping}
-                                  onChange={e => updateDevice(device.id, 'shipping', parseFloat(e.target.value) || 0)}
-                                  className="w-20 px-3 py-2 border rounded-lg text-right"
+                                  type="text"
+                                  value={device.shippingPartNumber || 'Shipping1'}
+                                  onChange={e => {
+                                    const pn = e.target.value;
+                                    updateDevice(device.id, 'shippingPartNumber', pn);
+                                    if (partsCache[pn]) {
+                                      updateDevice(device.id, 'shipping', partsCache[pn]);
+                                    }
+                                  }}
+                                  placeholder="Shipping1"
+                                  className={`w-full px-2 py-2 border rounded-lg text-sm font-mono ${
+                                    partsCache[device.shippingPartNumber || 'Shipping1']
+                                      ? 'border-green-400 bg-green-50'
+                                      : 'border-gray-300'
+                                  }`}
+                                  disabled={device.isContractCovered}
+                                />
+                              </div>
+                              {/* Description */}
+                              <div className="flex-1">
+                                <span className="text-sm font-medium text-gray-700">
+                                  📦 {device.isContractCovered ? 'Frais de port (inclus contrat)' : isMetro ? 'Frais de port' : 'Transport (géré par client)'}
+                                  {partsCache[device.shippingPartNumber || 'Shipping1'] && (
+                                    <span className="ml-2 text-green-600">✓</span>
+                                  )}
+                                </span>
+                              </div>
+                              {/* Price */}
+                              {device.isContractCovered ? (
+                                <span className="px-3 py-2 bg-emerald-600 text-white font-bold rounded-lg text-sm">
+                                  Contrat N° {contractNumber}
+                                </span>
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    value={device.shipping}
+                                    onChange={e => updateDevice(device.id, 'shipping', parseFloat(e.target.value) || 0)}
+                                    className="w-24 px-3 py-2 border rounded-lg text-right"
                                 />
                                 <span className="text-gray-500">€</span>
                               </div>
