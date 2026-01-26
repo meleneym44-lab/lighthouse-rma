@@ -9313,13 +9313,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         console.log('📋 Active contracts:', activeContracts, 'Error:', contractError);
         
         if (contractError) {
-          console.error('Contract query error:', contractError);
+          // Log error but don't block - just skip contract detection
+          console.warn('Contract query error (continuing without contract check):', contractError);
           setLoadingContract(false);
           return;
         }
         
         if (!activeContracts || activeContracts.length === 0) {
-          console.log('❌ No active contracts found');
+          console.log('ℹ️ No active contracts found for this date range');
           setLoadingContract(false);
           return;
         }
@@ -10026,19 +10027,36 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                             </p>
                           </div>
                         )}
+                        
+                        {/* Manual Entry Warning - Device not detected in system */}
+                        {device.needsCalibration && !device.calPartNumber && !device.isContractCovered && (
+                          <div className="bg-orange-100 px-4 py-2 border-b border-orange-300">
+                            <p className="text-sm text-orange-800">
+                              <span className="font-bold">⚠️ Appareil non reconnu dans le système</span> - Veuillez vérifier et saisir manuellement le tarif d'étalonnage
+                            </p>
+                          </div>
+                        )}
 
                         {/* Pricing Inputs */}
                         <div className="p-4 space-y-3">
                           {device.needsCalibration && (
-                            <div className="flex items-center justify-between bg-blue-50 p-3 rounded-lg">
+                            <div className={`flex items-center justify-between p-3 rounded-lg ${
+                              device.calPartNumber && partsCache[device.calPartNumber] 
+                                ? 'bg-blue-50' 
+                                : 'bg-orange-50 border-2 border-orange-300'
+                            }`}>
                               <div>
-                                <span className="font-medium text-blue-800">Main d'œuvre étalonnage</span>
+                                <span className={`font-medium ${device.calPartNumber && partsCache[device.calPartNumber] ? 'text-blue-800' : 'text-orange-800'}`}>
+                                  Main d'œuvre étalonnage
+                                </span>
                                 {device.calPartNumber && partsCache[device.calPartNumber] ? (
                                   <span className="text-xs ml-2 text-green-600 font-medium">
                                     ✓ {device.calPartNumber}
                                   </span>
                                 ) : (
-                                  <span className="text-xs ml-2 text-blue-600">({calTemplate.icon} {getDeviceTypeLabel(device.deviceType)})</span>
+                                  <span className="text-xs ml-2 text-orange-600 font-medium">
+                                    ⚠️ Saisie manuelle requise
+                                  </span>
                                 )}
                               </div>
                               {device.isContractCovered ? (
