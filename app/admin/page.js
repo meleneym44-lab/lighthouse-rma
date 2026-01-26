@@ -8888,6 +8888,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   const [quoteRef, setQuoteRef] = useState('');
   const [contractInfo, setContractInfo] = useState(null); // Active contract data
   const [loadingContract, setLoadingContract] = useState(true);
+  const [editingDeviceIndex, setEditingDeviceIndex] = useState(null); // For editing device details
 
   const devices = request?.request_devices || [];
   const signatory = profile?.full_name || 'Lighthouse France';
@@ -8919,10 +8920,10 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       console.log('📅 Today:', todayStr);
       
       try {
-        // First, get all active contracts (simplified query)
+        // First, get all active contracts (including bc_url for copying to RMA)
         const { data: activeContracts, error: contractError } = await supabase
           .from('contracts')
-          .select('id, contract_number, start_date, end_date, company_id')
+          .select('id, contract_number, start_date, end_date, company_id, bc_url, bc_signed_by')
           .eq('status', 'active')
           .lte('start_date', todayStr)
           .gte('end_date', todayStr);
@@ -9196,7 +9197,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         serviceTotal: getDeviceServiceTotal(d),
         // Contract info
         isContractCovered: d.isContractCovered,
-        contractDeviceId: d.contractDeviceId
+        contractDeviceId: d.contractDeviceId,
+        contractNumber: d.isContractCovered ? contractInfo?.primaryContract?.contract_number : null,
+        tokensRemaining: d.tokensRemaining
       })),
       requiredSections,
       servicesSubtotal,
@@ -9235,11 +9238,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       // Determine status and whether to auto-approve
       let newStatus = 'quote_sent';
       let bcUrl = null;
+      let bcSignedBy = null;
       
       // If fully contract covered (calibration only, all covered), auto-approve
       if (isFullyContractCovered) {
         newStatus = 'waiting_device'; // Skip quote approval, go straight to waiting
         bcUrl = contractInfo?.primaryContract?.bc_url; // Copy BC from contract
+        bcSignedBy = contractInfo?.primaryContract?.bc_signed_by || 'Contrat';
+        console.log('📋 Contract BC URL:', bcUrl, 'Signed by:', bcSignedBy);
       }
 
       const updateData = {
@@ -9264,7 +9270,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       // Add BC URL if contract-covered
       if (bcUrl) {
         updateData.bc_url = bcUrl;
+        updateData.bc_signed_by = bcSignedBy;
         updateData.bc_approved_at = new Date().toISOString();
+        updateData.bc_signature_date = new Date().toISOString().split('T')[0];
       }
 
       const { error } = await supabase.from('service_requests').update(updateData).eq('id', request.id);
@@ -9302,12 +9310,12 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
     <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={onClose}>
       <div className="bg-white w-full h-full md:w-[98%] md:h-[98%] md:m-auto md:rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
         
-        {/* Header */}
-        <div className={`px-6 py-4 text-white flex justify-between items-center shrink-0 ${isFullyContractCovered ? 'bg-emerald-600' : 'bg-[#1a1a2e]'}`}>
+        {/* Header - Always use standard dark theme */}
+        <div className="px-6 py-4 text-white flex justify-between items-center shrink-0 bg-[#1a1a2e]">
           <div className="flex items-center gap-6">
             <div>
               <h2 className="text-xl font-bold flex items-center gap-2">
-                {step === 1 && (isFullyContractCovered ? '📋 RMA Contrat' : 'Créer le Devis')}
+                {step === 1 && 'Créer le Devis'}
                 {step === 2 && 'Aperçu du Devis'}
                 {step === 3 && (isFullyContractCovered ? 'Confirmer RMA Contrat' : 'Confirmer l\'envoi')}
               </h2>
@@ -9315,18 +9323,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
             </div>
             <div className="flex gap-1">
               {[1,2,3].map(s => (
-                <div key={s} className={`w-8 h-2 rounded-full ${step >= s ? (isFullyContractCovered ? 'bg-white' : 'bg-[#00A651]') : 'bg-gray-600'}`} />
+                <div key={s} className={`w-8 h-2 rounded-full ${step >= s ? 'bg-[#00A651]' : 'bg-gray-600'}`} />
               ))}
             </div>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
               <p className="text-xs text-gray-300">Total HT</p>
-              {isFullyContractCovered ? (
-                <p className="text-2xl font-bold text-white">CONTRAT</p>
-              ) : (
-                <p className="text-2xl font-bold text-[#00A651]">{grandTotal.toFixed(2)} €</p>
-              )}
+              <p className="text-2xl font-bold text-[#00A651]">{grandTotal.toFixed(2)} €</p>
             </div>
             <button onClick={onClose} className="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
           </div>
@@ -9425,10 +9429,15 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                 <div className="space-y-4">
                   {devicePricing.map((device, index) => {
                     const calTemplate = CALIBRATION_TEMPLATES[device.deviceType] || CALIBRATION_TEMPLATES.particle_counter;
+                    // Get contract number for display
+                    const contractNumber = device.isContractCovered && contractInfo?.primaryContract?.contract_number 
+                      ? contractInfo.primaryContract.contract_number 
+                      : null;
+                    const isEditing = editingDeviceIndex === index;
                     return (
-                      <div key={device.id} className={`border-2 rounded-xl overflow-hidden ${device.isContractCovered ? 'bg-emerald-50 border-emerald-300' : 'bg-white border-gray-200'}`}>
-                        {/* Device Header */}
-                        <div className={`px-4 py-3 flex items-center justify-between ${device.isContractCovered ? 'bg-emerald-600' : 'bg-[#1a1a2e]'} text-white`}>
+                      <div key={device.id} className="border-2 rounded-xl overflow-hidden bg-white border-gray-200">
+                        {/* Device Header - Always standard dark */}
+                        <div className="px-4 py-3 flex items-center justify-between bg-[#1a1a2e] text-white">
                           <div className="flex items-center gap-3">
                             <span className="bg-white/20 px-2 py-1 rounded text-sm font-bold">#{index + 1}</span>
                             <div>
@@ -9437,16 +9446,80 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            {device.isContractCovered && (
-                              <span className="bg-white text-emerald-600 px-2 py-1 rounded text-xs font-bold">📋 CONTRAT</span>
-                            )}
-                            {device.tokensExhausted && (
-                              <span className="bg-amber-500 px-2 py-1 rounded text-xs font-bold">⚠️ Tokens épuisés</span>
-                            )}
-                            {device.needsCalibration && !device.isContractCovered && <span className="bg-blue-500 px-2 py-1 rounded text-xs">🔬 Cal</span>}
+                            <button 
+                              onClick={() => setEditingDeviceIndex(isEditing ? null : index)}
+                              className="bg-white/20 hover:bg-white/30 px-2 py-1 rounded text-xs"
+                            >
+                              ✏️ Modifier
+                            </button>
+                            {device.needsCalibration && <span className="bg-blue-500 px-2 py-1 rounded text-xs">🔬 Cal</span>}
                             {device.needsRepair && <span className="bg-orange-500 px-2 py-1 rounded text-xs">🔧 Rép</span>}
                           </div>
                         </div>
+
+                        {/* Device Edit Form */}
+                        {isEditing && (
+                          <div className="bg-blue-50 p-4 border-b border-blue-200">
+                            <p className="text-sm font-bold text-blue-800 mb-3">✏️ Modifier les informations de l'appareil</p>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Modèle</label>
+                                <input
+                                  type="text"
+                                  value={device.model}
+                                  onChange={e => updateDevice(device.id, 'model', e.target.value)}
+                                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">N° Série</label>
+                                <input
+                                  type="text"
+                                  value={device.serial}
+                                  onChange={e => updateDevice(device.id, 'serial', e.target.value)}
+                                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Type d'appareil</label>
+                                <select
+                                  value={device.deviceType}
+                                  onChange={e => updateDevice(device.id, 'deviceType', e.target.value)}
+                                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                                >
+                                  <option value="particle_counter">Compteur Particules (Air)</option>
+                                  <option value="liquid_counter">Compteur Particules (Liquide)</option>
+                                  <option value="bio_collector">Bio Collecteur</option>
+                                  <option value="temp_humidity">Capteur Temp/Humidité</option>
+                                  <option value="other">Autre</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Type de service</label>
+                                <select
+                                  value={device.serviceType}
+                                  onChange={e => {
+                                    const newType = e.target.value;
+                                    updateDevice(device.id, 'serviceType', newType);
+                                    updateDevice(device.id, 'needsCalibration', newType.includes('calibration') || newType === 'cal_repair');
+                                    updateDevice(device.id, 'needsRepair', newType.includes('repair') || newType === 'cal_repair');
+                                  }}
+                                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                                >
+                                  <option value="calibration">Étalonnage uniquement</option>
+                                  <option value="repair">Réparation uniquement</option>
+                                  <option value="calibration_repair">Étalonnage + Réparation</option>
+                                </select>
+                              </div>
+                            </div>
+                            <button 
+                              onClick={() => setEditingDeviceIndex(null)}
+                              className="mt-3 px-4 py-1 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700"
+                            >
+                              ✓ Terminé
+                            </button>
+                          </div>
+                        )}
 
                         {/* Customer Notes (Internal) */}
                         {device.customerNotes && (
@@ -9456,19 +9529,11 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                           </div>
                         )}
                         
-                        {/* Contract Coverage Info */}
-                        {device.isContractCovered && (
-                          <div className="bg-emerald-100 px-4 py-2 border-b border-emerald-200">
-                            <p className="text-sm text-emerald-800">
-                              <span className="font-bold">📋 Couvert par contrat</span> 
-                              <span className="ml-2">• Tokens restants: {device.tokensRemaining}</span>
-                            </p>
-                          </div>
-                        )}
+                        {/* Tokens Exhausted Warning */}
                         {device.tokensExhausted && (
                           <div className="bg-amber-100 px-4 py-2 border-b border-amber-200">
                             <p className="text-sm text-amber-800">
-                              <span className="font-bold">⚠️ Tokens épuisés</span> - Facturation au tarif normal
+                              <span className="font-bold">⚠️ Client sous contrat - 0 jetons restants pour cet appareil</span> - Facturation au tarif normal
                             </p>
                           </div>
                         )}
@@ -9476,17 +9541,16 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                         {/* Pricing Inputs */}
                         <div className="p-4 space-y-3">
                           {device.needsCalibration && (
-                            <div className={`flex items-center justify-between p-3 rounded-lg ${device.isContractCovered ? 'bg-emerald-100' : 'bg-blue-50'}`}>
+                            <div className="flex items-center justify-between bg-blue-50 p-3 rounded-lg">
                               <div>
-                                <span className={`font-medium ${device.isContractCovered ? 'text-emerald-800' : 'text-blue-800'}`}>Main d'œuvre étalonnage</span>
-                                <span className={`text-xs ml-2 ${device.isContractCovered ? 'text-emerald-600' : 'text-blue-600'}`}>({calTemplate.icon} {getDeviceTypeLabel(device.deviceType)})</span>
+                                <span className="font-medium text-blue-800">Main d'œuvre étalonnage</span>
+                                <span className="text-xs ml-2 text-blue-600">({calTemplate.icon} {getDeviceTypeLabel(device.deviceType)})</span>
                               </div>
                               {device.isContractCovered ? (
                                 <div className="flex items-center gap-2">
-                                  <span className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg">
-                                    CONTRAT
+                                  <span className="px-3 py-2 bg-emerald-600 text-white font-bold rounded-lg text-sm">
+                                    Contrat N° {contractNumber}
                                   </span>
-                                  <span className="text-emerald-600 font-medium">0,00 €</span>
                                 </div>
                               ) : (
                                 <div className="flex items-center gap-1">
@@ -9544,17 +9608,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                           </button>
 
                           {/* Shipping */}
-                          <div className={`flex items-center justify-between p-3 rounded-lg border-t mt-3 ${device.isContractCovered ? 'bg-emerald-100' : 'bg-gray-100'}`}>
-                            <span className={`font-medium ${device.isContractCovered ? 'text-emerald-700' : 'text-gray-700'}`}>
+                          <div className="flex items-center justify-between p-3 rounded-lg border-t mt-3 bg-gray-100">
+                            <span className="font-medium text-gray-700">
                               {device.isContractCovered ? 'Frais de port (inclus contrat)' : isMetro ? 'Frais de port' : 'Transport (géré par client)'}
                             </span>
                             {device.isContractCovered ? (
-                              <div className="flex items-center gap-2">
-                                <span className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg">
-                                  CONTRAT
-                                </span>
-                                <span className="text-emerald-600 font-medium">0,00 €</span>
-                              </div>
+                              <span className="px-3 py-2 bg-emerald-600 text-white font-bold rounded-lg text-sm">
+                                Contrat N° {contractNumber}
+                              </span>
                             ) : (
                               <div className="flex items-center gap-1">
                                 <input
@@ -9580,18 +9641,28 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                 
                 {/* Per-device totals */}
                 <div className="space-y-3 mb-6">
-                  {devicePricing.map((device, i) => (
-                    <div key={device.id} className={`rounded-lg p-3 border ${device.isContractCovered ? 'bg-emerald-50 border-emerald-200' : 'bg-white'}`}>
+                  {devicePricing.map((device, i) => {
+                    const deviceContractNumber = device.isContractCovered && contractInfo?.primaryContract?.contract_number 
+                      ? contractInfo.primaryContract.contract_number 
+                      : null;
+                    return (
+                    <div key={device.id} className="rounded-lg p-3 border bg-white">
                       <div className="flex justify-between items-start">
                         <div>
                           <p className="font-medium text-sm">{device.model}</p>
                           <p className="text-xs text-gray-500">SN: {device.serial}</p>
                         </div>
                         <div className="text-right">
-                          {device.isContractCovered ? (
+                          {device.isContractCovered && !device.needsRepair ? (
                             <>
-                              <p className="font-bold text-emerald-600">CONTRAT</p>
-                              <p className="text-xs text-emerald-500">Inclus dans le contrat</p>
+                              <p className="font-bold text-emerald-600 text-sm">Contrat N° {deviceContractNumber}</p>
+                              <p className="text-xs text-gray-400">({device.tokensRemaining} jetons restants)</p>
+                            </>
+                          ) : device.isContractCovered && device.needsRepair ? (
+                            <>
+                              <p className="font-bold text-[#00A651]">{(getDeviceServiceTotal(device) + device.shipping).toFixed(2)} €</p>
+                              <p className="text-xs text-emerald-600">Cal: Contrat</p>
+                              <p className="text-xs text-gray-400">Rép: {device.repairPrice}€</p>
                             </>
                           ) : (
                             <>
@@ -9602,7 +9673,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                         </div>
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
 
                 {/* Totals */}
