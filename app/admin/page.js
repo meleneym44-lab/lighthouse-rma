@@ -9220,10 +9220,10 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
     const loadCalibrationParts = async () => {
       setLoadingParts(true);
       try {
-        // First try to load ALL parts to debug
+        // Load all parts - use correct column name: unit_price not price
         const { data: allParts, error: allError } = await supabase
           .from('parts_pricing')
-          .select('part_number, price')
+          .select('part_number, unit_price')
           .limit(500);
         
         console.log('📦 All parts query result:', allParts?.length, 'parts, error:', allError);
@@ -9240,7 +9240,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           const pn = p.part_number || '';
           // Include Cal-% parts and cell1/cell2
           if (pn.startsWith('Cal-') || pn === 'cell1' || pn === 'cell2') {
-            cache[pn] = p.price;
+            cache[pn] = p.unit_price; // Use unit_price
           }
         });
         
