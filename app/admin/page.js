@@ -8860,6 +8860,22 @@ const REPAIR_TEMPLATE = {
 };
 
 // ============================================
+// NETTOYAGE CELLULE - Air particle counters only
+// ============================================
+const NETTOYAGE_TEMPLATE = {
+  icon: '✨',
+  title: "Nettoyage Cellule de Mesure",
+  prestations: [
+    "Démontage de la cellule de mesure optique",
+    "Nettoyage des composants optiques (lentilles, miroirs)",
+    "Nettoyage du circuit fluidique",
+    "Vérification de l'état des joints et connexions",
+    "Remontage et test d'étanchéité"
+  ],
+  defaultPrice: 0 // Included with calibration for air particle counters
+};
+
+// ============================================
 // DISCLAIMERS
 // ============================================
 const QUOTE_DISCLAIMERS = [
@@ -9097,11 +9113,51 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
     }
   }, [loadingContract, contractInfo]);
 
-  // Update device pricing
+  // Update device pricing with automatic recalculation for type/service changes
   const updateDevice = (deviceId, field, value) => {
-    setDevicePricing(prev => prev.map(d => 
-      d.id === deviceId ? { ...d, [field]: value } : d
-    ));
+    setDevicePricing(prev => prev.map(d => {
+      if (d.id !== deviceId) return d;
+      
+      const updated = { ...d, [field]: value };
+      
+      // If device type changed, update calibration price
+      if (field === 'deviceType') {
+        const newTemplate = CALIBRATION_TEMPLATES[value] || CALIBRATION_TEMPLATES.particle_counter;
+        // Only update price if not contract covered
+        if (!d.isContractCovered && d.needsCalibration) {
+          updated.calibrationPrice = newTemplate.defaultPrice;
+        }
+      }
+      
+      // If service type changed, update needs flags and recalculate prices
+      if (field === 'serviceType') {
+        const newNeedsCal = value.includes('calibration') || value === 'cal_repair' || value === 'calibration_repair';
+        const newNeedsRepair = value.includes('repair') || value === 'cal_repair' || value === 'calibration_repair';
+        
+        updated.needsCalibration = newNeedsCal;
+        updated.needsRepair = newNeedsRepair;
+        
+        // Update prices based on new service type
+        if (newNeedsCal && !d.needsCalibration && !d.isContractCovered) {
+          // Adding calibration - set default price
+          const calTemplate = CALIBRATION_TEMPLATES[d.deviceType] || CALIBRATION_TEMPLATES.particle_counter;
+          updated.calibrationPrice = calTemplate.defaultPrice;
+        } else if (!newNeedsCal) {
+          // Removing calibration
+          updated.calibrationPrice = 0;
+        }
+        
+        if (newNeedsRepair && !d.needsRepair) {
+          // Adding repair - set default price
+          updated.repairPrice = REPAIR_TEMPLATE.defaultPrice;
+        } else if (!newNeedsRepair) {
+          // Removing repair
+          updated.repairPrice = 0;
+        }
+      }
+      
+      return updated;
+    }));
   };
 
   // Add part to device
@@ -9777,6 +9833,24 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                       </div>
                     );
                   })}
+
+                  {/* Nettoyage Cellule Section - Only for air particle counters */}
+                  {requiredSections.calibrationTypes.includes('particle_counter') && (
+                    <div className="border-l-4 border-cyan-500 pl-4">
+                      <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
+                        <span>{NETTOYAGE_TEMPLATE.icon}</span> {NETTOYAGE_TEMPLATE.title}
+                      </h3>
+                      <ul className="space-y-1">
+                        {NETTOYAGE_TEMPLATE.prestations.map((p, i) => (
+                          <li key={i} className="text-gray-700 flex items-start gap-2">
+                            <span className="text-cyan-500 mt-1">▸</span>
+                            <span>{p}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="text-xs text-gray-500 italic mt-2">* Inclus avec l'étalonnage des compteurs de particules aéroportées</p>
+                    </div>
+                  )}
 
                   {/* Repair Section */}
                   {requiredSections.hasRepair && (
