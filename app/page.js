@@ -7203,27 +7203,67 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                         if (needsCal) services.push('Étalonnage');
                         if (needsRep) services.push('Réparation');
                         
-                        const serviceTotal = device.serviceTotal || 
-                          ((device.calibrationPrice || 0) + (device.repairPrice || 0) + 
-                           (device.additionalParts || []).reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0));
-                        const shipping = device.shipping || 0;
+                        const isContractCovered = device.isContractCovered;
+                        const contractNumber = device.contractNumber;
+                        
+                        // Calculate service total excluding contract-covered calibration
+                        const calibrationCost = isContractCovered ? 0 : (device.calibrationPrice || 0);
+                        const repairCost = device.repairPrice || 0;
+                        const partsCost = (device.additionalParts || []).reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0);
+                        const serviceTotal = device.serviceTotal || (calibrationCost + repairCost + partsCost);
+                        const shipping = isContractCovered && !needsRep ? 0 : (device.shipping || 0);
                         
                         return [
                           <tr key={`${i}-main`} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-100'}>
                             <td className="px-4 py-3 font-medium">{device.model || device.model_name || '—'}</td>
                             <td className="px-4 py-3 font-mono text-xs">{device.serial || device.serial_number || '—'}</td>
-                            <td className="px-4 py-3">{services.join(' + ') || 'Service'}</td>
-                            <td className="px-4 py-3 text-right font-medium">{serviceTotal.toFixed(2)} €</td>
+                            <td className="px-4 py-3">
+                              {services.join(' + ') || 'Service'}
+                              {isContractCovered && (
+                                <span className="ml-2 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full">
+                                  Contrat
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right font-medium">
+                              {isContractCovered && !needsRep ? (
+                                <span className="text-emerald-600 font-bold">Contrat N° {contractNumber}</span>
+                              ) : isContractCovered && needsRep ? (
+                                <span>{repairCost.toFixed(2)} €</span>
+                              ) : (
+                                <span>{serviceTotal.toFixed(2)} €</span>
+                              )}
+                            </td>
                           </tr>,
+                          // Show calibration line for mixed contract+repair
+                          ...(isContractCovered && needsCal ? [
+                            <tr key={`${i}-cal-contract`} className="bg-emerald-50 text-emerald-700">
+                              <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ Étalonnage (couvert par contrat)</td>
+                              <td className="px-4 py-2 text-right text-sm font-medium">Contrat N° {contractNumber}</td>
+                            </tr>
+                          ] : []),
+                          // Show repair line for mixed contract+repair
+                          ...(isContractCovered && needsRep ? [
+                            <tr key={`${i}-repair`} className="bg-orange-50 text-orange-700">
+                              <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ Réparation</td>
+                              <td className="px-4 py-2 text-right text-sm">{repairCost.toFixed(2)} €</td>
+                            </tr>
+                          ] : []),
                           ...(device.additionalParts || []).map(part => (
                             <tr key={`${i}-part-${part.id}`} className="bg-gray-50 text-gray-600">
                               <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ {part.description || 'Pièce/Service'}</td>
                               <td className="px-4 py-2 text-right text-sm">{parseFloat(part.price || 0).toFixed(2)} €</td>
                             </tr>
                           )),
-                          <tr key={`${i}-shipping`} className="bg-gray-200 text-gray-600">
+                          <tr key={`${i}-shipping`} className={isContractCovered && !needsRep ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-200 text-gray-600'}>
                             <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ Frais de port</td>
-                            <td className="px-4 py-2 text-right text-sm">{shipping.toFixed(2)} €</td>
+                            <td className="px-4 py-2 text-right text-sm">
+                              {isContractCovered && !needsRep ? (
+                                <span className="font-medium">Contrat</span>
+                              ) : (
+                                <span>{shipping.toFixed(2)} €</span>
+                              )}
+                            </td>
                           </tr>
                         ];
                       })}
