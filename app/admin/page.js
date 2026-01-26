@@ -9220,10 +9220,11 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
     const loadCalibrationParts = async () => {
       setLoadingParts(true);
       try {
+        // Load all Cal-% parts and cell1/cell2
         const { data, error } = await supabase
           .from('parts_pricing')
           .select('part_number, price')
-          .or('part_number.ilike.Cal-%,part_number.eq.cell1,part_number.eq.cell2');
+          .like('part_number', 'Cal-%');
         
         if (error) {
           console.error('Error loading calibration parts:', error);
@@ -9231,13 +9232,26 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           return;
         }
         
+        // Also load cell1 and cell2 separately
+        const { data: cellData, error: cellError } = await supabase
+          .from('parts_pricing')
+          .select('part_number, price')
+          .in('part_number', ['cell1', 'cell2']);
+        
+        if (cellError) {
+          console.error('Error loading cell parts:', cellError);
+        }
+        
         // Build cache: { 'Cal-ApexZ3': 920, 'cell1': 150, ... }
         const cache = {};
         (data || []).forEach(p => {
           cache[p.part_number] = p.price;
         });
+        (cellData || []).forEach(p => {
+          cache[p.part_number] = p.price;
+        });
         setPartsCache(cache);
-        console.log('📦 Loaded calibration parts cache:', Object.keys(cache).length, 'parts');
+        console.log('📦 Loaded calibration parts cache:', Object.keys(cache).length, 'parts', cache);
       } catch (err) {
         console.error('Parts cache error:', err);
       }
