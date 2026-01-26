@@ -337,6 +337,18 @@ const REPAIR_TEMPLATE = {
   ]
 };
 
+const NETTOYAGE_TEMPLATE = {
+  icon: '✨',
+  title: "Nettoyage Cellule de Mesure",
+  prestations: [
+    "Démontage de la cellule de mesure optique",
+    "Nettoyage des composants optiques (lentilles, miroirs)",
+    "Nettoyage du circuit fluidique",
+    "Vérification de l'état des joints et connexions",
+    "Remontage et test d'étanchéité"
+  ]
+};
+
 const QUOTE_DISCLAIMERS = [
   "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
   "Un devis complémentaire sera établi si des pièces sont trouvées défectueuses et nécessitent un remplacement.",
@@ -7164,6 +7176,24 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                       </div>
                     );
                   })}
+
+                  {/* Nettoyage Cellule - Only for air particle counters */}
+                  {calibrationTypes.includes('particle_counter') && (
+                    <div className="border-l-4 border-cyan-500 pl-4">
+                      <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
+                        <span>{NETTOYAGE_TEMPLATE.icon}</span> {NETTOYAGE_TEMPLATE.title}
+                      </h3>
+                      <ul className="space-y-1">
+                        {NETTOYAGE_TEMPLATE.prestations.map((p, i) => (
+                          <li key={i} className="text-gray-700 flex items-start gap-2">
+                            <span className="text-cyan-500 mt-1">▸</span>
+                            <span>{p}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="text-xs text-gray-500 italic mt-2">* Inclus avec l'étalonnage des compteurs de particules aéroportées</p>
+                    </div>
+                  )}
 
                   {hasRepair && (
                     <div className="border-l-4 border-orange-500 pl-4">
