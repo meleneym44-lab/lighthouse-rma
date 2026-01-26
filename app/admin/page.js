@@ -1404,7 +1404,7 @@ export default function AdminPortal() {
     
     // Load rental requests
     const { data: rentalsData, error: rentalsError } = await supabase.from('rental_requests')
-      .select('*, companies(*), rental_request_items(*), shipping_addresses(*)')
+      .select('*, companies(*), rental_request_items(*), shipping_address:shipping_addresses!shipping_address_id(*)')
       .order('created_at', { ascending: false });
     console.log('Main loadData - rental_requests:', { rentalsData, rentalsError });
     if (rentalsData) setRentalRequests(rentalsData);
@@ -11413,13 +11413,13 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings })
           )}
 
           {/* Shipping Address */}
-          {rental.shipping_addresses && (
+          {rental.shipping_address && (
             <div>
               <h3 className="font-bold text-gray-700 mb-2">Adresse de livraison</h3>
-              <p className="text-gray-600">{rental.shipping_addresses.company_name}</p>
-              {rental.shipping_addresses.attention && <p className="text-gray-600">À l'att. {rental.shipping_addresses.attention}</p>}
-              <p className="text-gray-600">{rental.shipping_addresses.address_line1}</p>
-              <p className="text-gray-600">{rental.shipping_addresses.postal_code} {rental.shipping_addresses.city}</p>
+              <p className="text-gray-600">{rental.shipping_address.company_name}</p>
+              {rental.shipping_address.attention && <p className="text-gray-600">À l'att. {rental.shipping_address.attention}</p>}
+              <p className="text-gray-600">{rental.shipping_address.address_line1}</p>
+              <p className="text-gray-600">{rental.shipping_address.postal_code} {rental.shipping_address.city}</p>
             </div>
           )}
         </div>
