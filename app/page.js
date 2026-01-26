@@ -3567,7 +3567,9 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
   // Handle serial number change with auto-decode
   const handleSerialNumberChange = (deviceId, sn) => {
     const decoded = decodeSerialNumber(sn);
+    console.log('🔍 Contract device serial decode:', sn, 'Result:', decoded);
     if (decoded) {
+      console.log('✅ Updating contract device with:', { serial_number: sn, model_name: decoded.model, device_type: decoded.category });
       updateDeviceMultiple(deviceId, {
         serial_number: sn,
         model_name: decoded.model,
@@ -4146,8 +4148,10 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
     // Then try to decode if it's a valid Lighthouse serial
     if (device.brand === 'Lighthouse') {
       const decoded = decodeSerialNumber(sn);
+      console.log('🔍 Serial decode attempt:', sn, 'Result:', decoded);
       if (decoded) {
         // Update serial, model, and device_type together
+        console.log('✅ Updating device with:', { serial_number: sn, model: decoded.model, device_type: decoded.category });
         updateDeviceMultiple(device.id, {
           serial_number: sn,
           model: decoded.model,
@@ -4243,7 +4247,15 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
           />
           {device.brand === 'Lighthouse' && device.serial_number && decodeSerialNumber(device.serial_number) && (
             <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-              <span>✓</span> Détecté: {decodeSerialNumber(device.serial_number).model}
+              <span>✓</span> Détecté: {decodeSerialNumber(device.serial_number).model} 
+              <span className="text-gray-500">({
+                decodeSerialNumber(device.serial_number).category === 'particle_counter' ? '🔬 Air' :
+                decodeSerialNumber(device.serial_number).category === 'bio_collector' ? '🧫 Bio' :
+                decodeSerialNumber(device.serial_number).category === 'liquid_counter' ? '💧 Liquide' :
+                decodeSerialNumber(device.serial_number).category === 'temp_humidity' ? '🌡️ TRH' :
+                decodeSerialNumber(device.serial_number).category === 'diluter' ? '🌀 Diluteur' :
+                '📦 Autre'
+              })</span>
             </p>
           )}
         </div>
