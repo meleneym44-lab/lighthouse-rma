@@ -9518,6 +9518,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           nettoyageCellType: nettoyageCellType,
           nettoyagePartNumber: nettoyagePartNumber,
           nettoyagePrice: isContractCovered ? 0 : nettoyagePrice,
+          hideNettoyageOnQuote: false, // Option to hide nettoyage on quote (price still included)
           // Pricing - 0 for contract-covered calibrations
           calibrationPrice: isContractCovered ? 0 : (needsCal ? calPrice : 0),
           repairPrice: needsRepair ? REPAIR_TEMPLATE.defaultPrice : 0,
@@ -10192,6 +10193,18 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                                     <span className="text-gray-500 font-medium">€</span>
                                   </div>
                                 )}
+                                {/* Hide on quote checkbox */}
+                                {!device.isContractCovered && (
+                                  <label className="flex items-center gap-1 ml-2 cursor-pointer" title="Masquer sur le devis (prix inclus dans le total)">
+                                    <input
+                                      type="checkbox"
+                                      checked={device.hideNettoyageOnQuote || false}
+                                      onChange={e => updateDevice(device.id, 'hideNettoyageOnQuote', e.target.checked)}
+                                      className="w-4 h-4 rounded border-gray-300"
+                                    />
+                                    <span className="text-xs text-gray-500">Masquer</span>
+                                  </label>
+                                )}
                               </div>
                             </div>
                           )}
@@ -10581,7 +10594,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                         if (device.needsRepair) services.push('Réparation');
                         const deviceTotal = getDeviceServiceTotal(device);
                         
-                        console.log('📄 Preview device:', device.serial, 'isContractCovered:', device.isContractCovered, 'shipping:', device.shipping);
+                        console.log('📄 Preview device:', device.serial, 'nettoyage:', device.needsNettoyage, 'hideNettoyage:', device.hideNettoyageOnQuote);
                         
                         const rows = [
                           <tr key={`${device.id}-main`} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-100'} ${device.isContractCovered ? 'bg-emerald-50' : ''}`}>
@@ -10601,6 +10614,19 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                           </tr>
                         ];
                         
+                        // Add nettoyage row if applicable and not hidden
+                        if (device.needsNettoyage && !device.hideNettoyageOnQuote && !device.isContractCovered) {
+                          rows.push(
+                            <tr key={`${device.id}-nettoyage`} className="bg-cyan-50 text-cyan-800">
+                              <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>
+                                ↳ Nettoyage cellule ({device.nettoyageCellType === 'cell2' ? 'LD Sensor' : 'Standard'})
+                              </td>
+                              <td className="px-4 py-2 text-right text-sm">{parseFloat(device.nettoyagePrice || 0).toFixed(2)} €</td>
+                            </tr>
+                          );
+                        }
+                        
+                        // Add additional parts
                         device.additionalParts.forEach(part => {
                           rows.push(
                             <tr key={`${device.id}-part-${part.id}`} className="bg-gray-50 text-gray-600">
