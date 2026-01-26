@@ -8861,7 +8861,21 @@ const REPAIR_TEMPLATE = {
 
 // ============================================
 // NETTOYAGE CELLULE - Air particle counters only
+// Cell2 models use LD sensor cleaning (different price)
 // ============================================
+const CELL2_MODELS = [
+  'remote 1104', '1104', 'remote1104',
+  'remote 1102', '1102', 'remote1102', 
+  'hh solair 1100', 'solair 1100', 'hh1100', 'handheld 1100'
+];
+
+// Check if a model requires cell2 (LD sensor) cleaning
+const isCell2Model = (modelName) => {
+  if (!modelName) return false;
+  const normalized = modelName.toLowerCase().trim();
+  return CELL2_MODELS.some(m => normalized.includes(m));
+};
+
 const NETTOYAGE_TEMPLATE = {
   icon: '✨',
   title: "Nettoyage Cellule de Mesure",
@@ -8872,7 +8886,14 @@ const NETTOYAGE_TEMPLATE = {
     "Vérification de l'état des joints et connexions",
     "Remontage et test d'étanchéité"
   ],
-  defaultPrice: 0 // Included with calibration for air particle counters
+  // Pricing will be pulled from parts database (cell1 or cell2)
+  // For now using placeholder - will be replaced by parts lookup
+  getPrice: (modelName) => {
+    // TODO: Pull from parts database based on cell1/cell2 part numbers
+    // cell1 = standard particle counters
+    // cell2 = Remote 1104, Remote 1102, HH Solair 1100 (LD sensor)
+    return isCell2Model(modelName) ? 'cell2' : 'cell1';
+  }
 };
 
 // ============================================
@@ -9036,29 +9057,31 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
     checkContract();
   }, [devices]);
 
-  // Determine which service sections are needed based on devices
-  const getRequiredSections = () => {
-    const sections = { calibration: new Set(), repair: false };
+  // Determine which service sections are needed based on CURRENT devicePricing (reactive)
+  const getRequiredSections = (pricingData) => {
+    const sections = { calibration: new Set(), repair: false, hasAirParticleCounter: false };
     
-    devices.forEach(d => {
-      const serviceType = d.service_type || '';
-      const deviceType = d.device_type || 'particle_counter';
-      
-      if (serviceType.includes('calibration') || serviceType === 'calibration_repair' || serviceType === 'cal_repair') {
-        sections.calibration.add(deviceType);
+    pricingData.forEach(d => {
+      if (d.needsCalibration) {
+        sections.calibration.add(d.deviceType);
+        if (d.deviceType === 'particle_counter') {
+          sections.hasAirParticleCounter = true;
+        }
       }
-      if (serviceType.includes('repair') || serviceType === 'calibration_repair' || serviceType === 'cal_repair') {
+      if (d.needsRepair) {
         sections.repair = true;
       }
     });
     
     return {
       calibrationTypes: Array.from(sections.calibration),
-      hasRepair: sections.repair
+      hasRepair: sections.repair,
+      hasAirParticleCounter: sections.hasAirParticleCounter
     };
   };
 
-  const requiredSections = getRequiredSections();
+  // Compute from devicePricing so it updates when user edits devices
+  const requiredSections = getRequiredSections(devicePricing);
 
   useEffect(() => {
     if (loadingContract) return; // Wait for contract check
@@ -9079,6 +9102,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         const needsRepair = serviceType.includes('repair') || serviceType === 'calibration_repair' || serviceType === 'cal_repair';
         
         const calTemplate = CALIBRATION_TEMPLATES[deviceType] || CALIBRATION_TEMPLATES.particle_counter;
+        const modelName = d.model_name || '';
+        
+        // Determine nettoyage cell type for air particle counters
+        const needsNettoyage = needsCal && deviceType === 'particle_counter';
+        const nettoyageCellType = needsNettoyage ? NETTOYAGE_TEMPLATE.getPrice(modelName) : null;
+        // TODO: Pull actual price from parts database using cell1/cell2 part numbers
+        // For now using placeholder prices - replace with parts lookup
+        const nettoyagePrice = needsNettoyage ? (nettoyageCellType === 'cell2' ? 180 : 150) : 0;
         
         // Check contract coverage - trim serial number for matching
         const serialTrimmed = (d.serial_number || '').trim();
@@ -9086,11 +9117,11 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         const isContractCovered = needsCal && contractDevice && contractDevice.tokens_remaining > 0;
         const tokensExhausted = needsCal && contractDevice && contractDevice.tokens_remaining <= 0;
         
-        console.log(`📊 Device ${serialTrimmed}: contractDevice=`, contractDevice, 'isContractCovered=', isContractCovered);
+        console.log(`📊 Device ${serialTrimmed}: contractDevice=`, contractDevice, 'isContractCovered=', isContractCovered, 'nettoyage:', nettoyageCellType);
         
         return {
           id: d.id || `device-${i}`,
-          model: d.model_name || '',
+          model: modelName,
           serial: serialTrimmed,
           deviceType: deviceType,
           serviceType: serviceType,
@@ -9103,6 +9134,10 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           contractDeviceId: contractDevice?.contract_device_id || null,
           contractId: contractDevice?.contract_id || null,
           tokensRemaining: contractDevice?.tokens_remaining || 0,
+          // Nettoyage cellule (air particle counters only)
+          needsNettoyage: needsNettoyage,
+          nettoyageCellType: nettoyageCellType,
+          nettoyagePrice: isContractCovered ? 0 : nettoyagePrice,
           // Pricing - 0 for contract-covered calibrations
           calibrationPrice: isContractCovered ? 0 : (needsCal ? calTemplate.defaultPrice : 0),
           repairPrice: needsRepair ? REPAIR_TEMPLATE.defaultPrice : 0,
@@ -9120,13 +9155,31 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       
       const updated = { ...d, [field]: value };
       
-      // If device type changed, update calibration price
+      // Helper to calculate nettoyage price
+      const calcNettoyagePrice = (model, deviceType, needsCal, isContractCovered) => {
+        if (!needsCal || deviceType !== 'particle_counter') return { needsNettoyage: false, nettoyageCellType: null, nettoyagePrice: 0 };
+        const cellType = NETTOYAGE_TEMPLATE.getPrice(model);
+        // TODO: Pull from parts database
+        const price = isContractCovered ? 0 : (cellType === 'cell2' ? 180 : 150);
+        return { needsNettoyage: true, nettoyageCellType: cellType, nettoyagePrice: price };
+      };
+      
+      // If device type changed, update calibration and nettoyage pricing
       if (field === 'deviceType') {
         const newTemplate = CALIBRATION_TEMPLATES[value] || CALIBRATION_TEMPLATES.particle_counter;
         // Only update price if not contract covered
         if (!d.isContractCovered && d.needsCalibration) {
           updated.calibrationPrice = newTemplate.defaultPrice;
         }
+        // Update nettoyage based on new device type
+        const nettoyage = calcNettoyagePrice(d.model, value, d.needsCalibration, d.isContractCovered);
+        Object.assign(updated, nettoyage);
+      }
+      
+      // If model changed, update nettoyage cell type
+      if (field === 'model') {
+        const nettoyage = calcNettoyagePrice(value, d.deviceType, d.needsCalibration, d.isContractCovered);
+        Object.assign(updated, nettoyage);
       }
       
       // If service type changed, update needs flags and recalculate prices
@@ -9137,23 +9190,24 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         updated.needsCalibration = newNeedsCal;
         updated.needsRepair = newNeedsRepair;
         
-        // Update prices based on new service type
+        // Update calibration prices
         if (newNeedsCal && !d.needsCalibration && !d.isContractCovered) {
-          // Adding calibration - set default price
           const calTemplate = CALIBRATION_TEMPLATES[d.deviceType] || CALIBRATION_TEMPLATES.particle_counter;
           updated.calibrationPrice = calTemplate.defaultPrice;
         } else if (!newNeedsCal) {
-          // Removing calibration
           updated.calibrationPrice = 0;
         }
         
+        // Update repair prices
         if (newNeedsRepair && !d.needsRepair) {
-          // Adding repair - set default price
           updated.repairPrice = REPAIR_TEMPLATE.defaultPrice;
         } else if (!newNeedsRepair) {
-          // Removing repair
           updated.repairPrice = 0;
         }
+        
+        // Update nettoyage based on new service type
+        const nettoyage = calcNettoyagePrice(d.model, d.deviceType, newNeedsCal, d.isContractCovered);
+        Object.assign(updated, nettoyage);
       }
       
       return updated;
@@ -9194,6 +9248,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   const getDeviceServiceTotal = (d) => {
     let total = 0;
     if (d.needsCalibration) total += d.calibrationPrice;
+    if (d.needsNettoyage) total += d.nettoyagePrice || 0;
     if (d.needsRepair) total += d.repairPrice;
     total += d.additionalParts.reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0);
     return total;
@@ -9246,6 +9301,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         serviceType: d.serviceType,
         needsCalibration: d.needsCalibration,
         needsRepair: d.needsRepair,
+        needsNettoyage: d.needsNettoyage,
+        nettoyageCellType: d.nettoyageCellType,
+        nettoyagePrice: d.nettoyagePrice,
         calibrationPrice: d.calibrationPrice,
         repairPrice: d.repairPrice,
         additionalParts: d.additionalParts,
@@ -9614,6 +9672,33 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                                     type="number"
                                     value={device.calibrationPrice}
                                     onChange={e => updateDevice(device.id, 'calibrationPrice', parseFloat(e.target.value) || 0)}
+                                    className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
+                                  />
+                                  <span className="text-gray-500 font-medium">€</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          
+                          {/* Nettoyage Cellule - Air particle counters only */}
+                          {device.needsNettoyage && (
+                            <div className="flex items-center justify-between bg-cyan-50 p-3 rounded-lg">
+                              <div>
+                                <span className="font-medium text-cyan-800">✨ Nettoyage cellule</span>
+                                <span className="text-xs ml-2 text-cyan-600">
+                                  ({device.nettoyageCellType === 'cell2' ? 'LD Sensor' : 'Standard'})
+                                </span>
+                              </div>
+                              {device.isContractCovered ? (
+                                <span className="px-3 py-2 bg-emerald-600 text-white font-bold rounded-lg text-sm">
+                                  Contrat N° {contractNumber}
+                                </span>
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    value={device.nettoyagePrice}
+                                    onChange={e => updateDevice(device.id, 'nettoyagePrice', parseFloat(e.target.value) || 0)}
                                     className="w-24 px-3 py-2 border rounded-lg text-right font-medium"
                                   />
                                   <span className="text-gray-500 font-medium">€</span>
