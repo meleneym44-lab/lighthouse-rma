@@ -9220,32 +9220,46 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
     const loadCalibrationParts = async () => {
       setLoadingParts(true);
       try {
-        // Load all parts - use correct column name: unit_price not price
-        const { data: allParts, error: allError } = await supabase
-          .from('parts_pricing')
-          .select('part_number, unit_price')
-          .limit(500);
+        // Load parts in batches to get all of them
+        let allCalParts = [];
+        let offset = 0;
+        const batchSize = 1000;
+        let hasMore = true;
         
-        console.log('📦 All parts query result:', allParts?.length, 'parts, error:', allError);
-        
-        if (allError) {
-          console.error('Error loading all parts:', allError);
-          setLoadingParts(false);
-          return;
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from('parts_pricing')
+            .select('part_number, unit_price')
+            .range(offset, offset + batchSize - 1);
+          
+          if (error) {
+            console.error('Error loading parts batch:', error);
+            break;
+          }
+          
+          if (data && data.length > 0) {
+            // Filter for Cal- and cell parts
+            const calParts = data.filter(p => {
+              const pn = p.part_number || '';
+              return pn.startsWith('Cal-') || pn === 'cell1' || pn === 'cell2';
+            });
+            allCalParts = [...allCalParts, ...calParts];
+            offset += batchSize;
+            hasMore = data.length === batchSize;
+            console.log(`📦 Loaded batch: ${data.length} parts, found ${calParts.length} Cal- parts`);
+          } else {
+            hasMore = false;
+          }
         }
         
-        // Filter for calibration parts in JavaScript instead of SQL
+        // Build cache
         const cache = {};
-        (allParts || []).forEach(p => {
-          const pn = p.part_number || '';
-          // Include Cal-% parts and cell1/cell2
-          if (pn.startsWith('Cal-') || pn === 'cell1' || pn === 'cell2') {
-            cache[pn] = p.unit_price; // Use unit_price
-          }
+        allCalParts.forEach(p => {
+          cache[p.part_number] = p.unit_price;
         });
         
         setPartsCache(cache);
-        console.log('📦 Calibration parts cache:', Object.keys(cache).length, 'parts');
+        console.log('📦 Total calibration parts loaded:', Object.keys(cache).length);
         console.log('📦 Cache contents:', cache);
         
         // Check specifically for Cal-S3200
@@ -9253,9 +9267,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           console.log('✅ Cal-S3200 found in cache:', cache['Cal-S3200']);
         } else {
           console.log('❌ Cal-S3200 NOT found in cache');
-          // Show what Cal- parts we do have
           const calParts = Object.keys(cache).filter(k => k.startsWith('Cal-'));
-          console.log('📋 Available Cal- parts:', calParts.slice(0, 20));
+          console.log('📋 Available Cal- parts:', calParts);
         }
       } catch (err) {
         console.error('Parts cache error:', err);
