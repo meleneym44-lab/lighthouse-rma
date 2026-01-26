@@ -9202,6 +9202,15 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   const [partsCache, setPartsCache] = useState({}); // Cache of part prices
   const [partsDescriptionCache, setPartsDescriptionCache] = useState({}); // Cache of part descriptions
   const [loadingParts, setLoadingParts] = useState(true); // Loading state for parts
+  
+  // Shipping state - based on parcels count from RMA request
+  const parcelsCount = request?.parcels_count || 1;
+  const [shippingData, setShippingData] = useState({
+    partNumber: 'Shipping1',
+    unitPrice: 45, // Default, will be updated from parts cache
+    parcels: parcelsCount,
+    total: 45 * parcelsCount
+  });
 
   const devices = request?.request_devices || [];
   const signatory = profile?.full_name || 'Lighthouse France';
@@ -9259,6 +9268,15 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         
         setPartsCache(cache);
         setPartsDescriptionCache(descCache);
+        
+        // Update shipping price if Shipping1 is in the cache
+        if (cache['Shipping1']) {
+          setShippingData(prev => ({
+            ...prev,
+            unitPrice: cache['Shipping1'],
+            total: cache['Shipping1'] * prev.parcels
+          }));
+        }
         
         // Filter for Cal- parts for logging
         const calParts = Object.keys(cache).filter(k => k.startsWith('Cal-') || k === 'cell1' || k === 'cell2');
@@ -9634,7 +9652,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
 
   // Calculate totals
   const servicesSubtotal = devicePricing.reduce((sum, d) => sum + getDeviceServiceTotal(d), 0);
-  const shippingTotal = devicePricing.reduce((sum, d) => sum + (parseFloat(d.shipping) || 0), 0);
+  const shippingTotal = shippingData.total;
   const grandTotal = servicesSubtotal + shippingTotal;
 
   // Get device type label
@@ -9679,13 +9697,15 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         serviceType: d.serviceType,
         needsCalibration: d.needsCalibration,
         needsRepair: d.needsRepair,
+        calPartNumber: d.calPartNumber,
         needsNettoyage: d.needsNettoyage,
         nettoyageCellType: d.nettoyageCellType,
+        nettoyagePartNumber: d.nettoyagePartNumber,
         nettoyagePrice: d.nettoyagePrice,
         calibrationPrice: d.calibrationPrice,
+        repairPartNumber: d.repairPartNumber,
         repairPrice: d.repairPrice,
         additionalParts: d.additionalParts,
-        shipping: d.shipping,
         serviceTotal: getDeviceServiceTotal(d),
         // Contract info
         isContractCovered: d.isContractCovered,
@@ -9693,6 +9713,12 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         contractNumber: d.isContractCovered ? contractInfo?.primaryContract?.contract_number : null,
         tokensRemaining: d.tokensRemaining
       })),
+      shipping: {
+        partNumber: shippingData.partNumber,
+        parcels: shippingData.parcels,
+        unitPrice: shippingData.unitPrice,
+        total: shippingData.total
+      },
       requiredSections,
       servicesSubtotal,
       shippingTotal,
@@ -10264,61 +10290,91 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                           <button onClick={() => addPart(device.id)} className="text-sm text-[#00A651] font-medium hover:underline">
                             + Ajouter pièce/service
                           </button>
-
-                          {/* Shipping */}
-                          <div className="p-3 rounded-lg border-t mt-3 bg-gray-100">
-                            <div className="flex items-center gap-2">
-                              {/* Part Number */}
-                              <div className="w-32">
-                                <input
-                                  type="text"
-                                  value={device.shippingPartNumber || 'Shipping1'}
-                                  onChange={e => {
-                                    const pn = e.target.value;
-                                    updateDevice(device.id, 'shippingPartNumber', pn);
-                                    if (partsCache[pn]) {
-                                      updateDevice(device.id, 'shipping', partsCache[pn]);
-                                    }
-                                  }}
-                                  placeholder="Shipping1"
-                                  className={`w-full px-2 py-2 border rounded-lg text-sm font-mono ${
-                                    partsCache[device.shippingPartNumber || 'Shipping1']
-                                      ? 'border-green-400 bg-green-50'
-                                      : 'border-gray-300'
-                                  }`}
-                                  disabled={device.isContractCovered}
-                                />
-                              </div>
-                              {/* Description */}
-                              <div className="flex-1">
-                                <span className="text-sm font-medium text-gray-700">
-                                  📦 {device.isContractCovered ? 'Frais de port (inclus contrat)' : isMetro ? 'Frais de port' : 'Transport (géré par client)'}
-                                  {partsCache[device.shippingPartNumber || 'Shipping1'] && (
-                                    <span className="ml-2 text-green-600">✓</span>
-                                  )}
-                                </span>
-                              </div>
-                              {/* Price */}
-                              {device.isContractCovered ? (
-                                <span className="px-3 py-2 bg-emerald-600 text-white font-bold rounded-lg text-sm">
-                                  Contrat N° {contractNumber}
-                                </span>
-                              ) : (
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    type="number"
-                                    value={device.shipping}
-                                    onChange={e => updateDevice(device.id, 'shipping', parseFloat(e.target.value) || 0)}
-                                    className="w-24 px-3 py-2 border rounded-lg text-right"
-                                />
-                                <span className="text-gray-500">€</span>
-                              </div>
-                            )}
-                          </div>
                         </div>
                       </div>
                     );
                   })}
+                </div>
+                
+                {/* GLOBAL SHIPPING SECTION */}
+                <div className="mt-6 p-4 bg-gray-100 rounded-lg border-2 border-gray-300">
+                  <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                    📦 Frais de port
+                    <span className="text-sm font-normal text-gray-500">
+                      ({shippingData.parcels} colis × {shippingData.unitPrice.toFixed(2)}€)
+                    </span>
+                  </h4>
+                  <div className="flex items-center gap-3">
+                    {/* Part Number */}
+                    <div className="w-32">
+                      <label className="block text-xs text-gray-500 mb-1">N° Pièce</label>
+                      <input
+                        type="text"
+                        value={shippingData.partNumber}
+                        onChange={e => {
+                          const pn = e.target.value;
+                          const unitPrice = partsCache[pn] || shippingData.unitPrice;
+                          setShippingData(prev => ({
+                            ...prev,
+                            partNumber: pn,
+                            unitPrice: unitPrice,
+                            total: unitPrice * prev.parcels
+                          }));
+                        }}
+                        className={`w-full px-2 py-2 border rounded-lg text-sm font-mono ${
+                          partsCache[shippingData.partNumber]
+                            ? 'border-green-400 bg-green-50'
+                            : 'border-gray-300'
+                        }`}
+                      />
+                    </div>
+                    {/* Parcels */}
+                    <div className="w-24">
+                      <label className="block text-xs text-gray-500 mb-1">Nb Colis</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={shippingData.parcels}
+                        onChange={e => {
+                          const parcels = Math.max(1, parseInt(e.target.value) || 1);
+                          setShippingData(prev => ({
+                            ...prev,
+                            parcels: parcels,
+                            total: prev.unitPrice * parcels
+                          }));
+                        }}
+                        className="w-full px-2 py-2 border rounded-lg text-sm text-center"
+                      />
+                    </div>
+                    {/* Unit Price */}
+                    <div className="w-24">
+                      <label className="block text-xs text-gray-500 mb-1">Prix/colis</label>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          value={shippingData.unitPrice}
+                          onChange={e => {
+                            const unitPrice = parseFloat(e.target.value) || 0;
+                            setShippingData(prev => ({
+                              ...prev,
+                              unitPrice: unitPrice,
+                              total: unitPrice * prev.parcels
+                            }));
+                          }}
+                          className="w-full px-2 py-2 border rounded-lg text-sm text-right"
+                        />
+                        <span className="text-gray-500">€</span>
+                      </div>
+                    </div>
+                    {/* Total */}
+                    <div className="flex-1 text-right">
+                      <label className="block text-xs text-gray-500 mb-1">Total port</label>
+                      <p className="text-lg font-bold text-[#00A651]">{shippingData.total.toFixed(2)} €</p>
+                    </div>
+                  </div>
+                  {partsCache[shippingData.partNumber] && (
+                    <p className="text-xs text-green-600 mt-2">✓ Prix chargé depuis la base de données</p>
+                  )}
                 </div>
               </div>
 
@@ -10347,14 +10403,13 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                             </>
                           ) : device.isContractCovered && device.needsRepair ? (
                             <>
-                              <p className="font-bold text-[#00A651]">{(getDeviceServiceTotal(device) + device.shipping).toFixed(2)} €</p>
+                              <p className="font-bold text-[#00A651]">{getDeviceServiceTotal(device).toFixed(2)} €</p>
                               <p className="text-xs text-emerald-600">Cal: Contrat</p>
                               <p className="text-xs text-gray-400">Rép: {device.repairPrice}€</p>
                             </>
                           ) : (
                             <>
-                              <p className="font-bold text-[#00A651]">{(getDeviceServiceTotal(device) + device.shipping).toFixed(2)} €</p>
-                              <p className="text-xs text-gray-400">dont port: {device.shipping}€</p>
+                              <p className="font-bold text-[#00A651]">{getDeviceServiceTotal(device).toFixed(2)} €</p>
                             </>
                           )}
                         </div>
