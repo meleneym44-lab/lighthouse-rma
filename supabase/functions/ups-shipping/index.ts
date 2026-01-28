@@ -4,6 +4,7 @@
 // Production: https://onlinetools.ups.com
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,12 +12,12 @@ const corsHeaders = {
 }
 
 // UPS API Configuration
-const UPS_BASE_URL = Deno.env.get('UPS_BASE_URL') || 'https://wwwcie.ups.com'
+const UPS_BASE_URL = Deno.env.get('UPS_BASE_URL') || 'https://wwwcie.ups.com' // Sandbox by default
 const UPS_CLIENT_ID = Deno.env.get('UPS_CLIENT_ID')
 const UPS_CLIENT_SECRET = Deno.env.get('UPS_CLIENT_SECRET')
 const UPS_ACCOUNT_NUMBER = Deno.env.get('UPS_ACCOUNT_NUMBER')
 
-// Lighthouse France address
+// Lighthouse France address (shipper for returns, receiver for outbound)
 const LIGHTHOUSE_ADDRESS = {
   name: "Lighthouse Worldwide Solutions France",
   attentionName: "Service Technique",
@@ -52,11 +53,17 @@ async function getUPSToken(): Promise<string> {
 
 // Create a shipment and get label
 async function createShipment(token: string, shipmentData: any) {
-  const { shipTo, shipFrom, packages, serviceCode, description, isReturn } = shipmentData
+  const { shipper, shipTo, shipFrom, packages, serviceCode, description, isReturn } = shipmentData
   
+  // For returns: customer ships TO Lighthouse
+  // For outbound: Lighthouse ships TO customer
   const shipperAddress = isReturn ? shipFrom : LIGHTHOUSE_ADDRESS
   const shipToAddress = isReturn ? LIGHTHOUSE_ADDRESS : shipTo
   const shipFromAddress = isReturn ? shipFrom : LIGHTHOUSE_ADDRESS
+  
+  // Ensure we have valid company/name for UPS (UPS requires Name to be company name)
+  const getShipperName = (addr: any) => addr.company || addr.attentionName || addr.name || "Customer"
+  const getAttentionName = (addr: any) => addr.name || addr.attentionName || addr.company || "Customer"
   
   const requestBody = {
     ShipmentRequest: {
@@ -69,9 +76,9 @@ async function createShipment(token: string, shipmentData: any) {
       Shipment: {
         Description: description || "Calibration Equipment",
         Shipper: {
-          Name: shipperAddress.name,
-          AttentionName: shipperAddress.attentionName || shipperAddress.name,
-          Phone: { Number: shipperAddress.phone || "0000000000" },
+          Name: getShipperName(shipperAddress),
+          AttentionName: getAttentionName(shipperAddress),
+          Phone: { Number: (shipperAddress.phone || "0000000000").replace(/\s/g, '') },
           ShipperNumber: UPS_ACCOUNT_NUMBER,
           Address: {
             AddressLine: [shipperAddress.addressLine1, shipperAddress.addressLine2].filter(Boolean),
@@ -81,9 +88,9 @@ async function createShipment(token: string, shipmentData: any) {
           }
         },
         ShipTo: {
-          Name: shipToAddress.name,
-          AttentionName: shipToAddress.attentionName || shipToAddress.name,
-          Phone: { Number: shipToAddress.phone || "0000000000" },
+          Name: getShipperName(shipToAddress),
+          AttentionName: getAttentionName(shipToAddress),
+          Phone: { Number: (shipToAddress.phone || "0000000000").replace(/\s/g, '') },
           Address: {
             AddressLine: [shipToAddress.addressLine1, shipToAddress.addressLine2].filter(Boolean),
             City: shipToAddress.city,
@@ -92,9 +99,9 @@ async function createShipment(token: string, shipmentData: any) {
           }
         },
         ShipFrom: {
-          Name: shipFromAddress.name,
-          AttentionName: shipFromAddress.attentionName || shipFromAddress.name,
-          Phone: { Number: shipFromAddress.phone || "0000000000" },
+          Name: getShipperName(shipFromAddress),
+          AttentionName: getAttentionName(shipFromAddress),
+          Phone: { Number: (shipFromAddress.phone || "0000000000").replace(/\s/g, '') },
           Address: {
             AddressLine: [shipFromAddress.addressLine1, shipFromAddress.addressLine2].filter(Boolean),
             City: shipFromAddress.city,
@@ -104,20 +111,20 @@ async function createShipment(token: string, shipmentData: any) {
         },
         PaymentInformation: {
           ShipmentCharge: [{
-            Type: "01",
+            Type: "01", // Transportation
             BillShipper: {
               AccountNumber: UPS_ACCOUNT_NUMBER
             }
           }]
         },
         Service: {
-          Code: serviceCode || "11",
+          Code: serviceCode || "11", // UPS Standard
           Description: getServiceDescription(serviceCode || "11")
         },
         Package: packages.map((pkg: any, index: number) => ({
           Description: pkg.description || `Package ${index + 1}`,
           Packaging: {
-            Code: "02",
+            Code: "02", // Customer Supplied Package
             Description: "Package"
           },
           Dimensions: {
@@ -131,9 +138,10 @@ async function createShipment(token: string, shipmentData: any) {
             Weight: String(pkg.weight || 5)
           }
         })),
+        // Return service for customer-to-Lighthouse shipments
         ...(isReturn && {
           ReturnService: {
-            Code: "9"
+            Code: "9" // UPS Print Return Label
           }
         })
       },
@@ -148,6 +156,8 @@ async function createShipment(token: string, shipmentData: any) {
       }
     }
   }
+  
+  console.log('UPS Shipment Request:', JSON.stringify(requestBody, null, 2))
   
   const response = await fetch(`${UPS_BASE_URL}/api/shipments/v1/ship`, {
     method: 'POST',
@@ -172,12 +182,12 @@ async function createShipment(token: string, shipmentData: any) {
 
 // Get shipping rates
 async function getRates(token: string, rateData: any) {
-  const { shipTo, packages } = rateData
+  const { shipTo, shipFrom, packages } = rateData
   
   const requestBody = {
     RateRequest: {
       Request: {
-        RequestOption: "Shop"
+        RequestOption: "Shop" // Get all available rates
       },
       Shipment: {
         Shipper: {
@@ -269,6 +279,7 @@ async function trackShipment(token: string, trackingNumber: string) {
   return responseData
 }
 
+// Helper: Get service description
 function getServiceDescription(code: string): string {
   const services: Record<string, string> = {
     "01": "UPS Next Day Air",
@@ -289,6 +300,7 @@ function getServiceDescription(code: string): string {
 
 // Main handler
 serve(async (req) => {
+  // Handle CORS
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -296,10 +308,12 @@ serve(async (req) => {
   try {
     const { action, ...data } = await req.json()
     
+    // Validate credentials
     if (!UPS_CLIENT_ID || !UPS_CLIENT_SECRET || !UPS_ACCOUNT_NUMBER) {
       throw new Error('UPS credentials not configured')
     }
     
+    // Get OAuth token
     const token = await getUPSToken()
     
     let result
@@ -307,13 +321,14 @@ serve(async (req) => {
     switch (action) {
       case 'create_shipment':
         result = await createShipment(token, data)
+        // Extract useful info from response
         const shipmentResult = result.ShipmentResponse?.ShipmentResults
         return new Response(JSON.stringify({
           success: true,
           trackingNumber: shipmentResult?.ShipmentIdentificationNumber,
           packages: shipmentResult?.PackageResults?.map((pkg: any) => ({
             trackingNumber: pkg.TrackingNumber,
-            labelData: pkg.ShippingLabel?.GraphicImage,
+            labelData: pkg.ShippingLabel?.GraphicImage, // Base64 PDF
             labelFormat: 'PDF'
           })),
           totalCharges: shipmentResult?.ShipmentCharges?.TotalCharges,
@@ -324,6 +339,7 @@ serve(async (req) => {
         
       case 'get_rates':
         result = await getRates(token, data)
+        // Parse rates from response
         const ratedShipments = result.RateResponse?.RatedShipment || []
         return new Response(JSON.stringify({
           success: true,
@@ -348,6 +364,7 @@ serve(async (req) => {
         })
         
       case 'test_connection':
+        // Simple test to verify credentials work
         return new Response(JSON.stringify({
           success: true,
           message: 'UPS API connection successful',
