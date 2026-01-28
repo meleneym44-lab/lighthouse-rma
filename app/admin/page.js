@@ -4720,11 +4720,75 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     return `BL-${rmaNum}-${dateStr}${shipments.length > 1 ? `-${index + 1}` : ''}`;
   };
   
-  const generateTrackingNumber = () => `1Z999AA1${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`;
+  // State for UPS API
+  const [upsLoading, setUpsLoading] = useState(false);
+  const [upsLabels, setUpsLabels] = useState({}); // Store PDF labels by index
   
-  const createUPSLabels = () => {
-    setShipments(prev => prev.map(s => ({ ...s, trackingNumber: s.trackingNumber || generateTrackingNumber() })));
-    setStep(2);
+  // Create REAL UPS Labels via Edge Function
+  const createUPSLabels = async () => {
+    setUpsLoading(true);
+    try {
+      const updatedShipments = [...shipments];
+      
+      for (let i = 0; i < shipments.length; i++) {
+        const s = shipments[i];
+        const address = s.address || {};
+        
+        // Call UPS Edge Function to create shipment
+        const { data, error } = await supabase.functions.invoke('ups-shipping', {
+          body: {
+            action: 'create_shipment',
+            shipTo: {
+              name: address.attention || address.company_name || 'Customer',
+              company: address.company_name || 'Customer',
+              attentionName: address.attention || address.company_name || 'Customer',
+              phone: address.phone || '0100000000',
+              addressLine1: address.address_line1 || '',
+              city: address.city || '',
+              postalCode: address.postal_code || '',
+              countryCode: address.country === 'France' ? 'FR' : (address.country_code || 'FR')
+            },
+            packages: [{
+              weight: parseFloat(s.weight) || 2,
+              length: 30,
+              width: 30,
+              height: 30,
+              description: `RMA ${rma.request_number}`
+            }],
+            serviceCode: '11', // UPS Standard
+            description: `RMA ${rma.request_number} - ${s.devices?.length || 1} appareil(s)`,
+            isReturn: false
+          }
+        });
+        
+        if (error) throw error;
+        if (!data.success) throw new Error(data.error || 'UPS API error');
+        
+        // Update shipment with real tracking number
+        updatedShipments[i] = {
+          ...s,
+          trackingNumber: data.trackingNumber,
+          upsResponse: data
+        };
+        
+        // Store label PDF data if available
+        if (data.packages?.[0]?.labelData) {
+          setUpsLabels(prev => ({
+            ...prev,
+            [i]: data.packages[0].labelData // Base64 PDF
+          }));
+        }
+        
+        notify(`✅ Étiquette UPS créée: ${data.trackingNumber}`);
+      }
+      
+      setShipments(updatedShipments);
+      setStep(2);
+    } catch (err) {
+      console.error('UPS Label creation error:', err);
+      notify('❌ Erreur UPS: ' + (err.message || 'Erreur inconnue'), 'error');
+    }
+    setUpsLoading(false);
   };
   
   // French month names for written date
@@ -4745,11 +4809,44 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
   
   const printLabel = (index) => {
     const s = shipments[index];
-    const w = window.open('', '_blank');
-    if (!w) { notify('Popup bloqué', 'error'); return; }
-    w.document.write(`<html><head><title>UPS Label</title><style>body{font-family:Arial;padding:20px}.label{border:3px solid #351C15;padding:20px;max-width:400px;margin:0 auto}.ups{font-size:32px;font-weight:bold;color:#351C15;text-align:center}.tracking{font-size:18px;font-family:monospace;text-align:center;margin:20px 0;padding:10px;background:#f5f5f5}.addr{margin:15px 0;padding:15px;border:1px solid #ddd}</style></head><body><div class="label"><div class="ups">UPS</div><div class="tracking">${s.trackingNumber}</div><div class="addr"><small>DESTINATAIRE:</small><br><strong>${s.address.company_name}</strong><br>${s.address.attention ? 'À l att. de: ' + s.address.attention + '<br>' : ''}${s.address.address_line1}<br>${s.address.postal_code} ${s.address.city}<br>${s.address.country}</div><div class="addr"><small>EXPÉDITEUR:</small><br><strong>LIGHTHOUSE FRANCE</strong><br>1 Rue de la Pépinière<br>94000 Créteil<br>France</div><p style="text-align:center;font-size:20px;font-weight:bold">${s.parcels} COLIS - ${s.weight} KG</p><p style="text-align:center;color:#666">${rma.request_number}</p></div><script>window.print()</script></body></html>`);
-    w.document.close();
-    setLabelsPrinted(prev => ({ ...prev, [index]: true }));
+    const labelData = upsLabels[index];
+    
+    if (labelData) {
+      // Download real UPS PDF label
+      try {
+        const byteCharacters = atob(labelData);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        
+        // Open in new tab for printing
+        const w = window.open(url, '_blank');
+        if (!w) {
+          // Fallback: download the file
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `UPS-Label-${s.trackingNumber}.pdf`;
+          a.click();
+        }
+        
+        setLabelsPrinted(prev => ({ ...prev, [index]: true }));
+        notify('📄 Étiquette UPS ouverte');
+      } catch (err) {
+        console.error('Error opening label:', err);
+        notify('Erreur ouverture étiquette', 'error');
+      }
+    } else {
+      // Fallback to generated label if no real PDF
+      const w = window.open('', '_blank');
+      if (!w) { notify('Popup bloqué', 'error'); return; }
+      w.document.write(`<html><head><title>UPS Label</title><style>body{font-family:Arial;padding:20px}.label{border:3px solid #351C15;padding:20px;max-width:400px;margin:0 auto}.ups{font-size:32px;font-weight:bold;color:#351C15;text-align:center}.tracking{font-size:18px;font-family:monospace;text-align:center;margin:20px 0;padding:10px;background:#f5f5f5}.addr{margin:15px 0;padding:15px;border:1px solid #ddd}</style></head><body><div class="label"><div class="ups">UPS</div><div class="tracking">${s.trackingNumber}</div><div class="addr"><small>DESTINATAIRE:</small><br><strong>${s.address.company_name}</strong><br>${s.address.attention ? 'À l att. de: ' + s.address.attention + '<br>' : ''}${s.address.address_line1}<br>${s.address.postal_code} ${s.address.city}<br>${s.address.country}</div><div class="addr"><small>EXPÉDITEUR:</small><br><strong>LIGHTHOUSE FRANCE</strong><br>16 rue Paul Sejourne<br>94000 Créteil<br>France</div><p style="text-align:center;font-size:20px;font-weight:bold">${s.parcels} COLIS - ${s.weight} KG</p><p style="text-align:center;color:#666">${rma.request_number}</p></div><script>window.print()</script></body></html>`);
+      w.document.close();
+      setLabelsPrinted(prev => ({ ...prev, [index]: true }));
+    }
   };
   
   const printBL = (index) => {
@@ -5355,7 +5452,19 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           {step === 1 && (
             <>
               <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Annuler</button>
-              <button onClick={createUPSLabels} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium">Créer Étiquettes UPS →</button>
+              <button 
+                onClick={createUPSLabels} 
+                disabled={upsLoading || !shipments[0]?.address?.company_name || !shipments[0]?.address?.address_line1}
+                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
+              >
+                {upsLoading ? (
+                  <>
+                    <span className="animate-spin">⏳</span> Création étiquette UPS...
+                  </>
+                ) : (
+                  <>📦 Créer Étiquette UPS →</>
+                )}
+              </button>
             </>
           )}
           {step === 2 && (
