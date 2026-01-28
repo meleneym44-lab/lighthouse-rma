@@ -1481,6 +1481,7 @@ export default function AdminPortal() {
     { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
     { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
     { id: 'rentals', label: 'Locations', icon: '📅', badge: rentalActionCount > 0 ? rentalActionCount : null },
+    { id: 'ups', label: 'UPS', icon: '📦' },
     { id: 'settings', label: 'Paramètres', icon: '⚙️' },
     ...(isAdmin ? [{ id: 'admin', label: 'Admin', icon: '🔐' }] : [])
   ];
@@ -1594,6 +1595,7 @@ export default function AdminPortal() {
               businessSettings={businessSettings}
             />}
             {activeSheet === 'settings' && <SettingsSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} />}
+            {activeSheet === 'ups' && <UPSToolsSheet notify={notify} />}
             {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} />}
           </>
         )}
@@ -12341,6 +12343,559 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings })
           <button onClick={onClose} className="px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Fermer</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ============================================
+// UPS TOOLS SHEET - Testing & Shipping Tools
+// ============================================
+function UPSToolsSheet({ notify }) {
+  const [activeTab, setActiveTab] = useState('test');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  
+  // Test connection state
+  const [connectionStatus, setConnectionStatus] = useState(null);
+  
+  // Rate calculator state
+  const [rateForm, setRateForm] = useState({
+    postalCode: '',
+    city: '',
+    countryCode: 'FR',
+    weight: 5,
+    length: 30,
+    width: 30,
+    height: 30
+  });
+  const [rates, setRates] = useState(null);
+  
+  // Create shipment state
+  const [shipmentForm, setShipmentForm] = useState({
+    name: '',
+    company: '',
+    phone: '',
+    addressLine1: '',
+    city: '',
+    postalCode: '',
+    countryCode: 'FR',
+    weight: 5,
+    length: 30,
+    width: 30,
+    height: 30,
+    serviceCode: '11',
+    isReturn: false
+  });
+  const [shipmentResult, setShipmentResult] = useState(null);
+  
+  // Track package state
+  const [trackingNumber, setTrackingNumber] = useState('');
+  const [trackingResult, setTrackingResult] = useState(null);
+
+  // Test UPS Connection
+  const testConnection = async () => {
+    setLoading(true);
+    setConnectionStatus(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('ups-shipping', {
+        body: { action: 'test_connection' }
+      });
+      if (error) throw error;
+      setConnectionStatus(data);
+      notify(data.success ? 'Connexion UPS réussie!' : 'Échec de connexion', data.success ? 'success' : 'error');
+    } catch (err) {
+      setConnectionStatus({ success: false, error: err.message });
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setLoading(false);
+  };
+
+  // Get shipping rates
+  const getRates = async () => {
+    setLoading(true);
+    setRates(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('ups-shipping', {
+        body: {
+          action: 'get_rates',
+          shipTo: {
+            name: 'Test Customer',
+            addressLine1: rateForm.addressLine1 || '123 Test Street',
+            city: rateForm.city,
+            postalCode: rateForm.postalCode,
+            countryCode: rateForm.countryCode
+          },
+          packages: [{
+            weight: parseFloat(rateForm.weight) || 5,
+            length: parseFloat(rateForm.length) || 30,
+            width: parseFloat(rateForm.width) || 30,
+            height: parseFloat(rateForm.height) || 30
+          }]
+        }
+      });
+      if (error) throw error;
+      setRates(data);
+      notify('Tarifs récupérés!', 'success');
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setLoading(false);
+  };
+
+  // Create shipment
+  const createShipment = async () => {
+    setLoading(true);
+    setShipmentResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('ups-shipping', {
+        body: {
+          action: 'create_shipment',
+          shipTo: {
+            name: shipmentForm.name || 'Test Customer',
+            attentionName: shipmentForm.company,
+            phone: shipmentForm.phone || '0100000000',
+            addressLine1: shipmentForm.addressLine1,
+            city: shipmentForm.city,
+            postalCode: shipmentForm.postalCode,
+            countryCode: shipmentForm.countryCode
+          },
+          shipFrom: shipmentForm.isReturn ? {
+            name: shipmentForm.name || 'Test Customer',
+            attentionName: shipmentForm.company,
+            phone: shipmentForm.phone || '0100000000',
+            addressLine1: shipmentForm.addressLine1,
+            city: shipmentForm.city,
+            postalCode: shipmentForm.postalCode,
+            countryCode: shipmentForm.countryCode
+          } : undefined,
+          packages: [{
+            weight: parseFloat(shipmentForm.weight) || 5,
+            length: parseFloat(shipmentForm.length) || 30,
+            width: parseFloat(shipmentForm.width) || 30,
+            height: parseFloat(shipmentForm.height) || 30,
+            description: 'Calibration Equipment'
+          }],
+          serviceCode: shipmentForm.serviceCode,
+          isReturn: shipmentForm.isReturn,
+          description: 'RMA Test Shipment'
+        }
+      });
+      if (error) throw error;
+      setShipmentResult(data);
+      notify(data.success ? 'Expédition créée!' : 'Échec création', data.success ? 'success' : 'error');
+    } catch (err) {
+      setShipmentResult({ success: false, error: err.message });
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setLoading(false);
+  };
+
+  // Track shipment
+  const trackPackage = async () => {
+    if (!trackingNumber.trim()) {
+      notify('Veuillez entrer un numéro de suivi', 'error');
+      return;
+    }
+    setLoading(true);
+    setTrackingResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('ups-shipping', {
+        body: {
+          action: 'track',
+          trackingNumber: trackingNumber.trim()
+        }
+      });
+      if (error) throw error;
+      setTrackingResult(data);
+      notify('Suivi récupéré!', 'success');
+    } catch (err) {
+      setTrackingResult({ success: false, error: err.message });
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setLoading(false);
+  };
+
+  // Download label PDF
+  const downloadLabel = (labelData, trackingNumber) => {
+    const byteCharacters = atob(labelData);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `UPS-Label-${trackingNumber}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-2xl font-bold text-[#1a1a2e]">📦 UPS Tools</h2>
+          <p className="text-gray-500">Test et outils d'expédition UPS</p>
+        </div>
+        <div className="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg font-medium">
+          🧪 Mode SANDBOX (Test)
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 mb-6 border-b">
+        {[
+          { id: 'test', label: '🔌 Test Connexion' },
+          { id: 'rates', label: '💰 Calculer Tarifs' },
+          { id: 'ship', label: '📤 Créer Expédition' },
+          { id: 'track', label: '🔍 Suivi Colis' }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 font-medium border-b-2 -mb-px ${
+              activeTab === tab.id 
+                ? 'border-[#00A651] text-[#00A651]' 
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Test Connection Tab */}
+      {activeTab === 'test' && (
+        <div className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h3 className="font-bold text-blue-800 mb-2">Test de connexion API UPS</h3>
+            <p className="text-blue-600 text-sm mb-4">
+              Vérifie que vos identifiants UPS sont corrects et que l'API est accessible.
+            </p>
+            <button
+              onClick={testConnection}
+              disabled={loading}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold disabled:opacity-50"
+            >
+              {loading ? 'Test en cours...' : 'Tester la connexion'}
+            </button>
+          </div>
+
+          {connectionStatus && (
+            <div className={`p-4 rounded-lg ${connectionStatus.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+              <h4 className={`font-bold ${connectionStatus.success ? 'text-green-800' : 'text-red-800'}`}>
+                {connectionStatus.success ? '✅ Connexion réussie!' : '❌ Échec de connexion'}
+              </h4>
+              {connectionStatus.success ? (
+                <div className="mt-2 text-green-700">
+                  <p><strong>Environnement:</strong> {connectionStatus.environment}</p>
+                  <p><strong>Compte:</strong> {connectionStatus.accountNumber}</p>
+                  <p><strong>Message:</strong> {connectionStatus.message}</p>
+                </div>
+              ) : (
+                <p className="mt-2 text-red-700">{connectionStatus.error}</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Rate Calculator Tab */}
+      {activeTab === 'rates' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Code Postal *</label>
+              <input
+                type="text"
+                value={rateForm.postalCode}
+                onChange={e => setRateForm({...rateForm, postalCode: e.target.value})}
+                placeholder="75001"
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Ville *</label>
+              <input
+                type="text"
+                value={rateForm.city}
+                onChange={e => setRateForm({...rateForm, city: e.target.value})}
+                placeholder="Paris"
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Pays</label>
+              <select
+                value={rateForm.countryCode}
+                onChange={e => setRateForm({...rateForm, countryCode: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                <option value="FR">France</option>
+                <option value="BE">Belgique</option>
+                <option value="CH">Suisse</option>
+                <option value="DE">Allemagne</option>
+                <option value="ES">Espagne</option>
+                <option value="IT">Italie</option>
+                <option value="GB">Royaume-Uni</option>
+                <option value="US">États-Unis</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Poids (kg)</label>
+              <input
+                type="number"
+                value={rateForm.weight}
+                onChange={e => setRateForm({...rateForm, weight: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Dimensions (L × l × H cm)</label>
+              <div className="flex gap-2">
+                <input type="number" value={rateForm.length} onChange={e => setRateForm({...rateForm, length: e.target.value})} className="w-full px-2 py-2 border rounded-lg" placeholder="L" />
+                <input type="number" value={rateForm.width} onChange={e => setRateForm({...rateForm, width: e.target.value})} className="w-full px-2 py-2 border rounded-lg" placeholder="l" />
+                <input type="number" value={rateForm.height} onChange={e => setRateForm({...rateForm, height: e.target.value})} className="w-full px-2 py-2 border rounded-lg" placeholder="H" />
+              </div>
+            </div>
+          </div>
+          
+          <button
+            onClick={getRates}
+            disabled={loading || !rateForm.postalCode || !rateForm.city}
+            className="px-6 py-3 bg-[#00A651] hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50"
+          >
+            {loading ? 'Calcul en cours...' : 'Calculer les tarifs'}
+          </button>
+
+          {rates && rates.success && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h4 className="font-bold text-gray-800 mb-3">Tarifs disponibles:</h4>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-200">
+                    <th className="px-3 py-2 text-left">Service</th>
+                    <th className="px-3 py-2 text-right">Prix</th>
+                    <th className="px-3 py-2 text-right">Délai</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rates.rates.map((rate, i) => (
+                    <tr key={i} className="border-b">
+                      <td className="px-3 py-2">{rate.serviceName}</td>
+                      <td className="px-3 py-2 text-right font-bold">{rate.totalPrice} {rate.currency}</td>
+                      <td className="px-3 py-2 text-right">{rate.estimatedDays ? `${rate.estimatedDays} jours` : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          
+          {rates && !rates.success && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+              Erreur: {rates.error}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Create Shipment Tab */}
+      {activeTab === 'ship' && (
+        <div className="space-y-4">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-yellow-800 text-sm">
+            ⚠️ Mode SANDBOX: Les étiquettes générées ne sont PAS valides pour de vraies expéditions.
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Nom du destinataire *</label>
+              <input
+                type="text"
+                value={shipmentForm.name}
+                onChange={e => setShipmentForm({...shipmentForm, name: e.target.value})}
+                placeholder="Jean Dupont"
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Société</label>
+              <input
+                type="text"
+                value={shipmentForm.company}
+                onChange={e => setShipmentForm({...shipmentForm, company: e.target.value})}
+                placeholder="Acme Corp"
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Téléphone</label>
+              <input
+                type="text"
+                value={shipmentForm.phone}
+                onChange={e => setShipmentForm({...shipmentForm, phone: e.target.value})}
+                placeholder="0612345678"
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Adresse *</label>
+              <input
+                type="text"
+                value={shipmentForm.addressLine1}
+                onChange={e => setShipmentForm({...shipmentForm, addressLine1: e.target.value})}
+                placeholder="123 Rue de Test"
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Code Postal *</label>
+              <input
+                type="text"
+                value={shipmentForm.postalCode}
+                onChange={e => setShipmentForm({...shipmentForm, postalCode: e.target.value})}
+                placeholder="75001"
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Ville *</label>
+              <input
+                type="text"
+                value={shipmentForm.city}
+                onChange={e => setShipmentForm({...shipmentForm, city: e.target.value})}
+                placeholder="Paris"
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Pays</label>
+              <select
+                value={shipmentForm.countryCode}
+                onChange={e => setShipmentForm({...shipmentForm, countryCode: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                <option value="FR">France</option>
+                <option value="BE">Belgique</option>
+                <option value="CH">Suisse</option>
+                <option value="DE">Allemagne</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Service</label>
+              <select
+                value={shipmentForm.serviceCode}
+                onChange={e => setShipmentForm({...shipmentForm, serviceCode: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                <option value="11">UPS Standard</option>
+                <option value="07">UPS Express</option>
+                <option value="54">UPS Express Plus</option>
+                <option value="65">UPS Express Saver</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Poids (kg)</label>
+              <input
+                type="number"
+                value={shipmentForm.weight}
+                onChange={e => setShipmentForm({...shipmentForm, weight: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="flex items-center gap-2 mt-6">
+                <input
+                  type="checkbox"
+                  checked={shipmentForm.isReturn}
+                  onChange={e => setShipmentForm({...shipmentForm, isReturn: e.target.checked})}
+                  className="w-5 h-5"
+                />
+                <span>Étiquette retour (client → Lighthouse)</span>
+              </label>
+            </div>
+          </div>
+          
+          <button
+            onClick={createShipment}
+            disabled={loading || !shipmentForm.name || !shipmentForm.addressLine1 || !shipmentForm.postalCode || !shipmentForm.city}
+            className="px-6 py-3 bg-[#00A651] hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50"
+          >
+            {loading ? 'Création en cours...' : '📦 Créer l\'expédition'}
+          </button>
+
+          {shipmentResult && shipmentResult.success && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <h4 className="font-bold text-green-800 mb-2">✅ Expédition créée!</h4>
+              <p><strong>N° Suivi:</strong> {shipmentResult.trackingNumber}</p>
+              {shipmentResult.totalCharges && (
+                <p><strong>Coût:</strong> {shipmentResult.totalCharges.MonetaryValue} {shipmentResult.totalCharges.CurrencyCode}</p>
+              )}
+              {shipmentResult.packages?.map((pkg, i) => (
+                <div key={i} className="mt-3">
+                  <p className="text-sm text-gray-600">Colis {i + 1}: {pkg.trackingNumber}</p>
+                  {pkg.labelData && (
+                    <button
+                      onClick={() => downloadLabel(pkg.labelData, pkg.trackingNumber)}
+                      className="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm"
+                    >
+                      📄 Télécharger l'étiquette PDF
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {shipmentResult && !shipmentResult.success && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+              ❌ Erreur: {shipmentResult.error}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Track Package Tab */}
+      {activeTab === 'track' && (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Numéro de suivi UPS</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={trackingNumber}
+                onChange={e => setTrackingNumber(e.target.value)}
+                placeholder="1Z999AA10123456784"
+                className="flex-1 px-3 py-2 border rounded-lg font-mono"
+              />
+              <button
+                onClick={trackPackage}
+                disabled={loading || !trackingNumber.trim()}
+                className="px-6 py-2 bg-[#00A651] hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50"
+              >
+                {loading ? '...' : 'Suivre'}
+              </button>
+            </div>
+          </div>
+
+          {trackingResult && trackingResult.success && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h4 className="font-bold text-gray-800 mb-2">Résultat du suivi:</h4>
+              <pre className="text-xs bg-white p-3 rounded border overflow-auto max-h-96">
+                {JSON.stringify(trackingResult.tracking, null, 2)}
+              </pre>
+            </div>
+          )}
+          
+          {trackingResult && !trackingResult.success && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+              ❌ Erreur: {trackingResult.error}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
