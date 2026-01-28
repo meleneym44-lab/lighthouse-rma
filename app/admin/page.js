@@ -4722,19 +4722,32 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
   
   // State for UPS API
   const [upsLoading, setUpsLoading] = useState(false);
-  const [upsLabels, setUpsLabels] = useState({}); // Store PDF labels by index
+  const [upsLabels, setUpsLabels] = useState({}); // Store PDF labels by "shipmentIndex-packageIndex"
   
   // Create REAL UPS Labels via Edge Function
   const createUPSLabels = async () => {
     setUpsLoading(true);
     try {
       const updatedShipments = [...shipments];
+      const newLabels = {};
       
       for (let i = 0; i < shipments.length; i++) {
         const s = shipments[i];
         const address = s.address || {};
         
-        // Call UPS Edge Function to create shipment
+        // Build packages array - one per parcel count
+        const packagesList = [];
+        for (let p = 0; p < (s.parcels || 1); p++) {
+          packagesList.push({
+            weight: parseFloat(s.weight) || 2,
+            length: 30,
+            width: 30,
+            height: 30,
+            description: `RMA ${rma.request_number} - Colis ${p + 1}/${s.parcels || 1}`
+          });
+        }
+        
+        // Call UPS Edge Function to create shipment with multiple packages
         const { data, error } = await supabase.functions.invoke('ups-shipping', {
           body: {
             action: 'create_shipment',
@@ -4748,13 +4761,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
               postalCode: address.postal_code || '',
               countryCode: address.country === 'France' ? 'FR' : (address.country_code || 'FR')
             },
-            packages: [{
-              weight: parseFloat(s.weight) || 2,
-              length: 30,
-              width: 30,
-              height: 30,
-              description: `RMA ${rma.request_number}`
-            }],
+            packages: packagesList,
             serviceCode: '11', // UPS Standard
             description: `RMA ${rma.request_number} - ${s.devices?.length || 1} appareil(s)`,
             isReturn: false
@@ -4768,20 +4775,27 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
         updatedShipments[i] = {
           ...s,
           trackingNumber: data.trackingNumber,
-          upsResponse: data
+          upsResponse: data,
+          packageLabels: data.packages || [] // Store all package labels
         };
         
-        // Store label PDF data if available
-        if (data.packages?.[0]?.labelData) {
-          setUpsLabels(prev => ({
-            ...prev,
-            [i]: data.packages[0].labelData // Base64 PDF
-          }));
+        // Store label PDF data for each package
+        if (data.packages) {
+          data.packages.forEach((pkg, pkgIndex) => {
+            if (pkg.labelData) {
+              newLabels[`${i}-${pkgIndex}`] = pkg.labelData;
+            }
+          });
+          // Also store first label as main label for backward compatibility
+          if (data.packages[0]?.labelData) {
+            newLabels[i] = data.packages[0].labelData;
+          }
         }
         
-        notify(`✅ Étiquette UPS créée: ${data.trackingNumber}`);
+        notify(`✅ ${data.packages?.length || 1} étiquette(s) UPS créée(s): ${data.trackingNumber}`);
       }
       
+      setUpsLabels(prev => ({ ...prev, ...newLabels }));
       setShipments(updatedShipments);
       setStep(2);
     } catch (err) {
@@ -5065,18 +5079,41 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           console.error('BL PDF generation error:', pdfErr);
         }
         
-        // Generate UPS Label PDF
+        // Generate UPS Label PDF - use REAL label from UPS API if available
         let upsLabelUrl = null;
         try {
-          console.log('Generating UPS label for shipment:', i, s.trackingNumber);
-          const upsPdfBlob = await generateUPSLabelPDF(rma, s);
-          console.log('UPS PDF blob generated:', upsPdfBlob?.size);
-          const safeTracking = (s.trackingNumber || String(i)).replace(/[^a-zA-Z0-9-_]/g, '');
-          const upsFileName = `${rma.request_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
-          upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
-          console.log('UPS label uploaded:', upsLabelUrl);
+          console.log('Saving UPS label for shipment:', i, s.trackingNumber);
+          
+          // Check if we have real UPS label data
+          const realLabelData = upsLabels[i];
+          
+          if (realLabelData) {
+            // Convert base64 to blob
+            const byteCharacters = atob(realLabelData);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let j = 0; j < byteCharacters.length; j++) {
+              byteNumbers[j] = byteCharacters.charCodeAt(j);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const upsPdfBlob = new Blob([byteArray], { type: 'application/pdf' });
+            
+            console.log('Real UPS PDF blob size:', upsPdfBlob?.size);
+            const safeTracking = (s.trackingNumber || String(i)).replace(/[^a-zA-Z0-9-_]/g, '');
+            const upsFileName = `${rma.request_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
+            upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
+            console.log('Real UPS label uploaded:', upsLabelUrl);
+          } else {
+            // Fallback to generated label if no real one
+            console.log('No real UPS label, generating fake one');
+            const upsPdfBlob = await generateUPSLabelPDF(rma, s);
+            console.log('Fake UPS PDF blob generated:', upsPdfBlob?.size);
+            const safeTracking = (s.trackingNumber || String(i)).replace(/[^a-zA-Z0-9-_]/g, '');
+            const upsFileName = `${rma.request_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
+            upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
+            console.log('Fake UPS label uploaded:', upsLabelUrl);
+          }
         } catch (pdfErr) {
-          console.error('UPS Label PDF generation error:', pdfErr);
+          console.error('UPS Label PDF save error:', pdfErr);
         }
         
         // Update devices with docs but keep ready_to_ship status
@@ -5250,13 +5287,33 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
               
               {/* Shipping Details */}
               <div className="bg-white border-2 border-gray-200 rounded-xl">
-                <div className="bg-green-50 px-4 py-3 border-b">
+                <div className="bg-green-50 px-4 py-3 border-b flex justify-between items-center">
                   <h3 className="font-bold text-green-800">🚚 Détails d'expédition</h3>
+                  <span className="text-xs text-green-600">💡 UPS crée 1 étiquette par colis</span>
                 </div>
                 <div className="p-4 grid md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de colis</label>
-                    <input type="number" min="1" value={shipment.parcels} onChange={e => updateShipment(idx, 'parcels', parseInt(e.target.value) || 1)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => updateShipment(idx, 'parcels', Math.max(1, (shipment.parcels || 1) - 1))}
+                        className="w-10 h-10 bg-gray-200 hover:bg-gray-300 rounded-lg font-bold text-lg"
+                      >-</button>
+                      <input 
+                        type="number" 
+                        min="1" 
+                        value={shipment.parcels} 
+                        onChange={e => updateShipment(idx, 'parcels', parseInt(e.target.value) || 1)} 
+                        className="w-20 px-3 py-2 border border-gray-300 rounded-lg text-center font-bold text-lg" 
+                      />
+                      <button 
+                        onClick={() => updateShipment(idx, 'parcels', (shipment.parcels || 1) + 1)}
+                        className="w-10 h-10 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold text-lg"
+                      >+</button>
+                    </div>
+                    {shipment.parcels > 1 && (
+                      <p className="text-xs text-green-600 mt-1">📦 {shipment.parcels} étiquettes seront créées</p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Poids total (kg)</label>
@@ -5299,15 +5356,55 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                   <a href={`https://www.ups.com/track?tracknum=${shipment.trackingNumber}`} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline">Suivre →</a>
                 </div>
               </div>
-              <div className="bg-gray-50 rounded-lg p-6 mb-4 text-center border-2 border-dashed">
-                <div className="text-4xl font-bold text-[#351C15]">UPS</div>
-                <div className="font-mono text-xl my-3">{shipment.trackingNumber}</div>
-                <div className="text-gray-600">{shipment.address.company_name}<br/>{shipment.address.postal_code} {shipment.address.city}</div>
-                <div className="text-lg font-bold mt-3">{shipment.parcels} colis • {shipment.weight} kg</div>
+              
+              {/* Show all package labels */}
+              <div className="space-y-4">
+                {(shipment.packageLabels || [{ trackingNumber: shipment.trackingNumber }]).map((pkg, pkgIdx) => (
+                  <div key={pkgIdx} className="bg-gray-50 rounded-lg p-4 border">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <div className="text-2xl font-bold text-[#351C15]">UPS</div>
+                        <div className="font-mono text-sm">{pkg.trackingNumber || shipment.trackingNumber}</div>
+                        <div className="text-sm text-gray-500 mt-1">
+                          Colis {pkgIdx + 1} / {shipment.parcels || 1}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className={labelsPrinted[`${idx}-${pkgIdx}`] ? 'text-green-600 font-medium text-sm' : 'text-gray-400 text-sm'}>
+                          {labelsPrinted[`${idx}-${pkgIdx}`] ? '✓ Imprimé' : ''}
+                        </span>
+                        <button 
+                          onClick={() => {
+                            const labelData = upsLabels[`${idx}-${pkgIdx}`] || upsLabels[idx];
+                            if (labelData) {
+                              const byteCharacters = atob(labelData);
+                              const byteNumbers = new Array(byteCharacters.length);
+                              for (let i = 0; i < byteCharacters.length; i++) {
+                                byteNumbers[i] = byteCharacters.charCodeAt(i);
+                              }
+                              const byteArray = new Uint8Array(byteNumbers);
+                              const blob = new Blob([byteArray], { type: 'application/pdf' });
+                              const url = URL.createObjectURL(blob);
+                              window.open(url, '_blank');
+                              setLabelsPrinted(prev => ({ ...prev, [`${idx}-${pkgIdx}`]: true }));
+                            } else {
+                              printLabel(idx);
+                            }
+                          }} 
+                          className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium text-sm"
+                        >
+                          🖨️ Imprimer
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="flex justify-between items-center">
-                <span className={labelsPrinted[idx] ? 'text-green-600 font-medium' : 'text-gray-400'}>{labelsPrinted[idx] ? '✓ Imprimé' : 'Non imprimé'}</span>
-                <button onClick={() => printLabel(idx)} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium">🖨️ Imprimer Étiquette</button>
+              
+              {/* Summary */}
+              <div className="mt-4 pt-4 border-t flex justify-between items-center text-sm text-gray-600">
+                <span>{shipment.address.company_name} • {shipment.parcels || 1} colis • {shipment.weight} kg</span>
+                <span className="text-gray-400">{rma.request_number}</span>
               </div>
             </div>
           ))}
