@@ -12478,7 +12478,8 @@ function UPSToolsSheet({ notify }) {
           action: 'create_shipment',
           shipTo: {
             name: shipmentForm.name || 'Test Customer',
-            attentionName: shipmentForm.company,
+            company: shipmentForm.company || shipmentForm.name || 'Customer',
+            attentionName: shipmentForm.name || 'Customer',
             phone: shipmentForm.phone || '0100000000',
             addressLine1: shipmentForm.addressLine1,
             city: shipmentForm.city,
@@ -12487,7 +12488,8 @@ function UPSToolsSheet({ notify }) {
           },
           shipFrom: shipmentForm.isReturn ? {
             name: shipmentForm.name || 'Test Customer',
-            attentionName: shipmentForm.company,
+            company: shipmentForm.company || shipmentForm.name || 'Customer',
+            attentionName: shipmentForm.name || 'Customer',
             phone: shipmentForm.phone || '0100000000',
             addressLine1: shipmentForm.addressLine1,
             city: shipmentForm.city,
