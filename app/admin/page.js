@@ -12398,18 +12398,31 @@ function UPSToolsSheet({ notify }) {
     setConnectionStatus(null);
     try {
       // Get current session for auth
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        throw new Error('Session error: ' + sessionError.message);
+      }
+      
+      if (!session) {
+        throw new Error('No active session - please log in again');
+      }
+      
+      console.log('Session found, calling UPS function...');
       
       const { data, error } = await supabase.functions.invoke('ups-shipping', {
-        body: { action: 'test_connection' },
-        headers: session ? {
-          Authorization: `Bearer ${session.access_token}`
-        } : {}
+        body: { action: 'test_connection' }
       });
-      if (error) throw error;
+      
+      if (error) {
+        console.error('Function error:', error);
+        throw error;
+      }
+      
       setConnectionStatus(data);
       notify(data.success ? 'Connexion UPS réussie!' : 'Échec de connexion', data.success ? 'success' : 'error');
     } catch (err) {
+      console.error('Test connection error:', err);
       setConnectionStatus({ success: false, error: err.message });
       notify('Erreur: ' + err.message, 'error');
     }
