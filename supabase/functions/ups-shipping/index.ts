@@ -1,4 +1,4 @@
-// UPS Shipping Edge Function 
+// UPS Shipping Edge Function
 // Sandbox URL for testing - switch to production when ready
 // Testing: https://wwwcie.ups.com
 // Production: https://onlinetools.ups.com
