@@ -16,14 +16,14 @@ const UPS_CLIENT_ID = Deno.env.get('UPS_CLIENT_ID')
 const UPS_CLIENT_SECRET = Deno.env.get('UPS_CLIENT_SECRET')
 const UPS_ACCOUNT_NUMBER = Deno.env.get('UPS_ACCOUNT_NUMBER')
 
-// Lighthouse France address
+// Lighthouse France address - MUST MATCH UPS ACCOUNT EXACTLY
 const LIGHTHOUSE_ADDRESS = {
-  name: "Lighthouse Worldwide Solutions France",
-  company: "Lighthouse Worldwide Solutions France",
+  name: "Lighthouse France",
+  company: "Lighthouse France",
   attentionName: "Service Technique",
-  phone: "0143772807",
-  addressLine1: "16 Rue Paul Sejourne",
-  city: "Creteil",
+  phone: "769898396",
+  addressLine1: "16 rue Paul Sejourne Batiment B",
+  city: "CRETEIL",
   postalCode: "94000",
   countryCode: "FR"
 }
@@ -62,15 +62,8 @@ async function createShipment(token: string, shipmentData: any) {
   const shipFromAddress = isReturn ? shipFrom : LIGHTHOUSE_ADDRESS
   
   // Helper functions to get proper names for UPS
-  // UPS requires Name = company name, AttentionName = person name
-  const getCompanyName = (addr: any) => {
-    return addr.company || addr.attentionName || addr.name || "Company"
-  }
-  
-  const getPersonName = (addr: any) => {
-    return addr.attentionName || addr.name || addr.company || "Recipient"
-  }
-  
+  const getCompanyName = (addr: any) => addr.company || addr.attentionName || addr.name || "Company"
+  const getPersonName = (addr: any) => addr.attentionName || addr.name || addr.company || "Recipient"
   const getPhone = (addr: any) => {
     const phone = addr.phone || "0100000000"
     return phone.replace(/\s/g, '').replace(/[^0-9]/g, '')
