@@ -12397,8 +12397,14 @@ function UPSToolsSheet({ notify }) {
     setLoading(true);
     setConnectionStatus(null);
     try {
+      // Get current session for auth
+      const { data: { session } } = await supabase.auth.getSession();
+      
       const { data, error } = await supabase.functions.invoke('ups-shipping', {
-        body: { action: 'test_connection' }
+        body: { action: 'test_connection' },
+        headers: session ? {
+          Authorization: `Bearer ${session.access_token}`
+        } : {}
       });
       if (error) throw error;
       setConnectionStatus(data);
@@ -12415,6 +12421,8 @@ function UPSToolsSheet({ notify }) {
     setLoading(true);
     setRates(null);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
       const { data, error } = await supabase.functions.invoke('ups-shipping', {
         body: {
           action: 'get_rates',
@@ -12431,7 +12439,10 @@ function UPSToolsSheet({ notify }) {
             width: parseFloat(rateForm.width) || 30,
             height: parseFloat(rateForm.height) || 30
           }]
-        }
+        },
+        headers: session ? {
+          Authorization: `Bearer ${session.access_token}`
+        } : {}
       });
       if (error) throw error;
       setRates(data);
@@ -12447,6 +12458,8 @@ function UPSToolsSheet({ notify }) {
     setLoading(true);
     setShipmentResult(null);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
       const { data, error } = await supabase.functions.invoke('ups-shipping', {
         body: {
           action: 'create_shipment',
@@ -12478,7 +12491,10 @@ function UPSToolsSheet({ notify }) {
           serviceCode: shipmentForm.serviceCode,
           isReturn: shipmentForm.isReturn,
           description: 'RMA Test Shipment'
-        }
+        },
+        headers: session ? {
+          Authorization: `Bearer ${session.access_token}`
+        } : {}
       });
       if (error) throw error;
       setShipmentResult(data);
@@ -12499,11 +12515,16 @@ function UPSToolsSheet({ notify }) {
     setLoading(true);
     setTrackingResult(null);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
       const { data, error } = await supabase.functions.invoke('ups-shipping', {
         body: {
           action: 'track',
           trackingNumber: trackingNumber.trim()
-        }
+        },
+        headers: session ? {
+          Authorization: `Bearer ${session.access_token}`
+        } : {}
       });
       if (error) throw error;
       setTrackingResult(data);
