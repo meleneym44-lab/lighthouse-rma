@@ -20,9 +20,9 @@ const UPS_ACCOUNT_NUMBER = Deno.env.get('UPS_ACCOUNT_NUMBER')
 const LIGHTHOUSE_ADDRESS = {
   name: "Lighthouse France",
   company: "Lighthouse France",
-  attentionName: "Service Technique",
-  phone: "769898396",
-  addressLine1: "16 rue Paul Sejourne Batiment B",
+  attentionName: "Service Clients",
+  phone: "0143772807",
+  addressLine1: "16 rue Paul Sejourne",
   city: "CRETEIL",
   postalCode: "94000",
   countryCode: "FR"
