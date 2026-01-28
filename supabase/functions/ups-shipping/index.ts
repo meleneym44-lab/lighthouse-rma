@@ -321,10 +321,13 @@ serve(async (req) => {
       case 'create_shipment':
         result = await createShipment(token, data)
         const shipmentResult = result.ShipmentResponse?.ShipmentResults
+        // PackageResults can be array or single object
+        const packageResults = shipmentResult?.PackageResults
+        const packagesArray = Array.isArray(packageResults) ? packageResults : [packageResults].filter(Boolean)
         return new Response(JSON.stringify({
           success: true,
           trackingNumber: shipmentResult?.ShipmentIdentificationNumber,
-          packages: shipmentResult?.PackageResults?.map((pkg: any) => ({
+          packages: packagesArray.map((pkg: any) => ({
             trackingNumber: pkg.TrackingNumber,
             labelData: pkg.ShippingLabel?.GraphicImage,
             labelFormat: 'PDF'
@@ -340,13 +343,13 @@ serve(async (req) => {
         const ratedShipments = result.RateResponse?.RatedShipment || []
         return new Response(JSON.stringify({
           success: true,
-          rates: ratedShipments.map((rate: any) => ({
+          rates: Array.isArray(ratedShipments) ? ratedShipments.map((rate: any) => ({
             serviceCode: rate.Service?.Code,
             serviceName: getServiceDescription(rate.Service?.Code),
             totalPrice: rate.TotalCharges?.MonetaryValue,
             currency: rate.TotalCharges?.CurrencyCode,
             estimatedDays: rate.GuaranteedDelivery?.BusinessDaysInTransit
-          }))
+          })) : []
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
