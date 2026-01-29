@@ -2885,7 +2885,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     address_id: addresses.find(a => a.is_default)?.id || '',
     showNewForm: false,
     newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' },
-    parcels: 1 // Number of parcels/boxes for the shipment
+    parcels: 0 // Start at 0 - customer must choose
   });
   const [saving, setSaving] = useState(false);
 
@@ -3035,6 +3035,12 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     
     if (!addressId) {
       notify('Veuillez sélectionner ou ajouter une adresse', 'error');
+      return;
+    }
+    
+    // Validate parcels count
+    if (!shipping.parcels || shipping.parcels < 1) {
+      notify('Veuillez indiquer le nombre de colis', 'error');
       return;
     }
 
@@ -3796,6 +3802,45 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
         Information de Livraison
       </h2>
 
+      {/* Number of Parcels - FIRST (Required) */}
+      <div className="mb-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
+        <label className="block text-sm font-bold text-[#1E3A5F] mb-2">
+          📦 Nombre de colis *
+        </label>
+        <p className="text-sm text-gray-600 mb-3">
+          Indiquez le nombre de colis/boîtes dans lesquels vous enverrez vos appareils.
+        </p>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShipping({ ...shipping, parcels: Math.max(0, (shipping.parcels || 0) - 1) })}
+            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
+          >
+            −
+          </button>
+          <input
+            type="number"
+            min="0"
+            value={shipping.parcels || 0}
+            onChange={e => setShipping({ ...shipping, parcels: Math.max(0, parseInt(e.target.value) || 0) })}
+            className={`w-20 px-3 py-2 text-center border rounded-lg font-bold text-lg ${
+              shipping.parcels === 0 ? 'border-red-300 bg-red-50' : 'border-gray-300'
+            }`}
+          />
+          <button
+            type="button"
+            onClick={() => setShipping({ ...shipping, parcels: (shipping.parcels || 0) + 1 })}
+            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
+          >
+            +
+          </button>
+          <span className="text-gray-600 ml-2">colis</span>
+        </div>
+        {shipping.parcels === 0 && (
+          <p className="text-red-500 text-sm mt-2">⚠️ Veuillez indiquer le nombre de colis</p>
+        )}
+      </div>
+
       {/* Existing Addresses */}
       <div className="mb-4">
         <label className="block text-sm font-bold text-gray-700 mb-2">Adresse de Retour *</label>
@@ -3974,40 +4019,6 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
           </div>
         </div>
       )}
-
-      {/* Number of Parcels */}
-      <div className="mt-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
-        <label className="block text-sm font-bold text-[#1E3A5F] mb-2">
-          📦 Nombre de colis
-        </label>
-        <p className="text-sm text-gray-600 mb-3">
-          Indiquez le nombre de colis/boîtes dans lesquels vous enverrez vos appareils.
-        </p>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setShipping({ ...shipping, parcels: Math.max(1, (shipping.parcels || 1) - 1) })}
-            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
-          >
-            −
-          </button>
-          <input
-            type="number"
-            min="1"
-            value={shipping.parcels || 1}
-            onChange={e => setShipping({ ...shipping, parcels: Math.max(1, parseInt(e.target.value) || 1) })}
-            className="w-20 px-3 py-2 text-center border border-gray-300 rounded-lg font-bold text-lg"
-          />
-          <button
-            type="button"
-            onClick={() => setShipping({ ...shipping, parcels: (shipping.parcels || 1) + 1 })}
-            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
-          >
-            +
-          </button>
-          <span className="text-gray-600 ml-2">colis</span>
-        </div>
-      </div>
 
       {/* Warning for address outside France Metropolitan */}
       {(isOutsideMetro || newAddressIsOutsideMetro) && (
@@ -6228,18 +6239,99 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   // Quote approval/revision handlers
   const handleApproveQuote = async () => {
     setApprovingQuote(true);
-    const { error } = await supabase.from('service_requests').update({
-      status: 'waiting_bc',
-      quote_approved_at: new Date().toISOString()
-    }).eq('id', request.id);
     
-    if (error) {
-      notify('Erreur: ' + error.message, 'error');
-    } else {
-      notify('✅ Devis approuvé! Veuillez soumettre votre bon de commande.', 'success');
-      setShowQuoteModal(false);
-      refresh();
+    try {
+      // Upload signature image if exists
+      let signatureUrl = null;
+      if (signatureData) {
+        try {
+          const base64Data = signatureData.split(',')[1];
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'image/png' });
+          
+          const fileName = `signatures/${request.id}/quote_signature_${Date.now()}.png`;
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('rma-files')
+            .upload(fileName, blob);
+          
+          if (!uploadError && uploadData) {
+            const { data: urlData } = supabase.storage.from('rma-files').getPublicUrl(fileName);
+            signatureUrl = urlData?.publicUrl;
+          }
+        } catch (sigErr) {
+          console.error('Signature upload error:', sigErr);
+        }
+      }
+      
+      // Generate signed quote PDF and save it
+      let signedQuotePdfUrl = null;
+      if (signatureName && signatureData) {
+        try {
+          const pdfBlob = await generateQuotePDF({
+            request,
+            devices: request.request_devices || [],
+            servicesSubtotal: request.quoted_price || 0,
+            shippingTotal: (request.parcels_count || 1) * 45,
+            grandTotal: (request.quoted_price || 0) + ((request.parcels_count || 1) * 45),
+            isSigned: true,
+            signatureName: signatureName,
+            signatureDate: signatureDateDisplay,
+            signatureImage: signatureData
+          });
+          
+          const fileName = `quotes/${request.id}/quote_signed_${Date.now()}.pdf`;
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('rma-files')
+            .upload(fileName, pdfBlob);
+          
+          if (!uploadError && uploadData) {
+            const { data: urlData } = supabase.storage.from('rma-files').getPublicUrl(fileName);
+            signedQuotePdfUrl = urlData?.publicUrl;
+          }
+        } catch (pdfErr) {
+          console.error('PDF generation error:', pdfErr);
+        }
+      }
+      
+      // Update request with quote approval and signature
+      const { error } = await supabase.from('service_requests').update({
+        status: 'waiting_bc',
+        quote_approved_at: new Date().toISOString(),
+        quote_signed_by: signatureName,
+        quote_signature_date: signatureDateISO,
+        quote_signature_url: signatureUrl,
+        quote_signed_pdf_url: signedQuotePdfUrl
+      }).eq('id', request.id);
+      
+      // Save signed quote to attachments
+      if (signedQuotePdfUrl) {
+        await supabase.from('request_attachments').insert({
+          request_id: request.id,
+          file_name: `Devis_Signé_${request.request_number}.pdf`,
+          file_url: signedQuotePdfUrl,
+          file_type: 'application/pdf',
+          file_size: 0,
+          uploaded_by: profile.id,
+          category: 'devis_signe'
+        });
+      }
+      
+      if (error) {
+        notify('Erreur: ' + error.message, 'error');
+      } else {
+        notify('✅ Devis approuvé! Veuillez soumettre votre bon de commande.', 'success');
+        setShowQuoteModal(false);
+        refresh();
+      }
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
     }
+    
     setApprovingQuote(false);
   };
   
@@ -7103,110 +7195,63 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 <div className="px-8 py-6 bg-gray-50">
                   <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
                   
-                  <table className="w-full text-sm border-collapse">
+                  <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-[#1a1a2e] text-white">
-                        <th className="px-4 py-3 text-center w-16">Qté</th>
-                        <th className="px-4 py-3 text-left">Désignation</th>
-                        <th className="px-4 py-3 text-right w-28">Prix Unit.</th>
-                        <th className="px-4 py-3 text-right w-28">Total HT</th>
+                        <th className="px-4 py-3 text-left">Appareil</th>
+                        <th className="px-4 py-3 text-left">N° Série</th>
+                        <th className="px-4 py-3 text-left">Service</th>
+                        <th className="px-4 py-3 text-right">Prix HT</th>
                       </tr>
                     </thead>
                     <tbody>
                       {devices.map((device, i) => {
-                        const rows = [];
+                        const services = [];
                         const needsCal = device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration');
                         const needsRep = device.needsRepair || (device.serviceType || device.service_type || '').includes('repair');
+                        if (needsCal) services.push('Étalonnage');
+                        if (needsRep) services.push('Réparation');
                         
-                        // Calibration row
-                        if (needsCal) {
-                          const qty = device.calibrationQty || 1;
-                          const unitPrice = parseFloat(device.calibrationPrice) || 0;
-                          const lineTotal = qty * unitPrice;
-                          rows.push(
-                            <tr key={`${i}-cal`} className="border-b">
-                              <td className="px-4 py-3 text-center">{qty}</td>
-                              <td className="px-4 py-3">Étalonnage {device.model || device.model_name} (SN: {device.serial || device.serial_number})</td>
-                              <td className="px-4 py-3 text-right">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-4 py-3 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                        const serviceTotal = device.serviceTotal || 
+                          ((device.calibrationPrice || 0) + (device.repairPrice || 0) + 
+                           (device.additionalParts || []).reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0));
+                        const shipping = device.shipping || 0;
+                        
+                        return [
+                          <tr key={`${i}-main`} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-100'}>
+                            <td className="px-4 py-3 font-medium">{device.model || device.model_name || '—'}</td>
+                            <td className="px-4 py-3 font-mono text-xs">{device.serial || device.serial_number || '—'}</td>
+                            <td className="px-4 py-3">{services.join(' + ') || 'Service'}</td>
+                            <td className="px-4 py-3 text-right font-medium">{serviceTotal.toFixed(2)} €</td>
+                          </tr>,
+                          ...(device.additionalParts || []).map(part => (
+                            <tr key={`${i}-part-${part.id}`} className="bg-gray-50 text-gray-600">
+                              <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ {part.description || 'Pièce/Service'}</td>
+                              <td className="px-4 py-2 text-right text-sm">{parseFloat(part.price || 0).toFixed(2)} €</td>
                             </tr>
-                          );
-                        }
-                        
-                        // Nettoyage row
-                        if (device.needsNettoyage && device.nettoyagePrice > 0) {
-                          const qty = device.nettoyageQty || 1;
-                          const unitPrice = parseFloat(device.nettoyagePrice) || 0;
-                          const lineTotal = qty * unitPrice;
-                          rows.push(
-                            <tr key={`${i}-nettoyage`} className="border-b">
-                              <td className="px-4 py-3 text-center">{qty}</td>
-                              <td className="px-4 py-3">Nettoyage cellule - si requis selon l'état du capteur</td>
-                              <td className="px-4 py-3 text-right">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-4 py-3 text-right font-medium">{lineTotal.toFixed(2)} €</td>
-                            </tr>
-                          );
-                        }
-                        
-                        // Repair row
-                        if (needsRep) {
-                          const qty = device.repairQty || 1;
-                          const unitPrice = parseFloat(device.repairPrice) || 0;
-                          const lineTotal = qty * unitPrice;
-                          rows.push(
-                            <tr key={`${i}-repair`} className="border-b">
-                              <td className="px-4 py-3 text-center">{qty}</td>
-                              <td className="px-4 py-3">Réparation {device.model || device.model_name} (SN: {device.serial || device.serial_number})</td>
-                              <td className="px-4 py-3 text-right">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-4 py-3 text-right font-medium">{lineTotal.toFixed(2)} €</td>
-                            </tr>
-                          );
-                        }
-                        
-                        // Additional parts
-                        (device.additionalParts || []).forEach(part => {
-                          const qty = parseInt(part.quantity) || 1;
-                          const unitPrice = parseFloat(part.price) || 0;
-                          const lineTotal = qty * unitPrice;
-                          rows.push(
-                            <tr key={`${i}-part-${part.id}`} className="border-b">
-                              <td className="px-4 py-3 text-center">{qty}</td>
-                              <td className="px-4 py-3">
-                                {part.partNumber && <span className="text-gray-500 mr-1">[{part.partNumber}]</span>}
-                                {part.description || 'Pièce/Service'}
-                              </td>
-                              <td className="px-4 py-3 text-right">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-4 py-3 text-right font-medium">{lineTotal.toFixed(2)} €</td>
-                            </tr>
-                          );
-                        });
-                        
-                        return rows;
+                          )),
+                          <tr key={`${i}-shipping`} className="bg-gray-200 text-gray-600">
+                            <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ Frais de port</td>
+                            <td className="px-4 py-2 text-right text-sm">{shipping.toFixed(2)} €</td>
+                          </tr>
+                        ];
                       })}
-                      
-                      {/* Shipping row */}
-                      <tr className="border-b bg-gray-50">
-                        <td className="px-4 py-3 text-center">{quoteData?.shipping?.parcels || 1}</td>
-                        <td className="px-4 py-3">Frais de port ({quoteData?.shipping?.parcels || 1} colis)</td>
-                        <td className="px-4 py-3 text-right">{(quoteData?.shipping?.unitPrice || shippingTotal).toFixed(2)} €</td>
-                        <td className="px-4 py-3 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
-                      </tr>
                     </tbody>
                     <tfoot>
+                      <tr className="border-t-2 border-gray-300">
+                        <td className="px-4 py-3 font-medium" colSpan={3}>Sous-total services</td>
+                        <td className="px-4 py-3 text-right font-medium">{servicesSubtotal.toFixed(2)} €</td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3 font-medium" colSpan={3}>Total frais de port</td>
+                        <td className="px-4 py-3 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
+                      </tr>
                       <tr className="bg-[#00A651] text-white">
-                        <td colSpan={2} className="px-4 py-4"></td>
-                        <td className="px-4 py-4 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
-                        <td className="px-4 py-4 text-right font-bold text-xl whitespace-nowrap">{grandTotal.toFixed(2)} €</td>
+                        <td className="px-4 py-4 font-bold text-lg" colSpan={3}>TOTAL HT</td>
+                        <td className="px-4 py-4 text-right font-bold text-2xl">{grandTotal.toFixed(2)} €</td>
                       </tr>
                     </tfoot>
                   </table>
-                  
-                  {/* Nettoyage disclaimer if applicable */}
-                  {devices.some(d => d.needsNettoyage && d.nettoyagePrice > 0) && (
-                    <p className="text-xs text-gray-500 mt-3 italic">
-                      * Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.
-                    </p>
-                  )}
                 </div>
 
                 {/* Disclaimers */}
