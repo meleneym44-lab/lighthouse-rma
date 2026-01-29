@@ -4645,7 +4645,26 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
   const [blsPrinted, setBlsPrinted] = useState({});
   const [loading, setLoading] = useState(true);
   
-  // Fetch shipping address on mount and initialize shipments
+  // NEW: Device selection state
+  const [selectedDeviceIds, setSelectedDeviceIds] = useState(new Set());
+  
+  // NEW: UPS API state
+  const [upsLoading, setUpsLoading] = useState(false);
+  const [upsLabels, setUpsLabels] = useState({});
+  
+  // NEW: Per-package weights
+  const [packageWeights, setPackageWeights] = useState([]);
+  
+  // Categorize devices
+  const readyDevices = devices.filter(d => 
+    ['ready_to_ship', 'ready', 'prêt'].includes(d.status?.toLowerCase()) || d.qc_complete
+  );
+  const notReadyDevices = devices.filter(d => 
+    !['ready_to_ship', 'ready', 'prêt', 'shipped'].includes(d.status?.toLowerCase()) && !d.qc_complete
+  );
+  const alreadyShippedDevices = devices.filter(d => d.status === 'shipped');
+  
+  // Fetch shipping address on mount and initialize
   useEffect(() => {
     const initShipments = async () => {
       let address = {
@@ -4658,7 +4677,6 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
         phone: ''
       };
       
-      // If RMA has a shipping_address_id, fetch it
       if (rma.shipping_address_id) {
         const { data: shippingAddr } = await supabase
           .from('shipping_addresses')
@@ -4679,11 +4697,17 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
         }
       }
       
+      // Auto-select all ready devices
+      setSelectedDeviceIds(new Set(readyDevices.map(d => d.id)));
+      
+      // Initialize with 1 parcel per ready device (can adjust)
+      const initialParcels = Math.max(1, readyDevices.length);
+      const initialWeights = Array(initialParcels).fill('2.0');
+      setPackageWeights(initialWeights);
+      
       setShipments([{
         address,
-        devices: devices,
-        parcels: rma.parcels_count || 1,
-        weight: '2.0',
+        parcels: initialParcels,
         trackingNumber: '',
         notes: ''
       }]);
@@ -4697,6 +4721,57 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     }
   }, []);
   
+  // Get selected devices
+  const selectedDevices = devices.filter(d => selectedDeviceIds.has(d.id));
+  
+  // Toggle device selection
+  const toggleDevice = (deviceId) => {
+    const device = devices.find(d => d.id === deviceId);
+    // Only allow toggling ready devices
+    if (!readyDevices.find(d => d.id === deviceId)) return;
+    
+    setSelectedDeviceIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(deviceId)) {
+        newSet.delete(deviceId);
+      } else {
+        newSet.add(deviceId);
+      }
+      return newSet;
+    });
+  };
+  
+  // Update parcels count and weights array
+  const updateParcelsCount = (count) => {
+    const newCount = Math.max(1, count);
+    setShipments(prev => {
+      const updated = [...prev];
+      updated[0] = { ...updated[0], parcels: newCount };
+      return updated;
+    });
+    
+    // Adjust weights array
+    setPackageWeights(prev => {
+      if (newCount > prev.length) {
+        return [...prev, ...Array(newCount - prev.length).fill('2.0')];
+      } else {
+        return prev.slice(0, newCount);
+      }
+    });
+  };
+  
+  // Update individual package weight
+  const updatePackageWeight = (index, weight) => {
+    setPackageWeights(prev => {
+      const updated = [...prev];
+      updated[index] = weight;
+      return updated;
+    });
+  };
+  
+  // Calculate total weight
+  const totalWeight = packageWeights.reduce((sum, w) => sum + (parseFloat(w) || 0), 0);
+  
   const updateAddress = (index, field, value) => {
     setShipments(prev => {
       const updated = [...prev];
@@ -4705,98 +4780,83 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     });
   };
   
-  const updateShipment = (index, field, value) => {
-    setShipments(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
-      return updated;
-    });
-  };
-  
   const generateBLNumber = (index) => {
     const rmaNum = rma.request_number?.replace('FR-', '') || '00000';
     const date = new Date();
     const dateStr = `${String(date.getDate()).padStart(2, '0')}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getFullYear()).slice(-2)}`;
-    return `BL-${rmaNum}-${dateStr}${shipments.length > 1 ? `-${index + 1}` : ''}`;
+    // Add batch number if partial shipment
+    const batchNum = alreadyShippedDevices.length > 0 ? `-B${Math.floor(alreadyShippedDevices.length / selectedDevices.length) + 2}` : '';
+    return `BL-${rmaNum}-${dateStr}${batchNum}`;
   };
-  
-  // State for UPS API
-  const [upsLoading, setUpsLoading] = useState(false);
-  const [upsLabels, setUpsLabels] = useState({}); // Store PDF labels by "shipmentIndex-packageIndex"
   
   // Create REAL UPS Labels via Edge Function
   const createUPSLabels = async () => {
+    if (selectedDevices.length === 0) {
+      notify('Veuillez sélectionner au moins un appareil', 'error');
+      return;
+    }
+    
     setUpsLoading(true);
     try {
-      const updatedShipments = [...shipments];
-      const newLabels = {};
+      const s = shipments[0];
+      const address = s.address || {};
       
-      for (let i = 0; i < shipments.length; i++) {
-        const s = shipments[i];
-        const address = s.address || {};
-        
-        // Build packages array - one per parcel count
-        const packagesList = [];
-        for (let p = 0; p < (s.parcels || 1); p++) {
-          packagesList.push({
-            weight: parseFloat(s.weight) || 2,
-            length: 30,
-            width: 30,
-            height: 30,
-            description: `RMA ${rma.request_number} - Colis ${p + 1}/${s.parcels || 1}`
-          });
+      // Build packages array with individual weights
+      const packagesList = packageWeights.map((weight, idx) => ({
+        weight: parseFloat(weight) || 2,
+        length: 30,
+        width: 30,
+        height: 30,
+        description: `RMA ${rma.request_number} - Colis ${idx + 1}/${s.parcels}`
+      }));
+      
+      // Call UPS Edge Function
+      const { data, error } = await supabase.functions.invoke('ups-shipping', {
+        body: {
+          action: 'create_shipment',
+          shipTo: {
+            name: address.attention || address.company_name || 'Customer',
+            company: address.company_name || 'Customer',
+            attentionName: address.attention || address.company_name || 'Customer',
+            phone: address.phone || '0100000000',
+            addressLine1: address.address_line1 || '',
+            city: address.city || '',
+            postalCode: address.postal_code || '',
+            countryCode: address.country === 'France' ? 'FR' : (address.country_code || 'FR')
+          },
+          packages: packagesList,
+          serviceCode: '11',
+          description: `RMA ${rma.request_number} - ${selectedDevices.length} appareil(s)`,
+          isReturn: false
         }
-        
-        // Call UPS Edge Function to create shipment with multiple packages
-        const { data, error } = await supabase.functions.invoke('ups-shipping', {
-          body: {
-            action: 'create_shipment',
-            shipTo: {
-              name: address.attention || address.company_name || 'Customer',
-              company: address.company_name || 'Customer',
-              attentionName: address.attention || address.company_name || 'Customer',
-              phone: address.phone || '0100000000',
-              addressLine1: address.address_line1 || '',
-              city: address.city || '',
-              postalCode: address.postal_code || '',
-              countryCode: address.country === 'France' ? 'FR' : (address.country_code || 'FR')
-            },
-            packages: packagesList,
-            serviceCode: '11', // UPS Standard
-            description: `RMA ${rma.request_number} - ${s.devices?.length || 1} appareil(s)`,
-            isReturn: false
+      });
+      
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error || 'UPS API error');
+      
+      // Store all labels
+      const newLabels = {};
+      if (data.packages) {
+        data.packages.forEach((pkg, pkgIndex) => {
+          if (pkg.labelData) {
+            newLabels[pkgIndex] = pkg.labelData;
           }
         });
-        
-        if (error) throw error;
-        if (!data.success) throw new Error(data.error || 'UPS API error');
-        
-        // Update shipment with real tracking number
-        updatedShipments[i] = {
-          ...s,
-          trackingNumber: data.trackingNumber,
-          upsResponse: data,
-          packageLabels: data.packages || [] // Store all package labels
-        };
-        
-        // Store label PDF data for each package
-        if (data.packages) {
-          data.packages.forEach((pkg, pkgIndex) => {
-            if (pkg.labelData) {
-              newLabels[`${i}-${pkgIndex}`] = pkg.labelData;
-            }
-          });
-          // Also store first label as main label for backward compatibility
-          if (data.packages[0]?.labelData) {
-            newLabels[i] = data.packages[0].labelData;
-          }
-        }
-        
-        notify(`✅ ${data.packages?.length || 1} étiquette(s) UPS créée(s): ${data.trackingNumber}`);
       }
       
-      setUpsLabels(prev => ({ ...prev, ...newLabels }));
-      setShipments(updatedShipments);
+      setUpsLabels(newLabels);
+      setShipments(prev => {
+        const updated = [...prev];
+        updated[0] = {
+          ...updated[0],
+          trackingNumber: data.trackingNumber,
+          upsResponse: data,
+          packageLabels: data.packages || []
+        };
+        return updated;
+      });
+      
+      notify(`✅ ${data.packages?.length || 1} étiquette(s) UPS créée(s): ${data.trackingNumber}`);
       setStep(2);
     } catch (err) {
       console.error('UPS Label creation error:', err);
@@ -4805,66 +4865,88 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     setUpsLoading(false);
   };
   
-  // French month names for written date
+  // Download/print individual label
+  const printLabel = (pkgIndex) => {
+    const labelData = upsLabels[pkgIndex];
+    if (labelData) {
+      const byteCharacters = atob(labelData);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
+    }
+  };
+  
+  // Download ALL labels as combined PDF (for printing)
+  const downloadAllLabels = async () => {
+    try {
+      const jsPDF = await loadJsPDF();
+      const pdf = new jsPDF('p', 'mm', [101.6, 152.4]); // 4x6 inches
+      
+      let firstPage = true;
+      for (const [idx, labelData] of Object.entries(upsLabels)) {
+        if (!firstPage) pdf.addPage([101.6, 152.4]);
+        firstPage = false;
+        
+        // Decode base64 and add as image
+        const img = new Image();
+        img.src = 'data:application/pdf;base64,' + labelData;
+        // For PDF labels, we need to merge them differently
+        // This is a simplified version - adds placeholder
+        pdf.setFontSize(12);
+        pdf.text(`Étiquette Colis ${parseInt(idx) + 1}`, 50, 70, { align: 'center' });
+        pdf.text(shipments[0]?.trackingNumber || '', 50, 80, { align: 'center' });
+      }
+      
+      // Actually, let's just open each label separately for now
+      // A proper merge would need pdf-lib
+      Object.keys(upsLabels).forEach(idx => printLabel(parseInt(idx)));
+      
+      notify('📄 Toutes les étiquettes ouvertes');
+    } catch (err) {
+      console.error('Error downloading labels:', err);
+    }
+  };
+  
+  // French date
   const frenchMonths = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
   const getFrenchDate = () => {
     const d = new Date();
     return `${d.getDate()} ${frenchMonths[d.getMonth()]} ${d.getFullYear()}`;
   };
   
-  const generateBLContent = (shipment, index) => ({
-    blNumber: generateBLNumber(index),
+  const generateBLContent = (shipment) => ({
+    blNumber: generateBLNumber(0),
     date: getFrenchDate(),
     rmaNumber: rma.request_number,
-    client: { name: shipment.address.company_name, attention: shipment.address.attention, street: shipment.address.address_line1, city: `${shipment.address.postal_code} ${shipment.address.city}`, country: shipment.address.country || 'France' },
-    devices: shipment.devices.map(d => ({ model: d.model_name, serial: d.serial_number, service: d.service_type === 'repair' ? 'Réparation' : 'Étalonnage' })),
-    shipping: { carrier: 'UPS', tracking: shipment.trackingNumber, parcels: shipment.parcels, weight: shipment.weight }
+    client: { 
+      name: shipment.address.company_name, 
+      attention: shipment.address.attention, 
+      street: shipment.address.address_line1, 
+      city: `${shipment.address.postal_code} ${shipment.address.city}`, 
+      country: shipment.address.country || 'France' 
+    },
+    devices: selectedDevices.map(d => ({ 
+      model: d.model_name, 
+      serial: d.serial_number, 
+      service: d.service_type === 'repair' ? 'Réparation' : 'Étalonnage' 
+    })),
+    shipping: { 
+      carrier: 'UPS', 
+      tracking: shipment.trackingNumber, 
+      parcels: shipment.parcels, 
+      weight: totalWeight.toFixed(1) 
+    }
   });
   
-  const printLabel = (index) => {
-    const s = shipments[index];
-    const labelData = upsLabels[index];
-    
-    if (labelData) {
-      // Download real UPS PDF label
-      try {
-        const byteCharacters = atob(labelData);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        
-        // Open in new tab for printing
-        const w = window.open(url, '_blank');
-        if (!w) {
-          // Fallback: download the file
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `UPS-Label-${s.trackingNumber}.pdf`;
-          a.click();
-        }
-        
-        setLabelsPrinted(prev => ({ ...prev, [index]: true }));
-        notify('📄 Étiquette UPS ouverte');
-      } catch (err) {
-        console.error('Error opening label:', err);
-        notify('Erreur ouverture étiquette', 'error');
-      }
-    } else {
-      // Fallback to generated label if no real PDF
-      const w = window.open('', '_blank');
-      if (!w) { notify('Popup bloqué', 'error'); return; }
-      w.document.write(`<html><head><title>UPS Label</title><style>body{font-family:Arial;padding:20px}.label{border:3px solid #351C15;padding:20px;max-width:400px;margin:0 auto}.ups{font-size:32px;font-weight:bold;color:#351C15;text-align:center}.tracking{font-size:18px;font-family:monospace;text-align:center;margin:20px 0;padding:10px;background:#f5f5f5}.addr{margin:15px 0;padding:15px;border:1px solid #ddd}</style></head><body><div class="label"><div class="ups">UPS</div><div class="tracking">${s.trackingNumber}</div><div class="addr"><small>DESTINATAIRE:</small><br><strong>${s.address.company_name}</strong><br>${s.address.attention ? 'À l att. de: ' + s.address.attention + '<br>' : ''}${s.address.address_line1}<br>${s.address.postal_code} ${s.address.city}<br>${s.address.country}</div><div class="addr"><small>EXPÉDITEUR:</small><br><strong>LIGHTHOUSE FRANCE</strong><br>16 rue Paul Sejourne<br>94000 Créteil<br>France</div><p style="text-align:center;font-size:20px;font-weight:bold">${s.parcels} COLIS - ${s.weight} KG</p><p style="text-align:center;color:#666">${rma.request_number}</p></div><script>window.print()</script></body></html>`);
-      w.document.close();
-      setLabelsPrinted(prev => ({ ...prev, [index]: true }));
-    }
-  };
-  
-  const printBL = (index) => {
-    const s = shipments[index], bl = generateBLContent(s, index);
+  const printBL = () => {
+    const s = shipments[0];
+    const bl = generateBLContent(s);
     const employeeName = profile?.full_name || 'Lighthouse France';
     const biz = businessSettings || {};
     const w = window.open('', '_blank');
@@ -4874,302 +4956,182 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
 <head>
   <title>BL - ${bl.blNumber}</title>
   <style>
-    @page { 
-      margin: 15mm; 
-      size: A4;
-    }
+    @page { margin: 15mm; size: A4; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; }
-    body { font-family: Arial, sans-serif; font-size: 11pt; color: #333; }
-    .page { 
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      padding: 15px 25px;
-      position: relative;
-    }
-    
-    /* Watermark - on top of everything */
-    .watermark {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      opacity: 0.12;
-      pointer-events: none;
-      z-index: 999;
-    }
-    .watermark img { width: 500px; height: auto; }
-    
-    .content { flex: 1 0 auto; }
+    body { font-family: Arial, sans-serif; font-size: 11pt; color: #333; padding: 20px; }
     .header { margin-bottom: 15px; padding-bottom: 12px; border-bottom: 2px solid #333; }
-    .header img { height: 50px; }
     .title-section { text-align: center; margin: 20px 0; }
-    .title { font-size: 20pt; font-weight: bold; color: #333; margin: 0; }
-    .bl-number { font-size: 14pt; color: #333; font-weight: bold; margin-top: 8px; }
+    .title { font-size: 20pt; font-weight: bold; }
+    .bl-number { font-size: 14pt; font-weight: bold; margin-top: 8px; }
     .info-row { display: flex; justify-content: space-between; margin: 12px 0; }
-    .client-box { background: rgba(248,249,250,0.85); border: 1px solid #ddd; padding: 15px; margin: 12px 0; }
+    .client-box { background: #f8f9fa; border: 1px solid #ddd; padding: 15px; margin: 12px 0; }
     .client-label { font-size: 9pt; color: #666; text-transform: uppercase; font-weight: 600; margin-bottom: 5px; }
     .client-name { font-size: 12pt; font-weight: bold; margin-bottom: 5px; }
     table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-    th { background: rgba(51,51,51,0.35); color: #333; padding: 10px 12px; text-align: left; font-size: 10pt; font-weight: bold; border-bottom: 2px solid #333; }
-    td { padding: 10px 12px; border-bottom: 1px solid #ddd; font-size: 10pt; background: rgba(255,255,255,0.9); }
-    tr:nth-child(even) td { background: rgba(249,249,249,0.9); }
+    th { background: #333; color: white; padding: 10px 12px; text-align: left; font-size: 10pt; }
+    td { padding: 10px 12px; border-bottom: 1px solid #ddd; font-size: 10pt; }
     .shipping-section { margin: 15px 0; }
     .shipping-title { font-weight: bold; font-size: 11pt; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 5px; }
     .shipping-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .shipping-item { display: flex; padding: 6px 0; }
     .shipping-label { color: #666; width: 130px; }
     .shipping-value { font-weight: 600; }
-    .prepared-by { font-size: 10pt; margin-top: 12px; color: #666; }
-    .prepared-by strong { color: #333; }
-    
-    .footer-section { 
-      flex-shrink: 0;
-      margin-top: auto;
-      padding-top: 15px; 
-      border-top: 2px solid #333;
-    }
-    .footer-content { display: flex; align-items: center; justify-content: center; gap: 30px; }
-    .footer-logo img { height: 100px; }
-    .footer-info { font-size: 8pt; color: #555; text-align: center; line-height: 1.8; }
-    .footer-info strong { color: #333; font-size: 9pt; }
-    
-    @media print { 
-      @page { margin: 15mm; }
-      .page { min-height: 100%; padding: 10px 20px; }
-      .watermark { position: fixed; }
-      /* Make backgrounds print */
-      th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    }
+    .footer-section { margin-top: 30px; padding-top: 15px; border-top: 2px solid #333; text-align: center; font-size: 9pt; color: #666; }
   </style>
 </head>
 <body onload="window.print()">
-  <div class="page">
-    <!-- Watermark - shows through everything -->
-    <div class="watermark">
-      <img src="/images/logos/Lighthouse-Square-logo.png" alt="" onerror="this.parentElement.innerHTML='<div style=\\'font-size:150px;font-weight:bold;color:#000;opacity:0.5\\'>LWS</div>'">
-    </div>
-    
-    <div class="content">
-      <div class="header">
-        <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" onerror="this.outerHTML='<div style=\\'font-size:24px;font-weight:bold;color:#333\\'>LIGHTHOUSE<div style=\\'font-size:10px;color:#666\\'>FRANCE</div></div>'">
-      </div>
-
-      <div class="title-section">
-        <h1 class="title">BON DE LIVRAISON</h1>
-        <div class="bl-number">${bl.blNumber}</div>
-      </div>
-
-      <div class="info-row">
-        <div><span style="color:#666">${biz.city || 'Créteil'}, le</span> <strong>${bl.date}</strong></div>
-        <div><span style="color:#666">RMA:</span> <strong>${bl.rmaNumber}</strong></div>
-      </div>
-
-      <div class="client-box">
-        <div class="client-label">Destinataire</div>
-        <div class="client-name">${bl.client.name}</div>
-        ${bl.client.attention ? `<div>À l'attention de: <strong>${bl.client.attention}</strong></div>` : ''}
-        <div>${bl.client.street}</div>
-        <div>${bl.client.city}</div>
-        <div>${bl.client.country}</div>
-      </div>
-
-      <table>
-        <thead>
-          <tr>
-            <th style="width:50px">Qté</th>
-            <th>Désignation</th>
-            <th style="width:120px">N° Série</th>
-            <th style="width:100px">Service</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${bl.devices.map(d => `
-            <tr>
-              <td style="text-align:center;font-weight:600">1</td>
-              <td>Compteur de particules LIGHTHOUSE ${d.model}</td>
-              <td style="font-family:monospace">${d.serial}</td>
-              <td>${d.service}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-
-      <div class="shipping-section">
-        <div class="shipping-title">Informations d'expédition</div>
-        <div class="shipping-grid">
-          <div class="shipping-item"><span class="shipping-label">Transporteur:</span><span class="shipping-value">${bl.shipping.carrier}</span></div>
-          <div class="shipping-item"><span class="shipping-label">N° de suivi:</span><span class="shipping-value" style="font-family:monospace">${bl.shipping.tracking}</span></div>
-          <div class="shipping-item"><span class="shipping-label">Nombre de colis:</span><span class="shipping-value">${bl.shipping.parcels}</span></div>
-          <div class="shipping-item"><span class="shipping-label">Poids:</span><span class="shipping-value">${bl.shipping.weight} kg</span></div>
-        </div>
-      </div>
-
-      <div class="prepared-by">
-        Préparé par: <strong>${employeeName}</strong>
-      </div>
-    </div>
-
-    <div class="footer-section">
-      <div class="footer-content">
-        <div class="footer-logo">
-          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" onerror="this.outerHTML='<div style=\\'font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center\\'><strong>CAPCERT</strong><br>ISO 9001</div>'">
-        </div>
-        <div class="footer-info">
-          <strong>${biz.company_name || 'Lighthouse France SAS'}</strong> au capital de ${biz.capital || '10 000'} €<br>
-          ${biz.address || '16 rue Paul Séjourné'}, ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} | Tél. ${biz.phone || '01 43 77 28 07'}<br>
-          SIRET ${biz.siret || '50178134800013'} | TVA ${biz.tva || 'FR 86501781348'}<br>
-          ${biz.email || 'France@golighthouse.com'} | ${biz.website || 'www.golighthouse.fr'}
-        </div>
-      </div>
+  <div class="header">
+    <strong style="font-size: 18pt;">LIGHTHOUSE FRANCE</strong>
+  </div>
+  <div class="title-section">
+    <h1 class="title">BON DE LIVRAISON</h1>
+    <div class="bl-number">${bl.blNumber}</div>
+  </div>
+  <div class="info-row">
+    <div><span style="color:#666">${biz.city || 'Créteil'}, le</span> <strong>${bl.date}</strong></div>
+    <div><span style="color:#666">RMA:</span> <strong>${bl.rmaNumber}</strong></div>
+  </div>
+  <div class="client-box">
+    <div class="client-label">Destinataire</div>
+    <div class="client-name">${bl.client.name}</div>
+    ${bl.client.attention ? `<div>À l'attention de: <strong>${bl.client.attention}</strong></div>` : ''}
+    <div>${bl.client.street}</div>
+    <div>${bl.client.city}</div>
+    <div>${bl.client.country}</div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:50px">Qté</th>
+        <th>Désignation</th>
+        <th style="width:120px">N° Série</th>
+        <th style="width:100px">Service</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${bl.devices.map(d => `
+        <tr>
+          <td style="text-align:center;font-weight:600">1</td>
+          <td>Compteur de particules LIGHTHOUSE ${d.model}</td>
+          <td style="font-family:monospace">${d.serial}</td>
+          <td>${d.service}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  <div class="shipping-section">
+    <div class="shipping-title">Informations d'expédition</div>
+    <div class="shipping-grid">
+      <div class="shipping-item"><span class="shipping-label">Transporteur:</span><span class="shipping-value">${bl.shipping.carrier}</span></div>
+      <div class="shipping-item"><span class="shipping-label">N° de suivi:</span><span class="shipping-value" style="font-family:monospace">${bl.shipping.tracking}</span></div>
+      <div class="shipping-item"><span class="shipping-label">Nombre de colis:</span><span class="shipping-value">${bl.shipping.parcels}</span></div>
+      <div class="shipping-item"><span class="shipping-label">Poids total:</span><span class="shipping-value">${bl.shipping.weight} kg</span></div>
     </div>
   </div>
-
+  <div style="margin-top: 20px; font-size: 10pt; color: #666;">
+    Préparé par: <strong>${employeeName}</strong>
+  </div>
+  <div class="footer-section">
+    <strong>${biz.company_name || 'Lighthouse France SAS'}</strong><br>
+    ${biz.address || '16 rue Paul Séjourné'}, ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} | Tél. ${biz.phone || '01 43 77 28 07'}<br>
+    ${biz.email || 'France@golighthouse.com'}
+  </div>
 </body>
 </html>`);
     w.document.close();
-    setBlsPrinted(prev => ({ ...prev, [index]: true }));
+    setBlsPrinted(prev => ({ ...prev, [0]: true }));
   };
   
-  // Save shipping documents (BL, UPS labels) but don't mark as shipped yet
+  // Save shipping docs and optionally mark as shipped
   const saveShippingDocs = async () => {
     setSaving(true);
     try {
-      const blData = [];
-      const employeeName = profile?.full_name || 'Lighthouse France';
+      const s = shipments[0];
+      const bl = generateBLContent(s);
       
-      for (let i = 0; i < shipments.length; i++) {
-        const s = shipments[i], bl = generateBLContent(s, i);
-        blData.push(bl);
-        
-        // Generate BL PDF by capturing the visible preview element
-        let blUrl = null;
-        try {
-          // Load html2canvas if needed
-          if (!window.html2canvas) {
-            await new Promise((resolve, reject) => {
-              const script = document.createElement('script');
-              script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-              script.onload = resolve;
-              script.onerror = reject;
-              document.head.appendChild(script);
-            });
-          }
-          
-          // Capture the visible BL preview element
-          const element = document.getElementById(`bl-preview-${i}`);
-          if (element) {
-            const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-            const jsPDF = await loadJsPDF();
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const imgData = canvas.toDataURL('image/jpeg', 0.8);
-            const pdfWidth = 210;
-            const imgRatio = canvas.height / canvas.width;
-            const imgHeight = pdfWidth * imgRatio;
-            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
-            
-            const blPdfBlob = pdf.output('blob');
-            const safeBLNumber = (bl.blNumber || 'BL').replace(/[^a-zA-Z0-9-_]/g, '');
-            const blFileName = `${rma.request_number}_BL_${safeBLNumber}_${Date.now()}.pdf`;
-            blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${rma.request_number}`, blFileName);
-          }
-        } catch (pdfErr) {
-          console.error('BL PDF generation error:', pdfErr);
+      // Generate BL PDF
+      let blUrl = null;
+      try {
+        const element = document.getElementById('bl-preview-0');
+        if (element && window.html2canvas) {
+          const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+          const jsPDF = await loadJsPDF();
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          const imgData = canvas.toDataURL('image/jpeg', 0.8);
+          const pdfWidth = 210;
+          const imgRatio = canvas.height / canvas.width;
+          const imgHeight = pdfWidth * imgRatio;
+          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
+          const blPdfBlob = pdf.output('blob');
+          const blFileName = `${rma.request_number}_BL_${bl.blNumber.replace(/[^a-zA-Z0-9-_]/g, '')}_${Date.now()}.pdf`;
+          blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${rma.request_number}`, blFileName);
         }
-        
-        // Generate UPS Label PDF - use REAL label from UPS API if available
-        let upsLabelUrl = null;
-        try {
-          console.log('Saving UPS label for shipment:', i, s.trackingNumber);
-          
-          // Check if we have real UPS label data
-          const realLabelData = upsLabels[i];
-          
-          if (realLabelData) {
-            // Convert base64 to blob
-            const byteCharacters = atob(realLabelData);
+      } catch (pdfErr) {
+        console.error('BL PDF generation error:', pdfErr);
+      }
+      
+      // Combine all UPS labels into one PDF
+      let combinedUpsLabelUrl = null;
+      try {
+        if (Object.keys(upsLabels).length > 0) {
+          // For now, save first label (TODO: combine multiple pages)
+          const firstLabel = upsLabels[0];
+          if (firstLabel) {
+            const byteCharacters = atob(firstLabel);
             const byteNumbers = new Array(byteCharacters.length);
             for (let j = 0; j < byteCharacters.length; j++) {
               byteNumbers[j] = byteCharacters.charCodeAt(j);
             }
             const byteArray = new Uint8Array(byteNumbers);
             const upsPdfBlob = new Blob([byteArray], { type: 'application/pdf' });
-            
-            console.log('Real UPS PDF blob size:', upsPdfBlob?.size);
-            const safeTracking = (s.trackingNumber || String(i)).replace(/[^a-zA-Z0-9-_]/g, '');
-            const upsFileName = `${rma.request_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
-            upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
-            console.log('Real UPS label uploaded:', upsLabelUrl);
-          } else {
-            // Fallback to generated label if no real one
-            console.log('No real UPS label, generating fake one');
-            const upsPdfBlob = await generateUPSLabelPDF(rma, s);
-            console.log('Fake UPS PDF blob generated:', upsPdfBlob?.size);
-            const safeTracking = (s.trackingNumber || String(i)).replace(/[^a-zA-Z0-9-_]/g, '');
-            const upsFileName = `${rma.request_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
-            upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
-            console.log('Fake UPS label uploaded:', upsLabelUrl);
+            const upsFileName = `${rma.request_number}_UPS_${s.trackingNumber?.replace(/[^a-zA-Z0-9-_]/g, '') || 'label'}_${Date.now()}.pdf`;
+            combinedUpsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
           }
-        } catch (pdfErr) {
-          console.error('UPS Label PDF save error:', pdfErr);
         }
-        
-        // Update devices with docs but keep ready_to_ship status
-        for (const d of s.devices) {
-          const updateData = { 
-            tracking_number: s.trackingNumber || null, 
-            bl_number: bl.blNumber
-          };
-          
-          // Add PDF URLs if generated
-          if (blUrl) updateData.bl_url = blUrl;
-          if (upsLabelUrl) updateData.ups_label_url = upsLabelUrl;
-          
-          await supabase.from('request_devices').update(updateData).eq('id', d.id);
-        }
+      } catch (pdfErr) {
+        console.error('UPS Label save error:', pdfErr);
       }
       
-      setGeneratedBLs(blData);
-      setStep(4); // Move to final step
-      notify('✅ Documents d\'expédition enregistrés! Prêt pour scan UPS.');
-      reload();
-    } catch (err) { 
-      notify('Erreur: ' + (err.message || 'Erreur'), 'error'); 
-    }
-    setSaving(false);
-  };
-  
-  // Mark as shipped - closes the RMA (will be triggered by barcode scan later)
-  const markAsShipped = async () => {
-    setSaving(true);
-    try {
-      // Update all devices to shipped
-      for (const device of devices) {
-        await supabase.from('request_devices').update({ 
-          status: 'shipped', 
+      // Update ONLY selected devices
+      for (const device of selectedDevices) {
+        const updateData = { 
+          tracking_number: s.trackingNumber || null, 
+          bl_number: bl.blNumber,
+          status: 'shipped',
           shipped_at: new Date().toISOString()
-        }).eq('id', device.id);
+        };
+        if (blUrl) updateData.bl_url = blUrl;
+        if (combinedUpsLabelUrl) updateData.ups_label_url = combinedUpsLabelUrl;
+        
+        await supabase.from('request_devices').update(updateData).eq('id', device.id);
       }
       
-      // Update RMA to shipped (closes it)
-      await supabase.from('service_requests').update({ 
-        status: 'shipped', 
-        shipped_at: new Date().toISOString(), 
-        updated_at: new Date().toISOString() 
-      }).eq('id', rma.id);
+      // Check if ALL devices are now shipped
+      const remainingDevices = devices.filter(d => !selectedDeviceIds.has(d.id) && d.status !== 'shipped');
       
-      notify('🚚 RMA marqué comme expédié et fermé!');
+      if (remainingDevices.length === 0) {
+        // All devices shipped - close the RMA
+        await supabase.from('service_requests').update({ 
+          status: 'shipped', 
+          shipped_at: new Date().toISOString(), 
+          updated_at: new Date().toISOString() 
+        }).eq('id', rma.id);
+        notify('🚚 Tous les appareils expédiés - RMA fermé!');
+      } else {
+        // Partial shipment - RMA stays open
+        notify(`✅ ${selectedDevices.length} appareil(s) expédié(s). ${remainingDevices.length} appareil(s) restant(s).`);
+      }
+      
       reload();
-      onBack(); // Go back to dashboard since RMA is now closed
+      setStep(4);
     } catch (err) { 
+      console.error('Save error:', err);
       notify('Erreur: ' + (err.message || 'Erreur'), 'error'); 
     }
     setSaving(false);
   };
   
-  const stepLabels = ['Vérification', 'Étiquette UPS', 'Bon de Livraison', 'Expédier'];
+  const stepLabels = ['Sélection', 'Étiquettes UPS', 'Bon de Livraison', 'Terminé'];
   
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
@@ -5179,7 +5141,9 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           <div className="flex justify-between items-center">
             <div>
               <h2 className="text-xl font-bold">🚚 Expédition - {rma.request_number}</h2>
-              <p className="text-green-100 text-sm">{devices.length} appareil(s)</p>
+              <p className="text-green-100 text-sm">
+                {selectedDevices.length} / {devices.length} appareil(s) sélectionné(s)
+              </p>
             </div>
             <button onClick={onClose} className="text-white/70 hover:text-white text-2xl">&times;</button>
           </div>
@@ -5198,19 +5162,99 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
         
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* Loading State */}
           {loading && (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
                 <div className="text-4xl mb-4">⏳</div>
-                <p className="text-gray-500">Chargement des informations...</p>
+                <p className="text-gray-500">Chargement...</p>
               </div>
             </div>
           )}
           
-          {/* Step 1: Review */}
-          {!loading && step === 1 && shipments.map((shipment, idx) => (
-            <div key={idx} className="space-y-6">
+          {/* STEP 1: Device Selection & Address */}
+          {!loading && step === 1 && shipments[0] && (
+            <div className="space-y-6">
+              {/* Already Shipped Warning */}
+              {alreadyShippedDevices.length > 0 && (
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl">✈️</span>
+                    <div>
+                      <h4 className="font-bold text-blue-800">Appareils déjà expédiés</h4>
+                      <div className="text-sm text-blue-700 mt-1">
+                        {alreadyShippedDevices.map(d => (
+                          <div key={d.id} className="flex items-center gap-2">
+                            <span>• {d.model_name} - {d.serial_number}</span>
+                            <span className="text-blue-500 font-mono text-xs">{d.tracking_number || ''}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Not Ready Warning */}
+              {notReadyDevices.length > 0 && (
+                <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl">⚠️</span>
+                    <div>
+                      <h4 className="font-bold text-amber-800">Appareils non prêts pour expédition</h4>
+                      <p className="text-sm text-amber-700 mb-2">Les appareils suivants ne peuvent pas être expédiés:</p>
+                      <div className="text-sm text-amber-700">
+                        {notReadyDevices.map(d => (
+                          <div key={d.id} className="flex items-center gap-2">
+                            <span>• {d.model_name} - {d.serial_number}</span>
+                            <span className="px-2 py-0.5 bg-amber-200 rounded text-xs">{d.status || 'En cours'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Device Selection */}
+              <div className="bg-white border-2 border-gray-200 rounded-xl">
+                <div className="bg-blue-50 px-4 py-3 border-b flex justify-between items-center">
+                  <h3 className="font-bold text-blue-800">📦 Sélectionner les appareils à expédier</h3>
+                  <span className="text-sm text-blue-600">{selectedDevices.length} sélectionné(s)</span>
+                </div>
+                <div className="p-4">
+                  {readyDevices.length === 0 ? (
+                    <p className="text-gray-500 text-center py-4">Aucun appareil prêt à expédier</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {readyDevices.map(device => (
+                        <label 
+                          key={device.id} 
+                          className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                            selectedDeviceIds.has(device.id) 
+                              ? 'border-green-500 bg-green-50' 
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedDeviceIds.has(device.id)}
+                            onChange={() => toggleDevice(device.id)}
+                            className="w-5 h-5 text-green-600 rounded"
+                          />
+                          <div className="flex-1">
+                            <div className="font-medium">{device.model_name}</div>
+                            <div className="text-sm text-gray-500 font-mono">{device.serial_number}</div>
+                          </div>
+                          <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">
+                            ✓ Prêt
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
               {/* Address Section */}
               <div className="bg-white border-2 border-gray-200 rounded-xl">
                 <div className="bg-amber-50 px-4 py-3 border-b">
@@ -5219,327 +5263,234 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                 <div className="p-4 grid md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Société *</label>
-                    <input type="text" value={shipment.address.company_name} onChange={e => updateAddress(idx, 'company_name', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    <input type="text" value={shipments[0].address.company_name} onChange={e => updateAddress(0, 'company_name', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">À l'attention de</label>
-                    <input type="text" value={shipment.address.attention} onChange={e => updateAddress(idx, 'attention', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Nom du contact" />
+                    <input type="text" value={shipments[0].address.attention} onChange={e => updateAddress(0, 'attention', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Adresse *</label>
-                    <input type="text" value={shipment.address.address_line1} onChange={e => updateAddress(idx, 'address_line1', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    <input type="text" value={shipments[0].address.address_line1} onChange={e => updateAddress(0, 'address_line1', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Code postal *</label>
-                    <input type="text" value={shipment.address.postal_code} onChange={e => updateAddress(idx, 'postal_code', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    <input type="text" value={shipments[0].address.postal_code} onChange={e => updateAddress(0, 'postal_code', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Ville *</label>
-                    <input type="text" value={shipment.address.city} onChange={e => updateAddress(idx, 'city', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    <input type="text" value={shipments[0].address.city} onChange={e => updateAddress(0, 'city', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Pays</label>
-                    <input type="text" value={shipment.address.country} onChange={e => updateAddress(idx, 'country', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    <input type="text" value={shipments[0].address.country} onChange={e => updateAddress(0, 'country', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
-                    <input type="text" value={shipment.address.phone || ''} onChange={e => updateAddress(idx, 'phone', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="+33..." />
+                    <input type="text" value={shipments[0].address.phone || ''} onChange={e => updateAddress(0, 'phone', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
                 </div>
               </div>
               
-              {/* Devices Section */}
-              <div className="bg-white border-2 border-gray-200 rounded-xl">
-                <div className="bg-blue-50 px-4 py-3 border-b">
-                  <h3 className="font-bold text-blue-800">📦 Appareils à expédier ({shipment.devices.length})</h3>
-                </div>
-                <div className="p-4">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">Appareil</th>
-                        <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">N° Série</th>
-                        <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">Service</th>
-                        <th className="px-3 py-2 text-left text-sm font-bold text-gray-600">Certificat</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {shipment.devices.map(device => (
-                        <tr key={device.id}>
-                          <td className="px-3 py-3 font-medium">{device.model_name}</td>
-                          <td className="px-3 py-3 font-mono text-sm">{device.serial_number}</td>
-                          <td className="px-3 py-3">
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {device.service_type === 'repair' ? '🔧 Réparation' : '🔬 Étalonnage'}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3">
-                            {device.calibration_certificate_url ? (
-                              <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm">📄 Voir</a>
-                            ) : <span className="text-gray-400 text-sm">—</span>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              
-              {/* Shipping Details */}
+              {/* Package Configuration */}
               <div className="bg-white border-2 border-gray-200 rounded-xl">
                 <div className="bg-green-50 px-4 py-3 border-b flex justify-between items-center">
-                  <h3 className="font-bold text-green-800">🚚 Détails d'expédition</h3>
-                  <span className="text-xs text-green-600">💡 UPS crée 1 étiquette par colis</span>
+                  <h3 className="font-bold text-green-800">📦 Configuration des colis</h3>
+                  <span className="text-sm text-green-600">Poids total: {totalWeight.toFixed(1)} kg</span>
                 </div>
-                <div className="p-4 grid md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de colis</label>
+                <div className="p-4">
+                  <div className="flex items-center gap-4 mb-4">
+                    <label className="text-sm font-medium text-gray-700">Nombre de colis:</label>
                     <div className="flex items-center gap-2">
                       <button 
-                        onClick={() => updateShipment(idx, 'parcels', Math.max(1, (shipment.parcels || 1) - 1))}
+                        onClick={() => updateParcelsCount((shipments[0]?.parcels || 1) - 1)}
                         className="w-10 h-10 bg-gray-200 hover:bg-gray-300 rounded-lg font-bold text-lg"
                       >-</button>
-                      <input 
-                        type="number" 
-                        min="1" 
-                        value={shipment.parcels} 
-                        onChange={e => updateShipment(idx, 'parcels', parseInt(e.target.value) || 1)} 
-                        className="w-20 px-3 py-2 border border-gray-300 rounded-lg text-center font-bold text-lg" 
-                      />
+                      <span className="w-12 text-center font-bold text-xl">{shipments[0]?.parcels || 1}</span>
                       <button 
-                        onClick={() => updateShipment(idx, 'parcels', (shipment.parcels || 1) + 1)}
+                        onClick={() => updateParcelsCount((shipments[0]?.parcels || 1) + 1)}
                         className="w-10 h-10 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold text-lg"
                       >+</button>
                     </div>
-                    {shipment.parcels > 1 && (
-                      <p className="text-xs text-green-600 mt-1">📦 {shipment.parcels} étiquettes seront créées</p>
-                    )}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Poids total (kg)</label>
-                    <input type="text" value={shipment.weight} onChange={e => updateShipment(idx, 'weight', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  
+                  {/* Individual Package Weights */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {packageWeights.map((weight, idx) => (
+                      <div key={idx} className="bg-gray-50 rounded-lg p-3">
+                        <label className="block text-xs text-gray-500 mb-1">Colis {idx + 1}</label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0.1"
+                            value={weight}
+                            onChange={e => updatePackageWeight(idx, e.target.value)}
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-center font-medium"
+                          />
+                          <span className="text-sm text-gray-500">kg</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">BL #</label>
-                    <input type="text" value={generateBLNumber(idx)} disabled className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 font-mono" />
-                  </div>
-                  <div className="md:col-span-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Notes internes</label>
-                    <textarea value={shipment.notes || ''} onChange={e => updateShipment(idx, 'notes', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={2} placeholder="Notes pour l'expédition..." />
-                  </div>
-                </div>
-              </div>
-              
-              {/* RMA Summary */}
-              <div className="bg-gray-50 rounded-xl p-4">
-                <h4 className="font-bold text-gray-700 mb-2">📋 Récapitulatif RMA</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div><span className="text-gray-500">RMA:</span> <span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span></div>
-                  <div><span className="text-gray-500">Client:</span> <span className="font-medium">{rma.companies?.name}</span></div>
-                  <div><span className="text-gray-500">Appareils:</span> <span className="font-medium">{devices.length}</span></div>
-                  <div><span className="text-gray-500">Date:</span> <span className="font-medium">{new Date().toLocaleDateString('fr-FR')}</span></div>
                 </div>
               </div>
             </div>
-          ))}
+          )}
           
-          {/* Step 2: UPS Labels */}
-          {step === 2 && shipments.map((shipment, idx) => (
-            <div key={idx} className="bg-white border-2 rounded-xl p-6 mb-4">
-              <div className="flex justify-between items-center mb-4">
-                <div>
-                  <h3 className="font-bold text-lg">Expédition #{idx + 1}</h3>
-                  <p className="text-gray-500">{shipment.address.postal_code} {shipment.address.city}</p>
+          {/* STEP 2: UPS Labels */}
+          {step === 2 && shipments[0] && (
+            <div className="space-y-4">
+              <div className="bg-white border-2 rounded-xl p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h3 className="font-bold text-lg">Étiquettes UPS</h3>
+                    <p className="text-gray-500">{selectedDevices.length} appareil(s) • {shipments[0].parcels} colis</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-mono text-lg font-bold text-amber-600">{shipments[0].trackingNumber}</p>
+                    <a href={`https://www.ups.com/track?tracknum=${shipments[0].trackingNumber}`} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline">Suivre sur UPS →</a>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="font-mono text-lg font-bold text-amber-600">{shipment.trackingNumber}</p>
-                  <a href={`https://www.ups.com/track?tracknum=${shipment.trackingNumber}`} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline">Suivre →</a>
-                </div>
-              </div>
-              
-              {/* Show all package labels */}
-              <div className="space-y-4">
-                {(shipment.packageLabels || [{ trackingNumber: shipment.trackingNumber }]).map((pkg, pkgIdx) => (
-                  <div key={pkgIdx} className="bg-gray-50 rounded-lg p-4 border">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <div className="text-2xl font-bold text-[#351C15]">UPS</div>
-                        <div className="font-mono text-sm">{pkg.trackingNumber || shipment.trackingNumber}</div>
-                        <div className="text-sm text-gray-500 mt-1">
-                          Colis {pkgIdx + 1} / {shipment.parcels || 1}
+                
+                {/* Package Labels */}
+                <div className="space-y-3">
+                  {(shipments[0].packageLabels || []).map((pkg, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-gray-50 rounded-lg p-4 border">
+                      <div className="flex items-center gap-4">
+                        <div className="text-3xl font-bold text-[#351C15]">📦</div>
+                        <div>
+                          <div className="font-medium">Colis {idx + 1} / {shipments[0].parcels}</div>
+                          <div className="font-mono text-sm text-gray-500">{pkg.trackingNumber}</div>
+                          <div className="text-xs text-gray-400">{packageWeights[idx] || '2.0'} kg</div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className={labelsPrinted[`${idx}-${pkgIdx}`] ? 'text-green-600 font-medium text-sm' : 'text-gray-400 text-sm'}>
-                          {labelsPrinted[`${idx}-${pkgIdx}`] ? '✓ Imprimé' : ''}
-                        </span>
+                      <div className="flex items-center gap-2">
+                        {labelsPrinted[idx] && <span className="text-green-600 text-sm">✓ Imprimé</span>}
                         <button 
-                          onClick={() => {
-                            const labelData = upsLabels[`${idx}-${pkgIdx}`] || upsLabels[idx];
-                            if (labelData) {
-                              const byteCharacters = atob(labelData);
-                              const byteNumbers = new Array(byteCharacters.length);
-                              for (let i = 0; i < byteCharacters.length; i++) {
-                                byteNumbers[i] = byteCharacters.charCodeAt(i);
-                              }
-                              const byteArray = new Uint8Array(byteNumbers);
-                              const blob = new Blob([byteArray], { type: 'application/pdf' });
-                              const url = URL.createObjectURL(blob);
-                              window.open(url, '_blank');
-                              setLabelsPrinted(prev => ({ ...prev, [`${idx}-${pkgIdx}`]: true }));
-                            } else {
-                              printLabel(idx);
-                            }
-                          }} 
-                          className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium text-sm"
+                          onClick={() => printLabel(idx)}
+                          className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
                         >
                           🖨️ Imprimer
                         </button>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-              
-              {/* Summary */}
-              <div className="mt-4 pt-4 border-t flex justify-between items-center text-sm text-gray-600">
-                <span>{shipment.address.company_name} • {shipment.parcels || 1} colis • {shipment.weight} kg</span>
-                <span className="text-gray-400">{rma.request_number}</span>
-              </div>
-            </div>
-          ))}
-          
-          {/* Step 3: BL Preview */}
-          {step === 3 && shipments.map((shipment, idx) => {
-            const bl = generateBLContent(shipment, idx);
-            const employeeName = profile?.full_name || 'Lighthouse France';
-            const biz = businessSettings || {};
-            return (
-              <div key={idx} className="mb-4">
-                {/* Controls bar */}
-                <div className="bg-gray-100 px-4 py-3 rounded-t-xl flex justify-between items-center">
-                  <div>
-                    <h3 className="font-bold">{bl.blNumber}</h3>
-                    <p className="text-sm text-gray-500">{bl.devices.length} appareil(s)</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={blsPrinted[idx] ? 'text-green-600 font-medium' : 'text-gray-400'}>{blsPrinted[idx] ? '✓ Imprimé' : ''}</span>
-                    <button onClick={() => setStep(1)} className="px-3 py-1 bg-white hover:bg-gray-50 border rounded text-sm">✏️ Modifier</button>
-                    <button onClick={() => printBL(idx)} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">🖨️ Imprimer BL</button>
-                  </div>
+                  ))}
                 </div>
                 
-                {/* Clean PDF Preview with Watermark */}
-                <div className="bg-white border-2 border-t-0 rounded-b-xl overflow-hidden shadow-lg">
-                  <div id={`bl-preview-${idx}`} style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', minHeight: '270mm', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-                    {/* Watermark - on top of everything */}
-                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.12, pointerEvents: 'none', zIndex: 999 }}>
-                      <img src="/images/logos/Lighthouse-Square-logo.png" alt="" style={{ width: '500px', height: 'auto' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:150px;font-weight:bold;color:#000">LWS</div>'; }} />
-                    </div>
-                    
-                    {/* Content area */}
-                    <div style={{ flex: '1 0 auto' }}>
-                      {/* Header */}
-                      <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333' }}>
-                        <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
-                      </div>
-
-                      {/* Title */}
-                      <div style={{ textAlign: 'center', margin: '20px 0' }}>
-                        <div style={{ fontSize: '20pt', fontWeight: 'bold', color: '#333' }}>BON DE LIVRAISON</div>
-                        <div style={{ fontSize: '14pt', color: '#333', fontWeight: 'bold', marginTop: '8px' }}>{bl.blNumber}</div>
-                      </div>
-
-                      {/* Info row */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', margin: '12px 0' }}>
-                        <div><span style={{ color: '#666' }}>{biz.city || 'Créteil'}, le</span> <strong>{bl.date}</strong></div>
-                        <div><span style={{ color: '#666' }}>RMA:</span> <strong>{bl.rmaNumber}</strong></div>
-                      </div>
-
-                      {/* Client box - semi-transparent */}
-                      <div style={{ background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px', margin: '12px 0' }}>
-                        <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Destinataire</div>
-                        <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{bl.client.name}</div>
-                        {bl.client.attention && <div>À l'attention de: <strong>{bl.client.attention}</strong></div>}
-                        <div>{bl.client.street}</div>
-                        <div>{bl.client.city}</div>
-                        <div>{bl.client.country}</div>
-                      </div>
-
-                      {/* Table - semi-transparent header */}
-                      <table style={{ width: '100%', borderCollapse: 'collapse', margin: '12px 0' }}>
-                        <thead>
-                          <tr style={{ background: 'rgba(51,51,51,0.35)' }}>
-                            <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '50px', fontWeight: 'bold' }}>Qté</th>
-                            <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', fontWeight: 'bold' }}>Désignation</th>
-                            <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '120px', fontWeight: 'bold' }}>N° Série</th>
-                            <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '100px', fontWeight: 'bold' }}>Service</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {bl.devices.map((d, i) => (
-                            <tr key={i}>
-                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', textAlign: 'center', fontWeight: '600', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>1</td>
-                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>Compteur de particules LIGHTHOUSE {d.model}</td>
-                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', fontFamily: 'monospace', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>{d.serial}</td>
-                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>{d.service}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-
-                      {/* Shipping section */}
-                      <div style={{ margin: '15px 0' }}>
-                        <div style={{ fontWeight: 'bold', fontSize: '11pt', marginBottom: '10px', borderBottom: '1px solid #333', paddingBottom: '5px' }}>Informations d'expédition</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Transporteur:</span><span style={{ fontWeight: '600' }}>{bl.shipping.carrier}</span></div>
-                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>N° de suivi:</span><span style={{ fontWeight: '600', fontFamily: 'monospace' }}>{bl.shipping.tracking}</span></div>
-                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Nombre de colis:</span><span style={{ fontWeight: '600' }}>{bl.shipping.parcels}</span></div>
-                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Poids:</span><span style={{ fontWeight: '600' }}>{bl.shipping.weight} kg</span></div>
-                        </div>
-                      </div>
-
-                      {/* Prepared by */}
-                      <div style={{ fontSize: '10pt', marginTop: '12px', color: '#666' }}>
-                        Préparé par: <strong style={{ color: '#333' }}>{employeeName}</strong>
-                      </div>
-                    </div>
-
-                    {/* Footer - at bottom */}
-                    <div style={{ flexShrink: 0, marginTop: 'auto', paddingTop: '15px', borderTop: '2px solid #333' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '30px' }}>
-                        <div>
-                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '100px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
-                        </div>
-                        <div style={{ fontSize: '8pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
-                          <strong style={{ color: '#333', fontSize: '9pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
-                          {biz.address || '16 rue Paul Séjourné'}, {biz.postal_code || '94000'} {biz.city || 'CRÉTEIL'} | Tél. {biz.phone || '01 43 77 28 07'}<br/>
-                          SIRET {biz.siret || '50178134800013'} | TVA {biz.tva || 'FR 86501781348'}<br/>
-                          {biz.email || 'France@golighthouse.com'} | {biz.website || 'www.golighthouse.fr'}
-                        </div>
-                      </div>
-                    </div>
+                {/* Print All Button */}
+                {Object.keys(upsLabels).length > 1 && (
+                  <div className="mt-4 pt-4 border-t">
+                    <button 
+                      onClick={downloadAllLabels}
+                      className="w-full py-3 bg-[#351C15] hover:bg-[#4a2820] text-white rounded-lg font-bold"
+                    >
+                      🖨️ Imprimer Toutes les Étiquettes
+                    </button>
                   </div>
+                )}
+              </div>
+              
+              {/* Selected Devices Summary */}
+              <div className="bg-gray-50 rounded-xl p-4">
+                <h4 className="font-bold text-gray-700 mb-2">Appareils dans cette expédition:</h4>
+                <div className="flex flex-wrap gap-2">
+                  {selectedDevices.map(d => (
+                    <span key={d.id} className="px-3 py-1 bg-white border rounded-full text-sm">
+                      {d.model_name} - {d.serial_number}
+                    </span>
+                  ))}
                 </div>
               </div>
-            );
-          })}
+            </div>
+          )}
           
-          {/* Step 4: Complete */}
-          {step === 4 && (
-            <div className="text-center py-8">
-              <div className="text-6xl mb-4">✅</div>
-              <h3 className="text-2xl font-bold text-green-700 mb-2">Expédition Terminée!</h3>
-              <p className="text-gray-600 mb-2">Les appareils ont été marqués comme expédiés.</p>
-              <p className="text-gray-500 text-sm mb-6">Fermez cette fenêtre pour voir le détail du RMA complété.</p>
-              <div className="bg-gray-50 rounded-xl p-6 max-w-md mx-auto">
-                {generatedBLs.map((bl, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 bg-white rounded-lg mb-2 border">
-                    <span className="font-mono font-medium">📄 {bl.blNumber}</span>
-                    <a href={`https://www.ups.com/track?tracknum=${bl.shipping.tracking}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm">{bl.shipping.tracking}</a>
-                  </div>
-                ))}
+          {/* STEP 3: BL Preview */}
+          {step === 3 && shipments[0] && (
+            <div>
+              <div className="bg-gray-100 px-4 py-3 rounded-t-xl flex justify-between items-center">
+                <span className="font-bold">Bon de Livraison - {generateBLNumber(0)}</span>
+                <button 
+                  onClick={printBL}
+                  className={`px-4 py-2 rounded-lg font-medium ${blsPrinted[0] ? 'bg-green-100 text-green-700' : 'bg-amber-500 hover:bg-amber-600 text-white'}`}
+                >
+                  {blsPrinted[0] ? '✓ Imprimé' : '🖨️ Imprimer BL'}
+                </button>
               </div>
+              <div id="bl-preview-0" className="bg-white border-2 border-t-0 rounded-b-xl p-6">
+                {/* BL Preview Content */}
+                <div className="text-center mb-6">
+                  <h2 className="text-2xl font-bold">BON DE LIVRAISON</h2>
+                  <p className="text-lg font-bold text-gray-600">{generateBLNumber(0)}</p>
+                </div>
+                <div className="flex justify-between mb-4">
+                  <span>Créteil, le {getFrenchDate()}</span>
+                  <span>RMA: <strong>{rma.request_number}</strong></span>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-lg mb-4">
+                  <p className="text-xs text-gray-500 uppercase mb-1">Destinataire</p>
+                  <p className="font-bold">{shipments[0].address.company_name}</p>
+                  {shipments[0].address.attention && <p>À l'att. de: {shipments[0].address.attention}</p>}
+                  <p>{shipments[0].address.address_line1}</p>
+                  <p>{shipments[0].address.postal_code} {shipments[0].address.city}</p>
+                </div>
+                <table className="w-full mb-4">
+                  <thead className="bg-gray-800 text-white">
+                    <tr>
+                      <th className="p-2 text-left">Qté</th>
+                      <th className="p-2 text-left">Désignation</th>
+                      <th className="p-2 text-left">N° Série</th>
+                      <th className="p-2 text-left">Service</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedDevices.map(d => (
+                      <tr key={d.id} className="border-b">
+                        <td className="p-2 text-center font-bold">1</td>
+                        <td className="p-2">LIGHTHOUSE {d.model_name}</td>
+                        <td className="p-2 font-mono">{d.serial_number}</td>
+                        <td className="p-2">{d.service_type === 'repair' ? 'Réparation' : 'Étalonnage'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div><span className="text-gray-500">Transporteur:</span> <strong>UPS</strong></div>
+                  <div><span className="text-gray-500">N° Suivi:</span> <strong className="font-mono">{shipments[0].trackingNumber}</strong></div>
+                  <div><span className="text-gray-500">Colis:</span> <strong>{shipments[0].parcels}</strong></div>
+                  <div><span className="text-gray-500">Poids:</span> <strong>{totalWeight.toFixed(1)} kg</strong></div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* STEP 4: Done */}
+          {step === 4 && (
+            <div className="text-center py-12">
+              <div className="text-6xl mb-4">✅</div>
+              <h3 className="text-2xl font-bold text-green-600 mb-2">Expédition Enregistrée!</h3>
+              <p className="text-gray-600 mb-4">
+                {selectedDevices.length} appareil(s) marqué(s) comme expédié(s)
+              </p>
+              <div className="bg-gray-50 rounded-xl p-4 max-w-md mx-auto">
+                <p className="font-mono text-lg font-bold text-amber-600">{shipments[0]?.trackingNumber}</p>
+                <a 
+                  href={`https://www.ups.com/track?tracknum=${shipments[0]?.trackingNumber}`} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="text-blue-500 hover:underline"
+                >
+                  Suivre sur UPS.com →
+                </a>
+              </div>
+              {devices.filter(d => !selectedDeviceIds.has(d.id) && d.status !== 'shipped').length > 0 && (
+                <div className="mt-6 p-4 bg-amber-50 rounded-xl max-w-md mx-auto">
+                  <p className="text-amber-800 font-medium">
+                    ⚠️ {devices.filter(d => !selectedDeviceIds.has(d.id) && d.status !== 'shipped').length} appareil(s) restant(s) dans le RMA
+                  </p>
+                  <p className="text-sm text-amber-600">Le RMA reste ouvert.</p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -5551,15 +5502,13 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
               <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Annuler</button>
               <button 
                 onClick={createUPSLabels} 
-                disabled={upsLoading || !shipments[0]?.address?.company_name || !shipments[0]?.address?.address_line1}
+                disabled={upsLoading || selectedDevices.length === 0 || !shipments[0]?.address?.company_name}
                 className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
               >
                 {upsLoading ? (
-                  <>
-                    <span className="animate-spin">⏳</span> Création étiquette UPS...
-                  </>
+                  <><span className="animate-spin">⏳</span> Création UPS...</>
                 ) : (
-                  <>📦 Créer Étiquette UPS →</>
+                  <>📦 Créer Étiquettes UPS ({selectedDevices.length} appareil(s)) →</>
                 )}
               </button>
             </>
@@ -5573,23 +5522,19 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           {step === 3 && (
             <>
               <button onClick={() => setStep(2)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">← Retour</button>
-              <button onClick={saveShippingDocs} disabled={saving} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">{saving ? '⏳ Traitement...' : '💾 Enregistrer Documents'}</button>
+              <button onClick={saveShippingDocs} disabled={saving} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50">
+                {saving ? '⏳ Enregistrement...' : '🚚 Confirmer Expédition'}
+              </button>
             </>
           )}
           {step === 4 && (
-            <div className="flex gap-3 ml-auto">
-              <button onClick={onClose} className="px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">📋 Voir le RMA</button>
-              <button onClick={markAsShipped} disabled={saving} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50">
-                {saving ? '⏳...' : '🚚 Marquer Expédié (Fermer RMA)'}
-              </button>
-            </div>
+            <button onClick={onClose} className="px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium ml-auto">Fermer</button>
           )}
         </div>
       </div>
     </div>
   );
 }
-
 // ============================================
 // MESSAGES SHEET - All chats with clients
 // ============================================
