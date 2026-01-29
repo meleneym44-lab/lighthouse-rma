@@ -2,6 +2,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
+// Expose supabase to window for debugging
+if (typeof window !== 'undefined') {
+  window.supabase = supabase;
+}
+
 // France Metropolitan postal code check
 // Valid France Metropolitan: 5 digits, starting with 01-95 (includes Corsica 20)
 // INVALID (show warning): DOM-TOM (97xxx, 98xxx), foreign addresses, or non-French codes
@@ -31,6 +36,220 @@ const isFranceMetropolitan = (postalCode) => {
 // Returns true if address is OUTSIDE France Metropolitan (needs warning)
 const isOutsideFranceMetropolitan = (postalCode) => {
   return !isFranceMetropolitan(postalCode);
+};
+
+// ============================================
+// SERIAL NUMBER DECODER - LIGHTHOUSE PRODUCTS
+// ============================================
+// Serial number formats:
+// 9-digit: YYMMCC### (CC = 2-digit product code)
+// 10-digit: YYMMCCC### (CCC = 3-digit product code)
+// 8-digit: CCC##### (CCC = 3-digit product code for accessories)
+
+const PRODUCT_CODES = {
+  // === 9-DIGIT SERIAL NUMBERS (2-digit CC codes) ===
+  // Airborne Particle Counters
+  '01': { model: 'Remote CEMS', category: 'particle_counter' },
+  '02': { model: 'Handheld 3016', category: 'particle_counter' },
+  '03': { model: 'Solair 5100/5100+', category: 'particle_counter' },
+  '04': { model: 'Solair 3100/3100+', category: 'particle_counter' },
+  '05': { model: 'Solair 1100/1100+', category: 'particle_counter' },
+  '06': { model: 'Remote 1100/1104/1100LD/1104LD', category: 'particle_counter' },
+  '07': { model: 'Remote 5100', category: 'particle_counter' },
+  '08': { model: 'Remote 3010/5010', category: 'particle_counter' },
+  '09': { model: 'Mini Manifold 1.0 CFM', category: 'particle_counter' },
+  '10': { model: 'Remote 3014P/5014P', category: 'particle_counter' },
+  '11': { model: 'Manifold Controller', category: 'other' },
+  '12': { model: 'TRH Sensor (0-5V version)', category: 'temp_humidity' },
+  '13': { model: 'AV Probe - Instrument', category: 'other' },
+  '14': { model: 'DP Sensor - Instrument', category: 'other' },
+  '15': { model: 'AMC Sample System', category: 'other' },
+  '16': { model: 'Remote 3014/5014', category: 'particle_counter' },
+  '17': { model: 'Remote 3012/5012', category: 'particle_counter' },
+  '18': { model: 'Remote 5102', category: 'particle_counter' },
+  '19': { model: 'Remote 2010', category: 'particle_counter' },
+  '20': { model: 'Remote 2014P', category: 'particle_counter' },
+  '21': { model: 'Remote 2014', category: 'particle_counter' },
+  '22': { model: 'Handheld 2016', category: 'particle_counter' },
+  '23': { model: 'Solair 3010+', category: 'particle_counter' },
+  '24': { model: 'Remote 3014i/5014i', category: 'particle_counter' },
+  '25': { model: 'Remote 50104', category: 'particle_counter' },
+  '26': { model: 'Solair 1001+', category: 'particle_counter' },
+  '27': { model: 'Handheld 5016', category: 'particle_counter' },
+  '28': { model: 'Remote 5104', category: 'particle_counter' },
+  '29': { model: 'UM-II (or 32 Port Manifold)', category: 'other' },
+  '30': { model: 'Mini Manifold 0.1 CFM', category: 'other' },
+  '31': { model: 'Remote 3102', category: 'particle_counter' },
+  '32': { model: 'Remote 3104', category: 'particle_counter' },
+  '33': { model: 'Boulder Counter', category: 'particle_counter' },
+  '34': { model: 'Remote 5104V', category: 'particle_counter' },
+  '35': { model: 'Remote 2014i', category: 'particle_counter' },
+  '36': { model: 'Remote 3104V', category: 'particle_counter' },
+  '37': { model: 'Remote 2012', category: 'particle_counter' },
+  '38': { model: 'Solair 5200/5200+', category: 'particle_counter' },
+  '39': { model: 'Solair 3200/3200+', category: 'particle_counter' },
+  '40': { model: 'Remote LPC 0.2μm/0.3μm/0.5μm (Modbus)', category: 'liquid_counter' },
+  '41': { model: 'Remote LPC 0.1μm (Modbus)', category: 'liquid_counter' },
+  '42': { model: 'LS-60', category: 'liquid_counter' },
+  '43': { model: 'NanoCount/NC50+/NC65C+/NC25+/NC30+', category: 'liquid_counter' },
+  '44': { model: 'IAQ Handheld', category: 'particle_counter' },
+  '45': { model: 'MiniMultiplexer', category: 'other' },
+  '46': { model: 'Remote LPC 0.2μm/0.3μm/0.5μm (4-20mA)', category: 'liquid_counter' },
+  '47': { model: 'Remote LPC 0.1μm (4-20mA)', category: 'liquid_counter' },
+  '48': { model: 'LS-20', category: 'liquid_counter' },
+  '49': { model: 'Remote LPC 1.5μm (Modbus)', category: 'liquid_counter' },
+  '50': { model: 'Solair 3100Rx', category: 'particle_counter' },
+  '51': { model: 'Solair 5100Rx', category: 'particle_counter' },
+  '52': { model: 'Solair 3200Rx', category: 'particle_counter' },
+  '53': { model: 'Solair 5200Rx', category: 'particle_counter' },
+  '54': { model: 'Remote PN 0.1 CFM (Modbus)', category: 'particle_counter' },
+  '55': { model: 'Remote PN 0.1 CFM (4-20mA)', category: 'particle_counter' },
+  '56': { model: 'Remote PN 1.0 CFM (Modbus)', category: 'particle_counter' },
+  '57': { model: 'Remote PN 1.0 CFM (4-20mA)', category: 'particle_counter' },
+  '58': { model: 'TOC, Neptune', category: 'other' },
+  '60': { model: 'Handheld 3013', category: 'particle_counter' },
+  '61': { model: 'Solair 2010+', category: 'particle_counter' },
+  '62': { model: 'Solair 3350/5350/3350Rx/5350Rx', category: 'particle_counter' },
+  '65': { model: 'Viable, Remote Active Count', category: 'bio_collector' },
+  '70': { model: 'TRH Sensor (SIU)', category: 'temp_humidity' },
+  '71': { model: 'DP Sensor - Analog (SIU)', category: 'other' },
+  '72': { model: 'Freq. DP Sensor (SIU)', category: 'other' },
+  '73': { model: 'Remote 5104P', category: 'particle_counter' },
+  '74': { model: 'Remote 3104P', category: 'particle_counter' },
+  '75': { model: 'Remote 50104V', category: 'particle_counter' },
+  '76': { model: 'Remote 5102V', category: 'particle_counter' },
+  '80': { model: 'SIU Standard', category: 'other' },
+  '81': { model: 'SIU Lite', category: 'other' },
+  '82': { model: 'IDP', category: 'other' },
+  '83': { model: 'IIU Gateway', category: 'other' },
+  '84': { model: 'IIU HSEM', category: 'other' },
+  '85': { model: 'IIU Analog', category: 'other' },
+  '86': { model: 'IIU Alarm Controller', category: 'other' },
+  '87': { model: 'AAU', category: 'other' },
+  '88': { model: '8 Port Alarm Controller', category: 'other' },
+  '89': { model: 'Toggle Switch Controller', category: 'other' },
+  '92': { model: 'LMS Laptop', category: 'other' },
+  '93': { model: 'LMS Computer', category: 'other' },
+  '94': { model: 'LMS DataServer', category: 'other' },
+  '98': { model: 'S1100LD Standard', category: 'particle_counter' },
+  '99': { model: 'Specials', category: 'other' },
+
+  // === 10-DIGIT SERIAL NUMBERS (3-digit CCC codes) ===
+  '100': { model: 'ApexR5', category: 'particle_counter' },
+  '101': { model: 'ApexR3', category: 'particle_counter' },
+  '102': { model: 'ApexR02', category: 'particle_counter' },
+  '103': { model: 'ApexR03', category: 'particle_counter' },
+  '104': { model: 'ApexR05', category: 'particle_counter' },
+  '105': { model: 'ApexP3', category: 'particle_counter' },
+  '106': { model: 'ApexP5', category: 'particle_counter' },
+  '129': { model: 'ActiveCount25H', category: 'bio_collector' },
+  '130': { model: 'ActiveCount100', category: 'bio_collector' },
+  '131': { model: 'ActiveCount100H', category: 'bio_collector' },
+  '140': { model: 'Apex 1100', category: 'particle_counter' },
+  '141': { model: 'ApexZ3', category: 'particle_counter' },
+  '142': { model: 'ApexZ30', category: 'particle_counter' },
+  '143': { model: 'ApexZ5', category: 'particle_counter' },
+  '144': { model: 'ApexZ50', category: 'particle_counter' },
+  '150': { model: 'ApexR02P', category: 'particle_counter' },
+  '151': { model: 'ApexR03P', category: 'particle_counter' },
+  '152': { model: 'ApexR05P', category: 'particle_counter' },
+  '153': { model: 'ApexR3P', category: 'particle_counter' },
+  '154': { model: 'ApexR5P', category: 'particle_counter' },
+  '155': { model: 'ApexBCRp', category: 'bio_collector' },
+  '160': { model: 'FILTR', category: 'other' },
+  '165': { model: 'Manifold III', category: 'other' },
+  '170': { model: 'Vertex50', category: 'liquid_counter' },
+  '171': { model: 'Vertex50C', category: 'liquid_counter' },
+  '172': { model: 'Vertex100', category: 'liquid_counter' },
+  '504': { model: 'Pentagon QIII ST', category: 'other' },
+  '505': { model: 'Pentagon QIII SX', category: 'other' },
+  '506': { model: 'Pentagon QIII SM', category: 'other' },
+
+  // === 8-DIGIT SERIAL NUMBERS (3-digit CCC codes for accessories) ===
+  '100_acc': { model: '0.1 CFM MiniManifold Blower', category: 'other' },
+  '101_acc': { model: 'Handheld Battery', category: 'other' },
+  '102_acc': { model: 'Solair Battery', category: 'other' },
+  '103_acc': { model: 'Engineering Serial Number', category: 'other' },
+  '104_acc': { model: '1.0 CFM MiniManifold Blower', category: 'other' },
+  '110_acc': { model: 'Remote Display - Remote P', category: 'other' },
+  '112_acc': { model: 'Remote Display - NC', category: 'other' },
+  '120_acc': { model: 'TRH Probe (Handhelds, R4-Series, TRH Wands)', category: 'temp_humidity' },
+  '125_acc': { model: 'TRH Digital Probe', category: 'temp_humidity' },
+  '130_acc': { model: 'Current to Frequency Converter', category: 'other' },
+  '140_acc': { model: 'Voltage to Frequency Converter', category: 'other' },
+  '150_acc': { model: 'IFS, ScanAir, ScanAir Pro', category: 'bio_collector' },
+  '160_acc': { model: 'RS485 Gateway', category: 'other' },
+  '170_acc': { model: 'DP Switch', category: 'other' },
+  '180_acc': { model: 'Particle Diluter', category: 'diluter' },
+  '185_acc': { model: 'RA-25 Flow Calibrator', category: 'other' },
+  '190_acc': { model: 'RA-100 Flow Calibrator', category: 'other' },
+  '250_acc': { model: 'High Pressure Diffuser 1.0 cfm', category: 'other' },
+  '260_acc': { model: 'High Pressure Diffuser 0.1 cfm', category: 'other' },
+  '270_acc': { model: 'High Pressure Controller 1100', category: 'other' },
+  '280_acc': { model: 'High Pressure Diffuser 2.0 cfm', category: 'other' },
+  '290_acc': { model: 'High Pressure Diffuser 3.5 cfm, 5-10 PSI', category: 'other' },
+  '291_acc': { model: 'High Pressure Diffuser 3.5 cfm, 30-70 PSI', category: 'other' },
+  '292_acc': { model: 'High Pressure Diffuser 3.5 cfm, 70-150 PSI', category: 'other' },
+  '293_acc': { model: 'High Pressure Diffuser 3.5 cfm, 30-150 PSI', category: 'other' },
+  '330_acc': { model: 'TRH Sensor', category: 'temp_humidity' },
+  '340_acc': { model: 'TRH Wand', category: 'temp_humidity' },
+  '350_acc': { model: 'Data Server HASP Key', category: 'other' },
+  '351_acc': { model: 'Web Server HASP Key', category: 'other' },
+  '352_acc': { model: 'LMS System HASP Key', category: 'other' },
+  '420_acc': { model: 'Liquid Calibration Station 110V', category: 'other' },
+  '421_acc': { model: 'Liquid Calibration Station 220V', category: 'other' },
+  '510_acc': { model: 'Air Calibration Station', category: 'other' },
+  '520_acc': { model: 'System Cabinet', category: 'other' },
+};
+
+// Decode serial number to get model and category
+const decodeSerialNumber = (serialNumber) => {
+  if (!serialNumber) return null;
+  
+  // Clean the serial number (remove spaces, dashes)
+  const sn = serialNumber.toString().replace(/[\s-]/g, '');
+  
+  // Must be all digits
+  if (!/^\d+$/.test(sn)) return null;
+  
+  const length = sn.length;
+  let productCode = null;
+  let format = null;
+  
+  if (length === 9) {
+    // 9-digit: YYMMCC### - extract CC (positions 4-5, 0-indexed)
+    productCode = sn.substring(4, 6);
+    format = '9-digit';
+  } else if (length === 10) {
+    // 10-digit: YYMMCCC### - extract CCC (positions 4-6, 0-indexed)
+    productCode = sn.substring(4, 7);
+    format = '10-digit';
+  } else if (length === 8) {
+    // 8-digit: CCC##### - extract CCC (positions 0-2)
+    productCode = sn.substring(0, 3) + '_acc';
+    format = '8-digit';
+  } else {
+    return null;
+  }
+  
+  // Look up the product code
+  let product = PRODUCT_CODES[productCode];
+  
+  // For 8-digit, also try without _acc suffix (some overlap)
+  if (!product && format === '8-digit') {
+    product = PRODUCT_CODES[sn.substring(0, 3)];
+  }
+  
+  if (product) {
+    return {
+      model: product.model,
+      category: product.category,
+      productCode: productCode.replace('_acc', ''),
+      format
+    };
+  }
+  
+  return null;
 };
 
 // ============================================
@@ -91,6 +310,17 @@ const CALIBRATION_TEMPLATES = {
       "Étalonnage selon les spécifications du fabricant",
       "Tests de fonctionnement",
       "Fourniture d'un rapport de test"
+    ]
+  },
+  diluter: {
+    icon: '🌀',
+    title: "Étalonnage Diluteur de Particules",
+    prestations: [
+      "Vérification des fonctionnalités du diluteur",
+      "Contrôle du taux de dilution",
+      "Vérification de l'étanchéité du système",
+      "Tests de performance",
+      "Fourniture d'un rapport de test et de calibration"
     ]
   }
 };
@@ -228,9 +458,526 @@ function getQuoteDataFromRequest(request) {
 
 async function generateQuotePDF(options) {
   const {
-    request, devices = [], servicesSubtotal = 0, shippingTotal = 0, grandTotal = 0,
-    calibrationTypes = ['particle_counter'], hasRepair = false, isSigned = false,
-    signatureName = '', signatureDate = '', signatureImage = null, createdBy = 'M. Meleney'
+    request, isSigned = false,
+    signatureName = '', signatureDate = '', signatureImage = null
+  } = options;
+
+  // Load jsPDF
+  await new Promise((resolve, reject) => {
+    if (window.jspdf) { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  
+  // Get quote data from request (contains breakdown)
+  const quoteData = request.quote_data || {};
+  const devicePricing = quoteData.devices || [];
+  const shipping = quoteData.shipping || { parcels: request.parcels_count || 1, unitPrice: 45, total: (request.parcels_count || 1) * 45 };
+  const servicesSubtotal = quoteData.servicesSubtotal || request.quote_subtotal || 0;
+  const shippingTotal = quoteData.shippingTotal || request.quote_shipping || shipping.total;
+  const grandTotal = quoteData.grandTotal || request.quote_total || (servicesSubtotal + shippingTotal);
+  const requiredSections = quoteData.requiredSections || { calibrationTypes: ['particle_counter'], hasRepair: false };
+  const createdBy = quoteData.createdBy || 'M. Meleney';
+  
+  const company = request.companies || {};
+  
+  const pageWidth = 210, pageHeight = 297, margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  const footerHeight = 16;
+  
+  // Colors
+  const green = [0, 166, 81];
+  const darkBlue = [26, 26, 46];
+  const gray = [80, 80, 80];
+  const lightGray = [130, 130, 130];
+  const white = [255, 255, 255];
+  
+  let y = margin;
+  
+  // Load logos
+  const loadImageAsBase64 = async (url) => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      return null;
+    }
+  };
+  
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
+  
+  const addFooter = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+    pdf.setTextColor(...white);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(180, 180, 180);
+    pdf.setFontSize(8);
+    pdf.text('16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07', pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+  };
+  
+  const getUsableHeight = () => pageHeight - footerHeight - margin;
+  
+  const checkPageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) {
+      addFooter();
+      pdf.addPage();
+      y = margin;
+      return true;
+    }
+    return false;
+  };
+
+  // ===== HEADER =====
+  if (lighthouseLogo) {
+    try {
+      const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+    } catch (e) {
+      pdf.setFontSize(26);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...darkBlue);
+      pdf.text('LIGHTHOUSE', margin, y + 8);
+    }
+  } else {
+    pdf.setFontSize(26);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('LIGHTHOUSE', margin, y + 8);
+  }
+  
+  pdf.setFontSize(18);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...green);
+  pdf.text(isSigned ? 'DEVIS SIGNE' : 'OFFRE DE PRIX', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('N. ' + (request.request_number || 'FR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
+  
+  y += 18;
+  pdf.setDrawColor(...green);
+  pdf.setLineWidth(1);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 7;
+
+  // ===== INFO BAR =====
+  pdf.setFillColor(245, 245, 245);
+  pdf.rect(margin, y, contentWidth, 16, 'F');
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('DATE', margin + 5, y + 5);
+  pdf.text('VALIDITE', margin + 60, y + 5);
+  pdf.text('CONDITIONS', margin + 115, y + 5);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  const qDate = request.quoted_at ? new Date(request.quoted_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
+  pdf.text(qDate, margin + 5, y + 12);
+  pdf.text('30 jours', margin + 60, y + 12);
+  pdf.text('A reception de facture', margin + 115, y + 12);
+  y += 20;
+
+  // ===== CLIENT =====
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CLIENT', margin, y);
+  y += 5;
+  pdf.setFontSize(14);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(company.name || 'Client', margin, y);
+  y += 6;
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  if (company.billing_address || company.address) {
+    pdf.text(company.billing_address || company.address, margin, y);
+    y += 5;
+  }
+  const city = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
+  if (city) {
+    pdf.text(city, margin, y);
+    y += 5;
+  }
+  y += 8;
+
+  // ===== SERVICE DESCRIPTION BLOCKS =====
+  const calibrationTypes = requiredSections.calibrationTypes || ['particle_counter'];
+  const hasRepair = requiredSections.hasRepair || false;
+
+  // Service descriptions data
+  const CAL_DATA = {
+    particle_counter: {
+      title: "Etalonnage Compteur de Particules Aeroportees",
+      prestations: [
+        "Verification des fonctionnalites du compteur",
+        "Verification et reglage du debit",
+        "Verification de la cellule de mesure",
+        "Controle et reglage des seuils de mesures granulometrique a l'aide de spheres de latex calibrees et certifiees",
+        "Verification en nombre par comparaison a un etalon etalonne selon la norme ISO 17025, conformement a la norme ISO 21501-4",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    bio_collector: {
+      title: "Etalonnage Bio Collecteur",
+      prestations: [
+        "Verification des fonctionnalites de l'appareil",
+        "Verification et reglage du debit",
+        "Verification de la cellule d'impaction",
+        "Controle des parametres de collecte",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    liquid_counter: {
+      title: "Etalonnage Compteur de Particules en Milieu Liquide",
+      prestations: [
+        "Verification des fonctionnalites du compteur",
+        "Verification et reglage du debit",
+        "Verification de la cellule de mesure optique",
+        "Controle et reglage des seuils de mesures granulometrique",
+        "Verification en nombre par comparaison a un etalon",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    other: {
+      title: "Etalonnage Equipement",
+      prestations: [
+        "Verification des fonctionnalites de l'appareil",
+        "Etalonnage selon les specifications du fabricant",
+        "Tests de fonctionnement",
+        "Fourniture d'un rapport de test"
+      ]
+    }
+  };
+
+  const REPAIR_DATA = {
+    title: "Reparation",
+    prestations: [
+      "Diagnostic complet de l'appareil",
+      "Identification des composants defectueux",
+      "Remplacement des pieces defectueuses (pieces facturees en sus)",
+      "Tests de fonctionnement complets",
+      "Verification d'etalonnage post-reparation si applicable"
+    ]
+  };
+
+  const DISCLAIMERS = [
+    "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables.",
+    "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses et necessitent un remplacement.",
+    "Les mesures stockees dans les appareils seront eventuellement perdues lors des operations de maintenance.",
+    "Les equipements envoyes devront etre decontamines de toutes substances chimiques, bacteriennes ou radioactives."
+  ];
+
+  // Draw service blocks
+  const drawServiceBlock = (data, color) => {
+    const lineH = 5;
+    let lines = [];
+    data.prestations.forEach(p => {
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
+      wrapped.forEach(l => lines.push(l));
+    });
+    const blockH = 12 + (lines.length * lineH);
+    checkPageBreak(blockH);
+    
+    pdf.setDrawColor(...color);
+    pdf.setLineWidth(1);
+    pdf.line(margin, y, margin, y + blockH - 3);
+    
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(data.title, margin + 5, y + 6);
+    y += 10;
+    
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    data.prestations.forEach(p => {
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
+      wrapped.forEach((line, i) => {
+        if (i === 0) pdf.text('-', margin + 5, y);
+        pdf.text(line, margin + 9, y);
+        y += lineH;
+      });
+    });
+    y += 3;
+  };
+
+  // Draw calibration blocks (blue)
+  calibrationTypes.forEach(type => {
+    const data = CAL_DATA[type] || CAL_DATA.particle_counter;
+    drawServiceBlock(data, [59, 130, 246]);
+  });
+  
+  // Draw repair block (orange) if needed
+  if (hasRepair) {
+    drawServiceBlock(REPAIR_DATA, [249, 115, 22]);
+  }
+
+  // ===== CONDITIONS/DISCLAIMERS =====
+  checkPageBreak(25);
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS', margin, y);
+  y += 4;
+  pdf.setFontSize(8);
+  pdf.setTextColor(...gray);
+  DISCLAIMERS.forEach(d => {
+    pdf.text('- ' + d, margin, y);
+    y += 4;
+  });
+  y += 5;
+
+  // ===== DETAILED PRICING TABLE (Qté | Désignation | Prix Unit. | Total HT) =====
+  const rowH = 7;
+  const colQty = margin;
+  const colDesc = margin + 12;
+  const colUnit = pageWidth - margin - 45;
+  const colTotal = pageWidth - margin - 3;
+  
+  checkPageBreak(60);
+  
+  pdf.setFontSize(13);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Recapitulatif des Prix', margin, y);
+  y += 7;
+
+  // Header row
+  pdf.setFillColor(...darkBlue);
+  pdf.rect(margin, y, contentWidth, 9, 'F');
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...white);
+  pdf.text('Qte', colQty + 3, y + 6);
+  pdf.text('Designation', colDesc, y + 6);
+  pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
+  pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
+  y += 9;
+
+  let rowIndex = 0;
+  let hasNettoyage = false;
+
+  // Build line items from devicePricing (from quote_data)
+  devicePricing.forEach((device) => {
+    // Calibration row
+    if (device.needsCalibration) {
+      const qty = device.calibrationQty || 1;
+      const unitPrice = parseFloat(device.calibrationPrice) || 0;
+      const lineTotal = qty * unitPrice;
+      const isContract = device.isContractCovered;
+      
+      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...darkBlue);
+      pdf.text(String(qty), colQty + 3, y + 5);
+      const calDesc = `Etalonnage ${device.model || ''} (SN: ${device.serial || ''})${isContract ? ' [CONTRAT]' : ''}`;
+      pdf.text(calDesc.substring(0, 60), colDesc, y + 5);
+      pdf.text(isContract ? 'Contrat' : unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(isContract ? 'Contrat' : lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      y += rowH;
+      rowIndex++;
+    }
+    
+    // Nettoyage row
+    if (device.needsNettoyage && !device.isContractCovered && device.nettoyagePrice > 0) {
+      hasNettoyage = true;
+      const qty = device.nettoyageQty || 1;
+      const unitPrice = parseFloat(device.nettoyagePrice) || 0;
+      const lineTotal = qty * unitPrice;
+      
+      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...darkBlue);
+      pdf.text(String(qty), colQty + 3, y + 5);
+      pdf.text('Nettoyage cellule - si requis selon etat du capteur', colDesc, y + 5);
+      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      y += rowH;
+      rowIndex++;
+    }
+    
+    // Repair row
+    if (device.needsRepair) {
+      const qty = device.repairQty || 1;
+      const unitPrice = parseFloat(device.repairPrice) || 0;
+      const lineTotal = qty * unitPrice;
+      
+      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...darkBlue);
+      pdf.text(String(qty), colQty + 3, y + 5);
+      const repDesc = `Reparation ${device.model || ''} (SN: ${device.serial || ''})`;
+      pdf.text(repDesc.substring(0, 60), colDesc, y + 5);
+      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      y += rowH;
+      rowIndex++;
+    }
+    
+    // Additional parts
+    (device.additionalParts || []).forEach(part => {
+      const qty = parseInt(part.quantity) || 1;
+      const unitPrice = parseFloat(part.price) || 0;
+      const lineTotal = qty * unitPrice;
+      
+      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...darkBlue);
+      pdf.text(String(qty), colQty + 3, y + 5);
+      const partDesc = part.partNumber ? `[${part.partNumber}] ${part.description || 'Piece'}` : (part.description || 'Piece/Service');
+      pdf.text(partDesc.substring(0, 55), colDesc, y + 5);
+      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      y += rowH;
+      rowIndex++;
+    });
+  });
+  
+  // Shipping row
+  pdf.setFillColor(245, 245, 245);
+  pdf.rect(margin, y, contentWidth, rowH, 'F');
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(String(shipping.parcels || 1), colQty + 3, y + 5);
+  const shipDesc = shipping.parcels > 1 ? `Frais de port (${shipping.parcels} colis)` : 'Frais de port';
+  pdf.text(shipDesc, colDesc, y + 5);
+  pdf.text((shipping.unitPrice || 45).toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(shippingTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+  y += rowH;
+
+  // Total row
+  pdf.setFillColor(...green);
+  pdf.rect(margin, y, contentWidth, 11, 'F');
+  pdf.setTextColor(...white);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('TOTAL HT', colUnit - 30, y + 7.5);
+  pdf.setFontSize(16);
+  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
+  y += 15;
+  
+  // Nettoyage disclaimer
+  if (hasNettoyage) {
+    pdf.setFontSize(7);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(...lightGray);
+    pdf.text('* Le nettoyage cellule sera facture uniquement si necessaire selon l\'etat du capteur a reception.', margin, y);
+    y += 5;
+  }
+
+  // ===== SIGNATURE SECTION =====
+  const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
+  
+  pdf.setDrawColor(200, 200, 200);
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, sigY, pageWidth - margin, sigY);
+  
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('ETABLI PAR', margin, sigY + 7);
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(createdBy, margin, sigY + 14);
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('Lighthouse France', margin, sigY + 20);
+
+  // Capcert logo
+  if (capcertLogo) {
+    try {
+      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
+    } catch (e) {}
+  }
+
+  // Signature box
+  const sigBoxX = pageWidth - margin - 62;
+  
+  if (isSigned && signatureName) {
+    // Signed version - green box with signature
+    pdf.setFillColor(245, 255, 250);
+    pdf.setDrawColor(...green);
+    pdf.setLineWidth(0.5);
+    pdf.roundedRect(sigBoxX, sigY + 3, 62, 36, 2, 2, 'FD');
+    
+    pdf.setFontSize(8);
+    pdf.setTextColor(...green);
+    pdf.text('APPROUVE PAR', sigBoxX + 4, sigY + 10);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(signatureName, sigBoxX + 4, sigY + 17);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Date: ' + signatureDate, sigBoxX + 4, sigY + 24);
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(...green);
+    pdf.text('Lu et approuve', sigBoxX + 4, sigY + 30);
+    
+    if (signatureImage) {
+      try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 40, sigY + 9, 18, 16); } catch(e) {}
+    }
+  } else {
+    // Unsigned version - dashed box
+    pdf.setFontSize(8);
+    pdf.setTextColor(...lightGray);
+    pdf.text('Signature client', sigBoxX + 16, sigY + 7);
+    pdf.setDrawColor(180, 180, 180);
+    pdf.setLineWidth(0.3);
+    pdf.setLineDashPattern([2, 2], 0);
+    pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 22, 2, 2, 'D');
+    pdf.setLineDashPattern([], 0);
+    pdf.text('Lu et approuve', sigBoxX + 18, sigY + 37);
+  }
+
+  addFooter();
+  return pdf.output('blob');
+}
+// Contract Quote PDF Generator - IDENTICAL structure to RMA
+async function generateContractQuotePDF(options) {
+  const {
+    contract, devices = [], totalPrice = 0, totalTokens = 0,
+    calibrationTypes = ['particle_counter'], isSigned = false,
+    signatureName = '', signatureDate = '', signatureImage = null
   } = options;
 
   await new Promise((resolve, reject) => {
@@ -258,15 +1005,11 @@ async function generateQuotePDF(options) {
   
   let y = margin;
   
-  // === LOGO LOADING ===
+  // === LOGO LOADING (identical to RMA) ===
   const loadImageAsBase64 = async (url) => {
     try {
-      // First try fetch approach (works better with Next.js)
       const response = await fetch(url);
-      if (!response.ok) {
-        console.log('Logo fetch failed:', url, response.status);
-        return null;
-      }
+      if (!response.ok) return null;
       const blob = await response.blob();
       return new Promise((resolve) => {
         const reader = new FileReader();
@@ -275,8 +1018,6 @@ async function generateQuotePDF(options) {
         reader.readAsDataURL(blob);
       });
     } catch (e) {
-      console.log('Logo loading error:', url, e);
-      // Fallback to Image approach
       return new Promise((resolve) => {
         const img = new Image();
         img.crossOrigin = 'anonymous';
@@ -294,7 +1035,6 @@ async function generateQuotePDF(options) {
     }
   };
   
-  // Load logos (with fallback if not available)
   let lighthouseLogo = null;
   let capcertLogo = null;
   try {
@@ -304,10 +1044,7 @@ async function generateQuotePDF(options) {
     ]);
     lighthouseLogo = results[0];
     capcertLogo = results[1];
-    console.log('Logos loaded:', !!lighthouseLogo, !!capcertLogo);
-  } catch (e) {
-    console.log('Logo loading skipped:', e);
-  }
+  } catch (e) {}
   
   const addFooter = () => {
     pdf.setFillColor(...darkBlue);
@@ -338,20 +1075,15 @@ async function generateQuotePDF(options) {
   let logoAdded = false;
   if (lighthouseLogo) {
     try {
-      console.log('Attempting to add lighthouse logo, data length:', lighthouseLogo.length);
-      // Detect format from base64 header
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
       pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
       logoAdded = true;
-      console.log('Lighthouse logo added successfully');
     } catch (e) {
-      console.log('Lighthouse logo addImage failed:', e);
       logoAdded = false;
     }
   }
   
   if (!logoAdded) {
-    // Fallback to text if image fails
     pdf.setFontSize(26);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
@@ -365,11 +1097,11 @@ async function generateQuotePDF(options) {
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...green);
-  pdf.text(isSigned ? 'DEVIS SIGNE' : 'OFFRE DE PRIX', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.text('OFFRE DE PRIX', pageWidth - margin, y + 8, { align: 'right' });
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text('N. ' + (request.request_number || 'FR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
+  pdf.text('N° ' + (contract.contract_number || 'CTR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
   
   y += 18;
   pdf.setDrawColor(...green);
@@ -377,22 +1109,23 @@ async function generateQuotePDF(options) {
   pdf.line(margin, y, pageWidth - margin, y);
   y += 7;
 
-
   // ===== INFO BAR =====
   pdf.setFillColor(245, 245, 245);
   pdf.rect(margin, y, contentWidth, 16, 'F');
   pdf.setFontSize(8);
   pdf.setTextColor(...lightGray);
   pdf.text('DATE', margin + 5, y + 5);
-  pdf.text('VALIDITE', margin + 60, y + 5);
-  pdf.text('CONDITIONS', margin + 115, y + 5);
+  pdf.text('PERIODE DU CONTRAT', margin + 50, y + 5);
+  pdf.text('VALIDITE DEVIS', margin + 140, y + 5);
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  const qDate = request.quoted_at ? new Date(request.quoted_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
+  const qDate = contract.quote_sent_at ? new Date(contract.quote_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
   pdf.text(qDate, margin + 5, y + 12);
-  pdf.text('30 jours', margin + 60, y + 12);
-  pdf.text('A reception de facture', margin + 115, y + 12);
+  const startDate = new Date(contract.start_date).toLocaleDateString('fr-FR');
+  const endDate = new Date(contract.end_date).toLocaleDateString('fr-FR');
+  pdf.text(startDate + ' - ' + endDate, margin + 50, y + 12);
+  pdf.text('30 jours', margin + 140, y + 12);
   y += 20;
 
   // ===== CLIENT =====
@@ -404,31 +1137,31 @@ async function generateQuotePDF(options) {
   pdf.setFontSize(14);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(request.companies?.name || 'Client', margin, y);
+  pdf.text(contract.companies?.name || 'Client', margin, y);
   y += 6;
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  if (request.companies?.billing_address) {
-    pdf.text(request.companies.billing_address, margin, y);
+  if (contract.companies?.billing_address) {
+    pdf.text(contract.companies.billing_address, margin, y);
     y += 5;
   }
-  const city = [request.companies?.billing_postal_code, request.companies?.billing_city].filter(Boolean).join(' ');
+  const city = [contract.companies?.billing_postal_code, contract.companies?.billing_city].filter(Boolean).join(' ');
   if (city) {
     pdf.text(city, margin, y);
     y += 5;
   }
   y += 3;
 
-  // ===== SERVICE SECTIONS =====
+  // ===== SERVICE SECTIONS BY TYPE =====
   const drawServiceBlock = (data, color) => {
-    const lineH = 5;
+    const lineH = 5.5; // Slightly more spacing between lines
     let lines = [];
     data.prestations.forEach(p => {
-      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 12); // More width available
       wrapped.forEach(l => lines.push(l));
     });
-    const blockH = 12 + (lines.length * lineH);
+    const blockH = 14 + (lines.length * lineH); // More padding
     checkPageBreak(blockH);
     
     pdf.setDrawColor(...color);
@@ -438,14 +1171,14 @@ async function generateQuotePDF(options) {
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
-    pdf.text(data.title, margin + 5, y + 6);
-    y += 10;
+    pdf.text(data.title, margin + 5, y + 7);
+    y += 12;
     
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...gray);
     data.prestations.forEach(p => {
-      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 12);
       wrapped.forEach((line, i) => {
         if (i === 0) {
           pdf.text('-', margin + 5, y);
@@ -454,42 +1187,50 @@ async function generateQuotePDF(options) {
         y += lineH;
       });
     });
-    y += 3;
+    y += 4;
   };
 
-  calibrationTypes.forEach(type => {
+  // Group devices by type
+  const devicesByType = {};
+  devices.forEach(d => {
+    const type = d.device_type || 'particle_counter';
+    if (!devicesByType[type]) devicesByType[type] = [];
+    devicesByType[type].push(d);
+  });
+
+  // Draw service block for each type
+  Object.keys(devicesByType).forEach(type => {
     const data = PDF_CALIBRATION_DATA[type] || PDF_CALIBRATION_DATA.particle_counter;
     drawServiceBlock(data, [59, 130, 246]);
   });
-  
-  if (hasRepair) {
-    drawServiceBlock(PDF_REPAIR_DATA, [249, 115, 22]);
-  }
 
-  // ===== CONDITIONS (moved up - right after service descriptions) =====
-  const conditionsHeight = 22;
+  // ===== CONDITIONS =====
+  const conditionsHeight = 28;
   checkPageBreak(conditionsHeight);
   
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...lightGray);
-  pdf.text('CONDITIONS', margin, y);
+  pdf.text('CONDITIONS DU CONTRAT', margin + 3, y);
   y += 4;
   pdf.setFontSize(8);
   pdf.setTextColor(...gray);
-  PDF_DISCLAIMERS.forEach(d => {
-    pdf.text('- ' + d, margin, y);
+  const contractConditions = [
+    'Validite du contrat: ' + startDate + ' au ' + endDate,
+    totalTokens + ' etalonnage(s) inclus a utiliser pendant la periode contractuelle',
+    'Etalonnages supplementaires factures au tarif standard en vigueur',
+    'Frais de port inclus (France metropolitaine)',
+    'Paiement a 30 jours date de facture'
+  ];
+  contractConditions.forEach(d => {
+    pdf.text('- ' + d, margin + 3, y);
     y += 4;
   });
   y += 5;
 
-  // ===== PRICING TABLE (moved down - after conditions) =====
+  // ===== PRICING TABLE =====
   const rowH = 8;
-  let tableRows = devices.length;
-  devices.forEach(d => {
-    tableRows += (d.additionalParts || []).length + 1;
-  });
-  const tableH = 12 + (tableRows * rowH) + 32;
+  const tableH = 12 + (devices.length * rowH) + 20;
   checkPageBreak(tableH);
 
   pdf.setFontSize(13);
@@ -505,80 +1246,44 @@ async function generateQuotePDF(options) {
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...white);
   pdf.text('Appareil', margin + 3, y + 6);
-  pdf.text('N. Serie', margin + 55, y + 6);
-  pdf.text('Service', margin + 100, y + 6);
+  pdf.text('N° Serie', margin + 55, y + 6);
+  pdf.text('Etal./an', margin + 120, y + 6);
   pdf.text('Prix HT', pageWidth - margin - 3, y + 6, { align: 'right' });
   y += 9;
 
+  // Device rows
   devices.forEach((device, idx) => {
-    const svc = [];
-    if (device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration')) svc.push('Etalonnage');
-    if (device.needsRepair || (device.serviceType || device.service_type || '').includes('repair')) svc.push('Reparation');
-    const total = device.serviceTotal || ((device.calibrationPrice || 0) + (device.repairPrice || 0) + (device.additionalParts || []).reduce((s, p) => s + (parseFloat(p.price) || 0), 0));
-    
     pdf.setFillColor(idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250);
     pdf.rect(margin, y, contentWidth, rowH, 'F');
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...darkBlue);
-    pdf.text(device.model || device.model_name || '-', margin + 3, y + 5.5);
+    pdf.text(device.model_name || '-', margin + 3, y + 5.5);
     pdf.setFont('courier', 'normal');
-    pdf.text(device.serial || device.serial_number || '-', margin + 55, y + 5.5);
+    pdf.text(device.serial_number || '-', margin + 55, y + 5.5);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(svc.join(' + ') || 'Service', margin + 100, y + 5.5);
+    pdf.text(String(device.tokens_total || 1), margin + 125, y + 5.5);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(total.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
-    y += rowH;
-
-    (device.additionalParts || []).forEach(part => {
-      pdf.setFillColor(250, 250, 250);
-      pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(8);
-      pdf.setTextColor(...gray);
-      pdf.text('    > ' + (part.description || 'Piece/Service'), margin + 3, y + 5.5);
-      pdf.text((parseFloat(part.price) || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
-      y += rowH;
-    });
-
-    pdf.setFillColor(242, 242, 242);
-    pdf.rect(margin, y, contentWidth, rowH, 'F');
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8);
-    pdf.setTextColor(...gray);
-    pdf.text('    > Frais de port', margin + 3, y + 5.5);
-    pdf.text((device.shipping || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+    pdf.text((device.unit_price || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
     y += rowH;
   });
 
-  // Totals
-  pdf.setDrawColor(200, 200, 200);
-  pdf.line(margin, y, pageWidth - margin, y);
-  
-  pdf.setFillColor(255, 255, 255);
-  pdf.rect(margin, y, contentWidth, rowH, 'F');
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(9);
-  pdf.setTextColor(...darkBlue);
-  pdf.text('Sous-total services', margin + 3, y + 5.5);
-  pdf.text(servicesSubtotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
-  y += rowH;
-
-  pdf.rect(margin, y, contentWidth, rowH, 'F');
-  pdf.text('Total frais de port', margin + 3, y + 5.5);
-  pdf.text(shippingTotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
-  y += rowH;
-
+  // Total row
   pdf.setFillColor(...green);
-  pdf.rect(margin, y, contentWidth, 11, 'F');
+  pdf.rect(margin, y, contentWidth, 14, 'F'); // Increased height
   pdf.setTextColor(...white);
   pdf.setFontSize(11);
-  pdf.text('TOTAL HT', margin + 4, y + 7.5);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('TOTAL CONTRAT ANNUEL HT', margin + 4, y + 6);
+  pdf.setFontSize(7);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(totalTokens + ' etalonnage(s) inclus pendant la periode du contrat', margin + 4, y + 11);
   pdf.setFontSize(16);
-  pdf.text(grandTotal.toFixed(2) + ' EUR', pageWidth - margin - 4, y + 8, { align: 'right' });
-  y += 15;
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(totalPrice.toFixed(2) + ' EUR', pageWidth - margin - 4, y + 9, { align: 'right' });
+  y += 18;
 
-  // ===== SIGNATURE - AT BOTTOM OF CURRENT PAGE =====
+  // ===== SIGNATURE - AT BOTTOM =====
   const sigY = Math.max(y + 5, pageHeight - footerHeight - signatureBlockHeight - 3);
   
   pdf.setDrawColor(200, 200, 200);
@@ -591,22 +1296,14 @@ async function generateQuotePDF(options) {
   pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(createdBy, margin, sigY + 14);
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  pdf.text('Lighthouse France', margin, sigY + 20);
+  pdf.text('Lighthouse France', margin, sigY + 14);
 
-  // Add Capcert certification logo (bottom left, next to ETABLI PAR)
+  // Capcert logo
   if (capcertLogo) {
     try {
-      console.log('Attempting to add capcert logo');
       const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
       pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
-      console.log('Capcert logo added successfully');
-    } catch (e) {
-      console.log('Capcert logo failed:', e);
-    }
+    } catch (e) {}
   }
 
   const sigBoxX = pageWidth - margin - 62;
@@ -783,28 +1480,32 @@ const STATUS_STYLES = {
 // Step Progress Tracker Component (Chevron Style)
 const StepProgress = ({ status, serviceType }) => {
   // Define steps based on service type
+  // CALIBRATION: 10 steps
   const calibrationSteps = [
     { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
-    { id: 'rma_created', label: 'RMA Créé', shortLabel: 'RMA' },
-    { id: 'bc_approved', label: 'BC Approuvé', shortLabel: 'BC' },
+    { id: 'rma_created', label: 'RMA/Devis Créé', shortLabel: 'Devis' },
+    { id: 'approved', label: 'Devis Approuvé', shortLabel: 'Approuvé' },
+    { id: 'waiting', label: 'En attente réception', shortLabel: 'Attente' },
     { id: 'received', label: 'Reçu', shortLabel: 'Reçu' },
     { id: 'queue', label: 'File d\'attente', shortLabel: 'File' },
     { id: 'calibration', label: 'Étalonnage', shortLabel: 'Étal.' },
-    { id: 'final_qc', label: 'Contrôle QC', shortLabel: 'QC' },
-    { id: 'ready_to_ship', label: 'Prêt', shortLabel: 'Prêt' },
+    { id: 'qc', label: 'Contrôle QC', shortLabel: 'QC' },
+    { id: 'ready', label: 'Prêt', shortLabel: 'Prêt' },
     { id: 'shipped', label: 'Expédié', shortLabel: 'Expédié' }
   ];
 
+  // REPAIR: 11 steps
   const repairSteps = [
     { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
-    { id: 'rma_created', label: 'RMA Créé', shortLabel: 'RMA' },
-    { id: 'bc_approved', label: 'BC Approuvé', shortLabel: 'BC' },
+    { id: 'rma_created', label: 'RMA/Devis Créé', shortLabel: 'Devis' },
+    { id: 'approved', label: 'Devis Approuvé', shortLabel: 'Approuvé' },
+    { id: 'waiting', label: 'En attente réception', shortLabel: 'Attente' },
     { id: 'received', label: 'Reçu', shortLabel: 'Reçu' },
     { id: 'inspection', label: 'Inspection', shortLabel: 'Insp.' },
-    { id: 'customer_approval', label: 'Approbation', shortLabel: 'Appr.' },
+    { id: 'approval', label: 'Approbation', shortLabel: 'Appr.' },
     { id: 'repair', label: 'Réparation', shortLabel: 'Rép.' },
-    { id: 'final_qc', label: 'Contrôle QC', shortLabel: 'QC' },
-    { id: 'ready_to_ship', label: 'Prêt', shortLabel: 'Prêt' },
+    { id: 'qc', label: 'Contrôle QC', shortLabel: 'QC' },
+    { id: 'ready', label: 'Prêt', shortLabel: 'Prêt' },
     { id: 'shipped', label: 'Expédié', shortLabel: 'Expédié' }
   ];
 
@@ -813,37 +1514,45 @@ const StepProgress = ({ status, serviceType }) => {
 
   // Map current status to step index
   const getStepIndex = (currentStatus) => {
+    if (!currentStatus) return 0;
+    
+    console.log('🔍 StepProgress - status:', currentStatus, 'isRepair:', isRepair);
+    
     if (isRepair) {
-      // Repair flow mapping
+      // Repair flow mapping (11 steps: 0-10)
       const repairMap = {
-        'submitted': 0, 'pending': 0, 'waiting_approval': 0,
-        'approved': 1, // RMA Created by Lighthouse
-        'waiting_bc': 2, 'waiting_po': 2, 'waiting_customer': 2, // Waiting for BC from customer
-        'waiting_device': 3, // BC approved, waiting for device
-        'received': 3, 'received_repair': 3, 
-        'inspection_complete': 4, // Inspection done
-        'quote_sent': 5, // Waiting customer approval for repair
-        'order_received': 6, 'waiting_parts': 6, 'repair_in_progress': 6,
-        'repair_complete': 7, 'final_qc': 7, 'quality_check': 7,
+        'submitted': 0, 'pending': 0,
+        'quote_sent': 1, 'quote_revision_requested': 1,
+        'bc_pending': 2, 'bc_review': 2, 'waiting_bc': 2,
+        'waiting_device': 3,
+        'received': 4, 'received_repair': 4,
+        'inspection': 5, 'inspection_complete': 5,
+        'customer_approval': 6, 'waiting_approval': 6,
+        'repair_in_progress': 7, 'in_progress': 7, 'waiting_parts': 7,
+        'final_qc': 8, 'quality_check': 8,
+        'ready_to_ship': 9,
+        'shipped': 10, 'delivered': 10, 'completed': 10
+      };
+      const index = repairMap[currentStatus] ?? 0;
+      console.log('🔍 Repair step index:', index);
+      return index;
+    } else {
+      // Calibration flow mapping (10 steps: 0-9)
+      const calibrationMap = {
+        'submitted': 0, 'pending': 0,
+        'quote_sent': 1, 'quote_revision_requested': 1,
+        'bc_pending': 2, 'bc_review': 2, 'waiting_bc': 2,
+        'waiting_device': 3,
+        'received': 4, 'received_calibration': 4,
+        'in_queue': 5, 'queued': 5,
+        'in_progress': 6, 'calibration_in_progress': 6,
+        'final_qc': 7, 'quality_check': 7,
         'ready_to_ship': 8,
         'shipped': 9, 'delivered': 9, 'completed': 9
       };
-      return repairMap[currentStatus] ?? 0;
-    } else {
-      // Calibration flow mapping
-      const calibrationMap = {
-        'submitted': 0, 'pending': 0, 'waiting_approval': 0,
-        'approved': 1, // RMA Created by Lighthouse
-        'waiting_bc': 2, 'waiting_po': 2, 'waiting_customer': 2, // Waiting for BC from customer
-        'waiting_device': 3, // BC approved, waiting to receive device
-        'received': 3, 'received_calibration': 3,
-        'in_queue': 4, 'queued': 4, // In calibration queue
-        'in_progress': 5, 'calibration_in_progress': 5,
-        'final_qc': 6, 'quality_check': 6,
-        'ready_to_ship': 7,
-        'shipped': 8, 'delivered': 8, 'completed': 8
-      };
-      return calibrationMap[currentStatus] ?? 0;
+      const index = calibrationMap[currentStatus] ?? 0;
+      console.log('🔍 Calibration step index:', index);
+      return index;
     }
   };
 
@@ -971,6 +1680,7 @@ export default function CustomerPortal() {
   // Data
   const [requests, setRequests] = useState([]);
   const [addresses, setAddresses] = useState([]);
+  const [contracts, setContracts] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
 
   const t = useCallback((k) => T[lang]?.[k] || k, [lang]);
@@ -983,7 +1693,7 @@ export default function CustomerPortal() {
   const loadData = useCallback(async (p) => {
     if (!p?.company_id) return;
     
-    const [reqRes, addrRes] = await Promise.all([
+    const [reqRes, addrRes, contractsRes] = await Promise.all([
       supabase.from('service_requests')
         .select('*, request_devices(*)')
         .eq('company_id', p.company_id)
@@ -991,11 +1701,16 @@ export default function CustomerPortal() {
       supabase.from('shipping_addresses')
         .select('*')
         .eq('company_id', p.company_id)
-        .order('is_default', { ascending: false })
+        .order('is_default', { ascending: false }),
+      supabase.from('contracts')
+        .select('*, contract_devices(*), companies(*)')
+        .eq('company_id', p.company_id)
+        .order('created_at', { ascending: false })
     ]);
     
     if (reqRes.data) setRequests(reqRes.data);
     if (addrRes.data) setAddresses(addrRes.data);
+    if (contractsRes.data) setContracts(contractsRes.data);
   }, []);
 
   const refresh = useCallback(() => loadData(profile), [loadData, profile]);
@@ -1128,7 +1843,7 @@ export default function CustomerPortal() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F9F9F9]">
+    <div className="min-h-screen bg-[#f0f2f5]">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white font-medium ${
@@ -1139,7 +1854,7 @@ export default function CustomerPortal() {
       )}
 
       {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-50">
+      <header className="bg-[#1a1a2e] shadow-lg sticky top-0 z-50 border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
@@ -1147,33 +1862,36 @@ export default function CustomerPortal() {
               <img 
                 src="/images/logos/lighthouse-logo.png" 
                 alt="Lighthouse France" 
-                className="h-10 w-auto"
+                className="h-10 w-auto invert brightness-0 invert"
                 onError={(e) => {
                   e.target.style.display = 'none';
                   e.target.nextSibling.style.display = 'flex';
                 }}
               />
               <div className="items-center gap-2 hidden">
-                <span className="text-[#1E3A5F] font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
-                <span className="text-[#3B7AB4] font-semibold text-sm">FRANCE</span>
+                <span className="text-white font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                <span className="text-[#00A651] font-semibold text-sm">FRANCE</span>
               </div>
             </div>
 
             {/* Nav */}
             <nav className="hidden md:flex items-center gap-6">
-              <button onClick={() => setPage('dashboard')} className={`font-medium ${page === 'dashboard' ? 'text-[#3B7AB4]' : 'text-[#1E3A5F] hover:text-[#3B7AB4]'}`}>
+              <button onClick={() => setPage('dashboard')} className={`font-medium ${page === 'dashboard' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('dashboard')}
               </button>
-              <button onClick={() => setPage('new-request')} className={`font-medium ${page === 'new-request' ? 'text-[#3B7AB4]' : 'text-[#1E3A5F] hover:text-[#3B7AB4]'}`}>
+              <button onClick={() => setPage('new-request')} className={`font-medium ${page === 'new-request' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('newRequest')}
               </button>
-              <button onClick={() => setPage('equipment')} className={`font-medium ${page === 'equipment' ? 'text-[#3B7AB4]' : 'text-[#1E3A5F] hover:text-[#3B7AB4]'}`}>
+              <button onClick={() => setPage('contracts')} className={`font-medium ${page === 'contracts' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+                Contrats
+              </button>
+              <button onClick={() => setPage('equipment')} className={`font-medium ${page === 'equipment' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('myEquipment')}
               </button>
-              <button onClick={() => setPage('settings')} className={`font-medium ${page === 'settings' ? 'text-[#3B7AB4]' : 'text-[#1E3A5F] hover:text-[#3B7AB4]'}`}>
+              <button onClick={() => setPage('settings')} className={`font-medium ${page === 'settings' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('settings')}
               </button>
-              <button onClick={logout} className="text-gray-500 hover:text-gray-700">
+              <button onClick={logout} className="text-white/50 hover:text-white/80">
                 {t('logout')}
               </button>
             </nav>
@@ -1182,13 +1900,13 @@ export default function CustomerPortal() {
             <div className="flex items-center gap-2">
               <button 
                 onClick={() => setLang('fr')} 
-                className={`px-2 py-1 rounded text-sm font-bold ${lang === 'fr' ? 'bg-[#1E3A5F] text-white' : 'text-gray-500'}`}
+                className={`px-2 py-1 rounded text-sm font-bold ${lang === 'fr' ? 'bg-[#00A651] text-white' : 'text-white/50'}`}
               >
                 FR
               </button>
               <button 
                 onClick={() => setLang('en')} 
-                className={`px-2 py-1 rounded text-sm font-bold ${lang === 'en' ? 'bg-[#1E3A5F] text-white' : 'text-gray-500'}`}
+                className={`px-2 py-1 rounded text-sm font-bold ${lang === 'en' ? 'bg-[#00A651] text-white' : 'text-white/50'}`}
               >
                 EN
               </button>
@@ -1197,15 +1915,15 @@ export default function CustomerPortal() {
 
           {/* Mobile nav */}
           <nav className="md:hidden flex gap-2 pb-3 overflow-x-auto">
-            {['dashboard', 'new-request', 'equipment', 'settings'].map(p => (
+            {['dashboard', 'new-request', 'contracts', 'equipment', 'settings'].map(p => (
               <button
                 key={p}
                 onClick={() => setPage(p)}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap ${
-                  page === p ? 'bg-[#3B7AB4] text-white' : 'bg-gray-100 text-gray-700'
+                  page === p ? 'bg-[#00A651] text-white' : 'bg-white/10 text-white/70'
                 }`}
               >
-                {t(p === 'new-request' ? 'newRequest' : p)}
+                {p === 'new-request' ? t('newRequest') : p === 'contracts' ? 'Contrats' : t(p)}
               </button>
             ))}
           </nav>
@@ -1217,7 +1935,8 @@ export default function CustomerPortal() {
         {page === 'dashboard' && (
           <Dashboard 
             profile={profile} 
-            requests={requests} 
+            requests={requests}
+            contracts={contracts}
             t={t} 
             setPage={setPage}
             setSelectedRequest={setSelectedRequest}
@@ -1278,6 +1997,15 @@ export default function CustomerPortal() {
             setPage={setPage}
           />
         )}
+        
+        {page === 'contracts' && (
+          <ContractsPage 
+            profile={profile}
+            t={t}
+            notify={notify}
+            setPage={setPage}
+          />
+        )}
       </main>
 
       {/* Footer */}
@@ -1296,7 +2024,7 @@ export default function CustomerPortal() {
 // ============================================
 // DASHBOARD COMPONENT (Enhanced)
 // ============================================
-function Dashboard({ profile, requests, t, setPage, setSelectedRequest, setPreviousPage }) {
+function Dashboard({ profile, requests, contracts, t, setPage, setSelectedRequest, setPreviousPage }) {
   const [messages, setMessages] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'service', 'parts', 'messages'
@@ -1456,14 +2184,16 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest, setPrevi
       {/* Overview Tab */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* ACTION REQUIRED - Show at top */}
-          {serviceRequests.filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at).length > 0 && (
+          {/* ACTION REQUIRED - Combined RMA and Contracts */}
+          {(serviceRequests.filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at).length > 0 || 
+            (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0)) && (
             <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4">
               <h3 className="font-bold text-red-800 mb-2 flex items-center gap-2">
                 <span className="animate-pulse">⚠</span> Action requise
               </h3>
               <p className="text-sm text-red-600 mb-3">Les demandes suivantes nécessitent votre attention</p>
               <div className="space-y-2">
+                {/* RMA Requests */}
                 {serviceRequests
                   .filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at)
                   .map(req => (
@@ -1480,6 +2210,27 @@ function Dashboard({ profile, requests, t, setPage, setSelectedRequest, setPrevi
                           : req.status === 'inspection_complete' || req.status === 'quote_sent'
                           ? 'Approuver le devis'
                           : 'Action requise'}
+                      </span>
+                    </div>
+                    <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
+                      Agir →
+                    </span>
+                  </div>
+                ))}
+                {/* Contract Quotes */}
+                {contracts && contracts
+                  .filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected')
+                  .map(contract => (
+                  <div 
+                    key={contract.id}
+                    onClick={() => setPage('contracts')}
+                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-100 border border-red-200"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-blue-500">📋</span>
+                      <span className="font-mono font-bold text-red-700">{contract.contract_number || 'Nouveau Contrat'}</span>
+                      <span className="text-sm text-red-600">
+                        {contract.status === 'quote_sent' ? 'Approuver le devis contrat' : 'Resoumettre BC contrat'}
                       </span>
                     </div>
                     <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
@@ -1862,6 +2613,12 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
   const [selectedThread, setSelectedThread] = useState(null);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  // Scroll to bottom of messages
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   // Group messages by request
   const messagesByRequest = requests.map(req => {
@@ -1918,14 +2675,17 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
         request_id: selectedThread.request.id,
         sender_id: profile.id,
         sender_type: 'customer',
+        sender_name: profile.full_name || 'Client',
         content: newMessage.trim()
       })
       .select()
       .single();
     
     if (!error && data) {
-      setMessages([data, ...messages]);
+      setMessages(prevMessages => [data, ...prevMessages]);
       setNewMessage('');
+      // Scroll to bottom after sending
+      setTimeout(scrollToBottom, 100);
     }
     setSending(false);
   };
@@ -1933,14 +2693,23 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
   const openThread = (thread) => {
     setSelectedThread(thread);
     markAsRead(thread.request.id);
+    // Scroll to bottom when opening thread
+    setTimeout(scrollToBottom, 100);
   };
+
+  // Scroll to bottom when selected thread changes
+  useEffect(() => {
+    if (selectedThread) {
+      setTimeout(scrollToBottom, 100);
+    }
+  }, [selectedThread?.request.id]);
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
       <div className="grid md:grid-cols-3 h-[600px]">
         {/* Thread List */}
         <div className="border-r border-gray-100 overflow-y-auto">
-          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 sticky top-0">
             <h3 className="font-bold text-[#1E3A5F]">Conversations</h3>
           </div>
           
@@ -1989,54 +2758,69 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
         </div>
 
         {/* Message Thread */}
-        <div className="md:col-span-2 flex flex-col">
+        <div className="md:col-span-2 flex flex-col h-full overflow-hidden">
           {selectedThread ? (
-            <>
-              {/* Thread Header */}
-              <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
-                <h3 className="font-bold text-[#1E3A5F]">
-                  Demande {selectedThread.request.request_number}
-                </h3>
-                <p className="text-sm text-gray-500">
-                  {selectedThread.request.request_devices?.length || 0} appareil(s) • 
-                  {new Date(selectedThread.request.created_at).toLocaleDateString('fr-FR')}
-                </p>
-              </div>
-
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {selectedThread.messages.length === 0 ? (
-                  <div className="text-center text-gray-400 py-8">
-                    <p>Aucun message pour cette demande</p>
-                    <p className="text-sm">Envoyez un message pour démarrer la conversation</p>
+            (() => {
+              // Get current messages for selected thread from state (not from cached selectedThread)
+              const currentMessages = messages.filter(m => m.request_id === selectedThread.request.id);
+              return (
+                <>
+                  {/* Thread Header */}
+                  <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex-shrink-0">
+                    <h3 className="font-bold text-[#1E3A5F]">
+                      Demande {selectedThread.request.request_number}
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      {selectedThread.request.request_devices?.length || 0} appareil(s) • 
+                      {new Date(selectedThread.request.created_at).toLocaleDateString('fr-FR')}
+                    </p>
                   </div>
-                ) : (
-                  [...selectedThread.messages].reverse().map(msg => (
-                    <div 
-                      key={msg.id}
-                      className={`flex ${msg.sender_id === profile.id ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div className={`max-w-[70%] rounded-lg p-3 ${
-                        msg.sender_id === profile.id 
-                          ? 'bg-[#3B7AB4] text-white' 
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        <p className="text-sm">{msg.content}</p>
-                        <p className={`text-xs mt-1 ${
-                          msg.sender_id === profile.id ? 'text-white/70' : 'text-gray-400'
-                        }`}>
-                          {new Date(msg.created_at).toLocaleString('fr-FR', {
-                            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
-                          })}
-                        </p>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
 
-              {/* Message Input */}
-              <form onSubmit={sendMessage} className="p-4 border-t border-gray-100">
+                  {/* Messages - scrollable area */}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+                    {currentMessages.length === 0 ? (
+                      <div className="text-center text-gray-400 py-8">
+                        <p>Aucun message pour cette demande</p>
+                        <p className="text-sm">Envoyez un message pour démarrer la conversation</p>
+                      </div>
+                    ) : (
+                      [...currentMessages].reverse().map(msg => {
+                        const isMe = msg.sender_id === profile.id;
+                        return (
+                          <div 
+                            key={msg.id}
+                            className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+                          >
+                            <div className={`max-w-[70%] rounded-lg p-3 ${
+                              isMe 
+                                ? 'bg-[#3B7AB4] text-white' 
+                                : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              <div className={`text-xs mb-1 font-medium ${isMe ? 'text-white/70' : 'text-gray-500'}`}>
+                                {isMe ? 'Vous' : (msg.sender_name || 'Lighthouse France')}
+                              </div>
+                              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                              {msg.attachment_url && (
+                                <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isMe ? 'text-white/80 hover:text-white' : 'text-blue-600 hover:underline'}`}>
+                                  📎 {msg.attachment_name || 'Télécharger le fichier'}
+                                </a>
+                              )}
+                              <p className={`text-xs mt-1 ${isMe ? 'text-white/60' : 'text-gray-400'}`}>
+                                {new Date(msg.created_at).toLocaleString('fr-FR', {
+                                  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+                                })}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                    {/* Scroll anchor */}
+                    <div ref={messagesEndRef} />
+                  </div>
+
+              {/* Message Input - fixed at bottom */}
+              <form onSubmit={sendMessage} className="p-4 border-t border-gray-100 flex-shrink-0 bg-white">
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -2055,6 +2839,8 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
                 </div>
               </form>
             </>
+              );
+            })()
           ) : (
             <div className="flex-1 flex items-center justify-center text-gray-400">
               <div className="text-center">
@@ -2073,7 +2859,7 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
 // NEW REQUEST FORM - Type Selection First
 // ============================================
 function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
-  const [requestType, setRequestType] = useState(null); // 'service' or 'parts'
+  const [requestType, setRequestType] = useState(null); // 'service', 'parts', or 'contract'
   
   // If no type selected, show selection screen
   if (!requestType) {
@@ -2083,7 +2869,7 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
         
         <p className="text-gray-600 mb-8">Quel type de demande souhaitez-vous soumettre?</p>
         
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid md:grid-cols-3 gap-6">
           {/* Service Request */}
           <button
             onClick={() => setRequestType('service')}
@@ -2111,6 +2897,20 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
               Commander des pièces de rechange ou consommables pour vos équipements
             </p>
           </button>
+          
+          {/* Contract Request */}
+          <button
+            onClick={() => setRequestType('contract')}
+            className="bg-white rounded-xl p-8 shadow-sm border-2 border-gray-200 hover:border-[#00A651] transition-colors text-left group"
+          >
+            <div className="text-4xl mb-4">📋</div>
+            <h2 className="text-xl font-bold text-[#1E3A5F] mb-2 group-hover:text-[#00A651]">
+              Contrat d'Étalonnage
+            </h2>
+            <p className="text-gray-600 text-sm">
+              Demander un devis pour un contrat annuel d'étalonnage de votre parc d'appareils
+            </p>
+          </button>
         </div>
         
         <button
@@ -2127,6 +2927,20 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
   if (requestType === 'parts') {
     return (
       <PartsOrderForm 
+        profile={profile}
+        addresses={addresses}
+        t={t}
+        notify={notify}
+        refresh={refresh}
+        setPage={setPage}
+        goBack={() => setRequestType(null)}
+      />
+    );
+  }
+  
+  if (requestType === 'contract') {
+    return (
+      <ContractRequestForm 
         profile={profile}
         addresses={addresses}
         t={t}
@@ -2160,7 +2974,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
   const [shipping, setShipping] = useState({ 
     address_id: addresses.find(a => a.is_default)?.id || '',
     showNewForm: false,
-    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' }
+    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' },
+    parcels: 0
   });
   const [saving, setSaving] = useState(false);
 
@@ -2232,6 +3047,10 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     setDevices(devices.map(d => d.id === id ? { ...d, [field]: value } : d));
   };
 
+  const updateDeviceMultiple = (id, updates) => {
+    setDevices(devices.map(d => d.id === id ? { ...d, ...updates } : d));
+  };
+
   const toggleAccessory = (deviceId, accessory) => {
     setDevices(devices.map(d => {
       if (d.id !== deviceId) return d;
@@ -2277,8 +3096,14 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     
     // Validate devices
     for (const d of devices) {
-      if (!d.device_type || !d.model || !d.serial_number || !d.service_type || !d.notes) {
-        notify('Veuillez remplir tous les champs obligatoires pour chaque appareil (type, modèle, n° série, service, notes)', 'error');
+      if (!d.device_type || !d.model || !d.serial_number || !d.service_type) {
+        notify('Veuillez remplir tous les champs obligatoires pour chaque appareil (type, modèle, n° série, service)', 'error');
+        return;
+      }
+      // Notes required only for repair, calibration_repair, or other services
+      const needsNotes = d.service_type === 'repair' || d.service_type === 'calibration_repair' || d.service_type === 'other';
+      if (needsNotes && !d.notes) {
+        notify('Veuillez décrire le problème ou la demande dans les notes pour les réparations', 'error');
         return;
       }
       if (d.brand === 'other' && !d.brand_other) {
@@ -2302,11 +3127,18 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       notify('Veuillez sélectionner ou ajouter une adresse', 'error');
       return;
     }
+    
+    // Validate parcels
+    if (!shipping.parcels || shipping.parcels < 1) {
+      notify('Veuillez indiquer le nombre de colis', 'error');
+      return;
+    }
 
     setSaving(true);
     
     try {
       // No number assigned yet - will get FR-XXXXX after approval
+      // Contract detection happens on admin side when creating quote
       const { data: request, error: reqErr } = await supabase
         .from('service_requests')
         .insert({
@@ -2320,6 +3152,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           problem_description: devices.map(d => `[${d.brand === 'other' ? d.brand_other : 'Lighthouse'}] ${d.model} - ${d.serial_number}\nService: ${d.service_type === 'other' ? d.service_other : d.service_type}\nAccessoires: ${d.accessories.join(', ') || 'Aucun'}\nNotes: ${d.notes}`).join('\n\n---\n\n'),
           urgency: 'normal',
           shipping_address_id: addressId,
+          parcels_count: shipping.parcels || 1,
           status: 'submitted',
           submitted_at: new Date().toISOString()
         })
@@ -2328,18 +3161,18 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
 
       if (reqErr) throw reqErr;
 
-      // Save devices with full details including per-device shipping address
+      // Save devices with full details
       for (const d of devices) {
         await supabase.from('request_devices').insert({
           request_id: request.id,
           serial_number: d.serial_number,
           model_name: d.model,
-          device_type: d.device_type, // NEW: particle_counter, bio_collector, etc.
+          device_type: d.device_type,
           equipment_type: d.brand === 'other' ? d.brand_other : 'Lighthouse',
           service_type: d.service_type === 'other' ? d.service_other : d.service_type,
           notes: d.notes,
           accessories: d.accessories,
-          shipping_address_id: d.shipping_address_id || null // Per-device shipping address
+          shipping_address_id: d.shipping_address_id || null
         });
 
         // Save to equipment if checkbox is checked and not already from saved
@@ -2350,7 +3183,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
             model_name: d.model,
             nickname: d.nickname || null,
             brand: d.brand === 'other' ? d.brand_other : 'Lighthouse',
-            equipment_type: d.device_type || 'particle_counter', // Use selected device type
+            equipment_type: d.device_type || 'particle_counter',
             added_by: profile.id
           }, { onConflict: 'serial_number' });
         }
@@ -2381,6 +3214,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
               key={device.id}
               device={device}
               updateDevice={updateDevice}
+              updateDeviceMultiple={updateDeviceMultiple}
               toggleAccessory={toggleAccessory}
               removeDevice={removeDevice}
               canRemove={devices.length > 1}
@@ -2673,6 +3507,377 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
 }
 
 // ============================================
+// CONTRACT REQUEST FORM
+// ============================================
+function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, goBack }) {
+  const [devices, setDevices] = useState([createContractDevice(1)]);
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [savedEquipment, setSavedEquipment] = useState([]);
+
+  // Load saved equipment on mount
+  useEffect(() => {
+    const loadEquipment = async () => {
+      if (!profile?.company_id) return;
+      const { data } = await supabase
+        .from('equipment')
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      if (data) setSavedEquipment(data);
+    };
+    loadEquipment();
+  }, [profile?.company_id]);
+
+  function createContractDevice(num) {
+    return {
+      id: `contract_device_${Date.now()}_${num}`,
+      num,
+      nickname: '',
+      serial_number: '',
+      model_name: '',
+      device_type: ''
+    };
+  }
+
+  const addDevice = () => {
+    setDevices([...devices, createContractDevice(devices.length + 1)]);
+  };
+
+  const addMultipleDevices = (count) => {
+    const newDevices = [];
+    for (let i = 0; i < count; i++) {
+      newDevices.push(createContractDevice(devices.length + i + 1));
+    }
+    setDevices([...devices, ...newDevices]);
+  };
+
+  const removeDevice = (id) => {
+    if (devices.length === 1) return;
+    setDevices(devices.filter(d => d.id !== id).map((d, i) => ({ ...d, num: i + 1 })));
+  };
+
+  const updateDevice = (id, field, value) => {
+    setDevices(devices.map(d => d.id === id ? { ...d, [field]: value } : d));
+  };
+
+  const updateDeviceMultiple = (id, updates) => {
+    setDevices(devices.map(d => d.id === id ? { ...d, ...updates } : d));
+  };
+
+  // Handle serial number change with auto-decode
+  const handleSerialNumberChange = (deviceId, sn) => {
+    const decoded = decodeSerialNumber(sn);
+    if (decoded) {
+      updateDeviceMultiple(deviceId, {
+        serial_number: sn,
+        model_name: decoded.model,
+        device_type: decoded.category
+      });
+    } else {
+      updateDevice(deviceId, 'serial_number', sn);
+    }
+  };
+
+  // Load from saved equipment
+  const loadFromSaved = (deviceId, equipmentId) => {
+    const equip = savedEquipment.find(e => e.id === equipmentId);
+    if (!equip) return;
+    
+    updateDeviceMultiple(deviceId, {
+      nickname: equip.nickname || '',
+      serial_number: equip.serial_number || '',
+      model_name: equip.model_name || '',
+      device_type: equip.equipment_type || ''
+    });
+  };
+
+  // Load all saved equipment at once
+  const loadAllSavedEquipment = () => {
+    if (!savedEquipment || savedEquipment.length === 0) {
+      notify('Aucun appareil enregistré', 'error');
+      return;
+    }
+    
+    const newDevices = savedEquipment.map((equip, i) => ({
+      id: `contract_device_${Date.now()}_${i + 1}`,
+      num: i + 1,
+      nickname: equip.nickname || '',
+      serial_number: equip.serial_number || '',
+      model_name: equip.model_name || '',
+      device_type: equip.equipment_type || ''
+    }));
+    
+    setDevices(newDevices);
+    notify(`${newDevices.length} appareils chargés`, 'success');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Validate devices
+    for (const d of devices) {
+      if (!d.serial_number || !d.model_name) {
+        notify('Veuillez remplir le numéro de série et le modèle pour chaque appareil', 'error');
+        return;
+      }
+    }
+
+    if (devices.length === 0) {
+      notify('Veuillez ajouter au moins un appareil', 'error');
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      // Generate contract number manually (no RPC needed)
+      const year = new Date().getFullYear();
+      const timestamp = Date.now().toString().slice(-4);
+      const contractNum = `CTR-${year}-${timestamp}`;
+      
+      // Create contract with only columns that exist
+      const { data: contract, error: contractError } = await supabase
+        .from('contracts')
+        .insert({
+          company_id: profile.company_id,
+          status: 'requested',
+          start_date: new Date().toISOString().split('T')[0],
+          end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0]
+        })
+        .select()
+        .single();
+
+      if (contractError) {
+        console.error('Contract insert error:', contractError);
+        throw contractError;
+      }
+
+      // Add devices to contract
+      const deviceInserts = devices.map(d => ({
+        contract_id: contract.id,
+        serial_number: d.serial_number,
+        model_name: d.model_name,
+        device_type: d.device_type,
+        nickname: d.nickname || null,
+        tokens_total: 1,
+        tokens_used: 0
+      }));
+
+      const { error: devicesError } = await supabase
+        .from('contract_devices')
+        .insert(deviceInserts);
+
+      if (devicesError) {
+        console.error('Devices insert error:', devicesError);
+        throw devicesError;
+      }
+
+      notify('Demande de contrat envoyée avec succès!', 'success');
+      await refresh();
+      setPage('dashboard');
+    } catch (err) {
+      console.error('Error creating contract request:', err);
+      notify('Erreur lors de la création de la demande: ' + (err.message || 'Erreur inconnue'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <button 
+        onClick={goBack}
+        className="mb-4 text-gray-500 hover:text-gray-700 flex items-center gap-2"
+      >
+        ← Retour au choix du type
+      </button>
+
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="flex items-center gap-3 mb-6">
+          <span className="text-3xl">📋</span>
+          <div>
+            <h1 className="text-2xl font-bold text-[#1E3A5F]">Demande de Contrat d'Étalonnage</h1>
+            <p className="text-gray-600">Ajoutez tous les appareils que vous souhaitez inclure dans votre contrat annuel</p>
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="mb-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/20">
+          <h3 className="font-bold text-[#1E3A5F] mb-3">Actions Rapides</h3>
+          <div className="flex flex-wrap gap-3">
+            {savedEquipment && savedEquipment.length > 0 && (
+              <button
+                type="button"
+                onClick={loadAllSavedEquipment}
+                className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg text-sm hover:bg-[#1E3A5F]"
+              >
+                📋 Charger tous mes appareils ({savedEquipment.length})
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => addMultipleDevices(5)}
+              className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+            >
+              + Ajouter 5 lignes
+            </button>
+            <button
+              type="button"
+              onClick={() => addMultipleDevices(10)}
+              className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+            >
+              + Ajouter 10 lignes
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          {/* Device Count Summary */}
+          <div className="mb-4 text-sm text-gray-600">
+            <span className="font-bold text-[#1E3A5F]">{devices.length}</span> appareil{devices.length > 1 ? 's' : ''} dans la demande
+          </div>
+
+          {/* Devices Table */}
+          <div className="overflow-x-auto mb-6">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">#</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">Surnom (optionnel)</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">N° de Série *</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">Modèle *</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">Type</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {devices.map((device, idx) => (
+                  <tr key={device.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-3 py-2 border text-center text-sm text-gray-500">{device.num}</td>
+                    <td className="px-2 py-1 border">
+                      <input
+                        type="text"
+                        value={device.nickname}
+                        onChange={e => updateDevice(device.id, 'nickname', e.target.value)}
+                        placeholder="ex: Salle Blanche 1"
+                        className="w-full px-2 py-1 text-sm border-0 focus:ring-1 focus:ring-[#3B7AB4] rounded"
+                      />
+                    </td>
+                    <td className="px-2 py-1 border">
+                      <input
+                        type="text"
+                        value={device.serial_number}
+                        onChange={e => handleSerialNumberChange(device.id, e.target.value)}
+                        placeholder="ex: 2101280015"
+                        className="w-full px-2 py-1 text-sm border-0 focus:ring-1 focus:ring-[#3B7AB4] rounded font-mono"
+                        required
+                      />
+                    </td>
+                    <td className="px-2 py-1 border">
+                      <input
+                        type="text"
+                        value={device.model_name}
+                        onChange={e => updateDevice(device.id, 'model_name', e.target.value)}
+                        placeholder="ex: ApexZ3"
+                        className={`w-full px-2 py-1 text-sm border-0 focus:ring-1 focus:ring-[#3B7AB4] rounded ${
+                          device.model_name ? 'bg-green-50' : ''
+                        }`}
+                        required
+                      />
+                    </td>
+                    <td className="px-2 py-1 border">
+                      <select
+                        value={device.device_type}
+                        onChange={e => updateDevice(device.id, 'device_type', e.target.value)}
+                        className={`w-full px-2 py-1 text-sm border-0 focus:ring-1 focus:ring-[#3B7AB4] rounded ${
+                          device.device_type ? 'bg-green-50' : ''
+                        }`}
+                      >
+                        <option value="">—</option>
+                        <option value="particle_counter">🔬 Compteur Air</option>
+                        <option value="bio_collector">🧫 Bio Collecteur</option>
+                        <option value="liquid_counter">💧 Compteur Liquide</option>
+                        <option value="temp_humidity">🌡️ Temp/Humidité</option>
+                        <option value="other">📦 Autre</option>
+                      </select>
+                    </td>
+                    <td className="px-2 py-1 border text-center">
+                      {devices.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeDevice(device.id)}
+                          className="text-red-500 hover:text-red-700 text-lg"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Add Device Button */}
+          <button
+            type="button"
+            onClick={addDevice}
+            className="mb-6 px-4 py-2 border-2 border-dashed border-gray-300 text-gray-600 rounded-lg w-full hover:border-[#3B7AB4] hover:text-[#3B7AB4]"
+          >
+            + Ajouter un appareil
+          </button>
+
+          {/* Notes */}
+          <div className="mb-6">
+            <label className="block text-sm font-bold text-gray-700 mb-2">
+              Notes / Commentaires (optionnel)
+            </label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Précisions sur votre demande de contrat (fréquence souhaitée, conditions particulières, etc.)"
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
+          </div>
+
+          {/* Info Box */}
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <h4 className="font-bold text-amber-800 mb-2">ℹ️ Comment ça marche?</h4>
+            <ol className="text-sm text-amber-700 list-decimal list-inside space-y-1">
+              <li>Soumettez votre liste d'appareils</li>
+              <li>Notre équipe prépare un devis personnalisé</li>
+              <li>Vous recevez et validez le devis</li>
+              <li>Signez le bon de commande</li>
+              <li>Votre contrat est activé!</li>
+            </ol>
+          </div>
+
+          {/* Submit Buttons */}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setPage('dashboard')}
+              className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008c44] disabled:opacity-50"
+            >
+              {saving ? 'Envoi en cours...' : `Soumettre la demande (${devices.length} appareil${devices.length > 1 ? 's' : ''})`}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
 // SHIPPING SECTION (Reusable)
 // ============================================
 function ShippingSection({ shipping, setShipping, addresses, profile, notify, refresh }) {
@@ -2686,6 +3891,45 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
       <h2 className="text-xl font-bold text-[#1E3A5F] mb-4 pb-4 border-b-2 border-[#E8F2F8]">
         Information de Livraison
       </h2>
+
+      {/* Number of Parcels - FIRST */}
+      <div className="mb-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
+        <label className="block text-sm font-bold text-[#1E3A5F] mb-2">
+          📦 Nombre de colis *
+        </label>
+        <p className="text-sm text-gray-600 mb-3">
+          Indiquez le nombre de colis/boîtes dans lesquels vous enverrez vos appareils.
+        </p>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShipping({ ...shipping, parcels: Math.max(0, (shipping.parcels || 0) - 1) })}
+            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
+          >
+            −
+          </button>
+          <input
+            type="number"
+            min="0"
+            value={shipping.parcels || 0}
+            onChange={e => setShipping({ ...shipping, parcels: Math.max(0, parseInt(e.target.value) || 0) })}
+            className={`w-20 px-3 py-2 text-center border rounded-lg font-bold text-lg ${
+              (shipping.parcels || 0) === 0 ? 'border-red-400 bg-red-50' : 'border-gray-300'
+            }`}
+          />
+          <button
+            type="button"
+            onClick={() => setShipping({ ...shipping, parcels: (shipping.parcels || 0) + 1 })}
+            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
+          >
+            +
+          </button>
+          <span className="text-gray-600 ml-2">colis</span>
+        </div>
+        {(shipping.parcels || 0) === 0 && (
+          <p className="text-red-600 text-sm mt-2 font-medium">⚠️ Veuillez indiquer le nombre de colis</p>
+        )}
+      </div>
 
       {/* Existing Addresses */}
       <div className="mb-4">
@@ -2889,7 +4133,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
 // ============================================
 // DEVICE CARD COMPONENT (Updated)
 // ============================================
-function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRemove, savedEquipment, loadFromSaved, addresses, defaultAddressId }) {
+function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessory, removeDevice, canRemove, savedEquipment, loadFromSaved, addresses, defaultAddressId }) {
   const [charCount, setCharCount] = useState(device.notes.length);
   const [showDifferentAddress, setShowDifferentAddress] = useState(!!device.shipping_address_id);
   const maxChars = 500;
@@ -2898,6 +4142,29 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
     const value = e.target.value.slice(0, maxChars);
     updateDevice(device.id, 'notes', value);
     setCharCount(value.length);
+  };
+
+  // Handle serial number change with auto-decode
+  const handleSerialNumberChange = (e) => {
+    const sn = e.target.value;
+    
+    // Always update the serial number first
+    // Then try to decode if it's a valid Lighthouse serial
+    if (device.brand === 'Lighthouse') {
+      const decoded = decodeSerialNumber(sn);
+      if (decoded) {
+        // Update serial, model, and device_type together
+        updateDeviceMultiple(device.id, {
+          serial_number: sn,
+          model: decoded.model,
+          device_type: decoded.category
+        });
+        return;
+      }
+    }
+    
+    // Just update serial number if no decode
+    updateDevice(device.id, 'serial_number', sn);
   };
 
   return (
@@ -2926,12 +4193,15 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
           onChange={e => {
             if (e.target.value === 'manual') {
               // Clear form for manual entry
-              updateDevice(device.id, 'fromSaved', null);
-              updateDevice(device.id, 'brand', 'Lighthouse');
-              updateDevice(device.id, 'brand_other', '');
-              updateDevice(device.id, 'nickname', '');
-              updateDevice(device.id, 'model', '');
-              updateDevice(device.id, 'serial_number', '');
+              updateDeviceMultiple(device.id, {
+                fromSaved: null,
+                brand: 'Lighthouse',
+                brand_other: '',
+                nickname: '',
+                model: '',
+                serial_number: '',
+                device_type: ''
+              });
             } else if (e.target.value) {
               loadFromSaved(device.id, e.target.value);
             }
@@ -2952,7 +4222,8 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
-        {/* Nickname for saving */}
+        
+        {/* NICKNAME - FIRST */}
         <div className="md:col-span-2">
           <label className="block text-sm font-bold text-gray-700 mb-1">Surnom de l'appareil (optionnel)</label>
           <input
@@ -2965,12 +4236,43 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
           <p className="text-xs text-gray-500 mt-1">Pour identifier facilement cet appareil dans vos futures demandes</p>
         </div>
 
+        {/* SERIAL NUMBER - SECOND */}
+        <div className="md:col-span-2">
+          <label className="block text-sm font-bold text-gray-700 mb-1">N° de Série *</label>
+          <input
+            type="text"
+            value={device.serial_number}
+            onChange={handleSerialNumberChange}
+            placeholder="ex: 2101280015"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-lg font-mono"
+            required
+          />
+          {device.brand === 'Lighthouse' && device.serial_number && decodeSerialNumber(device.serial_number) && (
+            <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+              <span>✓</span> Détecté: {decodeSerialNumber(device.serial_number).model}
+            </p>
+          )}
+        </div>
+
         {/* Brand */}
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-1">Marque *</label>
           <select
             value={device.brand}
-            onChange={e => updateDevice(device.id, 'brand', e.target.value)}
+            onChange={e => {
+              updateDevice(device.id, 'brand', e.target.value);
+              // Re-decode if switching to Lighthouse
+              if (e.target.value === 'Lighthouse' && device.serial_number) {
+                const decoded = decodeSerialNumber(device.serial_number);
+                if (decoded) {
+                  updateDeviceMultiple(device.id, {
+                    brand: 'Lighthouse',
+                    model: decoded.model,
+                    device_type: decoded.category
+                  });
+                }
+              }
+            }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
             required
           >
@@ -2994,13 +4296,15 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
           </div>
         )}
 
-        {/* Device Type - NEW */}
+        {/* Device Type */}
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-1">Type d'Appareil *</label>
           <select
             value={device.device_type}
             onChange={e => updateDevice(device.id, 'device_type', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+            className={`w-full px-3 py-2 border rounded-lg bg-white ${
+              device.device_type ? 'border-green-400 bg-green-50' : 'border-gray-300'
+            }`}
             required
           >
             <option value="">Sélectionner le type</option>
@@ -3008,32 +4312,22 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
             <option value="bio_collector">🧫 Bio Collecteur</option>
             <option value="liquid_counter">💧 Compteur de Particules (Liquide)</option>
             <option value="temp_humidity">🌡️ Capteur Température/Humidité</option>
+            <option value="diluter">🌀 Diluteur de Particules</option>
             <option value="other">📦 Autre</option>
           </select>
         </div>
 
-        {/* Model - always text input */}
+        {/* Model */}
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-1">Modèle *</label>
           <input
             type="text"
             value={device.model}
             onChange={e => updateDevice(device.id, 'model', e.target.value)}
-            placeholder="ex: Solair 3100, ApexZ, etc."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            required
-          />
-        </div>
-
-        {/* Serial Number */}
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">N° de Série *</label>
-          <input
-            type="text"
-            value={device.serial_number}
-            onChange={e => updateDevice(device.id, 'serial_number', e.target.value)}
-            placeholder="ex: 205482857"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            placeholder="ex: Solair 3100, ApexZ3, etc."
+            className={`w-full px-3 py-2 border rounded-lg ${
+              device.model ? 'border-green-400 bg-green-50' : 'border-gray-300'
+            }`}
             required
           />
         </div>
@@ -3070,16 +4364,20 @@ function DeviceCard({ device, updateDevice, toggleAccessory, removeDevice, canRe
           </div>
         )}
 
-        {/* Notes for Technician */}
+        {/* Notes - required only for repair */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-bold text-gray-700 mb-1">Notes pour le Technicien *</label>
+          <label className="block text-sm font-bold text-gray-700 mb-1">
+            Notes / Commentaires {(device.service_type === 'repair' || device.service_type === 'calibration_repair' || device.service_type === 'other') ? '*' : '(optionnel)'}
+          </label>
           <textarea
             value={device.notes}
             onChange={handleNotesChange}
-            placeholder="Décrivez le problème ou le service demandé pour cet appareil..."
+            placeholder={device.service_type === 'repair' || device.service_type === 'calibration_repair' 
+              ? "Décrivez le problème rencontré avec cet appareil..." 
+              : "Informations complémentaires (optionnel)..."}
             rows={4}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
-            required
+            required={device.service_type === 'repair' || device.service_type === 'calibration_repair' || device.service_type === 'other'}
           />
           <p className="text-sm text-gray-500 mt-1">
             {charCount}/{maxChars} caractères
@@ -5318,6 +6616,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         request_id: request.id,
         sender_id: profile.id,
         sender_type: 'customer',
+        sender_name: profile.full_name || 'Client',
         content: newMessage.trim()
       })
       .select()
@@ -5327,6 +6626,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       setMessages([...messages, data]);
       setNewMessage('');
       notify('Message envoyé!');
+    } else if (error) {
+      notify('Erreur: ' + error.message, 'error');
     }
     setSending(false);
   };
@@ -5399,9 +6700,18 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             <div className="mt-4 space-y-3">
               <p className="text-xs text-gray-500 uppercase font-medium">Suivi par appareil</p>
               {(request.request_devices || []).map((device, idx) => {
-                // Each device can have its own status, fallback to RMA status
-                const deviceStatus = device.status || request.status;
                 const deviceServiceType = device.service_type || request.requested_service;
+                
+                // For early steps (before received), use RMA status
+                // For later steps (received onwards), use device status independently
+                const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 
+                                       'bc_pending', 'bc_review', 'waiting_bc', 'waiting_device'];
+                const rmaIsEarly = earlyStatuses.includes(request.status);
+                
+                // If RMA is still in early stages, all devices show RMA status
+                // Once RMA moves past waiting_device, each device tracks independently
+                const effectiveStatus = rmaIsEarly ? request.status : (device.status || request.status);
+                
                 return (
                   <div key={device.id || idx} className="bg-gray-50 rounded-lg p-3">
                     <div className="flex items-center justify-between mb-2">
@@ -5416,7 +6726,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                          deviceServiceType}
                       </span>
                     </div>
-                    <StepProgress status={deviceStatus} serviceType={deviceServiceType} />
+                    <StepProgress status={effectiveStatus} serviceType={deviceServiceType} />
                   </div>
                 );
               })}
@@ -6444,34 +7754,36 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     <p className="text-sm">Envoyez un message à notre équipe</p>
                   </div>
                 ) : (
-                  messages.map(msg => (
-                    <div 
-                      key={msg.id}
-                      className={`flex ${msg.sender_id === profile?.id ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div className={`max-w-[70%] rounded-lg p-3 ${
-                        msg.sender_id === profile?.id 
-                          ? 'bg-[#3B7AB4] text-white' 
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {msg.sender_type !== 'customer' && (
-                          <p className={`text-xs font-medium mb-1 ${
-                            msg.sender_id === profile?.id ? 'text-white/70' : 'text-[#3B7AB4]'
-                          }`}>
-                            Lighthouse France
-                          </p>
-                        )}
-                        <p className="text-sm">{msg.content}</p>
-                        <p className={`text-xs mt-1 ${
-                          msg.sender_id === profile?.id ? 'text-white/70' : 'text-gray-400'
+                  messages.map(msg => {
+                    const isMe = msg.sender_id === profile?.id;
+                    return (
+                      <div 
+                        key={msg.id}
+                        className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div className={`max-w-[70%] rounded-lg p-3 ${
+                          isMe 
+                            ? 'bg-[#3B7AB4] text-white' 
+                            : 'bg-gray-100 text-gray-800'
                         }`}>
-                          {new Date(msg.created_at).toLocaleString('fr-FR', {
-                            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
-                          })}
-                        </p>
+                          <p className={`text-xs font-medium mb-1 ${isMe ? 'text-white/70' : 'text-[#3B7AB4]'}`}>
+                            {isMe ? 'Vous' : (msg.sender_name || 'Lighthouse France')}
+                          </p>
+                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                          {msg.attachment_url && (
+                            <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isMe ? 'text-white/80 hover:text-white' : 'text-blue-600 hover:underline'}`}>
+                              📎 {msg.attachment_name || 'Télécharger le fichier'}
+                            </a>
+                          )}
+                          <p className={`text-xs mt-1 ${isMe ? 'text-white/60' : 'text-gray-400'}`}>
+                            {new Date(msg.created_at).toLocaleString('fr-FR', {
+                              day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
               
@@ -6843,175 +8155,1543 @@ function DeviceHistoryPage({ profile, requests, t, setPage }) {
 }
 
 // ============================================
-// HOME PAGE (Public Landing)
+// CONTRACTS PAGE (Customer View)
 // ============================================
-function HomePage({ t, setPage }) {
-  return (
-    <div className="min-h-screen bg-[#1a1a2e]">
-      {/* Hero Section with Background Image */}
-      <div className="relative min-h-screen overflow-hidden">
-        {/* Background Image */}
-        <div className="absolute inset-0">
-          <img 
-            src="/images/products/hero-background.png" 
-            alt="" 
-            className="w-full h-full object-cover"
-            onError={(e) => { e.target.style.display = 'none'; }}
-          />
-          {/* Dark overlay for readability */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[#1a1a2e]/95 via-[#1a1a2e]/80 to-[#1a1a2e]/60"></div>
-          {/* Subtle gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-br from-[#00A651]/10 via-transparent to-[#3B7AB4]/10"></div>
-        </div>
-        
-        {/* Header - Now integrated into hero */}
-        <header className="relative z-20">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex justify-between items-center">
+function ContractsPage({ profile, t, notify, setPage }) {
+  const [contracts, setContracts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedContract, setSelectedContract] = useState(null);
+  const [contractTab, setContractTab] = useState('details');
+  
+  // IDENTICAL to RMA - Quote and BC state
+  const [showQuoteModal, setShowQuoteModal] = useState(false);
+  const [showRevisionModal, setShowRevisionModal] = useState(false);
+  const [revisionNotes, setRevisionNotes] = useState('');
+  const [showBCModal, setShowBCModal] = useState(false);
+  const [bcFile, setBcFile] = useState(null);
+  const [signatureName, setSignatureName] = useState(profile?.full_name || `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || '');
+  const [luEtApprouve, setLuEtApprouve] = useState('');
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [signatureData, setSignatureData] = useState(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [submittingBC, setSubmittingBC] = useState(false);
+  const [approvingQuote, setApprovingQuote] = useState(false);
+  const canvasRef = useRef(null);
+  
+  const signatureDateDisplay = new Date().toLocaleDateString('fr-FR');
+  
+  // Validation - IDENTICAL to RMA
+  const hasFile = bcFile !== null;
+  const hasSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
+  const isSubmissionValid = signatureName.trim().length > 0 && acceptTerms && (hasFile || hasSignature);
+
+  // Load contracts
+  const loadContracts = useCallback(async () => {
+    if (!profile?.company_id) return;
+    
+    const { data, error } = await supabase
+      .from('contracts')
+      .select('*, contract_devices(*), companies(*)')
+      .eq('company_id', profile.company_id)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error loading contracts:', error);
+    } else {
+      setContracts(data || []);
+    }
+    setLoading(false);
+  }, [profile?.company_id]);
+
+  useEffect(() => {
+    loadContracts();
+  }, [loadContracts]);
+
+  // Signature pad functions - IDENTICAL to RMA
+  const startDrawing = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setIsDrawing(true);
+  };
+
+  const draw = (e) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#1E3A5F';
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    if (isDrawing && canvasRef.current) {
+      setSignatureData(canvasRef.current.toDataURL());
+    }
+    setIsDrawing(false);
+  };
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    setSignatureData(null);
+  };
+
+  // Request revision - IDENTICAL to RMA
+  const handleRequestRevision = async () => {
+    if (!revisionNotes.trim() || !selectedContract) return;
+    
+    setApprovingQuote(true);
+    const { error } = await supabase.from('contracts').update({
+      status: 'quote_revision_requested',
+      quote_revision_notes: revisionNotes,
+      quote_revision_requested_at: new Date().toISOString()
+    }).eq('id', selectedContract.id);
+    
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('✅ Demande de modification envoyée!', 'success');
+      setShowRevisionModal(false);
+      setShowQuoteModal(false);
+      setRevisionNotes('');
+      loadContracts();
+    }
+    setApprovingQuote(false);
+  };
+
+  // Submit BC - COPIED FROM RMA (working version)
+  const submitBonCommande = async () => {
+    // Validation first - exactly like RMA
+    if (!acceptTerms) {
+      notify('Veuillez accepter les conditions générales', 'error');
+      return;
+    }
+    if (!signatureName.trim()) {
+      notify('Veuillez entrer votre nom', 'error');
+      return;
+    }
+    
+    // Need either file OR signature
+    const hasValidSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
+    if (!bcFile && !hasValidSignature) {
+      notify('Veuillez télécharger un bon de commande OU signer électroniquement', 'error');
+      return;
+    }
+    
+    if (!selectedContract) return;
+    
+    setSubmittingBC(true);
+    const signatureDateISO = new Date().toISOString();
+    
+    try {
+      // Try to upload BC file if provided (may fail if storage not configured)
+      let fileUrl = null;
+      if (bcFile) {
+        try {
+          const fileName = `bc_contract_${selectedContract.id}_${Date.now()}.${bcFile.name.split('.').pop()}`;
+          const { error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(fileName, bcFile);
+          
+          if (!uploadError) {
+            const { data: publicUrl } = supabase.storage
+              .from('documents')
+              .getPublicUrl(fileName);
+            fileUrl = publicUrl?.publicUrl;
+          }
+        } catch (e) {
+          console.log('File upload skipped - storage not configured');
+        }
+      }
+      
+      // Try to upload signature image (may fail if storage not configured)
+      let signatureUrl = null;
+      if (signatureData) {
+        try {
+          const signatureBlob = await fetch(signatureData).then(r => r.blob());
+          const signatureFileName = `signature_contract_${selectedContract.id}_${Date.now()}.png`;
+          const { error: sigError } = await supabase.storage
+            .from('documents')
+            .upload(signatureFileName, signatureBlob);
+          
+          if (!sigError) {
+            const { data: sigUrl } = supabase.storage
+              .from('documents')
+              .getPublicUrl(signatureFileName);
+            signatureUrl = sigUrl?.publicUrl;
+          }
+        } catch (e) {
+          console.log('Signature upload skipped - storage not configured');
+        }
+      }
+      
+      // Generate signed quote PDF
+      let signedQuotePdfUrl = null;
+      if (hasValidSignature) {
+        try {
+          const pdfBlob = await generateContractQuotePDF({
+            contract: selectedContract,
+            devices: selectedContract.contract_devices || [],
+            totalPrice: (selectedContract.contract_devices || []).reduce((sum, d) => sum + (d.unit_price || 0), 0),
+            totalTokens: (selectedContract.contract_devices || []).reduce((sum, d) => sum + (d.tokens_total || 0), 0),
+            calibrationTypes: [...new Set((selectedContract.contract_devices || []).map(d => d.device_type || 'particle_counter'))],
+            isSigned: true,
+            signatureName: signatureName,
+            signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+            signatureImage: signatureData
+          });
+          
+          const pdfFileName = `devis_signe_contrat_${selectedContract.contract_number}_${Date.now()}.pdf`;
+          const { error: pdfUploadError } = await supabase.storage
+            .from('documents')
+            .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
+          
+          if (!pdfUploadError) {
+            const { data: pdfUrl } = supabase.storage
+              .from('documents')
+              .getPublicUrl(pdfFileName);
+            signedQuotePdfUrl = pdfUrl?.publicUrl;
+            console.log('Signed quote PDF uploaded:', signedQuotePdfUrl);
+          } else {
+            console.log('PDF upload error:', pdfUploadError);
+          }
+        } catch (e) {
+          console.log('Signed quote PDF generation error:', e);
+        }
+      }
+      
+      // Update contract status - exactly like RMA updates service_requests
+      const { error: updateError } = await supabase
+        .from('contracts')
+        .update({ 
+          status: 'bc_pending',
+          bc_submitted_at: new Date().toISOString(),
+          bc_signed_by: signatureName,
+          bc_file_url: fileUrl,
+          signed_quote_url: signedQuotePdfUrl
+        })
+        .eq('id', selectedContract.id);
+      
+      if (updateError) throw updateError;
+      
+      notify('Bon de commande soumis avec succès!');
+      setShowBCModal(false);
+      
+      // Force full page reload to ensure fresh data - exactly like RMA
+      window.location.reload();
+      
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+    
+    setSubmittingBC(false);
+  };
+
+  const getStatusBadge = (status) => {
+    const styles = {
+      requested: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'En attente de devis' },
+      quote_sent: { bg: 'bg-blue-50', text: 'text-blue-700', label: 'Devis envoyé - Action requise' },
+      quote_revision_requested: { bg: 'bg-orange-50', text: 'text-orange-700', label: 'Modification demandée' },
+      bc_pending: { bg: 'bg-blue-50', text: 'text-blue-700', label: 'BC soumis - En vérification' },
+      bc_rejected: { bg: 'bg-red-50', text: 'text-red-700', label: 'BC rejeté - Action requise' },
+      active: { bg: 'bg-green-100', text: 'text-green-700', label: 'Actif' },
+      expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Expiré' },
+      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
+    };
+    const style = styles[status] || styles.requested;
+    return <span className={`px-3 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="w-8 h-8 border-4 border-[#00A651] border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  // ========================================
+  // CONTRACT DETAIL VIEW - IDENTICAL TO RMA
+  // ========================================
+  if (selectedContract) {
+    const contract = selectedContract;
+    const devices = contract.contract_devices || [];
+    const isQuoteSent = contract.status === 'quote_sent';
+    const needsQuoteAction = isQuoteSent && !contract.bc_submitted_at;
+    const totalPrice = devices.reduce((sum, d) => sum + (d.unit_price || 0), 0);
+    const totalTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
+    const usedTokens = devices.reduce((sum, d) => sum + (d.tokens_used || 0), 0);
+    const isActive = contract.status === 'active';
+    
+    // Detect calibration types from devices
+    const calibrationTypes = [...new Set(devices.map(d => d.device_type || 'particle_counter'))];
+    
+    return (
+      <div>
+        <button onClick={() => setSelectedContract(null)} className="mb-4 text-gray-500 hover:text-gray-700 flex items-center gap-2">
+          ← Retour aux contrats
+        </button>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          {/* Header */}
+          <div className="px-6 py-4 bg-[#1E3A5F] text-white">
+            <div className="flex justify-between items-start">
+              <div>
+                <h1 className="text-2xl font-bold">
+                  {contract.contract_number ? `Contrat ${contract.contract_number}` : 'Demande de Contrat'}
+                </h1>
+                <p className="text-white/70">
+                  Période: {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
+                </p>
+              </div>
+              {getStatusBadge(contract.status)}
+            </div>
+          </div>
+          
+          {/* QUOTE ACTION BANNER - Single button to review and approve */}
+          {needsQuoteAction && (
+            <div className="bg-blue-50 border-b border-blue-300 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center">
+                    <span className="text-white text-2xl">💰</span>
+                  </div>
+                  <div>
+                    <p className="font-bold text-blue-800 text-lg">Devis reçu - Action requise</p>
+                    <p className="text-sm text-blue-600">
+                      Consultez le devis et approuvez pour soumettre votre bon de commande
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowQuoteModal(true)}
+                  className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors"
+                >
+                  📋 Consulter et Approuver le Devis
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Quote Revision Requested - IDENTICAL TO RMA */}
+          {contract.status === 'quote_revision_requested' && (
+            <div className="bg-orange-50 border-b border-orange-300 px-6 py-4">
               <div className="flex items-center gap-3">
-                {/* Text-based logo for dark background */}
-                <div className="flex items-center gap-2 text-white">
-                  <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
-                  <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
+                <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center">
+                  <span className="text-orange-600 text-2xl">✏️</span>
+                </div>
+                <div>
+                  <p className="font-bold text-orange-800">Modification en cours</p>
+                  <p className="text-sm text-orange-600">
+                    Votre demande de modification a été envoyée. Vous recevrez un nouveau devis sous peu.
+                  </p>
+                  {contract.quote_revision_notes && (
+                    <div className="mt-2 p-2 bg-white rounded border border-orange-200">
+                      <p className="text-xs text-gray-500">Votre demande :</p>
+                      <p className="text-sm text-gray-700">{contract.quote_revision_notes}</p>
+                    </div>
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-4">
-                <button onClick={() => setPage('login')} className="px-4 py-2 text-white/90 font-medium hover:text-[#00A651] transition-colors">
-                  Connexion
+            </div>
+          )}
+          
+          {/* BC Submitted - IDENTICAL TO RMA */}
+          {contract.status === 'bc_pending' && (
+            <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                  <span className="text-blue-600 text-lg">📄</span>
+                </div>
+                <div>
+                  <p className="font-semibold text-blue-800">Bon de commande soumis</p>
+                  <p className="text-sm text-blue-600">
+                    Votre BC est en cours de vérification par notre équipe. Vous serez notifié une fois approuvé.
+                  </p>
+                  {contract.bc_submitted_at && (
+                    <p className="text-xs text-blue-500 mt-1">
+                      Soumis le {new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(contract.bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* BC Rejected - IDENTICAL TO RMA */}
+          {contract.status === 'bc_rejected' && (
+            <div className="bg-red-50 border-b border-red-300 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center">
+                    <span className="text-white text-2xl">❌</span>
+                  </div>
+                  <div>
+                    <p className="font-bold text-red-800 text-lg">Bon de commande rejeté - Action requise</p>
+                    <p className="text-sm text-red-600">
+                      Votre bon de commande a été rejeté. Veuillez corriger et soumettre à nouveau.
+                    </p>
+                    {contract.bc_rejection_reason && (
+                      <div className="mt-2 p-3 bg-white rounded-lg border-2 border-red-300">
+                        <p className="text-xs text-red-600 font-medium uppercase">Raison du rejet :</p>
+                        <p className="text-sm text-red-800 font-medium mt-1">{contract.bc_rejection_reason}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowBCModal(true)}
+                  className="px-6 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors"
+                >
+                  📄 Resoumettre BC
                 </button>
-                <button onClick={() => setPage('register')} className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-all hover:scale-105">
-                  S'inscrire
+              </div>
+            </div>
+          )}
+
+          {/* TABS - Like RMA */}
+          <div className="border-b border-gray-200">
+            <div className="flex">
+              {[
+                { id: 'details', label: 'Détails', icon: '📋' },
+                { id: 'devices', label: 'Appareils', icon: '🔬' },
+                { id: 'documents', label: 'Documents', icon: '📄' },
+                { id: 'history', label: 'Historique', icon: '📜' }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setContractTab(tab.id)}
+                  className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${
+                    contractTab === tab.id
+                      ? 'border-[#00A651] text-[#00A651]'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {tab.icon} {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* TAB CONTENT */}
+          <div className="p-6">
+            {/* DETAILS TAB */}
+            {contractTab === 'details' && (
+              <>
+                {/* Contract Info Card */}
+                <div className="bg-white border rounded-xl p-6 mb-6">
+                  <h3 className="font-bold text-[#1E3A5F] mb-4 text-lg">📋 Informations du Contrat</h3>
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Numéro de contrat</span>
+                        <span className="font-mono font-bold text-[#00A651]">{contract.contract_number || '—'}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Date de début</span>
+                        <span className="font-medium">{new Date(contract.start_date).toLocaleDateString('fr-FR')}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Date de fin</span>
+                        <span className="font-medium">{new Date(contract.end_date).toLocaleDateString('fr-FR')}</span>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Durée</span>
+                        <span className="font-medium">
+                          {Math.round((new Date(contract.end_date) - new Date(contract.start_date)) / (1000 * 60 * 60 * 24 * 30))} mois
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Prix annuel HT</span>
+                        <span className="font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-gray-600">Statut</span>
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                          contract.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {contract.status === 'active' ? '✅ Actif' : contract.status === 'quote_sent' ? '📋 Devis envoyé' : contract.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Devices with their calibration status */}
+                <div className="bg-white border rounded-xl p-6 mb-6">
+                  <h3 className="font-bold text-[#1E3A5F] mb-4 text-lg">🔬 Appareils sous contrat ({devices.length})</h3>
+                  <div className="space-y-4">
+                    {devices.map((device, idx) => {
+                      const deviceUsed = device.tokens_used || 0;
+                      const deviceTotal = device.tokens_total || 1;
+                      const deviceRemaining = deviceTotal - deviceUsed;
+                      const isComplete = deviceUsed >= deviceTotal;
+                      const progressPercent = (deviceUsed / deviceTotal) * 100;
+                      
+                      return (
+                        <div key={device.id} className={`p-4 rounded-xl border-2 ${isComplete ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-white'}`}>
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl ${
+                                isComplete ? 'bg-green-500 text-white' : 'bg-[#1E3A5F] text-white'
+                              }`}>
+                                {device.device_type === 'particle_counter' && '🔬'}
+                                {device.device_type === 'bio_collector' && '🧫'}
+                                {device.device_type === 'liquid_counter' && '💧'}
+                                {device.device_type === 'temp_humidity' && '🌡️'}
+                                {(!device.device_type || device.device_type === 'other') && '📦'}
+                              </div>
+                              <div>
+                                <p className="font-bold text-[#1E3A5F]">{device.model_name || 'Appareil'}</p>
+                                <p className="text-sm text-gray-500">N° Série: {device.serial_number}</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              {isComplete ? (
+                                <span className="px-3 py-1 bg-green-500 text-white rounded-full text-sm font-medium">
+                                  ✅ Étalonnages complets
+                                </span>
+                              ) : (
+                                <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                                  {deviceRemaining} étalonnage{deviceRemaining > 1 ? 's' : ''} restant{deviceRemaining > 1 ? 's' : ''}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* Progress bar for this device */}
+                          <div className="mt-3">
+                            <div className="flex justify-between text-sm mb-1">
+                              <span className="text-gray-600">
+                                {deviceUsed} / {deviceTotal} étalonnage{deviceTotal > 1 ? 's' : ''} effectué{deviceUsed > 1 ? 's' : ''}
+                              </span>
+                              <span className="font-medium">{Math.round(progressPercent)}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div 
+                                className={`h-2 rounded-full transition-all ${isComplete ? 'bg-green-500' : 'bg-[#00A651]'}`}
+                                style={{ width: `${Math.min(progressPercent, 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                          
+                          {/* Price info */}
+                          <div className="mt-3 pt-3 border-t border-gray-200 flex justify-between text-sm">
+                            <span className="text-gray-500">Prix annuel pour cet appareil</span>
+                            <span className="font-bold text-[#00A651]">{(device.unit_price || 0).toFixed(2)} € HT</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                
+                {/* Actions */}
+                {isActive && (
+                  <div className="flex justify-center">
+                    <button
+                      onClick={() => setPage('new-request')}
+                      className="px-8 py-4 bg-[#00A651] text-white rounded-xl font-bold hover:bg-[#008f45] text-lg shadow-lg hover:shadow-xl transition-all"
+                    >
+                      🔬 Créer une demande d'étalonnage
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* DEVICES TAB */}
+            {contractTab === 'devices' && (
+              <>
+                <h3 className="font-bold text-[#1E3A5F] mb-3">Appareils sous contrat ({devices.length})</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="bg-[#1E3A5F] text-white">
+                        <th className="px-4 py-3 text-left text-xs font-bold">Modèle</th>
+                        <th className="px-4 py-3 text-left text-xs font-bold">N° Série</th>
+                        <th className="px-4 py-3 text-left text-xs font-bold">Type</th>
+                        <th className="px-4 py-3 text-center text-xs font-bold">Étal. inclus/an</th>
+                        <th className="px-4 py-3 text-center text-xs font-bold">Effectués</th>
+                        <th className="px-4 py-3 text-center text-xs font-bold">Restants</th>
+                        <th className="px-4 py-3 text-center text-xs font-bold">Statut</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {devices.map((device, idx) => {
+                        const deviceUsed = device.tokens_used || 0;
+                        const deviceTotal = device.tokens_total || 1;
+                        const deviceRemaining = deviceTotal - deviceUsed;
+                        const isComplete = deviceUsed >= deviceTotal;
+                        
+                        return (
+                          <tr key={device.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="px-4 py-3 font-medium">{device.model_name || '—'}</td>
+                            <td className="px-4 py-3 font-mono text-xs">{device.serial_number}</td>
+                            <td className="px-4 py-3 text-sm">
+                              {device.device_type === 'particle_counter' && '🔬 Compteur Particules'}
+                              {device.device_type === 'bio_collector' && '🧫 Bio Collecteur'}
+                              {device.device_type === 'liquid_counter' && '💧 Compteur Liquide'}
+                              {device.device_type === 'temp_humidity' && '🌡️ Temp/Humidité'}
+                              {(!device.device_type || device.device_type === 'other') && '📦 Autre'}
+                            </td>
+                            <td className="px-4 py-3 text-center font-bold">{deviceTotal}</td>
+                            <td className="px-4 py-3 text-center">
+                              <span className="text-green-600 font-bold">{deviceUsed}</span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={`font-bold ${deviceRemaining > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                                {deviceRemaining}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              {isComplete ? (
+                                <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                  ✅ Complet
+                                </span>
+                              ) : (
+                                <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">
+                                  ⏳ En cours
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                
+                {/* Summary */}
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg flex justify-between items-center">
+                  <span className="text-gray-600">Total pour cette période:</span>
+                  <div className="flex gap-6">
+                    <span><strong className="text-green-600">{usedTokens}</strong> effectués</span>
+                    <span><strong className="text-blue-600">{totalTokens - usedTokens}</strong> restants</span>
+                    <span><strong className="text-gray-800">{totalTokens}</strong> inclus</span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* DOCUMENTS TAB */}
+            {contractTab === 'documents' && (
+              <>
+                <h3 className="font-bold text-[#1E3A5F] mb-3">Documents</h3>
+                <div className="space-y-3">
+                  {/* Original Quote - viewable */}
+                  {contract.quote_sent_at && (
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                          <span className="text-blue-600">📄</span>
+                        </div>
+                        <div>
+                          <p className="font-medium">Devis Contrat</p>
+                          <p className="text-xs text-gray-500">
+                            Envoyé le {new Date(contract.quote_sent_at).toLocaleDateString('fr-FR')}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setShowQuoteModal(true)}
+                        className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600"
+                      >
+                        👁️ Voir
+                      </button>
+                    </div>
+                  )}
+                  
+                  {/* Signed Quote PDF */}
+                  {contract.signed_quote_url && (
+                    <a 
+                      href={contract.signed_quote_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors border border-green-200"
+                    >
+                      <div className="w-12 h-12 bg-green-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                        PDF
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-green-800">Devis Signé</p>
+                        <p className="text-xs text-green-600">
+                          Signé le {contract.bc_submitted_at ? new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR') : '—'}
+                          {contract.bc_signed_by && ` par ${contract.bc_signed_by}`}
+                        </p>
+                      </div>
+                      <div className="text-green-500">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </div>
+                    </a>
+                  )}
+                  
+                  {/* BC File (uploaded purchase order) */}
+                  {contract.bc_file_url && (
+                    <a 
+                      href={contract.bc_file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors border border-purple-200"
+                    >
+                      <div className="w-12 h-12 bg-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                        BC
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-purple-800">Bon de Commande</p>
+                        <p className="text-xs text-purple-600">Document uploadé</p>
+                      </div>
+                      <div className="text-purple-500">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </div>
+                    </a>
+                  )}
+                  
+                  {/* No documents message */}
+                  {!contract.quote_sent_at && !contract.bc_submitted_at && (
+                    <div className="text-center py-8 text-gray-500">
+                      <p className="text-4xl mb-2">📭</p>
+                      <p>Aucun document disponible</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* HISTORY TAB */}
+            {contractTab === 'history' && (
+              <>
+                <h3 className="font-bold text-[#1E3A5F] mb-3">Historique</h3>
+                <div className="space-y-3">
+                  {/* Build history from contract data */}
+                  {contract.bc_approved_at && (
+                    <div className="flex items-start gap-3 p-3 bg-green-50 rounded-lg">
+                      <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-sm">✓</span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-green-800">Contrat activé</p>
+                        <p className="text-xs text-green-600">{new Date(contract.bc_approved_at).toLocaleString('fr-FR')}</p>
+                      </div>
+                    </div>
+                  )}
+                  {contract.bc_submitted_at && (
+                    <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
+                      <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-sm">📄</span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-blue-800">BC soumis</p>
+                        <p className="text-xs text-blue-600">{new Date(contract.bc_submitted_at).toLocaleString('fr-FR')}</p>
+                      </div>
+                    </div>
+                  )}
+                  {contract.quote_sent_at && (
+                    <div className="flex items-start gap-3 p-3 bg-purple-50 rounded-lg">
+                      <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-sm">📧</span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-purple-800">Devis envoyé</p>
+                        <p className="text-xs text-purple-600">{new Date(contract.quote_sent_at).toLocaleString('fr-FR')}</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                    <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <span className="text-white text-sm">🆕</span>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-800">Demande créée</p>
+                      <p className="text-xs text-gray-600">{new Date(contract.created_at).toLocaleString('fr-FR')}</p>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+        
+        {/* ========================================
+            BC SUBMISSION MODAL - IDENTICAL TO RMA
+            ======================================== */}
+        {showBCModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold text-[#1E3A5F]">Soumettre Bon de Commande</h2>
+                  <button onClick={() => setShowBCModal(false)} className="text-gray-400 hover:text-gray-600">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                {/* Reference */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-500">Référence contrat</p>
+                  <p className="font-mono font-bold text-[#1E3A5F]">{contract.contract_number || 'En attente'}</p>
+                </div>
+
+                {/* File Upload */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Télécharger votre Bon de Commande (optionnel)
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#3B7AB4] transition-colors">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      onChange={(e) => setBcFile(e.target.files?.[0] || null)}
+                      className="hidden"
+                      id="contract-bc-file-input"
+                    />
+                    <label htmlFor="contract-bc-file-input" className="cursor-pointer">
+                      {bcFile ? (
+                        <div className="flex items-center justify-center gap-2 text-[#3B7AB4]">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="font-medium">{bcFile.name}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <svg className="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                          <p className="text-sm text-gray-600">Cliquez pour télécharger ou glissez-déposez</p>
+                          <p className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX, JPG, PNG (max 10MB)</p>
+                        </>
+                      )}
+                    </label>
+                  </div>
+                </div>
+
+                {/* OR Divider */}
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 h-px bg-gray-200"></div>
+                  <span className="text-sm text-gray-500">ou</span>
+                  <div className="flex-1 h-px bg-gray-200"></div>
+                </div>
+
+                {/* Electronic Signature */}
+                <div className="bg-[#F5F9FC] rounded-lg p-4 border border-[#3B7AB4]/20">
+                  <h3 className="font-semibold text-[#1E3A5F] mb-4">Signature électronique</h3>
+                  
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Nom complet du signataire *
+                        </label>
+                        <input
+                          type="text"
+                          value={signatureName}
+                          onChange={(e) => setSignatureName(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
+                          placeholder="Prénom et Nom"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Date
+                        </label>
+                        <input
+                          type="text"
+                          value={signatureDateDisplay}
+                          readOnly
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Tapez "Lu et approuvé" *
+                      </label>
+                      <input
+                        type="text"
+                        value={luEtApprouve}
+                        onChange={(e) => setLuEtApprouve(e.target.value)}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent font-medium ${
+                          luEtApprouve.toLowerCase().trim() === 'lu et approuvé' 
+                            ? 'border-green-500 bg-green-50 text-green-800' 
+                            : 'border-gray-300'
+                        }`}
+                        placeholder="Lu et approuvé"
+                      />
+                    </div>
+                    
+                    {/* Signature Pad */}
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Signature manuscrite *
+                        </label>
+                        <button
+                          type="button"
+                          onClick={clearSignature}
+                          className="text-xs text-red-600 hover:text-red-700"
+                        >
+                          Effacer
+                        </button>
+                      </div>
+                      <div className={`border-2 rounded-lg bg-white ${signatureData ? 'border-green-500' : 'border-gray-300 border-dashed'}`}>
+                        <canvas
+                          ref={canvasRef}
+                          width={400}
+                          height={150}
+                          className="w-full cursor-crosshair touch-none"
+                          onMouseDown={startDrawing}
+                          onMouseMove={draw}
+                          onMouseUp={stopDrawing}
+                          onMouseLeave={stopDrawing}
+                          onTouchStart={startDrawing}
+                          onTouchMove={draw}
+                          onTouchEnd={stopDrawing}
+                        />
+                      </div>
+                      {!signatureData && (
+                        <p className="text-xs text-gray-500 mt-1">Dessinez votre signature ci-dessus</p>
+                      )}
+                      {signatureData && (
+                        <p className="text-xs text-green-600 mt-1">✓ Signature enregistrée</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Legal Terms */}
+                <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={acceptTerms}
+                      onChange={(e) => setAcceptTerms(e.target.checked)}
+                      className="mt-1 w-4 h-4 text-[#3B7AB4] border-gray-300 rounded focus:ring-[#3B7AB4]"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Je soussigné(e), <strong>{signatureName || '[Nom]'}</strong>, 
+                      certifie avoir pris connaissance et accepter les conditions générales de vente de Lighthouse France. 
+                      Je m'engage à régler la facture correspondante selon les modalités convenues. 
+                      Cette validation électronique a valeur de signature manuscrite conformément aux articles 1366 et 1367 du Code civil français.
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-6 border-t border-gray-200 bg-gray-50 flex gap-3">
+                <button
+                  onClick={() => setShowBCModal(false)}
+                  className="flex-1 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={submitBonCommande}
+                  disabled={submittingBC || !isSubmissionValid}
+                  className={`flex-1 py-3 rounded-lg font-medium transition-colors ${
+                    isSubmissionValid 
+                      ? 'bg-[#1E3A5F] text-white hover:bg-[#2a4a6f]' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  {submittingBC ? 'Envoi en cours...' : 'Valider et soumettre'}
                 </button>
               </div>
             </div>
           </div>
+        )}
+
+        {/* ========================================
+            QUOTE REVIEW MODAL - Contract Style matching Admin
+            ======================================== */}
+        {showQuoteModal && (() => {
+          // Group devices by type for proper layout
+          const devicesByType = {};
+          devices.forEach(d => {
+            const type = d.device_type || 'particle_counter';
+            if (!devicesByType[type]) devicesByType[type] = [];
+            devicesByType[type].push(d);
+          });
+          
+          return (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
+                <div>
+                  <h2 className="text-xl font-bold">Offre de Prix - Contrat d'Étalonnage</h2>
+                  <p className="text-gray-400">{contract.contract_number}</p>
+                </div>
+                <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
+              </div>
+
+              {/* Quote Document - This prints */}
+              <div id="contract-quote-print-content">
+                {/* Quote Header */}
+                <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <img 
+                        src="/images/logos/lighthouse-logo.png" 
+                        alt="Lighthouse France" 
+                        className="h-14 w-auto mb-1"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'block';
+                        }}
+                      />
+                      <div className="hidden">
+                        <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
+                        <p className="text-gray-500">Worldwide Solutions</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
+                      <p className="text-gray-500">N° {contract.contract_number}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Info Bar */}
+                <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Date</p>
+                    <p className="font-medium">{contract.quote_sent_at ? new Date(contract.quote_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Période du Contrat</p>
+                    <p className="font-medium">{new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Validité Devis</p>
+                    <p className="font-medium">30 jours</p>
+                  </div>
+                </div>
+
+                {/* Client Info */}
+                <div className="px-8 py-4 border-b">
+                  <p className="text-xs text-gray-500 uppercase">Client</p>
+                  <p className="font-bold text-xl text-[#1a1a2e]">{contract.companies?.name}</p>
+                  {contract.companies?.billing_address && <p className="text-gray-600">{contract.companies?.billing_address}</p>}
+                  <p className="text-gray-600">{contract.companies?.billing_postal_code} {contract.companies?.billing_city}</p>
+                </div>
+
+                {/* SERVICE SECTIONS BY DEVICE TYPE - Matching Admin Layout */}
+                {Object.entries(devicesByType).map(([type, typeDevices]) => {
+                  const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.particle_counter;
+                  const typeSubtotal = typeDevices.reduce((sum, d) => sum + (d.unit_price || 0), 0);
+                  const typeTokens = typeDevices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
+                  
+                  return (
+                    <div key={type} className="border-b">
+                      {/* Type Header with green background */}
+                      <div className="bg-[#00A651] text-white px-8 py-3">
+                        <h3 className="font-bold text-lg flex items-center gap-2">
+                          <span>{template.icon}</span> {template.title}
+                        </h3>
+                      </div>
+                      
+                      {/* Prestations */}
+                      <div className="px-8 py-4 bg-gray-50">
+                        <p className="text-xs text-gray-500 uppercase mb-2">Prestations Incluses</p>
+                        <ul className="space-y-1">
+                          {template.prestations.map((p, i) => (
+                            <li key={i} className="text-gray-700 flex items-start gap-2 text-sm">
+                              <span className="text-green-600 mt-0.5">✓</span>
+                              <span>{p}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      
+                      {/* Devices Table for this type */}
+                      <div className="px-8 py-4">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b-2 border-gray-300">
+                              <th className="px-2 py-2 text-left font-bold text-gray-700">Appareil</th>
+                              <th className="px-2 py-2 text-left font-bold text-gray-700">N° Série</th>
+                              <th className="px-2 py-2 text-center font-bold text-gray-700">Étal./an</th>
+                              <th className="px-2 py-2 text-right font-bold text-gray-700">Prix HT</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {typeDevices.map((device, i) => (
+                              <tr key={device.id} className="border-b border-gray-100">
+                                <td className="px-2 py-2 font-medium">{device.model_name || '—'}</td>
+                                <td className="px-2 py-2 font-mono text-xs">{device.serial_number || '—'}</td>
+                                <td className="px-2 py-2 text-center">{device.tokens_total || 1}</td>
+                                <td className="px-2 py-2 text-right font-medium">{(device.unit_price || 0).toFixed(2)} €</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t-2 border-gray-300 bg-gray-50">
+                              <td colSpan={2} className="px-2 py-2 font-bold">Sous-total {template.title}</td>
+                              <td className="px-2 py-2 text-center font-bold">{typeTokens} étal.</td>
+                              <td className="px-2 py-2 text-right font-bold text-[#00A651]">{typeSubtotal.toFixed(2)} €</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* TOTAL CONTRACT */}
+                <div className="px-8 py-6 bg-[#1E3A5F]">
+                  <div className="flex justify-between items-center text-white">
+                    <div>
+                      <p className="text-xl font-bold">TOTAL CONTRAT ANNUEL HT</p>
+                      <p className="text-sm text-white/70">{totalTokens} étalonnage(s) inclus pendant la période du contrat</p>
+                    </div>
+                    <p className="text-4xl font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</p>
+                  </div>
+                </div>
+
+                {/* Contract Conditions */}
+                <div className="px-8 py-4 border-t">
+                  <p className="text-xs text-gray-500 uppercase mb-2">Conditions du Contrat</p>
+                  <ul className="text-xs text-gray-600 space-y-1">
+                    <li>• Validité du contrat: {new Date(contract.start_date).toLocaleDateString('fr-FR')} au {new Date(contract.end_date).toLocaleDateString('fr-FR')}</li>
+                    <li>• {totalTokens} étalonnage(s) inclus à utiliser pendant la période contractuelle</li>
+                    <li>• Étalonnages supplémentaires facturés au tarif standard en vigueur</li>
+                    <li>• Frais de port inclus (France métropolitaine)</li>
+                    <li>• Paiement à 30 jours date de facture</li>
+                  </ul>
+                </div>
+
+                {/* Signature Section */}
+                <div className="px-8 py-6 border-t flex justify-between items-end">
+                  <div className="flex items-end gap-6">
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
+                      <p className="font-bold text-lg">{contract.quote_data?.createdBy || 'Lighthouse France'}</p>
+                      <p className="text-gray-600">Lighthouse France</p>
+                    </div>
+                    <img 
+                      src="/images/logos/capcert-logo.png" 
+                      alt="Capcert Certification" 
+                      className="h-20 w-auto"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  </div>
+                  
+                  {contract.bc_submitted_at ? (
+                    <div className="text-right">
+                      <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+                        <p className="text-xs text-green-600 uppercase mb-1">Approuvé</p>
+                        <p className="font-bold text-green-800">{contract.bc_signed_by || 'Client'}</p>
+                        <p className="text-sm text-green-700">
+                          {contract.bc_signature_date 
+                            ? new Date(contract.bc_signature_date).toLocaleDateString('fr-FR')
+                            : new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR')}
+                        </p>
+                        {contract.bc_signature_url && (
+                          <img src={contract.bc_signature_url} alt="Signature" className="max-h-16 mt-2" />
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-right">
+                      <p className="text-xs text-gray-400 mb-1">Signature client</p>
+                      <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+                      <p className="text-xs text-gray-400 mt-1">Lu et approuvé</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
+                  <p className="font-medium">Lighthouse France SAS</p>
+                  <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+                </div>
+              </div>
+
+              {/* Action Buttons - IDENTICAL TO RMA */}
+              <div className="print-hide sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex flex-wrap gap-3 justify-between items-center">
+                <div className="flex gap-2">
+                  <button onClick={async () => {
+                    try {
+                      const pdfBlob = await generateContractQuotePDF({
+                        contract,
+                        devices,
+                        totalPrice,
+                        totalTokens,
+                        calibrationTypes: Object.keys(devicesByType),
+                        isSigned: false
+                      });
+                      const url = URL.createObjectURL(pdfBlob);
+                      const printWindow = window.open(url, '_blank');
+                      printWindow.onload = () => {
+                        printWindow.print();
+                      };
+                    } catch (err) {
+                      console.error('Print error:', err);
+                    }
+                  }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
+                    🖨️ Imprimer
+                  </button>
+                  <button onClick={async () => {
+                    try {
+                      const pdfBlob = await generateContractQuotePDF({
+                        contract,
+                        devices,
+                        totalPrice,
+                        totalTokens,
+                        calibrationTypes: Object.keys(devicesByType),
+                        isSigned: false
+                      });
+                      const url = URL.createObjectURL(pdfBlob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `Devis_Contrat_${contract.contract_number}.pdf`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    } catch (err) {
+                      console.error('PDF error:', err);
+                    }
+                  }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
+                    📥 Télécharger PDF
+                  </button>
+                </div>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => setShowRevisionModal(true)}
+                    className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium"
+                  >
+                    ✏️ Demander modification
+                  </button>
+                  <button 
+                    onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
+                    className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold"
+                  >
+                    ✅ Approuver et soumettre BC
+                  </button>
+                </div>
+              </div>
+
+              {/* Revision Request Sub-Modal */}
+              {showRevisionModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
+                  <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-xl font-bold text-gray-800 mb-4">Demander une modification</h3>
+                    <p className="text-gray-600 mb-4">Décrivez les modifications que vous souhaitez apporter au devis :</p>
+                    <textarea
+                      value={revisionNotes}
+                      onChange={e => setRevisionNotes(e.target.value)}
+                      className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                      placeholder="Ex: Veuillez ajouter un appareil supplémentaire, modifier le prix, retirer les frais de transport, etc."
+                    />
+                    <div className="mt-4 flex justify-end gap-3">
+                      <button onClick={() => setShowRevisionModal(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+                        Annuler
+                      </button>
+                      <button 
+                        onClick={handleRequestRevision}
+                        disabled={approvingQuote || !revisionNotes.trim()}
+                        className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50"
+                      >
+                        {approvingQuote ? 'Envoi...' : 'Envoyer la demande'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          );
+        })()}
+      </div>
+    );
+  }
+
+  // ========================================
+  // CONTRACTS LIST VIEW
+  // ========================================
+  const pendingQuotes = contracts.filter(c => c.status === 'quote_sent');
+  
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-[#1E3A5F]">Mes Contrats</h1>
+        <button 
+          onClick={() => setPage('new-request')}
+          className="px-4 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008c44]"
+        >
+          + Nouveau Contrat
+        </button>
+      </div>
+      
+      {/* Pending Quotes Alert - IDENTICAL styling to RMA */}
+      {pendingQuotes.length > 0 && (
+        <div className="mb-6 p-4 bg-blue-50 border-2 border-blue-300 rounded-xl">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center text-2xl text-white">💰</div>
+            <div>
+              <h3 className="font-bold text-blue-800">{pendingQuotes.length} devis en attente d'approbation</h3>
+              <p className="text-blue-600 text-sm">Cliquez sur un contrat pour voir et approuver le devis</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {contracts.length === 0 ? (
+        <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-100 text-center">
+          <div className="text-4xl mb-4">📋</div>
+          <h2 className="text-xl font-bold text-[#1E3A5F] mb-2">Aucun contrat</h2>
+          <p className="text-gray-600 mb-4">
+            Vous n'avez pas encore de contrat d'étalonnage. Demandez un devis pour bénéficier de tarifs préférentiels.
+          </p>
+          <button 
+            onClick={() => setPage('new-request')}
+            className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008c44]"
+          >
+            Demander un devis contrat
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {contracts.map(contract => {
+            const devices = contract.contract_devices || [];
+            const totalTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
+            const usedTokens = devices.reduce((sum, d) => sum + (d.tokens_used || 0), 0);
+            const remainingTokens = totalTokens - usedTokens;
+            const needsAction = contract.status === 'quote_sent' || contract.status === 'bc_rejected';
+            
+            return (
+              <div 
+                key={contract.id}
+                onClick={() => setSelectedContract(contract)}
+                className={`bg-white rounded-xl p-6 shadow-sm border-2 cursor-pointer transition-colors ${
+                  needsAction 
+                    ? 'border-blue-400 bg-blue-50/30 hover:border-blue-500' 
+                    : 'border-gray-100 hover:border-[#3B7AB4]'
+                }`}
+              >
+                {needsAction && (
+                  <div className="mb-3 flex items-center gap-2 text-blue-600">
+                    <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                    <span className="text-sm font-bold">
+                      <span className="animate-pulse">⚠</span> Action requise
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="font-bold text-[#1E3A5F] text-lg">{contract.contract_number || 'Demande en cours'}</h3>
+                    <p className="text-sm text-gray-600">
+                      {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
+                    </p>
+                  </div>
+                  {getStatusBadge(contract.status)}
+                </div>
+                
+                <div className="flex gap-6 text-sm">
+                  <div>
+                    <span className="text-gray-500">Appareils:</span>{' '}
+                    <span className="font-bold">{devices.length}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Étalonnages:</span>{' '}
+                    <span className={`font-bold ${remainingTokens <= 0 ? 'text-red-600' : remainingTokens <= devices.length ? 'text-amber-600' : 'text-green-600'}`}>
+                      {remainingTokens}/{totalTokens}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// HOME PAGE (Public Landing)
+// ============================================
+function HomePage({ t, setPage }) {
+  return (
+    <div className="min-h-screen">
+      {/* Fixed Background - stays in place while content scrolls */}
+      <div className="fixed inset-0 z-0">
+        <img 
+          src="/images/products/hero-background.png" 
+          alt="" 
+          className="w-full h-full object-cover"
+          onError={(e) => { e.target.style.display = 'none'; }}
+        />
+        {/* Dark overlay */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e]/90 via-[#1a1a2e]/80 to-[#1a1a2e]/70"></div>
+        {/* Subtle color overlay */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#00A651]/5 via-transparent to-[#3B7AB4]/5"></div>
+      </div>
+
+      {/* Scrollable Content */}
+      <div className="relative z-10">
+        {/* Header */}
+        <header className="sticky top-0 z-50 bg-[#1a1a2e]/80 backdrop-blur-md border-b border-white/10">
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-10 w-auto invert brightness-0 invert"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+                <div className="items-center gap-2 text-white hidden">
+                  <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                  <span className="font-semibold text-lg text-[#00A651]">FRANCE</span>
+                </div>
+              </div>
+              <div></div>
+            </div>
+          </div>
         </header>
         
-        {/* Hero Content */}
-        <div className="relative z-10 max-w-7xl mx-auto px-6 pt-16 pb-24 md:pt-24 md:pb-32">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            {/* Left: Text Content */}
-            <div className="text-white">
-              <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full mb-6 border border-white/10">
-                <span className="w-2 h-2 bg-[#00A651] rounded-full animate-pulse"></span>
-                <span className="text-sm font-medium">Portail Service Lighthouse France</span>
-              </div>
-              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-                Service &<br/>
-                <span className="text-[#00A651]">Calibration</span> Portal
-              </h1>
-              <p className="text-lg md:text-xl text-white/70 mb-8 max-w-lg leading-relaxed">
-                Gerez vos demandes de calibration et reparation d'equipements de mesure de contamination en temps reel.
-              </p>
-              <div className="flex flex-wrap gap-4">
-                <button onClick={() => setPage('register')} className="px-8 py-4 bg-[#00A651] text-white rounded-xl font-bold text-lg hover:bg-[#008f45] transition-all hover:scale-105 shadow-lg shadow-[#00A651]/25">
-                  Creer un compte
-                </button>
-                <button onClick={() => setPage('login')} className="px-8 py-4 bg-white/10 backdrop-blur-sm border border-white/20 text-white rounded-xl font-bold text-lg hover:bg-white/20 transition-all">
-                  Se connecter
-                </button>
+        {/* Hero Section */}
+        <div className="min-h-[90vh] flex items-center">
+          <div className="max-w-7xl mx-auto px-6 py-12">
+            <div className="grid lg:grid-cols-2 gap-8 items-center">
+              {/* Left: Text Content */}
+              <div className="text-white">
+                <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full mb-6 border border-white/10">
+                  <span className="w-2 h-2 bg-[#00A651] rounded-full animate-pulse"></span>
+                  <span className="text-sm font-medium">Portail Service Lighthouse France</span>
+                </div>
+                <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
+                  Portail de<br/>
+                  <span className="text-[#00A651]">Service</span> & Pieces
+                </h1>
+                <p className="text-lg md:text-xl text-white/70 mb-8 max-w-lg leading-relaxed">
+                  Gerez vos demandes de calibration et reparation d'equipements de mesure de contamination en temps reel.
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  <button onClick={() => setPage('register')} className="px-8 py-4 bg-[#00A651] text-white rounded-xl font-bold text-lg hover:bg-[#008f45] transition-all hover:scale-105 shadow-lg shadow-[#00A651]/25">
+                    Creer un compte
+                  </button>
+                  <button onClick={() => setPage('login')} className="px-8 py-4 bg-white/10 backdrop-blur-sm border border-white/20 text-white rounded-xl font-bold text-lg hover:bg-white/20 transition-all">
+                    Se connecter
+                  </button>
+                </div>
+                
+                {/* Trust indicators */}
+                <div className="flex flex-wrap items-center gap-6 mt-10 pt-8 border-t border-white/10">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-white/70 text-sm">Certifie ISO 9001</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-white/70 text-sm">40+ ans d'expertise</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-white/70 text-sm">Support mondial</span>
+                  </div>
+                </div>
               </div>
               
-              {/* Trust indicators - Fixed */}
-              <div className="flex flex-wrap items-center gap-6 mt-10 pt-8 border-t border-white/10">
-                <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-white/70 text-sm">Certifie ISO 9001</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-white/70 text-sm">40+ ans d'expertise</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5 text-[#00A651]" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-white/70 text-sm">Support mondial</span>
-                </div>
-              </div>
-            </div>
-            
-            {/* Right: Equipment Showcase - Bigger images, no double background */}
-            <div className="relative hidden lg:block">
-              <div className="relative">
-                {/* Main equipment grid */}
+              {/* Right: Equipment Showcase */}
+              <div className="relative hidden lg:block">
                 <div className="bg-white/5 backdrop-blur-md rounded-3xl p-5 border border-white/10">
                   <div className="grid grid-cols-2 gap-3">
-                    {/* Particle Counter */}
-                    <div className="bg-white rounded-2xl p-3 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
-                      <div className="w-full h-36 mb-2 flex items-center justify-center">
+                    {/* Airborne Particle Counter */}
+                    <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
                         <img 
                           src="/images/products/particle-counter.png" 
-                          alt="Particle Counter" 
+                          alt="Airborne Particle Counter" 
                           className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
-                      <p className="text-[#1E3A5F] font-bold text-sm">Compteurs de Particules</p>
-                      <p className="text-gray-500 text-xs">Airborne & Portable</p>
+                      <p className="text-white font-bold text-sm">Compteurs de Particules</p>
+                      <p className="text-white/60 text-xs">Aeroportees</p>
                     </div>
                     
                     {/* Bio Collector */}
-                    <div className="bg-white rounded-2xl p-3 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
-                      <div className="w-full h-36 mb-2 flex items-center justify-center">
+                    <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
                         <img 
                           src="/images/products/bio-collector.png" 
                           alt="Bio Collector" 
                           className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
-                      <p className="text-[#1E3A5F] font-bold text-sm">Bio Collecteurs</p>
-                      <p className="text-gray-500 text-xs">Echantillonneurs Microbiens</p>
+                      <p className="text-white font-bold text-sm">Bio Collecteurs</p>
+                      <p className="text-white/60 text-xs">Echantillonneurs Microbiens</p>
                     </div>
                     
-                    {/* Liquid Counter */}
-                    <div className="bg-white rounded-2xl p-3 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
-                      <div className="w-full h-36 mb-2 flex items-center justify-center">
+                    {/* Liquid Particle Counter */}
+                    <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
                         <img 
                           src="/images/products/liquid-counter.png" 
-                          alt="Liquid Counter" 
+                          alt="Liquid Particle Counter" 
                           className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
-                      <p className="text-[#1E3A5F] font-bold text-sm">Compteurs Liquides</p>
-                      <p className="text-gray-500 text-xs">Analyse de Particules</p>
+                      <p className="text-white font-bold text-sm">Compteurs de Particules</p>
+                      <p className="text-white/60 text-xs">Liquides</p>
                     </div>
                     
-                    {/* Temperature Probe */}
-                    <div className="bg-white rounded-2xl p-3 text-center hover:scale-105 transition-all duration-300 hover:shadow-xl group cursor-pointer">
-                      <div className="w-full h-36 mb-2 flex items-center justify-center">
+                    {/* Temperature & Humidity Probe */}
+                    <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
+                      <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
                         <img 
                           src="/images/products/temp-probe.png" 
-                          alt="Temperature Probe" 
+                          alt="Temperature & Humidity Probe" 
                           className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
-                      <p className="text-[#1E3A5F] font-bold text-sm">Sondes de Temperature</p>
-                      <p className="text-gray-500 text-xs">Capteurs Environnementaux</p>
+                      <p className="text-white font-bold text-sm">Sondes Temperature</p>
+                      <p className="text-white/60 text-xs">& Humidite</p>
                     </div>
                   </div>
                   
-                  {/* "And more" indicator */}
-                  <div className="mt-3 text-center">
-                    <span className="text-white/60 text-sm">+ Systemes de monitoring, capteurs de pression, et plus...</span>
-                  </div>
-                </div>
-                
-                {/* Floating badge */}
-                <div className="absolute -bottom-4 -left-4 bg-white rounded-xl p-4 shadow-2xl border border-gray-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-[#00A651]/10 rounded-full flex items-center justify-center">
-                      <svg className="w-6 h-6 text-[#00A651]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-xl font-bold text-[#1E3A5F]">40+ ans</p>
-                      <p className="text-gray-500 text-sm">d'expertise</p>
-                    </div>
+                  <div className="mt-4 text-center">
+                    <span className="text-white/50 text-sm">+ Systemes de monitoring, capteurs de pression, et plus...</span>
                   </div>
                 </div>
               </div>
@@ -7020,140 +9700,142 @@ function HomePage({ t, setPage }) {
         </div>
         
         {/* Scroll indicator */}
-        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10 hidden md:block">
+        <div className="flex justify-center pb-8">
           <div className="w-6 h-10 border-2 border-white/30 rounded-full flex justify-center">
             <div className="w-1.5 h-3 bg-white/50 rounded-full mt-2 animate-bounce"></div>
           </div>
         </div>
-      </div>
 
-      {/* How It Works - Redesigned */}
-      <div className="py-20 px-6 bg-white">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <span className="text-[#00A651] font-semibold text-sm uppercase tracking-wider">Processus simple</span>
-            <h2 className="text-3xl md:text-4xl font-bold text-[#1E3A5F] mt-2">Comment ca marche</h2>
-          </div>
-          <div className="grid md:grid-cols-4 gap-8 relative">
-            {/* Connection line */}
-            <div className="hidden md:block absolute top-10 left-[12%] right-[12%] h-0.5 bg-gradient-to-r from-[#00A651] via-[#3B7AB4] to-[#00A651]"></div>
-            
-            {[
-              { num: '1', title: 'Creer un compte', desc: 'Enregistrez votre societe et vos coordonnees en quelques minutes' },
-              { num: '2', title: 'Soumettre une demande', desc: 'Detaillez vos equipements et besoins de service' },
-              { num: '3', title: 'Recevoir le devis', desc: 'Obtenez votre devis et numero RMA rapidement' },
-              { num: '4', title: 'Suivre le progres', desc: 'Surveillez l\'etat de vos demandes en temps reel' }
-            ].map((step, i) => (
-              <div key={i} className="text-center relative z-10 group">
-                <div className="w-20 h-20 bg-white border-4 border-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg group-hover:scale-110 transition-transform group-hover:shadow-[#00A651]/30 group-hover:shadow-xl">
-                  <span className="text-2xl font-bold text-[#00A651]">{step.num}</span>
-                </div>
-                <h3 className="font-bold text-[#1E3A5F] text-lg mb-2">{step.title}</h3>
-                <p className="text-gray-600 text-sm leading-relaxed">{step.desc}</p>
+        {/* How It Works - Glassmorphism */}
+        <div className="py-20 px-6">
+          <div className="max-w-6xl mx-auto">
+            <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-10 border border-white/20">
+              <div className="text-center mb-12">
+                <span className="text-[#00A651] font-semibold text-sm uppercase tracking-wider">Processus simple</span>
+                <h2 className="text-3xl md:text-4xl font-bold text-white mt-2">Comment ca marche</h2>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Services Section - Redesigned */}
-      <div className="py-20 px-6 bg-gradient-to-br from-gray-50 to-white">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <span className="text-[#00A651] font-semibold text-sm uppercase tracking-wider">Nos expertises</span>
-            <h2 className="text-3xl md:text-4xl font-bold text-[#1E3A5F] mt-2">Services proposes</h2>
-          </div>
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              { 
-                icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
-                icon2: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z',
-                title: 'Reparation', 
-                desc: 'Reparation experte de compteurs de particules, echantillonneurs microbiens et equipements de monitoring environnemental.',
-                color: '#00A651'
-              },
-              { 
-                icon: 'M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3',
-                title: 'Etalonnage', 
-                desc: 'Calibration selon ISO 21501-4 avec certificats traceables pour garantir precision et conformite reglementaire.',
-                color: '#3B7AB4'
-              },
-              { 
-                icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
-                title: 'Maintenance', 
-                desc: 'Programmes de maintenance preventive pour optimiser la duree de vie et les performances de vos equipements.',
-                color: '#1E3A5F'
-              }
-            ].map((svc, i) => (
-              <div key={i} className="bg-white rounded-2xl p-8 shadow-lg hover:shadow-xl transition-all hover:-translate-y-1 border border-gray-100 group">
-                <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-6 transition-colors" style={{ backgroundColor: `${svc.color}15` }}>
-                  <svg className="w-7 h-7" style={{ color: svc.color }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={svc.icon} />
-                    {svc.icon2 && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={svc.icon2} />}
-                  </svg>
-                </div>
-                <h3 className="font-bold text-[#1E3A5F] text-xl mb-3">{svc.title}</h3>
-                <p className="text-gray-600 leading-relaxed">{svc.desc}</p>
+              <div className="grid md:grid-cols-4 gap-8 relative">
+                {/* Connection lines - positioned between each circle */}
+                <div className="hidden md:block absolute top-10 h-0.5 bg-gradient-to-r from-[#00A651] to-[#3B7AB4]" style={{ left: 'calc(12.5% + 40px)', width: 'calc(25% - 80px)' }}></div>
+                <div className="hidden md:block absolute top-10 h-0.5 bg-[#3B7AB4]" style={{ left: 'calc(37.5% + 40px)', width: 'calc(25% - 80px)' }}></div>
+                <div className="hidden md:block absolute top-10 h-0.5 bg-gradient-to-r from-[#3B7AB4] to-[#00A651]" style={{ left: 'calc(62.5% + 40px)', width: 'calc(25% - 80px)' }}></div>
+                
+                {[
+                  { num: '1', title: 'Creer un compte', desc: 'Enregistrez votre societe et vos coordonnees en quelques minutes' },
+                  { num: '2', title: 'Soumettre une demande', desc: 'Detaillez vos equipements et besoins de service' },
+                  { num: '3', title: 'Recevoir le devis', desc: 'Obtenez votre devis et numero RMA rapidement' },
+                  { num: '4', title: 'Suivre le progres', desc: 'Surveillez l\'etat de vos demandes en temps reel' }
+                ].map((step, i) => (
+                  <div key={i} className="text-center relative z-10 group">
+                    <div className="w-20 h-20 bg-white/10 backdrop-blur-sm border-4 border-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg group-hover:scale-110 transition-transform group-hover:bg-[#00A651]/20">
+                      <span className="text-2xl font-bold text-[#00A651]">{step.num}</span>
+                    </div>
+                    <h3 className="font-bold text-white text-lg mb-2">{step.title}</h3>
+                    <p className="text-white/60 text-sm leading-relaxed">{step.desc}</p>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* CTA Section */}
-      <div className="py-20 px-6 bg-[#1a1a2e] relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10" style={{
-          backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(0,166,81,0.5) 0%, transparent 70%)'
-        }}></div>
-        <div className="max-w-4xl mx-auto text-center relative z-10">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
-            Pret a demarrer ?
-          </h2>
-          <p className="text-xl text-white/70 mb-8 max-w-2xl mx-auto">
-            Rejoignez les entreprises qui font confiance a Lighthouse France pour la maintenance de leurs equipements critiques.
-          </p>
-          <div className="flex flex-wrap gap-4 justify-center">
-            <button onClick={() => setPage('register')} className="px-8 py-4 bg-[#00A651] text-white rounded-lg font-bold text-lg hover:bg-[#008f45] transition-all hover:scale-105 shadow-lg">
-              Creer mon compte gratuitement
-            </button>
-            <button onClick={() => setPage('login')} className="px-8 py-4 bg-white/10 border border-white/30 text-white rounded-lg font-bold text-lg hover:bg-white/20 transition-all">
-              J'ai deja un compte
-            </button>
+        {/* Services Section - Glassmorphism */}
+        <div className="py-20 px-6">
+          <div className="max-w-6xl mx-auto">
+            <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-10 border border-white/20">
+              <div className="text-center mb-12">
+                <span className="text-[#00A651] font-semibold text-sm uppercase tracking-wider">Nos expertises</span>
+                <h2 className="text-3xl md:text-4xl font-bold text-white mt-2">Services proposes</h2>
+              </div>
+              <div className="grid md:grid-cols-3 gap-6">
+                {[
+                  { 
+                    icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
+                    icon2: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z',
+                    title: 'Reparation', 
+                    desc: 'Reparation experte de compteurs de particules, echantillonneurs microbiens et equipements de monitoring environnemental.'
+                  },
+                  { 
+                    icon: 'M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3',
+                    title: 'Etalonnage', 
+                    desc: 'Calibration selon ISO 21501-4 avec certificats traceables pour garantir precision et conformite reglementaire.'
+                  },
+                  { 
+                    icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
+                    title: 'Maintenance', 
+                    desc: 'Programmes de maintenance preventive pour optimiser la duree de vie et les performances de vos equipements.'
+                  }
+                ].map((svc, i) => (
+                  <div key={i} className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-all hover:-translate-y-1 group">
+                    <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-5 bg-[#00A651]/20 group-hover:bg-[#00A651]/30 transition-colors">
+                      <svg className="w-7 h-7 text-[#00A651]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={svc.icon} />
+                        {svc.icon2 && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={svc.icon2} />}
+                      </svg>
+                    </div>
+                    <h3 className="font-bold text-white text-xl mb-3">{svc.title}</h3>
+                    <p className="text-white/60 leading-relaxed text-sm">{svc.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Footer */}
-      <footer className="bg-[#0f0f1a] text-white py-12">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="grid md:grid-cols-3 gap-8 mb-8">
-            <div>
-              <h4 className="font-bold text-lg mb-4">LIGHTHOUSE FRANCE</h4>
-              <p className="text-white/60 text-sm leading-relaxed">
-                Filiale francaise de Lighthouse Worldwide Solutions, leader mondial des solutions de monitoring de contamination.
+        {/* CTA Section - Glassmorphism */}
+        <div className="py-20 px-6">
+          <div className="max-w-4xl mx-auto">
+            <div className="bg-gradient-to-r from-[#00A651]/20 to-[#3B7AB4]/20 backdrop-blur-lg rounded-3xl p-12 border border-white/20 text-center">
+              <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
+                Pret a demarrer ?
+              </h2>
+              <p className="text-xl text-white/70 mb-8 max-w-2xl mx-auto">
+                Rejoignez les entreprises qui font confiance a Lighthouse France pour la maintenance de leurs equipements critiques.
               </p>
-            </div>
-            <div>
-              <h4 className="font-bold text-lg mb-4">Contact</h4>
-              <p className="text-white/60 text-sm">16 Rue Paul Sejourne</p>
-              <p className="text-white/60 text-sm">94000 Creteil, France</p>
-              <p className="text-white/60 text-sm mt-2">Tel: +33 (1) 43 77 28 07</p>
-              <p className="text-white/60 text-sm">France@golighthouse.com</p>
-            </div>
-            <div>
-              <h4 className="font-bold text-lg mb-4">Liens rapides</h4>
-              <div className="space-y-2">
-                <button onClick={() => setPage('login')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Connexion</button>
-                <button onClick={() => setPage('register')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Creer un compte</button>
-                <a href="https://www.golighthouse.com" target="_blank" rel="noopener noreferrer" className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Lighthouse Worldwide</a>
+              <div className="flex flex-wrap gap-4 justify-center">
+                <button onClick={() => setPage('register')} className="px-8 py-4 bg-[#00A651] text-white rounded-xl font-bold text-lg hover:bg-[#008f45] transition-all hover:scale-105 shadow-lg shadow-[#00A651]/25">
+                  Creer mon compte gratuitement
+                </button>
+                <button onClick={() => setPage('login')} className="px-8 py-4 bg-white/10 border border-white/30 text-white rounded-xl font-bold text-lg hover:bg-white/20 transition-all">
+                  J'ai deja un compte
+                </button>
               </div>
             </div>
           </div>
-          <div className="border-t border-white/10 pt-8 text-center">
-            <p className="text-white/40 text-sm">© 2026 Lighthouse France SAS. Tous droits reserves.</p>
-          </div>
         </div>
-      </footer>
+
+        {/* Footer */}
+        <footer className="bg-[#0a0a12]/80 backdrop-blur-lg text-white py-12 border-t border-white/10">
+          <div className="max-w-6xl mx-auto px-6">
+            <div className="grid md:grid-cols-3 gap-8 mb-8">
+              <div>
+                <h4 className="font-bold text-lg mb-4">LIGHTHOUSE FRANCE</h4>
+                <p className="text-white/60 text-sm leading-relaxed">
+                  Filiale francaise de Lighthouse Worldwide Solutions, leader mondial des solutions de monitoring de contamination.
+                </p>
+              </div>
+              <div>
+                <h4 className="font-bold text-lg mb-4">Contact</h4>
+                <p className="text-white/60 text-sm">16 Rue Paul Sejourne</p>
+                <p className="text-white/60 text-sm">94000 Creteil, France</p>
+                <p className="text-white/60 text-sm mt-2">Tel: +33 (1) 43 77 28 07</p>
+                <p className="text-white/60 text-sm">France@golighthouse.com</p>
+              </div>
+              <div>
+                <h4 className="font-bold text-lg mb-4">Liens rapides</h4>
+                <div className="space-y-2">
+                  <button onClick={() => setPage('login')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Connexion</button>
+                  <button onClick={() => setPage('register')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Creer un compte</button>
+                  <a href="https://www.golighthouse.com" target="_blank" rel="noopener noreferrer" className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Lighthouse Worldwide</a>
+                </div>
+              </div>
+            </div>
+            <div className="border-t border-white/10 pt-8 text-center">
+              <p className="text-white/40 text-sm">© 2025 Lighthouse France SAS. Tous droits reserves.</p>
+            </div>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }
@@ -7177,98 +9859,112 @@ function LoginPage({ t, login, setPage }) {
   };
 
   return (
-    <div>
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex justify-between items-center h-16">
-            <button onClick={() => setPage('home')} className="flex items-center gap-3">
-              <img 
-                src="/images/logos/lighthouse-logo.png" 
-                alt="Lighthouse France" 
-                className="h-10 w-auto"
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                  e.target.nextSibling.style.display = 'flex';
-                }}
-              />
-              <div className="items-center gap-2 hidden">
-                <span className="text-[#1E3A5F] font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
-                <span className="text-[#3B7AB4] font-semibold text-sm">FRANCE</span>
-              </div>
-            </button>
-            <button onClick={() => setPage('home')} className="text-[#3B7AB4] font-medium">
-              ← Retour
-            </button>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen">
+      {/* Fixed Background */}
+      <div className="fixed inset-0 z-0">
+        <img 
+          src="/images/products/hero-background.png" 
+          alt="" 
+          className="w-full h-full object-cover"
+          onError={(e) => { e.target.style.display = 'none'; }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e]/90 via-[#1a1a2e]/85 to-[#1a1a2e]/80"></div>
+      </div>
 
-      {/* Login Form */}
-      <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-md">
-          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-            <div className="bg-white px-6 py-8 text-center border-b-4 border-[#00A651]">
-              <img 
-                src="/images/logos/lighthouse-logo.png" 
-                alt="Lighthouse France" 
-                className="h-14 w-auto mx-auto mb-3"
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                  e.target.nextSibling.style.display = 'block';
-                }}
-              />
-              <h1 className="text-2xl font-bold text-[#1E3A5F] hidden">LIGHTHOUSE FRANCE</h1>
-              <p className="text-gray-500 mt-2">Service Portal</p>
-            </div>
-            
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
-                  placeholder="votre@email.com"
-                  required
+      {/* Content */}
+      <div className="relative z-10">
+        {/* Header */}
+        <header className="bg-[#1a1a2e]/50 backdrop-blur-md border-b border-white/10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="flex justify-between items-center h-16">
+              <button onClick={() => setPage('home')} className="flex items-center gap-3">
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-10 w-auto invert brightness-0 invert"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
                 />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
-                  placeholder="••••••••"
-                  required
-                />
-              </div>
-              
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                  {error}
+                <div className="items-center gap-2 hidden text-white">
+                  <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                  <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
                 </div>
-              )}
-              
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 bg-[#3B7AB4] text-white rounded-lg font-semibold hover:bg-[#1E3A5F] transition-colors disabled:opacity-50"
-              >
-                {loading ? 'Connexion...' : 'Se connecter'}
               </button>
-            </form>
-            
-            <div className="px-6 pb-6 text-center">
-              <p className="text-gray-600">
-                Pas de compte?{' '}
-                <button onClick={() => setPage('register')} className="text-[#3B7AB4] font-semibold">
-                  Créer un compte
+              <button onClick={() => setPage('home')} className="text-white/70 hover:text-white font-medium transition-colors">
+                ← Retour
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Login Form */}
+        <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
+          <div className="w-full max-w-md">
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden">
+              <div className="px-6 py-8 text-center border-b border-white/10">
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-14 w-auto mx-auto mb-3 invert brightness-0 invert"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'block';
+                  }}
+                />
+                <h1 className="text-2xl font-bold text-white hidden">LIGHTHOUSE FRANCE</h1>
+                <p className="text-white/60 mt-2">Portail de Service</p>
+              </div>
+              
+              <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-white/80 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                    placeholder="votre@email.com"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-white/80 mb-1">Mot de passe</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+                
+                {error && (
+                  <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
+                    {error}
+                  </div>
+                )}
+                
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50"
+                >
+                  {loading ? 'Connexion...' : 'Se connecter'}
                 </button>
-              </p>
+              </form>
+              
+              <div className="px-6 pb-6 text-center">
+                <p className="text-white/60">
+                  Pas de compte?{' '}
+                  <button onClick={() => setPage('register')} className="text-[#00A651] font-semibold hover:text-[#00c564]">
+                    Créer un compte
+                  </button>
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -7312,195 +10008,209 @@ function RegisterPage({ t, register, setPage }) {
   };
 
   return (
-    <div>
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex justify-between items-center h-16">
-            <button onClick={() => setPage('home')} className="flex items-center gap-3">
-              <img 
-                src="/images/logos/lighthouse-logo.png" 
-                alt="Lighthouse France" 
-                className="h-10 w-auto"
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                  e.target.nextSibling.style.display = 'flex';
-                }}
-              />
-              <div className="items-center gap-2 hidden">
-                <span className="text-[#1E3A5F] font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
-                <span className="text-[#3B7AB4] font-semibold text-sm">FRANCE</span>
-              </div>
-            </button>
-            <button onClick={() => setPage('home')} className="text-[#3B7AB4] font-medium">
-              ← Retour
-            </button>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen">
+      {/* Fixed Background */}
+      <div className="fixed inset-0 z-0">
+        <img 
+          src="/images/products/hero-background.png" 
+          alt="" 
+          className="w-full h-full object-cover"
+          onError={(e) => { e.target.style.display = 'none'; }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e]/90 via-[#1a1a2e]/85 to-[#1a1a2e]/80"></div>
+      </div>
 
-      {/* Register Form */}
-      <div className="py-12 px-4">
-        <div className="max-w-2xl mx-auto">
-          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-            <div className="bg-[#1E3A5F] px-6 py-6">
-              <h1 className="text-xl font-bold text-white">Créer un compte</h1>
-              <p className="text-white/70 text-sm mt-1">Enregistrez votre société pour accéder au portail</p>
+      {/* Content */}
+      <div className="relative z-10">
+        {/* Header */}
+        <header className="bg-[#1a1a2e]/50 backdrop-blur-md border-b border-white/10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="flex justify-between items-center h-16">
+              <button onClick={() => setPage('home')} className="flex items-center gap-3">
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-10 w-auto invert brightness-0 invert"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+                <div className="items-center gap-2 hidden text-white">
+                  <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                  <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
+                </div>
+              </button>
+              <button onClick={() => setPage('home')} className="text-white/70 hover:text-white font-medium transition-colors">
+                ← Retour
+              </button>
             </div>
-            
-            <form onSubmit={handleSubmit} className="p-6 space-y-6">
-              {/* Company Section */}
-              <div>
-                <h2 className="text-lg font-bold text-[#1E3A5F] mb-4 pb-2 border-b-2 border-[#E8F2F8]">
-                  Information Société
-                </h2>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nom de la société *</label>
-                    <input
-                      type="text"
-                      value={formData.companyName}
-                      onChange={(e) => updateField('companyName', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nom du contact *</label>
-                    <input
-                      type="text"
-                      value={formData.contactName}
-                      onChange={(e) => updateField('contactName', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
-                    <input
-                      type="tel"
-                      value={formData.phone}
-                      onChange={(e) => updateField('phone', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="+33 1 23 45 67 89"
-                    />
-                  </div>
-                </div>
-              </div>
+          </div>
+        </header>
 
-              {/* Address Section */}
-              <div>
-                <h2 className="text-lg font-bold text-[#1E3A5F] mb-4 pb-2 border-b-2 border-[#E8F2F8]">
-                  Adresse
-                </h2>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Adresse *</label>
-                    <input
-                      type="text"
-                      value={formData.address}
-                      onChange={(e) => updateField('address', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="16 Rue de la République"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Code Postal *</label>
-                    <input
-                      type="text"
-                      value={formData.postalCode}
-                      onChange={(e) => updateField('postalCode', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="75001"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Ville *</label>
-                    <input
-                      type="text"
-                      value={formData.city}
-                      onChange={(e) => updateField('city', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="Paris"
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Account Section */}
-              <div>
-                <h2 className="text-lg font-bold text-[#1E3A5F] mb-4 pb-2 border-b-2 border-[#E8F2F8]">
-                  Identifiants
-                </h2>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-                    <input
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => updateField('email', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe *</label>
-                    <input
-                      type="password"
-                      value={formData.password}
-                      onChange={(e) => updateField('password', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="Minimum 6 caractères"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Confirmer *</label>
-                    <input
-                      type="password"
-                      value={formData.confirmPassword}
-                      onChange={(e) => updateField('confirmPassword', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      required
-                    />
-                  </div>
-                </div>
+        {/* Register Form */}
+        <div className="py-12 px-4">
+          <div className="max-w-2xl mx-auto">
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden">
+              <div className="bg-[#00A651]/20 backdrop-blur-sm px-6 py-6 border-b border-white/10">
+                <h1 className="text-xl font-bold text-white">Créer un compte</h1>
+                <p className="text-white/60 text-sm mt-1">Enregistrez votre société pour accéder au portail</p>
               </div>
               
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                  {error}
+              <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                {/* Company Section */}
+                <div>
+                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
+                    Information Société
+                  </h2>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-white/80 mb-1">Nom de la société *</label>
+                      <input
+                        type="text"
+                        value={formData.companyName}
+                        onChange={(e) => updateField('companyName', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Nom du contact *</label>
+                      <input
+                        type="text"
+                        value={formData.contactName}
+                        onChange={(e) => updateField('contactName', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Téléphone</label>
+                      <input
+                        type="tel"
+                        value={formData.phone}
+                        onChange={(e) => updateField('phone', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="+33 1 23 45 67 89"
+                      />
+                    </div>
+                  </div>
                 </div>
-              )}
+
+                {/* Address Section */}
+                <div>
+                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
+                    Adresse
+                  </h2>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-white/80 mb-1">Adresse *</label>
+                      <input
+                        type="text"
+                        value={formData.address}
+                        onChange={(e) => updateField('address', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="16 Rue de la République"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Code Postal *</label>
+                      <input
+                        type="text"
+                        value={formData.postalCode}
+                        onChange={(e) => updateField('postalCode', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="75001"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Ville *</label>
+                      <input
+                        type="text"
+                        value={formData.city}
+                        onChange={(e) => updateField('city', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="Paris"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Account Section */}
+                <div>
+                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
+                    Identifiants
+                  </h2>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-white/80 mb-1">Email *</label>
+                      <input
+                        type="email"
+                        value={formData.email}
+                        onChange={(e) => updateField('email', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Mot de passe *</label>
+                      <input
+                        type="password"
+                        value={formData.password}
+                        onChange={(e) => updateField('password', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="Minimum 6 caractères"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Confirmer *</label>
+                      <input
+                        type="password"
+                        value={formData.confirmPassword}
+                        onChange={(e) => updateField('confirmPassword', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                {error && (
+                  <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
+                    {error}
+                  </div>
+                )}
+                
+                <div className="flex gap-4 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setPage('login')}
+                    className="flex-1 py-3 bg-white/10 border border-white/20 text-white rounded-lg font-medium hover:bg-white/20 transition-colors"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50"
+                  >
+                    {loading ? 'Création...' : 'Créer le compte'}
+                  </button>
+                </div>
+              </form>
               
-              <div className="flex gap-4 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setPage('login')}
-                  className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 py-3 bg-[#3B7AB4] text-white rounded-lg font-semibold disabled:opacity-50"
-                >
-                  {loading ? 'Création...' : 'Créer le compte'}
-                </button>
+              <div className="px-6 pb-6 text-center">
+                <p className="text-white/60">
+                  Déjà un compte?{' '}
+                  <button onClick={() => setPage('login')} className="text-[#00A651] font-semibold hover:text-[#00c564]">
+                    Se connecter
+                  </button>
+                </p>
               </div>
-            </form>
-            
-            <div className="px-6 pb-6 text-center">
-              <p className="text-gray-600">
-                Déjà un compte?{' '}
-                <button onClick={() => setPage('login')} className="text-[#3B7AB4] font-semibold">
-                  Se connecter
-                </button>
-              </p>
             </div>
           </div>
         </div>
