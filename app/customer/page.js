@@ -2885,7 +2885,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     address_id: addresses.find(a => a.is_default)?.id || '',
     showNewForm: false,
     newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' },
-    parcels: 0 // Start at 0 - customer must choose
+    parcels: 0
   });
   const [saving, setSaving] = useState(false);
 
@@ -3038,7 +3038,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       return;
     }
     
-    // Validate parcels count
+    // Validate parcels
     if (!shipping.parcels || shipping.parcels < 1) {
       notify('Veuillez indiquer le nombre de colis', 'error');
       return;
@@ -3802,7 +3802,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
         Information de Livraison
       </h2>
 
-      {/* Number of Parcels - FIRST (Required) */}
+      {/* Number of Parcels - FIRST */}
       <div className="mb-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
         <label className="block text-sm font-bold text-[#1E3A5F] mb-2">
           📦 Nombre de colis *
@@ -3824,7 +3824,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
             value={shipping.parcels || 0}
             onChange={e => setShipping({ ...shipping, parcels: Math.max(0, parseInt(e.target.value) || 0) })}
             className={`w-20 px-3 py-2 text-center border rounded-lg font-bold text-lg ${
-              shipping.parcels === 0 ? 'border-red-300 bg-red-50' : 'border-gray-300'
+              (shipping.parcels || 0) === 0 ? 'border-red-400 bg-red-50' : 'border-gray-300'
             }`}
           />
           <button
@@ -3836,8 +3836,8 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
           </button>
           <span className="text-gray-600 ml-2">colis</span>
         </div>
-        {shipping.parcels === 0 && (
-          <p className="text-red-500 text-sm mt-2">⚠️ Veuillez indiquer le nombre de colis</p>
+        {(shipping.parcels || 0) === 0 && (
+          <p className="text-red-600 text-sm mt-2 font-medium">⚠️ Veuillez indiquer le nombre de colis</p>
         )}
       </div>
 
@@ -6284,14 +6284,14 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             signatureImage: signatureData
           });
           
-          const fileName = `quotes/${request.id}/quote_signed_${Date.now()}.pdf`;
-          const { data: uploadData, error: uploadError } = await supabase.storage
+          const pdfFileName = `quotes/${request.id}/quote_signed_${Date.now()}.pdf`;
+          const { data: pdfUpload, error: pdfError } = await supabase.storage
             .from('rma-files')
-            .upload(fileName, pdfBlob);
+            .upload(pdfFileName, pdfBlob);
           
-          if (!uploadError && uploadData) {
-            const { data: urlData } = supabase.storage.from('rma-files').getPublicUrl(fileName);
-            signedQuotePdfUrl = urlData?.publicUrl;
+          if (!pdfError && pdfUpload) {
+            const { data: pdfUrlData } = supabase.storage.from('rma-files').getPublicUrl(pdfFileName);
+            signedQuotePdfUrl = pdfUrlData?.publicUrl;
           }
         } catch (pdfErr) {
           console.error('PDF generation error:', pdfErr);
@@ -6302,8 +6302,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       const { error } = await supabase.from('service_requests').update({
         status: 'waiting_bc',
         quote_approved_at: new Date().toISOString(),
-        quote_signed_by: signatureName,
-        quote_signature_date: signatureDateISO,
+        quote_signed_by: signatureName || null,
+        quote_signature_date: signatureDateISO || null,
         quote_signature_url: signatureUrl,
         quote_signed_pdf_url: signedQuotePdfUrl
       }).eq('id', request.id);
