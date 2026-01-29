@@ -458,11 +458,11 @@ function getQuoteDataFromRequest(request) {
 
 async function generateQuotePDF(options) {
   const {
-    request, devices = [], servicesSubtotal = 0, shippingTotal = 0, grandTotal = 0,
-    calibrationTypes = ['particle_counter'], hasRepair = false, isSigned = false,
-    signatureName = '', signatureDate = '', signatureImage = null, createdBy = 'M. Meleney'
+    request, isSigned = false,
+    signatureName = '', signatureDate = '', signatureImage = null
   } = options;
 
+  // Load jsPDF
   await new Promise((resolve, reject) => {
     if (window.jspdf) { resolve(); return; }
     const script = document.createElement('script');
@@ -475,11 +475,23 @@ async function generateQuotePDF(options) {
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF('p', 'mm', 'a4');
   
+  // Get quote data from request (contains breakdown)
+  const quoteData = request.quote_data || {};
+  const devicePricing = quoteData.devices || [];
+  const shipping = quoteData.shipping || { parcels: request.parcels_count || 1, unitPrice: 45, total: (request.parcels_count || 1) * 45 };
+  const servicesSubtotal = quoteData.servicesSubtotal || request.quote_subtotal || 0;
+  const shippingTotal = quoteData.shippingTotal || request.quote_shipping || shipping.total;
+  const grandTotal = quoteData.grandTotal || request.quote_total || (servicesSubtotal + shippingTotal);
+  const requiredSections = quoteData.requiredSections || { calibrationTypes: ['particle_counter'], hasRepair: false };
+  const createdBy = quoteData.createdBy || 'M. Meleney';
+  
+  const company = request.companies || {};
+  
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
   const footerHeight = 16;
-  const signatureBlockHeight = 42;
   
+  // Colors
   const green = [0, 166, 81];
   const darkBlue = [26, 26, 46];
   const gray = [80, 80, 80];
@@ -488,15 +500,11 @@ async function generateQuotePDF(options) {
   
   let y = margin;
   
-  // === LOGO LOADING ===
+  // Load logos
   const loadImageAsBase64 = async (url) => {
     try {
-      // First try fetch approach (works better with Next.js)
       const response = await fetch(url);
-      if (!response.ok) {
-        console.log('Logo fetch failed:', url, response.status);
-        return null;
-      }
+      if (!response.ok) return null;
       const blob = await response.blob();
       return new Promise((resolve) => {
         const reader = new FileReader();
@@ -505,39 +513,12 @@ async function generateQuotePDF(options) {
         reader.readAsDataURL(blob);
       });
     } catch (e) {
-      console.log('Logo loading error:', url, e);
-      // Fallback to Image approach
-      return new Promise((resolve) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0);
-          resolve(canvas.toDataURL('image/png'));
-        };
-        img.onerror = () => resolve(null);
-        img.src = url;
-      });
+      return null;
     }
   };
   
-  // Load logos (with fallback if not available)
-  let lighthouseLogo = null;
-  let capcertLogo = null;
-  try {
-    const results = await Promise.all([
-      loadImageAsBase64('/images/logos/lighthouse-logo.png'),
-      loadImageAsBase64('/images/logos/capcert-logo.png')
-    ]);
-    lighthouseLogo = results[0];
-    capcertLogo = results[1];
-    console.log('Logos loaded:', !!lighthouseLogo, !!capcertLogo);
-  } catch (e) {
-    console.log('Logo loading skipped:', e);
-  }
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
   
   const addFooter = () => {
     pdf.setFillColor(...darkBlue);
@@ -565,31 +546,21 @@ async function generateQuotePDF(options) {
   };
 
   // ===== HEADER =====
-  let logoAdded = false;
   if (lighthouseLogo) {
     try {
-      console.log('Attempting to add lighthouse logo, data length:', lighthouseLogo.length);
-      // Detect format from base64 header
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
       pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
-      logoAdded = true;
-      console.log('Lighthouse logo added successfully');
     } catch (e) {
-      console.log('Lighthouse logo addImage failed:', e);
-      logoAdded = false;
+      pdf.setFontSize(26);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...darkBlue);
+      pdf.text('LIGHTHOUSE', margin, y + 8);
     }
-  }
-  
-  if (!logoAdded) {
-    // Fallback to text if image fails
+  } else {
     pdf.setFontSize(26);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
     pdf.text('LIGHTHOUSE', margin, y + 8);
-    pdf.setFontSize(11);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...gray);
-    pdf.text('Worldwide Solutions', margin, y + 14);
   }
   
   pdf.setFontSize(18);
@@ -606,7 +577,6 @@ async function generateQuotePDF(options) {
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
   y += 7;
-
 
   // ===== INFO BAR =====
   pdf.setFillColor(245, 245, 245);
@@ -634,23 +604,90 @@ async function generateQuotePDF(options) {
   pdf.setFontSize(14);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(request.companies?.name || 'Client', margin, y);
+  pdf.text(company.name || 'Client', margin, y);
   y += 6;
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  if (request.companies?.billing_address) {
-    pdf.text(request.companies.billing_address, margin, y);
+  if (company.billing_address || company.address) {
+    pdf.text(company.billing_address || company.address, margin, y);
     y += 5;
   }
-  const city = [request.companies?.billing_postal_code, request.companies?.billing_city].filter(Boolean).join(' ');
+  const city = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
   if (city) {
     pdf.text(city, margin, y);
     y += 5;
   }
-  y += 3;
+  y += 8;
 
-  // ===== SERVICE SECTIONS =====
+  // ===== SERVICE DESCRIPTION BLOCKS =====
+  const calibrationTypes = requiredSections.calibrationTypes || ['particle_counter'];
+  const hasRepair = requiredSections.hasRepair || false;
+
+  // Service descriptions data
+  const CAL_DATA = {
+    particle_counter: {
+      title: "Etalonnage Compteur de Particules Aeroportees",
+      prestations: [
+        "Verification des fonctionnalites du compteur",
+        "Verification et reglage du debit",
+        "Verification de la cellule de mesure",
+        "Controle et reglage des seuils de mesures granulometrique a l'aide de spheres de latex calibrees et certifiees",
+        "Verification en nombre par comparaison a un etalon etalonne selon la norme ISO 17025, conformement a la norme ISO 21501-4",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    bio_collector: {
+      title: "Etalonnage Bio Collecteur",
+      prestations: [
+        "Verification des fonctionnalites de l'appareil",
+        "Verification et reglage du debit",
+        "Verification de la cellule d'impaction",
+        "Controle des parametres de collecte",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    liquid_counter: {
+      title: "Etalonnage Compteur de Particules en Milieu Liquide",
+      prestations: [
+        "Verification des fonctionnalites du compteur",
+        "Verification et reglage du debit",
+        "Verification de la cellule de mesure optique",
+        "Controle et reglage des seuils de mesures granulometrique",
+        "Verification en nombre par comparaison a un etalon",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    other: {
+      title: "Etalonnage Equipement",
+      prestations: [
+        "Verification des fonctionnalites de l'appareil",
+        "Etalonnage selon les specifications du fabricant",
+        "Tests de fonctionnement",
+        "Fourniture d'un rapport de test"
+      ]
+    }
+  };
+
+  const REPAIR_DATA = {
+    title: "Reparation",
+    prestations: [
+      "Diagnostic complet de l'appareil",
+      "Identification des composants defectueux",
+      "Remplacement des pieces defectueuses (pieces facturees en sus)",
+      "Tests de fonctionnement complets",
+      "Verification d'etalonnage post-reparation si applicable"
+    ]
+  };
+
+  const DISCLAIMERS = [
+    "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables.",
+    "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses et necessitent un remplacement.",
+    "Les mesures stockees dans les appareils seront eventuellement perdues lors des operations de maintenance.",
+    "Les equipements envoyes devront etre decontamines de toutes substances chimiques, bacteriennes ou radioactives."
+  ];
+
+  // Draw service blocks
   const drawServiceBlock = (data, color) => {
     const lineH = 5;
     let lines = [];
@@ -677,9 +714,7 @@ async function generateQuotePDF(options) {
     data.prestations.forEach(p => {
       const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
       wrapped.forEach((line, i) => {
-        if (i === 0) {
-          pdf.text('-', margin + 5, y);
-        }
+        if (i === 0) pdf.text('-', margin + 5, y);
         pdf.text(line, margin + 9, y);
         y += lineH;
       });
@@ -687,19 +722,19 @@ async function generateQuotePDF(options) {
     y += 3;
   };
 
+  // Draw calibration blocks (blue)
   calibrationTypes.forEach(type => {
-    const data = PDF_CALIBRATION_DATA[type] || PDF_CALIBRATION_DATA.particle_counter;
+    const data = CAL_DATA[type] || CAL_DATA.particle_counter;
     drawServiceBlock(data, [59, 130, 246]);
   });
   
+  // Draw repair block (orange) if needed
   if (hasRepair) {
-    drawServiceBlock(PDF_REPAIR_DATA, [249, 115, 22]);
+    drawServiceBlock(REPAIR_DATA, [249, 115, 22]);
   }
 
-  // ===== CONDITIONS (moved up - right after service descriptions) =====
-  const conditionsHeight = 22;
-  checkPageBreak(conditionsHeight);
-  
+  // ===== CONDITIONS/DISCLAIMERS =====
+  checkPageBreak(25);
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...lightGray);
@@ -707,21 +742,21 @@ async function generateQuotePDF(options) {
   y += 4;
   pdf.setFontSize(8);
   pdf.setTextColor(...gray);
-  PDF_DISCLAIMERS.forEach(d => {
+  DISCLAIMERS.forEach(d => {
     pdf.text('- ' + d, margin, y);
     y += 4;
   });
   y += 5;
 
-  // ===== PRICING TABLE (moved down - after conditions) =====
-  const rowH = 8;
-  let tableRows = devices.length;
-  devices.forEach(d => {
-    tableRows += (d.additionalParts || []).length + 1;
-  });
-  const tableH = 12 + (tableRows * rowH) + 32;
-  checkPageBreak(tableH);
-
+  // ===== DETAILED PRICING TABLE (Qté | Désignation | Prix Unit. | Total HT) =====
+  const rowH = 7;
+  const colQty = margin;
+  const colDesc = margin + 12;
+  const colUnit = pageWidth - margin - 45;
+  const colTotal = pageWidth - margin - 3;
+  
+  checkPageBreak(60);
+  
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
@@ -734,82 +769,139 @@ async function generateQuotePDF(options) {
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...white);
-  pdf.text('Appareil', margin + 3, y + 6);
-  pdf.text('N. Serie', margin + 55, y + 6);
-  pdf.text('Service', margin + 100, y + 6);
-  pdf.text('Prix HT', pageWidth - margin - 3, y + 6, { align: 'right' });
+  pdf.text('Qte', colQty + 3, y + 6);
+  pdf.text('Designation', colDesc, y + 6);
+  pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
+  pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
   y += 9;
 
-  devices.forEach((device, idx) => {
-    const svc = [];
-    if (device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration')) svc.push('Etalonnage');
-    if (device.needsRepair || (device.serviceType || device.service_type || '').includes('repair')) svc.push('Reparation');
-    const total = device.serviceTotal || ((device.calibrationPrice || 0) + (device.repairPrice || 0) + (device.additionalParts || []).reduce((s, p) => s + (parseFloat(p.price) || 0), 0));
-    
-    pdf.setFillColor(idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250);
-    pdf.rect(margin, y, contentWidth, rowH, 'F');
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...darkBlue);
-    pdf.text(device.model || device.model_name || '-', margin + 3, y + 5.5);
-    pdf.setFont('courier', 'normal');
-    pdf.text(device.serial || device.serial_number || '-', margin + 55, y + 5.5);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(svc.join(' + ') || 'Service', margin + 100, y + 5.5);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(total.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
-    y += rowH;
+  let rowIndex = 0;
+  let hasNettoyage = false;
 
-    (device.additionalParts || []).forEach(part => {
-      pdf.setFillColor(250, 250, 250);
+  // Build line items from devicePricing (from quote_data)
+  devicePricing.forEach((device) => {
+    // Calibration row
+    if (device.needsCalibration) {
+      const qty = device.calibrationQty || 1;
+      const unitPrice = parseFloat(device.calibrationPrice) || 0;
+      const lineTotal = qty * unitPrice;
+      const isContract = device.isContractCovered;
+      
+      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
       pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
       pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(8);
-      pdf.setTextColor(...gray);
-      pdf.text('    > ' + (part.description || 'Piece/Service'), margin + 3, y + 5.5);
-      pdf.text((parseFloat(part.price) || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+      pdf.setTextColor(...darkBlue);
+      pdf.text(String(qty), colQty + 3, y + 5);
+      const calDesc = `Etalonnage ${device.model || ''} (SN: ${device.serial || ''})${isContract ? ' [CONTRAT]' : ''}`;
+      pdf.text(calDesc.substring(0, 60), colDesc, y + 5);
+      pdf.text(isContract ? 'Contrat' : unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(isContract ? 'Contrat' : lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
       y += rowH;
+      rowIndex++;
+    }
+    
+    // Nettoyage row
+    if (device.needsNettoyage && !device.isContractCovered && device.nettoyagePrice > 0) {
+      hasNettoyage = true;
+      const qty = device.nettoyageQty || 1;
+      const unitPrice = parseFloat(device.nettoyagePrice) || 0;
+      const lineTotal = qty * unitPrice;
+      
+      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...darkBlue);
+      pdf.text(String(qty), colQty + 3, y + 5);
+      pdf.text('Nettoyage cellule - si requis selon etat du capteur', colDesc, y + 5);
+      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      y += rowH;
+      rowIndex++;
+    }
+    
+    // Repair row
+    if (device.needsRepair) {
+      const qty = device.repairQty || 1;
+      const unitPrice = parseFloat(device.repairPrice) || 0;
+      const lineTotal = qty * unitPrice;
+      
+      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...darkBlue);
+      pdf.text(String(qty), colQty + 3, y + 5);
+      const repDesc = `Reparation ${device.model || ''} (SN: ${device.serial || ''})`;
+      pdf.text(repDesc.substring(0, 60), colDesc, y + 5);
+      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      y += rowH;
+      rowIndex++;
+    }
+    
+    // Additional parts
+    (device.additionalParts || []).forEach(part => {
+      const qty = parseInt(part.quantity) || 1;
+      const unitPrice = parseFloat(part.price) || 0;
+      const lineTotal = qty * unitPrice;
+      
+      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...darkBlue);
+      pdf.text(String(qty), colQty + 3, y + 5);
+      const partDesc = part.partNumber ? `[${part.partNumber}] ${part.description || 'Piece'}` : (part.description || 'Piece/Service');
+      pdf.text(partDesc.substring(0, 55), colDesc, y + 5);
+      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      y += rowH;
+      rowIndex++;
     });
-
-    pdf.setFillColor(242, 242, 242);
-    pdf.rect(margin, y, contentWidth, rowH, 'F');
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8);
-    pdf.setTextColor(...gray);
-    pdf.text('    > Frais de port', margin + 3, y + 5.5);
-    pdf.text((device.shipping || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
-    y += rowH;
   });
-
-  // Totals
-  pdf.setDrawColor(200, 200, 200);
-  pdf.line(margin, y, pageWidth - margin, y);
   
-  pdf.setFillColor(255, 255, 255);
+  // Shipping row
+  pdf.setFillColor(245, 245, 245);
   pdf.rect(margin, y, contentWidth, rowH, 'F');
-  pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...darkBlue);
-  pdf.text('Sous-total services', margin + 3, y + 5.5);
-  pdf.text(servicesSubtotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+  pdf.text(String(shipping.parcels || 1), colQty + 3, y + 5);
+  const shipDesc = shipping.parcels > 1 ? `Frais de port (${shipping.parcels} colis)` : 'Frais de port';
+  pdf.text(shipDesc, colDesc, y + 5);
+  pdf.text((shipping.unitPrice || 45).toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(shippingTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
   y += rowH;
 
-  pdf.rect(margin, y, contentWidth, rowH, 'F');
-  pdf.text('Total frais de port', margin + 3, y + 5.5);
-  pdf.text(shippingTotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
-  y += rowH;
-
+  // Total row
   pdf.setFillColor(...green);
   pdf.rect(margin, y, contentWidth, 11, 'F');
   pdf.setTextColor(...white);
   pdf.setFontSize(11);
-  pdf.text('TOTAL HT', margin + 4, y + 7.5);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('TOTAL HT', colUnit - 30, y + 7.5);
   pdf.setFontSize(16);
-  pdf.text(grandTotal.toFixed(2) + ' EUR', pageWidth - margin - 4, y + 8, { align: 'right' });
+  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
   y += 15;
+  
+  // Nettoyage disclaimer
+  if (hasNettoyage) {
+    pdf.setFontSize(7);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(...lightGray);
+    pdf.text('* Le nettoyage cellule sera facture uniquement si necessaire selon l\'etat du capteur a reception.', margin, y);
+    y += 5;
+  }
 
-  // ===== SIGNATURE - AT BOTTOM OF CURRENT PAGE =====
-  const sigY = Math.max(y + 5, pageHeight - footerHeight - signatureBlockHeight - 3);
+  // ===== SIGNATURE SECTION =====
+  const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
   
   pdf.setDrawColor(200, 200, 200);
   pdf.setLineWidth(0.3);
@@ -827,21 +919,19 @@ async function generateQuotePDF(options) {
   pdf.setTextColor(...gray);
   pdf.text('Lighthouse France', margin, sigY + 20);
 
-  // Add Capcert certification logo (bottom left, next to ETABLI PAR)
+  // Capcert logo
   if (capcertLogo) {
     try {
-      console.log('Attempting to add capcert logo');
       const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
       pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
-      console.log('Capcert logo added successfully');
-    } catch (e) {
-      console.log('Capcert logo failed:', e);
-    }
+    } catch (e) {}
   }
 
+  // Signature box
   const sigBoxX = pageWidth - margin - 62;
   
   if (isSigned && signatureName) {
+    // Signed version - green box with signature
     pdf.setFillColor(245, 255, 250);
     pdf.setDrawColor(...green);
     pdf.setLineWidth(0.5);
@@ -867,6 +957,7 @@ async function generateQuotePDF(options) {
       try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 40, sigY + 9, 18, 16); } catch(e) {}
     }
   } else {
+    // Unsigned version - dashed box
     pdf.setFontSize(8);
     pdf.setTextColor(...lightGray);
     pdf.text('Signature client', sigBoxX + 16, sigY + 7);
@@ -881,7 +972,6 @@ async function generateQuotePDF(options) {
   addFooter();
   return pdf.output('blob');
 }
-
 // Contract Quote PDF Generator - IDENTICAL structure to RMA
 async function generateContractQuotePDF(options) {
   const {
@@ -1795,6 +1885,9 @@ export default function CustomerPortal() {
               <button onClick={() => setPage('contracts')} className={`font-medium ${page === 'contracts' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 Contrats
               </button>
+              <button onClick={() => setPage('rentals')} className={`font-medium ${page === 'rentals' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+                Locations
+              </button>
               <button onClick={() => setPage('equipment')} className={`font-medium ${page === 'equipment' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('myEquipment')}
               </button>
@@ -1825,7 +1918,7 @@ export default function CustomerPortal() {
 
           {/* Mobile nav */}
           <nav className="md:hidden flex gap-2 pb-3 overflow-x-auto">
-            {['dashboard', 'new-request', 'contracts', 'equipment', 'settings'].map(p => (
+            {['dashboard', 'new-request', 'contracts', 'rentals', 'equipment', 'settings'].map(p => (
               <button
                 key={p}
                 onClick={() => setPage(p)}
@@ -1833,7 +1926,7 @@ export default function CustomerPortal() {
                   page === p ? 'bg-[#00A651] text-white' : 'bg-white/10 text-white/70'
                 }`}
               >
-                {p === 'new-request' ? t('newRequest') : p === 'contracts' ? 'Contrats' : t(p)}
+                {p === 'new-request' ? t('newRequest') : p === 'contracts' ? 'Contrats' : p === 'rentals' ? 'Locations' : t(p)}
               </button>
             ))}
           </nav>
@@ -1914,6 +2007,17 @@ export default function CustomerPortal() {
             t={t}
             notify={notify}
             setPage={setPage}
+          />
+        )}
+        
+        {page === 'rentals' && (
+          <RentalsPage 
+            profile={profile}
+            addresses={addresses}
+            t={t}
+            notify={notify}
+            setPage={setPage}
+            refresh={refresh}
           />
         )}
       </main>
@@ -2885,7 +2989,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     address_id: addresses.find(a => a.is_default)?.id || '',
     showNewForm: false,
     newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' },
-    parcels: 0 // Start at 0 - customer must choose
+    parcels: 0
   });
   const [saving, setSaving] = useState(false);
 
@@ -3038,7 +3142,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       return;
     }
     
-    // Validate parcels count
+    // Validate parcels
     if (!shipping.parcels || shipping.parcels < 1) {
       notify('Veuillez indiquer le nombre de colis', 'error');
       return;
@@ -3802,7 +3906,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
         Information de Livraison
       </h2>
 
-      {/* Number of Parcels - FIRST (Required) */}
+      {/* Number of Parcels - FIRST */}
       <div className="mb-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
         <label className="block text-sm font-bold text-[#1E3A5F] mb-2">
           📦 Nombre de colis *
@@ -3824,7 +3928,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
             value={shipping.parcels || 0}
             onChange={e => setShipping({ ...shipping, parcels: Math.max(0, parseInt(e.target.value) || 0) })}
             className={`w-20 px-3 py-2 text-center border rounded-lg font-bold text-lg ${
-              shipping.parcels === 0 ? 'border-red-300 bg-red-50' : 'border-gray-300'
+              (shipping.parcels || 0) === 0 ? 'border-red-400 bg-red-50' : 'border-gray-300'
             }`}
           />
           <button
@@ -3836,8 +3940,8 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
           </button>
           <span className="text-gray-600 ml-2">colis</span>
         </div>
-        {shipping.parcels === 0 && (
-          <p className="text-red-500 text-sm mt-2">⚠️ Veuillez indiquer le nombre de colis</p>
+        {(shipping.parcels || 0) === 0 && (
+          <p className="text-red-600 text-sm mt-2 font-medium">⚠️ Veuillez indiquer le nombre de colis</p>
         )}
       </div>
 
@@ -6239,99 +6343,18 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   // Quote approval/revision handlers
   const handleApproveQuote = async () => {
     setApprovingQuote(true);
+    const { error } = await supabase.from('service_requests').update({
+      status: 'waiting_bc',
+      quote_approved_at: new Date().toISOString()
+    }).eq('id', request.id);
     
-    try {
-      // Upload signature image if exists
-      let signatureUrl = null;
-      if (signatureData) {
-        try {
-          const base64Data = signatureData.split(',')[1];
-          const byteCharacters = atob(base64Data);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: 'image/png' });
-          
-          const fileName = `signatures/${request.id}/quote_signature_${Date.now()}.png`;
-          const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('rma-files')
-            .upload(fileName, blob);
-          
-          if (!uploadError && uploadData) {
-            const { data: urlData } = supabase.storage.from('rma-files').getPublicUrl(fileName);
-            signatureUrl = urlData?.publicUrl;
-          }
-        } catch (sigErr) {
-          console.error('Signature upload error:', sigErr);
-        }
-      }
-      
-      // Generate signed quote PDF and save it
-      let signedQuotePdfUrl = null;
-      if (signatureName && signatureData) {
-        try {
-          const pdfBlob = await generateQuotePDF({
-            request,
-            devices: request.request_devices || [],
-            servicesSubtotal: request.quoted_price || 0,
-            shippingTotal: (request.parcels_count || 1) * 45,
-            grandTotal: (request.quoted_price || 0) + ((request.parcels_count || 1) * 45),
-            isSigned: true,
-            signatureName: signatureName,
-            signatureDate: signatureDateDisplay,
-            signatureImage: signatureData
-          });
-          
-          const fileName = `quotes/${request.id}/quote_signed_${Date.now()}.pdf`;
-          const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('rma-files')
-            .upload(fileName, pdfBlob);
-          
-          if (!uploadError && uploadData) {
-            const { data: urlData } = supabase.storage.from('rma-files').getPublicUrl(fileName);
-            signedQuotePdfUrl = urlData?.publicUrl;
-          }
-        } catch (pdfErr) {
-          console.error('PDF generation error:', pdfErr);
-        }
-      }
-      
-      // Update request with quote approval and signature
-      const { error } = await supabase.from('service_requests').update({
-        status: 'waiting_bc',
-        quote_approved_at: new Date().toISOString(),
-        quote_signed_by: signatureName,
-        quote_signature_date: signatureDateISO,
-        quote_signature_url: signatureUrl,
-        quote_signed_pdf_url: signedQuotePdfUrl
-      }).eq('id', request.id);
-      
-      // Save signed quote to attachments
-      if (signedQuotePdfUrl) {
-        await supabase.from('request_attachments').insert({
-          request_id: request.id,
-          file_name: `Devis_Signé_${request.request_number}.pdf`,
-          file_url: signedQuotePdfUrl,
-          file_type: 'application/pdf',
-          file_size: 0,
-          uploaded_by: profile.id,
-          category: 'devis_signe'
-        });
-      }
-      
-      if (error) {
-        notify('Erreur: ' + error.message, 'error');
-      } else {
-        notify('✅ Devis approuvé! Veuillez soumettre votre bon de commande.', 'success');
-        setShowQuoteModal(false);
-        refresh();
-      }
-    } catch (err) {
-      notify('Erreur: ' + err.message, 'error');
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('✅ Devis approuvé! Veuillez soumettre votre bon de commande.', 'success');
+      setShowQuoteModal(false);
+      refresh();
     }
-    
     setApprovingQuote(false);
   };
   
@@ -6490,76 +6513,100 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       let signatureUrl = null;
       if (signatureData) {
         try {
+          console.log('🖊️ Uploading signature...');
           const signatureBlob = await fetch(signatureData).then(r => r.blob());
           const signatureFileName = `signature_${request.id}_${Date.now()}.png`;
-          const { error: sigError } = await supabase.storage
+          console.log('🖊️ Signature file name:', signatureFileName);
+          
+          const { data: sigUploadData, error: sigError } = await supabase.storage
             .from('documents')
             .upload(signatureFileName, signatureBlob);
+          
+          console.log('🖊️ Signature upload result:', { sigUploadData, sigError });
           
           if (!sigError) {
             const { data: sigUrl } = supabase.storage
               .from('documents')
               .getPublicUrl(signatureFileName);
             signatureUrl = sigUrl?.publicUrl;
+            console.log('🖊️ Signature URL:', signatureUrl);
+          } else {
+            console.error('🖊️ Signature upload error:', sigError);
           }
         } catch (e) {
-          console.log('Signature upload skipped - storage not configured');
+          console.error('🖊️ Signature upload exception:', e);
         }
+      } else {
+        console.log('🖊️ No signature data to upload');
       }
       
       // Generate signed quote PDF
       let signedQuotePdfUrl = null;
       if (hasValidSignature) {
         try {
-          const quoteInfo = getQuoteDataFromRequest(request);
+          console.log('📄 Generating signed quote PDF...');
           const pdfBlob = await generateQuotePDF({
             request,
-            ...quoteInfo,
             isSigned: true,
             signatureName: signatureName,
             signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
             signatureImage: signatureData
           });
           
+          console.log('📄 PDF blob generated, size:', pdfBlob?.size);
+          
           const pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
-          const { error: pdfUploadError } = await supabase.storage
+          const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
             .from('documents')
             .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
+          
+          console.log('📄 PDF upload result:', { pdfUploadData, pdfUploadError });
           
           if (!pdfUploadError) {
             const { data: pdfUrl } = supabase.storage
               .from('documents')
               .getPublicUrl(pdfFileName);
             signedQuotePdfUrl = pdfUrl?.publicUrl;
-            console.log('Signed quote PDF uploaded:', signedQuotePdfUrl);
+            console.log('📄 Signed quote PDF URL:', signedQuotePdfUrl);
           } else {
-            console.log('PDF upload error:', pdfUploadError);
+            console.error('📄 PDF upload error:', pdfUploadError);
           }
         } catch (e) {
-          console.log('Signed quote PDF generation error:', e);
+          console.error('📄 Signed quote PDF generation error:', e);
         }
+      } else {
+        console.log('📄 No valid signature, skipping signed PDF generation');
       }
       
       // Update request status - set to bc_review so admin can verify
       // Also record quote approval if coming from quote_sent status
+      const updatePayload = { 
+        status: 'bc_review',
+        bc_submitted_at: new Date().toISOString(),
+        bc_signed_by: signatureName,
+        bc_signature_date: signatureDateISO,
+        bc_file_url: fileUrl,
+        bc_signature_url: signatureUrl,
+        quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
+      };
+      
+      console.log('📝 Updating service_request with:', updatePayload);
+      
       const { error: updateError } = await supabase
         .from('service_requests')
-        .update({ 
-          status: 'bc_review',
-          bc_submitted_at: new Date().toISOString(),
-          bc_signed_by: signatureName,
-          bc_signature_date: signatureDateISO,
-          bc_file_url: fileUrl,
-          bc_signature_url: signatureUrl,
-          quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
-        })
+        .update(updatePayload)
         .eq('id', request.id);
       
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('📝 Update error:', updateError);
+        throw updateError;
+      }
+      
+      console.log('✅ Service request updated successfully');
       
       // Save documents to request_attachments
       if (fileUrl) {
-        await supabase.from('request_attachments').insert({
+        const { error: bcAttachError } = await supabase.from('request_attachments').insert({
           request_id: request.id,
           file_name: bcFile?.name || 'Bon de Commande.pdf',
           file_url: fileUrl,
@@ -6568,11 +6615,12 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           uploaded_by: profile.id,
           category: 'bon_commande'
         });
+        console.log('📎 BC attachment saved:', { fileUrl, error: bcAttachError });
       }
       
       // Save signed quote PDF to attachments (this is the main document)
       if (signedQuotePdfUrl) {
-        await supabase.from('request_attachments').insert({
+        const { error: pdfAttachError } = await supabase.from('request_attachments').insert({
           request_id: request.id,
           file_name: `Devis_Signé_${request.request_number}.pdf`,
           file_url: signedQuotePdfUrl,
@@ -6581,13 +6629,20 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           uploaded_by: profile.id,
           category: 'devis_signe'
         });
+        console.log('📎 Signed PDF attachment saved:', { signedQuotePdfUrl, error: pdfAttachError });
+      } else {
+        console.log('📎 No signed PDF URL to save as attachment');
       }
+      
+      console.log('🎉 BC submission complete! Signature URL:', signatureUrl, 'Signed PDF URL:', signedQuotePdfUrl);
       
       notify('Bon de commande soumis avec succès!');
       setShowBCModal(false);
       
-      // Force full page reload to ensure fresh data
-      window.location.reload();
+      // Delay reload so we can see console logs
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
       
     } catch (err) {
       notify(`Erreur: ${err.message}`, 'error');
@@ -7191,67 +7246,116 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   )}
                 </div>
 
-                {/* PRICING BREAKDOWN TABLE */}
+                {/* DETAILED PRICING BREAKDOWN TABLE - Qté | Désignation | Prix Unit. | Total HT */}
                 <div className="px-8 py-6 bg-gray-50">
                   <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
                   
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-[#1a1a2e] text-white">
-                        <th className="px-4 py-3 text-left">Appareil</th>
-                        <th className="px-4 py-3 text-left">N° Série</th>
-                        <th className="px-4 py-3 text-left">Service</th>
-                        <th className="px-4 py-3 text-right">Prix HT</th>
+                        <th className="px-3 py-3 text-center w-12">Qté</th>
+                        <th className="px-3 py-3 text-left">Désignation</th>
+                        <th className="px-3 py-3 text-right w-24">Prix Unit.</th>
+                        <th className="px-3 py-3 text-right w-24">Total HT</th>
                       </tr>
                     </thead>
                     <tbody>
                       {devices.map((device, i) => {
-                        const services = [];
-                        const needsCal = device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration');
-                        const needsRep = device.needsRepair || (device.serviceType || device.service_type || '').includes('repair');
-                        if (needsCal) services.push('Étalonnage');
-                        if (needsRep) services.push('Réparation');
+                        const rows = [];
                         
-                        const serviceTotal = device.serviceTotal || 
-                          ((device.calibrationPrice || 0) + (device.repairPrice || 0) + 
-                           (device.additionalParts || []).reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0));
-                        const shipping = device.shipping || 0;
-                        
-                        return [
-                          <tr key={`${i}-main`} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-100'}>
-                            <td className="px-4 py-3 font-medium">{device.model || device.model_name || '—'}</td>
-                            <td className="px-4 py-3 font-mono text-xs">{device.serial || device.serial_number || '—'}</td>
-                            <td className="px-4 py-3">{services.join(' + ') || 'Service'}</td>
-                            <td className="px-4 py-3 text-right font-medium">{serviceTotal.toFixed(2)} €</td>
-                          </tr>,
-                          ...(device.additionalParts || []).map(part => (
-                            <tr key={`${i}-part-${part.id}`} className="bg-gray-50 text-gray-600">
-                              <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ {part.description || 'Pièce/Service'}</td>
-                              <td className="px-4 py-2 text-right text-sm">{parseFloat(part.price || 0).toFixed(2)} €</td>
+                        // Calibration row
+                        if (device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration')) {
+                          const qty = device.calibrationQty || 1;
+                          const unitPrice = parseFloat(device.calibrationPrice) || 0;
+                          const lineTotal = qty * unitPrice;
+                          const isContract = device.isContractCovered;
+                          rows.push(
+                            <tr key={`${i}-cal`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-3 py-2 text-center">{qty}</td>
+                              <td className="px-3 py-2">
+                                Étalonnage {device.model || device.model_name || ''} (SN: {device.serial || device.serial_number || ''})
+                                {isContract && <span className="ml-2 px-2 py-0.5 bg-emerald-500 text-white text-xs rounded">CONTRAT</span>}
+                              </td>
+                              <td className="px-3 py-2 text-right">{isContract ? <span className="text-emerald-600">Contrat</span> : `${unitPrice.toFixed(2)} €`}</td>
+                              <td className="px-3 py-2 text-right font-medium">{isContract ? <span className="text-emerald-600">Contrat</span> : `${lineTotal.toFixed(2)} €`}</td>
                             </tr>
-                          )),
-                          <tr key={`${i}-shipping`} className="bg-gray-200 text-gray-600">
-                            <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ Frais de port</td>
-                            <td className="px-4 py-2 text-right text-sm">{shipping.toFixed(2)} €</td>
-                          </tr>
-                        ];
+                          );
+                        }
+                        
+                        // Nettoyage row
+                        if (device.needsNettoyage && !device.isContractCovered && device.nettoyagePrice > 0) {
+                          const qty = device.nettoyageQty || 1;
+                          const unitPrice = parseFloat(device.nettoyagePrice) || 0;
+                          const lineTotal = qty * unitPrice;
+                          rows.push(
+                            <tr key={`${i}-nettoyage`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-3 py-2 text-center">{qty}</td>
+                              <td className="px-3 py-2">Nettoyage cellule - si requis selon l'état du capteur</td>
+                              <td className="px-3 py-2 text-right">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-3 py-2 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                            </tr>
+                          );
+                        }
+                        
+                        // Repair row
+                        if (device.needsRepair || (device.serviceType || device.service_type || '').includes('repair')) {
+                          const qty = device.repairQty || 1;
+                          const unitPrice = parseFloat(device.repairPrice) || 0;
+                          const lineTotal = qty * unitPrice;
+                          rows.push(
+                            <tr key={`${i}-repair`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-3 py-2 text-center">{qty}</td>
+                              <td className="px-3 py-2">Réparation {device.model || device.model_name || ''} (SN: {device.serial || device.serial_number || ''})</td>
+                              <td className="px-3 py-2 text-right">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-3 py-2 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                            </tr>
+                          );
+                        }
+                        
+                        // Additional parts
+                        (device.additionalParts || []).forEach((part, pi) => {
+                          const qty = parseInt(part.quantity) || 1;
+                          const unitPrice = parseFloat(part.price) || 0;
+                          const lineTotal = qty * unitPrice;
+                          rows.push(
+                            <tr key={`${i}-part-${pi}`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-3 py-2 text-center">{qty}</td>
+                              <td className="px-3 py-2">
+                                {part.partNumber && <span className="text-gray-500 mr-1">[{part.partNumber}]</span>}
+                                {part.description || 'Pièce/Service'}
+                              </td>
+                              <td className="px-3 py-2 text-right">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-3 py-2 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                            </tr>
+                          );
+                        });
+                        
+                        return rows;
                       })}
+                      
+                      {/* Shipping row */}
+                      <tr className="bg-gray-100">
+                        <td className="px-3 py-2 text-center">{quoteData.shipping?.parcels || request.parcels_count || 1}</td>
+                        <td className="px-3 py-2">Frais de port ({quoteData.shipping?.parcels || request.parcels_count || 1} colis)</td>
+                        <td className="px-3 py-2 text-right">{(quoteData.shipping?.unitPrice || 45).toFixed(2)} €</td>
+                        <td className="px-3 py-2 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
+                      </tr>
                     </tbody>
                     <tfoot>
-                      <tr className="border-t-2 border-gray-300">
-                        <td className="px-4 py-3 font-medium" colSpan={3}>Sous-total services</td>
-                        <td className="px-4 py-3 text-right font-medium">{servicesSubtotal.toFixed(2)} €</td>
-                      </tr>
-                      <tr>
-                        <td className="px-4 py-3 font-medium" colSpan={3}>Total frais de port</td>
-                        <td className="px-4 py-3 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
-                      </tr>
                       <tr className="bg-[#00A651] text-white">
-                        <td className="px-4 py-4 font-bold text-lg" colSpan={3}>TOTAL HT</td>
-                        <td className="px-4 py-4 text-right font-bold text-2xl">{grandTotal.toFixed(2)} €</td>
+                        <td colSpan={2} className="px-3 py-4"></td>
+                        <td className="px-3 py-4 text-right font-bold text-lg">TOTAL HT</td>
+                        <td className="px-3 py-4 text-right font-bold text-xl">{grandTotal.toFixed(2)} €</td>
                       </tr>
                     </tfoot>
                   </table>
+                  
+                  {/* Nettoyage disclaimer */}
+                  {devices.some(d => d.needsNettoyage && !d.isContractCovered) && (
+                    <p className="text-xs text-gray-500 mt-3 italic">
+                      * Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.
+                    </p>
+                  )}
                 </div>
 
                 {/* Disclaimers */}
@@ -9523,6 +9627,606 @@ function ContractsPage({ profile, t, notify, setPage }) {
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// RENTALS PAGE (Equipment Rental / Locations)
+// ============================================
+function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
+  const [rentals, setRentals] = useState([]);
+  const [inventory, setInventory] = useState([]);
+  const [bundles, setBundles] = useState([]);
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showNewRental, setShowNewRental] = useState(false);
+  const [selectedRental, setSelectedRental] = useState(null);
+  
+  // New rental form state
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedItems, setSelectedItems] = useState([]);
+  const [step, setStep] = useState(1); // 1: dates, 2: equipment, 3: confirm
+  const [shippingAddressId, setShippingAddressId] = useState(addresses.find(a => a.is_default)?.id || '');
+  const [customerNotes, setCustomerNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    loadData();
+  }, [profile?.company_id]);
+
+  const loadData = async () => {
+    setLoading(true);
+    
+    // Load rental requests for this company
+    const { data: rentalData } = await supabase
+      .from('rental_requests')
+      .select('*, rental_request_items(*), companies(*), shipping_addresses(*)')
+      .eq('company_id', profile.company_id)
+      .order('created_at', { ascending: false });
+    
+    // Load available inventory
+    const { data: invData } = await supabase
+      .from('rental_inventory')
+      .select('*')
+      .eq('is_available', true)
+      .order('model_name');
+    
+    // Load bundles
+    const { data: bundleData } = await supabase
+      .from('rental_bundles')
+      .select('*, rental_bundle_items(*, rental_inventory(*))')
+      .eq('is_active', true)
+      .order('bundle_name');
+    
+    // Load bookings for next 6 months
+    const fromDate = new Date();
+    const toDate = new Date();
+    toDate.setMonth(toDate.getMonth() + 6);
+    
+    const { data: bookingData } = await supabase
+      .from('rental_bookings')
+      .select('*')
+      .gte('end_date', fromDate.toISOString().split('T')[0])
+      .lte('start_date', toDate.toISOString().split('T')[0]);
+    
+    if (rentalData) setRentals(rentalData);
+    if (invData) setInventory(invData);
+    if (bundleData) setBundles(bundleData);
+    if (bookingData) setBookings(bookingData);
+    
+    setLoading(false);
+  };
+
+  const rentalDays = startDate && endDate 
+    ? Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1 
+    : 0;
+
+  const isDeviceAvailable = (inventoryId) => {
+    if (!startDate || !endDate) return true;
+    const start = startDate.toISOString().split('T')[0];
+    const end = endDate.toISOString().split('T')[0];
+    return !bookings.some(b => 
+      b.inventory_id === inventoryId &&
+      b.start_date <= end &&
+      b.end_date >= start
+    );
+  };
+
+  const isBundleAvailable = (bundle) => {
+    if (!bundle.rental_bundle_items) return false;
+    return bundle.rental_bundle_items.every(item => isDeviceAvailable(item.inventory_id));
+  };
+
+  const calculatePrice = (dailyRate, weeklyRate, monthlyRate, days) => {
+    const weekly = weeklyRate || dailyRate * 7;
+    const monthly = monthlyRate || dailyRate * 30;
+    
+    const dailyTotal = dailyRate * days;
+    const weeklyTotal = Math.floor(days / 7) * weekly + (days % 7) * dailyRate;
+    const monthlyTotal = Math.floor(days / 30) * monthly + (days % 30) * dailyRate;
+    
+    let best = { total: dailyTotal, rate: dailyRate, type: 'daily' };
+    if (days >= 7 && weeklyTotal < best.total) best = { total: weeklyTotal, rate: weekly, type: 'weekly' };
+    if (days >= 30 && monthlyTotal < best.total) best = { total: monthlyTotal, rate: monthly, type: 'monthly' };
+    
+    return best;
+  };
+
+  const toggleSelection = (type, item) => {
+    const exists = selectedItems.find(s => s.type === type && s.id === item.id);
+    
+    if (exists) {
+      setSelectedItems(selectedItems.filter(s => !(s.type === type && s.id === item.id)));
+    } else {
+      const pricing = calculatePrice(item.price_per_day, item.price_per_week, item.price_per_month, rentalDays);
+      let serialNumbers = [];
+      if (type === 'device') {
+        serialNumbers = [item.serial_number];
+      } else if (type === 'bundle' && item.rental_bundle_items) {
+        serialNumbers = item.rental_bundle_items.map(bi => bi.rental_inventory?.serial_number).filter(Boolean);
+      }
+      
+      setSelectedItems([...selectedItems, {
+        type, id: item.id,
+        name: type === 'device' ? `${item.model_name} (${item.serial_number})` : item.bundle_name,
+        serialNumbers, dailyRate: item.price_per_day,
+        appliedRate: pricing.rate, rateType: pricing.type,
+        rentalDays, total: pricing.total
+      }]);
+    }
+  };
+
+  const subtotal = selectedItems.reduce((sum, item) => sum + item.total, 0);
+
+  const isDateBlocked = (date) => {
+    const dateStr = date.toISOString().split('T')[0];
+    if (selectedItems.length > 0) {
+      for (const item of selectedItems) {
+        if (item.type === 'device') {
+          const blocked = bookings.some(b => b.inventory_id === item.id && b.start_date <= dateStr && b.end_date >= dateStr);
+          if (blocked) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const handleSubmit = async () => {
+    if (!startDate || !endDate || selectedItems.length === 0 || !shippingAddressId) {
+      notify('Veuillez compléter tous les champs', 'error');
+      return;
+    }
+    
+    setSaving(true);
+    try {
+      // Generate rental number
+      const { data: numberData } = await supabase.rpc('generate_rental_number');
+      const rentalNumber = numberData || `LOC-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`;
+      
+      // Create rental request
+      const { data: rental, error: rentalErr } = await supabase
+        .from('rental_requests')
+        .insert({
+          rental_number: rentalNumber,
+          company_id: profile.company_id,
+          submitted_by: profile.id,
+          start_date: startDate.toISOString().split('T')[0],
+          end_date: endDate.toISOString().split('T')[0],
+          shipping_address_id: shippingAddressId,
+          status: 'requested',
+          quote_subtotal: subtotal,
+          customer_notes: customerNotes,
+          submitted_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      
+      if (rentalErr) throw rentalErr;
+      
+      // Create rental items
+      for (const item of selectedItems) {
+        await supabase.from('rental_request_items').insert({
+          request_id: rental.id,
+          item_type: item.type,
+          inventory_id: item.type === 'device' ? item.id : null,
+          bundle_id: item.type === 'bundle' ? item.id : null,
+          item_name: item.name,
+          serial_numbers: item.serialNumbers,
+          daily_rate: item.dailyRate,
+          applied_rate: item.appliedRate,
+          rate_type: item.rateType,
+          rental_days: item.rentalDays,
+          line_total: item.total
+        });
+        
+        // Create booking entries
+        if (item.type === 'device') {
+          await supabase.from('rental_bookings').insert({
+            inventory_id: item.id,
+            start_date: startDate.toISOString().split('T')[0],
+            end_date: endDate.toISOString().split('T')[0],
+            rental_request_id: rental.id,
+            booking_type: 'rental',
+            created_by: profile.id
+          });
+        } else {
+          const bundle = bundles.find(b => b.id === item.id);
+          if (bundle?.rental_bundle_items) {
+            for (const bi of bundle.rental_bundle_items) {
+              await supabase.from('rental_bookings').insert({
+                inventory_id: bi.inventory_id,
+                start_date: startDate.toISOString().split('T')[0],
+                end_date: endDate.toISOString().split('T')[0],
+                rental_request_id: rental.id,
+                booking_type: 'rental',
+                created_by: profile.id
+              });
+            }
+          }
+        }
+      }
+      
+      notify('Demande de location soumise avec succès!');
+      setShowNewRental(false);
+      setStep(1);
+      setStartDate(null);
+      setEndDate(null);
+      setSelectedItems([]);
+      setCustomerNotes('');
+      loadData();
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+    setSaving(false);
+  };
+
+  const getStatusBadge = (status) => {
+    const styles = {
+      requested: 'bg-blue-100 text-blue-700',
+      quote_sent: 'bg-amber-100 text-amber-700',
+      waiting_bc: 'bg-purple-100 text-purple-700',
+      bc_review: 'bg-indigo-100 text-indigo-700',
+      bc_approved: 'bg-teal-100 text-teal-700',
+      shipped: 'bg-cyan-100 text-cyan-700',
+      in_rental: 'bg-green-100 text-green-700',
+      return_pending: 'bg-orange-100 text-orange-700',
+      returned: 'bg-gray-100 text-gray-700',
+      completed: 'bg-emerald-100 text-emerald-700',
+      cancelled: 'bg-red-100 text-red-700'
+    };
+    const labels = {
+      requested: 'Demande envoyée',
+      quote_sent: 'Devis reçu',
+      waiting_bc: 'En attente BC',
+      bc_review: 'BC en révision',
+      bc_approved: 'BC approuvé',
+      shipped: 'Expédié',
+      in_rental: 'En location',
+      return_pending: 'Retour en attente',
+      returned: 'Retourné',
+      completed: 'Terminé',
+      cancelled: 'Annulé'
+    };
+    return (
+      <span className={`px-3 py-1 rounded-full text-xs font-medium ${styles[status] || 'bg-gray-100 text-gray-700'}`}>
+        {labels[status] || status}
+      </span>
+    );
+  };
+
+  // Calendar Component
+  const Calendar = () => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const startPadding = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const days = [];
+    for (let i = 0; i < startPadding; i++) {
+      days.push(<div key={`pad-${i}`} className="h-10" />);
+    }
+    
+    for (let d = 1; d <= lastDay.getDate(); d++) {
+      const date = new Date(year, month, d);
+      const isPast = date < today;
+      const isBlocked = isDateBlocked(date);
+      const isSelected = startDate && endDate && date >= startDate && date <= endDate;
+      const isStart = startDate && date.getTime() === startDate.getTime();
+      const isEnd = endDate && date.getTime() === endDate.getTime();
+      
+      let className = 'h-10 flex items-center justify-center rounded-lg text-sm font-medium transition-colors ';
+      if (isPast) className += 'text-gray-300 cursor-not-allowed';
+      else if (isBlocked) className += 'bg-red-100 text-red-400 cursor-not-allowed line-through';
+      else if (isStart || isEnd) className += 'bg-[#8B5CF6] text-white';
+      else if (isSelected) className += 'bg-[#8B5CF6]/20 text-[#8B5CF6]';
+      else className += 'hover:bg-gray-100 cursor-pointer text-gray-700';
+      
+      days.push(
+        <div key={d} className={className}
+          onClick={() => {
+            if (isPast || isBlocked) return;
+            if (!startDate || (startDate && endDate)) { setStartDate(date); setEndDate(null); }
+            else if (date < startDate) setStartDate(date);
+            else setEndDate(date);
+          }}
+        >{d}</div>
+      );
+    }
+    
+    return (
+      <div className="bg-white rounded-xl p-6 shadow-sm border">
+        <div className="flex items-center justify-between mb-4">
+          <button type="button" onClick={() => setCurrentMonth(new Date(year, month - 1, 1))} className="p-2 hover:bg-gray-100 rounded-lg">←</button>
+          <h3 className="font-bold text-gray-800">{currentMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</h3>
+          <button type="button" onClick={() => setCurrentMonth(new Date(year, month + 1, 1))} className="p-2 hover:bg-gray-100 rounded-lg">→</button>
+        </div>
+        <div className="grid grid-cols-7 gap-1 mb-2">
+          {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map(day => (
+            <div key={day} className="h-8 flex items-center justify-center text-xs font-medium text-gray-500">{day}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">{days}</div>
+        <div className="mt-4 flex gap-4 text-xs text-gray-500">
+          <div className="flex items-center gap-2"><div className="w-4 h-4 bg-[#8B5CF6] rounded" /><span>Sélectionné</span></div>
+          <div className="flex items-center gap-2"><div className="w-4 h-4 bg-red-100 rounded" /><span>Indisponible</span></div>
+        </div>
+      </div>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="w-8 h-8 border-4 border-[#8B5CF6] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // New Rental Form
+  if (showNewRental) {
+    return (
+      <div>
+        <div className="flex items-center gap-4 mb-6">
+          <button onClick={() => { setShowNewRental(false); setStep(1); }} className="text-gray-500 hover:text-gray-700">←</button>
+          <h1 className="text-2xl font-bold text-[#1E3A5F]">Nouvelle Location</h1>
+        </div>
+
+        {/* Progress Steps */}
+        <div className="flex items-center gap-2 mb-8">
+          {[{ num: 1, label: 'Dates' }, { num: 2, label: 'Équipement' }, { num: 3, label: 'Confirmation' }].map((s, idx) => (
+            <div key={s.num} className="flex items-center">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${step >= s.num ? 'bg-[#8B5CF6] text-white' : 'bg-gray-200 text-gray-500'}`}>{s.num}</div>
+              <span className={`ml-2 text-sm font-medium ${step >= s.num ? 'text-[#8B5CF6]' : 'text-gray-400'}`}>{s.label}</span>
+              {idx < 2 && <div className={`w-12 h-0.5 mx-4 ${step > s.num ? 'bg-[#8B5CF6]' : 'bg-gray-200'}`} />}
+            </div>
+          ))}
+        </div>
+
+        {/* Step 1: Dates */}
+        {step === 1 && (
+          <div className="grid lg:grid-cols-2 gap-8">
+            <div>
+              <h2 className="text-lg font-bold text-gray-800 mb-4">Sélectionnez vos dates de location</h2>
+              <Calendar />
+            </div>
+            <div>
+              <div className="bg-[#8B5CF6]/10 rounded-xl p-6 border border-[#8B5CF6]/20">
+                <h3 className="font-bold text-[#8B5CF6] mb-4">📅 Période sélectionnée</h3>
+                {startDate && endDate ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div><p className="text-sm text-gray-500">Date de début</p><p className="font-bold text-gray-800">{startDate.toLocaleDateString('fr-FR')}</p></div>
+                      <div><p className="text-sm text-gray-500">Date de fin</p><p className="font-bold text-gray-800">{endDate.toLocaleDateString('fr-FR')}</p></div>
+                    </div>
+                    <div className="bg-white rounded-lg p-4">
+                      <p className="text-3xl font-bold text-[#8B5CF6]">{rentalDays} jour{rentalDays > 1 ? 's' : ''}</p>
+                    </div>
+                    <button onClick={() => setStep(2)} className="w-full py-3 bg-[#8B5CF6] text-white rounded-lg font-bold hover:bg-[#7C3AED]">
+                      Continuer → Choisir l'équipement
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-400">
+                    <p className="text-4xl mb-2">📅</p>
+                    <p>Sélectionnez une période sur le calendrier</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: Equipment */}
+        {step === 2 && (
+          <div className="grid lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-800">Choisissez votre équipement</h2>
+                  <p className="text-gray-600">Du {startDate?.toLocaleDateString('fr-FR')} au {endDate?.toLocaleDateString('fr-FR')} ({rentalDays} jours)</p>
+                </div>
+                <button onClick={() => setStep(1)} className="text-[#8B5CF6] hover:underline">← Modifier les dates</button>
+              </div>
+
+              {/* Bundles */}
+              {bundles.length > 0 && (
+                <div>
+                  <h3 className="font-bold text-gray-700 mb-3">📦 Kits complets</h3>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {bundles.map(bundle => {
+                      const available = isBundleAvailable(bundle);
+                      const selected = selectedItems.find(s => s.type === 'bundle' && s.id === bundle.id);
+                      const pricing = calculatePrice(bundle.price_per_day, bundle.price_per_week, bundle.price_per_month, rentalDays);
+                      return (
+                        <div key={bundle.id} onClick={() => available && toggleSelection('bundle', bundle)}
+                          className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${!available ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed' : selected ? 'bg-[#8B5CF6]/10 border-[#8B5CF6]' : 'bg-white border-gray-200 hover:border-[#8B5CF6]/50'}`}>
+                          <div className="flex items-start justify-between mb-2">
+                            <div><h4 className="font-bold text-gray-800">{bundle.bundle_name}</h4><p className="text-sm text-gray-500">{bundle.description_fr || bundle.description}</p></div>
+                            {selected && <span className="text-[#8B5CF6] text-xl">✓</span>}
+                          </div>
+                          <div className="flex items-end justify-between">
+                            <div><p className="text-2xl font-bold text-[#8B5CF6]">€{pricing.total.toFixed(2)}</p><p className="text-xs text-gray-500">€{bundle.price_per_day}/jour</p></div>
+                            {!available && <span className="px-2 py-1 bg-red-100 text-red-600 text-xs rounded-full">Indisponible</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Devices */}
+              <div>
+                <h3 className="font-bold text-gray-700 mb-3">🔬 Appareils individuels</h3>
+                <div className="grid md:grid-cols-2 gap-4">
+                  {inventory.map(device => {
+                    const available = isDeviceAvailable(device.id);
+                    const selected = selectedItems.find(s => s.type === 'device' && s.id === device.id);
+                    const pricing = calculatePrice(device.price_per_day, device.price_per_week, device.price_per_month, rentalDays);
+                    return (
+                      <div key={device.id} onClick={() => available && toggleSelection('device', device)}
+                        className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${!available ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed' : selected ? 'bg-[#8B5CF6]/10 border-[#8B5CF6]' : 'bg-white border-gray-200 hover:border-[#8B5CF6]/50'}`}>
+                        <div className="flex items-start justify-between mb-2">
+                          <div><h4 className="font-bold text-gray-800">{device.model_name}</h4><p className="text-sm text-gray-500 font-mono">SN: {device.serial_number}</p></div>
+                          {selected && <span className="text-[#8B5CF6] text-xl">✓</span>}
+                        </div>
+                        <div className="flex items-end justify-between">
+                          <div><p className="text-2xl font-bold text-[#8B5CF6]">€{pricing.total.toFixed(2)}</p><p className="text-xs text-gray-500">€{device.price_per_day}/jour</p></div>
+                          {!available && <span className="px-2 py-1 bg-red-100 text-red-600 text-xs rounded-full">Indisponible</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Selection Summary */}
+            <div>
+              <div className="bg-white rounded-xl p-6 shadow-sm border sticky top-4">
+                <h3 className="font-bold text-gray-800 mb-4">🛒 Votre sélection</h3>
+                {selectedItems.length === 0 ? (
+                  <p className="text-gray-400 text-center py-8">Aucun équipement sélectionné</p>
+                ) : (
+                  <div className="space-y-3 mb-6">
+                    {selectedItems.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div><p className="font-medium text-gray-800 text-sm">{item.name}</p><p className="text-xs text-gray-500">{item.rentalDays} jours</p></div>
+                        <div className="text-right">
+                          <p className="font-bold text-[#8B5CF6]">€{item.total.toFixed(2)}</p>
+                          <button onClick={() => setSelectedItems(selectedItems.filter((_, i) => i !== idx))} className="text-xs text-red-500 hover:underline">Retirer</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="border-t pt-4">
+                  <div className="flex justify-between text-lg font-bold">
+                    <span>Total estimé</span>
+                    <span className="text-[#8B5CF6]">€{subtotal.toFixed(2)} HT</span>
+                  </div>
+                </div>
+                <button onClick={() => setStep(3)} disabled={selectedItems.length === 0}
+                  className="w-full mt-6 py-3 bg-[#8B5CF6] text-white rounded-lg font-bold hover:bg-[#7C3AED] disabled:opacity-50 disabled:cursor-not-allowed">
+                  Continuer → Confirmation
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Confirm */}
+        {step === 3 && (
+          <div className="max-w-3xl mx-auto">
+            <div className="bg-white rounded-xl shadow-sm border overflow-hidden mb-6">
+              <div className="bg-[#8B5CF6] text-white p-6">
+                <h3 className="text-xl font-bold mb-2">Demande de Location</h3>
+                <p>Du {startDate?.toLocaleDateString('fr-FR')} au {endDate?.toLocaleDateString('fr-FR')} ({rentalDays} jours)</p>
+              </div>
+              
+              <div className="p-6 border-b">
+                <h4 className="font-bold text-gray-700 mb-4">Équipement sélectionné</h4>
+                {selectedItems.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between py-3 border-b last:border-0">
+                    <div><p className="font-medium text-gray-800">{item.name}</p></div>
+                    <p className="font-bold text-gray-800">€{item.total.toFixed(2)}</p>
+                  </div>
+                ))}
+                <div className="flex justify-between pt-4 text-lg font-bold">
+                  <span>Total HT (estimation)</span>
+                  <span className="text-[#8B5CF6]">€{subtotal.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="p-6 border-b">
+                <h4 className="font-bold text-gray-700 mb-4">Adresse de livraison</h4>
+                <div className="space-y-2">
+                  {addresses.map(addr => (
+                    <label key={addr.id} className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer ${shippingAddressId === addr.id ? 'border-[#8B5CF6] bg-[#8B5CF6]/5' : 'border-gray-200'}`}>
+                      <input type="radio" checked={shippingAddressId === addr.id} onChange={() => setShippingAddressId(addr.id)} />
+                      <div>
+                        <p className="font-medium">{addr.label || addr.company_name}</p>
+                        <p className="text-sm text-gray-600">{addr.address_line1}, {addr.postal_code} {addr.city}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-6">
+                <h4 className="font-bold text-gray-700 mb-2">Notes (optionnel)</h4>
+                <textarea value={customerNotes} onChange={e => setCustomerNotes(e.target.value)} rows={3}
+                  className="w-full border rounded-lg p-3" placeholder="Informations complémentaires..." />
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <button onClick={() => setStep(2)} className="px-6 py-3 border rounded-lg hover:bg-gray-50">← Retour</button>
+              <button onClick={handleSubmit} disabled={saving}
+                className="flex-1 py-3 bg-[#8B5CF6] text-white rounded-lg font-bold hover:bg-[#7C3AED] disabled:opacity-50">
+                {saving ? 'Envoi en cours...' : 'Soumettre la demande'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Main Rentals List
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-[#1E3A5F]">📦 Mes Locations</h1>
+        <button onClick={() => setShowNewRental(true)}
+          className="px-4 py-2 bg-[#8B5CF6] text-white rounded-lg font-medium hover:bg-[#7C3AED] flex items-center gap-2">
+          + Nouvelle Location
+        </button>
+      </div>
+
+      {rentals.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-xl border">
+          <p className="text-6xl mb-4">📦</p>
+          <h3 className="text-xl font-bold text-gray-800 mb-2">Aucune location</h3>
+          <p className="text-gray-500 mb-6">Vous n'avez pas encore de demande de location</p>
+          <button onClick={() => setShowNewRental(true)}
+            className="px-6 py-3 bg-[#8B5CF6] text-white rounded-lg font-bold hover:bg-[#7C3AED]">
+            Louer un équipement
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {rentals.map(rental => (
+            <div key={rental.id} className="bg-white rounded-xl p-6 shadow-sm border hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-bold text-lg text-[#1E3A5F]">{rental.rental_number}</h3>
+                  <p className="text-sm text-gray-500">
+                    Du {new Date(rental.start_date).toLocaleDateString('fr-FR')} au {new Date(rental.end_date).toLocaleDateString('fr-FR')}
+                    {' '}({rental.rental_days || Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000 * 60 * 60 * 24)) + 1} jours)
+                  </p>
+                </div>
+                {getStatusBadge(rental.status)}
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-600">
+                  {rental.rental_request_items?.length || 0} équipement(s)
+                </div>
+                <div className="text-lg font-bold text-[#8B5CF6]">
+                  €{(rental.quote_total_ht || rental.quote_subtotal || 0).toFixed(2)} HT
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
