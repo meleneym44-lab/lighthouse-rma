@@ -458,11 +458,11 @@ function getQuoteDataFromRequest(request) {
 
 async function generateQuotePDF(options) {
   const {
-    request, isSigned = false,
-    signatureName = '', signatureDate = '', signatureImage = null
+    request, devices = [], servicesSubtotal = 0, shippingTotal = 0, grandTotal = 0,
+    calibrationTypes = ['particle_counter'], hasRepair = false, isSigned = false,
+    signatureName = '', signatureDate = '', signatureImage = null, createdBy = 'M. Meleney'
   } = options;
 
-  // Load jsPDF
   await new Promise((resolve, reject) => {
     if (window.jspdf) { resolve(); return; }
     const script = document.createElement('script');
@@ -475,23 +475,11 @@ async function generateQuotePDF(options) {
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF('p', 'mm', 'a4');
   
-  // Get quote data from request (contains breakdown)
-  const quoteData = request.quote_data || {};
-  const devicePricing = quoteData.devices || [];
-  const shipping = quoteData.shipping || { parcels: request.parcels_count || 1, unitPrice: 45, total: (request.parcels_count || 1) * 45 };
-  const servicesSubtotal = quoteData.servicesSubtotal || request.quote_subtotal || 0;
-  const shippingTotal = quoteData.shippingTotal || request.quote_shipping || shipping.total;
-  const grandTotal = quoteData.grandTotal || request.quote_total || (servicesSubtotal + shippingTotal);
-  const requiredSections = quoteData.requiredSections || { calibrationTypes: ['particle_counter'], hasRepair: false };
-  const createdBy = quoteData.createdBy || 'M. Meleney';
-  
-  const company = request.companies || {};
-  
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
   const footerHeight = 16;
+  const signatureBlockHeight = 42;
   
-  // Colors
   const green = [0, 166, 81];
   const darkBlue = [26, 26, 46];
   const gray = [80, 80, 80];
@@ -500,11 +488,15 @@ async function generateQuotePDF(options) {
   
   let y = margin;
   
-  // Load logos
+  // === LOGO LOADING ===
   const loadImageAsBase64 = async (url) => {
     try {
+      // First try fetch approach (works better with Next.js)
       const response = await fetch(url);
-      if (!response.ok) return null;
+      if (!response.ok) {
+        console.log('Logo fetch failed:', url, response.status);
+        return null;
+      }
       const blob = await response.blob();
       return new Promise((resolve) => {
         const reader = new FileReader();
@@ -513,12 +505,39 @@ async function generateQuotePDF(options) {
         reader.readAsDataURL(blob);
       });
     } catch (e) {
-      return null;
+      console.log('Logo loading error:', url, e);
+      // Fallback to Image approach
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+      });
     }
   };
   
-  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
-  let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
+  // Load logos (with fallback if not available)
+  let lighthouseLogo = null;
+  let capcertLogo = null;
+  try {
+    const results = await Promise.all([
+      loadImageAsBase64('/images/logos/lighthouse-logo.png'),
+      loadImageAsBase64('/images/logos/capcert-logo.png')
+    ]);
+    lighthouseLogo = results[0];
+    capcertLogo = results[1];
+    console.log('Logos loaded:', !!lighthouseLogo, !!capcertLogo);
+  } catch (e) {
+    console.log('Logo loading skipped:', e);
+  }
   
   const addFooter = () => {
     pdf.setFillColor(...darkBlue);
@@ -546,21 +565,31 @@ async function generateQuotePDF(options) {
   };
 
   // ===== HEADER =====
+  let logoAdded = false;
   if (lighthouseLogo) {
     try {
+      console.log('Attempting to add lighthouse logo, data length:', lighthouseLogo.length);
+      // Detect format from base64 header
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
       pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+      logoAdded = true;
+      console.log('Lighthouse logo added successfully');
     } catch (e) {
-      pdf.setFontSize(26);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(...darkBlue);
-      pdf.text('LIGHTHOUSE', margin, y + 8);
+      console.log('Lighthouse logo addImage failed:', e);
+      logoAdded = false;
     }
-  } else {
+  }
+  
+  if (!logoAdded) {
+    // Fallback to text if image fails
     pdf.setFontSize(26);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
     pdf.text('LIGHTHOUSE', margin, y + 8);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Worldwide Solutions', margin, y + 14);
   }
   
   pdf.setFontSize(18);
@@ -577,6 +606,7 @@ async function generateQuotePDF(options) {
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
   y += 7;
+
 
   // ===== INFO BAR =====
   pdf.setFillColor(245, 245, 245);
@@ -604,90 +634,23 @@ async function generateQuotePDF(options) {
   pdf.setFontSize(14);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(company.name || 'Client', margin, y);
+  pdf.text(request.companies?.name || 'Client', margin, y);
   y += 6;
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  if (company.billing_address || company.address) {
-    pdf.text(company.billing_address || company.address, margin, y);
+  if (request.companies?.billing_address) {
+    pdf.text(request.companies.billing_address, margin, y);
     y += 5;
   }
-  const city = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
+  const city = [request.companies?.billing_postal_code, request.companies?.billing_city].filter(Boolean).join(' ');
   if (city) {
     pdf.text(city, margin, y);
     y += 5;
   }
-  y += 8;
+  y += 3;
 
-  // ===== SERVICE DESCRIPTION BLOCKS =====
-  const calibrationTypes = requiredSections.calibrationTypes || ['particle_counter'];
-  const hasRepair = requiredSections.hasRepair || false;
-
-  // Service descriptions data
-  const CAL_DATA = {
-    particle_counter: {
-      title: "Etalonnage Compteur de Particules Aeroportees",
-      prestations: [
-        "Verification des fonctionnalites du compteur",
-        "Verification et reglage du debit",
-        "Verification de la cellule de mesure",
-        "Controle et reglage des seuils de mesures granulometrique a l'aide de spheres de latex calibrees et certifiees",
-        "Verification en nombre par comparaison a un etalon etalonne selon la norme ISO 17025, conformement a la norme ISO 21501-4",
-        "Fourniture d'un rapport de test et de calibration"
-      ]
-    },
-    bio_collector: {
-      title: "Etalonnage Bio Collecteur",
-      prestations: [
-        "Verification des fonctionnalites de l'appareil",
-        "Verification et reglage du debit",
-        "Verification de la cellule d'impaction",
-        "Controle des parametres de collecte",
-        "Fourniture d'un rapport de test et de calibration"
-      ]
-    },
-    liquid_counter: {
-      title: "Etalonnage Compteur de Particules en Milieu Liquide",
-      prestations: [
-        "Verification des fonctionnalites du compteur",
-        "Verification et reglage du debit",
-        "Verification de la cellule de mesure optique",
-        "Controle et reglage des seuils de mesures granulometrique",
-        "Verification en nombre par comparaison a un etalon",
-        "Fourniture d'un rapport de test et de calibration"
-      ]
-    },
-    other: {
-      title: "Etalonnage Equipement",
-      prestations: [
-        "Verification des fonctionnalites de l'appareil",
-        "Etalonnage selon les specifications du fabricant",
-        "Tests de fonctionnement",
-        "Fourniture d'un rapport de test"
-      ]
-    }
-  };
-
-  const REPAIR_DATA = {
-    title: "Reparation",
-    prestations: [
-      "Diagnostic complet de l'appareil",
-      "Identification des composants defectueux",
-      "Remplacement des pieces defectueuses (pieces facturees en sus)",
-      "Tests de fonctionnement complets",
-      "Verification d'etalonnage post-reparation si applicable"
-    ]
-  };
-
-  const DISCLAIMERS = [
-    "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables.",
-    "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses et necessitent un remplacement.",
-    "Les mesures stockees dans les appareils seront eventuellement perdues lors des operations de maintenance.",
-    "Les equipements envoyes devront etre decontamines de toutes substances chimiques, bacteriennes ou radioactives."
-  ];
-
-  // Draw service blocks
+  // ===== SERVICE SECTIONS =====
   const drawServiceBlock = (data, color) => {
     const lineH = 5;
     let lines = [];
@@ -714,7 +677,9 @@ async function generateQuotePDF(options) {
     data.prestations.forEach(p => {
       const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
       wrapped.forEach((line, i) => {
-        if (i === 0) pdf.text('-', margin + 5, y);
+        if (i === 0) {
+          pdf.text('-', margin + 5, y);
+        }
         pdf.text(line, margin + 9, y);
         y += lineH;
       });
@@ -722,19 +687,19 @@ async function generateQuotePDF(options) {
     y += 3;
   };
 
-  // Draw calibration blocks (blue)
   calibrationTypes.forEach(type => {
-    const data = CAL_DATA[type] || CAL_DATA.particle_counter;
+    const data = PDF_CALIBRATION_DATA[type] || PDF_CALIBRATION_DATA.particle_counter;
     drawServiceBlock(data, [59, 130, 246]);
   });
   
-  // Draw repair block (orange) if needed
   if (hasRepair) {
-    drawServiceBlock(REPAIR_DATA, [249, 115, 22]);
+    drawServiceBlock(PDF_REPAIR_DATA, [249, 115, 22]);
   }
 
-  // ===== CONDITIONS/DISCLAIMERS =====
-  checkPageBreak(25);
+  // ===== CONDITIONS (moved up - right after service descriptions) =====
+  const conditionsHeight = 22;
+  checkPageBreak(conditionsHeight);
+  
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...lightGray);
@@ -742,21 +707,21 @@ async function generateQuotePDF(options) {
   y += 4;
   pdf.setFontSize(8);
   pdf.setTextColor(...gray);
-  DISCLAIMERS.forEach(d => {
+  PDF_DISCLAIMERS.forEach(d => {
     pdf.text('- ' + d, margin, y);
     y += 4;
   });
   y += 5;
 
-  // ===== DETAILED PRICING TABLE (Qté | Désignation | Prix Unit. | Total HT) =====
-  const rowH = 7;
-  const colQty = margin;
-  const colDesc = margin + 12;
-  const colUnit = pageWidth - margin - 45;
-  const colTotal = pageWidth - margin - 3;
-  
-  checkPageBreak(60);
-  
+  // ===== PRICING TABLE (moved down - after conditions) =====
+  const rowH = 8;
+  let tableRows = devices.length;
+  devices.forEach(d => {
+    tableRows += (d.additionalParts || []).length + 1;
+  });
+  const tableH = 12 + (tableRows * rowH) + 32;
+  checkPageBreak(tableH);
+
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
@@ -769,139 +734,82 @@ async function generateQuotePDF(options) {
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...white);
-  pdf.text('Qte', colQty + 3, y + 6);
-  pdf.text('Designation', colDesc, y + 6);
-  pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
-  pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
+  pdf.text('Appareil', margin + 3, y + 6);
+  pdf.text('N. Serie', margin + 55, y + 6);
+  pdf.text('Service', margin + 100, y + 6);
+  pdf.text('Prix HT', pageWidth - margin - 3, y + 6, { align: 'right' });
   y += 9;
 
-  let rowIndex = 0;
-  let hasNettoyage = false;
+  devices.forEach((device, idx) => {
+    const svc = [];
+    if (device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration')) svc.push('Etalonnage');
+    if (device.needsRepair || (device.serviceType || device.service_type || '').includes('repair')) svc.push('Reparation');
+    const total = device.serviceTotal || ((device.calibrationPrice || 0) + (device.repairPrice || 0) + (device.additionalParts || []).reduce((s, p) => s + (parseFloat(p.price) || 0), 0));
+    
+    pdf.setFillColor(idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(device.model || device.model_name || '-', margin + 3, y + 5.5);
+    pdf.setFont('courier', 'normal');
+    pdf.text(device.serial || device.serial_number || '-', margin + 55, y + 5.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(svc.join(' + ') || 'Service', margin + 100, y + 5.5);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(total.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+    y += rowH;
 
-  // Build line items from devicePricing (from quote_data)
-  devicePricing.forEach((device) => {
-    // Calibration row
-    if (device.needsCalibration) {
-      const qty = device.calibrationQty || 1;
-      const unitPrice = parseFloat(device.calibrationPrice) || 0;
-      const lineTotal = qty * unitPrice;
-      const isContract = device.isContractCovered;
-      
-      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
-      pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkBlue);
-      pdf.text(String(qty), colQty + 3, y + 5);
-      const calDesc = `Etalonnage ${device.model || ''} (SN: ${device.serial || ''})${isContract ? ' [CONTRAT]' : ''}`;
-      pdf.text(calDesc.substring(0, 60), colDesc, y + 5);
-      pdf.text(isContract ? 'Contrat' : unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(isContract ? 'Contrat' : lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
-      y += rowH;
-      rowIndex++;
-    }
-    
-    // Nettoyage row
-    if (device.needsNettoyage && !device.isContractCovered && device.nettoyagePrice > 0) {
-      hasNettoyage = true;
-      const qty = device.nettoyageQty || 1;
-      const unitPrice = parseFloat(device.nettoyagePrice) || 0;
-      const lineTotal = qty * unitPrice;
-      
-      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
-      pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkBlue);
-      pdf.text(String(qty), colQty + 3, y + 5);
-      pdf.text('Nettoyage cellule - si requis selon etat du capteur', colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
-      y += rowH;
-      rowIndex++;
-    }
-    
-    // Repair row
-    if (device.needsRepair) {
-      const qty = device.repairQty || 1;
-      const unitPrice = parseFloat(device.repairPrice) || 0;
-      const lineTotal = qty * unitPrice;
-      
-      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
-      pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkBlue);
-      pdf.text(String(qty), colQty + 3, y + 5);
-      const repDesc = `Reparation ${device.model || ''} (SN: ${device.serial || ''})`;
-      pdf.text(repDesc.substring(0, 60), colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
-      y += rowH;
-      rowIndex++;
-    }
-    
-    // Additional parts
     (device.additionalParts || []).forEach(part => {
-      const qty = parseInt(part.quantity) || 1;
-      const unitPrice = parseFloat(part.price) || 0;
-      const lineTotal = qty * unitPrice;
-      
-      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
+      pdf.setFillColor(250, 250, 250);
       pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFontSize(9);
       pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkBlue);
-      pdf.text(String(qty), colQty + 3, y + 5);
-      const partDesc = part.partNumber ? `[${part.partNumber}] ${part.description || 'Piece'}` : (part.description || 'Piece/Service');
-      pdf.text(partDesc.substring(0, 55), colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      pdf.setFontSize(8);
+      pdf.setTextColor(...gray);
+      pdf.text('    > ' + (part.description || 'Piece/Service'), margin + 3, y + 5.5);
+      pdf.text((parseFloat(part.price) || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
       y += rowH;
-      rowIndex++;
     });
+
+    pdf.setFillColor(242, 242, 242);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.setTextColor(...gray);
+    pdf.text('    > Frais de port', margin + 3, y + 5.5);
+    pdf.text((device.shipping || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+    y += rowH;
   });
+
+  // Totals
+  pdf.setDrawColor(200, 200, 200);
+  pdf.line(margin, y, pageWidth - margin, y);
   
-  // Shipping row
-  pdf.setFillColor(245, 245, 245);
+  pdf.setFillColor(255, 255, 255);
   pdf.rect(margin, y, contentWidth, rowH, 'F');
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...darkBlue);
-  pdf.text(String(shipping.parcels || 1), colQty + 3, y + 5);
-  const shipDesc = shipping.parcels > 1 ? `Frais de port (${shipping.parcels} colis)` : 'Frais de port';
-  pdf.text(shipDesc, colDesc, y + 5);
-  pdf.text((shipping.unitPrice || 45).toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
   pdf.setFont('helvetica', 'bold');
-  pdf.text(shippingTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+  pdf.setFontSize(9);
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Sous-total services', margin + 3, y + 5.5);
+  pdf.text(servicesSubtotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
   y += rowH;
 
-  // Total row
+  pdf.rect(margin, y, contentWidth, rowH, 'F');
+  pdf.text('Total frais de port', margin + 3, y + 5.5);
+  pdf.text(shippingTotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+  y += rowH;
+
   pdf.setFillColor(...green);
   pdf.rect(margin, y, contentWidth, 11, 'F');
   pdf.setTextColor(...white);
   pdf.setFontSize(11);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('TOTAL HT', colUnit - 30, y + 7.5);
+  pdf.text('TOTAL HT', margin + 4, y + 7.5);
   pdf.setFontSize(16);
-  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
+  pdf.text(grandTotal.toFixed(2) + ' EUR', pageWidth - margin - 4, y + 8, { align: 'right' });
   y += 15;
-  
-  // Nettoyage disclaimer
-  if (hasNettoyage) {
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'italic');
-    pdf.setTextColor(...lightGray);
-    pdf.text('* Le nettoyage cellule sera facture uniquement si necessaire selon l\'etat du capteur a reception.', margin, y);
-    y += 5;
-  }
 
-  // ===== SIGNATURE SECTION =====
-  const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
+  // ===== SIGNATURE - AT BOTTOM OF CURRENT PAGE =====
+  const sigY = Math.max(y + 5, pageHeight - footerHeight - signatureBlockHeight - 3);
   
   pdf.setDrawColor(200, 200, 200);
   pdf.setLineWidth(0.3);
@@ -919,19 +827,21 @@ async function generateQuotePDF(options) {
   pdf.setTextColor(...gray);
   pdf.text('Lighthouse France', margin, sigY + 20);
 
-  // Capcert logo
+  // Add Capcert certification logo (bottom left, next to ETABLI PAR)
   if (capcertLogo) {
     try {
+      console.log('Attempting to add capcert logo');
       const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
       pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
-    } catch (e) {}
+      console.log('Capcert logo added successfully');
+    } catch (e) {
+      console.log('Capcert logo failed:', e);
+    }
   }
 
-  // Signature box
   const sigBoxX = pageWidth - margin - 62;
   
   if (isSigned && signatureName) {
-    // Signed version - green box with signature
     pdf.setFillColor(245, 255, 250);
     pdf.setDrawColor(...green);
     pdf.setLineWidth(0.5);
@@ -957,7 +867,6 @@ async function generateQuotePDF(options) {
       try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 40, sigY + 9, 18, 16); } catch(e) {}
     }
   } else {
-    // Unsigned version - dashed box
     pdf.setFontSize(8);
     pdf.setTextColor(...lightGray);
     pdf.text('Signature client', sigBoxX + 16, sigY + 7);
@@ -972,6 +881,7 @@ async function generateQuotePDF(options) {
   addFooter();
   return pdf.output('blob');
 }
+
 // Contract Quote PDF Generator - IDENTICAL structure to RMA
 async function generateContractQuotePDF(options) {
   const {
@@ -2975,7 +2885,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     address_id: addresses.find(a => a.is_default)?.id || '',
     showNewForm: false,
     newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' },
-    parcels: 0
+    parcels: 0 // Start at 0 - customer must choose
   });
   const [saving, setSaving] = useState(false);
 
@@ -3128,7 +3038,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       return;
     }
     
-    // Validate parcels
+    // Validate parcels count
     if (!shipping.parcels || shipping.parcels < 1) {
       notify('Veuillez indiquer le nombre de colis', 'error');
       return;
@@ -3892,7 +3802,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
         Information de Livraison
       </h2>
 
-      {/* Number of Parcels - FIRST */}
+      {/* Number of Parcels - FIRST (Required) */}
       <div className="mb-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
         <label className="block text-sm font-bold text-[#1E3A5F] mb-2">
           📦 Nombre de colis *
@@ -3914,7 +3824,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
             value={shipping.parcels || 0}
             onChange={e => setShipping({ ...shipping, parcels: Math.max(0, parseInt(e.target.value) || 0) })}
             className={`w-20 px-3 py-2 text-center border rounded-lg font-bold text-lg ${
-              (shipping.parcels || 0) === 0 ? 'border-red-400 bg-red-50' : 'border-gray-300'
+              shipping.parcels === 0 ? 'border-red-300 bg-red-50' : 'border-gray-300'
             }`}
           />
           <button
@@ -3926,8 +3836,8 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
           </button>
           <span className="text-gray-600 ml-2">colis</span>
         </div>
-        {(shipping.parcels || 0) === 0 && (
-          <p className="text-red-600 text-sm mt-2 font-medium">⚠️ Veuillez indiquer le nombre de colis</p>
+        {shipping.parcels === 0 && (
+          <p className="text-red-500 text-sm mt-2">⚠️ Veuillez indiquer le nombre de colis</p>
         )}
       </div>
 
@@ -6329,18 +6239,99 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   // Quote approval/revision handlers
   const handleApproveQuote = async () => {
     setApprovingQuote(true);
-    const { error } = await supabase.from('service_requests').update({
-      status: 'waiting_bc',
-      quote_approved_at: new Date().toISOString()
-    }).eq('id', request.id);
     
-    if (error) {
-      notify('Erreur: ' + error.message, 'error');
-    } else {
-      notify('✅ Devis approuvé! Veuillez soumettre votre bon de commande.', 'success');
-      setShowQuoteModal(false);
-      refresh();
+    try {
+      // Upload signature image if exists
+      let signatureUrl = null;
+      if (signatureData) {
+        try {
+          const base64Data = signatureData.split(',')[1];
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'image/png' });
+          
+          const fileName = `signatures/${request.id}/quote_signature_${Date.now()}.png`;
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('rma-files')
+            .upload(fileName, blob);
+          
+          if (!uploadError && uploadData) {
+            const { data: urlData } = supabase.storage.from('rma-files').getPublicUrl(fileName);
+            signatureUrl = urlData?.publicUrl;
+          }
+        } catch (sigErr) {
+          console.error('Signature upload error:', sigErr);
+        }
+      }
+      
+      // Generate signed quote PDF and save it
+      let signedQuotePdfUrl = null;
+      if (signatureName && signatureData) {
+        try {
+          const pdfBlob = await generateQuotePDF({
+            request,
+            devices: request.request_devices || [],
+            servicesSubtotal: request.quoted_price || 0,
+            shippingTotal: (request.parcels_count || 1) * 45,
+            grandTotal: (request.quoted_price || 0) + ((request.parcels_count || 1) * 45),
+            isSigned: true,
+            signatureName: signatureName,
+            signatureDate: signatureDateDisplay,
+            signatureImage: signatureData
+          });
+          
+          const fileName = `quotes/${request.id}/quote_signed_${Date.now()}.pdf`;
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('rma-files')
+            .upload(fileName, pdfBlob);
+          
+          if (!uploadError && uploadData) {
+            const { data: urlData } = supabase.storage.from('rma-files').getPublicUrl(fileName);
+            signedQuotePdfUrl = urlData?.publicUrl;
+          }
+        } catch (pdfErr) {
+          console.error('PDF generation error:', pdfErr);
+        }
+      }
+      
+      // Update request with quote approval and signature
+      const { error } = await supabase.from('service_requests').update({
+        status: 'waiting_bc',
+        quote_approved_at: new Date().toISOString(),
+        quote_signed_by: signatureName,
+        quote_signature_date: signatureDateISO,
+        quote_signature_url: signatureUrl,
+        quote_signed_pdf_url: signedQuotePdfUrl
+      }).eq('id', request.id);
+      
+      // Save signed quote to attachments
+      if (signedQuotePdfUrl) {
+        await supabase.from('request_attachments').insert({
+          request_id: request.id,
+          file_name: `Devis_Signé_${request.request_number}.pdf`,
+          file_url: signedQuotePdfUrl,
+          file_type: 'application/pdf',
+          file_size: 0,
+          uploaded_by: profile.id,
+          category: 'devis_signe'
+        });
+      }
+      
+      if (error) {
+        notify('Erreur: ' + error.message, 'error');
+      } else {
+        notify('✅ Devis approuvé! Veuillez soumettre votre bon de commande.', 'success');
+        setShowQuoteModal(false);
+        refresh();
+      }
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
     }
+    
     setApprovingQuote(false);
   };
   
@@ -6499,100 +6490,76 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       let signatureUrl = null;
       if (signatureData) {
         try {
-          console.log('🖊️ Uploading signature...');
           const signatureBlob = await fetch(signatureData).then(r => r.blob());
           const signatureFileName = `signature_${request.id}_${Date.now()}.png`;
-          console.log('🖊️ Signature file name:', signatureFileName);
-          
-          const { data: sigUploadData, error: sigError } = await supabase.storage
+          const { error: sigError } = await supabase.storage
             .from('documents')
             .upload(signatureFileName, signatureBlob);
-          
-          console.log('🖊️ Signature upload result:', { sigUploadData, sigError });
           
           if (!sigError) {
             const { data: sigUrl } = supabase.storage
               .from('documents')
               .getPublicUrl(signatureFileName);
             signatureUrl = sigUrl?.publicUrl;
-            console.log('🖊️ Signature URL:', signatureUrl);
-          } else {
-            console.error('🖊️ Signature upload error:', sigError);
           }
         } catch (e) {
-          console.error('🖊️ Signature upload exception:', e);
+          console.log('Signature upload skipped - storage not configured');
         }
-      } else {
-        console.log('🖊️ No signature data to upload');
       }
       
       // Generate signed quote PDF
       let signedQuotePdfUrl = null;
       if (hasValidSignature) {
         try {
-          console.log('📄 Generating signed quote PDF...');
+          const quoteInfo = getQuoteDataFromRequest(request);
           const pdfBlob = await generateQuotePDF({
             request,
+            ...quoteInfo,
             isSigned: true,
             signatureName: signatureName,
             signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
             signatureImage: signatureData
           });
           
-          console.log('📄 PDF blob generated, size:', pdfBlob?.size);
-          
           const pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
-          const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
+          const { error: pdfUploadError } = await supabase.storage
             .from('documents')
             .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
-          
-          console.log('📄 PDF upload result:', { pdfUploadData, pdfUploadError });
           
           if (!pdfUploadError) {
             const { data: pdfUrl } = supabase.storage
               .from('documents')
               .getPublicUrl(pdfFileName);
             signedQuotePdfUrl = pdfUrl?.publicUrl;
-            console.log('📄 Signed quote PDF URL:', signedQuotePdfUrl);
+            console.log('Signed quote PDF uploaded:', signedQuotePdfUrl);
           } else {
-            console.error('📄 PDF upload error:', pdfUploadError);
+            console.log('PDF upload error:', pdfUploadError);
           }
         } catch (e) {
-          console.error('📄 Signed quote PDF generation error:', e);
+          console.log('Signed quote PDF generation error:', e);
         }
-      } else {
-        console.log('📄 No valid signature, skipping signed PDF generation');
       }
       
       // Update request status - set to bc_review so admin can verify
       // Also record quote approval if coming from quote_sent status
-      const updatePayload = { 
-        status: 'bc_review',
-        bc_submitted_at: new Date().toISOString(),
-        bc_signed_by: signatureName,
-        bc_signature_date: signatureDateISO,
-        bc_file_url: fileUrl,
-        bc_signature_url: signatureUrl,
-        quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
-      };
-      
-      console.log('📝 Updating service_request with:', updatePayload);
-      
       const { error: updateError } = await supabase
         .from('service_requests')
-        .update(updatePayload)
+        .update({ 
+          status: 'bc_review',
+          bc_submitted_at: new Date().toISOString(),
+          bc_signed_by: signatureName,
+          bc_signature_date: signatureDateISO,
+          bc_file_url: fileUrl,
+          bc_signature_url: signatureUrl,
+          quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
+        })
         .eq('id', request.id);
       
-      if (updateError) {
-        console.error('📝 Update error:', updateError);
-        throw updateError;
-      }
-      
-      console.log('✅ Service request updated successfully');
+      if (updateError) throw updateError;
       
       // Save documents to request_attachments
       if (fileUrl) {
-        const { error: bcAttachError } = await supabase.from('request_attachments').insert({
+        await supabase.from('request_attachments').insert({
           request_id: request.id,
           file_name: bcFile?.name || 'Bon de Commande.pdf',
           file_url: fileUrl,
@@ -6601,12 +6568,11 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           uploaded_by: profile.id,
           category: 'bon_commande'
         });
-        console.log('📎 BC attachment saved:', { fileUrl, error: bcAttachError });
       }
       
       // Save signed quote PDF to attachments (this is the main document)
       if (signedQuotePdfUrl) {
-        const { error: pdfAttachError } = await supabase.from('request_attachments').insert({
+        await supabase.from('request_attachments').insert({
           request_id: request.id,
           file_name: `Devis_Signé_${request.request_number}.pdf`,
           file_url: signedQuotePdfUrl,
@@ -6615,20 +6581,13 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           uploaded_by: profile.id,
           category: 'devis_signe'
         });
-        console.log('📎 Signed PDF attachment saved:', { signedQuotePdfUrl, error: pdfAttachError });
-      } else {
-        console.log('📎 No signed PDF URL to save as attachment');
       }
-      
-      console.log('🎉 BC submission complete! Signature URL:', signatureUrl, 'Signed PDF URL:', signedQuotePdfUrl);
       
       notify('Bon de commande soumis avec succès!');
       setShowBCModal(false);
       
-      // Delay reload so we can see console logs
-      setTimeout(() => {
-        window.location.reload();
-      }, 2000);
+      // Force full page reload to ensure fresh data
+      window.location.reload();
       
     } catch (err) {
       notify(`Erreur: ${err.message}`, 'error');
@@ -7232,116 +7191,67 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   )}
                 </div>
 
-                {/* DETAILED PRICING BREAKDOWN TABLE - Qté | Désignation | Prix Unit. | Total HT */}
+                {/* PRICING BREAKDOWN TABLE */}
                 <div className="px-8 py-6 bg-gray-50">
                   <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
                   
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-[#1a1a2e] text-white">
-                        <th className="px-3 py-3 text-center w-12">Qté</th>
-                        <th className="px-3 py-3 text-left">Désignation</th>
-                        <th className="px-3 py-3 text-right w-24">Prix Unit.</th>
-                        <th className="px-3 py-3 text-right w-24">Total HT</th>
+                        <th className="px-4 py-3 text-left">Appareil</th>
+                        <th className="px-4 py-3 text-left">N° Série</th>
+                        <th className="px-4 py-3 text-left">Service</th>
+                        <th className="px-4 py-3 text-right">Prix HT</th>
                       </tr>
                     </thead>
                     <tbody>
                       {devices.map((device, i) => {
-                        const rows = [];
+                        const services = [];
+                        const needsCal = device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration');
+                        const needsRep = device.needsRepair || (device.serviceType || device.service_type || '').includes('repair');
+                        if (needsCal) services.push('Étalonnage');
+                        if (needsRep) services.push('Réparation');
                         
-                        // Calibration row
-                        if (device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration')) {
-                          const qty = device.calibrationQty || 1;
-                          const unitPrice = parseFloat(device.calibrationPrice) || 0;
-                          const lineTotal = qty * unitPrice;
-                          const isContract = device.isContractCovered;
-                          rows.push(
-                            <tr key={`${i}-cal`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-3 py-2 text-center">{qty}</td>
-                              <td className="px-3 py-2">
-                                Étalonnage {device.model || device.model_name || ''} (SN: {device.serial || device.serial_number || ''})
-                                {isContract && <span className="ml-2 px-2 py-0.5 bg-emerald-500 text-white text-xs rounded">CONTRAT</span>}
-                              </td>
-                              <td className="px-3 py-2 text-right">{isContract ? <span className="text-emerald-600">Contrat</span> : `${unitPrice.toFixed(2)} €`}</td>
-                              <td className="px-3 py-2 text-right font-medium">{isContract ? <span className="text-emerald-600">Contrat</span> : `${lineTotal.toFixed(2)} €`}</td>
+                        const serviceTotal = device.serviceTotal || 
+                          ((device.calibrationPrice || 0) + (device.repairPrice || 0) + 
+                           (device.additionalParts || []).reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0));
+                        const shipping = device.shipping || 0;
+                        
+                        return [
+                          <tr key={`${i}-main`} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-100'}>
+                            <td className="px-4 py-3 font-medium">{device.model || device.model_name || '—'}</td>
+                            <td className="px-4 py-3 font-mono text-xs">{device.serial || device.serial_number || '—'}</td>
+                            <td className="px-4 py-3">{services.join(' + ') || 'Service'}</td>
+                            <td className="px-4 py-3 text-right font-medium">{serviceTotal.toFixed(2)} €</td>
+                          </tr>,
+                          ...(device.additionalParts || []).map(part => (
+                            <tr key={`${i}-part-${part.id}`} className="bg-gray-50 text-gray-600">
+                              <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ {part.description || 'Pièce/Service'}</td>
+                              <td className="px-4 py-2 text-right text-sm">{parseFloat(part.price || 0).toFixed(2)} €</td>
                             </tr>
-                          );
-                        }
-                        
-                        // Nettoyage row
-                        if (device.needsNettoyage && !device.isContractCovered && device.nettoyagePrice > 0) {
-                          const qty = device.nettoyageQty || 1;
-                          const unitPrice = parseFloat(device.nettoyagePrice) || 0;
-                          const lineTotal = qty * unitPrice;
-                          rows.push(
-                            <tr key={`${i}-nettoyage`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-3 py-2 text-center">{qty}</td>
-                              <td className="px-3 py-2">Nettoyage cellule - si requis selon l'état du capteur</td>
-                              <td className="px-3 py-2 text-right">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-3 py-2 text-right font-medium">{lineTotal.toFixed(2)} €</td>
-                            </tr>
-                          );
-                        }
-                        
-                        // Repair row
-                        if (device.needsRepair || (device.serviceType || device.service_type || '').includes('repair')) {
-                          const qty = device.repairQty || 1;
-                          const unitPrice = parseFloat(device.repairPrice) || 0;
-                          const lineTotal = qty * unitPrice;
-                          rows.push(
-                            <tr key={`${i}-repair`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-3 py-2 text-center">{qty}</td>
-                              <td className="px-3 py-2">Réparation {device.model || device.model_name || ''} (SN: {device.serial || device.serial_number || ''})</td>
-                              <td className="px-3 py-2 text-right">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-3 py-2 text-right font-medium">{lineTotal.toFixed(2)} €</td>
-                            </tr>
-                          );
-                        }
-                        
-                        // Additional parts
-                        (device.additionalParts || []).forEach((part, pi) => {
-                          const qty = parseInt(part.quantity) || 1;
-                          const unitPrice = parseFloat(part.price) || 0;
-                          const lineTotal = qty * unitPrice;
-                          rows.push(
-                            <tr key={`${i}-part-${pi}`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-3 py-2 text-center">{qty}</td>
-                              <td className="px-3 py-2">
-                                {part.partNumber && <span className="text-gray-500 mr-1">[{part.partNumber}]</span>}
-                                {part.description || 'Pièce/Service'}
-                              </td>
-                              <td className="px-3 py-2 text-right">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-3 py-2 text-right font-medium">{lineTotal.toFixed(2)} €</td>
-                            </tr>
-                          );
-                        });
-                        
-                        return rows;
+                          )),
+                          <tr key={`${i}-shipping`} className="bg-gray-200 text-gray-600">
+                            <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ Frais de port</td>
+                            <td className="px-4 py-2 text-right text-sm">{shipping.toFixed(2)} €</td>
+                          </tr>
+                        ];
                       })}
-                      
-                      {/* Shipping row */}
-                      <tr className="bg-gray-100">
-                        <td className="px-3 py-2 text-center">{quoteData.shipping?.parcels || request.parcels_count || 1}</td>
-                        <td className="px-3 py-2">Frais de port ({quoteData.shipping?.parcels || request.parcels_count || 1} colis)</td>
-                        <td className="px-3 py-2 text-right">{(quoteData.shipping?.unitPrice || 45).toFixed(2)} €</td>
-                        <td className="px-3 py-2 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
-                      </tr>
                     </tbody>
                     <tfoot>
+                      <tr className="border-t-2 border-gray-300">
+                        <td className="px-4 py-3 font-medium" colSpan={3}>Sous-total services</td>
+                        <td className="px-4 py-3 text-right font-medium">{servicesSubtotal.toFixed(2)} €</td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3 font-medium" colSpan={3}>Total frais de port</td>
+                        <td className="px-4 py-3 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
+                      </tr>
                       <tr className="bg-[#00A651] text-white">
-                        <td colSpan={2} className="px-3 py-4"></td>
-                        <td className="px-3 py-4 text-right font-bold text-lg">TOTAL HT</td>
-                        <td className="px-3 py-4 text-right font-bold text-xl">{grandTotal.toFixed(2)} €</td>
+                        <td className="px-4 py-4 font-bold text-lg" colSpan={3}>TOTAL HT</td>
+                        <td className="px-4 py-4 text-right font-bold text-2xl">{grandTotal.toFixed(2)} €</td>
                       </tr>
                     </tfoot>
                   </table>
-                  
-                  {/* Nettoyage disclaimer */}
-                  {devices.some(d => d.needsNettoyage && !d.isContractCovered) && (
-                    <p className="text-xs text-gray-500 mt-3 italic">
-                      * Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.
-                    </p>
-                  )}
                 </div>
 
                 {/* Disclaimers */}
