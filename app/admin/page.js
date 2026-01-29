@@ -7176,7 +7176,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain }) {
     setLoading(true);
     const { data, error } = await supabase
       .from('contracts')
-      .select('*, companies(id, name), contract_devices(*)')
+      .select('*, companies(id, name, contact_name, address, billing_address, postal_code, billing_postal_code, city, billing_city, country, phone, email), contract_devices(*)')
       .order('created_at', { ascending: false });
     
     if (error) {
