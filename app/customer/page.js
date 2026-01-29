@@ -980,6 +980,14 @@ async function generateContractQuotePDF(options) {
     signatureName = '', signatureDate = '', signatureImage = null
   } = options;
 
+  // Get quote_data for detailed breakdown
+  const quoteData = contract.quote_data || {};
+  const quoteDevices = quoteData.devices || [];
+  const shipping = quoteData.shipping || { parcels: 1, unitPrice: 45, total: 45 };
+  const servicesSubtotal = quoteData.servicesSubtotal || totalPrice;
+  const shippingTotal = quoteData.shippingTotal || shipping.total || 0;
+  const grandTotal = quoteData.grandTotal || (servicesSubtotal + shippingTotal);
+
   await new Promise((resolve, reject) => {
     if (window.jspdf) { resolve(); return; }
     const script = document.createElement('script');
@@ -1005,7 +1013,7 @@ async function generateContractQuotePDF(options) {
   
   let y = margin;
   
-  // === LOGO LOADING (identical to RMA) ===
+  // === LOGO LOADING ===
   const loadImageAsBase64 = async (url) => {
     try {
       const response = await fetch(url);
@@ -1071,7 +1079,7 @@ async function generateContractQuotePDF(options) {
     return false;
   };
 
-  // ===== HEADER =====
+  // ===== HEADER WITH LOGO =====
   let logoAdded = false;
   if (lighthouseLogo) {
     try {
@@ -1097,11 +1105,11 @@ async function generateContractQuotePDF(options) {
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...green);
-  pdf.text('OFFRE DE PRIX', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.text('DEVIS CONTRAT', pageWidth - margin, y + 8, { align: 'right' });
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text('N° ' + (contract.contract_number || 'CTR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
+  pdf.text('N. ' + (contract.contract_number || 'CTR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
   
   y += 18;
   pdf.setDrawColor(...green);
@@ -1115,8 +1123,8 @@ async function generateContractQuotePDF(options) {
   pdf.setFontSize(8);
   pdf.setTextColor(...lightGray);
   pdf.text('DATE', margin + 5, y + 5);
-  pdf.text('PERIODE DU CONTRAT', margin + 50, y + 5);
-  pdf.text('VALIDITE DEVIS', margin + 140, y + 5);
+  pdf.text('PERIODE DU CONTRAT', margin + 55, y + 5);
+  pdf.text('VALIDITE DEVIS', margin + 135, y + 5);
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
@@ -1124,11 +1132,11 @@ async function generateContractQuotePDF(options) {
   pdf.text(qDate, margin + 5, y + 12);
   const startDate = new Date(contract.start_date).toLocaleDateString('fr-FR');
   const endDate = new Date(contract.end_date).toLocaleDateString('fr-FR');
-  pdf.text(startDate + ' - ' + endDate, margin + 50, y + 12);
-  pdf.text('30 jours', margin + 140, y + 12);
+  pdf.text(startDate + ' - ' + endDate, margin + 55, y + 12);
+  pdf.text('30 jours', margin + 135, y + 12);
   y += 20;
 
-  // ===== CLIENT =====
+  // ===== CLIENT INFO =====
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...lightGray);
@@ -1151,17 +1159,79 @@ async function generateContractQuotePDF(options) {
     pdf.text(city, margin, y);
     y += 5;
   }
-  y += 3;
+  if (contract.companies?.phone) {
+    pdf.text('Tel: ' + contract.companies.phone, margin, y);
+    y += 5;
+  }
+  if (contract.companies?.email) {
+    pdf.text('Email: ' + contract.companies.email, margin, y);
+    y += 5;
+  }
+  y += 5;
 
-  // ===== SERVICE SECTIONS BY TYPE =====
+  // ===== SERVICE DESCRIPTION BLOCKS (like RMA) =====
+  const CAL_DATA = {
+    particle_counter: {
+      title: "Etalonnage Compteur de Particules Aeroportees",
+      prestations: [
+        "Verification des fonctionnalites du compteur",
+        "Verification et reglage du debit",
+        "Verification de la cellule de mesure",
+        "Controle et reglage des seuils de mesures granulometrique a l'aide de spheres de latex calibrees et certifiees",
+        "Verification en nombre par comparaison a un etalon etalonne selon la norme ISO 17025, conformement a la norme ISO 21501-4",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    bio_collector: {
+      title: "Etalonnage Bio Collecteur",
+      prestations: [
+        "Verification des fonctionnalites de l'appareil",
+        "Verification et reglage du debit",
+        "Verification de la cellule d'impaction",
+        "Controle des parametres de collecte",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    liquid_counter: {
+      title: "Etalonnage Compteur de Particules en Milieu Liquide",
+      prestations: [
+        "Verification des fonctionnalites du compteur",
+        "Verification et reglage du debit",
+        "Verification de la cellule de mesure optique",
+        "Controle et reglage des seuils de mesures granulometrique",
+        "Verification en nombre par comparaison a un etalon",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    temp_humidity: {
+      title: "Etalonnage Capteur Temperature/Humidite",
+      prestations: [
+        "Verification des fonctionnalites du capteur",
+        "Etalonnage temperature sur points de reference certifies",
+        "Etalonnage humidite relative",
+        "Verification de la stabilite des mesures",
+        "Fourniture d'un certificat d'etalonnage"
+      ]
+    },
+    other: {
+      title: "Etalonnage Equipement",
+      prestations: [
+        "Verification des fonctionnalites de l'appareil",
+        "Etalonnage selon les specifications du fabricant",
+        "Tests de fonctionnement",
+        "Fourniture d'un rapport de test"
+      ]
+    }
+  };
+
   const drawServiceBlock = (data, color) => {
-    const lineH = 5.5; // Slightly more spacing between lines
+    const lineH = 5;
     let lines = [];
     data.prestations.forEach(p => {
-      const wrapped = pdf.splitTextToSize(p, contentWidth - 12); // More width available
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
       wrapped.forEach(l => lines.push(l));
     });
-    const blockH = 14 + (lines.length * lineH); // More padding
+    const blockH = 12 + (lines.length * lineH);
     checkPageBreak(blockH);
     
     pdf.setDrawColor(...color);
@@ -1171,67 +1241,85 @@ async function generateContractQuotePDF(options) {
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
-    pdf.text(data.title, margin + 5, y + 7);
-    y += 12;
+    pdf.text(data.title, margin + 5, y + 6);
+    y += 10;
     
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...gray);
     data.prestations.forEach(p => {
-      const wrapped = pdf.splitTextToSize(p, contentWidth - 12);
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
       wrapped.forEach((line, i) => {
-        if (i === 0) {
-          pdf.text('-', margin + 5, y);
-        }
+        if (i === 0) pdf.text('-', margin + 5, y);
         pdf.text(line, margin + 9, y);
         y += lineH;
       });
     });
-    y += 4;
+    y += 3;
   };
 
-  // Group devices by type
-  const devicesByType = {};
-  devices.forEach(d => {
-    const type = d.device_type || 'particle_counter';
-    if (!devicesByType[type]) devicesByType[type] = [];
-    devicesByType[type].push(d);
+  // Get device types from quote_data or devices
+  const deviceTypesSet = new Set();
+  (quoteDevices.length > 0 ? quoteDevices : devices).forEach(d => {
+    deviceTypesSet.add(d.deviceType || d.device_type || 'particle_counter');
   });
 
-  // Draw service block for each type
-  Object.keys(devicesByType).forEach(type => {
-    const data = PDF_CALIBRATION_DATA[type] || PDF_CALIBRATION_DATA.particle_counter;
-    drawServiceBlock(data, [59, 130, 246]);
+  // Draw service blocks for each device type
+  deviceTypesSet.forEach(type => {
+    const data = CAL_DATA[type] || CAL_DATA.particle_counter;
+    drawServiceBlock(data, [59, 130, 246]); // blue
   });
 
   // ===== CONDITIONS =====
-  const conditionsHeight = 28;
-  checkPageBreak(conditionsHeight);
-  
+  checkPageBreak(25);
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...lightGray);
-  pdf.text('CONDITIONS DU CONTRAT', margin + 3, y);
+  pdf.text('CONDITIONS', margin, y);
   y += 4;
   pdf.setFontSize(8);
   pdf.setTextColor(...gray);
-  const contractConditions = [
-    'Validite du contrat: ' + startDate + ' au ' + endDate,
-    totalTokens + ' etalonnage(s) inclus a utiliser pendant la periode contractuelle',
-    'Etalonnages supplementaires factures au tarif standard en vigueur',
-    'Frais de port inclus (France metropolitaine)',
-    'Paiement a 30 jours date de facture'
+  const disclaimers = [
+    "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables.",
+    "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses.",
+    "Paiement a 30 jours date de facture."
   ];
-  contractConditions.forEach(d => {
-    pdf.text('- ' + d, margin + 3, y);
+  disclaimers.forEach(d => {
+    pdf.text('- ' + d, margin, y);
     y += 4;
   });
   y += 5;
 
-  // ===== PRICING TABLE =====
-  const rowH = 8;
-  const tableH = 12 + (devices.length * rowH) + 20;
-  checkPageBreak(tableH);
+  // ===== DETAILED PRICING TABLE (Qté | Désignation | Prix Unit. | Total HT) =====
+  const rowH = 7;
+  const colQty = margin;
+  const colDesc = margin + 12;
+  const colUnit = pageWidth - margin - 45;
+  const colTotal = pageWidth - margin - 3;
+  
+  // Use quoteDevices if available, otherwise fall back to devices
+  const pricingDevices = quoteDevices.length > 0 ? quoteDevices : devices.map(d => ({
+    model: d.model_name || d.model || '',
+    serial: d.serial_number || d.serial || '',
+    tokens_total: d.tokens_total || 1,
+    needsCalibration: true,
+    calibrationPrice: d.unit_price || 350,
+    calibrationQty: 1,
+    needsNettoyage: (d.device_type || 'particle_counter') === 'particle_counter',
+    nettoyagePrice: 0,
+    nettoyageQty: 1
+  }));
+
+  // Calculate rows needed
+  let totalRows = 0;
+  pricingDevices.forEach(d => {
+    if (d.needsCalibration !== false) totalRows++;
+    if (d.needsNettoyage && d.nettoyagePrice > 0) totalRows++;
+  });
+  if (shippingTotal > 0) totalRows++;
+  totalRows += 1; // Total row
+
+  checkPageBreak(20 + (totalRows * rowH) + 15);
 
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
@@ -1245,67 +1333,133 @@ async function generateContractQuotePDF(options) {
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...white);
-  pdf.text('Appareil', margin + 3, y + 6);
-  pdf.text('N° Serie', margin + 55, y + 6);
-  pdf.text('Etal./an', margin + 120, y + 6);
-  pdf.text('Prix HT', pageWidth - margin - 3, y + 6, { align: 'right' });
+  pdf.text('Qte', colQty + 3, y + 6);
+  pdf.text('Designation', colDesc, y + 6);
+  pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
+  pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
   y += 9;
 
-  // Device rows
-  devices.forEach((device, idx) => {
-    pdf.setFillColor(idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250);
+  let rowIndex = 0;
+  let hasNettoyage = false;
+
+  // Build line items - DEVICE + NETTOYAGE TOGETHER
+  pricingDevices.forEach((device) => {
+    // Calibration row
+    if (device.needsCalibration !== false) {
+      const qty = device.tokens_total || device.calibrationQty || 1;
+      const unitPrice = parseFloat(device.calibrationPrice) || parseFloat(device.unit_price) || 0;
+      const lineTotal = qty * unitPrice;
+      
+      checkPageBreak(rowH);
+      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...darkBlue);
+      pdf.text(String(qty), colQty + 3, y + 5);
+      const calDesc = `Etalonnage ${device.model || ''} (SN: ${device.serial || ''})`;
+      pdf.text(calDesc.substring(0, 65), colDesc, y + 5);
+      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      y += rowH;
+      rowIndex++;
+    }
+    
+    // Nettoyage row - IMMEDIATELY AFTER DEVICE
+    if (device.needsNettoyage && device.nettoyagePrice > 0) {
+      hasNettoyage = true;
+      const qty = device.nettoyageQty || 1;
+      const unitPrice = parseFloat(device.nettoyagePrice) || 0;
+      const lineTotal = qty * unitPrice;
+      
+      checkPageBreak(rowH);
+      pdf.setFillColor(255, 251, 235); // amber-50
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(146, 64, 14); // amber-800
+      pdf.text(String(qty), colQty + 3, y + 5);
+      pdf.text('Nettoyage cellule - si requis selon etat du capteur', colDesc, y + 5);
+      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      y += rowH;
+      rowIndex++;
+    }
+  });
+
+  // Shipping row
+  if (shippingTotal > 0) {
+    checkPageBreak(rowH);
+    pdf.setFillColor(239, 246, 255); // blue-50
     pdf.rect(margin, y, contentWidth, rowH, 'F');
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...darkBlue);
-    pdf.text(device.model_name || '-', margin + 3, y + 5.5);
-    pdf.setFont('courier', 'normal');
-    pdf.text(device.serial_number || '-', margin + 55, y + 5.5);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(String(device.tokens_total || 1), margin + 125, y + 5.5);
+    pdf.setTextColor(30, 64, 175); // blue-800
+    pdf.text(String(shipping.parcels || 1), colQty + 3, y + 5);
+    pdf.text('Frais de port (' + (shipping.parcels || 1) + ' colis)', colDesc, y + 5);
+    pdf.text((shipping.unitPrice || 45).toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
     pdf.setFont('helvetica', 'bold');
-    pdf.text((device.unit_price || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+    pdf.text(shippingTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
     y += rowH;
-  });
+  }
 
   // Total row
+  checkPageBreak(12);
   pdf.setFillColor(...green);
-  pdf.rect(margin, y, contentWidth, 14, 'F'); // Increased height
+  pdf.rect(margin, y, contentWidth, 12, 'F');
   pdf.setTextColor(...white);
-  pdf.setFontSize(11);
+  pdf.setFontSize(10);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('TOTAL CONTRAT ANNUEL HT', margin + 4, y + 6);
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(totalTokens + ' etalonnage(s) inclus pendant la periode du contrat', margin + 4, y + 11);
-  pdf.setFontSize(16);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(totalPrice.toFixed(2) + ' EUR', pageWidth - margin - 4, y + 9, { align: 'right' });
-  y += 18;
+  pdf.text('', colQty + 3, y + 8);
+  pdf.text('', colDesc, y + 8);
+  pdf.text('TOTAL HT', colUnit, y + 8, { align: 'right' });
+  pdf.setFontSize(12);
+  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
+  y += 15;
 
-  // ===== SIGNATURE - AT BOTTOM =====
-  const sigY = Math.max(y + 5, pageHeight - footerHeight - signatureBlockHeight - 3);
+  // Nettoyage disclaimer
+  if (hasNettoyage) {
+    checkPageBreak(10);
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(146, 64, 14);
+    pdf.text('* Le nettoyage de la cellule sera effectue si necessaire selon l\'etat du capteur constate lors de l\'intervention.', margin, y);
+    y += 8;
+  }
+
+  // ===== SIGNATURE SECTION =====
+  checkPageBreak(signatureBlockHeight + 10);
+  
+  const sigY = Math.max(y + 5, pageHeight - footerHeight - signatureBlockHeight - 5);
   
   pdf.setDrawColor(200, 200, 200);
   pdf.setLineWidth(0.3);
   pdf.line(margin, sigY, pageWidth - margin, sigY);
   
+  // Left side - Etabli par + Capcert logo
   pdf.setFontSize(8);
   pdf.setTextColor(...lightGray);
   pdf.text('ETABLI PAR', margin, sigY + 7);
   pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text('Lighthouse France', margin, sigY + 14);
+  pdf.text(quoteData.createdBy || 'Lighthouse France', margin, sigY + 14);
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('Lighthouse France', margin, sigY + 20);
 
   // Capcert logo
   if (capcertLogo) {
     try {
       const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
+      pdf.addImage(capcertLogo, format, margin + 55, sigY + 3, 30, 30);
     } catch (e) {}
   }
 
+  // Right side - Signature box
   const sigBoxX = pageWidth - margin - 62;
   
   if (isSigned && signatureName) {
