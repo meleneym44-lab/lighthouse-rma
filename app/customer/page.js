@@ -2523,12 +2523,6 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
   const [selectedThread, setSelectedThread] = useState(null);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
-  const messagesEndRef = useRef(null);
-
-  // Scroll to bottom of messages
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
 
   // Group messages by request
   const messagesByRequest = requests.map(req => {
@@ -2585,17 +2579,14 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
         request_id: selectedThread.request.id,
         sender_id: profile.id,
         sender_type: 'customer',
-        sender_name: profile.full_name || 'Client',
         content: newMessage.trim()
       })
       .select()
       .single();
     
     if (!error && data) {
-      setMessages(prevMessages => [data, ...prevMessages]);
+      setMessages([data, ...messages]);
       setNewMessage('');
-      // Scroll to bottom after sending
-      setTimeout(scrollToBottom, 100);
     }
     setSending(false);
   };
@@ -2603,23 +2594,14 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
   const openThread = (thread) => {
     setSelectedThread(thread);
     markAsRead(thread.request.id);
-    // Scroll to bottom when opening thread
-    setTimeout(scrollToBottom, 100);
   };
-
-  // Scroll to bottom when selected thread changes
-  useEffect(() => {
-    if (selectedThread) {
-      setTimeout(scrollToBottom, 100);
-    }
-  }, [selectedThread?.request.id]);
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
       <div className="grid md:grid-cols-3 h-[600px]">
         {/* Thread List */}
         <div className="border-r border-gray-100 overflow-y-auto">
-          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 sticky top-0">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
             <h3 className="font-bold text-[#1E3A5F]">Conversations</h3>
           </div>
           
@@ -2668,69 +2650,54 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
         </div>
 
         {/* Message Thread */}
-        <div className="md:col-span-2 flex flex-col h-full overflow-hidden">
+        <div className="md:col-span-2 flex flex-col">
           {selectedThread ? (
-            (() => {
-              // Get current messages for selected thread from state (not from cached selectedThread)
-              const currentMessages = messages.filter(m => m.request_id === selectedThread.request.id);
-              return (
-                <>
-                  {/* Thread Header */}
-                  <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex-shrink-0">
-                    <h3 className="font-bold text-[#1E3A5F]">
-                      Demande {selectedThread.request.request_number}
-                    </h3>
-                    <p className="text-sm text-gray-500">
-                      {selectedThread.request.request_devices?.length || 0} appareil(s) • 
-                      {new Date(selectedThread.request.created_at).toLocaleDateString('fr-FR')}
-                    </p>
-                  </div>
+            <>
+              {/* Thread Header */}
+              <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                <h3 className="font-bold text-[#1E3A5F]">
+                  Demande {selectedThread.request.request_number}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {selectedThread.request.request_devices?.length || 0} appareil(s) • 
+                  {new Date(selectedThread.request.created_at).toLocaleDateString('fr-FR')}
+                </p>
+              </div>
 
-                  {/* Messages - scrollable area */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
-                    {currentMessages.length === 0 ? (
-                      <div className="text-center text-gray-400 py-8">
-                        <p>Aucun message pour cette demande</p>
-                        <p className="text-sm">Envoyez un message pour démarrer la conversation</p>
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {selectedThread.messages.length === 0 ? (
+                  <div className="text-center text-gray-400 py-8">
+                    <p>Aucun message pour cette demande</p>
+                    <p className="text-sm">Envoyez un message pour démarrer la conversation</p>
+                  </div>
+                ) : (
+                  [...selectedThread.messages].reverse().map(msg => (
+                    <div 
+                      key={msg.id}
+                      className={`flex ${msg.sender_id === profile.id ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`max-w-[70%] rounded-lg p-3 ${
+                        msg.sender_id === profile.id 
+                          ? 'bg-[#3B7AB4] text-white' 
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        <p className="text-sm">{msg.content}</p>
+                        <p className={`text-xs mt-1 ${
+                          msg.sender_id === profile.id ? 'text-white/70' : 'text-gray-400'
+                        }`}>
+                          {new Date(msg.created_at).toLocaleString('fr-FR', {
+                            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+                          })}
+                        </p>
                       </div>
-                    ) : (
-                      [...currentMessages].reverse().map(msg => {
-                        const isMe = msg.sender_id === profile.id;
-                        return (
-                          <div 
-                            key={msg.id}
-                            className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
-                          >
-                            <div className={`max-w-[70%] rounded-lg p-3 ${
-                              isMe 
-                                ? 'bg-[#3B7AB4] text-white' 
-                                : 'bg-gray-100 text-gray-800'
-                            }`}>
-                              <div className={`text-xs mb-1 font-medium ${isMe ? 'text-white/70' : 'text-gray-500'}`}>
-                                {isMe ? 'Vous' : (msg.sender_name || 'Lighthouse France')}
-                              </div>
-                              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                              {msg.attachment_url && (
-                                <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isMe ? 'text-white/80 hover:text-white' : 'text-blue-600 hover:underline'}`}>
-                                  📎 {msg.attachment_name || 'Télécharger le fichier'}
-                                </a>
-                              )}
-                              <p className={`text-xs mt-1 ${isMe ? 'text-white/60' : 'text-gray-400'}`}>
-                                {new Date(msg.created_at).toLocaleString('fr-FR', {
-                                  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
-                                })}
-                              </p>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                    {/* Scroll anchor */}
-                    <div ref={messagesEndRef} />
-                  </div>
+                    </div>
+                  ))
+                )}
+              </div>
 
-              {/* Message Input - fixed at bottom */}
-              <form onSubmit={sendMessage} className="p-4 border-t border-gray-100 flex-shrink-0 bg-white">
+              {/* Message Input */}
+              <form onSubmit={sendMessage} className="p-4 border-t border-gray-100">
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -2749,8 +2716,6 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
                 </div>
               </form>
             </>
-              );
-            })()
           ) : (
             <div className="flex-1 flex items-center justify-center text-gray-400">
               <div className="text-center">
@@ -2884,8 +2849,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
   const [shipping, setShipping] = useState({ 
     address_id: addresses.find(a => a.is_default)?.id || '',
     showNewForm: false,
-    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' },
-    parcels: 0 // Start at 0 - customer must choose
+    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' }
   });
   const [saving, setSaving] = useState(false);
 
@@ -3037,12 +3001,6 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       notify('Veuillez sélectionner ou ajouter une adresse', 'error');
       return;
     }
-    
-    // Validate parcels count
-    if (!shipping.parcels || shipping.parcels < 1) {
-      notify('Veuillez indiquer le nombre de colis', 'error');
-      return;
-    }
 
     setSaving(true);
     
@@ -3062,7 +3020,6 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           problem_description: devices.map(d => `[${d.brand === 'other' ? d.brand_other : 'Lighthouse'}] ${d.model} - ${d.serial_number}\nService: ${d.service_type === 'other' ? d.service_other : d.service_type}\nAccessoires: ${d.accessories.join(', ') || 'Aucun'}\nNotes: ${d.notes}`).join('\n\n---\n\n'),
           urgency: 'normal',
           shipping_address_id: addressId,
-          parcels_count: shipping.parcels || 1,
           status: 'submitted',
           submitted_at: new Date().toISOString()
         })
@@ -3801,45 +3758,6 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
       <h2 className="text-xl font-bold text-[#1E3A5F] mb-4 pb-4 border-b-2 border-[#E8F2F8]">
         Information de Livraison
       </h2>
-
-      {/* Number of Parcels - FIRST (Required) */}
-      <div className="mb-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
-        <label className="block text-sm font-bold text-[#1E3A5F] mb-2">
-          📦 Nombre de colis *
-        </label>
-        <p className="text-sm text-gray-600 mb-3">
-          Indiquez le nombre de colis/boîtes dans lesquels vous enverrez vos appareils.
-        </p>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setShipping({ ...shipping, parcels: Math.max(0, (shipping.parcels || 0) - 1) })}
-            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
-          >
-            −
-          </button>
-          <input
-            type="number"
-            min="0"
-            value={shipping.parcels || 0}
-            onChange={e => setShipping({ ...shipping, parcels: Math.max(0, parseInt(e.target.value) || 0) })}
-            className={`w-20 px-3 py-2 text-center border rounded-lg font-bold text-lg ${
-              shipping.parcels === 0 ? 'border-red-300 bg-red-50' : 'border-gray-300'
-            }`}
-          />
-          <button
-            type="button"
-            onClick={() => setShipping({ ...shipping, parcels: (shipping.parcels || 0) + 1 })}
-            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
-          >
-            +
-          </button>
-          <span className="text-gray-600 ml-2">colis</span>
-        </div>
-        {shipping.parcels === 0 && (
-          <p className="text-red-500 text-sm mt-2">⚠️ Veuillez indiquer le nombre de colis</p>
-        )}
-      </div>
 
       {/* Existing Addresses */}
       <div className="mb-4">
@@ -6239,99 +6157,18 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   // Quote approval/revision handlers
   const handleApproveQuote = async () => {
     setApprovingQuote(true);
+    const { error } = await supabase.from('service_requests').update({
+      status: 'waiting_bc',
+      quote_approved_at: new Date().toISOString()
+    }).eq('id', request.id);
     
-    try {
-      // Upload signature image if exists
-      let signatureUrl = null;
-      if (signatureData) {
-        try {
-          const base64Data = signatureData.split(',')[1];
-          const byteCharacters = atob(base64Data);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: 'image/png' });
-          
-          const fileName = `signatures/${request.id}/quote_signature_${Date.now()}.png`;
-          const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('rma-files')
-            .upload(fileName, blob);
-          
-          if (!uploadError && uploadData) {
-            const { data: urlData } = supabase.storage.from('rma-files').getPublicUrl(fileName);
-            signatureUrl = urlData?.publicUrl;
-          }
-        } catch (sigErr) {
-          console.error('Signature upload error:', sigErr);
-        }
-      }
-      
-      // Generate signed quote PDF and save it
-      let signedQuotePdfUrl = null;
-      if (signatureName && signatureData) {
-        try {
-          const pdfBlob = await generateQuotePDF({
-            request,
-            devices: request.request_devices || [],
-            servicesSubtotal: request.quoted_price || 0,
-            shippingTotal: (request.parcels_count || 1) * 45,
-            grandTotal: (request.quoted_price || 0) + ((request.parcels_count || 1) * 45),
-            isSigned: true,
-            signatureName: signatureName,
-            signatureDate: signatureDateDisplay,
-            signatureImage: signatureData
-          });
-          
-          const fileName = `quotes/${request.id}/quote_signed_${Date.now()}.pdf`;
-          const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('rma-files')
-            .upload(fileName, pdfBlob);
-          
-          if (!uploadError && uploadData) {
-            const { data: urlData } = supabase.storage.from('rma-files').getPublicUrl(fileName);
-            signedQuotePdfUrl = urlData?.publicUrl;
-          }
-        } catch (pdfErr) {
-          console.error('PDF generation error:', pdfErr);
-        }
-      }
-      
-      // Update request with quote approval and signature
-      const { error } = await supabase.from('service_requests').update({
-        status: 'waiting_bc',
-        quote_approved_at: new Date().toISOString(),
-        quote_signed_by: signatureName,
-        quote_signature_date: signatureDateISO,
-        quote_signature_url: signatureUrl,
-        quote_signed_pdf_url: signedQuotePdfUrl
-      }).eq('id', request.id);
-      
-      // Save signed quote to attachments
-      if (signedQuotePdfUrl) {
-        await supabase.from('request_attachments').insert({
-          request_id: request.id,
-          file_name: `Devis_Signé_${request.request_number}.pdf`,
-          file_url: signedQuotePdfUrl,
-          file_type: 'application/pdf',
-          file_size: 0,
-          uploaded_by: profile.id,
-          category: 'devis_signe'
-        });
-      }
-      
-      if (error) {
-        notify('Erreur: ' + error.message, 'error');
-      } else {
-        notify('✅ Devis approuvé! Veuillez soumettre votre bon de commande.', 'success');
-        setShowQuoteModal(false);
-        refresh();
-      }
-    } catch (err) {
-      notify('Erreur: ' + err.message, 'error');
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('✅ Devis approuvé! Veuillez soumettre votre bon de commande.', 'success');
+      setShowQuoteModal(false);
+      refresh();
     }
-    
     setApprovingQuote(false);
   };
   
@@ -6607,7 +6444,6 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         request_id: request.id,
         sender_id: profile.id,
         sender_type: 'customer',
-        sender_name: profile.full_name || 'Client',
         content: newMessage.trim()
       })
       .select()
@@ -6617,8 +6453,6 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       setMessages([...messages, data]);
       setNewMessage('');
       notify('Message envoyé!');
-    } else if (error) {
-      notify('Erreur: ' + error.message, 'error');
     }
     setSending(false);
   };
@@ -7745,36 +7579,34 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     <p className="text-sm">Envoyez un message à notre équipe</p>
                   </div>
                 ) : (
-                  messages.map(msg => {
-                    const isMe = msg.sender_id === profile?.id;
-                    return (
-                      <div 
-                        key={msg.id}
-                        className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div className={`max-w-[70%] rounded-lg p-3 ${
-                          isMe 
-                            ? 'bg-[#3B7AB4] text-white' 
-                            : 'bg-gray-100 text-gray-800'
+                  messages.map(msg => (
+                    <div 
+                      key={msg.id}
+                      className={`flex ${msg.sender_id === profile?.id ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`max-w-[70%] rounded-lg p-3 ${
+                        msg.sender_id === profile?.id 
+                          ? 'bg-[#3B7AB4] text-white' 
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {msg.sender_type !== 'customer' && (
+                          <p className={`text-xs font-medium mb-1 ${
+                            msg.sender_id === profile?.id ? 'text-white/70' : 'text-[#3B7AB4]'
+                          }`}>
+                            Lighthouse France
+                          </p>
+                        )}
+                        <p className="text-sm">{msg.content}</p>
+                        <p className={`text-xs mt-1 ${
+                          msg.sender_id === profile?.id ? 'text-white/70' : 'text-gray-400'
                         }`}>
-                          <p className={`text-xs font-medium mb-1 ${isMe ? 'text-white/70' : 'text-[#3B7AB4]'}`}>
-                            {isMe ? 'Vous' : (msg.sender_name || 'Lighthouse France')}
-                          </p>
-                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                          {msg.attachment_url && (
-                            <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isMe ? 'text-white/80 hover:text-white' : 'text-blue-600 hover:underline'}`}>
-                              📎 {msg.attachment_name || 'Télécharger le fichier'}
-                            </a>
-                          )}
-                          <p className={`text-xs mt-1 ${isMe ? 'text-white/60' : 'text-gray-400'}`}>
-                            {new Date(msg.created_at).toLocaleString('fr-FR', {
-                              day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
-                            })}
-                          </p>
-                        </div>
+                          {new Date(msg.created_at).toLocaleString('fr-FR', {
+                            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+                          })}
+                        </p>
                       </div>
-                    );
-                  })
+                    </div>
+                  ))
                 )}
               </div>
               
