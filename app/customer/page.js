@@ -6530,33 +6530,38 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       let signedQuotePdfUrl = null;
       if (hasValidSignature) {
         try {
-          const quoteInfo = getQuoteDataFromRequest(request);
+          console.log('📄 Generating signed quote PDF...');
           const pdfBlob = await generateQuotePDF({
             request,
-            ...quoteInfo,
             isSigned: true,
             signatureName: signatureName,
             signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
             signatureImage: signatureData
           });
           
+          console.log('📄 PDF blob generated, size:', pdfBlob?.size);
+          
           const pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
-          const { error: pdfUploadError } = await supabase.storage
+          const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
             .from('documents')
             .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
+          
+          console.log('📄 PDF upload result:', { pdfUploadData, pdfUploadError });
           
           if (!pdfUploadError) {
             const { data: pdfUrl } = supabase.storage
               .from('documents')
               .getPublicUrl(pdfFileName);
             signedQuotePdfUrl = pdfUrl?.publicUrl;
-            console.log('Signed quote PDF uploaded:', signedQuotePdfUrl);
+            console.log('📄 Signed quote PDF URL:', signedQuotePdfUrl);
           } else {
-            console.log('PDF upload error:', pdfUploadError);
+            console.error('📄 PDF upload error:', pdfUploadError);
           }
         } catch (e) {
-          console.log('Signed quote PDF generation error:', e);
+          console.error('📄 Signed quote PDF generation error:', e);
         }
+      } else {
+        console.log('📄 No valid signature, skipping signed PDF generation');
       }
       
       // Update request status - set to bc_review so admin can verify
@@ -6578,11 +6583,16 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         .update(updatePayload)
         .eq('id', request.id);
       
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('📝 Update error:', updateError);
+        throw updateError;
+      }
+      
+      console.log('✅ Service request updated successfully');
       
       // Save documents to request_attachments
       if (fileUrl) {
-        await supabase.from('request_attachments').insert({
+        const { error: bcAttachError } = await supabase.from('request_attachments').insert({
           request_id: request.id,
           file_name: bcFile?.name || 'Bon de Commande.pdf',
           file_url: fileUrl,
@@ -6591,11 +6601,12 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           uploaded_by: profile.id,
           category: 'bon_commande'
         });
+        console.log('📎 BC attachment saved:', { fileUrl, error: bcAttachError });
       }
       
       // Save signed quote PDF to attachments (this is the main document)
       if (signedQuotePdfUrl) {
-        await supabase.from('request_attachments').insert({
+        const { error: pdfAttachError } = await supabase.from('request_attachments').insert({
           request_id: request.id,
           file_name: `Devis_Signé_${request.request_number}.pdf`,
           file_url: signedQuotePdfUrl,
@@ -6604,13 +6615,20 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           uploaded_by: profile.id,
           category: 'devis_signe'
         });
+        console.log('📎 Signed PDF attachment saved:', { signedQuotePdfUrl, error: pdfAttachError });
+      } else {
+        console.log('📎 No signed PDF URL to save as attachment');
       }
+      
+      console.log('🎉 BC submission complete! Signature URL:', signatureUrl, 'Signed PDF URL:', signedQuotePdfUrl);
       
       notify('Bon de commande soumis avec succès!');
       setShowBCModal(false);
       
-      // Force full page reload to ensure fresh data
-      window.location.reload();
+      // Delay reload so we can see console logs
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
       
     } catch (err) {
       notify(`Erreur: ${err.message}`, 'error');
