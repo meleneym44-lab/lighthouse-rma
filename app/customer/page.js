@@ -2873,7 +2873,7 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
 // NEW REQUEST FORM - Type Selection First
 // ============================================
 function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
-  const [requestType, setRequestType] = useState(null); // 'service', 'parts', or 'contract'
+  const [requestType, setRequestType] = useState(null); // 'service', 'parts', 'contract', or 'rental'
   
   // If no type selected, show selection screen
   if (!requestType) {
@@ -2883,46 +2883,60 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
         
         <p className="text-gray-600 mb-8">Quel type de demande souhaitez-vous soumettre?</p>
         
-        <div className="grid md:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
           {/* Service Request */}
           <button
             onClick={() => setRequestType('service')}
-            className="bg-white rounded-xl p-8 shadow-sm border-2 border-gray-200 hover:border-[#3B7AB4] transition-colors text-left group"
+            className="bg-white rounded-xl p-6 shadow-sm border-2 border-gray-200 hover:border-[#3B7AB4] transition-colors text-left group"
           >
             <div className="text-4xl mb-4">🔧</div>
-            <h2 className="text-xl font-bold text-[#1E3A5F] mb-2 group-hover:text-[#3B7AB4]">
+            <h2 className="text-lg font-bold text-[#1E3A5F] mb-2 group-hover:text-[#3B7AB4]">
               Étalonnage / Réparation
             </h2>
             <p className="text-gray-600 text-sm">
-              Demande de calibration, réparation ou maintenance pour vos appareils de mesure
+              Calibration, réparation ou maintenance de vos appareils
             </p>
           </button>
           
           {/* Parts Order */}
           <button
             onClick={() => setRequestType('parts')}
-            className="bg-white rounded-xl p-8 shadow-sm border-2 border-gray-200 hover:border-[#3B7AB4] transition-colors text-left group"
+            className="bg-white rounded-xl p-6 shadow-sm border-2 border-gray-200 hover:border-[#3B7AB4] transition-colors text-left group"
           >
             <div className="text-4xl mb-4">📦</div>
-            <h2 className="text-xl font-bold text-[#1E3A5F] mb-2 group-hover:text-[#3B7AB4]">
+            <h2 className="text-lg font-bold text-[#1E3A5F] mb-2 group-hover:text-[#3B7AB4]">
               Commande de Pièces
             </h2>
             <p className="text-gray-600 text-sm">
-              Commander des pièces de rechange ou consommables pour vos équipements
+              Pièces de rechange ou consommables
             </p>
           </button>
           
           {/* Contract Request */}
           <button
             onClick={() => setRequestType('contract')}
-            className="bg-white rounded-xl p-8 shadow-sm border-2 border-gray-200 hover:border-[#00A651] transition-colors text-left group"
+            className="bg-white rounded-xl p-6 shadow-sm border-2 border-gray-200 hover:border-[#00A651] transition-colors text-left group"
           >
             <div className="text-4xl mb-4">📋</div>
-            <h2 className="text-xl font-bold text-[#1E3A5F] mb-2 group-hover:text-[#00A651]">
+            <h2 className="text-lg font-bold text-[#1E3A5F] mb-2 group-hover:text-[#00A651]">
               Contrat d'Étalonnage
             </h2>
             <p className="text-gray-600 text-sm">
-              Demander un devis pour un contrat annuel d'étalonnage de votre parc d'appareils
+              Contrat annuel pour votre parc d'appareils
+            </p>
+          </button>
+          
+          {/* Rental Request */}
+          <button
+            onClick={() => setRequestType('rental')}
+            className="bg-white rounded-xl p-6 shadow-sm border-2 border-gray-200 hover:border-[#8B5CF6] transition-colors text-left group"
+          >
+            <div className="text-4xl mb-4">📅</div>
+            <h2 className="text-lg font-bold text-[#1E3A5F] mb-2 group-hover:text-[#8B5CF6]">
+              Location d'Équipement
+            </h2>
+            <p className="text-gray-600 text-sm">
+              Louer des compteurs de particules
             </p>
           </button>
         </div>
@@ -2964,6 +2978,12 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
         goBack={() => setRequestType(null)}
       />
     );
+  }
+  
+  if (requestType === 'rental') {
+    // Navigate to rentals page with new rental form
+    setPage('rentals');
+    return null;
   }
   
   return (
@@ -9228,13 +9248,16 @@ function ContractsPage({ profile, t, notify, setPage }) {
             QUOTE REVIEW MODAL - Contract Style matching Admin
             ======================================== */}
         {showQuoteModal && (() => {
-          // Group devices by type for proper layout
-          const devicesByType = {};
-          devices.forEach(d => {
-            const type = d.device_type || 'particle_counter';
-            if (!devicesByType[type]) devicesByType[type] = [];
-            devicesByType[type].push(d);
-          });
+          // Get quote_data from contract (matches RMA format)
+          const quoteData = contract.quote_data || {};
+          const quoteDevices = quoteData.devices || [];
+          const shipping = quoteData.shipping || { parcels: 1, unitPrice: 45, total: 45 };
+          const servicesSubtotal = quoteData.servicesSubtotal || totalPrice;
+          const shippingTotal = quoteData.shippingTotal || shipping.total || 0;
+          const grandTotalFromQuote = quoteData.grandTotal || (servicesSubtotal + shippingTotal);
+          
+          // Check if we have nettoyage
+          const hasNettoyage = quoteDevices.some(d => d.needsNettoyage && d.nettoyagePrice > 0);
           
           return (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -9248,7 +9271,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
                 <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
               </div>
 
-              {/* Quote Document - This prints */}
+              {/* Quote Document */}
               <div id="contract-quote-print-content">
                 {/* Quote Header */}
                 <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
@@ -9269,7 +9292,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
+                      <p className="text-2xl font-bold text-[#00A651]">DEVIS CONTRAT</p>
                       <p className="text-gray-500">N° {contract.contract_number}</p>
                     </div>
                   </div>
@@ -9299,87 +9322,91 @@ function ContractsPage({ profile, t, notify, setPage }) {
                   <p className="text-gray-600">{contract.companies?.billing_postal_code} {contract.companies?.billing_city}</p>
                 </div>
 
-                {/* SERVICE SECTIONS BY DEVICE TYPE - Matching Admin Layout */}
-                {Object.entries(devicesByType).map(([type, typeDevices]) => {
-                  const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.particle_counter;
-                  const typeSubtotal = typeDevices.reduce((sum, d) => sum + (d.unit_price || 0), 0);
-                  const typeTokens = typeDevices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
-                  
-                  return (
-                    <div key={type} className="border-b">
-                      {/* Type Header with green background */}
-                      <div className="bg-[#00A651] text-white px-8 py-3">
-                        <h3 className="font-bold text-lg flex items-center gap-2">
-                          <span>{template.icon}</span> {template.title}
-                        </h3>
-                      </div>
+                {/* DETAILED PRICING TABLE - RMA STYLE */}
+                <div className="px-8 py-6">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-[#00A651] text-white">
+                        <th className="px-4 py-3 text-left text-sm font-bold">Qté</th>
+                        <th className="px-4 py-3 text-left text-sm font-bold">Désignation</th>
+                        <th className="px-4 py-3 text-right text-sm font-bold">Prix Unit.</th>
+                        <th className="px-4 py-3 text-right text-sm font-bold">Total HT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Calibration rows from quote_data or devices */}
+                      {(quoteDevices.length > 0 ? quoteDevices : devices).map((device, idx) => {
+                        const d = quoteDevices.length > 0 ? device : {
+                          ...device,
+                          serial: device.serial_number,
+                          model: device.model_name,
+                          tokens_total: device.tokens_total || 1,
+                          calibrationPrice: device.unit_price || 350,
+                          needsCalibration: true
+                        };
+                        return d.needsCalibration !== false && (
+                          <tr key={`cal-${d.id || idx}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="px-4 py-3 text-center">{d.tokens_total || 1}</td>
+                            <td className="px-4 py-3">
+                              <span className="font-medium">Étalonnage {d.model || d.model_name}</span>
+                              <span className="text-gray-500 text-sm ml-2">(SN: {d.serial || d.serial_number})</span>
+                            </td>
+                            <td className="px-4 py-3 text-right">{(d.calibrationPrice || d.unit_price || 0).toFixed(2)} €</td>
+                            <td className="px-4 py-3 text-right font-medium">{((d.tokens_total || 1) * (d.calibrationPrice || d.unit_price || 0)).toFixed(2)} €</td>
+                          </tr>
+                        );
+                      })}
                       
-                      {/* Prestations */}
-                      <div className="px-8 py-4 bg-gray-50">
-                        <p className="text-xs text-gray-500 uppercase mb-2">Prestations Incluses</p>
-                        <ul className="space-y-1">
-                          {template.prestations.map((p, i) => (
-                            <li key={i} className="text-gray-700 flex items-start gap-2 text-sm">
-                              <span className="text-green-600 mt-0.5">✓</span>
-                              <span>{p}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                      
-                      {/* Devices Table for this type */}
-                      <div className="px-8 py-4">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b-2 border-gray-300">
-                              <th className="px-2 py-2 text-left font-bold text-gray-700">Appareil</th>
-                              <th className="px-2 py-2 text-left font-bold text-gray-700">N° Série</th>
-                              <th className="px-2 py-2 text-center font-bold text-gray-700">Étal./an</th>
-                              <th className="px-2 py-2 text-right font-bold text-gray-700">Prix HT</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {typeDevices.map((device, i) => (
-                              <tr key={device.id} className="border-b border-gray-100">
-                                <td className="px-2 py-2 font-medium">{device.model_name || '—'}</td>
-                                <td className="px-2 py-2 font-mono text-xs">{device.serial_number || '—'}</td>
-                                <td className="px-2 py-2 text-center">{device.tokens_total || 1}</td>
-                                <td className="px-2 py-2 text-right font-medium">{(device.unit_price || 0).toFixed(2)} €</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                          <tfoot>
-                            <tr className="border-t-2 border-gray-300 bg-gray-50">
-                              <td colSpan={2} className="px-2 py-2 font-bold">Sous-total {template.title}</td>
-                              <td className="px-2 py-2 text-center font-bold">{typeTokens} étal.</td>
-                              <td className="px-2 py-2 text-right font-bold text-[#00A651]">{typeSubtotal.toFixed(2)} €</td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                      </div>
-                    </div>
-                  );
-                })}
+                      {/* Nettoyage rows */}
+                      {quoteDevices.filter(d => d.needsNettoyage && d.nettoyagePrice > 0).map((d, idx) => (
+                        <tr key={`net-${d.id || idx}`} className="bg-amber-50">
+                          <td className="px-4 py-3 text-center">{d.nettoyageQty || 1}</td>
+                          <td className="px-4 py-3">
+                            <span className="font-medium text-amber-800">Nettoyage cellule - si requis selon état du capteur</span>
+                            <span className="text-amber-600 text-sm ml-2">({d.model})</span>
+                          </td>
+                          <td className="px-4 py-3 text-right">{(d.nettoyagePrice || 0).toFixed(2)} €</td>
+                          <td className="px-4 py-3 text-right font-medium">{((d.nettoyageQty || 1) * (d.nettoyagePrice || 0)).toFixed(2)} €</td>
+                        </tr>
+                      ))}
 
-                {/* TOTAL CONTRACT */}
-                <div className="px-8 py-6 bg-[#1E3A5F]">
-                  <div className="flex justify-between items-center text-white">
-                    <div>
-                      <p className="text-xl font-bold">TOTAL CONTRAT ANNUEL HT</p>
-                      <p className="text-sm text-white/70">{totalTokens} étalonnage(s) inclus pendant la période du contrat</p>
-                    </div>
-                    <p className="text-4xl font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</p>
-                  </div>
+                      {/* Shipping row */}
+                      {shippingTotal > 0 && (
+                        <tr className="bg-blue-50">
+                          <td className="px-4 py-3 text-center">{shipping.parcels || 1}</td>
+                          <td className="px-4 py-3">
+                            <span className="font-medium text-blue-800">Frais de port</span>
+                            <span className="text-blue-600 text-sm ml-2">({shipping.parcels || 1} colis)</span>
+                          </td>
+                          <td className="px-4 py-3 text-right">{(shipping.unitPrice || 45).toFixed(2)} €</td>
+                          <td className="px-4 py-3 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
+                        </tr>
+                      )}
+
+                      {/* Total row */}
+                      <tr className="bg-[#00A651] text-white">
+                        <td className="px-4 py-4" colSpan={2}></td>
+                        <td className="px-4 py-4 text-right font-bold text-lg">TOTAL HT</td>
+                        <td className="px-4 py-4 text-right font-bold text-lg">{grandTotalFromQuote.toFixed(2)} €</td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {/* Nettoyage disclaimer */}
+                  {hasNettoyage && (
+                    <p className="mt-4 text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
+                      * Le nettoyage de la cellule de mesure sera effectué si nécessaire selon l'état du capteur constaté lors de l'intervention.
+                    </p>
+                  )}
                 </div>
 
                 {/* Contract Conditions */}
-                <div className="px-8 py-4 border-t">
+                <div className="px-8 py-4 border-t bg-gray-50">
                   <p className="text-xs text-gray-500 uppercase mb-2">Conditions du Contrat</p>
                   <ul className="text-xs text-gray-600 space-y-1">
                     <li>• Validité du contrat: {new Date(contract.start_date).toLocaleDateString('fr-FR')} au {new Date(contract.end_date).toLocaleDateString('fr-FR')}</li>
                     <li>• {totalTokens} étalonnage(s) inclus à utiliser pendant la période contractuelle</li>
                     <li>• Étalonnages supplémentaires facturés au tarif standard en vigueur</li>
-                    <li>• Frais de port inclus (France métropolitaine)</li>
                     <li>• Paiement à 30 jours date de facture</li>
                   </ul>
                 </div>
@@ -9389,7 +9416,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
                   <div className="flex items-end gap-6">
                     <div>
                       <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
-                      <p className="font-bold text-lg">{contract.quote_data?.createdBy || 'Lighthouse France'}</p>
+                      <p className="font-bold text-lg">{quoteData.createdBy || 'Lighthouse France'}</p>
                       <p className="text-gray-600">Lighthouse France</p>
                     </div>
                     <img 
