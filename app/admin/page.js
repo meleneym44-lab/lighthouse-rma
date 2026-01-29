@@ -8056,11 +8056,13 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                   </thead>
                   <tbody>
                     {/* Device rows - CALIBRATION + NETTOYAGE TOGETHER */}
-                    {devicePricing.map((device, idx) => (
-                      <React.Fragment key={device.id}>
-                        {/* Calibration row */}
-                        {device.needsCalibration && (
-                          <tr className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    {devicePricing.map((device, idx) => {
+                      const rows = [];
+                      
+                      // Calibration row
+                      if (device.needsCalibration) {
+                        rows.push(
+                          <tr key={`cal-${device.id}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                             <td className="px-4 py-3 text-center">{device.tokens_total}</td>
                             <td className="px-4 py-3">
                               <span className="font-medium">Étalonnage {device.model}</span>
@@ -8069,11 +8071,13 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                             <td className="px-4 py-3 text-right">{device.calibrationPrice.toFixed(2)} €</td>
                             <td className="px-4 py-3 text-right font-medium">{(device.tokens_total * device.calibrationPrice).toFixed(2)} €</td>
                           </tr>
-                        )}
-                        
-                        {/* Nettoyage row - IMMEDIATELY AFTER ITS DEVICE */}
-                        {device.needsNettoyage && device.nettoyagePrice > 0 && (
-                          <tr className="bg-amber-50">
+                        );
+                      }
+                      
+                      // Nettoyage row - IMMEDIATELY AFTER ITS DEVICE
+                      if (device.needsNettoyage && device.nettoyagePrice > 0) {
+                        rows.push(
+                          <tr key={`net-${device.id}`} className="bg-amber-50">
                             <td className="px-4 py-3 text-center">{device.nettoyageQty}</td>
                             <td className="px-4 py-3">
                               <span className="font-medium text-amber-800">Nettoyage cellule</span>
@@ -8082,9 +8086,11 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                             <td className="px-4 py-3 text-right">{device.nettoyagePrice.toFixed(2)} €</td>
                             <td className="px-4 py-3 text-right font-medium">{(device.nettoyageQty * device.nettoyagePrice).toFixed(2)} €</td>
                           </tr>
-                        )}
-                      </React.Fragment>
-                    ))}
+                        );
+                      }
+                      
+                      return rows;
+                    })}
 
                     {/* Shipping row */}
                     <tr className="bg-blue-50">
