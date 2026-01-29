@@ -6499,21 +6499,31 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       let signatureUrl = null;
       if (signatureData) {
         try {
+          console.log('🖊️ Uploading signature...');
           const signatureBlob = await fetch(signatureData).then(r => r.blob());
           const signatureFileName = `signature_${request.id}_${Date.now()}.png`;
-          const { error: sigError } = await supabase.storage
+          console.log('🖊️ Signature file name:', signatureFileName);
+          
+          const { data: sigUploadData, error: sigError } = await supabase.storage
             .from('documents')
             .upload(signatureFileName, signatureBlob);
+          
+          console.log('🖊️ Signature upload result:', { sigUploadData, sigError });
           
           if (!sigError) {
             const { data: sigUrl } = supabase.storage
               .from('documents')
               .getPublicUrl(signatureFileName);
             signatureUrl = sigUrl?.publicUrl;
+            console.log('🖊️ Signature URL:', signatureUrl);
+          } else {
+            console.error('🖊️ Signature upload error:', sigError);
           }
         } catch (e) {
-          console.log('Signature upload skipped - storage not configured');
+          console.error('🖊️ Signature upload exception:', e);
         }
+      } else {
+        console.log('🖊️ No signature data to upload');
       }
       
       // Generate signed quote PDF
@@ -6551,17 +6561,21 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       
       // Update request status - set to bc_review so admin can verify
       // Also record quote approval if coming from quote_sent status
+      const updatePayload = { 
+        status: 'bc_review',
+        bc_submitted_at: new Date().toISOString(),
+        bc_signed_by: signatureName,
+        bc_signature_date: signatureDateISO,
+        bc_file_url: fileUrl,
+        bc_signature_url: signatureUrl,
+        quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
+      };
+      
+      console.log('📝 Updating service_request with:', updatePayload);
+      
       const { error: updateError } = await supabase
         .from('service_requests')
-        .update({ 
-          status: 'bc_review',
-          bc_submitted_at: new Date().toISOString(),
-          bc_signed_by: signatureName,
-          bc_signature_date: signatureDateISO,
-          bc_file_url: fileUrl,
-          bc_signature_url: signatureUrl,
-          quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
-        })
+        .update(updatePayload)
         .eq('id', request.id);
       
       if (updateError) throw updateError;
