@@ -7876,12 +7876,12 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
           </div>
         )}
 
-        {/* Step 2: Preview - Exactly Like RMA Quote */}
+        {/* Step 2: Preview - Multi-Page A4 Layout */}
         {step === 2 && (() => {
           // Get unique device types for service description blocks
           const deviceTypes = [...new Set(devicePricing.map(d => d.deviceType))];
           
-          // Service description templates (same as RMA)
+          // Service description templates
           const CAL_TEMPLATES = {
             particle_counter: {
               title: "Étalonnage Compteur de Particules Aéroportées",
@@ -7890,8 +7890,8 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 "Vérification des fonctionnalités du compteur",
                 "Vérification et réglage du débit",
                 "Vérification de la cellule de mesure",
-                "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
-                "Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4",
+                "Contrôle et réglage des seuils granulométriques à l'aide de sphères de latex calibrées",
+                "Vérification en nombre par comparaison à un étalon ISO 17025 / ISO 21501-4",
                 "Fourniture d'un rapport de test et de calibration"
               ]
             },
@@ -7907,13 +7907,13 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
               ]
             },
             liquid_counter: {
-              title: "Étalonnage Compteur de Particules en Milieu Liquide",
+              title: "Étalonnage Compteur Particules Liquide",
               icon: "💧",
               prestations: [
                 "Vérification des fonctionnalités du compteur",
                 "Vérification et réglage du débit",
                 "Vérification de la cellule de mesure optique",
-                "Contrôle et réglage des seuils de mesures granulométrique",
+                "Contrôle et réglage des seuils granulométriques",
                 "Vérification en nombre par comparaison à un étalon",
                 "Fourniture d'un rapport de test et de calibration"
               ]
@@ -7940,231 +7940,350 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
               ]
             }
           };
+
+          // Build content blocks for pagination
+          const contentBlocks = [];
           
-          return (
-          <div className="p-6 bg-gray-200 min-h-full">
-            <div className="max-w-4xl mx-auto bg-white shadow-xl" style={{ fontFamily: 'Arial, sans-serif' }}>
-              
-              {/* ===== HEADER WITH LOGO ===== */}
-              <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <img 
-                      src="/images/logos/lighthouse-logo.png" 
-                      alt="Lighthouse France" 
-                      className="h-14 w-auto mb-1"
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                        e.target.nextSibling.style.display = 'block';
-                      }}
-                    />
-                    <div className="hidden">
-                      <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
-                      <p className="text-gray-500">Worldwide Solutions</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-bold text-[#00A651]">DEVIS CONTRAT</p>
-                    <p className="text-gray-500">N° {quoteRef}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* ===== INFO BAR ===== */}
-              <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
-                <div>
-                  <p className="text-xs text-gray-500 uppercase">Date</p>
-                  <p className="font-medium">{today.toLocaleDateString('fr-FR')}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 uppercase">Période Contrat</p>
-                  <p className="font-medium">{new Date(contractDates.start_date).toLocaleDateString('fr-FR')} - {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 uppercase">Validité</p>
-                  <p className="font-medium">30 jours</p>
-                </div>
-              </div>
-
-              {/* ===== CLIENT INFO (Full details like RMA) ===== */}
-              <div className="px-8 py-4 border-b">
+          // Block: Client Info
+          contentBlocks.push({
+            type: 'client',
+            height: 80,
+            render: () => (
+              <div className="px-6 py-4 border-b">
                 <p className="text-xs text-gray-500 uppercase">Client</p>
-                <p className="font-bold text-xl text-[#1a1a2e]">{contract.companies?.name}</p>
+                <p className="font-bold text-lg text-[#1a1a2e]">{contract.companies?.name}</p>
                 {contract.companies?.billing_address && (
-                  <p className="text-gray-600">{contract.companies.billing_address}</p>
+                  <p className="text-gray-600 text-sm">{contract.companies.billing_address}</p>
                 )}
                 {(contract.companies?.billing_postal_code || contract.companies?.billing_city) && (
-                  <p className="text-gray-600">
+                  <p className="text-gray-600 text-sm">
                     {contract.companies?.billing_postal_code} {contract.companies?.billing_city}
                   </p>
                 )}
                 {contract.companies?.phone && (
-                  <p className="text-gray-600">Tél: {contract.companies.phone}</p>
-                )}
-                {contract.companies?.email && (
-                  <p className="text-gray-600">{contract.companies.email}</p>
+                  <p className="text-gray-600 text-sm">Tél: {contract.companies.phone}</p>
                 )}
               </div>
+            )
+          });
 
-              {/* ===== SERVICE DESCRIPTION BLOCKS (Like RMA) ===== */}
-              {deviceTypes.map(type => {
-                const template = CAL_TEMPLATES[type] || CAL_TEMPLATES.particle_counter;
-                return (
-                  <div key={type} className="px-8 py-4 border-b">
-                    <div className="flex items-start gap-3">
-                      <div className="w-1 bg-blue-500 self-stretch rounded"></div>
-                      <div className="flex-1">
-                        <h3 className="font-bold text-[#1a1a2e] mb-2 flex items-center gap-2">
-                          <span>{template.icon}</span>
-                          {template.title}
-                        </h3>
-                        <ul className="text-sm text-gray-600 space-y-1">
-                          {template.prestations.map((p, i) => (
-                            <li key={i} className="flex items-start gap-2">
-                              <span className="text-gray-400">-</span>
-                              <span>{p}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
+          // Block: Service descriptions
+          deviceTypes.forEach(type => {
+            const template = CAL_TEMPLATES[type] || CAL_TEMPLATES.particle_counter;
+            contentBlocks.push({
+              type: 'service',
+              deviceType: type,
+              height: 120,
+              render: () => (
+                <div className="px-6 py-3 border-b">
+                  <div className="flex items-start gap-2">
+                    <div className="w-1 bg-blue-500 self-stretch rounded" style={{minHeight: '80px'}}></div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-[#1a1a2e] mb-1 text-sm flex items-center gap-2">
+                        <span>{template.icon}</span>
+                        {template.title}
+                      </h3>
+                      <ul className="text-xs text-gray-600 space-y-0.5">
+                        {template.prestations.map((p, i) => (
+                          <li key={i} className="flex items-start gap-1">
+                            <span className="text-gray-400">-</span>
+                            <span>{p}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              )
+            });
+          });
 
-              {/* ===== CONDITIONS ===== */}
-              <div className="px-8 py-3 border-b bg-gray-50">
-                <p className="text-xs text-gray-500 uppercase mb-2">Conditions</p>
-                <ul className="text-xs text-gray-600 space-y-0.5">
+          // Block: Conditions
+          contentBlocks.push({
+            type: 'conditions',
+            height: 50,
+            render: () => (
+              <div className="px-6 py-2 border-b bg-gray-50">
+                <p className="text-xs text-gray-500 uppercase mb-1">Conditions</p>
+                <ul className="text-xs text-gray-600 space-y-0">
                   <li>- Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.</li>
                   <li>- Un devis complémentaire sera établi si des pièces sont trouvées défectueuses.</li>
-                  <li>- Paiement à 30 jours date de facture.</li>
                 </ul>
               </div>
+            )
+          });
 
-              {/* ===== DETAILED PRICING TABLE ===== */}
-              <div className="px-8 py-6">
-                <h3 className="font-bold text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
+          // Block: Table header
+          contentBlocks.push({
+            type: 'table_header',
+            height: 45,
+            render: () => (
+              <div className="px-6 pt-4">
+                <h3 className="font-bold text-[#1a1a2e] mb-2 text-sm">Récapitulatif des Prix</h3>
                 <table className="w-full">
                   <thead>
                     <tr className="bg-[#1a1a2e] text-white">
-                      <th className="px-4 py-3 text-left text-sm font-bold w-16">Qté</th>
-                      <th className="px-4 py-3 text-left text-sm font-bold">Désignation</th>
-                      <th className="px-4 py-3 text-right text-sm font-bold w-28">Prix Unit.</th>
-                      <th className="px-4 py-3 text-right text-sm font-bold w-28">Total HT</th>
+                      <th className="px-3 py-2 text-left text-xs font-bold w-12">Qté</th>
+                      <th className="px-3 py-2 text-left text-xs font-bold">Désignation</th>
+                      <th className="px-3 py-2 text-right text-xs font-bold w-20">Prix Unit.</th>
+                      <th className="px-3 py-2 text-right text-xs font-bold w-20">Total HT</th>
                     </tr>
                   </thead>
+                </table>
+              </div>
+            )
+          });
+
+          // Block: Device rows (each device + its nettoyage as one block)
+          devicePricing.forEach((device, idx) => {
+            contentBlocks.push({
+              type: 'device',
+              device: device,
+              index: idx,
+              height: device.needsNettoyage && device.nettoyagePrice > 0 ? 60 : 32,
+              render: () => (
+                <div className="px-6">
+                  <table className="w-full">
+                    <tbody>
+                      {device.needsCalibration && (
+                        <tr className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-3 py-2 text-center text-sm w-12">{device.tokens_total}</td>
+                          <td className="px-3 py-2 text-sm">
+                            <span className="font-medium">Étalonnage {device.model}</span>
+                            <span className="text-gray-500 text-xs ml-1">(SN: {device.serial})</span>
+                          </td>
+                          <td className="px-3 py-2 text-right text-sm w-20">{device.calibrationPrice.toFixed(2)} €</td>
+                          <td className="px-3 py-2 text-right text-sm font-medium w-20">{(device.tokens_total * device.calibrationPrice).toFixed(2)} €</td>
+                        </tr>
+                      )}
+                      {device.needsNettoyage && device.nettoyagePrice > 0 && (
+                        <tr className="bg-amber-50">
+                          <td className="px-3 py-2 text-center text-sm w-12">{device.nettoyageQty}</td>
+                          <td className="px-3 py-2 text-sm">
+                            <span className="font-medium text-amber-800">Nettoyage cellule</span>
+                            <span className="text-amber-600 text-xs ml-1">- si requis ({device.model})</span>
+                          </td>
+                          <td className="px-3 py-2 text-right text-sm w-20">{device.nettoyagePrice.toFixed(2)} €</td>
+                          <td className="px-3 py-2 text-right text-sm font-medium w-20">{(device.nettoyageQty * device.nettoyagePrice).toFixed(2)} €</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            });
+          });
+
+          // Block: Shipping
+          contentBlocks.push({
+            type: 'shipping',
+            height: 32,
+            render: () => (
+              <div className="px-6">
+                <table className="w-full">
                   <tbody>
-                    {/* Device rows - CALIBRATION + NETTOYAGE TOGETHER */}
-                    {devicePricing.map((device, idx) => {
-                      const rows = [];
-                      
-                      // Calibration row
-                      if (device.needsCalibration) {
-                        rows.push(
-                          <tr key={`cal-${device.id}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                            <td className="px-4 py-3 text-center">{device.tokens_total}</td>
-                            <td className="px-4 py-3">
-                              <span className="font-medium">Étalonnage {device.model}</span>
-                              <span className="text-gray-500 text-sm ml-2">(SN: {device.serial})</span>
-                            </td>
-                            <td className="px-4 py-3 text-right">{device.calibrationPrice.toFixed(2)} €</td>
-                            <td className="px-4 py-3 text-right font-medium">{(device.tokens_total * device.calibrationPrice).toFixed(2)} €</td>
-                          </tr>
-                        );
-                      }
-                      
-                      // Nettoyage row - IMMEDIATELY AFTER ITS DEVICE
-                      if (device.needsNettoyage && device.nettoyagePrice > 0) {
-                        rows.push(
-                          <tr key={`net-${device.id}`} className="bg-amber-50">
-                            <td className="px-4 py-3 text-center">{device.nettoyageQty}</td>
-                            <td className="px-4 py-3">
-                              <span className="font-medium text-amber-800">Nettoyage cellule</span>
-                              <span className="text-amber-600 text-sm ml-2">- si requis selon état ({device.model})</span>
-                            </td>
-                            <td className="px-4 py-3 text-right">{device.nettoyagePrice.toFixed(2)} €</td>
-                            <td className="px-4 py-3 text-right font-medium">{(device.nettoyageQty * device.nettoyagePrice).toFixed(2)} €</td>
-                          </tr>
-                        );
-                      }
-                      
-                      return rows;
-                    })}
-
-                    {/* Shipping row */}
                     <tr className="bg-blue-50">
-                      <td className="px-4 py-3 text-center">{shippingData.parcels}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2 text-center text-sm w-12">{shippingData.parcels}</td>
+                      <td className="px-3 py-2 text-sm">
                         <span className="font-medium text-blue-800">Frais de port</span>
-                        <span className="text-blue-600 text-sm ml-2">({shippingData.parcels} colis)</span>
+                        <span className="text-blue-600 text-xs ml-1">({shippingData.parcels} colis)</span>
                       </td>
-                      <td className="px-4 py-3 text-right">{shippingData.unitPrice.toFixed(2)} €</td>
-                      <td className="px-4 py-3 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
-                    </tr>
-
-                    {/* Total row */}
-                    <tr className="bg-[#00A651] text-white">
-                      <td className="px-4 py-4" colSpan={2}></td>
-                      <td className="px-4 py-4 text-right font-bold text-lg">TOTAL HT</td>
-                      <td className="px-4 py-4 text-right font-bold text-lg">{grandTotal.toFixed(2)} €</td>
+                      <td className="px-3 py-2 text-right text-sm w-20">{shippingData.unitPrice.toFixed(2)} €</td>
+                      <td className="px-3 py-2 text-right text-sm font-medium w-20">{shippingTotal.toFixed(2)} €</td>
                     </tr>
                   </tbody>
                 </table>
+              </div>
+            )
+          });
 
-                {/* Nettoyage disclaimer */}
+          // Block: Total
+          contentBlocks.push({
+            type: 'total',
+            height: 35,
+            render: () => (
+              <div className="px-6 pb-4">
+                <table className="w-full">
+                  <tbody>
+                    <tr className="bg-[#00A651] text-white">
+                      <td className="px-3 py-2 w-12"></td>
+                      <td className="px-3 py-2"></td>
+                      <td className="px-3 py-2 text-right font-bold text-sm w-20">TOTAL HT</td>
+                      <td className="px-3 py-2 text-right font-bold text-sm w-20">{grandTotal.toFixed(2)} €</td>
+                    </tr>
+                  </tbody>
+                </table>
                 {hasNettoyage && (
-                  <p className="mt-4 text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
-                    * Le nettoyage de la cellule de mesure sera effectué si nécessaire selon l'état du capteur constaté lors de l'intervention.
+                  <p className="mt-2 text-xs text-amber-700 bg-amber-50 p-2 rounded">
+                    * Le nettoyage sera effectué si nécessaire selon l'état du capteur.
                   </p>
                 )}
               </div>
+            )
+          });
 
-              {/* ===== CONTRACT TERMS ===== */}
-              <div className="px-8 py-4 border-t bg-gray-50">
-                <p className="text-xs text-gray-500 uppercase mb-2">Conditions du contrat</p>
-                <ul className="text-xs text-gray-600 space-y-1">
-                  <li>• Période du contrat: {new Date(contractDates.start_date).toLocaleDateString('fr-FR')} au {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</li>
+          // Block: Contract terms
+          contentBlocks.push({
+            type: 'terms',
+            height: 60,
+            render: () => (
+              <div className="px-6 py-3 border-t bg-gray-50">
+                <p className="text-xs text-gray-500 uppercase mb-1">Conditions du contrat</p>
+                <ul className="text-xs text-gray-600 space-y-0">
+                  <li>• Période: {new Date(contractDates.start_date).toLocaleDateString('fr-FR')} au {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</li>
                   <li>• {totalTokens} étalonnage(s) inclus pendant la période contractuelle</li>
                   <li>• Étalonnages supplémentaires facturés au tarif standard</li>
                   <li>• Paiement à 30 jours date de facture</li>
                 </ul>
               </div>
+            )
+          });
 
-              {/* ===== SIGNATURE SECTION WITH CAPCERT LOGO ===== */}
-              <div className="px-8 py-6 border-t">
+          // Block: Signature (always last)
+          contentBlocks.push({
+            type: 'signature',
+            height: 100,
+            alwaysLast: true,
+            render: () => (
+              <div className="px-6 py-4 border-t">
                 <div className="flex justify-between items-end">
-                  {/* Left: Etabli par + Capcert logo */}
-                  <div className="flex items-end gap-6">
+                  <div className="flex items-end gap-4">
                     <div>
                       <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
-                      <p className="font-bold text-lg">{signatory}</p>
-                      <p className="text-gray-500 text-sm">Lighthouse France</p>
+                      <p className="font-bold">{signatory}</p>
+                      <p className="text-gray-500 text-xs">Lighthouse France</p>
                     </div>
                     <img 
                       src="/images/logos/capcert-logo.png" 
-                      alt="Capcert Certification" 
-                      className="h-16 w-auto"
+                      alt="Capcert" 
+                      className="h-12 w-auto"
                       onError={(e) => { e.target.style.display = 'none'; }}
                     />
                   </div>
-                  
-                  {/* Right: Signature box */}
                   <div className="text-center">
                     <p className="text-xs text-gray-500 uppercase mb-1">Bon pour accord</p>
-                    <div className="w-48 h-16 border-2 border-dashed border-gray-300 rounded"></div>
+                    <div className="w-40 h-12 border-2 border-dashed border-gray-300 rounded"></div>
                     <p className="text-xs text-gray-400 mt-1">Signature et cachet</p>
                   </div>
                 </div>
               </div>
+            )
+          });
 
-              {/* ===== FOOTER ===== */}
-              <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
-                <p className="font-medium">Lighthouse France SAS</p>
-                <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+          // Paginate content - A4 page height ~1050px usable (excluding header/footer)
+          const PAGE_CONTENT_HEIGHT = 680; // px available per page for content
+          const pages = [];
+          let currentPage = { blocks: [], usedHeight: 0 };
+          
+          // Separate signature block (always goes last)
+          const signatureBlock = contentBlocks.find(b => b.type === 'signature');
+          const otherBlocks = contentBlocks.filter(b => b.type !== 'signature');
+          
+          otherBlocks.forEach(block => {
+            if (currentPage.usedHeight + block.height > PAGE_CONTENT_HEIGHT) {
+              // Start new page
+              pages.push(currentPage);
+              currentPage = { blocks: [], usedHeight: 0 };
+            }
+            currentPage.blocks.push(block);
+            currentPage.usedHeight += block.height;
+          });
+          
+          // Add signature to last page (or new page if no room)
+          if (signatureBlock) {
+            if (currentPage.usedHeight + signatureBlock.height > PAGE_CONTENT_HEIGHT) {
+              pages.push(currentPage);
+              currentPage = { blocks: [signatureBlock], usedHeight: signatureBlock.height };
+            } else {
+              currentPage.blocks.push(signatureBlock);
+            }
+          }
+          pages.push(currentPage);
+          
+          const totalPages = pages.length;
+
+          // Page Header Component
+          const PageHeader = ({ pageNum }) => (
+            <div className="border-b-4 border-[#00A651]">
+              <div className="px-6 py-3 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <img 
+                    src="/images/logos/lighthouse-logo.png" 
+                    alt="Lighthouse" 
+                    className="h-10 w-auto"
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                      e.target.nextSibling.style.display = 'block';
+                    }}
+                  />
+                  <div className="hidden">
+                    <span className="text-xl font-bold text-[#1a1a2e]">LIGHTHOUSE</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-lg font-bold text-[#00A651]">DEVIS CONTRAT</p>
+                  <p className="text-gray-500 text-sm">{quoteRef}</p>
+                </div>
+              </div>
+              {pageNum === 1 && (
+                <div className="bg-gray-100 px-6 py-2 flex justify-between text-xs border-t">
+                  <div>
+                    <span className="text-gray-500">Date: </span>
+                    <span className="font-medium">{today.toLocaleDateString('fr-FR')}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Période: </span>
+                    <span className="font-medium">{new Date(contractDates.start_date).toLocaleDateString('fr-FR')} - {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Validité: </span>
+                    <span className="font-medium">30 jours</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+
+          // Page Footer Component
+          const PageFooter = ({ pageNum, totalPages }) => (
+            <div className="bg-[#1a1a2e] text-white px-6 py-2 flex justify-between items-center text-xs">
+              <span>Lighthouse France SAS • 16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</span>
+              <span className="font-medium">Page {pageNum}/{totalPages}</span>
+            </div>
+          );
+
+          return (
+            <div className="p-6 bg-gray-300 min-h-full">
+              <div className="space-y-8">
+                {pages.map((page, pageIdx) => (
+                  <div 
+                    key={pageIdx} 
+                    className="bg-white shadow-xl mx-auto"
+                    style={{ 
+                      width: '210mm', 
+                      minHeight: '297mm',
+                      display: 'flex',
+                      flexDirection: 'column'
+                    }}
+                  >
+                    {/* Page Header */}
+                    <PageHeader pageNum={pageIdx + 1} />
+                    
+                    {/* Page Content */}
+                    <div className="flex-1">
+                      {page.blocks.map((block, blockIdx) => (
+                        <div key={blockIdx}>
+                          {block.render()}
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {/* Page Footer */}
+                    <PageFooter pageNum={pageIdx + 1} totalPages={totalPages} />
+                  </div>
+                ))}
               </div>
             </div>
-          </div>
           );
         })()}
 
