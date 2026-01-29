@@ -310,8 +310,25 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   });
   y += 5;
 
-  // ===== PRICING TABLE =====
-  const rowH = 8;
+  // ===== DETAILED PRICING TABLE (Qté | Désignation | Prix Unit. | Total HT) =====
+  const rowH = 7;
+  const colQty = margin;
+  const colDesc = margin + 12;
+  const colUnit = pageWidth - margin - 45;
+  const colTotal = pageWidth - margin - 3;
+  
+  // Get devicePricing from options for detailed breakdown
+  const devicePricing = options.devicePricing || devices.map(d => ({
+    model: d.model_name || d.model || '',
+    serial: d.serial_number || d.serial || '',
+    needsCalibration: (d.service_type || '').includes('calibration'),
+    needsRepair: (d.service_type || '').includes('repair'),
+    calibrationPrice: d.quoted_price || 0,
+    repairPrice: 0,
+    nettoyagePrice: 0,
+    additionalParts: [],
+    isContractCovered: false
+  }));
   
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
@@ -325,69 +342,139 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...white);
-  pdf.text('Appareil', margin + 3, y + 6);
-  pdf.text('N. Serie', margin + 55, y + 6);
-  pdf.text('Service', margin + 100, y + 6);
-  pdf.text('Prix HT', pageWidth - margin - 3, y + 6, { align: 'right' });
+  pdf.text('Qte', colQty + 3, y + 6);
+  pdf.text('Designation', colDesc, y + 6);
+  pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
+  pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
   y += 9;
 
-  let servicesSubtotal = 0;
-  
-  devices.forEach((device, idx) => {
-    const price = parseFloat(device.quoted_price) || 0;
-    servicesSubtotal += price;
+  let rowIndex = 0;
+  let hasNettoyage = false;
+  let servicesSubtotal = options.servicesSubtotal || 0;
+
+  // Build line items from devicePricing
+  devicePricing.forEach((device) => {
+    // Calibration row
+    if (device.needsCalibration) {
+      const qty = device.calibrationQty || 1;
+      const unitPrice = parseFloat(device.calibrationPrice) || 0;
+      const lineTotal = qty * unitPrice;
+      const isContract = device.isContractCovered;
+      
+      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...darkBlue);
+      pdf.text(String(qty), colQty + 3, y + 5);
+      const calDesc = `Etalonnage ${device.model || ''} (SN: ${device.serial || ''})${isContract ? ' [CONTRAT]' : ''}`;
+      pdf.text(calDesc.substring(0, 60), colDesc, y + 5);
+      pdf.text(isContract ? 'Contrat' : unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(isContract ? 'Contrat' : lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      y += rowH;
+      rowIndex++;
+    }
     
-    const serviceType = device.service_type === 'calibration' ? 'Etalonnage' : 
-                        device.service_type === 'repair' ? 'Reparation' : 'Service';
+    // Nettoyage row
+    if (device.needsNettoyage && !device.isContractCovered && device.nettoyagePrice > 0) {
+      hasNettoyage = true;
+      const qty = device.nettoyageQty || 1;
+      const unitPrice = parseFloat(device.nettoyagePrice) || 0;
+      const lineTotal = qty * unitPrice;
+      
+      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...darkBlue);
+      pdf.text(String(qty), colQty + 3, y + 5);
+      pdf.text('Nettoyage cellule - si requis selon etat du capteur', colDesc, y + 5);
+      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      y += rowH;
+      rowIndex++;
+    }
     
-    pdf.setFillColor(idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250);
-    pdf.rect(margin, y, contentWidth, rowH, 'F');
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...darkBlue);
-    pdf.text(device.model_name || '-', margin + 3, y + 5.5);
-    pdf.setFont('courier', 'normal');
-    pdf.text(device.serial_number || '-', margin + 55, y + 5.5);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(serviceType, margin + 100, y + 5.5);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(price.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
-    y += rowH;
+    // Repair row
+    if (device.needsRepair) {
+      const qty = device.repairQty || 1;
+      const unitPrice = parseFloat(device.repairPrice) || 0;
+      const lineTotal = qty * unitPrice;
+      
+      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...darkBlue);
+      pdf.text(String(qty), colQty + 3, y + 5);
+      const repDesc = `Reparation ${device.model || ''} (SN: ${device.serial || ''})`;
+      pdf.text(repDesc.substring(0, 60), colDesc, y + 5);
+      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      y += rowH;
+      rowIndex++;
+    }
+    
+    // Additional parts
+    (device.additionalParts || []).forEach(part => {
+      const qty = parseInt(part.quantity) || 1;
+      const unitPrice = parseFloat(part.price) || 0;
+      const lineTotal = qty * unitPrice;
+      
+      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...darkBlue);
+      pdf.text(String(qty), colQty + 3, y + 5);
+      const partDesc = part.partNumber ? `[${part.partNumber}] ${part.description || 'Piece'}` : (part.description || 'Piece/Service');
+      pdf.text(partDesc.substring(0, 55), colDesc, y + 5);
+      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      y += rowH;
+      rowIndex++;
+    });
   });
-
-  // Use global shipping data
-  const shippingTotal = shippingInfo.total || 0;
-  const grandTotal = servicesSubtotal + shippingTotal;
   
-  pdf.setDrawColor(200, 200, 200);
-  pdf.line(margin, y, pageWidth - margin, y);
-  
-  pdf.setFillColor(255, 255, 255);
+  // Shipping row
+  pdf.setFillColor(245, 245, 245);
   pdf.rect(margin, y, contentWidth, rowH, 'F');
-  pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...darkBlue);
-  pdf.text('Sous-total services', margin + 3, y + 5.5);
-  pdf.text(servicesSubtotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+  pdf.text(String(shippingInfo.parcels || 1), colQty + 3, y + 5);
+  const shipDesc = shippingInfo.parcels > 1 ? `Frais de port (${shippingInfo.parcels} colis)` : 'Frais de port';
+  pdf.text(shipDesc, colDesc, y + 5);
+  pdf.text((shippingInfo.unitPrice || 45).toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+  pdf.setFont('helvetica', 'bold');
+  const shippingTotal = options.shippingTotal || shippingInfo.total || 0;
+  pdf.text(shippingTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
   y += rowH;
 
-  // Shipping with parcels info
-  pdf.rect(margin, y, contentWidth, rowH, 'F');
-  const shippingLabel = shippingInfo.parcels > 1 
-    ? `Frais de port (${shippingInfo.parcels} colis x ${shippingInfo.unitPrice.toFixed(2)} EUR)`
-    : 'Frais de port';
-  pdf.text(shippingLabel, margin + 3, y + 5.5);
-  pdf.text(shippingTotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
-  y += rowH;
-
+  // Total row
+  const grandTotal = options.grandTotal || (servicesSubtotal + shippingTotal);
   pdf.setFillColor(...green);
   pdf.rect(margin, y, contentWidth, 11, 'F');
   pdf.setTextColor(...white);
   pdf.setFontSize(11);
-  pdf.text('TOTAL HT', margin + 4, y + 7.5);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('TOTAL HT', colUnit - 30, y + 7.5);
   pdf.setFontSize(16);
-  pdf.text(grandTotal.toFixed(2) + ' EUR', pageWidth - margin - 4, y + 8, { align: 'right' });
+  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
   y += 15;
+  
+  // Nettoyage disclaimer
+  if (hasNettoyage) {
+    pdf.setFontSize(7);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(...lightGray);
+    pdf.text('* Le nettoyage cellule sera facture uniquement si necessaire selon l\'etat du capteur a reception.', margin, y);
+    y += 5;
+  }
 
   // ===== SIGNATURE SECTION =====
   const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
@@ -10097,15 +10184,13 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           request_number: rmaNumber,
           companies: request.companies
         };
-        const devicesForPDF = devicePricing.map(d => ({
-          model_name: d.model,
-          serial_number: d.serial,
-          service_type: d.needsCalibration && d.needsRepair ? 'both' : d.needsCalibration ? 'calibration' : 'repair',
-          quoted_price: getDeviceServiceTotal(d)
-        }));
         
-        const pdfBlob = await generateQuotePDF(rmaForPDF, devicesForPDF, {
-          shipping: shippingData
+        const pdfBlob = await generateQuotePDF(rmaForPDF, devicePricing, {
+          shipping: shippingData,
+          devicePricing: devicePricing,
+          servicesSubtotal: servicesSubtotal,
+          shippingTotal: shippingTotal,
+          grandTotal: grandTotal
         });
         const fileName = `${rmaNumber}_devis_${Date.now()}.pdf`;
         quoteUrl = await uploadPDFToStorage(pdfBlob, `quotes/${rmaNumber}`, fileName);
