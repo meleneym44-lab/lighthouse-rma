@@ -7493,8 +7493,9 @@ function ContractsSheet({ clients, notify, profile, reloadMain }) {
   );
 }
 
+
 // ============================================
-// CONTRACT QUOTE EDITOR - Like RMA Quote Editor
+// CONTRACT QUOTE EDITOR - Matches RMA Quote Style
 // ============================================
 function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
   const [step, setStep] = useState(1); // 1=Edit, 2=Preview, 3=Confirm
@@ -7502,25 +7503,42 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
   const [quoteRef, setQuoteRef] = useState('');
   const today = new Date();
   
-  // Signatory name from profile
   const signatory = profile?.full_name || 'Lighthouse France';
   
-  // Contract dates (editable)
+  // Contract dates
   const [contractDates, setContractDates] = useState({
     start_date: contract.start_date || new Date().toISOString().split('T')[0],
     end_date: contract.end_date || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0]
   });
   
-  // Initialize pricing for each device
+  // Shipping data (same as RMA)
+  const [shippingData, setShippingData] = useState({
+    parcels: 1,
+    unitPrice: 45,
+    total: 45,
+    partNumber: '1200199-1'
+  });
+  
+  // Initialize pricing for each device - matching RMA structure
   const [devicePricing, setDevicePricing] = useState(
-    (contract.contract_devices || []).map(d => ({
-      id: d.id,
-      serial_number: d.serial_number,
-      model_name: d.model_name || '',
-      device_type: d.device_type || 'particle_counter',
-      tokens_total: d.tokens_total || 1,
-      unit_price: d.unit_price || 350
-    }))
+    (contract.contract_devices || []).map(d => {
+      const isParticleCounter = (d.device_type || 'particle_counter') === 'particle_counter';
+      return {
+        id: d.id,
+        serial: d.serial_number,
+        model: d.model_name || '',
+        deviceType: d.device_type || 'particle_counter',
+        tokens_total: d.tokens_total || 1,
+        needsCalibration: true,
+        calibrationPrice: d.unit_price || 350,
+        calibrationQty: 1,
+        needsNettoyage: isParticleCounter,
+        nettoyagePrice: isParticleCounter ? 150 : 0,
+        nettoyageQty: 1,
+        additionalParts: [],
+        isContractCovered: false
+      };
+    })
   );
 
   useEffect(() => {
@@ -7529,12 +7547,28 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
     setQuoteRef(`CTR/${year}${month}/XXX`);
   }, []);
 
+  // Update shipping total when parcels change
+  useEffect(() => {
+    setShippingData(prev => ({ ...prev, total: prev.parcels * prev.unitPrice }));
+  }, [shippingData.parcels]);
+
   const updateDevice = (id, field, value) => {
     setDevicePricing(prev => prev.map(d => d.id === id ? { ...d, [field]: value } : d));
   };
 
-  const totalPrice = devicePricing.reduce((sum, d) => sum + (parseFloat(d.unit_price) || 0), 0);
+  // Calculate totals like RMA
+  const getDeviceTotal = (d) => {
+    let total = 0;
+    if (d.needsCalibration) total += (d.calibrationQty || 1) * (d.calibrationPrice || 0);
+    if (d.needsNettoyage) total += (d.nettoyageQty || 1) * (d.nettoyagePrice || 0);
+    return total;
+  };
+  
+  const servicesSubtotal = devicePricing.reduce((sum, d) => sum + getDeviceTotal(d), 0);
+  const shippingTotal = shippingData.total;
+  const grandTotal = servicesSubtotal + shippingTotal;
   const totalTokens = devicePricing.reduce((sum, d) => sum + (parseInt(d.tokens_total) || 0), 0);
+  const hasNettoyage = devicePricing.some(d => d.needsNettoyage && d.nettoyagePrice > 0);
 
   const getDeviceTypeLabel = (type) => {
     const labels = {
@@ -7546,57 +7580,6 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
     };
     return labels[type] || type;
   };
-
-  // Get calibration descriptions by device type
-  const getCalibrationPrestations = (deviceType) => {
-    const templates = {
-      particle_counter: [
-        "Vérification des fonctionnalités du compteur",
-        "Vérification et réglage du débit",
-        "Vérification de la cellule de mesure",
-        "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
-        "Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4",
-        "Fourniture d'un rapport de test et de calibration"
-      ],
-      bio_collector: [
-        "Vérification des fonctionnalités de l'appareil",
-        "Vérification et réglage du débit",
-        "Vérification de la cellule d'impaction",
-        "Contrôle des paramètres de collecte",
-        "Fourniture d'un rapport de test et de calibration"
-      ],
-      liquid_counter: [
-        "Vérification des fonctionnalités du compteur",
-        "Vérification et réglage du débit",
-        "Vérification de la cellule de mesure optique",
-        "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
-        "Vérification en nombre par comparaison à un étalon",
-        "Fourniture d'un rapport de test et de calibration"
-      ],
-      temp_humidity: [
-        "Vérification des fonctionnalités du capteur",
-        "Étalonnage température sur points de référence certifiés",
-        "Étalonnage humidité relative",
-        "Vérification de la stabilité des mesures",
-        "Fourniture d'un certificat d'étalonnage"
-      ],
-      other: [
-        "Vérification des fonctionnalités de l'appareil",
-        "Étalonnage selon les spécifications du fabricant",
-        "Tests de fonctionnement",
-        "Fourniture d'un rapport de test"
-      ]
-    };
-    return templates[deviceType] || templates.other;
-  };
-
-  // Group devices by type for the quote
-  const devicesByType = devicePricing.reduce((acc, d) => {
-    const type = d.device_type || 'other';
-    if (!acc[type]) acc[type] = [];
-    acc[type].push(d);
-    return acc;
-  }, {});
 
   const sendQuote = async () => {
     setSaving(true);
@@ -7617,60 +7600,54 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
         contractNumber = `CTR-${year}-${String(lastNum + 1).padStart(3, '0')}`;
       }
 
-      // Update contract - only use columns that definitely exist
+      // Build quote_data in same format as RMA
+      const quoteData = {
+        devices: devicePricing.map(d => ({
+          id: d.id,
+          serial: d.serial,
+          model: d.model,
+          deviceType: d.deviceType,
+          tokens_total: d.tokens_total,
+          needsCalibration: d.needsCalibration,
+          calibrationPrice: d.calibrationPrice,
+          calibrationQty: d.calibrationQty || 1,
+          needsNettoyage: d.needsNettoyage,
+          nettoyagePrice: d.nettoyagePrice,
+          nettoyageQty: d.nettoyageQty || 1,
+          additionalParts: d.additionalParts || [],
+          isContractCovered: false
+        })),
+        shipping: shippingData,
+        servicesSubtotal: servicesSubtotal,
+        shippingTotal: shippingTotal,
+        grandTotal: grandTotal,
+        totalTokens: totalTokens,
+        contractDates: contractDates,
+        createdBy: signatory,
+        createdAt: new Date().toISOString()
+      };
+
+      // Update contract with all quote data
       const { error: updateError } = await supabase.from('contracts').update({
         contract_number: contractNumber,
         start_date: contractDates.start_date,
         end_date: contractDates.end_date,
-        status: 'quote_sent'
+        status: 'quote_sent',
+        quote_subtotal: servicesSubtotal,
+        quote_shipping: shippingTotal,
+        quote_total: grandTotal,
+        quote_data: quoteData,
+        quote_sent_at: new Date().toISOString()
       }).eq('id', contract.id);
 
-      if (updateError) {
-        console.error('Contract update error:', updateError);
-        throw updateError;
-      }
+      if (updateError) throw updateError;
 
-      // Update device pricing
+      // Update device pricing in contract_devices
       for (const d of devicePricing) {
-        const { error: deviceError } = await supabase.from('contract_devices').update({
+        await supabase.from('contract_devices').update({
           tokens_total: d.tokens_total,
-          unit_price: d.unit_price
+          unit_price: d.calibrationPrice
         }).eq('id', d.id);
-        
-        if (deviceError) {
-          console.error('Device update error:', deviceError);
-        }
-      }
-
-      // Try to update optional quote fields (may not exist in schema)
-      try {
-        await supabase.from('contracts').update({
-          quote_total: totalPrice,
-          quote_data: { 
-            devices: devicePricing, 
-            totalPrice, 
-            totalTokens, 
-            createdBy: signatory,
-            createdAt: new Date().toISOString() 
-          },
-          quote_sent_at: new Date().toISOString()
-        }).eq('id', contract.id);
-      } catch (e) {
-        console.log('Optional quote fields not updated (columns may not exist)');
-      }
-
-      // Create notification for the client (optional - may not have notifications table)
-      try {
-        await supabase.from('notifications').insert({
-          company_id: contract.company_id,
-          type: 'contract_quote',
-          title: 'Nouveau Devis Contrat',
-          message: `Votre devis de contrat d'étalonnage ${contractNumber} est disponible. ${devicePricing.length} appareil(s) - ${totalPrice.toFixed(2)} € HT/an. Consultez votre portail pour approuver.`,
-          data: { contract_id: contract.id, contract_number: contractNumber },
-          read: false
-        });
-      } catch (notifErr) {
-        console.log('Notification not created (table may not exist):', notifErr);
       }
 
       notify(`✅ Devis contrat envoyé! N° ${contractNumber}`);
@@ -7705,12 +7682,12 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
             <p className="text-gray-300">{contract.companies?.name} • {devicePricing.length} appareil(s)</p>
           </div>
           <div className="text-right">
-            <p className="text-xs text-gray-400">Total HT / an</p>
-            <p className="text-2xl font-bold text-[#00A651]">{totalPrice.toFixed(2)} €</p>
+            <p className="text-xs text-gray-400">Total HT</p>
+            <p className="text-2xl font-bold text-[#00A651]">{grandTotal.toFixed(2)} €</p>
           </div>
         </div>
 
-        {/* Step 1: Pricing */}
+        {/* Step 1: Pricing - RMA Style */}
         {step === 1 && (
           <div className="p-6 space-y-6">
             {/* Contract Info & Dates */}
@@ -7739,95 +7716,179 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
               </div>
             </div>
 
-            {/* Devices Pricing */}
+            {/* Devices Pricing - RMA Style with Nettoyage */}
             <div>
               <h3 className="font-bold text-gray-800 mb-4">Tarification par Appareil</h3>
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {devicePricing.map((device, index) => (
                   <div key={device.id} className="bg-gray-50 rounded-lg p-4 border">
-                    <div className="flex items-center gap-4">
+                    {/* Device Header */}
+                    <div className="flex items-center gap-3 mb-4 pb-3 border-b">
                       <span className="bg-[#1a1a2e] text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">{index + 1}</span>
-                      <div className="flex-1 grid md:grid-cols-5 gap-4 items-center">
-                        <div>
-                          <p className="font-medium">{device.model_name || 'Appareil'}</p>
-                          <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500">Type</p>
-                          <p className="text-sm">{getDeviceTypeLabel(device.device_type)}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500">Étalonnages/an</label>
-                          <input
-                            type="number"
-                            value={device.tokens_total}
-                            onChange={e => updateDevice(device.id, 'tokens_total', parseInt(e.target.value) || 1)}
-                            className="w-full px-3 py-2 border rounded-lg"
-                            min="1"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500">Prix unitaire € HT</label>
-                          <input
-                            type="number"
-                            value={device.unit_price}
-                            onChange={e => updateDevice(device.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                            className="w-full px-3 py-2 border rounded-lg"
-                            min="0"
-                            step="0.01"
-                          />
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs text-gray-500">Sous-total</p>
-                          <p className="font-bold text-[#00A651]">{(device.unit_price || 0).toFixed(2)} €</p>
-                        </div>
+                      <div>
+                        <p className="font-bold">{device.model || 'Appareil'}</p>
+                        <p className="text-sm text-gray-500">SN: {device.serial} • {getDeviceTypeLabel(device.deviceType)}</p>
+                      </div>
+                      <div className="ml-auto text-right">
+                        <p className="text-xs text-gray-500">Sous-total</p>
+                        <p className="font-bold text-[#00A651]">{getDeviceTotal(device).toFixed(2)} €</p>
                       </div>
                     </div>
+
+                    {/* Calibration Row */}
+                    <div className="grid grid-cols-4 gap-4 items-center mb-3">
+                      <div className="col-span-2">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={device.needsCalibration}
+                            onChange={e => updateDevice(device.id, 'needsCalibration', e.target.checked)}
+                            className="w-4 h-4"
+                          />
+                          <span className="font-medium">Étalonnage</span>
+                        </label>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Qté/an</label>
+                        <input
+                          type="number"
+                          value={device.tokens_total}
+                          onChange={e => {
+                            updateDevice(device.id, 'tokens_total', parseInt(e.target.value) || 1);
+                            updateDevice(device.id, 'calibrationQty', parseInt(e.target.value) || 1);
+                          }}
+                          className="w-full px-3 py-2 border rounded-lg"
+                          min="1"
+                          disabled={!device.needsCalibration}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Prix € HT</label>
+                        <input
+                          type="number"
+                          value={device.calibrationPrice}
+                          onChange={e => updateDevice(device.id, 'calibrationPrice', parseFloat(e.target.value) || 0)}
+                          className="w-full px-3 py-2 border rounded-lg"
+                          min="0"
+                          step="0.01"
+                          disabled={!device.needsCalibration}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Nettoyage Row - Only for particle counters */}
+                    {device.deviceType === 'particle_counter' && (
+                      <div className="grid grid-cols-4 gap-4 items-center bg-amber-50 rounded-lg p-3 -mx-1">
+                        <div className="col-span-2">
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={device.needsNettoyage}
+                              onChange={e => updateDevice(device.id, 'needsNettoyage', e.target.checked)}
+                              className="w-4 h-4"
+                            />
+                            <span className="font-medium text-amber-800">Nettoyage cellule</span>
+                            <span className="text-xs text-amber-600">(si requis selon état)</span>
+                          </label>
+                        </div>
+                        <div>
+                          <input
+                            type="number"
+                            value={device.nettoyageQty}
+                            onChange={e => updateDevice(device.id, 'nettoyageQty', parseInt(e.target.value) || 1)}
+                            className="w-full px-3 py-2 border rounded-lg bg-white"
+                            min="1"
+                            disabled={!device.needsNettoyage}
+                          />
+                        </div>
+                        <div>
+                          <input
+                            type="number"
+                            value={device.nettoyagePrice}
+                            onChange={e => updateDevice(device.id, 'nettoyagePrice', parseFloat(e.target.value) || 0)}
+                            className="w-full px-3 py-2 border rounded-lg bg-white"
+                            min="0"
+                            step="0.01"
+                            disabled={!device.needsNettoyage}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Summary */}
-            <div className="bg-emerald-50 rounded-lg p-4 flex justify-between items-center border border-emerald-200">
-              <div>
-                <span className="text-emerald-800 font-medium">{devicePricing.length} appareil(s)</span>
-                <span className="text-emerald-600 mx-3">•</span>
-                <span className="text-emerald-800">{totalTokens} étalonnage(s) inclus</span>
+            {/* Shipping - Same as RMA */}
+            <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+              <h3 className="font-bold text-blue-800 mb-3">📦 Frais de Port</h3>
+              <div className="grid grid-cols-4 gap-4 items-center">
+                <div className="col-span-2">
+                  <p className="text-sm text-blue-700">Transport aller-retour France métropolitaine</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">Nb colis</label>
+                  <input
+                    type="number"
+                    value={shippingData.parcels}
+                    onChange={e => setShippingData({...shippingData, parcels: parseInt(e.target.value) || 1})}
+                    className="w-full px-3 py-2 border rounded-lg"
+                    min="1"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">Prix/colis</label>
+                  <input
+                    type="number"
+                    value={shippingData.unitPrice}
+                    onChange={e => setShippingData({...shippingData, unitPrice: parseFloat(e.target.value) || 0})}
+                    className="w-full px-3 py-2 border rounded-lg"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
               </div>
-              <div className="text-right">
-                <p className="text-sm text-emerald-600">Total HT / an</p>
-                <p className="text-2xl font-bold text-emerald-800">{totalPrice.toFixed(2)} €</p>
+              <div className="text-right mt-2">
+                <span className="text-blue-800 font-bold">{shippingTotal.toFixed(2)} € HT</span>
+              </div>
+            </div>
+
+            {/* Grand Total Summary */}
+            <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
+              <div className="flex justify-between items-center">
+                <div>
+                  <span className="text-emerald-800 font-medium">{devicePricing.length} appareil(s)</span>
+                  <span className="text-emerald-600 mx-3">•</span>
+                  <span className="text-emerald-800">{totalTokens} étalonnage(s)/an</span>
+                  {hasNettoyage && (
+                    <>
+                      <span className="text-emerald-600 mx-3">•</span>
+                      <span className="text-amber-700">+ Nettoyage</span>
+                    </>
+                  )}
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-emerald-600">Total HT</p>
+                  <p className="text-2xl font-bold text-emerald-800">{grandTotal.toFixed(2)} €</p>
+                </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Step 2: Preview - EXACTLY MATCHES CUSTOMER PORTAL */}
+        {/* Step 2: Preview - RMA Style Breakdown */}
         {step === 2 && (
-          <div className="p-6 bg-gray-200 min-h-full">
-            <div className="max-w-4xl mx-auto bg-white shadow-xl" style={{ fontFamily: 'Arial, sans-serif' }}>
-              
+          <div className="p-6 bg-gray-100">
+            <div className="max-w-4xl mx-auto bg-white shadow-xl rounded-lg overflow-hidden">
               {/* Quote Header */}
               <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
                 <div className="flex justify-between items-start">
                   <div>
-                    <img 
-                      src="/images/logos/lighthouse-logo.png" 
-                      alt="Lighthouse France" 
-                      className="h-14 w-auto mb-1"
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                        e.target.nextSibling.style.display = 'block';
-                      }}
-                    />
-                    <div className="hidden">
-                      <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
-                      <p className="text-gray-500">Worldwide Solutions</p>
-                    </div>
+                    <h1 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE FRANCE</h1>
+                    <p className="text-gray-500">Worldwide Solutions</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
+                    <p className="text-2xl font-bold text-[#00A651]">DEVIS CONTRAT</p>
                     <p className="text-gray-500">N° {quoteRef}</p>
                   </div>
                 </div>
@@ -7840,11 +7901,11 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                   <p className="font-medium">{today.toLocaleDateString('fr-FR')}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 uppercase">Période du Contrat</p>
+                  <p className="text-xs text-gray-500 uppercase">Période Contrat</p>
                   <p className="font-medium">{new Date(contractDates.start_date).toLocaleDateString('fr-FR')} - {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 uppercase">Validité Devis</p>
+                  <p className="text-xs text-gray-500 uppercase">Validité</p>
                   <p className="font-medium">30 jours</p>
                 </div>
               </div>
@@ -7853,123 +7914,97 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
               <div className="px-8 py-4 border-b">
                 <p className="text-xs text-gray-500 uppercase">Client</p>
                 <p className="font-bold text-xl text-[#1a1a2e]">{contract.companies?.name}</p>
-                {contract.companies?.billing_address && <p className="text-gray-600">{contract.companies?.billing_address}</p>}
-                <p className="text-gray-600">{contract.companies?.billing_postal_code} {contract.companies?.billing_city}</p>
               </div>
 
-              {/* SERVICE SECTIONS BY DEVICE TYPE - Green Headers like Customer Portal */}
-              {Object.entries(devicesByType).map(([type, typeDevices]) => {
-                const prestations = getCalibrationPrestations(type);
-                const typeTotal = typeDevices.reduce((sum, d) => sum + (d.unit_price || 0), 0);
-                const typeTokens = typeDevices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
-                
-                return (
-                  <div key={type} className="border-b">
-                    {/* Type Header with GREEN background - matching customer */}
-                    <div className="bg-[#00A651] text-white px-8 py-3">
-                      <h3 className="font-bold text-lg flex items-center gap-2">
-                        {type === 'particle_counter' && '🔬 '}
-                        {type === 'bio_collector' && '🧫 '}
-                        {type === 'liquid_counter' && '💧 '}
-                        {type === 'temp_humidity' && '🌡️ '}
-                        {type === 'other' && '📦 '}
-                        Étalonnage {getDeviceTypeLabel(type)}
-                      </h3>
-                    </div>
+              {/* Detailed Pricing Table - RMA Style */}
+              <div className="px-8 py-6">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-[#00A651] text-white">
+                      <th className="px-4 py-3 text-left text-sm font-bold">Qté</th>
+                      <th className="px-4 py-3 text-left text-sm font-bold">Désignation</th>
+                      <th className="px-4 py-3 text-right text-sm font-bold">Prix Unit.</th>
+                      <th className="px-4 py-3 text-right text-sm font-bold">Total HT</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {/* Calibration rows */}
+                    {devicePricing.filter(d => d.needsCalibration).map((device, idx) => (
+                      <tr key={`cal-${device.id}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-4 py-3 text-center">{device.tokens_total}</td>
+                        <td className="px-4 py-3">
+                          <span className="font-medium">Étalonnage {device.model}</span>
+                          <span className="text-gray-500 text-sm ml-2">(SN: {device.serial})</span>
+                        </td>
+                        <td className="px-4 py-3 text-right">{device.calibrationPrice.toFixed(2)} €</td>
+                        <td className="px-4 py-3 text-right font-medium">{(device.tokens_total * device.calibrationPrice).toFixed(2)} €</td>
+                      </tr>
+                    ))}
                     
-                    {/* Prestations */}
-                    <div className="px-8 py-4 bg-gray-50">
-                      <p className="text-xs text-gray-500 uppercase mb-2">Prestations Incluses</p>
-                      <ul className="text-sm text-gray-700 space-y-1">
-                        {prestations.map((p, i) => (
-                          <li key={i} className="flex items-start gap-2">
-                            <span className="text-[#00A651]">✓</span>
-                            <span>{p}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    
-                    {/* Devices Table */}
-                    <table className="w-full">
-                      <thead className="bg-gray-100">
-                        <tr>
-                          <th className="px-8 py-2 text-left text-xs font-bold text-gray-600">Appareil</th>
-                          <th className="px-4 py-2 text-left text-xs font-bold text-gray-600">N° Série</th>
-                          <th className="px-4 py-2 text-center text-xs font-bold text-gray-600">Étal./an</th>
-                          <th className="px-8 py-2 text-right text-xs font-bold text-gray-600">Prix HT</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {typeDevices.map((d, i) => (
-                          <tr key={d.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                            <td className="px-8 py-2 font-medium">{d.model_name || getDeviceTypeLabel(d.device_type)}</td>
-                            <td className="px-4 py-2 font-mono text-sm">{d.serial_number}</td>
-                            <td className="px-4 py-2 text-center">{d.tokens_total}</td>
-                            <td className="px-8 py-2 text-right font-medium">{(d.unit_price || 0).toFixed(2)} €</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-green-50">
-                          <td className="px-8 py-2 font-bold" colSpan={2}>Sous-total Étalonnage {getDeviceTypeLabel(type)}</td>
-                          <td className="px-4 py-2 text-center font-medium">{typeTokens} étal.</td>
-                          <td className="px-8 py-2 text-right font-bold text-[#00A651]">{typeTotal.toFixed(2)} €</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                );
-              })}
+                    {/* Nettoyage rows */}
+                    {devicePricing.filter(d => d.needsNettoyage && d.nettoyagePrice > 0).map((device, idx) => (
+                      <tr key={`net-${device.id}`} className="bg-amber-50">
+                        <td className="px-4 py-3 text-center">{device.nettoyageQty}</td>
+                        <td className="px-4 py-3">
+                          <span className="font-medium text-amber-800">Nettoyage cellule - si requis selon état du capteur</span>
+                          <span className="text-amber-600 text-sm ml-2">({device.model})</span>
+                        </td>
+                        <td className="px-4 py-3 text-right">{device.nettoyagePrice.toFixed(2)} €</td>
+                        <td className="px-4 py-3 text-right font-medium">{(device.nettoyageQty * device.nettoyagePrice).toFixed(2)} €</td>
+                      </tr>
+                    ))}
 
-              {/* Grand Total */}
-              <div className="mx-8 my-6 bg-[#00A651] text-white rounded-lg p-4 flex justify-between items-center">
-                <div>
-                  <p className="text-lg font-bold">TOTAL CONTRAT ANNUEL HT</p>
-                  <p className="text-emerald-100 text-sm">{totalTokens} étalonnage(s) inclus pendant la période du contrat</p>
-                </div>
-                <p className="text-3xl font-bold">{totalPrice.toFixed(2)} €</p>
+                    {/* Shipping row */}
+                    <tr className="bg-blue-50">
+                      <td className="px-4 py-3 text-center">{shippingData.parcels}</td>
+                      <td className="px-4 py-3">
+                        <span className="font-medium text-blue-800">Frais de port</span>
+                        <span className="text-blue-600 text-sm ml-2">({shippingData.parcels} colis)</span>
+                      </td>
+                      <td className="px-4 py-3 text-right">{shippingData.unitPrice.toFixed(2)} €</td>
+                      <td className="px-4 py-3 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
+                    </tr>
+
+                    {/* Total row */}
+                    <tr className="bg-[#00A651] text-white">
+                      <td className="px-4 py-4" colSpan={2}></td>
+                      <td className="px-4 py-4 text-right font-bold text-lg">TOTAL HT</td>
+                      <td className="px-4 py-4 text-right font-bold text-lg">{grandTotal.toFixed(2)} €</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* Nettoyage disclaimer */}
+                {hasNettoyage && (
+                  <p className="mt-4 text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
+                    * Le nettoyage de la cellule de mesure sera effectué si nécessaire selon l'état du capteur constaté lors de l'intervention.
+                  </p>
+                )}
               </div>
 
-              {/* Terms */}
+              {/* Contract Terms */}
               <div className="px-8 py-4 border-t bg-gray-50">
                 <p className="text-xs text-gray-500 uppercase mb-2">Conditions du contrat</p>
                 <ul className="text-xs text-gray-600 space-y-1">
-                  <li>• Validité du contrat: {new Date(contractDates.start_date).toLocaleDateString('fr-FR')} au {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</li>
-                  <li>• {totalTokens} étalonnage(s) inclus à utiliser pendant la période contractuelle</li>
-                  <li>• Étalonnages supplémentaires facturés au tarif standard en vigueur</li>
-                  <li>• Frais de port inclus (France métropolitaine)</li>
+                  <li>• Période: {new Date(contractDates.start_date).toLocaleDateString('fr-FR')} au {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</li>
+                  <li>• {totalTokens} étalonnage(s) inclus pendant la période contractuelle</li>
+                  <li>• Étalonnages supplémentaires facturés au tarif standard</li>
                   <li>• Paiement à 30 jours date de facture</li>
                 </ul>
               </div>
 
-              {/* Signature Section - MATCHING CUSTOMER PORTAL */}
+              {/* Signature Section */}
               <div className="px-8 py-6 border-t flex justify-between items-end">
-                <div className="flex items-end gap-6">
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
-                    <p className="font-bold text-lg">{signatory}</p>
-                    <p className="text-gray-600">Lighthouse France</p>
-                  </div>
-                  <img 
-                    src="/images/logos/capcert-logo.png" 
-                    alt="Capcert Certification" 
-                    className="h-20 w-auto"
-                    onError={(e) => { e.target.style.display = 'none'; }}
-                  />
+                <div>
+                  <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
+                  <p className="font-bold">{signatory}</p>
+                  <p className="text-sm text-gray-500">Lighthouse France</p>
                 </div>
-                
-                <div className="text-right">
-                  <p className="text-xs text-gray-400 mb-1">Signature client</p>
-                  <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
-                  <p className="text-xs text-gray-400 mt-1">Lu et approuvé</p>
+                <div className="text-center">
+                  <p className="text-xs text-gray-500 uppercase mb-1">Bon pour accord</p>
+                  <div className="w-48 h-16 border-b-2 border-gray-400"></div>
+                  <p className="text-xs text-gray-500 mt-1">Signature et cachet</p>
                 </div>
-              </div>
-
-              {/* Footer */}
-              <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
-                <p className="font-medium">Lighthouse France SAS</p>
-                <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
               </div>
             </div>
           </div>
@@ -7977,55 +8012,58 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
 
         {/* Step 3: Confirm */}
         {step === 3 && (
-          <div className="p-8 text-center max-w-lg mx-auto">
-            <div className="w-24 h-24 bg-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6">
-              <span className="text-5xl text-white">📧</span>
-            </div>
-            <h3 className="text-2xl font-bold text-gray-800 mb-2">Confirmer l'envoi du devis</h3>
-            <p className="text-gray-600 mb-6">Le devis de contrat sera envoyé au client et disponible sur son portail.</p>
-            
-            <div className="bg-gray-50 rounded-xl p-6 mb-6 text-left">
-              <p className="text-lg font-bold text-gray-800 mb-1">{contract.companies?.name}</p>
-              <p className="text-sm text-gray-500 mb-2">Période: {new Date(contractDates.start_date).toLocaleDateString('fr-FR')} - {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</p>
-              <p className="text-sm text-gray-500 mb-4">{devicePricing.length} appareil(s) • {totalTokens} étalonnage(s)/an</p>
-              <div className="border-t pt-3 flex justify-between font-bold text-lg">
-                <span>Total HT / an</span>
-                <span className="text-[#00A651]">{totalPrice.toFixed(2)} €</span>
+          <div className="p-6 text-center">
+            <div className="max-w-md mx-auto">
+              <p className="text-6xl mb-4">📧</p>
+              <h3 className="text-xl font-bold text-gray-800 mb-2">Prêt à envoyer</h3>
+              <p className="text-gray-600 mb-6">
+                Le devis de contrat sera envoyé au client {contract.companies?.name}.
+                <br />Montant total: <strong className="text-[#00A651]">{grandTotal.toFixed(2)} € HT</strong>
+              </p>
+              <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
+                <p className="text-sm text-gray-600">
+                  <strong>Période:</strong> {new Date(contractDates.start_date).toLocaleDateString('fr-FR')} - {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <strong>Appareils:</strong> {devicePricing.length}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <strong>Étalonnages inclus:</strong> {totalTokens}
+                </p>
               </div>
-            </div>
-
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 text-left">
-              <p className="font-medium mb-2">Après envoi :</p>
-              <p className="mb-1">✓ Le client recevra une notification sur son portail</p>
-              <p className="mb-1">✓ Il pourra consulter et approuver le devis</p>
-              <p className="mb-1">✓ Après approbation, il soumettra son bon de commande</p>
-              <p>✓ Le contrat sera activé après validation du BC</p>
             </div>
           </div>
         )}
 
-        {/* Footer */}
-        <div className="px-6 py-4 bg-gray-100 border-t flex justify-between">
-          <button 
-            onClick={step === 1 ? onClose : () => setStep(step - 1)} 
-            className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium"
-          >
-            {step === 1 ? 'Annuler' : '← Retour'}
-          </button>
+        {/* Footer Actions */}
+        <div className="px-6 py-4 bg-gray-50 border-t flex justify-between">
+          {step > 1 && (
+            <button
+              onClick={() => setStep(step - 1)}
+              className="px-4 py-2 text-gray-600 hover:text-gray-800"
+            >
+              ← Retour
+            </button>
+          )}
+          {step === 1 && <div></div>}
+          
           <div className="flex gap-3">
+            <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:text-gray-800">
+              Annuler
+            </button>
             {step < 3 && (
-              <button 
-                onClick={() => setStep(step + 1)} 
-                className="px-8 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium"
+              <button
+                onClick={() => setStep(step + 1)}
+                className="px-6 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008f45]"
               >
-                Suivant →
+                {step === 1 ? 'Aperçu →' : 'Confirmer →'}
               </button>
             )}
             {step === 3 && (
-              <button 
-                onClick={sendQuote} 
+              <button
+                onClick={sendQuote}
                 disabled={saving}
-                className="px-10 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold text-lg disabled:opacity-50"
+                className="px-6 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008f45] disabled:opacity-50"
               >
                 {saving ? 'Envoi...' : '✅ Envoyer le Devis'}
               </button>
