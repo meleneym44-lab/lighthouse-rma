@@ -7200,67 +7200,116 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   )}
                 </div>
 
-                {/* PRICING BREAKDOWN TABLE */}
+                {/* DETAILED PRICING BREAKDOWN TABLE - Qté | Désignation | Prix Unit. | Total HT */}
                 <div className="px-8 py-6 bg-gray-50">
                   <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
                   
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-[#1a1a2e] text-white">
-                        <th className="px-4 py-3 text-left">Appareil</th>
-                        <th className="px-4 py-3 text-left">N° Série</th>
-                        <th className="px-4 py-3 text-left">Service</th>
-                        <th className="px-4 py-3 text-right">Prix HT</th>
+                        <th className="px-3 py-3 text-center w-12">Qté</th>
+                        <th className="px-3 py-3 text-left">Désignation</th>
+                        <th className="px-3 py-3 text-right w-24">Prix Unit.</th>
+                        <th className="px-3 py-3 text-right w-24">Total HT</th>
                       </tr>
                     </thead>
                     <tbody>
                       {devices.map((device, i) => {
-                        const services = [];
-                        const needsCal = device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration');
-                        const needsRep = device.needsRepair || (device.serviceType || device.service_type || '').includes('repair');
-                        if (needsCal) services.push('Étalonnage');
-                        if (needsRep) services.push('Réparation');
+                        const rows = [];
                         
-                        const serviceTotal = device.serviceTotal || 
-                          ((device.calibrationPrice || 0) + (device.repairPrice || 0) + 
-                           (device.additionalParts || []).reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0));
-                        const shipping = device.shipping || 0;
-                        
-                        return [
-                          <tr key={`${i}-main`} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-100'}>
-                            <td className="px-4 py-3 font-medium">{device.model || device.model_name || '—'}</td>
-                            <td className="px-4 py-3 font-mono text-xs">{device.serial || device.serial_number || '—'}</td>
-                            <td className="px-4 py-3">{services.join(' + ') || 'Service'}</td>
-                            <td className="px-4 py-3 text-right font-medium">{serviceTotal.toFixed(2)} €</td>
-                          </tr>,
-                          ...(device.additionalParts || []).map(part => (
-                            <tr key={`${i}-part-${part.id}`} className="bg-gray-50 text-gray-600">
-                              <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ {part.description || 'Pièce/Service'}</td>
-                              <td className="px-4 py-2 text-right text-sm">{parseFloat(part.price || 0).toFixed(2)} €</td>
+                        // Calibration row
+                        if (device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration')) {
+                          const qty = device.calibrationQty || 1;
+                          const unitPrice = parseFloat(device.calibrationPrice) || 0;
+                          const lineTotal = qty * unitPrice;
+                          const isContract = device.isContractCovered;
+                          rows.push(
+                            <tr key={`${i}-cal`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-3 py-2 text-center">{qty}</td>
+                              <td className="px-3 py-2">
+                                Étalonnage {device.model || device.model_name || ''} (SN: {device.serial || device.serial_number || ''})
+                                {isContract && <span className="ml-2 px-2 py-0.5 bg-emerald-500 text-white text-xs rounded">CONTRAT</span>}
+                              </td>
+                              <td className="px-3 py-2 text-right">{isContract ? <span className="text-emerald-600">Contrat</span> : `${unitPrice.toFixed(2)} €`}</td>
+                              <td className="px-3 py-2 text-right font-medium">{isContract ? <span className="text-emerald-600">Contrat</span> : `${lineTotal.toFixed(2)} €`}</td>
                             </tr>
-                          )),
-                          <tr key={`${i}-shipping`} className="bg-gray-200 text-gray-600">
-                            <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ Frais de port</td>
-                            <td className="px-4 py-2 text-right text-sm">{shipping.toFixed(2)} €</td>
-                          </tr>
-                        ];
+                          );
+                        }
+                        
+                        // Nettoyage row
+                        if (device.needsNettoyage && !device.isContractCovered && device.nettoyagePrice > 0) {
+                          const qty = device.nettoyageQty || 1;
+                          const unitPrice = parseFloat(device.nettoyagePrice) || 0;
+                          const lineTotal = qty * unitPrice;
+                          rows.push(
+                            <tr key={`${i}-nettoyage`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-3 py-2 text-center">{qty}</td>
+                              <td className="px-3 py-2">Nettoyage cellule - si requis selon l'état du capteur</td>
+                              <td className="px-3 py-2 text-right">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-3 py-2 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                            </tr>
+                          );
+                        }
+                        
+                        // Repair row
+                        if (device.needsRepair || (device.serviceType || device.service_type || '').includes('repair')) {
+                          const qty = device.repairQty || 1;
+                          const unitPrice = parseFloat(device.repairPrice) || 0;
+                          const lineTotal = qty * unitPrice;
+                          rows.push(
+                            <tr key={`${i}-repair`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-3 py-2 text-center">{qty}</td>
+                              <td className="px-3 py-2">Réparation {device.model || device.model_name || ''} (SN: {device.serial || device.serial_number || ''})</td>
+                              <td className="px-3 py-2 text-right">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-3 py-2 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                            </tr>
+                          );
+                        }
+                        
+                        // Additional parts
+                        (device.additionalParts || []).forEach((part, pi) => {
+                          const qty = parseInt(part.quantity) || 1;
+                          const unitPrice = parseFloat(part.price) || 0;
+                          const lineTotal = qty * unitPrice;
+                          rows.push(
+                            <tr key={`${i}-part-${pi}`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-3 py-2 text-center">{qty}</td>
+                              <td className="px-3 py-2">
+                                {part.partNumber && <span className="text-gray-500 mr-1">[{part.partNumber}]</span>}
+                                {part.description || 'Pièce/Service'}
+                              </td>
+                              <td className="px-3 py-2 text-right">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-3 py-2 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                            </tr>
+                          );
+                        });
+                        
+                        return rows;
                       })}
+                      
+                      {/* Shipping row */}
+                      <tr className="bg-gray-100">
+                        <td className="px-3 py-2 text-center">{quoteData.shipping?.parcels || request.parcels_count || 1}</td>
+                        <td className="px-3 py-2">Frais de port ({quoteData.shipping?.parcels || request.parcels_count || 1} colis)</td>
+                        <td className="px-3 py-2 text-right">{(quoteData.shipping?.unitPrice || 45).toFixed(2)} €</td>
+                        <td className="px-3 py-2 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
+                      </tr>
                     </tbody>
                     <tfoot>
-                      <tr className="border-t-2 border-gray-300">
-                        <td className="px-4 py-3 font-medium" colSpan={3}>Sous-total services</td>
-                        <td className="px-4 py-3 text-right font-medium">{servicesSubtotal.toFixed(2)} €</td>
-                      </tr>
-                      <tr>
-                        <td className="px-4 py-3 font-medium" colSpan={3}>Total frais de port</td>
-                        <td className="px-4 py-3 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
-                      </tr>
                       <tr className="bg-[#00A651] text-white">
-                        <td className="px-4 py-4 font-bold text-lg" colSpan={3}>TOTAL HT</td>
-                        <td className="px-4 py-4 text-right font-bold text-2xl">{grandTotal.toFixed(2)} €</td>
+                        <td colSpan={2} className="px-3 py-4"></td>
+                        <td className="px-3 py-4 text-right font-bold text-lg">TOTAL HT</td>
+                        <td className="px-3 py-4 text-right font-bold text-xl">{grandTotal.toFixed(2)} €</td>
                       </tr>
                     </tfoot>
                   </table>
+                  
+                  {/* Nettoyage disclaimer */}
+                  {devices.some(d => d.needsNettoyage && !d.isContractCovered) && (
+                    <p className="text-xs text-gray-500 mt-3 italic">
+                      * Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.
+                    </p>
+                  )}
                 </div>
 
                 {/* Disclaimers */}
