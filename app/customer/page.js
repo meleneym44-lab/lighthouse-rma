@@ -5592,11 +5592,8 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
   const [deviceRMAs, setDeviceRMAs] = useState([]);
   const [loadingRMAs, setLoadingRMAs] = useState(false);
   const [newEquipment, setNewEquipment] = useState({
-    nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '', notes: '', return_address_id: ''
+    nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '', notes: ''
   });
-  
-  // Shipping addresses for return address selection
-  const [shippingAddresses, setShippingAddresses] = useState([]);
 
   // Load equipment
   useEffect(() => {
@@ -5604,27 +5601,13 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
       if (!profile?.company_id) return;
       const { data } = await supabase
         .from('equipment')
-        .select('*, return_address:shipping_addresses!return_address_id(*)')
+        .select('*')
         .eq('company_id', profile.company_id)
         .order('created_at', { ascending: false });
       if (data) setEquipment(data);
       setLoading(false);
     };
     loadEquipment();
-  }, [profile?.company_id]);
-  
-  // Load shipping addresses
-  useEffect(() => {
-    const loadAddresses = async () => {
-      if (!profile?.company_id) return;
-      const { data } = await supabase
-        .from('shipping_addresses')
-        .select('*')
-        .eq('company_id', profile.company_id)
-        .order('is_default', { ascending: false });
-      if (data) setShippingAddresses(data);
-    };
-    loadAddresses();
   }, [profile?.company_id]);
 
   // Load RMAs for selected device
@@ -5689,8 +5672,7 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
       serial_number: newEquipment.serial_number,
       notes: newEquipment.notes || null,
       equipment_type: 'particle_counter',
-      added_by: profile.id,
-      return_address_id: newEquipment.return_address_id || null
+      added_by: profile.id
     };
 
     let error;
@@ -5714,7 +5696,7 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
       }
       
       setEditingEquipment(null);
-      setNewEquipment({ nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '', notes: '', return_address_id: '' });
+      setNewEquipment({ nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '', notes: '' });
       await reloadEquipment();
     }
     setSaving(false);
@@ -5740,8 +5722,7 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
       brand_other: equip.brand !== 'Lighthouse' ? equip.brand : '',
       model_name: equip.model_name || '',
       serial_number: equip.serial_number || '',
-      notes: equip.notes || '',
-      return_address_id: equip.return_address_id || ''
+      notes: equip.notes || ''
     });
     setShowAddModal(true);
   };
@@ -5828,19 +5809,6 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
             <div className="mt-4 pt-4 border-t border-white/20">
               <p className="text-white/70 text-sm">Notes</p>
               <p className="text-sm">{selectedDevice.notes}</p>
-            </div>
-          )}
-          
-          {/* Return Address Display */}
-          {selectedDevice.return_address && (
-            <div className="mt-4 pt-4 border-t border-white/20">
-              <p className="text-white/70 text-sm">📍 Adresse de retour</p>
-              <p className="text-sm font-medium">
-                {selectedDevice.return_address.label || selectedDevice.return_address.company_name}
-              </p>
-              <p className="text-xs text-white/60">
-                {selectedDevice.return_address.address_line1}, {selectedDevice.return_address.postal_code} {selectedDevice.return_address.city}
-              </p>
             </div>
           )}
           
@@ -6006,28 +5974,6 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   />
-                </div>
-                
-                {/* Return Address Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    📍 Adresse de retour par défaut
-                  </label>
-                  <select
-                    value={newEquipment.return_address_id}
-                    onChange={e => setNewEquipment({ ...newEquipment, return_address_id: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  >
-                    <option value="">Utiliser l'adresse par défaut de la société</option>
-                    {shippingAddresses.map(addr => (
-                      <option key={addr.id} value={addr.id}>
-                        {addr.label || addr.company_name || 'Sans nom'} - {addr.city}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Cette adresse sera pré-sélectionnée lors de la création d'un RMA pour cet appareil
-                  </p>
                 </div>
                 
                 <div className="flex gap-3 pt-2">
@@ -7157,63 +7103,110 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 <div className="px-8 py-6 bg-gray-50">
                   <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
                   
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr className="bg-[#1a1a2e] text-white">
-                        <th className="px-4 py-3 text-left">Appareil</th>
-                        <th className="px-4 py-3 text-left">N° Série</th>
-                        <th className="px-4 py-3 text-left">Service</th>
-                        <th className="px-4 py-3 text-right">Prix HT</th>
+                        <th className="px-4 py-3 text-center w-16">Qté</th>
+                        <th className="px-4 py-3 text-left">Désignation</th>
+                        <th className="px-4 py-3 text-right w-28">Prix Unit.</th>
+                        <th className="px-4 py-3 text-right w-28">Total HT</th>
                       </tr>
                     </thead>
                     <tbody>
                       {devices.map((device, i) => {
-                        const services = [];
+                        const rows = [];
                         const needsCal = device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration');
                         const needsRep = device.needsRepair || (device.serviceType || device.service_type || '').includes('repair');
-                        if (needsCal) services.push('Étalonnage');
-                        if (needsRep) services.push('Réparation');
                         
-                        const serviceTotal = device.serviceTotal || 
-                          ((device.calibrationPrice || 0) + (device.repairPrice || 0) + 
-                           (device.additionalParts || []).reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0));
-                        const shipping = device.shipping || 0;
-                        
-                        return [
-                          <tr key={`${i}-main`} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-100'}>
-                            <td className="px-4 py-3 font-medium">{device.model || device.model_name || '—'}</td>
-                            <td className="px-4 py-3 font-mono text-xs">{device.serial || device.serial_number || '—'}</td>
-                            <td className="px-4 py-3">{services.join(' + ') || 'Service'}</td>
-                            <td className="px-4 py-3 text-right font-medium">{serviceTotal.toFixed(2)} €</td>
-                          </tr>,
-                          ...(device.additionalParts || []).map(part => (
-                            <tr key={`${i}-part-${part.id}`} className="bg-gray-50 text-gray-600">
-                              <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ {part.description || 'Pièce/Service'}</td>
-                              <td className="px-4 py-2 text-right text-sm">{parseFloat(part.price || 0).toFixed(2)} €</td>
+                        // Calibration row
+                        if (needsCal) {
+                          const qty = device.calibrationQty || 1;
+                          const unitPrice = parseFloat(device.calibrationPrice) || 0;
+                          const lineTotal = qty * unitPrice;
+                          rows.push(
+                            <tr key={`${i}-cal`} className="border-b">
+                              <td className="px-4 py-3 text-center">{qty}</td>
+                              <td className="px-4 py-3">Étalonnage {device.model || device.model_name} (SN: {device.serial || device.serial_number})</td>
+                              <td className="px-4 py-3 text-right">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-4 py-3 text-right font-medium">{lineTotal.toFixed(2)} €</td>
                             </tr>
-                          )),
-                          <tr key={`${i}-shipping`} className="bg-gray-200 text-gray-600">
-                            <td className="px-4 py-2 pl-8 text-sm" colSpan={3}>↳ Frais de port</td>
-                            <td className="px-4 py-2 text-right text-sm">{shipping.toFixed(2)} €</td>
-                          </tr>
-                        ];
+                          );
+                        }
+                        
+                        // Nettoyage row
+                        if (device.needsNettoyage && device.nettoyagePrice > 0) {
+                          const qty = device.nettoyageQty || 1;
+                          const unitPrice = parseFloat(device.nettoyagePrice) || 0;
+                          const lineTotal = qty * unitPrice;
+                          rows.push(
+                            <tr key={`${i}-nettoyage`} className="border-b">
+                              <td className="px-4 py-3 text-center">{qty}</td>
+                              <td className="px-4 py-3">Nettoyage cellule - si requis selon l'état du capteur</td>
+                              <td className="px-4 py-3 text-right">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-4 py-3 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                            </tr>
+                          );
+                        }
+                        
+                        // Repair row
+                        if (needsRep) {
+                          const qty = device.repairQty || 1;
+                          const unitPrice = parseFloat(device.repairPrice) || 0;
+                          const lineTotal = qty * unitPrice;
+                          rows.push(
+                            <tr key={`${i}-repair`} className="border-b">
+                              <td className="px-4 py-3 text-center">{qty}</td>
+                              <td className="px-4 py-3">Réparation {device.model || device.model_name} (SN: {device.serial || device.serial_number})</td>
+                              <td className="px-4 py-3 text-right">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-4 py-3 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                            </tr>
+                          );
+                        }
+                        
+                        // Additional parts
+                        (device.additionalParts || []).forEach(part => {
+                          const qty = parseInt(part.quantity) || 1;
+                          const unitPrice = parseFloat(part.price) || 0;
+                          const lineTotal = qty * unitPrice;
+                          rows.push(
+                            <tr key={`${i}-part-${part.id}`} className="border-b">
+                              <td className="px-4 py-3 text-center">{qty}</td>
+                              <td className="px-4 py-3">
+                                {part.partNumber && <span className="text-gray-500 mr-1">[{part.partNumber}]</span>}
+                                {part.description || 'Pièce/Service'}
+                              </td>
+                              <td className="px-4 py-3 text-right">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-4 py-3 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                            </tr>
+                          );
+                        });
+                        
+                        return rows;
                       })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 border-gray-300">
-                        <td className="px-4 py-3 font-medium" colSpan={3}>Sous-total services</td>
-                        <td className="px-4 py-3 text-right font-medium">{servicesSubtotal.toFixed(2)} €</td>
-                      </tr>
-                      <tr>
-                        <td className="px-4 py-3 font-medium" colSpan={3}>Total frais de port</td>
+                      
+                      {/* Shipping row */}
+                      <tr className="border-b bg-gray-50">
+                        <td className="px-4 py-3 text-center">{quoteData?.shipping?.parcels || 1}</td>
+                        <td className="px-4 py-3">Frais de port ({quoteData?.shipping?.parcels || 1} colis)</td>
+                        <td className="px-4 py-3 text-right">{(quoteData?.shipping?.unitPrice || shippingTotal).toFixed(2)} €</td>
                         <td className="px-4 py-3 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
                       </tr>
+                    </tbody>
+                    <tfoot>
                       <tr className="bg-[#00A651] text-white">
-                        <td className="px-4 py-4 font-bold text-lg" colSpan={3}>TOTAL HT</td>
-                        <td className="px-4 py-4 text-right font-bold text-2xl">{grandTotal.toFixed(2)} €</td>
+                        <td colSpan={2} className="px-4 py-4"></td>
+                        <td className="px-4 py-4 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
+                        <td className="px-4 py-4 text-right font-bold text-xl whitespace-nowrap">{grandTotal.toFixed(2)} €</td>
                       </tr>
                     </tfoot>
                   </table>
+                  
+                  {/* Nettoyage disclaimer if applicable */}
+                  {devices.some(d => d.needsNettoyage && d.nettoyagePrice > 0) && (
+                    <p className="text-xs text-gray-500 mt-3 italic">
+                      * Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.
+                    </p>
+                  )}
                 </div>
 
                 {/* Disclaimers */}
