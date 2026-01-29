@@ -7944,24 +7944,33 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
           // Build content blocks for pagination
           const contentBlocks = [];
           
-          // Block: Client Info
+          // Block: Client Info - Full details
           contentBlocks.push({
             type: 'client',
-            height: 80,
+            height: 100,
             render: () => (
-              <div className="px-6 py-4 border-b">
+              <div className="px-6 py-4 mt-2 border-b">
                 <p className="text-xs text-gray-500 uppercase">Client</p>
                 <p className="font-bold text-lg text-[#1a1a2e]">{contract.companies?.name}</p>
-                {contract.companies?.billing_address && (
-                  <p className="text-gray-600 text-sm">{contract.companies.billing_address}</p>
+                {contract.companies?.contact_name && (
+                  <p className="text-gray-700 text-sm">À l'attention de: {contract.companies.contact_name}</p>
                 )}
-                {(contract.companies?.billing_postal_code || contract.companies?.billing_city) && (
+                {(contract.companies?.billing_address || contract.companies?.address) && (
+                  <p className="text-gray-600 text-sm">{contract.companies.billing_address || contract.companies.address}</p>
+                )}
+                {(contract.companies?.billing_postal_code || contract.companies?.postal_code || contract.companies?.billing_city || contract.companies?.city) && (
                   <p className="text-gray-600 text-sm">
-                    {contract.companies?.billing_postal_code} {contract.companies?.billing_city}
+                    {contract.companies?.billing_postal_code || contract.companies?.postal_code} {contract.companies?.billing_city || contract.companies?.city}
                   </p>
+                )}
+                {contract.companies?.country && (
+                  <p className="text-gray-600 text-sm">{contract.companies.country}</p>
                 )}
                 {contract.companies?.phone && (
                   <p className="text-gray-600 text-sm">Tél: {contract.companies.phone}</p>
+                )}
+                {contract.companies?.email && (
+                  <p className="text-gray-600 text-sm">{contract.companies.email}</p>
                 )}
               </div>
             )
@@ -7998,16 +8007,20 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
             });
           });
 
-          // Block: Conditions
+          // Block: Combined Conditions (standard + contract)
           contentBlocks.push({
             type: 'conditions',
-            height: 50,
+            height: 80,
             render: () => (
-              <div className="px-6 py-2 border-b bg-gray-50">
+              <div className="px-6 py-3 border-b bg-gray-50">
                 <p className="text-xs text-gray-500 uppercase mb-1">Conditions</p>
-                <ul className="text-xs text-gray-600 space-y-0">
-                  <li>- Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.</li>
-                  <li>- Un devis complémentaire sera établi si des pièces sont trouvées défectueuses.</li>
+                <ul className="text-xs text-gray-600 space-y-0.5">
+                  <li>• Période du contrat: {new Date(contractDates.start_date).toLocaleDateString('fr-FR')} au {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</li>
+                  <li>• {totalTokens} étalonnage(s) inclus pendant la période contractuelle</li>
+                  <li>• Étalonnages supplémentaires facturés au tarif standard</li>
+                  <li>• Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables</li>
+                  <li>• Un devis complémentaire sera établi si des pièces sont trouvées défectueuses</li>
+                  <li>• Paiement à 30 jours date de facture</li>
                 </ul>
               </div>
             )
@@ -8122,47 +8135,30 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
             )
           });
 
-          // Block: Contract terms
-          contentBlocks.push({
-            type: 'terms',
-            height: 60,
-            render: () => (
-              <div className="px-6 py-3 border-t bg-gray-50">
-                <p className="text-xs text-gray-500 uppercase mb-1">Conditions du contrat</p>
-                <ul className="text-xs text-gray-600 space-y-0">
-                  <li>• Période: {new Date(contractDates.start_date).toLocaleDateString('fr-FR')} au {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</li>
-                  <li>• {totalTokens} étalonnage(s) inclus pendant la période contractuelle</li>
-                  <li>• Étalonnages supplémentaires facturés au tarif standard</li>
-                  <li>• Paiement à 30 jours date de facture</li>
-                </ul>
-              </div>
-            )
-          });
-
-          // Block: Signature (always last)
+          // Block: Signature (always last) - with larger Capcert logo
           contentBlocks.push({
             type: 'signature',
-            height: 100,
+            height: 120,
             alwaysLast: true,
             render: () => (
-              <div className="px-6 py-4 border-t">
+              <div className="px-6 py-6 border-t">
                 <div className="flex justify-between items-end">
-                  <div className="flex items-end gap-4">
+                  <div className="flex items-end gap-6">
                     <div>
                       <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
-                      <p className="font-bold">{signatory}</p>
-                      <p className="text-gray-500 text-xs">Lighthouse France</p>
+                      <p className="font-bold text-lg">{signatory}</p>
+                      <p className="text-gray-500 text-sm">Lighthouse France</p>
                     </div>
                     <img 
                       src="/images/logos/capcert-logo.png" 
                       alt="Capcert" 
-                      className="h-12 w-auto"
+                      className="h-24 w-auto"
                       onError={(e) => { e.target.style.display = 'none'; }}
                     />
                   </div>
                   <div className="text-center">
                     <p className="text-xs text-gray-500 uppercase mb-1">Bon pour accord</p>
-                    <div className="w-40 h-12 border-2 border-dashed border-gray-300 rounded"></div>
+                    <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded"></div>
                     <p className="text-xs text-gray-400 mt-1">Signature et cachet</p>
                   </div>
                 </div>
@@ -8202,15 +8198,15 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
           
           const totalPages = pages.length;
 
-          // Page Header Component
+          // Page Header Component - with more spacing after
           const PageHeader = ({ pageNum }) => (
-            <div className="border-b-4 border-[#00A651]">
-              <div className="px-6 py-3 flex justify-between items-center">
+            <div className="border-b-4 border-[#00A651] mb-4">
+              <div className="px-6 py-4 flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <img 
                     src="/images/logos/lighthouse-logo.png" 
                     alt="Lighthouse" 
-                    className="h-10 w-auto"
+                    className="h-12 w-auto"
                     onError={(e) => {
                       e.target.style.display = 'none';
                       e.target.nextSibling.style.display = 'block';
@@ -8244,11 +8240,11 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
             </div>
           );
 
-          // Page Footer Component
+          // Page Footer Component - centered
           const PageFooter = ({ pageNum, totalPages }) => (
-            <div className="bg-[#1a1a2e] text-white px-6 py-2 flex justify-between items-center text-xs">
-              <span>Lighthouse France SAS • 16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</span>
-              <span className="font-medium">Page {pageNum}/{totalPages}</span>
+            <div className="bg-[#1a1a2e] text-white px-6 py-3 text-center text-xs">
+              <p>Lighthouse France SAS • 16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+              <p className="font-medium mt-1">Page {pageNum}/{totalPages}</p>
             </div>
           );
 
