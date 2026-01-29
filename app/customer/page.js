@@ -458,11 +458,11 @@ function getQuoteDataFromRequest(request) {
 
 async function generateQuotePDF(options) {
   const {
-    request, devices = [], servicesSubtotal = 0, shippingTotal = 0, grandTotal = 0,
-    calibrationTypes = ['particle_counter'], hasRepair = false, isSigned = false,
-    signatureName = '', signatureDate = '', signatureImage = null, createdBy = 'M. Meleney'
+    request, devices = [], isSigned = false,
+    signatureName = '', signatureDate = '', signatureImage = null
   } = options;
-
+  
+  // Load jsPDF
   await new Promise((resolve, reject) => {
     if (window.jspdf) { resolve(); return; }
     const script = document.createElement('script');
@@ -475,11 +475,19 @@ async function generateQuotePDF(options) {
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF('p', 'mm', 'a4');
   
+  // Extract company from request
+  const company = request.companies || {};
+  const shippingInfo = { 
+    parcels: request.parcels_count || 1, 
+    unitPrice: 45, 
+    total: (request.parcels_count || 1) * 45 
+  };
+  
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
   const footerHeight = 16;
-  const signatureBlockHeight = 42;
   
+  // Colors
   const green = [0, 166, 81];
   const darkBlue = [26, 26, 46];
   const gray = [80, 80, 80];
@@ -488,15 +496,11 @@ async function generateQuotePDF(options) {
   
   let y = margin;
   
-  // === LOGO LOADING ===
+  // Load logos
   const loadImageAsBase64 = async (url) => {
     try {
-      // First try fetch approach (works better with Next.js)
       const response = await fetch(url);
-      if (!response.ok) {
-        console.log('Logo fetch failed:', url, response.status);
-        return null;
-      }
+      if (!response.ok) return null;
       const blob = await response.blob();
       return new Promise((resolve) => {
         const reader = new FileReader();
@@ -505,39 +509,12 @@ async function generateQuotePDF(options) {
         reader.readAsDataURL(blob);
       });
     } catch (e) {
-      console.log('Logo loading error:', url, e);
-      // Fallback to Image approach
-      return new Promise((resolve) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0);
-          resolve(canvas.toDataURL('image/png'));
-        };
-        img.onerror = () => resolve(null);
-        img.src = url;
-      });
+      return null;
     }
   };
   
-  // Load logos (with fallback if not available)
-  let lighthouseLogo = null;
-  let capcertLogo = null;
-  try {
-    const results = await Promise.all([
-      loadImageAsBase64('/images/logos/lighthouse-logo.png'),
-      loadImageAsBase64('/images/logos/capcert-logo.png')
-    ]);
-    lighthouseLogo = results[0];
-    capcertLogo = results[1];
-    console.log('Logos loaded:', !!lighthouseLogo, !!capcertLogo);
-  } catch (e) {
-    console.log('Logo loading skipped:', e);
-  }
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
   
   const addFooter = () => {
     pdf.setFillColor(...darkBlue);
@@ -565,31 +542,21 @@ async function generateQuotePDF(options) {
   };
 
   // ===== HEADER =====
-  let logoAdded = false;
   if (lighthouseLogo) {
     try {
-      console.log('Attempting to add lighthouse logo, data length:', lighthouseLogo.length);
-      // Detect format from base64 header
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
       pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
-      logoAdded = true;
-      console.log('Lighthouse logo added successfully');
     } catch (e) {
-      console.log('Lighthouse logo addImage failed:', e);
-      logoAdded = false;
+      pdf.setFontSize(26);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...darkBlue);
+      pdf.text('LIGHTHOUSE', margin, y + 8);
     }
-  }
-  
-  if (!logoAdded) {
-    // Fallback to text if image fails
+  } else {
     pdf.setFontSize(26);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
     pdf.text('LIGHTHOUSE', margin, y + 8);
-    pdf.setFontSize(11);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...gray);
-    pdf.text('Worldwide Solutions', margin, y + 14);
   }
   
   pdf.setFontSize(18);
@@ -606,7 +573,6 @@ async function generateQuotePDF(options) {
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
   y += 7;
-
 
   // ===== INFO BAR =====
   pdf.setFillColor(245, 245, 245);
@@ -634,23 +600,102 @@ async function generateQuotePDF(options) {
   pdf.setFontSize(14);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(request.companies?.name || 'Client', margin, y);
+  pdf.text(company.name || 'Client', margin, y);
   y += 6;
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  if (request.companies?.billing_address) {
-    pdf.text(request.companies.billing_address, margin, y);
+  if (company.billing_address || company.address) {
+    pdf.text(company.billing_address || company.address, margin, y);
     y += 5;
   }
-  const city = [request.companies?.billing_postal_code, request.companies?.billing_city].filter(Boolean).join(' ');
+  const city = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
   if (city) {
     pdf.text(city, margin, y);
     y += 5;
   }
-  y += 3;
+  y += 8;
 
-  // ===== SERVICE SECTIONS =====
+  // ===== SERVICE DESCRIPTION BLOCKS =====
+  // Determine what service types are needed based on devices
+  const calibrationTypes = new Set();
+  let hasRepair = false;
+  devices.forEach(d => {
+    const svcType = d.service_type || d.serviceType || 'calibration';
+    const devType = d.device_type || d.deviceType || 'particle_counter';
+    if (svcType.includes('calibration') || svcType === 'cal_repair') {
+      calibrationTypes.add(devType);
+    }
+    if (svcType.includes('repair') || svcType === 'cal_repair') {
+      hasRepair = true;
+    }
+  });
+  if (calibrationTypes.size === 0) calibrationTypes.add('particle_counter');
+
+  // Service descriptions data
+  const CAL_DATA = {
+    particle_counter: {
+      title: "Etalonnage Compteur de Particules Aeroportees",
+      prestations: [
+        "Verification des fonctionnalites du compteur",
+        "Verification et reglage du debit",
+        "Verification de la cellule de mesure",
+        "Controle et reglage des seuils de mesures granulometrique a l'aide de spheres de latex calibrees et certifiees",
+        "Verification en nombre par comparaison a un etalon etalonne selon la norme ISO 17025, conformement a la norme ISO 21501-4",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    bio_collector: {
+      title: "Etalonnage Bio Collecteur",
+      prestations: [
+        "Verification des fonctionnalites de l'appareil",
+        "Verification et reglage du debit",
+        "Verification de la cellule d'impaction",
+        "Controle des parametres de collecte",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    liquid_counter: {
+      title: "Etalonnage Compteur de Particules en Milieu Liquide",
+      prestations: [
+        "Verification des fonctionnalites du compteur",
+        "Verification et reglage du debit",
+        "Verification de la cellule de mesure optique",
+        "Controle et reglage des seuils de mesures granulometrique",
+        "Verification en nombre par comparaison a un etalon",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    other: {
+      title: "Etalonnage Equipement",
+      prestations: [
+        "Verification des fonctionnalites de l'appareil",
+        "Etalonnage selon les specifications du fabricant",
+        "Tests de fonctionnement",
+        "Fourniture d'un rapport de test"
+      ]
+    }
+  };
+
+  const REPAIR_DATA = {
+    title: "Reparation",
+    prestations: [
+      "Diagnostic complet de l'appareil",
+      "Identification des composants defectueux",
+      "Remplacement des pieces defectueuses (pieces facturees en sus)",
+      "Tests de fonctionnement complets",
+      "Verification d'etalonnage post-reparation si applicable"
+    ]
+  };
+
+  const DISCLAIMERS = [
+    "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables.",
+    "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses et necessitent un remplacement.",
+    "Les mesures stockees dans les appareils seront eventuellement perdues lors des operations de maintenance.",
+    "Les equipements envoyes devront etre decontamines de toutes substances chimiques, bacteriennes ou radioactives."
+  ];
+
+  // Draw service blocks
   const drawServiceBlock = (data, color) => {
     const lineH = 5;
     let lines = [];
@@ -677,9 +722,7 @@ async function generateQuotePDF(options) {
     data.prestations.forEach(p => {
       const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
       wrapped.forEach((line, i) => {
-        if (i === 0) {
-          pdf.text('-', margin + 5, y);
-        }
+        if (i === 0) pdf.text('-', margin + 5, y);
         pdf.text(line, margin + 9, y);
         y += lineH;
       });
@@ -687,19 +730,19 @@ async function generateQuotePDF(options) {
     y += 3;
   };
 
+  // Draw calibration blocks (blue)
   calibrationTypes.forEach(type => {
-    const data = PDF_CALIBRATION_DATA[type] || PDF_CALIBRATION_DATA.particle_counter;
+    const data = CAL_DATA[type] || CAL_DATA.particle_counter;
     drawServiceBlock(data, [59, 130, 246]);
   });
   
+  // Draw repair block (orange) if needed
   if (hasRepair) {
-    drawServiceBlock(PDF_REPAIR_DATA, [249, 115, 22]);
+    drawServiceBlock(REPAIR_DATA, [249, 115, 22]);
   }
 
-  // ===== CONDITIONS (moved up - right after service descriptions) =====
-  const conditionsHeight = 22;
-  checkPageBreak(conditionsHeight);
-  
+  // ===== CONDITIONS/DISCLAIMERS =====
+  checkPageBreak(25);
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...lightGray);
@@ -707,21 +750,15 @@ async function generateQuotePDF(options) {
   y += 4;
   pdf.setFontSize(8);
   pdf.setTextColor(...gray);
-  PDF_DISCLAIMERS.forEach(d => {
+  DISCLAIMERS.forEach(d => {
     pdf.text('- ' + d, margin, y);
     y += 4;
   });
   y += 5;
 
-  // ===== PRICING TABLE (moved down - after conditions) =====
+  // ===== PRICING TABLE =====
   const rowH = 8;
-  let tableRows = devices.length;
-  devices.forEach(d => {
-    tableRows += (d.additionalParts || []).length + 1;
-  });
-  const tableH = 12 + (tableRows * rowH) + 32;
-  checkPageBreak(tableH);
-
+  
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
@@ -740,48 +777,35 @@ async function generateQuotePDF(options) {
   pdf.text('Prix HT', pageWidth - margin - 3, y + 6, { align: 'right' });
   y += 9;
 
+  let servicesSubtotal = 0;
+  
   devices.forEach((device, idx) => {
-    const svc = [];
-    if (device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration')) svc.push('Etalonnage');
-    if (device.needsRepair || (device.serviceType || device.service_type || '').includes('repair')) svc.push('Reparation');
-    const total = device.serviceTotal || ((device.calibrationPrice || 0) + (device.repairPrice || 0) + (device.additionalParts || []).reduce((s, p) => s + (parseFloat(p.price) || 0), 0));
+    const price = parseFloat(device.quoted_price) || 0;
+    servicesSubtotal += price;
+    
+    const serviceType = device.service_type === 'calibration' ? 'Etalonnage' : 
+                        device.service_type === 'repair' ? 'Reparation' : 
+                        device.service_type === 'calibration_repair' ? 'Etal. + Rep.' : 'Service';
     
     pdf.setFillColor(idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250);
     pdf.rect(margin, y, contentWidth, rowH, 'F');
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...darkBlue);
-    pdf.text(device.model || device.model_name || '-', margin + 3, y + 5.5);
+    pdf.text((device.model_name || device.model || '-').substring(0, 25), margin + 3, y + 5.5);
     pdf.setFont('courier', 'normal');
-    pdf.text(device.serial || device.serial_number || '-', margin + 55, y + 5.5);
+    pdf.text(device.serial_number || '-', margin + 55, y + 5.5);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(svc.join(' + ') || 'Service', margin + 100, y + 5.5);
+    pdf.text(serviceType, margin + 100, y + 5.5);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(total.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
-    y += rowH;
-
-    (device.additionalParts || []).forEach(part => {
-      pdf.setFillColor(250, 250, 250);
-      pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(8);
-      pdf.setTextColor(...gray);
-      pdf.text('    > ' + (part.description || 'Piece/Service'), margin + 3, y + 5.5);
-      pdf.text((parseFloat(part.price) || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
-      y += rowH;
-    });
-
-    pdf.setFillColor(242, 242, 242);
-    pdf.rect(margin, y, contentWidth, rowH, 'F');
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8);
-    pdf.setTextColor(...gray);
-    pdf.text('    > Frais de port', margin + 3, y + 5.5);
-    pdf.text((device.shipping || 0).toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
+    pdf.text(price.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
     y += rowH;
   });
 
-  // Totals
+  // Use global shipping data
+  const shippingTotal = shippingInfo.total || 0;
+  const grandTotal = servicesSubtotal + shippingTotal;
+  
   pdf.setDrawColor(200, 200, 200);
   pdf.line(margin, y, pageWidth - margin, y);
   
@@ -794,8 +818,12 @@ async function generateQuotePDF(options) {
   pdf.text(servicesSubtotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
   y += rowH;
 
+  // Shipping with parcels info
   pdf.rect(margin, y, contentWidth, rowH, 'F');
-  pdf.text('Total frais de port', margin + 3, y + 5.5);
+  const shippingLabel = shippingInfo.parcels > 1 
+    ? `Frais de port (${shippingInfo.parcels} colis x ${shippingInfo.unitPrice.toFixed(2)} EUR)`
+    : 'Frais de port';
+  pdf.text(shippingLabel, margin + 3, y + 5.5);
   pdf.text(shippingTotal.toFixed(2) + ' EUR', pageWidth - margin - 3, y + 5.5, { align: 'right' });
   y += rowH;
 
@@ -808,8 +836,8 @@ async function generateQuotePDF(options) {
   pdf.text(grandTotal.toFixed(2) + ' EUR', pageWidth - margin - 4, y + 8, { align: 'right' });
   y += 15;
 
-  // ===== SIGNATURE - AT BOTTOM OF CURRENT PAGE =====
-  const sigY = Math.max(y + 5, pageHeight - footerHeight - signatureBlockHeight - 3);
+  // ===== SIGNATURE SECTION =====
+  const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
   
   pdf.setDrawColor(200, 200, 200);
   pdf.setLineWidth(0.3);
@@ -821,27 +849,25 @@ async function generateQuotePDF(options) {
   pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(createdBy, margin, sigY + 14);
+  pdf.text('M. Meleney', margin, sigY + 14);
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
   pdf.text('Lighthouse France', margin, sigY + 20);
 
-  // Add Capcert certification logo (bottom left, next to ETABLI PAR)
+  // Capcert logo
   if (capcertLogo) {
     try {
-      console.log('Attempting to add capcert logo');
       const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
       pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
-      console.log('Capcert logo added successfully');
-    } catch (e) {
-      console.log('Capcert logo failed:', e);
-    }
+    } catch (e) {}
   }
 
+  // Signature box
   const sigBoxX = pageWidth - margin - 62;
   
   if (isSigned && signatureName) {
+    // Signed version - green box with signature
     pdf.setFillColor(245, 255, 250);
     pdf.setDrawColor(...green);
     pdf.setLineWidth(0.5);
@@ -867,6 +893,7 @@ async function generateQuotePDF(options) {
       try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 40, sigY + 9, 18, 16); } catch(e) {}
     }
   } else {
+    // Unsigned version - dashed box
     pdf.setFontSize(8);
     pdf.setTextColor(...lightGray);
     pdf.text('Signature client', sigBoxX + 16, sigY + 7);
