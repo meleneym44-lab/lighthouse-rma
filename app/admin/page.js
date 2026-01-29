@@ -7876,16 +7876,92 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
           </div>
         )}
 
-        {/* Step 2: Preview - RMA Style Breakdown */}
-        {step === 2 && (
-          <div className="p-6 bg-gray-100">
-            <div className="max-w-4xl mx-auto bg-white shadow-xl rounded-lg overflow-hidden">
-              {/* Quote Header */}
+        {/* Step 2: Preview - Exactly Like RMA Quote */}
+        {step === 2 && (() => {
+          // Get unique device types for service description blocks
+          const deviceTypes = [...new Set(devicePricing.map(d => d.deviceType))];
+          
+          // Service description templates (same as RMA)
+          const CAL_TEMPLATES = {
+            particle_counter: {
+              title: "Étalonnage Compteur de Particules Aéroportées",
+              icon: "🔬",
+              prestations: [
+                "Vérification des fonctionnalités du compteur",
+                "Vérification et réglage du débit",
+                "Vérification de la cellule de mesure",
+                "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
+                "Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4",
+                "Fourniture d'un rapport de test et de calibration"
+              ]
+            },
+            bio_collector: {
+              title: "Étalonnage Bio Collecteur",
+              icon: "🧫",
+              prestations: [
+                "Vérification des fonctionnalités de l'appareil",
+                "Vérification et réglage du débit",
+                "Vérification de la cellule d'impaction",
+                "Contrôle des paramètres de collecte",
+                "Fourniture d'un rapport de test et de calibration"
+              ]
+            },
+            liquid_counter: {
+              title: "Étalonnage Compteur de Particules en Milieu Liquide",
+              icon: "💧",
+              prestations: [
+                "Vérification des fonctionnalités du compteur",
+                "Vérification et réglage du débit",
+                "Vérification de la cellule de mesure optique",
+                "Contrôle et réglage des seuils de mesures granulométrique",
+                "Vérification en nombre par comparaison à un étalon",
+                "Fourniture d'un rapport de test et de calibration"
+              ]
+            },
+            temp_humidity: {
+              title: "Étalonnage Capteur Température/Humidité",
+              icon: "🌡️",
+              prestations: [
+                "Vérification des fonctionnalités du capteur",
+                "Étalonnage température sur points de référence certifiés",
+                "Étalonnage humidité relative",
+                "Vérification de la stabilité des mesures",
+                "Fourniture d'un certificat d'étalonnage"
+              ]
+            },
+            other: {
+              title: "Étalonnage Équipement",
+              icon: "📦",
+              prestations: [
+                "Vérification des fonctionnalités de l'appareil",
+                "Étalonnage selon les spécifications du fabricant",
+                "Tests de fonctionnement",
+                "Fourniture d'un rapport de test"
+              ]
+            }
+          };
+          
+          return (
+          <div className="p-6 bg-gray-200 min-h-full">
+            <div className="max-w-4xl mx-auto bg-white shadow-xl" style={{ fontFamily: 'Arial, sans-serif' }}>
+              
+              {/* ===== HEADER WITH LOGO ===== */}
               <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
                 <div className="flex justify-between items-start">
                   <div>
-                    <h1 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE FRANCE</h1>
-                    <p className="text-gray-500">Worldwide Solutions</p>
+                    <img 
+                      src="/images/logos/lighthouse-logo.png" 
+                      alt="Lighthouse France" 
+                      className="h-14 w-auto mb-1"
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                        e.target.nextSibling.style.display = 'block';
+                      }}
+                    />
+                    <div className="hidden">
+                      <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
+                      <p className="text-gray-500">Worldwide Solutions</p>
+                    </div>
                   </div>
                   <div className="text-right">
                     <p className="text-2xl font-bold text-[#00A651]">DEVIS CONTRAT</p>
@@ -7894,7 +7970,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 </div>
               </div>
 
-              {/* Info Bar */}
+              {/* ===== INFO BAR ===== */}
               <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
                 <div>
                   <p className="text-xs text-gray-500 uppercase">Date</p>
@@ -7910,48 +7986,104 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 </div>
               </div>
 
-              {/* Client Info */}
+              {/* ===== CLIENT INFO (Full details like RMA) ===== */}
               <div className="px-8 py-4 border-b">
                 <p className="text-xs text-gray-500 uppercase">Client</p>
                 <p className="font-bold text-xl text-[#1a1a2e]">{contract.companies?.name}</p>
+                {contract.companies?.billing_address && (
+                  <p className="text-gray-600">{contract.companies.billing_address}</p>
+                )}
+                {(contract.companies?.billing_postal_code || contract.companies?.billing_city) && (
+                  <p className="text-gray-600">
+                    {contract.companies?.billing_postal_code} {contract.companies?.billing_city}
+                  </p>
+                )}
+                {contract.companies?.phone && (
+                  <p className="text-gray-600">Tél: {contract.companies.phone}</p>
+                )}
+                {contract.companies?.email && (
+                  <p className="text-gray-600">{contract.companies.email}</p>
+                )}
               </div>
 
-              {/* Detailed Pricing Table - RMA Style */}
+              {/* ===== SERVICE DESCRIPTION BLOCKS (Like RMA) ===== */}
+              {deviceTypes.map(type => {
+                const template = CAL_TEMPLATES[type] || CAL_TEMPLATES.particle_counter;
+                return (
+                  <div key={type} className="px-8 py-4 border-b">
+                    <div className="flex items-start gap-3">
+                      <div className="w-1 bg-blue-500 self-stretch rounded"></div>
+                      <div className="flex-1">
+                        <h3 className="font-bold text-[#1a1a2e] mb-2 flex items-center gap-2">
+                          <span>{template.icon}</span>
+                          {template.title}
+                        </h3>
+                        <ul className="text-sm text-gray-600 space-y-1">
+                          {template.prestations.map((p, i) => (
+                            <li key={i} className="flex items-start gap-2">
+                              <span className="text-gray-400">-</span>
+                              <span>{p}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* ===== CONDITIONS ===== */}
+              <div className="px-8 py-3 border-b bg-gray-50">
+                <p className="text-xs text-gray-500 uppercase mb-2">Conditions</p>
+                <ul className="text-xs text-gray-600 space-y-0.5">
+                  <li>- Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.</li>
+                  <li>- Un devis complémentaire sera établi si des pièces sont trouvées défectueuses.</li>
+                  <li>- Paiement à 30 jours date de facture.</li>
+                </ul>
+              </div>
+
+              {/* ===== DETAILED PRICING TABLE ===== */}
               <div className="px-8 py-6">
+                <h3 className="font-bold text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
                 <table className="w-full">
                   <thead>
-                    <tr className="bg-[#00A651] text-white">
-                      <th className="px-4 py-3 text-left text-sm font-bold">Qté</th>
+                    <tr className="bg-[#1a1a2e] text-white">
+                      <th className="px-4 py-3 text-left text-sm font-bold w-16">Qté</th>
                       <th className="px-4 py-3 text-left text-sm font-bold">Désignation</th>
-                      <th className="px-4 py-3 text-right text-sm font-bold">Prix Unit.</th>
-                      <th className="px-4 py-3 text-right text-sm font-bold">Total HT</th>
+                      <th className="px-4 py-3 text-right text-sm font-bold w-28">Prix Unit.</th>
+                      <th className="px-4 py-3 text-right text-sm font-bold w-28">Total HT</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {/* Calibration rows */}
-                    {devicePricing.filter(d => d.needsCalibration).map((device, idx) => (
-                      <tr key={`cal-${device.id}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        <td className="px-4 py-3 text-center">{device.tokens_total}</td>
-                        <td className="px-4 py-3">
-                          <span className="font-medium">Étalonnage {device.model}</span>
-                          <span className="text-gray-500 text-sm ml-2">(SN: {device.serial})</span>
-                        </td>
-                        <td className="px-4 py-3 text-right">{device.calibrationPrice.toFixed(2)} €</td>
-                        <td className="px-4 py-3 text-right font-medium">{(device.tokens_total * device.calibrationPrice).toFixed(2)} €</td>
-                      </tr>
-                    ))}
-                    
-                    {/* Nettoyage rows */}
-                    {devicePricing.filter(d => d.needsNettoyage && d.nettoyagePrice > 0).map((device, idx) => (
-                      <tr key={`net-${device.id}`} className="bg-amber-50">
-                        <td className="px-4 py-3 text-center">{device.nettoyageQty}</td>
-                        <td className="px-4 py-3">
-                          <span className="font-medium text-amber-800">Nettoyage cellule - si requis selon état du capteur</span>
-                          <span className="text-amber-600 text-sm ml-2">({device.model})</span>
-                        </td>
-                        <td className="px-4 py-3 text-right">{device.nettoyagePrice.toFixed(2)} €</td>
-                        <td className="px-4 py-3 text-right font-medium">{(device.nettoyageQty * device.nettoyagePrice).toFixed(2)} €</td>
-                      </tr>
+                    {/* Device rows - CALIBRATION + NETTOYAGE TOGETHER */}
+                    {devicePricing.map((device, idx) => (
+                      <React.Fragment key={device.id}>
+                        {/* Calibration row */}
+                        {device.needsCalibration && (
+                          <tr className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="px-4 py-3 text-center">{device.tokens_total}</td>
+                            <td className="px-4 py-3">
+                              <span className="font-medium">Étalonnage {device.model}</span>
+                              <span className="text-gray-500 text-sm ml-2">(SN: {device.serial})</span>
+                            </td>
+                            <td className="px-4 py-3 text-right">{device.calibrationPrice.toFixed(2)} €</td>
+                            <td className="px-4 py-3 text-right font-medium">{(device.tokens_total * device.calibrationPrice).toFixed(2)} €</td>
+                          </tr>
+                        )}
+                        
+                        {/* Nettoyage row - IMMEDIATELY AFTER ITS DEVICE */}
+                        {device.needsNettoyage && device.nettoyagePrice > 0 && (
+                          <tr className="bg-amber-50">
+                            <td className="px-4 py-3 text-center">{device.nettoyageQty}</td>
+                            <td className="px-4 py-3">
+                              <span className="font-medium text-amber-800">Nettoyage cellule</span>
+                              <span className="text-amber-600 text-sm ml-2">- si requis selon état ({device.model})</span>
+                            </td>
+                            <td className="px-4 py-3 text-right">{device.nettoyagePrice.toFixed(2)} €</td>
+                            <td className="px-4 py-3 text-right font-medium">{(device.nettoyageQty * device.nettoyagePrice).toFixed(2)} €</td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     ))}
 
                     {/* Shipping row */}
@@ -7982,33 +8114,53 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 )}
               </div>
 
-              {/* Contract Terms */}
+              {/* ===== CONTRACT TERMS ===== */}
               <div className="px-8 py-4 border-t bg-gray-50">
                 <p className="text-xs text-gray-500 uppercase mb-2">Conditions du contrat</p>
                 <ul className="text-xs text-gray-600 space-y-1">
-                  <li>• Période: {new Date(contractDates.start_date).toLocaleDateString('fr-FR')} au {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</li>
+                  <li>• Période du contrat: {new Date(contractDates.start_date).toLocaleDateString('fr-FR')} au {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</li>
                   <li>• {totalTokens} étalonnage(s) inclus pendant la période contractuelle</li>
                   <li>• Étalonnages supplémentaires facturés au tarif standard</li>
                   <li>• Paiement à 30 jours date de facture</li>
                 </ul>
               </div>
 
-              {/* Signature Section */}
-              <div className="px-8 py-6 border-t flex justify-between items-end">
-                <div>
-                  <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
-                  <p className="font-bold">{signatory}</p>
-                  <p className="text-sm text-gray-500">Lighthouse France</p>
+              {/* ===== SIGNATURE SECTION WITH CAPCERT LOGO ===== */}
+              <div className="px-8 py-6 border-t">
+                <div className="flex justify-between items-end">
+                  {/* Left: Etabli par + Capcert logo */}
+                  <div className="flex items-end gap-6">
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
+                      <p className="font-bold text-lg">{signatory}</p>
+                      <p className="text-gray-500 text-sm">Lighthouse France</p>
+                    </div>
+                    <img 
+                      src="/images/logos/capcert-logo.png" 
+                      alt="Capcert Certification" 
+                      className="h-16 w-auto"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  </div>
+                  
+                  {/* Right: Signature box */}
+                  <div className="text-center">
+                    <p className="text-xs text-gray-500 uppercase mb-1">Bon pour accord</p>
+                    <div className="w-48 h-16 border-2 border-dashed border-gray-300 rounded"></div>
+                    <p className="text-xs text-gray-400 mt-1">Signature et cachet</p>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <p className="text-xs text-gray-500 uppercase mb-1">Bon pour accord</p>
-                  <div className="w-48 h-16 border-b-2 border-gray-400"></div>
-                  <p className="text-xs text-gray-500 mt-1">Signature et cachet</p>
-                </div>
+              </div>
+
+              {/* ===== FOOTER ===== */}
+              <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
+                <p className="font-medium">Lighthouse France SAS</p>
+                <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Step 3: Confirm */}
         {step === 3 && (
