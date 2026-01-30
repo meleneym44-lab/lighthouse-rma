@@ -10830,15 +10830,19 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       // Determine status and whether to auto-approve
       let newStatus = 'quote_sent';
       let bcUrl = null;
+      let signedQuoteUrl = null;
       let bcSignedBy = null;
       
       // If fully contract covered (calibration only, all covered), auto-approve
       if (isFullyContractCovered) {
         newStatus = 'waiting_device'; // Skip quote approval, go straight to waiting
-        // Copy BC from contract - use bc_file_url or signed_quote_url
-        bcUrl = contractInfo?.primaryContract?.bc_file_url || contractInfo?.primaryContract?.signed_quote_url;
+        // Copy BC from contract - get both bc_file_url and signed_quote_url
+        bcUrl = contractInfo?.primaryContract?.bc_file_url;
+        signedQuoteUrl = contractInfo?.primaryContract?.signed_quote_url;
         bcSignedBy = contractInfo?.primaryContract?.bc_signed_by || 'Contrat';
-        console.log('📋 Contract BC URL:', bcUrl, 'Signed by:', bcSignedBy);
+        console.log('📋 Contract BC URL:', bcUrl);
+        console.log('📋 Contract Signed Quote URL:', signedQuoteUrl);
+        console.log('📋 Signed by:', bcSignedBy);
       }
 
       const updateData = {
@@ -10860,12 +10864,23 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         updateData.quote_url = quoteUrl;
       }
       
-      // Add BC URL if contract-covered
-      if (bcUrl) {
-        updateData.bc_file_url = bcUrl;
-        updateData.bc_signed_by = bcSignedBy;
-        updateData.bc_approved_at = new Date().toISOString();
-        updateData.bc_signature_date = new Date().toISOString().split('T')[0];
+      // Add BC/signed quote URLs if contract-covered
+      if (isFullyContractCovered) {
+        // Copy the BC file URL (customer's PO)
+        if (bcUrl) {
+          updateData.bc_file_url = bcUrl;
+        }
+        // Copy the signed quote URL as the BC signature (signed devis)
+        if (signedQuoteUrl) {
+          updateData.bc_signature_url = signedQuoteUrl;
+        }
+        // Set BC approval fields
+        if (bcUrl || signedQuoteUrl) {
+          updateData.bc_signed_by = bcSignedBy;
+          updateData.bc_approved_at = new Date().toISOString();
+          updateData.bc_submitted_at = new Date().toISOString();
+          updateData.bc_signature_date = new Date().toISOString().split('T')[0];
+        }
       }
 
       const { error } = await supabase.from('service_requests').update(updateData).eq('id', request.id);
@@ -10883,7 +10898,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       }
 
       if (isFullyContractCovered) {
-        notify(`✅ Contrat! RMA ${rmaNumber} créé - En attente de réception (BC contrat copié)`);
+        const bcCopied = (bcUrl || signedQuoteUrl) ? ' (BC/Devis contrat copié)' : ' (⚠️ BC contrat non trouvé)';
+        notify(`✅ Contrat! RMA ${rmaNumber} créé - En attente de réception${bcCopied}`);
       } else if (hasContractCoveredDevices) {
         notify(`✅ Devis envoyé! RMA: ${rmaNumber} (certains appareils sous contrat)`);
       } else {
