@@ -8674,6 +8674,8 @@ function ContractsPage({ profile, t, notify, setPage }) {
   const getStatusBadge = (status) => {
     const styles = {
       requested: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'En attente de devis' },
+      modification_requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: '⚠️ Modification demandée' },
+      refused: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ Demande refusée' },
       quote_sent: { bg: 'bg-blue-50', text: 'text-blue-700', label: 'Devis envoyé - Action requise' },
       quote_revision_requested: { bg: 'bg-orange-50', text: 'text-orange-700', label: 'Modification demandée' },
       bc_pending: { bg: 'bg-blue-50', text: 'text-blue-700', label: 'BC soumis - En vérification' },
@@ -8753,6 +8755,52 @@ function ContractsPage({ profile, t, notify, setPage }) {
                 >
                   📋 Consulter et Approuver le Devis
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* Modification Requested by Admin - Allow customer to edit and resubmit */}
+          {contract.status === 'modification_requested' && (
+            <div className="bg-amber-50 border-b border-amber-300 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
+                  <span className="text-amber-600 text-2xl">⚠️</span>
+                </div>
+                <div className="flex-1">
+                  <p className="font-bold text-amber-800">Modification demandée par Lighthouse</p>
+                  {contract.admin_notes && (
+                    <div className="mt-2 p-3 bg-white rounded border border-amber-200">
+                      <p className="text-xs text-gray-500 mb-1">Message de l'équipe :</p>
+                      <p className="text-sm text-gray-700">{contract.admin_notes}</p>
+                    </div>
+                  )}
+                  <p className="text-sm text-amber-600 mt-2">
+                    Veuillez modifier votre demande et resoumettre.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Request Refused */}
+          {contract.status === 'refused' && (
+            <div className="bg-red-50 border-b border-red-300 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                  <span className="text-red-600 text-2xl">❌</span>
+                </div>
+                <div className="flex-1">
+                  <p className="font-bold text-red-800">Demande de contrat refusée</p>
+                  {contract.admin_notes && (
+                    <div className="mt-2 p-3 bg-white rounded border border-red-200">
+                      <p className="text-xs text-gray-500 mb-1">Raison :</p>
+                      <p className="text-sm text-gray-700">{contract.admin_notes}</p>
+                    </div>
+                  )}
+                  <p className="text-sm text-red-600 mt-2">
+                    Veuillez contacter Lighthouse France si vous avez des questions.
+                  </p>
+                </div>
               </div>
             </div>
           )}
