@@ -795,9 +795,9 @@ async function generateQuotePDF(options) {
       pdf.text(String(qty), colQty + 3, y + 5);
       const calDesc = `Etalonnage ${device.model || ''} (SN: ${device.serial || ''})${isContract ? ' [CONTRAT]' : ''}`;
       pdf.text(calDesc.substring(0, 60), colDesc, y + 5);
-      pdf.text(isContract ? 'Contrat' : unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.text(isContract ? 'Contrat' : unitPrice.toFixed(2) + ' €', colUnit, y + 5, { align: 'right' });
       pdf.setFont('helvetica', 'bold');
-      pdf.text(isContract ? 'Contrat' : lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      pdf.text(isContract ? 'Contrat' : lineTotal.toFixed(2) + ' €', colTotal, y + 5, { align: 'right' });
       y += rowH;
       rowIndex++;
     }
@@ -816,9 +816,9 @@ async function generateQuotePDF(options) {
       pdf.setTextColor(...darkBlue);
       pdf.text(String(qty), colQty + 3, y + 5);
       pdf.text('Nettoyage cellule - si requis selon etat du capteur', colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.text(unitPrice.toFixed(2) + ' €', colUnit, y + 5, { align: 'right' });
       pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      pdf.text(lineTotal.toFixed(2) + ' €', colTotal, y + 5, { align: 'right' });
       y += rowH;
       rowIndex++;
     }
@@ -837,9 +837,9 @@ async function generateQuotePDF(options) {
       pdf.text(String(qty), colQty + 3, y + 5);
       const repDesc = `Reparation ${device.model || ''} (SN: ${device.serial || ''})`;
       pdf.text(repDesc.substring(0, 60), colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.text(unitPrice.toFixed(2) + ' €', colUnit, y + 5, { align: 'right' });
       pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      pdf.text(lineTotal.toFixed(2) + ' €', colTotal, y + 5, { align: 'right' });
       y += rowH;
       rowIndex++;
     }
@@ -858,9 +858,9 @@ async function generateQuotePDF(options) {
       pdf.text(String(qty), colQty + 3, y + 5);
       const partDesc = part.partNumber ? `[${part.partNumber}] ${part.description || 'Piece'}` : (part.description || 'Piece/Service');
       pdf.text(partDesc.substring(0, 55), colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.text(unitPrice.toFixed(2) + ' €', colUnit, y + 5, { align: 'right' });
       pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      pdf.text(lineTotal.toFixed(2) + ' €', colTotal, y + 5, { align: 'right' });
       y += rowH;
       rowIndex++;
     });
@@ -875,9 +875,9 @@ async function generateQuotePDF(options) {
   pdf.text(String(shipping.parcels || 1), colQty + 3, y + 5);
   const shipDesc = shipping.parcels > 1 ? `Frais de port (${shipping.parcels} colis)` : 'Frais de port';
   pdf.text(shipDesc, colDesc, y + 5);
-  pdf.text((shipping.unitPrice || 45).toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+  pdf.text((shipping.unitPrice || 45).toFixed(2) + ' €', colUnit, y + 5, { align: 'right' });
   pdf.setFont('helvetica', 'bold');
-  pdf.text(shippingTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+  pdf.text(shippingTotal.toFixed(2) + ' €', colTotal, y + 5, { align: 'right' });
   y += rowH;
 
   // Total row
@@ -888,7 +888,7 @@ async function generateQuotePDF(options) {
   pdf.setFont('helvetica', 'bold');
   pdf.text('TOTAL HT', colUnit - 30, y + 7.5);
   pdf.setFontSize(16);
-  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
+  pdf.text(grandTotal.toFixed(2) + ' €', colTotal, y + 8, { align: 'right' });
   y += 15;
   
   // Nettoyage disclaimer
@@ -1080,13 +1080,14 @@ async function generateContractQuotePDF(options) {
   };
 
   // ===== HEADER WITH LOGO =====
+  // The Lighthouse logo aspect ratio is approximately 4.5:1 (width:height)
+  // So for a 12mm height, width should be ~54mm
   let logoAdded = false;
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      // Fixed aspect ratio - wider logo should be ~4:1 ratio, so 55mm wide = ~14mm tall
-      // But the actual logo is more like 3:1, so use 50x17 for better proportions
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 50, 17);
+      // Use proper aspect ratio: height 12mm, width ~48mm (4:1 ratio like modal)
+      pdf.addImage(lighthouseLogo, format, margin, y, 48, 12);
       logoAdded = true;
     } catch (e) {
       logoAdded = false;
@@ -1094,14 +1095,13 @@ async function generateContractQuotePDF(options) {
   }
   
   if (!logoAdded) {
-    pdf.setFontSize(26);
+    pdf.setFontSize(22);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
     pdf.text('LIGHTHOUSE', margin, y + 8);
-    pdf.setFontSize(11);
+    pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...gray);
-    pdf.text('Worldwide Solutions', margin, y + 14);
+    pdf.text('FRANCE', margin + 52, y + 8);
   }
   
   pdf.setFontSize(18);
@@ -1165,10 +1165,7 @@ async function generateContractQuotePDF(options) {
     pdf.text('Tel: ' + contract.companies.phone, margin, y);
     y += 5;
   }
-  if (contract.companies?.email) {
-    pdf.text('Email: ' + contract.companies.email, margin, y);
-    y += 5;
-  }
+  // Don't show email - modal doesn't show it
   y += 5;
 
   // ===== SERVICE DESCRIPTION BLOCKS (like RMA) =====
@@ -1227,37 +1224,50 @@ async function generateContractQuotePDF(options) {
   };
 
   const drawServiceBlock = (data, color) => {
-    const lineH = 5;
+    const lineH = 4.5;
     let lines = [];
     data.prestations.forEach(p => {
-      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 16);
       wrapped.forEach(l => lines.push(l));
     });
-    const blockH = 12 + (lines.length * lineH);
-    checkPageBreak(blockH);
+    const blockH = 14 + (lines.length * lineH);
+    checkPageBreak(blockH + 5);
     
+    // Light background box (like modal's border)
+    pdf.setFillColor(248, 250, 252);
+    pdf.setDrawColor(226, 232, 240);
+    pdf.setLineWidth(0.3);
+    pdf.roundedRect(margin, y, contentWidth, blockH, 1.5, 1.5, 'FD');
+    
+    // Blue left border line (like modal)
     pdf.setDrawColor(...color);
-    pdf.setLineWidth(1);
-    pdf.line(margin, y, margin, y + blockH - 3);
+    pdf.setLineWidth(1.5);
+    pdf.line(margin + 3, y + 4, margin + 3, y + blockH - 4);
     
-    pdf.setFontSize(12);
+    // Title
+    pdf.setFontSize(11);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
-    pdf.text(data.title, margin + 5, y + 6);
-    y += 10;
+    pdf.text(data.title, margin + 8, y + 8);
+    y += 12;
     
-    pdf.setFontSize(9);
+    // Prestations list
+    pdf.setFontSize(8.5);
     pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...gray);
+    pdf.setTextColor(100, 100, 100);
     data.prestations.forEach(p => {
-      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 16);
       wrapped.forEach((line, i) => {
-        if (i === 0) pdf.text('-', margin + 5, y);
-        pdf.text(line, margin + 9, y);
+        if (i === 0) {
+          pdf.setTextColor(160, 160, 160);
+          pdf.text('-', margin + 8, y);
+          pdf.setTextColor(100, 100, 100);
+        }
+        pdf.text(line, margin + 12, y);
         y += lineH;
       });
     });
-    y += 3;
+    y += 6;
   };
 
   // Get device types from quote_data or devices
@@ -1276,19 +1286,13 @@ async function generateContractQuotePDF(options) {
   const contractDates = quoteData.contractDates || { start_date: contract.start_date, end_date: contract.end_date };
   const totalTokensDisplay = quoteData.totalTokens || totalTokens;
   
-  checkPageBreak(45);
+  checkPageBreak(35);
   
-  // Light gray background box for conditions
-  pdf.setFillColor(248, 248, 248);
-  pdf.setDrawColor(220, 220, 220);
-  pdf.setLineWidth(0.3);
-  pdf.roundedRect(margin, y, contentWidth, 38, 2, 2, 'FD');
-  
-  y += 5;
+  // No background box - just clean text like modal
   pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'bold');
+  pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...lightGray);
-  pdf.text('CONDITIONS', margin + 4, y);
+  pdf.text('CONDITIONS', margin, y);
   y += 5;
   
   pdf.setFontSize(8);
@@ -1310,7 +1314,7 @@ async function generateContractQuotePDF(options) {
   ];
   
   conditions.forEach(c => {
-    pdf.text('• ' + c, margin + 4, y);
+    pdf.text('• ' + c, margin, y);
     y += 4.5;
   });
   y += 8;
@@ -1377,9 +1381,9 @@ async function generateContractQuotePDF(options) {
       pdf.text(String(qty), colQty + 3, y + 5);
       const calDesc = `Etalonnage ${device.model || ''} (SN: ${device.serial || ''})`;
       pdf.text(calDesc.substring(0, 65), colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.text(unitPrice.toFixed(2) + ' €', colUnit, y + 5, { align: 'right' });
       pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      pdf.text(lineTotal.toFixed(2) + ' €', colTotal, y + 5, { align: 'right' });
       y += rowH;
       rowIndex++;
     }
@@ -1399,9 +1403,9 @@ async function generateContractQuotePDF(options) {
       pdf.setTextColor(146, 64, 14); // amber-800
       pdf.text(String(qty), colQty + 3, y + 5);
       pdf.text('Nettoyage cellule - si requis selon etat du capteur', colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.text(unitPrice.toFixed(2) + ' €', colUnit, y + 5, { align: 'right' });
       pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      pdf.text(lineTotal.toFixed(2) + ' €', colTotal, y + 5, { align: 'right' });
       y += rowH;
       rowIndex++;
     }
@@ -1417,9 +1421,9 @@ async function generateContractQuotePDF(options) {
     pdf.setTextColor(30, 64, 175); // blue-800
     pdf.text(String(shipping.parcels || 1), colQty + 3, y + 5);
     pdf.text('Frais de port (' + (shipping.parcels || 1) + ' colis)', colDesc, y + 5);
-    pdf.text((shipping.unitPrice || 45).toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+    pdf.text((shipping.unitPrice || 45).toFixed(2) + ' €', colUnit, y + 5, { align: 'right' });
     pdf.setFont('helvetica', 'bold');
-    pdf.text(shippingTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+    pdf.text(shippingTotal.toFixed(2) + ' €', colTotal, y + 5, { align: 'right' });
     y += rowH;
   }
 
@@ -1434,7 +1438,7 @@ async function generateContractQuotePDF(options) {
   pdf.text('', colDesc, y + 8);
   pdf.text('TOTAL HT', colUnit, y + 8, { align: 'right' });
   pdf.setFontSize(12);
-  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
+  pdf.text(grandTotal.toFixed(2) + ' €', colTotal, y + 8, { align: 'right' });
   y += 15;
 
   // Nettoyage disclaimer
