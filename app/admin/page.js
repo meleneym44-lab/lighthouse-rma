@@ -8901,15 +8901,17 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
                   
                   // Clear any references in request_devices
                   if (contractDeviceIds.length > 0) {
-                    const { error: clearRefError } = await supabase
+                    await supabase
                       .from('request_devices')
                       .update({ contract_device_id: null })
                       .in('contract_device_id', contractDeviceIds);
-                    
-                    if (clearRefError) {
-                      console.warn('Error clearing request_devices references:', clearRefError);
-                    }
                   }
+                  
+                  // Clear any references in service_requests (contract_id column if exists)
+                  await supabase
+                    .from('service_requests')
+                    .update({ contract_id: null })
+                    .eq('contract_id', contract.id);
                   
                   // Delete contract devices
                   const { error: devicesError } = await supabase
@@ -8917,7 +8919,9 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
                     .delete()
                     .eq('contract_id', contract.id);
                   
-                  if (devicesError) throw devicesError;
+                  if (devicesError) {
+                    console.error('Error deleting contract_devices:', devicesError);
+                  }
                   
                   // Then delete the contract
                   const { error: contractError } = await supabase
@@ -8925,7 +8929,10 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
                     .delete()
                     .eq('id', contract.id);
                   
-                  if (contractError) throw contractError;
+                  if (contractError) {
+                    console.error('Error deleting contract:', contractError);
+                    throw contractError;
+                  }
                   
                   notify('Contrat supprimé définitivement', 'success');
                   onClose();
