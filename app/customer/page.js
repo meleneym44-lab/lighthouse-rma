@@ -8203,7 +8203,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   </svg>
                   Certificats et Devis
                 </h3>
-                {request.quote_url || request.certificate_url ? (
+                {request.quote_url || request.certificate_url || request.bc_file_url ? (
                   <div className="space-y-2">
                     {request.quote_url && (
                       <a 
@@ -8220,6 +8220,29 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                           <p className="text-xs text-blue-600">Télécharger le devis</p>
                         </div>
                         <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </a>
+                    )}
+                    {request.bc_file_url && (
+                      <a 
+                        href={request.bc_file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors border border-purple-200"
+                      >
+                        <div className="w-10 h-10 bg-purple-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                          PDF
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-purple-900">
+                            {request.is_contract_rma ? 'Bon de Commande (Contrat)' : 'Bon de Commande'}
+                          </p>
+                          <p className="text-xs text-purple-600">
+                            {request.bc_signed_by ? `Signé par ${request.bc_signed_by}` : 'Télécharger le BC'}
+                          </p>
+                        </div>
+                        <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                         </svg>
                       </a>
@@ -8255,7 +8278,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               </div>
 
               {/* Empty state if no attachments at all */}
-              {attachments.length === 0 && !request.quote_url && !request.certificate_url && (
+              {attachments.length === 0 && !request.quote_url && !request.certificate_url && !request.bc_file_url && (
                 <div className="text-center py-12">
                   <svg className="w-16 h-16 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
