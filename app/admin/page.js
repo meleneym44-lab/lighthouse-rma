@@ -10060,8 +10060,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   // ============================================
   useEffect(() => {
     const checkContract = async () => {
-      // Trim whitespace from serial numbers
-      const deviceSerials = devices.map(d => (d.serial_number || '').trim()).filter(Boolean);
+      // Trim whitespace and normalize serial numbers (case-insensitive)
+      const deviceSerials = devices.map(d => (d.serial_number || '').trim().toUpperCase()).filter(Boolean);
       console.log('🔍 Checking contracts for serial numbers:', deviceSerials);
       
       if (deviceSerials.length === 0) {
@@ -10074,15 +10074,16 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       console.log('📅 Today:', todayStr);
       
       try {
-        // First, get all active contracts (including bc_url for copying to RMA)
+        // First, get all active contracts
         const { data: activeContracts, error: contractError } = await supabase
           .from('contracts')
-          .select('id, contract_number, start_date, end_date, company_id, bc_url, bc_signed_by')
+          .select('id, contract_number, start_date, end_date, company_id')
           .eq('status', 'active')
           .lte('start_date', todayStr)
           .gte('end_date', todayStr);
         
-        console.log('📋 Active contracts:', activeContracts, 'Error:', contractError);
+        console.log('📋 Active contracts found:', activeContracts?.length || 0, activeContracts);
+        if (contractError) console.error('Contract query error:', contractError);
         
         if (contractError) {
           // Log error but don't block - just skip contract detection
@@ -10093,6 +10094,12 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
         
         if (!activeContracts || activeContracts.length === 0) {
           console.log('ℹ️ No active contracts found for this date range');
+          // Also check if there are any active contracts at all (ignoring date)
+          const { data: allActive } = await supabase
+            .from('contracts')
+            .select('id, contract_number, start_date, end_date, status')
+            .eq('status', 'active');
+          console.log('📋 All active contracts (any date):', allActive);
           setLoadingContract(false);
           return;
         }
@@ -10107,7 +10114,10 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           .select('*')
           .in('contract_id', contractIds);
         
-        console.log('📋 Contract devices:', contractDevicesData, 'Error:', devicesError);
+        console.log('📋 Contract devices found:', contractDevicesData?.length || 0);
+        contractDevicesData?.forEach(cd => {
+          console.log(`  - Device: ${cd.serial_number} (contract_id: ${cd.contract_id})`);
+        });
         
         if (devicesError) {
           console.error('Contract devices query error:', devicesError);
@@ -10115,7 +10125,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           return;
         }
         
-        // Build map of serial numbers to contract devices
+        // Build map of serial numbers to contract devices (case-insensitive)
         const deviceMap = {};
         let matchedContract = null;
         
@@ -10124,7 +10134,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           if (!contract) continue;
           
           const tokensRemaining = (cd.tokens_total || 0) - (cd.tokens_used || 0);
-          const serialTrimmed = (cd.serial_number || '').trim();
+          const serialTrimmed = (cd.serial_number || '').trim().toUpperCase();
           
           // Check if this contract device matches any RMA device
           if (deviceSerials.includes(serialTrimmed)) {
@@ -10142,7 +10152,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           };
         }
         
-        console.log('📋 Device map:', deviceMap);
+        console.log('📋 Device map built:', Object.keys(deviceMap));
         
         // Check which RMA devices are in the map
         let hasMatch = false;
