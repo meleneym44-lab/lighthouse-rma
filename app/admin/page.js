@@ -7213,20 +7213,22 @@ function ContractsSheet({ clients, notify, profile, reloadMain }) {
   };
 
   // Separate new requests from processed contracts
-  const newRequests = contracts.filter(c => c.status === 'requested' || c.status === 'modification_requested');
-  const processedContracts = contracts.filter(c => c.status !== 'requested' && c.status !== 'modification_requested');
+  // Only 'requested' shows in the new requests queue
+  // modification_requested and refused go to processed section
+  const newRequests = contracts.filter(c => c.status === 'requested');
+  const processedContracts = contracts.filter(c => c.status !== 'requested');
   
   // Filter processed contracts
   const filteredContracts = processedContracts.filter(c => {
     if (filter === 'all') return true;
     if (filter === 'active') return c.status === 'active';
-    if (filter === 'pending') return ['quote_sent', 'quote_approved', 'bc_pending'].includes(c.status);
+    if (filter === 'pending') return ['quote_sent', 'quote_approved', 'bc_pending', 'modification_requested', 'refused'].includes(c.status);
     if (filter === 'expired') return c.status === 'expired';
     return true;
   });
 
   const stats = {
-    pending: processedContracts.filter(c => ['quote_sent', 'quote_approved', 'bc_pending'].includes(c.status)).length,
+    pending: processedContracts.filter(c => ['quote_sent', 'quote_approved', 'bc_pending', 'modification_requested', 'refused'].includes(c.status)).length,
     active: processedContracts.filter(c => c.status === 'active').length,
     expired: processedContracts.filter(c => c.status === 'expired').length
   };
@@ -8349,17 +8351,22 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 <button
                   onClick={async () => {
                     const reason = window.prompt('Raison de la demande de modification:\n(Ce message sera visible par le client)');
-                    if (reason) {
+                    if (reason && reason.trim()) {
                       setSaving(true);
                       try {
-                        await supabase.from('contracts').update({
+                        const { error } = await supabase.from('contracts').update({
                           status: 'modification_requested',
-                          admin_notes: reason,
+                          admin_notes: reason.trim(),
                           updated_at: new Date().toISOString()
                         }).eq('id', contract.id);
-                        notify('Demande de modification envoyée au client', 'success');
+                        
+                        if (error) throw error;
+                        
+                        notify('✅ Demande de modification envoyée au client', 'success');
+                        if (onSent) onSent();
                         onClose();
                       } catch (err) {
+                        console.error('Error updating contract:', err);
                         notify('Erreur: ' + err.message, 'error');
                       }
                       setSaving(false);
@@ -8373,17 +8380,22 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 <button
                   onClick={async () => {
                     const reason = window.prompt('Raison du refus:\n(Ce message sera visible par le client)');
-                    if (reason) {
+                    if (reason && reason.trim()) {
                       setSaving(true);
                       try {
-                        await supabase.from('contracts').update({
+                        const { error } = await supabase.from('contracts').update({
                           status: 'refused',
-                          admin_notes: reason,
+                          admin_notes: reason.trim(),
                           updated_at: new Date().toISOString()
                         }).eq('id', contract.id);
-                        notify('Demande de contrat refusée', 'success');
+                        
+                        if (error) throw error;
+                        
+                        notify('❌ Demande de contrat refusée', 'success');
+                        if (onSent) onSent();
                         onClose();
                       } catch (err) {
+                        console.error('Error updating contract:', err);
                         notify('Erreur: ' + err.message, 'error');
                       }
                       setSaving(false);
@@ -8422,11 +8434,15 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                         
                         // Delete devices and contract
                         await supabase.from('contract_devices').delete().eq('contract_id', contract.id);
-                        await supabase.from('contracts').delete().eq('id', contract.id);
+                        const { error } = await supabase.from('contracts').delete().eq('id', contract.id);
                         
-                        notify('Demande supprimée', 'success');
+                        if (error) throw error;
+                        
+                        notify('🗑️ Demande supprimée', 'success');
+                        if (onSent) onSent();
                         onClose();
                       } catch (err) {
+                        console.error('Error deleting contract:', err);
                         notify('Erreur: ' + err.message, 'error');
                       }
                       setSaving(false);
