@@ -9452,26 +9452,51 @@ function ContractsPage({ profile, t, notify, setPage }) {
               <>
                 <h3 className="font-bold text-[#1E3A5F] mb-3">Documents</h3>
                 <div className="space-y-3">
-                  {/* Original Quote - viewable */}
+                  {/* Original Quote - Generate PDF on click */}
                   {contract.quote_sent_at && (
-                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                          <span className="text-blue-600">📄</span>
-                        </div>
-                        <div>
-                          <p className="font-medium">Devis Contrat</p>
-                          <p className="text-xs text-gray-500">
-                            Envoyé le {new Date(contract.quote_sent_at).toLocaleDateString('fr-FR')}
-                          </p>
-                        </div>
+                    <div 
+                      className="flex items-center gap-3 p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200 cursor-pointer"
+                      onClick={async () => {
+                        try {
+                          const quoteData = contract.quote_data || {};
+                          const quoteDevices = quoteData.devices || [];
+                          const pricingDevices = quoteDevices.length > 0 ? quoteDevices : devices.map(d => ({
+                            ...d,
+                            serial: d.serial_number,
+                            model: d.model_name,
+                            deviceType: d.device_type || 'particle_counter',
+                            tokens_total: d.tokens_total || 1,
+                            calibrationPrice: d.unit_price || 350,
+                            needsCalibration: true
+                          }));
+                          const pdfBlob = await generateContractQuotePDF({
+                            contract,
+                            devices: pricingDevices,
+                            totalPrice: quoteData.servicesSubtotal || totalPrice,
+                            totalTokens: quoteData.totalTokens || totalTokens,
+                            isSigned: false
+                          });
+                          const url = URL.createObjectURL(pdfBlob);
+                          window.open(url, '_blank');
+                        } catch (err) {
+                          console.error('PDF generation error:', err);
+                        }
+                      }}
+                    >
+                      <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                        PDF
                       </div>
-                      <button
-                        onClick={() => setShowQuoteModal(true)}
-                        className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600"
-                      >
-                        👁️ Voir
-                      </button>
+                      <div className="flex-1">
+                        <p className="font-medium text-blue-800">Devis Contrat</p>
+                        <p className="text-xs text-blue-600">
+                          Envoyé le {new Date(contract.quote_sent_at).toLocaleDateString('fr-FR')}
+                        </p>
+                      </div>
+                      <div className="text-blue-500">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </div>
                     </div>
                   )}
                   
