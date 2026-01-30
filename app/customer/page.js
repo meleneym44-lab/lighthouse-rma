@@ -8424,6 +8424,247 @@ function DeviceHistoryPage({ profile, requests, t, setPage }) {
 }
 
 // ============================================
+// EDIT CONTRACT MODAL - For customer to edit after modification requested
+// ============================================
+function EditContractModal({ contract, notify, onClose, onSaved }) {
+  const [editDevices, setEditDevices] = useState(contract.contract_devices || []);
+  const [editDates, setEditDates] = useState({
+    start_date: contract.start_date || new Date().toISOString().split('T')[0],
+    end_date: contract.end_date || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0]
+  });
+  const [editNotes, setEditNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const updateEditDevice = (deviceId, field, value) => {
+    setEditDevices(editDevices.map(d => d.id === deviceId ? { ...d, [field]: value } : d));
+  };
+
+  const addEditDevice = () => {
+    setEditDevices([...editDevices, {
+      id: `new-${Date.now()}`,
+      serial_number: '',
+      model_name: '',
+      device_type: 'particle_counter',
+      tokens_total: 1,
+      isNew: true
+    }]);
+  };
+
+  const removeEditDevice = (deviceId) => {
+    if (editDevices.length > 1) {
+      setEditDevices(editDevices.filter(d => d.id !== deviceId));
+    }
+  };
+
+  const submitEdits = async () => {
+    // Validate
+    if (!editDevices.some(d => d.serial_number?.trim())) {
+      notify('Veuillez ajouter au moins un appareil avec un numéro de série', 'error');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // Update contract dates
+      const { error: contractError } = await supabase
+        .from('contracts')
+        .update({
+          start_date: editDates.start_date,
+          end_date: editDates.end_date,
+          status: 'requested', // Back to requested for admin review
+          admin_notes: null, // Clear the modification message
+          customer_notes: editNotes || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', contract.id);
+
+      if (contractError) throw contractError;
+
+      // Delete old devices and insert new ones
+      await supabase.from('contract_devices').delete().eq('contract_id', contract.id);
+
+      const deviceInserts = editDevices.filter(d => d.serial_number?.trim()).map(d => ({
+        contract_id: contract.id,
+        serial_number: d.serial_number.trim(),
+        model_name: d.model_name || '',
+        device_type: d.device_type || 'particle_counter',
+        nickname: d.nickname || '',
+        tokens_total: d.tokens_total || 1,
+        tokens_used: 0,
+        unit_price: 0
+      }));
+
+      const { error: devicesError } = await supabase
+        .from('contract_devices')
+        .insert(deviceInserts);
+
+      if (devicesError) throw devicesError;
+
+      notify('✅ Demande de contrat resoumise avec succès!', 'success');
+      onSaved();
+    } catch (err) {
+      console.error('Error updating contract:', err);
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto">
+      <button onClick={onClose} className="mb-4 text-gray-500 hover:text-gray-700 flex items-center gap-2">
+        ← Annuler les modifications
+      </button>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        {/* Header */}
+        <div className="px-6 py-4 bg-amber-500 text-white">
+          <h1 className="text-xl font-bold">✏️ Modifier la Demande de Contrat</h1>
+          <p className="text-amber-100">Modifiez les informations et resoumettez pour approbation</p>
+        </div>
+
+        {/* Admin Message */}
+        {contract.admin_notes && (
+          <div className="bg-amber-50 border-b border-amber-200 px-6 py-4">
+            <p className="text-xs text-amber-600 uppercase font-medium">Message de Lighthouse :</p>
+            <p className="text-amber-800 font-medium">{contract.admin_notes}</p>
+          </div>
+        )}
+
+        <div className="p-6 space-y-6">
+          {/* Contract Dates */}
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date de début</label>
+              <input
+                type="date"
+                value={editDates.start_date}
+                onChange={e => setEditDates({...editDates, start_date: e.target.value})}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date de fin</label>
+              <input
+                type="date"
+                value={editDates.end_date}
+                onChange={e => setEditDates({...editDates, end_date: e.target.value})}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          {/* Devices */}
+          <div>
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-bold text-gray-800">Appareils à inclure</h3>
+              <button
+                onClick={addEditDevice}
+                className="px-3 py-1 bg-[#00A651] text-white text-sm rounded-lg hover:bg-[#008f45]"
+              >
+                + Ajouter un appareil
+              </button>
+            </div>
+            
+            <div className="space-y-3">
+              {editDevices.map((device, idx) => (
+                <div key={device.id} className="bg-gray-50 rounded-lg p-4 border">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="bg-[#1E3A5F] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">{idx + 1}</span>
+                    {editDevices.length > 1 && (
+                      <button
+                        onClick={() => removeEditDevice(device.id)}
+                        className="text-red-500 hover:text-red-700 text-sm"
+                      >
+                        ✕ Supprimer
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">N° Série *</label>
+                      <input
+                        type="text"
+                        value={device.serial_number || ''}
+                        onChange={e => updateEditDevice(device.id, 'serial_number', e.target.value)}
+                        className="w-full px-3 py-2 border rounded-lg text-sm"
+                        placeholder="Ex: 12345678"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Modèle</label>
+                      <input
+                        type="text"
+                        value={device.model_name || ''}
+                        onChange={e => updateEditDevice(device.id, 'model_name', e.target.value)}
+                        className="w-full px-3 py-2 border rounded-lg text-sm"
+                        placeholder="Ex: ApexP3"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Type</label>
+                      <select
+                        value={device.device_type || 'particle_counter'}
+                        onChange={e => updateEditDevice(device.id, 'device_type', e.target.value)}
+                        className="w-full px-3 py-2 border rounded-lg text-sm"
+                      >
+                        <option value="particle_counter">Compteur Particules (Air)</option>
+                        <option value="liquid_counter">Compteur Particules (Liquide)</option>
+                        <option value="bio_collector">Bio Collecteur</option>
+                        <option value="temp_humidity">Capteur Temp/Humidité</option>
+                        <option value="other">Autre</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Étalonnages/an</label>
+                      <input
+                        type="number"
+                        value={device.tokens_total || 1}
+                        onChange={e => updateEditDevice(device.id, 'tokens_total', parseInt(e.target.value) || 1)}
+                        className="w-full px-3 py-2 border rounded-lg text-sm"
+                        min="1"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optionnel)</label>
+            <textarea
+              value={editNotes}
+              onChange={e => setEditNotes(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              rows={3}
+              placeholder="Informations supplémentaires ou explications des modifications..."
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 bg-gray-50 border-t flex justify-between">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 hover:text-gray-800"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={submitEdits}
+            disabled={saving}
+            className="px-6 py-2 bg-amber-500 text-white rounded-lg font-medium hover:bg-amber-600 disabled:opacity-50"
+          >
+            {saving ? 'Envoi...' : '✅ Resoumettre la demande'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
 // CONTRACTS PAGE (Customer View)
 // ============================================
 function ContractsPage({ profile, t, notify, setPage }) {
@@ -8431,6 +8672,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
   const [loading, setLoading] = useState(true);
   const [selectedContract, setSelectedContract] = useState(null);
   const [contractTab, setContractTab] = useState('details');
+  const [editingContract, setEditingContract] = useState(null); // For editing contract after modification requested
   
   // IDENTICAL to RMA - Quote and BC state
   const [showQuoteModal, setShowQuoteModal] = useState(false);
@@ -8697,6 +8939,23 @@ function ContractsPage({ profile, t, notify, setPage }) {
   }
 
   // ========================================
+  // EDIT CONTRACT MODAL - For modification_requested
+  // ========================================
+  if (editingContract) {
+    return (
+      <EditContractModal 
+        contract={editingContract}
+        notify={notify}
+        onClose={() => setEditingContract(null)}
+        onSaved={() => {
+          setEditingContract(null);
+          loadContracts();
+        }}
+      />
+    );
+  }
+
+  // ========================================
   // CONTRACT DETAIL VIEW - IDENTICAL TO RMA
   // ========================================
   if (selectedContract) {
@@ -8762,22 +9021,27 @@ function ContractsPage({ profile, t, notify, setPage }) {
           {/* Modification Requested by Admin - Allow customer to edit and resubmit */}
           {contract.status === 'modification_requested' && (
             <div className="bg-amber-50 border-b border-amber-300 px-6 py-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
-                  <span className="text-amber-600 text-2xl">⚠️</span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
+                    <span className="text-amber-600 text-2xl">⚠️</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-bold text-amber-800">Modification demandée par Lighthouse</p>
+                    {contract.admin_notes && (
+                      <div className="mt-2 p-3 bg-white rounded border border-amber-200">
+                        <p className="text-xs text-gray-500 mb-1">Message de l'équipe :</p>
+                        <p className="text-sm text-gray-700">{contract.admin_notes}</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <p className="font-bold text-amber-800">Modification demandée par Lighthouse</p>
-                  {contract.admin_notes && (
-                    <div className="mt-2 p-3 bg-white rounded border border-amber-200">
-                      <p className="text-xs text-gray-500 mb-1">Message de l'équipe :</p>
-                      <p className="text-sm text-gray-700">{contract.admin_notes}</p>
-                    </div>
-                  )}
-                  <p className="text-sm text-amber-600 mt-2">
-                    Veuillez modifier votre demande et resoumettre.
-                  </p>
-                </div>
+                <button
+                  onClick={() => setEditingContract(contract)}
+                  className="px-6 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600 transition-colors"
+                >
+                  ✏️ Modifier et Resoumettre
+                </button>
               </div>
             </div>
           )}
