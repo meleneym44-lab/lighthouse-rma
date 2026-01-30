@@ -1086,8 +1086,8 @@ async function generateContractQuotePDF(options) {
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      // Much wider logo: 60mm wide x 12mm tall (5:1 ratio like modal)
-      pdf.addImage(lighthouseLogo, format, margin, y, 60, 12);
+      // Bigger logo: 70mm wide x 14mm tall 
+      pdf.addImage(lighthouseLogo, format, margin, y, 70, 14);
       logoAdded = true;
     } catch (e) {
       logoAdded = false;
@@ -1230,14 +1230,10 @@ async function generateContractQuotePDF(options) {
       const wrapped = pdf.splitTextToSize(p, contentWidth - 12);
       wrapped.forEach(l => lines.push(l));
     });
-    const blockH = 14 + (lines.length * lineH);
-    checkPageBreak(blockH + 5);
+    const textHeight = 7 + (lines.length * lineH); // Title + prestations only
+    checkPageBreak(textHeight + 8);
     
-    // NO background box - just blue left border like modal
-    // Blue left border line
-    pdf.setDrawColor(...color);
-    pdf.setLineWidth(1.5);
-    pdf.line(margin, y + 2, margin, y + blockH - 2);
+    const startY = y;
     
     // Title
     pdf.setFontSize(11);
@@ -1262,6 +1258,12 @@ async function generateContractQuotePDF(options) {
         y += lineH;
       });
     });
+    
+    // Blue left border line - only spans from title to end of prestations
+    pdf.setDrawColor(...color);
+    pdf.setLineWidth(1.5);
+    pdf.line(margin, startY + 3, margin, y - 2);
+    
     y += 5;
   };
 
