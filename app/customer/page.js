@@ -8465,7 +8465,45 @@ function EditContractModal({ contract, notify, onClose, onSaved }) {
 
     setSaving(true);
     try {
-      // Update contract dates
+      // First, delete ALL existing devices for this contract
+      const { error: deleteError } = await supabase
+        .from('contract_devices')
+        .delete()
+        .eq('contract_id', contract.id);
+
+      if (deleteError) {
+        console.error('Error deleting old devices:', deleteError);
+        // Don't throw - try to continue, maybe RLS issue
+      }
+
+      // Wait a moment for delete to propagate
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Prepare new devices - only those with serial numbers
+      const deviceInserts = editDevices.filter(d => d.serial_number?.trim()).map(d => ({
+        contract_id: contract.id,
+        serial_number: d.serial_number.trim(),
+        model_name: d.model_name || '',
+        device_type: d.device_type || 'particle_counter',
+        nickname: d.nickname || '',
+        tokens_total: parseInt(d.tokens_total) || 1,
+        tokens_used: 0,
+        unit_price: 0
+      }));
+
+      console.log('Inserting devices:', deviceInserts);
+
+      // Insert new devices
+      const { error: devicesError } = await supabase
+        .from('contract_devices')
+        .insert(deviceInserts);
+
+      if (devicesError) {
+        console.error('Error inserting devices:', devicesError);
+        throw devicesError;
+      }
+
+      // Update contract dates and status
       const { error: contractError } = await supabase
         .from('contracts')
         .update({
@@ -8479,26 +8517,6 @@ function EditContractModal({ contract, notify, onClose, onSaved }) {
         .eq('id', contract.id);
 
       if (contractError) throw contractError;
-
-      // Delete old devices and insert new ones
-      await supabase.from('contract_devices').delete().eq('contract_id', contract.id);
-
-      const deviceInserts = editDevices.filter(d => d.serial_number?.trim()).map(d => ({
-        contract_id: contract.id,
-        serial_number: d.serial_number.trim(),
-        model_name: d.model_name || '',
-        device_type: d.device_type || 'particle_counter',
-        nickname: d.nickname || '',
-        tokens_total: d.tokens_total || 1,
-        tokens_used: 0,
-        unit_price: 0
-      }));
-
-      const { error: devicesError } = await supabase
-        .from('contract_devices')
-        .insert(deviceInserts);
-
-      if (devicesError) throw devicesError;
 
       notify('✅ Demande de contrat resoumise avec succès!', 'success');
       onSaved();
