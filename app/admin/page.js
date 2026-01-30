@@ -8890,10 +8890,16 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
               if (confirmation === 'SUPPRIMER') {
                 setSaving(true);
                 try {
-                  // Get contract device IDs
-                  const contractDeviceIds = (contract.contract_devices || devices || []).map(d => d.id).filter(Boolean);
+                  // First, get all contract device IDs from database
+                  const { data: contractDevices } = await supabase
+                    .from('contract_devices')
+                    .select('id')
+                    .eq('contract_id', contract.id);
                   
-                  // First, clear any references in request_devices
+                  const contractDeviceIds = (contractDevices || []).map(d => d.id);
+                  console.log('Contract device IDs to clear:', contractDeviceIds);
+                  
+                  // Clear any references in request_devices
                   if (contractDeviceIds.length > 0) {
                     const { error: clearRefError } = await supabase
                       .from('request_devices')
@@ -8902,7 +8908,6 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
                     
                     if (clearRefError) {
                       console.warn('Error clearing request_devices references:', clearRefError);
-                      // Continue anyway - might not have any references
                     }
                   }
                   
