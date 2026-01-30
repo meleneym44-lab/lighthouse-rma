@@ -10829,19 +10829,19 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
 
       // Determine status and whether to auto-approve
       let newStatus = 'quote_sent';
-      let bcUrl = null;
-      let signedQuoteUrl = null;
+      let contractBcFileUrl = null;
+      let contractSignedQuoteUrl = null;
       let bcSignedBy = null;
       
       // If fully contract covered (calibration only, all covered), auto-approve
       if (isFullyContractCovered) {
         newStatus = 'waiting_device'; // Skip quote approval, go straight to waiting
         // Copy BC from contract - get both bc_file_url and signed_quote_url
-        bcUrl = contractInfo?.primaryContract?.bc_file_url;
-        signedQuoteUrl = contractInfo?.primaryContract?.signed_quote_url;
+        contractBcFileUrl = contractInfo?.primaryContract?.bc_file_url;
+        contractSignedQuoteUrl = contractInfo?.primaryContract?.signed_quote_url;
         bcSignedBy = contractInfo?.primaryContract?.bc_signed_by || 'Contrat';
-        console.log('📋 Contract BC URL:', bcUrl);
-        console.log('📋 Contract Signed Quote URL:', signedQuoteUrl);
+        console.log('📋 Contract BC URL:', contractBcFileUrl);
+        console.log('📋 Contract Signed Quote URL:', contractSignedQuoteUrl);
         console.log('📋 Signed by:', bcSignedBy);
       }
 
@@ -10866,16 +10866,18 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       
       // Add BC/signed quote URLs if contract-covered
       if (isFullyContractCovered) {
-        // Copy the BC file URL (customer's PO)
-        if (bcUrl) {
-          updateData.bc_file_url = bcUrl;
+        // Use BC file if available, otherwise use signed quote as the BC document
+        const bcDocUrl = contractBcFileUrl || contractSignedQuoteUrl;
+        
+        if (bcDocUrl) {
+          updateData.bc_file_url = bcDocUrl;
         }
-        // Copy the signed quote URL as the BC signature (signed devis)
-        if (signedQuoteUrl) {
-          updateData.bc_signature_url = signedQuoteUrl;
+        // If we have BOTH, store the signed quote separately as signature proof
+        if (contractBcFileUrl && contractSignedQuoteUrl) {
+          updateData.bc_signature_url = contractSignedQuoteUrl;
         }
         // Set BC approval fields
-        if (bcUrl || signedQuoteUrl) {
+        if (bcDocUrl) {
           updateData.bc_signed_by = bcSignedBy;
           updateData.bc_approved_at = new Date().toISOString();
           updateData.bc_submitted_at = new Date().toISOString();
@@ -10898,7 +10900,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       }
 
       if (isFullyContractCovered) {
-        const bcCopied = (bcUrl || signedQuoteUrl) ? ' (BC/Devis contrat copié)' : ' (⚠️ BC contrat non trouvé)';
+        const bcDocUrl = contractBcFileUrl || contractSignedQuoteUrl;
+        const bcCopied = bcDocUrl ? ' (BC/Devis contrat copié)' : ' (⚠️ BC contrat non trouvé)';
         notify(`✅ Contrat! RMA ${rmaNumber} créé - En attente de réception${bcCopied}`);
       } else if (hasContractCoveredDevices) {
         notify(`✅ Devis envoyé! RMA: ${rmaNumber} (certains appareils sous contrat)`);
