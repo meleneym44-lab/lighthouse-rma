@@ -7316,8 +7316,11 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           }
 
           const servicesSubtotal = quoteData.servicesSubtotal || request.quote_subtotal || 0;
-          const shippingTotal = quoteData.shippingTotal || request.quote_shipping || 0;
-          const grandTotal = quoteData.grandTotal || request.quote_total || 0;
+          
+          // Check if fully contract covered
+          const isFullyContractCovered = devices.length > 0 && devices.every(d => d.isContractCovered);
+          const shippingTotal = isFullyContractCovered ? 0 : (quoteData.shippingTotal || request.quote_shipping || 0);
+          const grandTotal = isFullyContractCovered ? 0 : (quoteData.grandTotal || request.quote_total || 0);
 
           return (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -7508,18 +7511,24 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                       })}
                       
                       {/* Shipping row */}
-                      <tr className="bg-gray-100">
+                      <tr className={isFullyContractCovered ? "bg-emerald-50" : "bg-gray-100"}>
                         <td className="px-3 py-2 text-center">{quoteData.shipping?.parcels || request.parcels_count || 1}</td>
                         <td className="px-3 py-2">Frais de port ({quoteData.shipping?.parcels || request.parcels_count || 1} colis)</td>
-                        <td className="px-3 py-2 text-right">{(quoteData.shipping?.unitPrice || 45).toFixed(2)} €</td>
-                        <td className="px-3 py-2 text-right font-medium">{shippingTotal.toFixed(2)} €</td>
+                        <td className="px-3 py-2 text-right">
+                          {isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${(quoteData.shipping?.unitPrice || 45).toFixed(2)} €`}
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium">
+                          {isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${shippingTotal.toFixed(2)} €`}
+                        </td>
                       </tr>
                     </tbody>
                     <tfoot>
-                      <tr className="bg-[#00A651] text-white">
+                      <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#00A651] text-white"}>
                         <td colSpan={2} className="px-3 py-4"></td>
                         <td className="px-3 py-4 text-right font-bold text-lg">TOTAL HT</td>
-                        <td className="px-3 py-4 text-right font-bold text-xl">{grandTotal.toFixed(2)} €</td>
+                        <td className="px-3 py-4 text-right font-bold text-xl">
+                          {isFullyContractCovered ? 'Contrat' : `${grandTotal.toFixed(2)} €`}
+                        </td>
                       </tr>
                     </tfoot>
                   </table>
