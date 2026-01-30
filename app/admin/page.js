@@ -440,6 +440,9 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     });
   });
   
+  // Check if fully contract covered (passed from options)
+  const isFullyContractCovered = options.isContractRMA && devicePricing.every(d => d.isContractCovered);
+  
   // Shipping row
   pdf.setFillColor(245, 245, 245);
   pdf.rect(margin, y, contentWidth, rowH, 'F');
@@ -449,14 +452,14 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.text(String(shippingInfo.parcels || 1), colQty + 3, y + 5);
   const shipDesc = shippingInfo.parcels > 1 ? `Frais de port (${shippingInfo.parcels} colis)` : 'Frais de port';
   pdf.text(shipDesc, colDesc, y + 5);
-  pdf.text((shippingInfo.unitPrice || 45).toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+  pdf.text(isFullyContractCovered ? 'Contrat' : (shippingInfo.unitPrice || 45).toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
   pdf.setFont('helvetica', 'bold');
-  const shippingTotal = options.shippingTotal || shippingInfo.total || 0;
-  pdf.text(shippingTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+  const shippingTotal = isFullyContractCovered ? 0 : (options.shippingTotal || shippingInfo.total || 0);
+  pdf.text(isFullyContractCovered ? 'Contrat' : shippingTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
   y += rowH;
 
   // Total row
-  const grandTotal = options.grandTotal || (servicesSubtotal + shippingTotal);
+  const grandTotal = isFullyContractCovered ? 0 : (options.grandTotal || (servicesSubtotal + shippingTotal));
   pdf.setFillColor(...green);
   pdf.rect(margin, y, contentWidth, 11, 'F');
   pdf.setTextColor(...white);
@@ -464,7 +467,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.setFont('helvetica', 'bold');
   pdf.text('TOTAL HT', colUnit - 30, y + 7.5);
   pdf.setFontSize(16);
-  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
+  pdf.text(isFullyContractCovered ? 'Contrat' : grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
   y += 15;
   
   // Nettoyage disclaimer
@@ -8879,6 +8882,44 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
               ❌ Annuler Contrat
             </button>
           )}
+
+          {/* Delete Contract - Admin only, for any status */}
+          <button
+            onClick={async () => {
+              const confirmation = window.prompt('⚠️ ATTENTION: Cette action est irréversible!\n\nTapez "SUPPRIMER" pour confirmer la suppression définitive du contrat ' + (contract.contract_number || contract.id) + ':');
+              if (confirmation === 'SUPPRIMER') {
+                setSaving(true);
+                try {
+                  // First delete contract devices
+                  const { error: devicesError } = await supabase
+                    .from('contract_devices')
+                    .delete()
+                    .eq('contract_id', contract.id);
+                  
+                  if (devicesError) throw devicesError;
+                  
+                  // Then delete the contract
+                  const { error: contractError } = await supabase
+                    .from('contracts')
+                    .delete()
+                    .eq('id', contract.id);
+                  
+                  if (contractError) throw contractError;
+                  
+                  notify('Contrat supprimé définitivement', 'success');
+                  onClose();
+                  onUpdate();
+                } catch (err) {
+                  notify('Erreur: ' + err.message, 'error');
+                }
+                setSaving(false);
+              }
+            }}
+            disabled={saving}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+          >
+            🗑️ Supprimer Définitivement
+          </button>
         </div>
       </div>
     </div>
@@ -9065,6 +9106,40 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
 
     setSaving(true);
     try {
+      // Check for overlapping contracts with same serial numbers
+      const serialNumbers = devices.filter(d => d.serial_number).map(d => d.serial_number.trim().toUpperCase());
+      
+      // Get all active/quote_sent contracts that overlap with this date range
+      const { data: overlappingContracts } = await supabase
+        .from('contracts')
+        .select('id, contract_number, start_date, end_date, contract_devices(serial_number)')
+        .in('status', ['active', 'quote_sent', 'bc_pending'])
+        .or(`and(start_date.lte.${contractData.end_date},end_date.gte.${contractData.start_date})`);
+      
+      // Check if any serial numbers conflict
+      const conflicts = [];
+      for (const existingContract of (overlappingContracts || [])) {
+        for (const cd of (existingContract.contract_devices || [])) {
+          const existingSerial = (cd.serial_number || '').trim().toUpperCase();
+          if (serialNumbers.includes(existingSerial)) {
+            conflicts.push({
+              serial: cd.serial_number,
+              contractNumber: existingContract.contract_number,
+              period: `${new Date(existingContract.start_date).toLocaleDateString('fr-FR')} - ${new Date(existingContract.end_date).toLocaleDateString('fr-FR')}`
+            });
+          }
+        }
+      }
+      
+      if (conflicts.length > 0) {
+        const conflictMsg = conflicts.map(c => 
+          `• ${c.serial} déjà dans contrat ${c.contractNumber} (${c.period})`
+        ).join('\n');
+        notify(`❌ Conflit de numéros de série détecté:\n${conflictMsg}`, 'error');
+        setSaving(false);
+        return;
+      }
+
       // Create contract
       const { data: contract, error: contractError } = await supabase
         .from('contracts')
