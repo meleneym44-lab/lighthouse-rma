@@ -2594,10 +2594,10 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
   const totalTokens = devices.reduce((sum, d) => sum + (d.tokens_total || 0), 0);
   
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex" onClick={onClose}>
-      <div className="bg-white w-full max-w-6xl m-auto rounded-xl overflow-hidden flex flex-col max-h-[95vh]" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={onClose}>
+      <div className="bg-white w-full h-full max-w-[98vw] max-h-[98vh] m-auto rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="px-6 py-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white flex justify-between items-center">
+        <div className="px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white flex justify-between items-center flex-shrink-0">
           <div>
             <h2 className="text-xl font-bold">Vérification du Bon de Commande - Contrat</h2>
             <p className="text-orange-100">{contract.contract_number} • {contract.companies?.name}</p>
@@ -2605,143 +2605,136 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
           <button onClick={onClose} className="text-white/70 hover:text-white text-3xl">&times;</button>
         </div>
         
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="grid lg:grid-cols-2 gap-6">
-            {/* Left: Document Preview */}
-            <div className="space-y-4">
-              <h3 className="font-bold text-gray-800 text-lg">📄 Documents</h3>
-              
-              {/* Signed Quote PDF */}
+        {/* Content - Split Layout */}
+        <div className="flex-1 overflow-hidden flex">
+          {/* Left: Document Preview - Takes most of the space */}
+          <div className="flex-1 flex flex-col bg-gray-800 p-4">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-bold text-white text-lg">📄 Documents BC</h3>
+              <div className="flex gap-2">
+                {contract.signed_quote_url && (
+                  <a href={contract.signed_quote_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium">
+                    Devis Signé ↗
+                  </a>
+                )}
+                {contract.bc_file_url && (
+                  <a href={contract.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium">
+                    BC Client ↗
+                  </a>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex-1 bg-gray-900 rounded-lg overflow-hidden">
               {contract.signed_quote_url ? (
-                <div className="border-2 border-green-200 rounded-lg overflow-hidden">
-                  <div className="bg-green-100 px-4 py-2 flex justify-between items-center">
-                    <span className="font-medium text-green-800">✅ Devis Signé (PDF)</span>
-                    <a href={contract.signed_quote_url} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:underline text-sm">
-                      Ouvrir dans nouvel onglet ↗
-                    </a>
+                <iframe 
+                  src={contract.signed_quote_url} 
+                  className="w-full h-full" 
+                  title="Devis Signé PDF"
+                />
+              ) : contract.bc_file_url ? (
+                contract.bc_file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                  <div className="w-full h-full overflow-auto flex items-center justify-center">
+                    <img src={contract.bc_file_url} alt="BC Document" className="max-w-full max-h-full object-contain" />
                   </div>
-                  <iframe src={contract.signed_quote_url} className="w-full h-96" title="Devis Signé PDF" />
-                </div>
+                ) : (
+                  <iframe 
+                    src={contract.bc_file_url} 
+                    className="w-full h-full" 
+                    title="BC Document"
+                  />
+                )
               ) : (
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center text-gray-400">
-                  Aucun devis signé (signature électronique uniquement)
-                </div>
-              )}
-              
-              {/* BC File (if uploaded separately) */}
-              {contract.bc_file_url && (
-                <div className="border-2 border-purple-200 rounded-lg overflow-hidden">
-                  <div className="bg-purple-100 px-4 py-2 flex justify-between items-center">
-                    <span className="font-medium text-purple-800">📋 Bon de Commande Client</span>
-                    <a href={contract.bc_file_url} target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:underline text-sm">
-                      Ouvrir dans nouvel onglet ↗
-                    </a>
+                <div className="w-full h-full flex items-center justify-center text-gray-400">
+                  <div className="text-center">
+                    <p className="text-4xl mb-4">📄</p>
+                    <p>Aucun document disponible</p>
+                    <p className="text-sm">(Signature électronique uniquement)</p>
                   </div>
-                  {contract.bc_file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                    <img src={contract.bc_file_url} alt="BC Document" className="w-full" />
-                  ) : contract.bc_file_url.match(/\.pdf$/i) ? (
-                    <iframe src={contract.bc_file_url} className="w-full h-64" title="BC PDF" />
-                  ) : (
-                    <div className="p-8 text-center">
-                      <a href={contract.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-6 py-3 bg-purple-500 text-white rounded-lg inline-block">
-                        📥 Télécharger le fichier
-                      </a>
-                    </div>
-                  )}
-                </div>
-              )}
-              
-              {/* Signature Info */}
-              {contract.bc_signed_by && (
-                <div className="bg-gray-50 rounded-lg p-4 border">
-                  <p className="text-sm text-gray-600">
-                    <strong>Signé par:</strong> {contract.bc_signed_by}
-                  </p>
-                  {contract.bc_submitted_at && (
-                    <p className="text-sm text-gray-500">
-                      <strong>Date:</strong> {new Date(contract.bc_submitted_at).toLocaleString('fr-FR')}
-                    </p>
-                  )}
                 </div>
               )}
             </div>
+          </div>
+          
+          {/* Right: Contract Details Panel */}
+          <div className="w-96 flex-shrink-0 bg-gray-50 border-l overflow-y-auto p-4 space-y-4">
+            <h3 className="font-bold text-gray-800 text-lg">📋 Détails du Contrat</h3>
             
-            {/* Right: Contract Details */}
-            <div className="space-y-4">
-              <h3 className="font-bold text-gray-800 text-lg">📋 Détails du Contrat</h3>
-              
-              {/* Contract Info */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-500">N° Contrat</p>
-                    <p className="font-mono font-bold text-[#00A651]">{contract.contract_number}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Période</p>
-                    <p className="font-medium text-sm">
-                      {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Date soumission BC</p>
-                    <p className="font-medium">{contract.bc_submitted_at ? new Date(contract.bc_submitted_at).toLocaleString('fr-FR') : '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Client</p>
-                    <p className="font-medium">{contract.companies?.name}</p>
-                  </div>
+            {/* Contract Info */}
+            <div className="bg-white rounded-lg p-4 border shadow-sm">
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">N° Contrat</span>
+                  <span className="font-mono font-bold text-[#00A651]">{contract.contract_number}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Période</span>
+                  <span className="font-medium text-sm">
+                    {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Soumis le</span>
+                  <span className="font-medium text-sm">{contract.bc_submitted_at ? new Date(contract.bc_submitted_at).toLocaleString('fr-FR') : '—'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Signé par</span>
+                  <span className="font-medium">{contract.bc_signed_by || '—'}</span>
                 </div>
               </div>
-              
-              {/* Pricing Summary */}
-              <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-                <h4 className="font-medium text-green-800 mb-2">💰 Récapitulatif</h4>
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-sm text-green-700">{devices.length} appareils • {totalTokens} étalonnages/an</p>
+            </div>
+            
+            {/* Pricing Summary */}
+            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+              <h4 className="font-medium text-green-800 mb-2">💰 Récapitulatif</h4>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-green-700">{devices.length} appareils</span>
+                  <span className="text-green-700">{totalTokens} étalonnages/an</span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t border-green-200">
+                  <span className="font-medium text-green-800">Total HT</span>
+                  <span className="text-2xl font-bold text-green-700">{totalPrice.toFixed(2)} €</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Devices */}
+            <div className="bg-white rounded-lg p-4 border">
+              <h4 className="font-medium text-gray-700 mb-3">Appareils ({devices.length})</h4>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {devices.map((d, i) => (
+                  <div key={i} className="bg-gray-50 rounded p-3 border text-sm">
+                    <p className="font-medium">{d.model_name || 'Appareil'}</p>
+                    <p className="text-gray-500">SN: {d.serial_number}</p>
+                    <p className="text-gray-500">{d.tokens_total || 1} étal./an • {(d.unit_price || 0).toFixed(2)} €</p>
                   </div>
-                  <p className="text-2xl font-bold text-green-700">{totalPrice.toFixed(2)} € HT</p>
-                </div>
+                ))}
               </div>
-              
-              {/* Devices */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="font-medium text-gray-700 mb-3">Appareils ({devices.length})</h4>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {devices.map((d, i) => (
-                    <div key={i} className="bg-white rounded p-3 border">
-                      <p className="font-medium">{d.model_name || 'Appareil'}</p>
-                      <p className="text-sm text-gray-500">SN: {d.serial_number} • {d.tokens_total || 1} étal./an • {(d.unit_price || 0).toFixed(2)} €</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Reject Reason Input */}
-              <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-                <h4 className="font-medium text-red-800 mb-2">Refuser le BC?</h4>
-                <textarea
-                  value={rejectReason}
-                  onChange={e => setRejectReason(e.target.value)}
-                  placeholder="Indiquez la raison du refus (document illisible, montant incorrect, etc.)..."
-                  className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm h-20 resize-none"
-                />
-              </div>
+            </div>
+            
+            {/* Reject Reason Input */}
+            <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+              <h4 className="font-medium text-red-800 mb-2">❌ Refuser le BC?</h4>
+              <textarea
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+                placeholder="Raison du refus (document illisible, montant incorrect, etc.)..."
+                className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm h-20 resize-none"
+              />
             </div>
           </div>
         </div>
         
         {/* Footer Actions */}
-        <div className="px-6 py-4 bg-gray-100 border-t flex justify-between items-center">
+        <div className="px-6 py-4 bg-gray-100 border-t flex justify-between items-center flex-shrink-0">
           <button onClick={onClose} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
             Annuler
           </button>
           <div className="flex gap-3">
             <button
               onClick={rejectBC}
-              disabled={rejecting}
+              disabled={rejecting || !rejectReason.trim()}
               className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50"
             >
               {rejecting ? 'Refus...' : '❌ Refuser BC'}
