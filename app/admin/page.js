@@ -10417,11 +10417,6 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
     return total;
   };
 
-  // Calculate totals
-  const servicesSubtotal = devicePricing.reduce((sum, d) => sum + getDeviceServiceTotal(d), 0);
-  const shippingTotal = shippingData.total;
-  const grandTotal = servicesSubtotal + shippingTotal;
-
   // Get device type label
   const getDeviceTypeLabel = (type) => {
     const labels = {
@@ -10443,6 +10438,11 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
   
   // Check if any device is contract covered
   const hasContractCoveredDevices = devicePricing.some(d => d.isContractCovered);
+
+  // Calculate totals - shipping is 0 when fully contract covered
+  const servicesSubtotal = devicePricing.reduce((sum, d) => sum + getDeviceServiceTotal(d), 0);
+  const shippingTotal = isFullyContractCovered ? 0 : shippingData.total;
+  const grandTotal = servicesSubtotal + shippingTotal;
 
   // Send quote (or auto-approve for contract)
   const sendQuote = async () => {
