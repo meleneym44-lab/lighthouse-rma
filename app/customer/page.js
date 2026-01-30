@@ -1310,16 +1310,9 @@ async function generateContractQuotePDF(options) {
     nettoyageQty: 1
   }));
 
-  // Calculate rows needed
-  let totalRows = 0;
-  pricingDevices.forEach(d => {
-    if (d.needsCalibration !== false) totalRows++;
-    if (d.needsNettoyage && d.nettoyagePrice > 0) totalRows++;
-  });
-  if (shippingTotal > 0) totalRows++;
-  totalRows += 1; // Total row
-
-  checkPageBreak(20 + (totalRows * rowH) + 15);
+  // Only check if we have room for the header + at least 2 rows
+  // Don't try to fit everything - let it flow naturally across pages
+  checkPageBreak(25);
 
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
@@ -1405,7 +1398,7 @@ async function generateContractQuotePDF(options) {
     y += rowH;
   }
 
-  // Total row
+  // Total row - keep with at least shipping or last item
   checkPageBreak(12);
   pdf.setFillColor(...green);
   pdf.rect(margin, y, contentWidth, 12, 'F');
@@ -1430,32 +1423,34 @@ async function generateContractQuotePDF(options) {
   }
 
   // ===== SIGNATURE SECTION =====
+  // Ensure we have room for signature block, otherwise new page
   checkPageBreak(signatureBlockHeight + 10);
   
-  const sigY = Math.max(y + 5, pageHeight - footerHeight - signatureBlockHeight - 5);
+  // Put signature right after content, not forced to bottom
+  y += 5;
   
   pdf.setDrawColor(200, 200, 200);
   pdf.setLineWidth(0.3);
-  pdf.line(margin, sigY, pageWidth - margin, sigY);
+  pdf.line(margin, y, pageWidth - margin, y);
   
   // Left side - Etabli par + Capcert logo
   pdf.setFontSize(8);
   pdf.setTextColor(...lightGray);
-  pdf.text('ETABLI PAR', margin, sigY + 7);
+  pdf.text('ETABLI PAR', margin, y + 7);
   pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(quoteData.createdBy || 'Lighthouse France', margin, sigY + 14);
+  pdf.text(quoteData.createdBy || 'Lighthouse France', margin, y + 14);
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text('Lighthouse France', margin, sigY + 20);
+  pdf.text('Lighthouse France', margin, y + 20);
 
   // Capcert logo
   if (capcertLogo) {
     try {
       const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(capcertLogo, format, margin + 55, sigY + 3, 30, 30);
+      pdf.addImage(capcertLogo, format, margin + 55, y + 3, 30, 30);
     } catch (e) {}
   }
 
@@ -1466,37 +1461,37 @@ async function generateContractQuotePDF(options) {
     pdf.setFillColor(245, 255, 250);
     pdf.setDrawColor(...green);
     pdf.setLineWidth(0.5);
-    pdf.roundedRect(sigBoxX, sigY + 3, 62, 36, 2, 2, 'FD');
+    pdf.roundedRect(sigBoxX, y + 3, 62, 36, 2, 2, 'FD');
     
     pdf.setFontSize(8);
     pdf.setTextColor(...green);
-    pdf.text('APPROUVE PAR', sigBoxX + 4, sigY + 10);
+    pdf.text('APPROUVE PAR', sigBoxX + 4, y + 10);
     pdf.setFontSize(11);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
-    pdf.text(signatureName, sigBoxX + 4, sigY + 17);
+    pdf.text(signatureName, sigBoxX + 4, y + 17);
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...gray);
-    pdf.text('Date: ' + signatureDate, sigBoxX + 4, sigY + 24);
+    pdf.text('Date: ' + signatureDate, sigBoxX + 4, y + 24);
     pdf.setFontSize(8);
     pdf.setFont('helvetica', 'italic');
     pdf.setTextColor(...green);
-    pdf.text('Lu et approuve', sigBoxX + 4, sigY + 30);
+    pdf.text('Lu et approuve', sigBoxX + 4, y + 30);
     
     if (signatureImage) {
-      try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 40, sigY + 9, 18, 16); } catch(e) {}
+      try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 40, y + 9, 18, 16); } catch(e) {}
     }
   } else {
     pdf.setFontSize(8);
     pdf.setTextColor(...lightGray);
-    pdf.text('Signature client', sigBoxX + 16, sigY + 7);
+    pdf.text('Signature client', sigBoxX + 16, y + 7);
     pdf.setDrawColor(180, 180, 180);
     pdf.setLineWidth(0.3);
     pdf.setLineDashPattern([2, 2], 0);
-    pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 22, 2, 2, 'D');
+    pdf.roundedRect(sigBoxX + 5, y + 10, 52, 22, 2, 2, 'D');
     pdf.setLineDashPattern([], 0);
-    pdf.text('Lu et approuve', sigBoxX + 18, sigY + 37);
+    pdf.text('Lu et approuve', sigBoxX + 18, y + 37);
   }
 
   addFooter();
