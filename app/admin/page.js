@@ -7367,20 +7367,12 @@ function ContractsSheet({ clients, notify, profile, reloadMain }) {
                       </p>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setSelectedContract(contract)}
-                      className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium"
-                    >
-                      Voir détails
-                    </button>
-                    <button
-                      onClick={() => setQuoteContract(contract)}
-                      className="px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium"
-                    >
-                      💰 Créer Devis Contrat
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => setQuoteContract(contract)}
+                    className="px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium"
+                  >
+                    💰 Créer Devis Contrat
+                  </button>
                 </div>
               );
             })}
@@ -7695,14 +7687,41 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
         {/* Step 1: Pricing - RMA Style */}
         {step === 1 && (
           <div className="p-6 space-y-6">
-            {/* Contract Info & Dates */}
-            <div className="grid md:grid-cols-3 gap-4">
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-500">Client</p>
-                <p className="font-bold text-lg">{contract.companies?.name}</p>
+            {/* Client Info - Full Details */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-xs text-blue-600 uppercase font-medium">Client</p>
+                  <p className="font-bold text-xl text-[#1a1a2e]">{contract.companies?.name}</p>
+                  {contract.companies?.contact_name && (
+                    <p className="text-gray-600">Contact: {contract.companies.contact_name}</p>
+                  )}
+                  {(contract.companies?.billing_address || contract.companies?.address) && (
+                    <p className="text-gray-600 text-sm">{contract.companies.billing_address || contract.companies.address}</p>
+                  )}
+                  {(contract.companies?.billing_postal_code || contract.companies?.postal_code || contract.companies?.billing_city || contract.companies?.city) && (
+                    <p className="text-gray-600 text-sm">
+                      {contract.companies?.billing_postal_code || contract.companies?.postal_code} {contract.companies?.billing_city || contract.companies?.city}
+                    </p>
+                  )}
+                  {contract.companies?.phone && (
+                    <p className="text-gray-600 text-sm">Tél: {contract.companies.phone}</p>
+                  )}
+                  {contract.companies?.email && (
+                    <p className="text-gray-600 text-sm">{contract.companies.email}</p>
+                  )}
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-gray-500">Demandé le</p>
+                  <p className="font-medium">{new Date(contract.created_at).toLocaleDateString('fr-FR')}</p>
+                </div>
               </div>
+            </div>
+
+            {/* Contract Dates */}
+            <div className="grid md:grid-cols-2 gap-4">
               <div className="bg-gray-50 rounded-lg p-4">
-                <label className="text-sm text-gray-500 block mb-1">Date début</label>
+                <label className="text-sm text-gray-500 block mb-1">Date début contrat</label>
                 <input
                   type="date"
                   value={contractDates.start_date}
@@ -7711,7 +7730,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 />
               </div>
               <div className="bg-gray-50 rounded-lg p-4">
-                <label className="text-sm text-gray-500 block mb-1">Date fin</label>
+                <label className="text-sm text-gray-500 block mb-1">Date fin contrat</label>
                 <input
                   type="date"
                   value={contractDates.end_date}
@@ -8315,15 +8334,112 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
 
         {/* Footer Actions */}
         <div className="px-6 py-4 bg-gray-50 border-t flex justify-between">
-          {step > 1 && (
-            <button
-              onClick={() => setStep(step - 1)}
-              className="px-4 py-2 text-gray-600 hover:text-gray-800"
-            >
-              ← Retour
-            </button>
-          )}
-          {step === 1 && <div></div>}
+          <div className="flex gap-2">
+            {step > 1 && (
+              <button
+                onClick={() => setStep(step - 1)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              >
+                ← Retour
+              </button>
+            )}
+            {step === 1 && (
+              <>
+                {/* Refuse/Modification/Delete buttons only on step 1 */}
+                <button
+                  onClick={async () => {
+                    const reason = window.prompt('Raison de la demande de modification:\n(Ce message sera visible par le client)');
+                    if (reason) {
+                      setSaving(true);
+                      try {
+                        await supabase.from('contracts').update({
+                          status: 'modification_requested',
+                          admin_notes: reason,
+                          updated_at: new Date().toISOString()
+                        }).eq('id', contract.id);
+                        notify('Demande de modification envoyée au client', 'success');
+                        onClose();
+                      } catch (err) {
+                        notify('Erreur: ' + err.message, 'error');
+                      }
+                      setSaving(false);
+                    }
+                  }}
+                  disabled={saving}
+                  className="px-3 py-2 border border-amber-500 text-amber-600 rounded-lg hover:bg-amber-50 text-sm"
+                >
+                  ✏️ Demander modif
+                </button>
+                <button
+                  onClick={async () => {
+                    const reason = window.prompt('Raison du refus:\n(Ce message sera visible par le client)');
+                    if (reason) {
+                      setSaving(true);
+                      try {
+                        await supabase.from('contracts').update({
+                          status: 'refused',
+                          admin_notes: reason,
+                          updated_at: new Date().toISOString()
+                        }).eq('id', contract.id);
+                        notify('Demande de contrat refusée', 'success');
+                        onClose();
+                      } catch (err) {
+                        notify('Erreur: ' + err.message, 'error');
+                      }
+                      setSaving(false);
+                    }
+                  }}
+                  disabled={saving}
+                  className="px-3 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 text-sm"
+                >
+                  ❌ Refuser
+                </button>
+                <button
+                  onClick={async () => {
+                    const confirmation = window.prompt('⚠️ SUPPRIMER cette demande de contrat?\n\nTapez "SUPPRIMER" pour confirmer:');
+                    if (confirmation === 'SUPPRIMER') {
+                      setSaving(true);
+                      try {
+                        // Get contract device IDs
+                        const { data: contractDevices } = await supabase
+                          .from('contract_devices')
+                          .select('id')
+                          .eq('contract_id', contract.id);
+                        
+                        const contractDeviceIds = (contractDevices || []).map(d => d.id);
+                        
+                        // Clear references
+                        if (contractDeviceIds.length > 0) {
+                          await supabase
+                            .from('request_devices')
+                            .update({ contract_device_id: null })
+                            .in('contract_device_id', contractDeviceIds);
+                        }
+                        await supabase
+                          .from('service_requests')
+                          .update({ contract_id: null })
+                          .eq('contract_id', contract.id);
+                        
+                        // Delete devices and contract
+                        await supabase.from('contract_devices').delete().eq('contract_id', contract.id);
+                        await supabase.from('contracts').delete().eq('id', contract.id);
+                        
+                        notify('Demande supprimée', 'success');
+                        onClose();
+                      } catch (err) {
+                        notify('Erreur: ' + err.message, 'error');
+                      }
+                      setSaving(false);
+                    }
+                  }}
+                  disabled={saving}
+                  className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
+                >
+                  🗑️ Supprimer
+                </button>
+              </>
+            )}
+          </div>
           
           <div className="flex gap-3">
             <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:text-gray-800">
