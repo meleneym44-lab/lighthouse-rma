@@ -7288,6 +7288,95 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
 
         {/* Quote Review Modal */}
         {showQuoteModal && (() => {
+          // If we have a stored quote PDF, show that directly
+          if (request.quote_url) {
+            return (
+              <div className="fixed inset-0 bg-black/80 flex z-50" onClick={() => setShowQuoteModal(false)}>
+                <div className="bg-white w-full h-full max-w-[95vw] max-h-[95vh] m-auto rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                  {/* Header */}
+                  <div className="px-6 py-3 bg-[#1a1a2e] text-white flex justify-between items-center flex-shrink-0">
+                    <div>
+                      <h2 className="text-xl font-bold">Offre de Prix</h2>
+                      <p className="text-gray-400">{request.request_number}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <a 
+                        href={request.quote_url} 
+                        download={`Devis_${request.request_number}.pdf`}
+                        className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2"
+                      >
+                        📥 Télécharger PDF
+                      </a>
+                      <a 
+                        href={request.quote_url} 
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium flex items-center gap-2"
+                      >
+                        🖨️ Ouvrir / Imprimer
+                      </a>
+                      <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-white text-3xl ml-2">&times;</button>
+                    </div>
+                  </div>
+                  
+                  {/* PDF Viewer */}
+                  <div className="flex-1 bg-gray-800">
+                    <iframe 
+                      src={`${request.quote_url}#view=Fit`}
+                      className="w-full h-full"
+                      title="Devis PDF"
+                    />
+                  </div>
+                  
+                  {/* Footer Actions */}
+                  <div className="px-6 py-4 bg-gray-100 border-t flex justify-between items-center flex-shrink-0">
+                    <button 
+                      onClick={() => setShowRevisionModal(true)}
+                      className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium"
+                    >
+                      ✏️ Demander modification
+                    </button>
+                    <button 
+                      onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
+                      className="px-8 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold text-lg"
+                    >
+                      ✅ Approuver et soumettre BC
+                    </button>
+                  </div>
+                  
+                  {/* Revision Request Sub-Modal */}
+                  {showRevisionModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
+                      <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-xl font-bold text-gray-800 mb-4">Demander une modification</h3>
+                        <p className="text-gray-600 mb-4">Décrivez les modifications que vous souhaitez apporter au devis :</p>
+                        <textarea
+                          value={revisionNotes}
+                          onChange={e => setRevisionNotes(e.target.value)}
+                          className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                          placeholder="Ex: Veuillez ajouter un appareil supplémentaire, modifier le prix, retirer les frais de transport, etc."
+                        />
+                        <div className="mt-4 flex justify-end gap-3">
+                          <button onClick={() => setShowRevisionModal(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+                            Annuler
+                          </button>
+                          <button 
+                            onClick={handleRequestRevision}
+                            disabled={approvingQuote || !revisionNotes.trim()}
+                            className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50"
+                          >
+                            {approvingQuote ? 'Envoi...' : 'Envoyer la demande'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          }
+          
+          // Fallback to HTML preview if no PDF URL (shouldn't happen normally)
           const quoteData = request.quote_data || {};
           const devices = quoteData.devices || request.request_devices || [];
           
@@ -9759,7 +9848,95 @@ function ContractsPage({ profile, t, notify, setPage }) {
             QUOTE REVIEW MODAL - Contract Style matching Admin
             ======================================== */}
         {showQuoteModal && (() => {
-          // Get quote_data from contract (matches RMA format)
+          // If we have a stored quote PDF, show that directly
+          if (contract.quote_url) {
+            return (
+              <div className="fixed inset-0 bg-black/80 flex z-50" onClick={() => setShowQuoteModal(false)}>
+                <div className="bg-white w-full h-full max-w-[95vw] max-h-[95vh] m-auto rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                  {/* Header */}
+                  <div className="px-6 py-3 bg-[#1a1a2e] text-white flex justify-between items-center flex-shrink-0">
+                    <div>
+                      <h2 className="text-xl font-bold">Devis Contrat d'Étalonnage</h2>
+                      <p className="text-gray-400">{contract.contract_number}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <a 
+                        href={contract.quote_url} 
+                        download={`Devis_${contract.contract_number}.pdf`}
+                        className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2"
+                      >
+                        📥 Télécharger PDF
+                      </a>
+                      <a 
+                        href={contract.quote_url} 
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium flex items-center gap-2"
+                      >
+                        🖨️ Ouvrir / Imprimer
+                      </a>
+                      <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-white text-3xl ml-2">&times;</button>
+                    </div>
+                  </div>
+                  
+                  {/* PDF Viewer */}
+                  <div className="flex-1 bg-gray-800">
+                    <iframe 
+                      src={`${contract.quote_url}#view=Fit`}
+                      className="w-full h-full"
+                      title="Devis Contrat PDF"
+                    />
+                  </div>
+                  
+                  {/* Footer Actions */}
+                  <div className="px-6 py-4 bg-gray-100 border-t flex justify-between items-center flex-shrink-0">
+                    <button 
+                      onClick={() => setShowRevisionModal(true)}
+                      className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium"
+                    >
+                      ✏️ Demander modification
+                    </button>
+                    <button 
+                      onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
+                      className="px-8 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold text-lg"
+                    >
+                      ✅ Approuver et soumettre BC
+                    </button>
+                  </div>
+                  
+                  {/* Revision Request Sub-Modal */}
+                  {showRevisionModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
+                      <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-xl font-bold text-gray-800 mb-4">Demander une modification</h3>
+                        <p className="text-gray-600 mb-4">Décrivez les modifications que vous souhaitez apporter au devis :</p>
+                        <textarea
+                          value={revisionNotes}
+                          onChange={e => setRevisionNotes(e.target.value)}
+                          className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                          placeholder="Ex: Modifier les dates, ajouter un appareil, etc."
+                        />
+                        <div className="mt-4 flex justify-end gap-3">
+                          <button onClick={() => setShowRevisionModal(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+                            Annuler
+                          </button>
+                          <button 
+                            onClick={handleRequestRevision}
+                            disabled={approvingQuote || !revisionNotes.trim()}
+                            className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50"
+                          >
+                            {approvingQuote ? 'Envoi...' : 'Envoyer la demande'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          }
+          
+          // Fallback to HTML preview if no PDF URL
           const quoteData = contract.quote_data || {};
           const quoteDevices = quoteData.devices || [];
           const shipping = quoteData.shipping || { parcels: 1, unitPrice: 45, total: 45 };
