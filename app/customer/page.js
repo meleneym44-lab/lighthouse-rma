@@ -1080,14 +1080,14 @@ async function generateContractQuotePDF(options) {
   };
 
   // ===== HEADER WITH LOGO =====
-  // The Lighthouse logo aspect ratio is approximately 4.5:1 (width:height)
-  // So for a 12mm height, width should be ~54mm
+  // The Lighthouse logo needs proper aspect ratio - it's quite wide
+  // Looking at modal, logo is about 5:1 ratio (width:height)
   let logoAdded = false;
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      // Use proper aspect ratio: height 12mm, width ~48mm (4:1 ratio like modal)
-      pdf.addImage(lighthouseLogo, format, margin, y, 48, 12);
+      // Much wider logo: 60mm wide x 12mm tall (5:1 ratio like modal)
+      pdf.addImage(lighthouseLogo, format, margin, y, 60, 12);
       logoAdded = true;
     } catch (e) {
       logoAdded = false;
@@ -1227,47 +1227,42 @@ async function generateContractQuotePDF(options) {
     const lineH = 4.5;
     let lines = [];
     data.prestations.forEach(p => {
-      const wrapped = pdf.splitTextToSize(p, contentWidth - 16);
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 12);
       wrapped.forEach(l => lines.push(l));
     });
     const blockH = 14 + (lines.length * lineH);
     checkPageBreak(blockH + 5);
     
-    // Light background box (like modal's border)
-    pdf.setFillColor(248, 250, 252);
-    pdf.setDrawColor(226, 232, 240);
-    pdf.setLineWidth(0.3);
-    pdf.roundedRect(margin, y, contentWidth, blockH, 1.5, 1.5, 'FD');
-    
-    // Blue left border line (like modal)
+    // NO background box - just blue left border like modal
+    // Blue left border line
     pdf.setDrawColor(...color);
     pdf.setLineWidth(1.5);
-    pdf.line(margin + 3, y + 4, margin + 3, y + blockH - 4);
+    pdf.line(margin, y + 2, margin, y + blockH - 2);
     
     // Title
     pdf.setFontSize(11);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
-    pdf.text(data.title, margin + 8, y + 8);
-    y += 12;
+    pdf.text(data.title, margin + 5, y + 7);
+    y += 11;
     
     // Prestations list
     pdf.setFontSize(8.5);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(100, 100, 100);
     data.prestations.forEach(p => {
-      const wrapped = pdf.splitTextToSize(p, contentWidth - 16);
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 12);
       wrapped.forEach((line, i) => {
         if (i === 0) {
           pdf.setTextColor(160, 160, 160);
-          pdf.text('-', margin + 8, y);
+          pdf.text('-', margin + 5, y);
           pdf.setTextColor(100, 100, 100);
         }
-        pdf.text(line, margin + 12, y);
+        pdf.text(line, margin + 8, y);
         y += lineH;
       });
     });
-    y += 6;
+    y += 5;
   };
 
   // Get device types from quote_data or devices
@@ -1282,13 +1277,17 @@ async function generateContractQuotePDF(options) {
     drawServiceBlock(data, [59, 130, 246]); // blue
   });
 
-  // ===== CONDITIONS SECTION - Styled like modal =====
+  // ===== CONDITIONS SECTION - Full-width gray background like modal =====
   const contractDates = quoteData.contractDates || { start_date: contract.start_date, end_date: contract.end_date };
   const totalTokensDisplay = quoteData.totalTokens || totalTokens;
   
-  checkPageBreak(35);
+  checkPageBreak(38);
   
-  // No background box - just clean text like modal
+  // Full-width gray background (edge to edge, no margins)
+  pdf.setFillColor(249, 250, 251); // gray-50
+  pdf.rect(0, y, pageWidth, 34, 'F');
+  
+  y += 5;
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...lightGray);
@@ -1315,9 +1314,9 @@ async function generateContractQuotePDF(options) {
   
   conditions.forEach(c => {
     pdf.text('• ' + c, margin, y);
-    y += 4.5;
+    y += 4;
   });
-  y += 8;
+  y += 10;
 
   // ===== DETAILED PRICING TABLE (Qté | Désignation | Prix Unit. | Total HT) =====
   const rowH = 7;
