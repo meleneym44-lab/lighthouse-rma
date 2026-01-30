@@ -441,7 +441,12 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   });
   
   // Check if fully contract covered (passed from options)
-  const isFullyContractCovered = options.isContractRMA && devicePricing.every(d => d.isContractCovered);
+  // Either explicitly passed as isFullyContractCovered, OR calculated from isContractRMA + all devices covered
+  const isFullyContractCovered = options.isFullyContractCovered || 
+    (options.isContractRMA && devicePricing.length > 0 && devicePricing.every(d => d.isContractCovered));
+  
+  console.log('PDF Gen - isContractRMA:', options.isContractRMA, 'isFullyContractCovered:', isFullyContractCovered);
+  console.log('PDF Gen - devicePricing coverage:', devicePricing.map(d => ({ model: d.model, isContractCovered: d.isContractCovered })));
   
   // Shipping row
   pdf.setFillColor(245, 245, 245);
@@ -452,10 +457,14 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.text(String(shippingInfo.parcels || 1), colQty + 3, y + 5);
   const shipDesc = shippingInfo.parcels > 1 ? `Frais de port (${shippingInfo.parcels} colis)` : 'Frais de port';
   pdf.text(shipDesc, colDesc, y + 5);
-  pdf.text(isFullyContractCovered ? 'Contrat' : (shippingInfo.unitPrice || 45).toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+  
+  // Show "Contrat" for both unit price and total when fully contract covered
+  const shippingUnitDisplay = isFullyContractCovered ? 'Contrat' : (shippingInfo.unitPrice || 45).toFixed(2) + ' EUR';
+  pdf.text(shippingUnitDisplay, colUnit, y + 5, { align: 'right' });
   pdf.setFont('helvetica', 'bold');
   const shippingTotal = isFullyContractCovered ? 0 : (options.shippingTotal || shippingInfo.total || 0);
-  pdf.text(isFullyContractCovered ? 'Contrat' : shippingTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+  const shippingTotalDisplay = isFullyContractCovered ? 'Contrat' : shippingTotal.toFixed(2) + ' EUR';
+  pdf.text(shippingTotalDisplay, colTotal, y + 5, { align: 'right' });
   y += rowH;
 
   // Total row
@@ -467,7 +476,8 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.setFont('helvetica', 'bold');
   pdf.text('TOTAL HT', colUnit - 30, y + 7.5);
   pdf.setFontSize(16);
-  pdf.text(isFullyContractCovered ? 'Contrat' : grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
+  const grandTotalDisplay = isFullyContractCovered ? 'Contrat' : grandTotal.toFixed(2) + ' EUR';
+  pdf.text(grandTotalDisplay, colTotal, y + 8, { align: 'right' });
   y += 15;
   
   // Nettoyage disclaimer
@@ -10369,10 +10379,10 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       console.log('📅 Today:', todayStr);
       
       try {
-        // First, get all active contracts
+        // First, get all active contracts (include BC fields for copying to RMA)
         const { data: activeContracts, error: contractError } = await supabase
           .from('contracts')
-          .select('id, contract_number, start_date, end_date, company_id')
+          .select('id, contract_number, start_date, end_date, company_id, bc_file_url, signed_quote_url, bc_signed_by')
           .eq('status', 'active')
           .lte('start_date', todayStr)
           .gte('end_date', todayStr);
@@ -10806,7 +10816,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           devicePricing: devicePricing,
           servicesSubtotal: servicesSubtotal,
           shippingTotal: shippingTotal,
-          grandTotal: grandTotal
+          grandTotal: grandTotal,
+          isContractRMA: hasContractCoveredDevices,
+          isFullyContractCovered: isFullyContractCovered
         });
         const fileName = `${rmaNumber}_devis_${Date.now()}.pdf`;
         quoteUrl = await uploadPDFToStorage(pdfBlob, `quotes/${rmaNumber}`, fileName);
@@ -10823,7 +10835,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       // If fully contract covered (calibration only, all covered), auto-approve
       if (isFullyContractCovered) {
         newStatus = 'waiting_device'; // Skip quote approval, go straight to waiting
-        bcUrl = contractInfo?.primaryContract?.bc_url; // Copy BC from contract
+        // Copy BC from contract - use bc_file_url or signed_quote_url
+        bcUrl = contractInfo?.primaryContract?.bc_file_url || contractInfo?.primaryContract?.signed_quote_url;
         bcSignedBy = contractInfo?.primaryContract?.bc_signed_by || 'Contrat';
         console.log('📋 Contract BC URL:', bcUrl, 'Signed by:', bcSignedBy);
       }
@@ -10849,7 +10862,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       
       // Add BC URL if contract-covered
       if (bcUrl) {
-        updateData.bc_url = bcUrl;
+        updateData.bc_file_url = bcUrl;
         updateData.bc_signed_by = bcSignedBy;
         updateData.bc_approved_at = new Date().toISOString();
         updateData.bc_signature_date = new Date().toISOString().split('T')[0];
@@ -11750,10 +11763,12 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                       })}
                       
                       {/* Shipping row */}
-                      <tr className="border-b bg-gray-50">
+                      <tr className={isFullyContractCovered ? "border-b bg-emerald-50" : "border-b bg-gray-50"}>
                         <td className="px-4 py-3 text-center">{shippingData.parcels}</td>
                         <td className="px-4 py-3">Frais de port ({shippingData.parcels} colis)</td>
-                        <td className="px-4 py-3 text-right">{shippingData.unitPrice.toFixed(2)} €</td>
+                        <td className="px-4 py-3 text-right">
+                          {isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${shippingData.unitPrice.toFixed(2)} €`}
+                        </td>
                         <td className="px-4 py-3 text-right font-medium">
                           {isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${shippingTotal.toFixed(2)} €`}
                         </td>
