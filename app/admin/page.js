@@ -7197,6 +7197,8 @@ function ContractsSheet({ clients, notify, profile, reloadMain }) {
 
   const CONTRACT_STATUS_STYLES = {
     requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: '🆕 Nouvelle demande' },
+    modification_requested: { bg: 'bg-orange-100', text: 'text-orange-700', label: '✏️ Modification demandée' },
+    refused: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ Refusé' },
     quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: '📧 Devis envoyé' },
     quote_approved: { bg: 'bg-purple-100', text: 'text-purple-700', label: '✅ Devis approuvé' },
     bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: '📄 Attente BC' },
@@ -7211,8 +7213,8 @@ function ContractsSheet({ clients, notify, profile, reloadMain }) {
   };
 
   // Separate new requests from processed contracts
-  const newRequests = contracts.filter(c => c.status === 'requested');
-  const processedContracts = contracts.filter(c => c.status !== 'requested');
+  const newRequests = contracts.filter(c => c.status === 'requested' || c.status === 'modification_requested');
+  const processedContracts = contracts.filter(c => c.status !== 'requested' && c.status !== 'modification_requested');
   
   // Filter processed contracts
   const filteredContracts = processedContracts.filter(c => {
@@ -8827,13 +8829,78 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
                 ✏️ Définir les prix et tokens
               </button>
               <button
-                onClick={() => updateContractStatus('quote_sent')}
-                disabled={saving || !devices.every(d => d.unit_price)}
-                className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg hover:bg-[#1E3A5F] disabled:opacity-50"
+                onClick={() => setShowQuoteModal(true)}
+                className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg hover:bg-[#1E3A5F]"
               >
-                📧 Envoyer le devis
+                📧 Créer le devis
+              </button>
+              <button
+                onClick={async () => {
+                  const reason = window.prompt('Raison de la demande de modification:\n(Ce message sera visible par le client)');
+                  if (reason) {
+                    setSaving(true);
+                    try {
+                      await supabase.from('contracts').update({
+                        status: 'modification_requested',
+                        admin_notes: reason,
+                        updated_at: new Date().toISOString()
+                      }).eq('id', contract.id);
+                      notify('Demande de modification envoyée au client', 'success');
+                      onUpdate();
+                    } catch (err) {
+                      notify('Erreur: ' + err.message, 'error');
+                    }
+                    setSaving(false);
+                  }
+                }}
+                disabled={saving}
+                className="px-4 py-2 border border-amber-500 text-amber-600 rounded-lg hover:bg-amber-50"
+              >
+                ✏️ Demander modification
+              </button>
+              <button
+                onClick={async () => {
+                  const reason = window.prompt('Raison du refus:\n(Ce message sera visible par le client)');
+                  if (reason) {
+                    setSaving(true);
+                    try {
+                      await supabase.from('contracts').update({
+                        status: 'refused',
+                        admin_notes: reason,
+                        updated_at: new Date().toISOString()
+                      }).eq('id', contract.id);
+                      notify('Demande de contrat refusée', 'success');
+                      onUpdate();
+                    } catch (err) {
+                      notify('Erreur: ' + err.message, 'error');
+                    }
+                    setSaving(false);
+                  }
+                }}
+                disabled={saving}
+                className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50"
+              >
+                ❌ Refuser la demande
               </button>
             </>
+          )}
+
+          {contract.status === 'modification_requested' && (
+            <div className="w-full bg-amber-50 border border-amber-200 rounded-lg p-4 mb-2">
+              <p className="text-amber-800 font-medium">⏳ En attente de modification par le client</p>
+              {contract.admin_notes && (
+                <p className="text-amber-700 text-sm mt-1">Message: "{contract.admin_notes}"</p>
+              )}
+            </div>
+          )}
+
+          {contract.status === 'refused' && (
+            <div className="w-full bg-red-50 border border-red-200 rounded-lg p-4 mb-2">
+              <p className="text-red-800 font-medium">❌ Demande refusée</p>
+              {contract.admin_notes && (
+                <p className="text-red-700 text-sm mt-1">Raison: "{contract.admin_notes}"</p>
+              )}
+            </div>
           )}
 
           {contract.status === 'quote_sent' && (
