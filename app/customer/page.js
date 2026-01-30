@@ -1084,7 +1084,9 @@ async function generateContractQuotePDF(options) {
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+      // Fixed aspect ratio - wider logo should be ~4:1 ratio, so 55mm wide = ~14mm tall
+      // But the actual logo is more like 3:1, so use 50x17 for better proportions
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 50, 17);
       logoAdded = true;
     } catch (e) {
       logoAdded = false;
@@ -1270,25 +1272,48 @@ async function generateContractQuotePDF(options) {
     drawServiceBlock(data, [59, 130, 246]); // blue
   });
 
-  // ===== CONDITIONS =====
-  checkPageBreak(25);
+  // ===== CONDITIONS SECTION - Styled like modal =====
+  const contractDates = quoteData.contractDates || { start_date: contract.start_date, end_date: contract.end_date };
+  const totalTokensDisplay = quoteData.totalTokens || totalTokens;
+  
+  checkPageBreak(45);
+  
+  // Light gray background box for conditions
+  pdf.setFillColor(248, 248, 248);
+  pdf.setDrawColor(220, 220, 220);
+  pdf.setLineWidth(0.3);
+  pdf.roundedRect(margin, y, contentWidth, 38, 2, 2, 'FD');
+  
+  y += 5;
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS', margin + 4, y);
+  y += 5;
+  
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...lightGray);
-  pdf.text('CONDITIONS', margin, y);
-  y += 4;
-  pdf.setFontSize(8);
   pdf.setTextColor(...gray);
-  const disclaimers = [
-    "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables.",
-    "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses.",
-    "Paiement a 30 jours date de facture."
+  
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '—';
+    return new Date(dateStr).toLocaleDateString('fr-FR');
+  };
+  
+  const conditions = [
+    `Periode du contrat: ${formatDate(contractDates.start_date)} au ${formatDate(contractDates.end_date)}`,
+    `${totalTokensDisplay} etalonnage(s) inclus pendant la periode contractuelle`,
+    "Etalonnages supplementaires factures au tarif standard",
+    "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables",
+    "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses",
+    "Paiement a 30 jours date de facture"
   ];
-  disclaimers.forEach(d => {
-    pdf.text('- ' + d, margin, y);
-    y += 4;
+  
+  conditions.forEach(c => {
+    pdf.text('• ' + c, margin + 4, y);
+    y += 4.5;
   });
-  y += 5;
+  y += 8;
 
   // ===== DETAILED PRICING TABLE (Qté | Désignation | Prix Unit. | Total HT) =====
   const rowH = 7;
