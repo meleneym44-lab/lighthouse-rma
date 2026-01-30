@@ -8890,7 +8890,23 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
               if (confirmation === 'SUPPRIMER') {
                 setSaving(true);
                 try {
-                  // First delete contract devices
+                  // Get contract device IDs
+                  const contractDeviceIds = (contract.contract_devices || devices || []).map(d => d.id).filter(Boolean);
+                  
+                  // First, clear any references in request_devices
+                  if (contractDeviceIds.length > 0) {
+                    const { error: clearRefError } = await supabase
+                      .from('request_devices')
+                      .update({ contract_device_id: null })
+                      .in('contract_device_id', contractDeviceIds);
+                    
+                    if (clearRefError) {
+                      console.warn('Error clearing request_devices references:', clearRefError);
+                      // Continue anyway - might not have any references
+                    }
+                  }
+                  
+                  // Delete contract devices
                   const { error: devicesError } = await supabase
                     .from('contract_devices')
                     .delete()
