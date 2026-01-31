@@ -4986,15 +4986,672 @@ function RequestDetailModal({ request, onClose, onCreateQuote }) {
     </div>
   );
 }
+// ============================================
+// PARTS ORDER FULL PAGE - Like RMAFullPage but for parts
+// ============================================
+function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSettings, onOpenQuoteEditor }) {
+  const [activeTab, setActiveTab] = useState('details');
+  const [saving, setSaving] = useState(false);
+  const [showShipping, setShowShipping] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [attachments, setAttachments] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+  
+  // Safety check
+  if (!order) {
+    return (
+      <div className="p-8 text-center">
+        <p className="text-red-500">Erreur: Commande non trouvée</p>
+        <button onClick={onBack} className="mt-4 px-4 py-2 bg-gray-200 rounded-lg">← Retour</button>
+      </div>
+    );
+  }
+  
+  const company = order.companies || {};
+  const quoteData = order.quote_data || {};
+  const parts = quoteData.parts || [];
+  const shippingData = quoteData.shipping || {};
+  
+  // Fetch messages and attachments
+  useEffect(() => {
+    const fetchData = async () => {
+      // Fetch messages
+      const { data: msgs } = await supabase
+        .from('request_messages')
+        .select('*')
+        .eq('request_id', order.id)
+        .order('created_at', { ascending: true });
+      setMessages(msgs || []);
+      
+      // Fetch attachments
+      const { data: atts } = await supabase
+        .from('request_attachments')
+        .select('*')
+        .eq('request_id', order.id)
+        .order('created_at', { ascending: false });
+      setAttachments(atts || []);
+    };
+    fetchData();
+  }, [order.id]);
+  
+  // Parts order progress steps
+  const progressSteps = [
+    { id: 'submitted', label: 'Soumis', icon: '📋' },
+    { id: 'quote_sent', label: 'Devis', icon: '💰' },
+    { id: 'bc_review', label: 'BC', icon: '✍️' },
+    { id: 'in_progress', label: 'En cours', icon: '📦' },
+    { id: 'ready_to_ship', label: 'Prêt', icon: '🚚' },
+    { id: 'shipped', label: 'Expédié', icon: '✅' }
+  ];
+  
+  const getStepIndex = (status) => {
+    const statusMap = {
+      'submitted': 0,
+      'quote_revision_requested': 0,
+      'quote_sent': 1,
+      'waiting_bc': 1,
+      'bc_review': 2,
+      'bc_submitted': 2,
+      'in_progress': 3,
+      'ready_to_ship': 4,
+      'shipped': 5,
+      'delivered': 5,
+      'completed': 5
+    };
+    return statusMap[status] ?? 0;
+  };
+  
+  const currentStepIndex = getStepIndex(order.status);
+  
+  // Progress Bar Component
+  const ProgressBar = () => (
+    <div className="flex items-center w-full">
+      {progressSteps.map((step, index) => {
+        const isCompleted = index < currentStepIndex;
+        const isCurrent = index === currentStepIndex;
+        const isLast = index === progressSteps.length - 1;
+        
+        return (
+          <div key={step.id} className="flex items-center flex-1">
+            <div 
+              className={`
+                relative flex items-center justify-center flex-1 py-2 px-1 text-xs font-medium
+                ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-amber-500 text-white' : 'bg-gray-200 text-gray-500'}
+                ${index === 0 ? 'rounded-l-md' : ''}
+                ${isLast ? 'rounded-r-md' : ''}
+              `}
+              style={{
+                clipPath: isLast 
+                  ? 'polygon(0 0, 100% 0, 100% 100%, 0 100%, 8px 50%)' 
+                  : index === 0 
+                    ? 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)'
+                    : 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)'
+              }}
+            >
+              <span className="mr-1">{step.icon}</span>
+              <span className="hidden sm:inline">{step.label}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+  
+  // Update status helper
+  const updateStatus = async (newStatus) => {
+    setSaving(true);
+    const { error } = await supabase
+      .from('service_requests')
+      .update({ status: newStatus })
+      .eq('id', order.id);
+    
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('Statut mis à jour!');
+      reload();
+    }
+    setSaving(false);
+  };
+  
+  // Send message
+  const sendMessage = async () => {
+    if (!newMessage.trim()) return;
+    setSendingMessage(true);
+    
+    const { error } = await supabase.from('request_messages').insert({
+      request_id: order.id,
+      sender_type: 'admin',
+      sender_name: profile?.full_name || 'Admin',
+      message: newMessage.trim()
+    });
+    
+    if (error) {
+      notify('Erreur envoi message', 'error');
+    } else {
+      setNewMessage('');
+      // Refresh messages
+      const { data: msgs } = await supabase
+        .from('request_messages')
+        .select('*')
+        .eq('request_id', order.id)
+        .order('created_at', { ascending: true });
+      setMessages(msgs || []);
+      notify('Message envoyé!');
+    }
+    setSendingMessage(false);
+  };
+  
+  // Status styles
+  const STATUS_STYLES = {
+    submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Nouvelle demande' },
+    quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: 'Révision demandée' },
+    quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
+    bc_review: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'BC à vérifier' },
+    in_progress: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En cours' },
+    ready_to_ship: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Prêt à expédier' },
+    shipped: { bg: 'bg-green-100', text: 'text-green-700', label: 'Expédié' }
+  };
+  const statusStyle = STATUS_STYLES[order.status] || STATUS_STYLES.submitted;
+  
+  // Render shipping modal
+  if (showShipping) {
+    return (
+      <PartsShippingModal
+        order={order}
+        onClose={() => { setShowShipping(false); reload(); }}
+        notify={notify}
+        reload={reload}
+        profile={profile}
+        businessSettings={businessSettings}
+      />
+    );
+  }
+  
+  return (
+    <div className="min-h-screen bg-gray-100">
+      {/* Header */}
+      <div className="bg-white border-b shadow-sm sticky top-0 z-10">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-4">
+              <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
+                <span className="text-xl">←</span>
+              </button>
+              <div>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl font-bold text-gray-800">{order.request_number || 'Nouvelle Commande'}</h1>
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusStyle.bg} ${statusStyle.text}`}>
+                    {statusStyle.label}
+                  </span>
+                </div>
+                <p className="text-gray-500">{company.name} • Commande de pièces détachées</p>
+              </div>
+            </div>
+            
+            {/* Actions */}
+            <div className="flex items-center gap-3">
+              {(order.status === 'submitted' || order.status === 'quote_revision_requested') && (
+                <button
+                  onClick={() => onOpenQuoteEditor(order)}
+                  className={`px-4 py-2 ${order.status === 'quote_revision_requested' ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'} text-white rounded-lg font-medium`}
+                >
+                  💰 {order.status === 'quote_revision_requested' ? 'Réviser Devis' : 'Créer Devis'}
+                </button>
+              )}
+              {order.status === 'in_progress' && (
+                <button
+                  onClick={() => updateStatus('ready_to_ship')}
+                  disabled={saving}
+                  className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium disabled:opacity-50"
+                >
+                  🚚 Marquer Prêt
+                </button>
+              )}
+              {order.status === 'ready_to_ship' && (
+                <button
+                  onClick={() => setShowShipping(true)}
+                  className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
+                >
+                  📦 Créer Expédition
+                </button>
+              )}
+            </div>
+          </div>
+          
+          {/* Progress Bar */}
+          <ProgressBar />
+        </div>
+      </div>
+      
+      {/* Main Content */}
+      <div className="p-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column - Main Content */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Tabs */}
+            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+              <div className="flex border-b">
+                {[
+                  { id: 'details', label: 'Détails', icon: '📋' },
+                  { id: 'messages', label: 'Messages', icon: '💬', badge: messages.filter(m => m.sender_type === 'client' && !m.read_at).length },
+                  { id: 'documents', label: 'Documents', icon: '📄' },
+                  { id: 'history', label: 'Historique', icon: '📜' }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex-1 px-4 py-3 text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                      activeTab === tab.id 
+                        ? 'bg-amber-50 text-amber-700 border-b-2 border-amber-500' 
+                        : 'text-gray-500 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span>{tab.icon}</span> {tab.label}
+                    {tab.badge > 0 && (
+                      <span className="px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full">{tab.badge}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              
+              <div className="p-6">
+                {/* Details Tab */}
+                {activeTab === 'details' && (
+                  <div className="space-y-6">
+                    {/* Revision Notes */}
+                    {order.revision_notes && (
+                      <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
+                        <h3 className="font-bold text-red-800 mb-2">🔴 Demande de modification du client</h3>
+                        <p className="text-red-700 whitespace-pre-wrap">{order.revision_notes}</p>
+                      </div>
+                    )}
+                    
+                    {/* Parts List */}
+                    <div>
+                      <h3 className="font-bold text-gray-800 mb-3">📦 Pièces commandées ({parts.length})</h3>
+                      <div className="space-y-2">
+                        {parts.length > 0 ? parts.map((part, idx) => (
+                          <div key={idx} className="bg-gray-50 rounded-lg p-4 border">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <p className="font-medium text-gray-800">{part.description}</p>
+                                <p className="text-sm text-gray-500 font-mono">{part.partNumber || '—'}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-bold text-amber-600">x{part.quantity}</p>
+                                {part.unitPrice && (
+                                  <p className="text-sm text-gray-500">{(part.unitPrice * part.quantity).toFixed(2)} €</p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )) : (
+                          <div className="bg-amber-50 rounded-lg p-4">
+                            <p className="text-amber-700 whitespace-pre-wrap">{order.problem_description || 'Pas de pièces spécifiées'}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Quote Summary */}
+                    {quoteData.grandTotal && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h3 className="font-bold text-blue-800 mb-2">💰 Devis</h3>
+                        <div className="grid grid-cols-3 gap-4 text-sm">
+                          <div>
+                            <p className="text-blue-600">Sous-total HT</p>
+                            <p className="font-bold text-blue-800">{(quoteData.subtotal || 0).toFixed(2)} €</p>
+                          </div>
+                          <div>
+                            <p className="text-blue-600">TVA</p>
+                            <p className="font-bold text-blue-800">{(quoteData.tvaAmount || 0).toFixed(2)} €</p>
+                          </div>
+                          <div>
+                            <p className="text-blue-600">Total TTC</p>
+                            <p className="font-bold text-xl text-blue-800">{quoteData.grandTotal.toFixed(2)} €</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Shipping Info (if shipped) */}
+                    {shippingData.trackingNumber && (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <h3 className="font-bold text-green-800 mb-2">🚚 Informations d'expédition</h3>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <p className="text-green-600">N° Suivi UPS</p>
+                            <a 
+                              href={`https://www.ups.com/track?tracknum=${shippingData.trackingNumber}`} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="font-mono font-bold text-green-800 hover:underline"
+                            >
+                              {shippingData.trackingNumber} →
+                            </a>
+                          </div>
+                          <div>
+                            <p className="text-green-600">N° BL</p>
+                            <p className="font-mono font-bold text-green-800">{shippingData.blNumber}</p>
+                          </div>
+                          <div>
+                            <p className="text-green-600">Colis</p>
+                            <p className="font-bold text-green-800">{shippingData.parcels}</p>
+                          </div>
+                          <div>
+                            <p className="text-green-600">Poids</p>
+                            <p className="font-bold text-green-800">{shippingData.weight} kg</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Order Info */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <p className="text-xs text-gray-500 uppercase">Soumis le</p>
+                        <p className="font-medium">{new Date(order.created_at).toLocaleDateString('fr-FR', { dateStyle: 'full' })}</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <p className="text-xs text-gray-500 uppercase">Urgence</p>
+                        <p className="font-medium">{order.urgency || 'Normal'}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Messages Tab */}
+                {activeTab === 'messages' && (
+                  <div className="space-y-4">
+                    <h3 className="font-bold text-gray-800">💬 Messages avec le client</h3>
+                    
+                    {/* Messages List */}
+                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                      {messages.length === 0 ? (
+                        <p className="text-gray-500 text-center py-8">Aucun message</p>
+                      ) : messages.map(msg => (
+                        <div 
+                          key={msg.id}
+                          className={`p-3 rounded-lg ${msg.sender_type === 'admin' ? 'bg-blue-50 ml-8' : 'bg-gray-100 mr-8'}`}
+                        >
+                          <div className="flex justify-between items-start mb-1">
+                            <span className={`text-xs font-medium ${msg.sender_type === 'admin' ? 'text-blue-600' : 'text-gray-600'}`}>
+                              {msg.sender_name || (msg.sender_type === 'admin' ? 'Admin' : 'Client')}
+                            </span>
+                            <span className="text-xs text-gray-400">
+                              {new Date(msg.created_at).toLocaleString('fr-FR')}
+                            </span>
+                          </div>
+                          <p className="text-gray-800 whitespace-pre-wrap">{msg.message}</p>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {/* New Message */}
+                    <div className="pt-4 border-t">
+                      <textarea
+                        value={newMessage}
+                        onChange={e => setNewMessage(e.target.value)}
+                        placeholder="Écrire un message..."
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none h-20"
+                      />
+                      <div className="flex justify-end mt-2">
+                        <button
+                          onClick={sendMessage}
+                          disabled={sendingMessage || !newMessage.trim()}
+                          className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50"
+                        >
+                          {sendingMessage ? '...' : '📤 Envoyer'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Documents Tab */}
+                {activeTab === 'documents' && (
+                  <div className="space-y-4">
+                    <h3 className="font-bold text-gray-800">📄 Documents</h3>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Quote */}
+                      {order.quote_url && (
+                        <a href={order.quote_url} target="_blank" rel="noopener noreferrer" 
+                          className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-blue-300 hover:bg-blue-50 transition-colors">
+                          <span className="text-3xl">📄</span>
+                          <div>
+                            <p className="font-medium text-gray-800">Devis</p>
+                            <p className="text-xs text-gray-500">Original</p>
+                          </div>
+                        </a>
+                      )}
+                      
+                      {/* Signed Quote */}
+                      {order.signed_quote_url && (
+                        <a href={order.signed_quote_url} target="_blank" rel="noopener noreferrer" 
+                          className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-green-300 hover:bg-green-50 transition-colors">
+                          <span className="text-3xl">✅</span>
+                          <div>
+                            <p className="font-medium text-gray-800">Devis Signé</p>
+                            <p className="text-xs text-gray-500">Approuvé</p>
+                          </div>
+                        </a>
+                      )}
+                      
+                      {/* BC File */}
+                      {order.bc_file_url && order.bc_file_url !== order.signed_quote_url && (
+                        <a href={order.bc_file_url} target="_blank" rel="noopener noreferrer" 
+                          className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-purple-300 hover:bg-purple-50 transition-colors">
+                          <span className="text-3xl">📎</span>
+                          <div>
+                            <p className="font-medium text-gray-800">BC Uploadé</p>
+                            <p className="text-xs text-gray-500">Fichier client</p>
+                          </div>
+                        </a>
+                      )}
+                      
+                      {/* Shipping Documents from quote_data */}
+                      {shippingData.upsLabelUrl && (
+                        <a href={shippingData.upsLabelUrl} target="_blank" rel="noopener noreferrer" 
+                          className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-amber-300 hover:bg-amber-50 transition-colors">
+                          <span className="text-3xl">🏷️</span>
+                          <div>
+                            <p className="font-medium text-gray-800">Étiquette UPS</p>
+                            <p className="text-xs text-gray-500">{shippingData.trackingNumber}</p>
+                          </div>
+                        </a>
+                      )}
+                      
+                      {shippingData.blUrl && (
+                        <a href={shippingData.blUrl} target="_blank" rel="noopener noreferrer" 
+                          className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-indigo-300 hover:bg-indigo-50 transition-colors">
+                          <span className="text-3xl">📋</span>
+                          <div>
+                            <p className="font-medium text-gray-800">Bon de Livraison</p>
+                            <p className="text-xs text-gray-500">{shippingData.blNumber}</p>
+                          </div>
+                        </a>
+                      )}
+                      
+                      {/* Attachments from database */}
+                      {attachments.map(att => (
+                        <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer" 
+                          className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-gray-300 hover:bg-gray-50 transition-colors">
+                          <span className="text-3xl">
+                            {att.file_type === 'ups_label' ? '🏷️' : att.file_type === 'bl' ? '📋' : '📎'}
+                          </span>
+                          <div>
+                            <p className="font-medium text-gray-800">{att.file_name}</p>
+                            <p className="text-xs text-gray-500">{new Date(att.created_at).toLocaleDateString('fr-FR')}</p>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                    
+                    {!order.quote_url && !order.signed_quote_url && !order.bc_file_url && attachments.length === 0 && (
+                      <p className="text-gray-500 text-center py-8">Aucun document disponible</p>
+                    )}
+                  </div>
+                )}
+                
+                {/* History Tab */}
+                {activeTab === 'history' && (
+                  <div className="space-y-4">
+                    <h3 className="font-bold text-gray-800">📜 Historique</h3>
+                    
+                    <div className="space-y-3">
+                      {/* Build history from timestamps */}
+                      {[
+                        order.shipped_at && { date: order.shipped_at, label: 'Expédié', icon: '🚚', color: 'green' },
+                        order.bc_approved_at && { date: order.bc_approved_at, label: 'BC Approuvé', icon: '✅', color: 'green' },
+                        order.bc_submitted_at && { date: order.bc_submitted_at, label: 'BC Soumis', icon: '✍️', color: 'blue' },
+                        order.quote_sent_at && { date: order.quote_sent_at, label: 'Devis envoyé', icon: '💰', color: 'purple' },
+                        order.created_at && { date: order.created_at, label: 'Demande créée', icon: '📋', color: 'gray' }
+                      ].filter(Boolean).sort((a, b) => new Date(b.date) - new Date(a.date)).map((event, idx) => (
+                        <div key={idx} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg border">
+                          <span className="text-xl">{event.icon}</span>
+                          <div>
+                            <p className="font-medium text-gray-800">{event.label}</p>
+                            <p className="text-sm text-gray-500">
+                              {new Date(event.date).toLocaleDateString('fr-FR', { dateStyle: 'full' })} à {new Date(event.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          {/* Right Column - Client Info & Actions */}
+          <div className="space-y-6">
+            {/* Client Info Card */}
+            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+              <div className="bg-gradient-to-r from-[#1E3A5F] to-[#2d4a6f] px-4 py-3">
+                <h3 className="font-bold text-white">🏢 Client</h3>
+              </div>
+              <div className="p-4 space-y-3">
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Société</p>
+                  <p className="font-bold text-gray-800">{company.name || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Contact</p>
+                  <p className="font-medium text-gray-700">{company.contact_name || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Téléphone</p>
+                  <p className="font-medium text-gray-700">{company.phone || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Email</p>
+                  <p className="font-medium text-gray-700 truncate">{company.email || '—'}</p>
+                </div>
+                <div className="pt-2 border-t">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Adresse</p>
+                  <p className="text-sm text-gray-700">
+                    {company.address || company.billing_address || '—'}
+                    {(company.postal_code || company.billing_postal_code) && `, ${company.postal_code || company.billing_postal_code}`}
+                    {(company.city || company.billing_city) && ` ${company.city || company.billing_city}`}
+                    {company.country && `, ${company.country}`}
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Quick Actions Card */}
+            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+              <div className="bg-amber-500 px-4 py-3">
+                <h3 className="font-bold text-white">⚡ Actions rapides</h3>
+              </div>
+              <div className="p-4 space-y-2">
+                {(order.status === 'submitted' || order.status === 'quote_revision_requested') && (
+                  <button
+                    onClick={() => onOpenQuoteEditor(order)}
+                    className="w-full px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium"
+                  >
+                    💰 Créer/Réviser Devis
+                  </button>
+                )}
+                
+                {order.status === 'bc_review' && (
+                  <button
+                    onClick={() => {
+                      notify('Utilisez l\'onglet BC à vérifier dans la liste');
+                    }}
+                    className="w-full px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium"
+                  >
+                    🔍 Examiner BC
+                  </button>
+                )}
+                
+                {order.status === 'in_progress' && (
+                  <button
+                    onClick={() => updateStatus('ready_to_ship')}
+                    disabled={saving}
+                    className="w-full px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium disabled:opacity-50"
+                  >
+                    🚚 Marquer Prêt à Expédier
+                  </button>
+                )}
+                
+                {order.status === 'ready_to_ship' && (
+                  <button
+                    onClick={() => setShowShipping(true)}
+                    className="w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
+                  >
+                    📦 Créer Expédition & BL
+                  </button>
+                )}
+                
+                {shippingData.trackingNumber && (
+                  <a
+                    href={`https://www.ups.com/track?tracknum=${shippingData.trackingNumber}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium text-center"
+                  >
+                    📍 Suivre colis UPS
+                  </a>
+                )}
+              </div>
+            </div>
+            
+            {/* Signature Card (if BC signed) */}
+            {order.bc_signature_url && (
+              <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                <div className="bg-green-500 px-4 py-3">
+                  <h3 className="font-bold text-white">✍️ Signature</h3>
+                </div>
+                <div className="p-4">
+                  <img src={order.bc_signature_url} alt="Signature" className="max-h-20 mx-auto bg-gray-50 rounded p-2 border" />
+                  <p className="text-center text-sm text-gray-500 mt-2">
+                    {order.bc_signed_by || '—'} {order.bc_signature_date && `• ${new Date(order.bc_signature_date).toLocaleDateString('fr-FR')}`}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 // ============================================
 // PARTS ORDERS SHEET - Manage spare parts orders
 // ============================================
-function PartsOrdersSheet({ requests, notify, reload, profile }) {
+function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings }) {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [quoteOrder, setQuoteOrder] = useState(null);
   const [bcReviewOrder, setBcReviewOrder] = useState(null);
   const [processOrder, setProcessOrder] = useState(null);
+  const [fullPageOrder, setFullPageOrder] = useState(null); // Full page view
   
   // Categorize orders
   const pendingOrders = requests.filter(r => r.status === 'submitted' && !r.request_number);
@@ -5023,6 +5680,21 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
     delivered: { bg: 'bg-green-100', text: 'text-green-700', label: 'Livré' },
     completed: { bg: 'bg-green-100', text: 'text-green-700', label: 'Terminé' }
   };
+
+  // If a full page order is selected, show the full page view
+  if (fullPageOrder) {
+    return (
+      <PartsOrderFullPage
+        order={fullPageOrder}
+        onBack={() => setFullPageOrder(null)}
+        notify={notify}
+        reload={reload}
+        profile={profile}
+        businessSettings={businessSettings}
+        onOpenQuoteEditor={(o) => { setFullPageOrder(null); setQuoteOrder(o); }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -5094,7 +5766,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
                 <div 
                   key={order.id}
                   className={`p-4 hover:bg-amber-100/50 cursor-pointer transition-colors ${needsRevision ? 'bg-red-50' : ''}`}
-                  onClick={() => setSelectedOrder(order)}
+                  onClick={() => setFullPageOrder(order)}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
@@ -5148,7 +5820,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
                 <div 
                   key={order.id}
                   className="p-4 hover:bg-purple-100/50 cursor-pointer transition-colors"
-                  onClick={() => setSelectedOrder(order)}
+                  onClick={() => setFullPageOrder(order)}
                 >
                   <div className="flex items-center justify-between">
                     <div>
@@ -5191,7 +5863,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
                 <div 
                   key={order.id}
                   className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
-                  onClick={() => setProcessOrder(order)}
+                  onClick={() => setFullPageOrder(order)}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
@@ -5242,7 +5914,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
                 <div 
                   key={order.id}
                   className="p-4 hover:bg-green-100/50 cursor-pointer transition-colors"
-                  onClick={() => setSelectedOrder(order)}
+                  onClick={() => setFullPageOrder(order)}
                 >
                   <div className="flex items-center justify-between">
                     <div>
@@ -5250,11 +5922,11 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
                       <p className="text-sm text-green-600">{order.companies?.name}</p>
                     </div>
                     <div className="flex items-center gap-4">
-                      {order.bl_number && (
-                        <span className="text-sm text-green-600">BL: {order.bl_number}</span>
+                      {order.quote_data?.shipping?.blNumber && (
+                        <span className="text-sm text-green-600">BL: {order.quote_data.shipping.blNumber}</span>
                       )}
-                      {order.ups_tracking_number && (
-                        <span className="text-sm text-green-600">UPS: {order.ups_tracking_number}</span>
+                      {order.quote_data?.shipping?.trackingNumber && (
+                        <span className="text-sm text-green-600">UPS: {order.quote_data.shipping.trackingNumber}</span>
                       )}
                       <span className="text-xs text-green-500">
                         {order.shipped_at ? new Date(order.shipped_at).toLocaleDateString('fr-FR') : ''}
@@ -5732,40 +6404,40 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
                   </div>
                 </a>
               )}
-              {order.ups_label_url && (
-                <a href={order.ups_label_url} target="_blank" rel="noopener noreferrer" 
+              {order.quote_data?.shipping?.upsLabelUrl && (
+                <a href={order.quote_data.shipping.upsLabelUrl} target="_blank" rel="noopener noreferrer" 
                   className="flex items-center gap-2 p-3 bg-white rounded-lg border hover:bg-amber-50 hover:border-amber-300 transition-colors">
                   <span className="text-2xl">🏷️</span>
                   <div>
                     <p className="font-medium text-gray-800">Étiquette UPS</p>
-                    <p className="text-xs text-gray-500">{order.ups_tracking_number || 'PDF'}</p>
+                    <p className="text-xs text-gray-500">{order.quote_data.shipping.trackingNumber || 'PDF'}</p>
                   </div>
                 </a>
               )}
-              {order.bl_url && (
-                <a href={order.bl_url} target="_blank" rel="noopener noreferrer" 
+              {order.quote_data?.shipping?.blUrl && (
+                <a href={order.quote_data.shipping.blUrl} target="_blank" rel="noopener noreferrer" 
                   className="flex items-center gap-2 p-3 bg-white rounded-lg border hover:bg-indigo-50 hover:border-indigo-300 transition-colors">
                   <span className="text-2xl">📋</span>
                   <div>
                     <p className="font-medium text-gray-800">Bon de Livraison</p>
-                    <p className="text-xs text-gray-500">{order.bl_number || 'PDF'}</p>
+                    <p className="text-xs text-gray-500">{order.quote_data.shipping.blNumber || 'PDF'}</p>
                   </div>
                 </a>
               )}
-              {!order.quote_url && !order.signed_quote_url && !order.bc_file_url && !order.ups_label_url && !order.bl_url && (
+              {!order.quote_url && !order.signed_quote_url && !order.bc_file_url && !order.quote_data?.shipping?.upsLabelUrl && !order.quote_data?.shipping?.blUrl && (
                 <p className="col-span-2 text-gray-500 text-center py-4">Aucun document disponible</p>
               )}
             </div>
             
             {/* Tracking Number */}
-            {order.ups_tracking_number && (
+            {order.quote_data?.shipping?.trackingNumber && (
               <div className="mt-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
                 <div className="flex justify-between items-center">
                   <div>
                     <p className="text-sm text-amber-700">N° Suivi UPS</p>
-                    <p className="font-mono font-bold text-amber-800">{order.ups_tracking_number}</p>
+                    <p className="font-mono font-bold text-amber-800">{order.quote_data.shipping.trackingNumber}</p>
                   </div>
-                  <a href={`https://www.ups.com/track?tracknum=${order.ups_tracking_number}`} target="_blank" rel="noopener noreferrer" 
+                  <a href={`https://www.ups.com/track?tracknum=${order.quote_data.shipping.trackingNumber}`} target="_blank" rel="noopener noreferrer" 
                     className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-sm font-medium">
                     Suivre →
                   </a>
@@ -5899,7 +6571,7 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
           )}
           
           {/* Documents Section */}
-          {(order.quote_url || order.signed_quote_url || order.bc_file_url || order.ups_label_url || order.bl_url) && (
+          {(order.quote_url || order.signed_quote_url || order.bc_file_url || order.quote_data?.shipping?.upsLabelUrl || order.quote_data?.shipping?.blUrl) && (
             <div>
               <h3 className="font-bold text-gray-700 mb-3">📁 Documents</h3>
               <div className="bg-gray-50 rounded-lg p-4">
@@ -5934,37 +6606,37 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
                       </div>
                     </a>
                   )}
-                  {order.ups_label_url && (
-                    <a href={order.ups_label_url} target="_blank" rel="noopener noreferrer" 
+                  {order.quote_data?.shipping?.upsLabelUrl && (
+                    <a href={order.quote_data.shipping.upsLabelUrl} target="_blank" rel="noopener noreferrer" 
                       className="flex items-center gap-2 p-3 bg-white rounded-lg border hover:bg-amber-50 hover:border-amber-300 transition-colors">
                       <span className="text-xl">🏷️</span>
                       <div>
                         <p className="font-medium text-gray-800 text-sm">Étiquette UPS</p>
-                        <p className="text-xs text-gray-500">{order.ups_tracking_number || 'PDF'}</p>
+                        <p className="text-xs text-gray-500">{order.quote_data.shipping.trackingNumber || 'PDF'}</p>
                       </div>
                     </a>
                   )}
-                  {order.bl_url && (
-                    <a href={order.bl_url} target="_blank" rel="noopener noreferrer" 
+                  {order.quote_data?.shipping?.blUrl && (
+                    <a href={order.quote_data.shipping.blUrl} target="_blank" rel="noopener noreferrer" 
                       className="flex items-center gap-2 p-3 bg-white rounded-lg border hover:bg-indigo-50 hover:border-indigo-300 transition-colors">
                       <span className="text-xl">📋</span>
                       <div>
                         <p className="font-medium text-gray-800 text-sm">Bon de Livraison</p>
-                        <p className="text-xs text-gray-500">{order.bl_number || 'PDF'}</p>
+                        <p className="text-xs text-gray-500">{order.quote_data.shipping.blNumber || 'PDF'}</p>
                       </div>
                     </a>
                   )}
                 </div>
                 
                 {/* Tracking Number */}
-                {order.ups_tracking_number && (
+                {order.quote_data?.shipping?.trackingNumber && (
                   <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
                     <div className="flex justify-between items-center">
                       <div>
                         <p className="text-xs text-amber-700">N° Suivi UPS</p>
-                        <p className="font-mono font-bold text-amber-800">{order.ups_tracking_number}</p>
+                        <p className="font-mono font-bold text-amber-800">{order.quote_data.shipping.trackingNumber}</p>
                       </div>
-                      <a href={`https://www.ups.com/track?tracknum=${order.ups_tracking_number}`} target="_blank" rel="noopener noreferrer" 
+                      <a href={`https://www.ups.com/track?tracknum=${order.quote_data.shipping.trackingNumber}`} target="_blank" rel="noopener noreferrer" 
                         className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-sm font-medium">
                         Suivre →
                       </a>
@@ -7211,23 +7883,53 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
         console.error('Error saving BL:', err);
       }
       
-      // Update service_request with all shipping data
-      const updateData = {
-        status: 'shipped',
-        shipped_at: new Date().toISOString(),
-        bl_number: blNumber,
-        ups_tracking_number: shipment.trackingNumber
+      // Update service_request - store shipping data in quote_data JSON field
+      const existingQuoteData = order.quote_data || {};
+      const updatedQuoteData = {
+        ...existingQuoteData,
+        shipping: {
+          trackingNumber: shipment.trackingNumber,
+          blNumber: blNumber,
+          parcels: shipment.parcels,
+          weight: shipment.weight,
+          shippedAt: new Date().toISOString(),
+          shippedBy: profile?.full_name || 'Admin',
+          upsLabelUrl: upsLabelUrl || null,
+          blUrl: blUrl || null
+        }
       };
-      
-      if (upsLabelUrl) updateData.ups_label_url = upsLabelUrl;
-      if (blUrl) updateData.bl_url = blUrl;
       
       const { error: updateError } = await supabase
         .from('service_requests')
-        .update(updateData)
+        .update({
+          status: 'shipped',
+          shipped_at: new Date().toISOString(),
+          quote_data: updatedQuoteData
+        })
         .eq('id', order.id);
       
       if (updateError) throw updateError;
+      
+      // Also save as attachments for easy access
+      if (upsLabelUrl) {
+        await supabase.from('request_attachments').insert({
+          request_id: order.id,
+          file_name: `UPS-Label-${shipment.trackingNumber}.pdf`,
+          file_url: upsLabelUrl,
+          file_type: 'ups_label',
+          uploaded_by: profile?.id || null
+        }).catch(e => console.error('Attachment error:', e));
+      }
+      
+      if (blUrl) {
+        await supabase.from('request_attachments').insert({
+          request_id: order.id,
+          file_name: `${blNumber}.pdf`,
+          file_url: blUrl,
+          file_type: 'bl',
+          uploaded_by: profile?.id || null
+        }).catch(e => console.error('Attachment error:', e));
+      }
       
       notify('🚚 Commande expédiée! Documents sauvegardés.');
       reload();
