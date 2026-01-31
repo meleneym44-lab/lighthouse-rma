@@ -1940,9 +1940,8 @@ const STATUS_STYLES = {
   repair_in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'Réparation en cours', icon: '◉', progress: 65 },
   repair_complete: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-300', label: 'Réparation terminée', icon: '●', progress: 75 },
   
-  // === PARTS ORDER STATUSES ===
-  parts_ordered: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-300', label: 'Pièces commandées', icon: '📦', progress: 50 },
-  parts_received: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-300', label: 'Pièces reçues', icon: '✓', progress: 75 },
+  // === PARTS ORDER STATUSES (using existing db statuses) ===
+  // processing = parts ordered, in_progress = parts received
   
   // === LEGACY (for backwards compatibility) ===
   received: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu', icon: '◕', progress: 40 },
@@ -8668,14 +8667,14 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                         { id: 'submitted', label: 'Demande soumise', icon: '📝' },
                         { id: 'quote_sent', label: 'Devis envoyé', icon: '💰' },
                         { id: 'bc_review', label: 'BC en vérification', icon: '📋' },
-                        { id: 'parts_ordered', label: 'Pièces commandées', icon: '🛒' },
-                        { id: 'parts_received', label: 'Pièces reçues', icon: '📥' },
+                        { id: 'processing', label: 'Pièces commandées', icon: '🛒' },
+                        { id: 'in_progress', label: 'Pièces reçues', icon: '📥' },
                         { id: 'ready_to_ship', label: 'Prêt à expédier', icon: '📦' },
                         { id: 'shipped', label: 'Expédié', icon: '🚚' },
                         { id: 'delivered', label: 'Livré', icon: '✅' }
                       ];
                       
-                      const statusOrder = ['submitted', 'quote_sent', 'bc_review', 'parts_ordered', 'parts_received', 'ready_to_ship', 'shipped', 'delivered', 'completed'];
+                      const statusOrder = ['submitted', 'quote_sent', 'bc_review', 'processing', 'in_progress', 'ready_to_ship', 'shipped', 'delivered', 'completed'];
                       const currentIdx = statusOrder.indexOf(request.status);
                       
                       return (
