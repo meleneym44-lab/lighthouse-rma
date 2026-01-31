@@ -7336,6 +7336,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         bc_signature_date: signatureDateISO,
         bc_file_url: fileUrl,
         bc_signature_url: signatureUrl,
+        signed_quote_url: signedQuotePdfUrl,
         quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
       };
       
@@ -7878,9 +7879,15 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             const partsTotal = quoteData.partsTotal || parts.reduce((sum, p) => sum + (p.lineTotal || 0), 0);
             const grandTotal = quoteData.grandTotal || (partsTotal + (shipping.total || 0));
             
-            // Print function
-            const handlePrint = () => {
-              window.print();
+            // Print function - opens PDF in new tab
+            const handlePrint = async () => {
+              try {
+                const pdfBlob = await generatePartsQuotePDF({ request, isSigned: false });
+                const url = URL.createObjectURL(pdfBlob);
+                window.open(url, '_blank');
+              } catch (e) {
+                console.error('PDF generation error:', e);
+              }
             };
             
             // Download PDF function
@@ -7899,6 +7906,9 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 console.error('PDF generation error:', e);
               }
             };
+            
+            // Get company info from request
+            const company = request.companies || {};
             
             return (
               <div className="fixed inset-0 bg-black/70 z-50 overflow-hidden flex flex-col">
@@ -7973,17 +7983,17 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     {/* Client Info */}
                     <div className="px-8 py-4 border-b">
                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Client</p>
-                      <p className="font-bold text-lg text-[#1a1a2e]">{request.companies?.name || 'Client'}</p>
-                      {request.companies?.billing_address && (
-                        <p className="text-gray-600">{request.companies.billing_address}</p>
+                      <p className="font-bold text-lg text-[#1a1a2e]">{company.name || 'Client'}</p>
+                      {company.billing_address && (
+                        <p className="text-gray-600">{company.billing_address}</p>
                       )}
-                      {(request.companies?.billing_postal_code || request.companies?.billing_city) && (
+                      {(company.billing_postal_code || company.billing_city) && (
                         <p className="text-gray-600">
-                          {request.companies?.billing_postal_code} {request.companies?.billing_city}
+                          {company.billing_postal_code} {company.billing_city}
                         </p>
                       )}
-                      {request.companies?.siret && (
-                        <p className="text-gray-500 text-sm mt-1">SIRET: {request.companies.siret}</p>
+                      {company.siret && (
+                        <p className="text-gray-500 text-sm mt-1">SIRET: {company.siret}</p>
                       )}
                     </div>
                     
@@ -7991,40 +8001,40 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     <div className="px-8 py-6 flex-1">
                       {/* Parts Table */}
                       <h3 className="font-bold text-[#1a1a2e] mb-3">Pièces Commandées</h3>
-                      <table className="w-full border-collapse mb-6">
+                      <table className="w-full border-collapse mb-6 text-sm">
                         <thead>
                           <tr className="bg-[#1a1a2e] text-white">
-                            <th className="px-3 py-2 text-left text-sm w-12">Qté</th>
-                            <th className="px-3 py-2 text-left text-sm w-28">Référence</th>
-                            <th className="px-3 py-2 text-left text-sm">Désignation</th>
-                            <th className="px-3 py-2 text-right text-sm w-20">P.U. HT</th>
-                            <th className="px-3 py-2 text-right text-sm w-20">Total</th>
+                            <th className="px-2 py-2 text-center w-10">Qté</th>
+                            <th className="px-2 py-2 text-left w-24">Réf.</th>
+                            <th className="px-2 py-2 text-left">Désignation</th>
+                            <th className="px-2 py-2 text-right w-16">P.U.</th>
+                            <th className="px-2 py-2 text-right w-16">Total</th>
                           </tr>
                         </thead>
                         <tbody>
                           {parts.map((part, idx) => (
                             <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-3 py-2 border-b border-gray-200 text-center">{part.quantity}</td>
-                              <td className="px-3 py-2 border-b border-gray-200 font-mono text-xs">{part.partNumber || '—'}</td>
-                              <td className="px-3 py-2 border-b border-gray-200 text-sm">{part.description}</td>
-                              <td className="px-3 py-2 border-b border-gray-200 text-right text-sm">{(part.unitPrice || 0).toFixed(2)} €</td>
-                              <td className="px-3 py-2 border-b border-gray-200 text-right font-medium text-sm">{(part.lineTotal || 0).toFixed(2)} €</td>
+                              <td className="px-2 py-2 border-b border-gray-200 text-center">{part.quantity}</td>
+                              <td className="px-2 py-2 border-b border-gray-200 font-mono text-xs">{part.partNumber || '—'}</td>
+                              <td className="px-2 py-2 border-b border-gray-200">{part.description}</td>
+                              <td className="px-2 py-2 border-b border-gray-200 text-right">{(part.unitPrice || 0).toFixed(2)}€</td>
+                              <td className="px-2 py-2 border-b border-gray-200 text-right font-medium">{(part.lineTotal || 0).toFixed(2)}€</td>
                             </tr>
                           ))}
                           {shipping.total > 0 && (
                             <tr className="bg-blue-50">
-                              <td className="px-3 py-2 border-b border-blue-200 text-center">{shipping.parcels}</td>
-                              <td className="px-3 py-2 border-b border-blue-200 font-mono text-xs">SHIPPING</td>
-                              <td className="px-3 py-2 border-b border-blue-200 text-sm text-blue-800">Frais de port ({shipping.parcels} colis)</td>
-                              <td className="px-3 py-2 border-b border-blue-200 text-right text-sm">{(shipping.unitPrice || 0).toFixed(2)} €</td>
-                              <td className="px-3 py-2 border-b border-blue-200 text-right font-medium text-sm">{(shipping.total || 0).toFixed(2)} €</td>
+                              <td className="px-2 py-2 border-b border-blue-200 text-center">{shipping.parcels}</td>
+                              <td className="px-2 py-2 border-b border-blue-200 font-mono text-xs">PORT</td>
+                              <td className="px-2 py-2 border-b border-blue-200 text-blue-800">Frais de port ({shipping.parcels} colis)</td>
+                              <td className="px-2 py-2 border-b border-blue-200 text-right">{(shipping.unitPrice || 0).toFixed(2)}€</td>
+                              <td className="px-2 py-2 border-b border-blue-200 text-right font-medium">{(shipping.total || 0).toFixed(2)}€</td>
                             </tr>
                           )}
                         </tbody>
                         <tfoot>
                           <tr className="bg-amber-500 text-white">
-                            <td colSpan={4} className="px-3 py-2 text-right font-bold text-sm">TOTAL HT</td>
-                            <td className="px-3 py-2 text-right font-bold">{grandTotal.toFixed(2)} €</td>
+                            <td colSpan={4} className="px-2 py-2 text-right font-bold whitespace-nowrap">TOTAL HT</td>
+                            <td className="px-2 py-2 text-right font-bold whitespace-nowrap">{grandTotal.toFixed(2)}€</td>
                           </tr>
                         </tfoot>
                       </table>
@@ -8992,9 +9002,9 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
                   </svg>
-                  Certificats et Devis
+                  {isPartsOrder ? 'Devis et Documents' : 'Certificats et Devis'}
                 </h3>
-                {request.quote_url || request.certificate_url || request.bc_file_url ? (
+                {request.quote_url || request.certificate_url || request.bc_file_url || request.signed_quote_url ? (
                   <div className="space-y-2">
                     {request.quote_url && (
                       <a 
@@ -9038,6 +9048,27 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                         </svg>
                       </a>
                     )}
+                    {request.signed_quote_url && (
+                      <a 
+                        href={request.signed_quote_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors border border-amber-200"
+                      >
+                        <div className="w-10 h-10 bg-amber-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                          PDF
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-amber-900">Devis Signé</p>
+                          <p className="text-xs text-amber-600">
+                            {request.bc_signed_by ? `Approuvé par ${request.bc_signed_by}` : 'Télécharger le devis signé'}
+                          </p>
+                        </div>
+                        <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </a>
+                    )}
                     {request.certificate_url && (
                       <a 
                         href={request.certificate_url}
@@ -9069,7 +9100,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               </div>
 
               {/* Empty state if no attachments at all */}
-              {attachments.length === 0 && !request.quote_url && !request.certificate_url && !request.bc_file_url && (
+              {attachments.length === 0 && !request.quote_url && !request.certificate_url && !request.bc_file_url && !request.signed_quote_url && (
                 <div className="text-center py-12">
                   <svg className="w-16 h-16 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
