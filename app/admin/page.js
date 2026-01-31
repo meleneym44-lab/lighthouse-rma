@@ -5234,7 +5234,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
         createdAt: new Date().toISOString()
       };
       
-      // Update order
+      // Update order with quote data first
       const { error } = await supabase
         .from('service_requests')
         .update({
