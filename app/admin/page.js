@@ -5328,7 +5328,8 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
     const { error } = await supabase
       .from('service_requests')
       .update({ 
-        status: 'in_progress'
+        status: 'in_progress',
+        bc_approved_at: new Date().toISOString()
       })
       .eq('id', order.id);
     
@@ -5373,6 +5374,10 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
   const quoteData = order.quote_data || {};
   const parts = quoteData.parts || [];
   
+  // Get the document URL - prefer signed_quote_url (generated PDF with signature), then bc_file_url (uploaded BC)
+  const documentUrl = order.signed_quote_url || order.bc_file_url;
+  const documentType = order.signed_quote_url ? 'Devis Signé' : 'Bon de Commande';
+  
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={onClose}>
       <div className="bg-white w-full h-full max-w-[98vw] max-h-[98vh] m-auto rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
@@ -5390,43 +5395,46 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
           {/* Left: Document Preview - Takes most of the space */}
           <div className="flex-1 flex flex-col bg-gray-800 p-4">
             <div className="flex justify-between items-center mb-3">
-              <h3 className="font-bold text-white text-lg">📄 Document BC</h3>
-              {order.bc_file_url && (
-                <a href={order.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">
-                  Ouvrir dans nouvel onglet ↗
-                </a>
-              )}
+              <h3 className="font-bold text-white text-lg">📄 {documentType}</h3>
+              <div className="flex gap-2">
+                {order.signed_quote_url && order.bc_file_url && order.signed_quote_url !== order.bc_file_url && (
+                  <a href={order.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-3 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded text-sm">
+                    BC uploadé ↗
+                  </a>
+                )}
+                {documentUrl && (
+                  <a href={documentUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">
+                    Ouvrir dans nouvel onglet ↗
+                  </a>
+                )}
+              </div>
             </div>
             
-            {/* BC File - Full height PDF viewer */}
-            {order.bc_file_url ? (
+            {/* Document Preview - Full height PDF viewer */}
+            {documentUrl ? (
               <div className="flex-1 rounded-lg overflow-hidden bg-white">
-                {order.bc_file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                  <img src={order.bc_file_url} alt="BC Document" className="w-full h-full object-contain" />
-                ) : order.bc_file_url.match(/\.pdf$/i) ? (
+                {documentUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                  <img src={documentUrl} alt="Document" className="w-full h-full object-contain" />
+                ) : (
                   <object
-                    data={`${order.bc_file_url}#view=Fit`}
+                    data={`${documentUrl}#view=Fit`}
                     type="application/pdf"
                     className="w-full h-full"
                     style={{ minHeight: '100%' }}
                   >
                     <iframe 
-                      src={`${order.bc_file_url}#view=Fit`} 
+                      src={`${documentUrl}#view=Fit`} 
                       className="w-full h-full" 
-                      title="BC PDF"
+                      title="Document PDF"
                     />
                   </object>
-                ) : (
-                  <div className="h-full flex items-center justify-center">
-                    <a href={order.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-8 py-4 bg-blue-500 text-white rounded-lg text-lg font-medium">
-                      📥 Télécharger le fichier
-                    </a>
-                  </div>
                 )}
               </div>
             ) : (
-              <div className="flex-1 border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center text-gray-400 text-lg">
-                Aucun fichier BC uploadé
+              <div className="flex-1 border-2 border-dashed border-gray-600 rounded-lg flex flex-col items-center justify-center text-gray-400">
+                <div className="text-4xl mb-4">📄</div>
+                <p className="text-lg">Aucun document disponible</p>
+                <p className="text-sm mt-2">Le client n'a pas encore soumis de BC signé</p>
               </div>
             )}
           </div>
@@ -5457,11 +5465,33 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
               </div>
             </div>
             
+            {/* Documents Available */}
+            <div className="bg-white rounded-lg p-4 border">
+              <h4 className="font-medium text-gray-700 mb-2">📁 Documents</h4>
+              <div className="space-y-2 text-sm">
+                {order.quote_url && (
+                  <a href={order.quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600 hover:underline">
+                    📄 Devis original ↗
+                  </a>
+                )}
+                {order.signed_quote_url && (
+                  <a href={order.signed_quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-green-600 hover:underline">
+                    ✅ Devis signé ↗
+                  </a>
+                )}
+                {order.bc_file_url && order.bc_file_url !== order.signed_quote_url && (
+                  <a href={order.bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-purple-600 hover:underline">
+                    📎 BC uploadé ↗
+                  </a>
+                )}
+              </div>
+            </div>
+            
             {/* Signature */}
             {order.bc_signature_url && (
               <div className="bg-white rounded-lg p-4 border">
                 <h4 className="font-medium text-gray-700 mb-2">✍️ Signature</h4>
-                <img src={order.bc_signature_url} alt="Signature" className="max-h-20 mx-auto bg-gray-50 rounded p-2" />
+                <img src={order.bc_signature_url} alt="Signature" className="max-h-20 mx-auto bg-gray-50 rounded p-2 border" />
                 <p className="text-center text-xs text-gray-500 mt-1">
                   {order.bc_signed_by || '—'} {order.bc_signature_date && `• ${new Date(order.bc_signature_date).toLocaleDateString('fr-FR')}`}
                 </p>
@@ -5667,6 +5697,82 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
               </>
             )}
           </div>
+          
+          {/* Documents Section */}
+          <div className="bg-gray-50 rounded-lg p-4 border">
+            <h3 className="font-bold text-gray-800 mb-3">📁 Documents</h3>
+            <div className="grid grid-cols-2 gap-3">
+              {order.quote_url && (
+                <a href={order.quote_url} target="_blank" rel="noopener noreferrer" 
+                  className="flex items-center gap-2 p-3 bg-white rounded-lg border hover:bg-blue-50 hover:border-blue-300 transition-colors">
+                  <span className="text-2xl">📄</span>
+                  <div>
+                    <p className="font-medium text-gray-800">Devis</p>
+                    <p className="text-xs text-gray-500">Original</p>
+                  </div>
+                </a>
+              )}
+              {order.signed_quote_url && (
+                <a href={order.signed_quote_url} target="_blank" rel="noopener noreferrer" 
+                  className="flex items-center gap-2 p-3 bg-white rounded-lg border hover:bg-green-50 hover:border-green-300 transition-colors">
+                  <span className="text-2xl">✅</span>
+                  <div>
+                    <p className="font-medium text-gray-800">Devis Signé</p>
+                    <p className="text-xs text-gray-500">Approuvé par client</p>
+                  </div>
+                </a>
+              )}
+              {order.bc_file_url && order.bc_file_url !== order.signed_quote_url && (
+                <a href={order.bc_file_url} target="_blank" rel="noopener noreferrer" 
+                  className="flex items-center gap-2 p-3 bg-white rounded-lg border hover:bg-purple-50 hover:border-purple-300 transition-colors">
+                  <span className="text-2xl">📎</span>
+                  <div>
+                    <p className="font-medium text-gray-800">BC Uploadé</p>
+                    <p className="text-xs text-gray-500">Fichier client</p>
+                  </div>
+                </a>
+              )}
+              {order.ups_label_url && (
+                <a href={order.ups_label_url} target="_blank" rel="noopener noreferrer" 
+                  className="flex items-center gap-2 p-3 bg-white rounded-lg border hover:bg-amber-50 hover:border-amber-300 transition-colors">
+                  <span className="text-2xl">🏷️</span>
+                  <div>
+                    <p className="font-medium text-gray-800">Étiquette UPS</p>
+                    <p className="text-xs text-gray-500">{order.ups_tracking_number || 'PDF'}</p>
+                  </div>
+                </a>
+              )}
+              {order.bl_url && (
+                <a href={order.bl_url} target="_blank" rel="noopener noreferrer" 
+                  className="flex items-center gap-2 p-3 bg-white rounded-lg border hover:bg-indigo-50 hover:border-indigo-300 transition-colors">
+                  <span className="text-2xl">📋</span>
+                  <div>
+                    <p className="font-medium text-gray-800">Bon de Livraison</p>
+                    <p className="text-xs text-gray-500">{order.bl_number || 'PDF'}</p>
+                  </div>
+                </a>
+              )}
+              {!order.quote_url && !order.signed_quote_url && !order.bc_file_url && !order.ups_label_url && !order.bl_url && (
+                <p className="col-span-2 text-gray-500 text-center py-4">Aucun document disponible</p>
+              )}
+            </div>
+            
+            {/* Tracking Number */}
+            {order.ups_tracking_number && (
+              <div className="mt-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-sm text-amber-700">N° Suivi UPS</p>
+                    <p className="font-mono font-bold text-amber-800">{order.ups_tracking_number}</p>
+                  </div>
+                  <a href={`https://www.ups.com/track?tracknum=${order.ups_tracking_number}`} target="_blank" rel="noopener noreferrer" 
+                    className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-sm font-medium">
+                    Suivre →
+                  </a>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         
         {/* Footer */}
@@ -5788,6 +5894,83 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
               <h3 className="font-bold text-gray-700 mb-3">📍 Adresse de livraison</h3>
               <div className="bg-blue-50 rounded-lg p-4">
                 <p className="text-gray-600">ID: {order.shipping_address_id}</p>
+              </div>
+            </div>
+          )}
+          
+          {/* Documents Section */}
+          {(order.quote_url || order.signed_quote_url || order.bc_file_url || order.ups_label_url || order.bl_url) && (
+            <div>
+              <h3 className="font-bold text-gray-700 mb-3">📁 Documents</h3>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="grid grid-cols-2 gap-3">
+                  {order.quote_url && (
+                    <a href={order.quote_url} target="_blank" rel="noopener noreferrer" 
+                      className="flex items-center gap-2 p-3 bg-white rounded-lg border hover:bg-blue-50 hover:border-blue-300 transition-colors">
+                      <span className="text-xl">📄</span>
+                      <div>
+                        <p className="font-medium text-gray-800 text-sm">Devis</p>
+                        <p className="text-xs text-gray-500">Original</p>
+                      </div>
+                    </a>
+                  )}
+                  {order.signed_quote_url && (
+                    <a href={order.signed_quote_url} target="_blank" rel="noopener noreferrer" 
+                      className="flex items-center gap-2 p-3 bg-white rounded-lg border hover:bg-green-50 hover:border-green-300 transition-colors">
+                      <span className="text-xl">✅</span>
+                      <div>
+                        <p className="font-medium text-gray-800 text-sm">Devis Signé</p>
+                        <p className="text-xs text-gray-500">Approuvé</p>
+                      </div>
+                    </a>
+                  )}
+                  {order.bc_file_url && order.bc_file_url !== order.signed_quote_url && (
+                    <a href={order.bc_file_url} target="_blank" rel="noopener noreferrer" 
+                      className="flex items-center gap-2 p-3 bg-white rounded-lg border hover:bg-purple-50 hover:border-purple-300 transition-colors">
+                      <span className="text-xl">📎</span>
+                      <div>
+                        <p className="font-medium text-gray-800 text-sm">BC Uploadé</p>
+                        <p className="text-xs text-gray-500">Fichier client</p>
+                      </div>
+                    </a>
+                  )}
+                  {order.ups_label_url && (
+                    <a href={order.ups_label_url} target="_blank" rel="noopener noreferrer" 
+                      className="flex items-center gap-2 p-3 bg-white rounded-lg border hover:bg-amber-50 hover:border-amber-300 transition-colors">
+                      <span className="text-xl">🏷️</span>
+                      <div>
+                        <p className="font-medium text-gray-800 text-sm">Étiquette UPS</p>
+                        <p className="text-xs text-gray-500">{order.ups_tracking_number || 'PDF'}</p>
+                      </div>
+                    </a>
+                  )}
+                  {order.bl_url && (
+                    <a href={order.bl_url} target="_blank" rel="noopener noreferrer" 
+                      className="flex items-center gap-2 p-3 bg-white rounded-lg border hover:bg-indigo-50 hover:border-indigo-300 transition-colors">
+                      <span className="text-xl">📋</span>
+                      <div>
+                        <p className="font-medium text-gray-800 text-sm">Bon de Livraison</p>
+                        <p className="text-xs text-gray-500">{order.bl_number || 'PDF'}</p>
+                      </div>
+                    </a>
+                  )}
+                </div>
+                
+                {/* Tracking Number */}
+                {order.ups_tracking_number && (
+                  <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-xs text-amber-700">N° Suivi UPS</p>
+                        <p className="font-mono font-bold text-amber-800">{order.ups_tracking_number}</p>
+                      </div>
+                      <a href={`https://www.ups.com/track?tracknum=${order.ups_tracking_number}`} target="_blank" rel="noopener noreferrer" 
+                        className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-sm font-medium">
+                        Suivre →
+                      </a>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -6919,21 +7102,134 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
     setBlsPrinted(prev => ({ ...prev, [0]: true }));
   };
   
-  // Mark as shipped
+  // Mark as shipped - saves all documents
   const markAsShipped = async () => {
     setSaving(true);
     try {
+      const blNumber = generateBLNumber();
+      let upsLabelUrl = null;
+      let blUrl = null;
+      
+      // Save UPS label PDF if we have it
+      const labelData = upsLabels[0];
+      if (labelData) {
+        try {
+          const byteCharacters = atob(labelData);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const upsPdfBlob = new Blob([byteArray], { type: 'application/pdf' });
+          
+          const safeTracking = (shipment.trackingNumber || 'label').replace(/[^a-zA-Z0-9-_]/g, '');
+          const upsFileName = `${order.request_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
+          upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${order.request_number}`, upsFileName);
+          console.log('UPS label uploaded:', upsLabelUrl);
+        } catch (err) {
+          console.error('Error saving UPS label:', err);
+        }
+      }
+      
+      // Generate and save BL PDF
+      try {
+        const bl = generateBLContent();
+        const employeeName = profile?.full_name || 'Lighthouse France';
+        const biz = businessSettings || {};
+        
+        // Load jsPDF
+        const jsPDF = await loadJsPDF();
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        
+        // Add content to PDF
+        pdf.setFontSize(24);
+        pdf.text('LIGHTHOUSE France', 15, 20);
+        pdf.setFontSize(18);
+        pdf.text('BON DE LIVRAISON', 105, 35, { align: 'center' });
+        pdf.setFontSize(14);
+        pdf.text(blNumber, 105, 45, { align: 'center' });
+        
+        pdf.setFontSize(10);
+        pdf.text(`${biz.city || 'Créteil'}, le ${bl.date}`, 15, 55);
+        pdf.text(`Commande: ${bl.orderNumber}`, 140, 55);
+        
+        // Client info
+        pdf.setFontSize(9);
+        pdf.text('Destinataire:', 15, 70);
+        pdf.setFontSize(11);
+        pdf.text(bl.client.name, 15, 77);
+        if (bl.client.attention) pdf.text(`À l'att. de: ${bl.client.attention}`, 15, 84);
+        pdf.setFontSize(10);
+        pdf.text(bl.client.street, 15, bl.client.attention ? 91 : 84);
+        pdf.text(bl.client.city, 15, bl.client.attention ? 98 : 91);
+        
+        // Parts table
+        let yPos = bl.client.attention ? 115 : 105;
+        pdf.setFillColor(51, 51, 51);
+        pdf.rect(15, yPos - 5, 180, 8, 'F');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(9);
+        pdf.text('Qté', 20, yPos);
+        pdf.text('Référence', 40, yPos);
+        pdf.text('Désignation', 90, yPos);
+        pdf.setTextColor(0, 0, 0);
+        
+        yPos += 8;
+        bl.parts.forEach((p, i) => {
+          pdf.text(String(p.quantity), 20, yPos);
+          pdf.text(p.partNumber, 40, yPos);
+          pdf.text(p.description.substring(0, 50), 90, yPos);
+          yPos += 7;
+        });
+        
+        // Shipping info
+        yPos += 10;
+        pdf.setFontSize(10);
+        pdf.text('Informations d\'expédition:', 15, yPos);
+        yPos += 7;
+        pdf.text(`Transporteur: ${bl.shipping.carrier}`, 15, yPos);
+        pdf.text(`N° de suivi: ${bl.shipping.tracking}`, 105, yPos);
+        yPos += 7;
+        pdf.text(`Colis: ${bl.shipping.parcels}`, 15, yPos);
+        pdf.text(`Poids: ${bl.shipping.weight} kg`, 105, yPos);
+        
+        // Prepared by
+        yPos += 15;
+        pdf.text(`Préparé par: ${employeeName}`, 15, yPos);
+        
+        // Footer
+        pdf.setFontSize(8);
+        pdf.text(`${biz.company_name || 'Lighthouse France SAS'} - ${biz.address || '16 rue Paul Séjourné'}, ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'}`, 105, 280, { align: 'center' });
+        pdf.text(`SIRET ${biz.siret || '50178134800013'} | TVA ${biz.tva || 'FR 86501781348'}`, 105, 285, { align: 'center' });
+        
+        const blPdfBlob = pdf.output('blob');
+        const safeBLNumber = blNumber.replace(/[^a-zA-Z0-9-_]/g, '');
+        const blFileName = `${order.request_number}_BL_${safeBLNumber}_${Date.now()}.pdf`;
+        blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${order.request_number}`, blFileName);
+        console.log('BL uploaded:', blUrl);
+      } catch (err) {
+        console.error('Error saving BL:', err);
+      }
+      
+      // Update service_request with all shipping data
+      const updateData = {
+        status: 'shipped',
+        shipped_at: new Date().toISOString(),
+        bl_number: blNumber,
+        ups_tracking_number: shipment.trackingNumber
+      };
+      
+      if (upsLabelUrl) updateData.ups_label_url = upsLabelUrl;
+      if (blUrl) updateData.bl_url = blUrl;
+      
       const { error: updateError } = await supabase
         .from('service_requests')
-        .update({
-          status: 'shipped',
-          bl_number: generateBLNumber()
-        })
+        .update(updateData)
         .eq('id', order.id);
       
       if (updateError) throw updateError;
       
-      notify('🚚 Commande expédiée!');
+      notify('🚚 Commande expédiée! Documents sauvegardés.');
       reload();
       onClose();
     } catch (err) {
