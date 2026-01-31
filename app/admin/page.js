@@ -5327,8 +5327,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
     const { error } = await supabase
       .from('service_requests')
       .update({ 
-        status: 'parts_ordered', 
-        bc_approved_at: new Date().toISOString()
+        status: 'parts_ordered'
       })
       .eq('id', order.id);
     
