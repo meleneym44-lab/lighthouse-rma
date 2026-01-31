@@ -2007,19 +2007,21 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
   const [viewMode, setViewMode] = useState('rma'); // 'rma' or 'device'
   
   const archivedRMAs = requests.filter(r => r.status === 'archived');
-  const activeRMAs = requests.filter(r => r.request_number && !['completed', 'cancelled', 'archived', 'shipped'].includes(r.status));
+  const activeRMAs = requests.filter(r => r.request_number && !['completed', 'cancelled', 'archived', 'shipped'].includes(r.status) && r.request_type !== 'parts');
   
-  // BC needs review
+  // BC needs review - EXCLUDE parts orders (they have their own section)
   const needsReview = requests.filter(r => 
-    r.status === 'bc_review' || 
-    ((r.bc_file_url || r.bc_signature_url) && r.status === 'waiting_bc')
+    r.request_type !== 'parts' && (
+      r.status === 'bc_review' || 
+      ((r.bc_file_url || r.bc_signature_url) && r.status === 'waiting_bc')
+    )
   );
   
-  // Waiting for device
-  const waitingDevice = activeRMAs.filter(r => r.status === 'waiting_device');
+  // Waiting for device - EXCLUDE parts orders
+  const waitingDevice = activeRMAs.filter(r => r.status === 'waiting_device' && r.request_type !== 'parts');
   
-  // Waiting for BC (quote sent but not signed yet)
-  const waitingBC = activeRMAs.filter(r => ['quote_sent', 'waiting_bc'].includes(r.status) && !r.bc_submitted_at);
+  // Waiting for BC (quote sent but not signed yet) - EXCLUDE parts orders
+  const waitingBC = activeRMAs.filter(r => ['quote_sent', 'waiting_bc'].includes(r.status) && !r.bc_submitted_at && r.request_type !== 'parts');
   
   // Service statuses: File d'attente, Inspection, Approbation, Étalonnage, Réparation
   const serviceStatuses = ['in_queue', 'inspection', 'approbation', 'calibration', 'repair', 'calibration_in_progress', 'repair_in_progress'];
