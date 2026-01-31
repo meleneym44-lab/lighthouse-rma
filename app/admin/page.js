@@ -5002,9 +5002,9 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
   const bcReviewOrders = requests.filter(r => r.status === 'bc_review');
   
   // Approved orders ready for processing (after BC approved)
-  // Using existing statuses: processing (ordered), in_progress (received), ready_to_ship
+  // Using existing statuses: in_progress, ready_to_ship
   const approvedOrders = requests.filter(r => 
-    ['processing', 'in_progress', 'ready_to_ship'].includes(r.status)
+    ['in_progress', 'ready_to_ship'].includes(r.status)
   );
   const shippedOrders = requests.filter(r => ['shipped', 'delivered', 'completed'].includes(r.status));
   
@@ -5016,8 +5016,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
     quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
     quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: 'Révision demandée' },
     bc_review: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'BC à vérifier' },
-    processing: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Pièces commandées' },
-    in_progress: { bg: 'bg-teal-100', text: 'text-teal-700', label: 'Pièces reçues' },
+    in_progress: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En cours de traitement' },
     ready_to_ship: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Prêt à expédier' },
     shipped: { bg: 'bg-green-100', text: 'text-green-700', label: 'Expédié' },
     delivered: { bg: 'bg-green-100', text: 'text-green-700', label: 'Livré' },
@@ -5196,12 +5195,10 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-2xl ${
-                        order.status === 'processing' ? 'bg-orange-100' :
-                        order.status === 'in_progress' ? 'bg-teal-100' :
+                        order.status === 'in_progress' ? 'bg-orange-100' :
                         'bg-indigo-100'
                       }`}>
-                        {order.status === 'processing' ? '📦' :
-                         order.status === 'in_progress' ? '✓' : '🚚'}
+                        {order.status === 'in_progress' ? '📦' : '🚚'}
                       </div>
                       <div>
                         <p className="font-mono font-bold text-gray-800">{order.request_number}</p>
@@ -5330,7 +5327,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
     const { error } = await supabase
       .from('service_requests')
       .update({ 
-        status: 'processing'
+        status: 'in_progress'
       })
       .eq('id', order.id);
     
@@ -5594,12 +5591,11 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
         <div className="px-6 py-4 border-b bg-gray-50">
           <div className="flex items-center justify-between">
             {[
-              { id: 'processing', label: 'Commandé', icon: '🛒' },
-              { id: 'in_progress', label: 'Reçu', icon: '📥' },
-              { id: 'ready_to_ship', label: 'Prêt', icon: '📦' },
-              { id: 'shipped', label: 'Expédié', icon: '🚚' }
+              { id: 'in_progress', label: 'En cours', icon: '📦' },
+              { id: 'ready_to_ship', label: 'Prêt', icon: '🚚' },
+              { id: 'shipped', label: 'Expédié', icon: '✅' }
             ].map((step, idx) => {
-              const statusOrder = ['processing', 'in_progress', 'ready_to_ship', 'shipped'];
+              const statusOrder = ['in_progress', 'ready_to_ship', 'shipped'];
               const currentIdx = statusOrder.indexOf(order.status);
               const stepIdx = statusOrder.indexOf(step.id);
               const isComplete = currentIdx >= stepIdx;
@@ -5643,30 +5639,16 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
           
           {/* Action based on status */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            {order.status === 'processing' && (
-              <>
-                <h4 className="font-bold text-blue-800 mb-2">📦 Pièces commandées aux USA</h4>
-                <p className="text-blue-600 text-sm mb-4">Cliquez sur "Pièces Reçues" quand vous recevez les pièces.</p>
-                <button
-                  onClick={() => updateStatus('in_progress', {})}
-                  disabled={saving}
-                  className="w-full px-4 py-3 bg-teal-500 hover:bg-teal-600 text-white rounded-lg font-bold disabled:opacity-50"
-                >
-                  {saving ? '...' : '📥 Marquer comme Pièces Reçues'}
-                </button>
-              </>
-            )}
-            
             {order.status === 'in_progress' && (
               <>
-                <h4 className="font-bold text-blue-800 mb-2">✓ Pièces reçues</h4>
-                <p className="text-blue-600 text-sm mb-4">Préparez le colis et marquez comme prêt à expédier.</p>
+                <h4 className="font-bold text-blue-800 mb-2">📦 Commande en cours de traitement</h4>
+                <p className="text-blue-600 text-sm mb-4">Quand les pièces sont prêtes, marquez comme prêt à expédier.</p>
                 <button
                   onClick={() => updateStatus('ready_to_ship', {})}
                   disabled={saving}
                   className="w-full px-4 py-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-bold disabled:opacity-50"
                 >
-                  {saving ? '...' : '📦 Marquer Prêt à Expédier'}
+                  {saving ? '...' : '🚚 Marquer Prêt à Expédier'}
                 </button>
               </>
             )}
