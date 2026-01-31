@@ -7869,164 +7869,163 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             const grandTotal = quoteData.grandTotal || (partsTotal + (shipping.total || 0));
             
             return (
-              <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 overflow-y-auto">
-                <div className="bg-gray-300 rounded-xl w-full max-w-4xl my-4" onClick={e => e.stopPropagation()}>
-                  {/* Modal Header */}
-                  <div className="sticky top-0 bg-amber-600 text-white px-6 py-4 flex justify-between items-center z-10 rounded-t-xl">
-                    <div>
-                      <h2 className="text-xl font-bold">Devis Pièces Détachées</h2>
-                      <p className="text-amber-200">{request.request_number || 'En attente'}</p>
-                    </div>
-                    <button onClick={() => setShowQuoteModal(false)} className="text-amber-200 hover:text-white text-2xl">&times;</button>
+              <div className="fixed inset-0 bg-black/70 z-50 overflow-hidden flex flex-col">
+                {/* Fixed Header */}
+                <div className="bg-amber-600 text-white px-6 py-4 flex justify-between items-center flex-shrink-0">
+                  <div>
+                    <h2 className="text-xl font-bold">Devis Pièces Détachées</h2>
+                    <p className="text-amber-200">{request.request_number || 'En attente'}</p>
                   </div>
+                  <button onClick={() => setShowQuoteModal(false)} className="text-amber-200 hover:text-white text-2xl">&times;</button>
+                </div>
 
+                {/* Scrollable Content Area */}
+                <div className="flex-1 overflow-y-auto bg-gray-400 p-6">
                   {/* A4 Paper Container */}
-                  <div className="p-6">
-                    <div className="bg-white shadow-2xl mx-auto flex flex-col" style={{ width: '210mm', minHeight: '297mm', maxWidth: '100%' }}>
-                      
-                      {/* Quote Header */}
-                      <div className="px-8 pt-8 pb-4">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <img 
-                              src="/images/logos/lighthouse-logo.png" 
-                              alt="Lighthouse France" 
-                              className="h-14 w-auto mb-1"
-                              onError={(e) => {
-                                e.target.style.display = 'none';
-                                e.target.nextSibling.style.display = 'block';
-                              }}
-                            />
-                            <div style={{ display: 'none' }}>
-                              <h1 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h1>
-                              <p className="text-gray-500">France</p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xl font-bold text-amber-600">DEVIS PIÈCES</p>
-                            <p className="text-gray-500 font-mono">{quoteData.quoteRef || request.request_number}</p>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {/* Amber accent line */}
-                      <div className="h-1.5 bg-amber-500"></div>
-                      
-                      {/* Date bar */}
-                      <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm">
+                  <div className="bg-white shadow-2xl mx-auto flex flex-col" style={{ width: '210mm', minHeight: '297mm', maxWidth: '100%' }}>
+                    
+                    {/* Quote Header */}
+                    <div className="px-8 pt-8 pb-4">
+                      <div className="flex justify-between items-start">
                         <div>
-                          <span className="text-gray-500">Date: </span>
-                          <span className="font-medium">{quoteData.createdAt ? new Date(quoteData.createdAt).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">Validité: </span>
-                          <span className="font-medium">30 jours</span>
-                        </div>
-                      </div>
-                      
-                      {/* Client Info */}
-                      <div className="px-8 py-4 border-b">
-                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Client</p>
-                        <p className="font-bold text-lg text-[#1a1a2e]">{request.companies?.name}</p>
-                        {request.companies?.billing_address && (
-                          <p className="text-gray-600">{request.companies.billing_address}</p>
-                        )}
-                        <p className="text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
-                      </div>
-                      
-                      {/* Main content area - flex-1 to push footer down */}
-                      <div className="px-8 py-6 flex-1">
-                        {/* Parts Table */}
-                        <h3 className="font-bold text-[#1a1a2e] mb-3">Pièces Commandées</h3>
-                        <table className="w-full border-collapse mb-6">
-                          <thead>
-                            <tr className="bg-[#1a1a2e] text-white">
-                              <th className="px-4 py-3 text-left text-sm w-16">Qté</th>
-                              <th className="px-4 py-3 text-left text-sm">Référence</th>
-                              <th className="px-4 py-3 text-left text-sm">Désignation</th>
-                              <th className="px-4 py-3 text-right text-sm w-24">Prix Unit.</th>
-                              <th className="px-4 py-3 text-right text-sm w-24">Total HT</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {parts.map((part, idx) => (
-                              <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                <td className="px-4 py-3 border-b border-gray-200">{part.quantity}</td>
-                                <td className="px-4 py-3 border-b border-gray-200 font-mono text-sm">{part.partNumber || '—'}</td>
-                                <td className="px-4 py-3 border-b border-gray-200">{part.description}</td>
-                                <td className="px-4 py-3 border-b border-gray-200 text-right">{(part.unitPrice || 0).toFixed(2)} €</td>
-                                <td className="px-4 py-3 border-b border-gray-200 text-right font-medium">{(part.lineTotal || 0).toFixed(2)} €</td>
-                              </tr>
-                            ))}
-                            {shipping.total > 0 && (
-                              <tr className="bg-blue-50">
-                                <td className="px-4 py-3 border-b border-blue-200">{shipping.parcels}</td>
-                                <td className="px-4 py-3 border-b border-blue-200 font-mono text-sm">Shipping</td>
-                                <td className="px-4 py-3 border-b border-blue-200 text-blue-800">Frais de port ({shipping.parcels} colis)</td>
-                                <td className="px-4 py-3 border-b border-blue-200 text-right">{(shipping.unitPrice || 0).toFixed(2)} €</td>
-                                <td className="px-4 py-3 border-b border-blue-200 text-right font-medium">{(shipping.total || 0).toFixed(2)} €</td>
-                              </tr>
-                            )}
-                          </tbody>
-                          <tfoot>
-                            <tr className="bg-amber-500 text-white">
-                              <td colSpan={4} className="px-4 py-3 text-right font-bold">TOTAL HT</td>
-                              <td className="px-4 py-3 text-right font-bold text-lg">{grandTotal.toFixed(2)} €</td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                        
-                        {/* Conditions */}
-                        <div className="bg-gray-50 rounded-lg p-4 mb-8">
-                          <p className="font-bold text-[#1a1a2e] text-sm mb-2">Conditions:</p>
-                          <ul className="text-sm text-gray-600 space-y-1">
-                            <li>• Devis valable 30 jours</li>
-                            <li>• Paiement: 30 jours fin de mois</li>
-                            <li>• Livraison: Sous réserve de disponibilité</li>
-                          </ul>
-                        </div>
-                        
-                        {/* Signature Section */}
-                        <div className="flex justify-between items-end pt-6 border-t border-gray-200">
-                          <div>
-                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Établi par</p>
-                            <p className="font-bold text-lg text-[#1a1a2e]">{quoteData.createdBy || 'Lighthouse France'}</p>
-                            <p className="text-gray-500">Lighthouse France</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Bon pour accord</p>
-                            <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
-                              <span className="text-gray-300 text-sm">Signature et cachet</span>
-                            </div>
+                          <img 
+                            src="/images/logos/lighthouse-logo.png" 
+                            alt="Lighthouse France" 
+                            className="h-14 w-auto mb-1"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              e.target.nextSibling.style.display = 'block';
+                            }}
+                          />
+                          <div style={{ display: 'none' }}>
+                            <h1 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h1>
+                            <p className="text-gray-500">France</p>
                           </div>
                         </div>
-                      </div>
-                      
-                      {/* Footer */}
-                      <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center">
-                        <p className="font-medium">Lighthouse France SAS</p>
-                        <p className="text-gray-400 text-sm">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+                        <div className="text-right">
+                          <p className="text-xl font-bold text-amber-600">DEVIS PIÈCES</p>
+                          <p className="text-gray-500 font-mono">{quoteData.quoteRef || request.request_number}</p>
+                        </div>
                       </div>
                     </div>
+                    
+                    {/* Amber accent line */}
+                    <div className="h-1.5 bg-amber-500"></div>
+                    
+                    {/* Date bar */}
+                    <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm">
+                      <div>
+                        <span className="text-gray-500">Date: </span>
+                        <span className="font-medium">{quoteData.createdAt ? new Date(quoteData.createdAt).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Validité: </span>
+                        <span className="font-medium">30 jours</span>
+                      </div>
+                    </div>
+                    
+                    {/* Client Info */}
+                    <div className="px-8 py-4 border-b">
+                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Client</p>
+                      <p className="font-bold text-lg text-[#1a1a2e]">{request.companies?.name}</p>
+                      {request.companies?.billing_address && (
+                        <p className="text-gray-600">{request.companies.billing_address}</p>
+                      )}
+                      <p className="text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
+                    </div>
+                    
+                    {/* Main content area - flex-1 to push footer down */}
+                    <div className="px-8 py-6 flex-1">
+                      {/* Parts Table */}
+                      <h3 className="font-bold text-[#1a1a2e] mb-3">Pièces Commandées</h3>
+                      <table className="w-full border-collapse mb-6">
+                        <thead>
+                          <tr className="bg-[#1a1a2e] text-white">
+                            <th className="px-4 py-3 text-left text-sm w-16">Qté</th>
+                            <th className="px-4 py-3 text-left text-sm">Référence</th>
+                            <th className="px-4 py-3 text-left text-sm">Désignation</th>
+                            <th className="px-4 py-3 text-right text-sm w-24">Prix Unit.</th>
+                            <th className="px-4 py-3 text-right text-sm w-24">Total HT</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {parts.map((part, idx) => (
+                            <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-4 py-3 border-b border-gray-200">{part.quantity}</td>
+                              <td className="px-4 py-3 border-b border-gray-200 font-mono text-sm">{part.partNumber || '—'}</td>
+                              <td className="px-4 py-3 border-b border-gray-200">{part.description}</td>
+                              <td className="px-4 py-3 border-b border-gray-200 text-right">{(part.unitPrice || 0).toFixed(2)} €</td>
+                              <td className="px-4 py-3 border-b border-gray-200 text-right font-medium">{(part.lineTotal || 0).toFixed(2)} €</td>
+                            </tr>
+                          ))}
+                          {shipping.total > 0 && (
+                            <tr className="bg-blue-50">
+                              <td className="px-4 py-3 border-b border-blue-200">{shipping.parcels}</td>
+                              <td className="px-4 py-3 border-b border-blue-200 font-mono text-sm">Shipping</td>
+                              <td className="px-4 py-3 border-b border-blue-200 text-blue-800">Frais de port ({shipping.parcels} colis)</td>
+                              <td className="px-4 py-3 border-b border-blue-200 text-right">{(shipping.unitPrice || 0).toFixed(2)} €</td>
+                              <td className="px-4 py-3 border-b border-blue-200 text-right font-medium">{(shipping.total || 0).toFixed(2)} €</td>
+                            </tr>
+                          )}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-amber-500 text-white">
+                            <td colSpan={4} className="px-4 py-3 text-right font-bold">TOTAL HT</td>
+                            <td className="px-4 py-3 text-right font-bold text-lg">{grandTotal.toFixed(2)} €</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                      
+                      {/* Conditions */}
+                      <div className="bg-gray-50 rounded-lg p-4 mb-8">
+                        <p className="font-bold text-[#1a1a2e] text-sm mb-2">Conditions:</p>
+                        <ul className="text-sm text-gray-600 space-y-1">
+                          <li>• Devis valable 30 jours</li>
+                          <li>• Paiement: 30 jours fin de mois</li>
+                          <li>• Livraison: Sous réserve de disponibilité</li>
+                        </ul>
+                      </div>
+                      
+                      {/* Signature Section */}
+                      <div className="flex justify-between items-end pt-6 border-t border-gray-200">
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Établi par</p>
+                          <p className="font-bold text-lg text-[#1a1a2e]">{quoteData.createdBy || 'Lighthouse France'}</p>
+                          <p className="text-gray-500">Lighthouse France</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Bon pour accord</p>
+                          <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
+                            <span className="text-gray-300 text-sm">Signature et cachet</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Footer */}
+                    <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center">
+                      <p className="font-medium">Lighthouse France SAS</p>
+                      <p className="text-gray-400 text-sm">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+                    </div>
                   </div>
+                </div>
 
-                  {/* Modal Footer Actions */}
-                  <div className="sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex justify-between items-center rounded-b-xl">
+                {/* Fixed Footer Actions */}
+                <div className="bg-gray-100 px-6 py-4 border-t flex justify-between items-center flex-shrink-0">
+                  <button
+                    onClick={() => setShowQuoteModal(false)}
+                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                  >
+                    Fermer
+                  </button>
+                  {request.status === 'quote_sent' && (
                     <button
-                      onClick={() => setShowQuoteModal(false)}
-                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                      onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
+                      className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45]"
                     >
-                      Fermer
+                      ✅ Approuver et soumettre BC
                     </button>
-                    {request.status === 'quote_sent' && (
-                      <button
-                        onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
-                        className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45]"
-                      >
-                        ✅ Approuver et soumettre BC
-                      </button>
-                    )}
-                  </div>
+                  )}
                 </div>
               </div>
             );
