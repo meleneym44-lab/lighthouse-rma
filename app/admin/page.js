@@ -4904,9 +4904,6 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
   const isPending = order.status === 'submitted' && !order.request_number;
   const needsRevision = order.status === 'quote_revision_requested';
   
-  // Parse parts from description
-  const partsLines = (order.problem_description || '').split('\n').filter(Boolean);
-  
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
       <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -4934,16 +4931,73 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
             </div>
           )}
           
-          {/* Requested Parts */}
+          {/* Requested Parts - Structured Display */}
           <div>
             <h3 className="font-bold text-gray-700 mb-3">📦 Pièces demandées</h3>
-            <div className="bg-gray-50 rounded-lg divide-y divide-gray-200">
-              {partsLines.map((line, i) => (
-                <div key={i} className="p-3">
-                  <p className="text-gray-800">{line}</p>
-                </div>
-              ))}
-            </div>
+            
+            {order.parts_data?.parts ? (
+              <div className="space-y-4">
+                {order.parts_data.parts.map((part, idx) => (
+                  <div key={idx} className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="font-bold text-amber-900">Pièce #{part.num || idx + 1}</span>
+                      <span className="text-sm bg-amber-200 px-2 py-0.5 rounded text-amber-800">Qté: {part.quantity || 1}</span>
+                    </div>
+                    
+                    <div className="grid md:grid-cols-2 gap-2 text-sm mb-2">
+                      {part.device_for && (
+                        <div>
+                          <span className="text-gray-500">Pour appareil:</span>
+                          <span className="ml-2 font-medium">{part.device_for}</span>
+                        </div>
+                      )}
+                      {part.part_number && (
+                        <div>
+                          <span className="text-gray-500">N° pièce:</span>
+                          <span className="ml-2 font-mono font-medium text-amber-700">{part.part_number}</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {part.description && (
+                      <div className="mt-2 bg-white rounded p-2">
+                        <span className="text-gray-500 text-xs">Description:</span>
+                        <p className="text-gray-800">{part.description}</p>
+                      </div>
+                    )}
+                    
+                    {/* Photos */}
+                    {part.photos && part.photos.length > 0 && (
+                      <div className="mt-3">
+                        <span className="text-gray-500 text-sm">📷 Photos ({part.photos.length}):</span>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {part.photos.map((photoUrl, pIdx) => (
+                            <a 
+                              key={pIdx} 
+                              href={photoUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="block"
+                            >
+                              <img 
+                                src={photoUrl} 
+                                alt={`Photo ${pIdx + 1}`}
+                                className="w-20 h-20 object-cover rounded-lg border-2 border-amber-300 hover:border-amber-500 transition-colors"
+                              />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* Fallback to plain text */
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-gray-800 whitespace-pre-wrap">{order.problem_description}</p>
+              </div>
+            )}
           </div>
           
           {/* Shipping Address */}
@@ -5492,13 +5546,24 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
           {/* Step 2: Preview */}
           {step === 2 && (
             <div className="bg-gray-200 p-6 rounded-lg">
-              <div className="bg-white shadow-lg mx-auto" style={{ width: '210mm', minHeight: '280mm' }}>
+              <div className="bg-white shadow-lg mx-auto flex flex-col" style={{ width: '210mm', minHeight: '297mm' }}>
                 {/* PDF Preview Header */}
                 <div className="border-b-4 border-[#00A651] p-6">
                   <div className="flex justify-between items-start">
                     <div>
-                      <h1 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h1>
-                      <p className="text-gray-500">France</p>
+                      <img 
+                        src="/images/logos/lighthouse-logo.png" 
+                        alt="Lighthouse France" 
+                        className="h-12 w-auto"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'block';
+                        }}
+                      />
+                      <div style={{ display: 'none' }}>
+                        <h1 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h1>
+                        <p className="text-gray-500">France</p>
+                      </div>
                     </div>
                     <div className="text-right">
                       <p className="text-xl font-bold text-[#00A651]">DEVIS PIÈCES</p>
@@ -5527,8 +5592,8 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                   <p className="text-gray-600">{order.companies?.billing_postal_code} {order.companies?.billing_city}</p>
                 </div>
                 
-                {/* Parts Table */}
-                <div className="px-6 py-4">
+                {/* Parts Table - flex-1 to push footer down */}
+                <div className="px-6 py-4 flex-1">
                   <h3 className="font-bold text-[#1a1a2e] mb-3">Récapitulatif des Pièces</h3>
                   <table className="w-full">
                     <thead>
@@ -5565,27 +5630,28 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                       </tr>
                     </tbody>
                   </table>
-                </div>
-                
-                {/* Signature */}
-                <div className="px-6 py-6 border-t mt-8">
-                  <div className="flex justify-between items-end">
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
-                      <p className="font-bold text-lg">{signatory}</p>
-                      <p className="text-gray-500">Lighthouse France</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-xs text-gray-500 uppercase mb-1">Bon pour accord</p>
-                      <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded"></div>
-                      <p className="text-xs text-gray-400 mt-1">Signature et cachet</p>
+                  
+                  {/* Signature - moved inside flex-1 area */}
+                  <div className="mt-12 pt-6 border-t">
+                    <div className="flex justify-between items-end">
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
+                        <p className="font-bold text-lg">{signatory}</p>
+                        <p className="text-gray-500">Lighthouse France</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-gray-500 uppercase mb-1">Bon pour accord</p>
+                        <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded"></div>
+                        <p className="text-xs text-gray-400 mt-1">Signature et cachet</p>
+                      </div>
                     </div>
                   </div>
                 </div>
                 
-                {/* Footer */}
-                <div className="bg-[#1a1a2e] text-white px-6 py-3 text-center text-xs mt-auto">
-                  <p>Lighthouse France SAS • 16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+                {/* Footer - at bottom */}
+                <div className="bg-[#1a1a2e] text-white px-6 py-3 text-center text-xs">
+                  <p className="font-medium">Lighthouse France SAS</p>
+                  <p>16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
                 </div>
               </div>
             </div>
