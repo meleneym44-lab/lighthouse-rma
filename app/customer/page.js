@@ -3547,7 +3547,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
       }).select().single();
       
       if (error) {
-        notify(`Erreur: ${error.message}`, 'error');
+        notify(`Erreur adresse: ${error.message}`, 'error');
         return;
       }
       addressId = data.id;
@@ -3555,7 +3555,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
     }
     
     if (!addressId) {
-      notify('Veuillez sélectionner ou ajouter une adresse', 'error');
+      notify('Veuillez sélectionner ou ajouter une adresse de livraison', 'error');
       return;
     }
 
@@ -3566,10 +3566,10 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
         `Pièce ${p.num}: ${p.description}${p.part_number ? ` (Réf: ${p.part_number})` : ''}${p.device_for ? ` - Pour: ${p.device_for}` : ''} - Qté: ${p.quantity}`
       ).join('\n');
 
-      await supabase
+      const { data, error } = await supabase
         .from('service_requests')
         .insert({
-          request_number: null, // No number until approved
+          request_number: null,
           company_id: profile.company_id,
           submitted_by: profile.id,
           request_type: 'parts',
@@ -3579,12 +3579,23 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
           shipping_address_id: addressId,
           status: 'submitted',
           submitted_at: new Date().toISOString()
-        });
+        })
+        .select()
+        .single();
 
-      notify('Commande de pièces soumise! Numéro FR attribué après validation.');
+      if (error) {
+        console.error('Parts order insert error:', error);
+        notify(`Erreur: ${error.message}`, 'error');
+        setSaving(false);
+        return;
+      }
+
+      console.log('Parts order created:', data);
+      notify('Commande de pièces soumise avec succès!');
       refresh();
       setPage('dashboard');
     } catch (err) {
+      console.error('Parts order exception:', err);
       notify(`Erreur: ${err.message}`, 'error');
     }
     
@@ -3687,18 +3698,121 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
           + Ajouter une Pièce
         </button>
 
-        {/* Shipping Section */}
-        <ShippingSection 
-          shipping={shipping}
-          setShipping={setShipping}
-          addresses={addresses}
-          profile={profile}
-          notify={notify}
-          refresh={refresh}
-        />
+        {/* Simplified Shipping Section for Parts Orders - No parcels needed */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mb-8">
+          <h2 className="text-xl font-bold text-[#1E3A5F] mb-4 pb-4 border-b-2 border-[#E8F2F8]">
+            📍 Adresse de Livraison
+          </h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Les pièces seront expédiées à l'adresse sélectionnée.
+          </p>
+
+          {/* Existing Addresses */}
+          {addresses.length > 0 ? (
+            <div className="space-y-2 mb-4">
+              {addresses.map(addr => (
+                <label 
+                  key={addr.id}
+                  className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+                    shipping.address_id === addr.id && !shipping.showNewForm
+                      ? 'border-[#3B7AB4] bg-[#E8F2F8]' 
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="shipping_address"
+                    checked={shipping.address_id === addr.id && !shipping.showNewForm}
+                    onChange={() => setShipping({ ...shipping, address_id: addr.id, showNewForm: false })}
+                    className="mt-1"
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium text-[#1E3A5F]">
+                      {addr.company_name || addr.label}
+                      {addr.is_default && (
+                        <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
+                          Par défaut
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-600">{addr.address_line1}</div>
+                    {addr.attention && <div className="text-sm text-gray-500">À l'attention de: {addr.attention}</div>}
+                    <div className="text-sm text-gray-600">{addr.postal_code} {addr.city}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 mb-4">Aucune adresse enregistrée</p>
+          )}
+
+          {/* Add New Address Toggle */}
+          <button
+            type="button"
+            onClick={() => setShipping({ ...shipping, showNewForm: !shipping.showNewForm, address_id: shipping.showNewForm ? (addresses.find(a => a.is_default)?.id || '') : '' })}
+            className="text-[#3B7AB4] font-medium hover:underline mb-4"
+          >
+            {shipping.showNewForm ? '← Utiliser une adresse existante' : '+ Ajouter une nouvelle adresse'}
+          </button>
+
+          {/* New Address Form */}
+          {shipping.showNewForm && (
+            <div className="bg-gray-50 rounded-lg p-4 space-y-4 border">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Nom de l'entreprise *</label>
+                  <input
+                    type="text"
+                    value={shipping.newAddress.company_name}
+                    onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, company_name: e.target.value } })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">À l'attention de *</label>
+                  <input
+                    type="text"
+                    value={shipping.newAddress.attention}
+                    onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, attention: e.target.value } })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Adresse *</label>
+                <input
+                  type="text"
+                  value={shipping.newAddress.address_line1}
+                  onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, address_line1: e.target.value } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Code Postal *</label>
+                  <input
+                    type="text"
+                    value={shipping.newAddress.postal_code}
+                    onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, postal_code: e.target.value } })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Ville *</label>
+                  <input
+                    type="text"
+                    value={shipping.newAddress.city}
+                    onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, city: e.target.value } })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Submit Buttons */}
-        <div className="flex gap-4 mt-8">
+        <div className="flex gap-4">
           <button
             type="button"
             onClick={() => setPage('dashboard')}
