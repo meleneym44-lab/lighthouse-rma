@@ -972,6 +972,310 @@ async function generateQuotePDF(options) {
   addFooter();
   return pdf.output('blob');
 }
+
+// ============================================
+// PARTS ORDER QUOTE PDF GENERATOR
+// ============================================
+async function generatePartsQuotePDF(options) {
+  const {
+    request, isSigned = false,
+    signatureName = '', signatureDate = '', signatureImage = null
+  } = options;
+
+  // Load jsPDF
+  await new Promise((resolve, reject) => {
+    if (window.jspdf) { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  
+  const quoteData = request.quote_data || {};
+  const parts = quoteData.parts || [];
+  const shipping = quoteData.shipping || { parcels: 1, unitPrice: 45, total: 45 };
+  const partsTotal = quoteData.partsTotal || parts.reduce((sum, p) => sum + (p.lineTotal || 0), 0);
+  const grandTotal = quoteData.grandTotal || (partsTotal + (shipping.total || 0));
+  const createdBy = quoteData.createdBy || 'Lighthouse France';
+  const quoteRef = quoteData.quoteRef || request.request_number;
+  
+  const company = request.companies || {};
+  
+  const pageWidth = 210, pageHeight = 297, margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  const footerHeight = 16;
+  
+  // Colors
+  const amber = [245, 158, 11];
+  const darkBlue = [26, 26, 46];
+  const gray = [80, 80, 80];
+  const lightGray = [130, 130, 130];
+  const white = [255, 255, 255];
+  const green = [0, 166, 81];
+  
+  let y = margin;
+  
+  // Load logo
+  const loadImageAsBase64 = async (url) => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      return null;
+    }
+  };
+  
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  
+  const addFooter = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+    pdf.setTextColor(...white);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(180, 180, 180);
+    pdf.setFontSize(8);
+    pdf.text('16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07', pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+  };
+
+  // ===== HEADER =====
+  if (lighthouseLogo) {
+    try {
+      const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(lighthouseLogo, format, margin, y, 60, 12);
+    } catch (e) {
+      pdf.setFontSize(18);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...darkBlue);
+      pdf.text('LIGHTHOUSE', margin, y + 10);
+    }
+  } else {
+    pdf.setFontSize(18);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('LIGHTHOUSE', margin, y + 10);
+  }
+  
+  // Title - Right side
+  pdf.setFontSize(16);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...amber);
+  pdf.text('DEVIS PIECES', pageWidth - margin, y + 5, { align: 'right' });
+  pdf.setFontSize(10);
+  pdf.setTextColor(...gray);
+  pdf.text(quoteRef, pageWidth - margin, y + 12, { align: 'right' });
+  
+  y += 20;
+  
+  // Amber accent line
+  pdf.setFillColor(...amber);
+  pdf.rect(0, y, pageWidth, 1.5, 'F');
+  y += 8;
+  
+  // Date and validity
+  pdf.setFillColor(249, 250, 251);
+  pdf.rect(margin, y, contentWidth, 10, 'F');
+  pdf.setFontSize(9);
+  pdf.setTextColor(...gray);
+  const quoteDate = quoteData.createdAt ? new Date(quoteData.createdAt).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
+  pdf.text(`Date: ${quoteDate}`, margin + 5, y + 6);
+  pdf.text('Validite: 30 jours', pageWidth - margin - 5, y + 6, { align: 'right' });
+  y += 16;
+  
+  // Client info
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('CLIENT', margin, y);
+  y += 5;
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(company.name || 'Client', margin, y);
+  y += 5;
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  if (company.billing_address) {
+    pdf.text(company.billing_address, margin, y);
+    y += 4;
+  }
+  pdf.text(`${company.billing_postal_code || ''} ${company.billing_city || ''}`.trim(), margin, y);
+  y += 12;
+  
+  // Parts Table Header
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Pieces Commandees', margin, y);
+  y += 6;
+  
+  // Table header
+  const colQty = margin;
+  const colRef = margin + 15;
+  const colDesc = margin + 50;
+  const colUnit = pageWidth - margin - 40;
+  const colTotal = pageWidth - margin - 5;
+  
+  pdf.setFillColor(...darkBlue);
+  pdf.rect(margin, y, contentWidth, 8, 'F');
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...white);
+  pdf.text('Qte', colQty + 2, y + 5.5);
+  pdf.text('Reference', colRef, y + 5.5);
+  pdf.text('Designation', colDesc, y + 5.5);
+  pdf.text('Prix Unit.', colUnit, y + 5.5, { align: 'right' });
+  pdf.text('Total HT', colTotal, y + 5.5, { align: 'right' });
+  y += 10;
+  
+  // Table rows
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(9);
+  
+  parts.forEach((part, idx) => {
+    const rowHeight = 8;
+    if (idx % 2 === 0) {
+      pdf.setFillColor(255, 255, 255);
+    } else {
+      pdf.setFillColor(249, 250, 251);
+    }
+    pdf.rect(margin, y, contentWidth, rowHeight, 'F');
+    
+    pdf.setTextColor(...darkBlue);
+    pdf.text(String(part.quantity || 1), colQty + 5, y + 5.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.text(part.partNumber || '-', colRef, y + 5.5);
+    pdf.setFontSize(9);
+    
+    // Truncate description if too long
+    let desc = part.description || '';
+    if (desc.length > 45) desc = desc.substring(0, 42) + '...';
+    pdf.text(desc, colDesc, y + 5.5);
+    
+    pdf.text((part.unitPrice || 0).toFixed(2) + ' EUR', colUnit, y + 5.5, { align: 'right' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.text((part.lineTotal || 0).toFixed(2) + ' EUR', colTotal, y + 5.5, { align: 'right' });
+    pdf.setFont('helvetica', 'normal');
+    
+    y += rowHeight;
+  });
+  
+  // Shipping row
+  if (shipping.total > 0) {
+    pdf.setFillColor(239, 246, 255);
+    pdf.rect(margin, y, contentWidth, 8, 'F');
+    pdf.setTextColor(30, 64, 175);
+    pdf.text(String(shipping.parcels || 1), colQty + 5, y + 5.5);
+    pdf.setFontSize(8);
+    pdf.text('Shipping', colRef, y + 5.5);
+    pdf.setFontSize(9);
+    pdf.text(`Frais de port (${shipping.parcels || 1} colis)`, colDesc, y + 5.5);
+    pdf.text((shipping.unitPrice || 45).toFixed(2) + ' EUR', colUnit, y + 5.5, { align: 'right' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.text((shipping.total || 0).toFixed(2) + ' EUR', colTotal, y + 5.5, { align: 'right' });
+    y += 8;
+  }
+  
+  // Total row
+  pdf.setFillColor(...amber);
+  pdf.rect(margin, y, contentWidth, 10, 'F');
+  pdf.setTextColor(...white);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(11);
+  pdf.text('TOTAL HT', colUnit - 20, y + 7, { align: 'right' });
+  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 7, { align: 'right' });
+  y += 20;
+  
+  // Conditions
+  pdf.setFillColor(249, 250, 251);
+  pdf.rect(0, y, pageWidth, 28, 'F');
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Conditions:', margin, y + 6);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('- Devis valable 30 jours', margin + 5, y + 12);
+  pdf.text('- Paiement: 30 jours fin de mois', margin + 5, y + 17);
+  pdf.text('- Livraison: Sous reserve de disponibilite', margin + 5, y + 22);
+  y += 35;
+  
+  // Signature section
+  const sigY = y;
+  
+  // Left side - Etabli par
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('ETABLI PAR', margin, sigY);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(createdBy, margin, sigY + 6);
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('Lighthouse France', margin, sigY + 11);
+  
+  // Right side - Signature box
+  const sigBoxX = pageWidth - margin - 62;
+  
+  if (isSigned && signatureName) {
+    // Signed version
+    pdf.setFillColor(245, 255, 250);
+    pdf.setDrawColor(...green);
+    pdf.setLineWidth(0.5);
+    pdf.roundedRect(sigBoxX, sigY - 2, 62, 36, 2, 2, 'FD');
+    
+    pdf.setFontSize(8);
+    pdf.setTextColor(...green);
+    pdf.text('APPROUVE PAR', sigBoxX + 4, sigY + 5);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(signatureName, sigBoxX + 4, sigY + 12);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Date: ' + signatureDate, sigBoxX + 4, sigY + 19);
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(...green);
+    pdf.text('Lu et approuve', sigBoxX + 4, sigY + 26);
+    
+    if (signatureImage) {
+      try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 40, sigY + 4, 18, 16); } catch(e) {}
+    }
+  } else {
+    // Unsigned version
+    pdf.setFontSize(8);
+    pdf.setTextColor(...lightGray);
+    pdf.text('Bon pour accord', sigBoxX + 14, sigY + 2);
+    pdf.setDrawColor(180, 180, 180);
+    pdf.setLineWidth(0.3);
+    pdf.setLineDashPattern([2, 2], 0);
+    pdf.roundedRect(sigBoxX + 5, sigY + 5, 52, 22, 2, 2, 'D');
+    pdf.setLineDashPattern([], 0);
+    pdf.text('Signature et cachet', sigBoxX + 12, sigY + 32);
+  }
+
+  addFooter();
+  return pdf.output('blob');
+}
+
 // Contract Quote PDF Generator - IDENTICAL structure to RMA
 async function generateContractQuotePDF(options) {
   const {
@@ -6963,18 +7267,30 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         console.log('🖊️ No signature data to upload');
       }
       
-      // Generate signed quote PDF
+      // Generate signed quote PDF - use correct generator based on request type
       let signedQuotePdfUrl = null;
       if (hasValidSignature) {
         try {
           console.log('📄 Generating signed quote PDF...');
-          const pdfBlob = await generateQuotePDF({
-            request,
-            isSigned: true,
-            signatureName: signatureName,
-            signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
-            signatureImage: signatureData
-          });
+          
+          // Check if this is a parts order
+          const isPartsRequest = request.request_type === 'parts';
+          
+          const pdfBlob = isPartsRequest 
+            ? await generatePartsQuotePDF({
+                request,
+                isSigned: true,
+                signatureName: signatureName,
+                signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+                signatureImage: signatureData
+              })
+            : await generateQuotePDF({
+                request,
+                isSigned: true,
+                signatureName: signatureName,
+                signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+                signatureImage: signatureData
+              });
           
           console.log('📄 PDF blob generated, size:', pdfBlob?.size);
           
@@ -7546,16 +7862,17 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           
           // Check if this is a parts order
           if (isPartsOrder) {
-            // Parts Order Quote Modal
+            // Parts Order Quote Modal - A4 Paper Layout
             const parts = quoteData.parts || [];
             const shipping = quoteData.shipping || { parcels: 1, unitPrice: 45, total: 45 };
-            const grandTotal = quoteData.grandTotal || 0;
+            const partsTotal = quoteData.partsTotal || parts.reduce((sum, p) => sum + (p.lineTotal || 0), 0);
+            const grandTotal = quoteData.grandTotal || (partsTotal + (shipping.total || 0));
             
             return (
-              <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-                <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 overflow-y-auto">
+                <div className="bg-gray-300 rounded-xl w-full max-w-4xl my-4" onClick={e => e.stopPropagation()}>
                   {/* Modal Header */}
-                  <div className="sticky top-0 bg-amber-600 text-white px-6 py-4 flex justify-between items-center z-10">
+                  <div className="sticky top-0 bg-amber-600 text-white px-6 py-4 flex justify-between items-center z-10 rounded-t-xl">
                     <div>
                       <h2 className="text-xl font-bold">Devis Pièces Détachées</h2>
                       <p className="text-amber-200">{request.request_number || 'En attente'}</p>
@@ -7563,97 +7880,138 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     <button onClick={() => setShowQuoteModal(false)} className="text-amber-200 hover:text-white text-2xl">&times;</button>
                   </div>
 
-                  {/* Parts Quote Content */}
+                  {/* A4 Paper Container */}
                   <div className="p-6">
-                    {/* Header */}
-                    <div className="flex justify-between items-start mb-6 pb-4 border-b-4 border-amber-500">
-                      <div>
-                        <img 
-                          src="/images/logos/lighthouse-logo.png" 
-                          alt="Lighthouse France" 
-                          className="h-14 w-auto mb-1"
-                          onError={(e) => {
-                            e.target.style.display = 'none';
-                            e.target.nextSibling.style.display = 'block';
-                          }}
-                        />
-                        <div style={{ display: 'none' }}>
-                          <h1 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h1>
-                          <p className="text-gray-500">France</p>
+                    <div className="bg-white shadow-2xl mx-auto flex flex-col" style={{ width: '210mm', minHeight: '297mm', maxWidth: '100%' }}>
+                      
+                      {/* Quote Header */}
+                      <div className="px-8 pt-8 pb-4">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <img 
+                              src="/images/logos/lighthouse-logo.png" 
+                              alt="Lighthouse France" 
+                              className="h-14 w-auto mb-1"
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                                e.target.nextSibling.style.display = 'block';
+                              }}
+                            />
+                            <div style={{ display: 'none' }}>
+                              <h1 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h1>
+                              <p className="text-gray-500">France</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xl font-bold text-amber-600">DEVIS PIÈCES</p>
+                            <p className="text-gray-500 font-mono">{quoteData.quoteRef || request.request_number}</p>
+                          </div>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-xl font-bold text-amber-600">DEVIS PIÈCES</p>
-                        <p className="text-gray-500">{quoteData.quoteRef || request.request_number}</p>
-                        <p className="text-sm text-gray-400 mt-1">
-                          {quoteData.createdAt ? new Date(quoteData.createdAt).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}
-                        </p>
+                      
+                      {/* Amber accent line */}
+                      <div className="h-1.5 bg-amber-500"></div>
+                      
+                      {/* Date bar */}
+                      <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm">
+                        <div>
+                          <span className="text-gray-500">Date: </span>
+                          <span className="font-medium">{quoteData.createdAt ? new Date(quoteData.createdAt).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Validité: </span>
+                          <span className="font-medium">30 jours</span>
+                        </div>
                       </div>
-                    </div>
-
-                    {/* Client Info */}
-                    <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                      <p className="text-xs text-gray-500 uppercase mb-1">Client</p>
-                      <p className="font-bold text-lg">{request.companies?.name}</p>
-                    </div>
-
-                    {/* Parts Table */}
-                    <div className="mb-6">
-                      <h3 className="font-bold text-gray-800 mb-3">Pièces commandées</h3>
-                      <table className="w-full border-collapse">
-                        <thead>
-                          <tr className="bg-[#1a1a2e] text-white">
-                            <th className="px-4 py-2 text-left">Qté</th>
-                            <th className="px-4 py-2 text-left">Référence</th>
-                            <th className="px-4 py-2 text-left">Désignation</th>
-                            <th className="px-4 py-2 text-right">Prix Unit.</th>
-                            <th className="px-4 py-2 text-right">Total HT</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {parts.map((part, idx) => (
-                            <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-4 py-2 border-b">{part.quantity}</td>
-                              <td className="px-4 py-2 border-b font-mono text-sm">{part.partNumber || '—'}</td>
-                              <td className="px-4 py-2 border-b">{part.description}</td>
-                              <td className="px-4 py-2 border-b text-right">{(part.unitPrice || 0).toFixed(2)} €</td>
-                              <td className="px-4 py-2 border-b text-right font-medium">{(part.lineTotal || 0).toFixed(2)} €</td>
-                            </tr>
-                          ))}
-                          {shipping.total > 0 && (
-                            <tr className="bg-blue-50">
-                              <td className="px-4 py-2 border-b">{shipping.parcels}</td>
-                              <td className="px-4 py-2 border-b font-mono text-sm">Shipping</td>
-                              <td className="px-4 py-2 border-b text-blue-800">Frais de port ({shipping.parcels} colis)</td>
-                              <td className="px-4 py-2 border-b text-right">{(shipping.unitPrice || 0).toFixed(2)} €</td>
-                              <td className="px-4 py-2 border-b text-right font-medium">{(shipping.total || 0).toFixed(2)} €</td>
-                            </tr>
-                          )}
-                        </tbody>
-                        <tfoot>
-                          <tr className="bg-amber-500 text-white font-bold">
-                            <td colSpan={4} className="px-4 py-3 text-right">TOTAL HT</td>
-                            <td className="px-4 py-3 text-right">{grandTotal.toFixed(2)} €</td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-
-                    {/* Signatory */}
-                    <div className="flex justify-between items-end pt-6 border-t">
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
-                        <p className="font-bold">{quoteData.createdBy || 'Lighthouse France'}</p>
+                      
+                      {/* Client Info */}
+                      <div className="px-8 py-4 border-b">
+                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Client</p>
+                        <p className="font-bold text-lg text-[#1a1a2e]">{request.companies?.name}</p>
+                        {request.companies?.billing_address && (
+                          <p className="text-gray-600">{request.companies.billing_address}</p>
+                        )}
+                        <p className="text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
                       </div>
-                      <div className="text-center">
-                        <p className="text-xs text-gray-500 uppercase mb-1">Bon pour accord</p>
-                        <div className="w-40 h-14 border-2 border-dashed border-gray-300 rounded"></div>
+                      
+                      {/* Main content area - flex-1 to push footer down */}
+                      <div className="px-8 py-6 flex-1">
+                        {/* Parts Table */}
+                        <h3 className="font-bold text-[#1a1a2e] mb-3">Pièces Commandées</h3>
+                        <table className="w-full border-collapse mb-6">
+                          <thead>
+                            <tr className="bg-[#1a1a2e] text-white">
+                              <th className="px-4 py-3 text-left text-sm w-16">Qté</th>
+                              <th className="px-4 py-3 text-left text-sm">Référence</th>
+                              <th className="px-4 py-3 text-left text-sm">Désignation</th>
+                              <th className="px-4 py-3 text-right text-sm w-24">Prix Unit.</th>
+                              <th className="px-4 py-3 text-right text-sm w-24">Total HT</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {parts.map((part, idx) => (
+                              <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                <td className="px-4 py-3 border-b border-gray-200">{part.quantity}</td>
+                                <td className="px-4 py-3 border-b border-gray-200 font-mono text-sm">{part.partNumber || '—'}</td>
+                                <td className="px-4 py-3 border-b border-gray-200">{part.description}</td>
+                                <td className="px-4 py-3 border-b border-gray-200 text-right">{(part.unitPrice || 0).toFixed(2)} €</td>
+                                <td className="px-4 py-3 border-b border-gray-200 text-right font-medium">{(part.lineTotal || 0).toFixed(2)} €</td>
+                              </tr>
+                            ))}
+                            {shipping.total > 0 && (
+                              <tr className="bg-blue-50">
+                                <td className="px-4 py-3 border-b border-blue-200">{shipping.parcels}</td>
+                                <td className="px-4 py-3 border-b border-blue-200 font-mono text-sm">Shipping</td>
+                                <td className="px-4 py-3 border-b border-blue-200 text-blue-800">Frais de port ({shipping.parcels} colis)</td>
+                                <td className="px-4 py-3 border-b border-blue-200 text-right">{(shipping.unitPrice || 0).toFixed(2)} €</td>
+                                <td className="px-4 py-3 border-b border-blue-200 text-right font-medium">{(shipping.total || 0).toFixed(2)} €</td>
+                              </tr>
+                            )}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-amber-500 text-white">
+                              <td colSpan={4} className="px-4 py-3 text-right font-bold">TOTAL HT</td>
+                              <td className="px-4 py-3 text-right font-bold text-lg">{grandTotal.toFixed(2)} €</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                        
+                        {/* Conditions */}
+                        <div className="bg-gray-50 rounded-lg p-4 mb-8">
+                          <p className="font-bold text-[#1a1a2e] text-sm mb-2">Conditions:</p>
+                          <ul className="text-sm text-gray-600 space-y-1">
+                            <li>• Devis valable 30 jours</li>
+                            <li>• Paiement: 30 jours fin de mois</li>
+                            <li>• Livraison: Sous réserve de disponibilité</li>
+                          </ul>
+                        </div>
+                        
+                        {/* Signature Section */}
+                        <div className="flex justify-between items-end pt-6 border-t border-gray-200">
+                          <div>
+                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Établi par</p>
+                            <p className="font-bold text-lg text-[#1a1a2e]">{quoteData.createdBy || 'Lighthouse France'}</p>
+                            <p className="text-gray-500">Lighthouse France</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Bon pour accord</p>
+                            <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
+                              <span className="text-gray-300 text-sm">Signature et cachet</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Footer */}
+                      <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center">
+                        <p className="font-medium">Lighthouse France SAS</p>
+                        <p className="text-gray-400 text-sm">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Modal Footer */}
-                  <div className="sticky bottom-0 bg-gray-50 px-6 py-4 border-t flex justify-between items-center">
+                  {/* Modal Footer Actions */}
+                  <div className="sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex justify-between items-center rounded-b-xl">
                     <button
                       onClick={() => setShowQuoteModal(false)}
                       className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
@@ -7663,7 +8021,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     {request.status === 'quote_sent' && (
                       <button
                         onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
-                        className="px-6 py-2 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45]"
+                        className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45]"
                       >
                         ✅ Approuver et soumettre BC
                       </button>
