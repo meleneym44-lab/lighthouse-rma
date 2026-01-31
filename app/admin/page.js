@@ -4990,42 +4990,91 @@ function RequestDetailModal({ request, onClose, onCreateQuote }) {
 function PartsOrdersSheet({ requests, notify, reload, profile }) {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [quoteOrder, setQuoteOrder] = useState(null);
+  const [shippingOrder, setShippingOrder] = useState(null);
   const [filter, setFilter] = useState('pending');
   
+  // Categorize orders
   const pendingOrders = requests.filter(r => r.status === 'submitted' && !r.request_number);
   const revisionOrders = requests.filter(r => r.status === 'quote_revision_requested');
-  const quoteSentOrders = requests.filter(r => r.status === 'quote_sent' || r.status === 'waiting_bc');
+  const quoteSentOrders = requests.filter(r => r.status === 'quote_sent');
+  const bcReviewOrders = requests.filter(r => r.status === 'bc_review');
+  const inFulfillment = requests.filter(r => ['parts_ordered', 'parts_received', 'ready_to_ship'].includes(r.status));
+  const shippedOrders = requests.filter(r => ['shipped', 'delivered', 'completed'].includes(r.status));
+  
   const allPending = [...revisionOrders, ...pendingOrders];
+  const allInProgress = [...bcReviewOrders, ...inFulfillment];
   
   const getDisplayOrders = () => {
     switch (filter) {
       case 'pending': return allPending;
       case 'quote_sent': return quoteSentOrders;
+      case 'in_progress': return allInProgress;
+      case 'shipped': return shippedOrders;
       case 'all': return requests;
       default: return allPending;
     }
   };
   
   const displayOrders = getDisplayOrders();
+  
+  // Status update function
+  const updateOrderStatus = async (orderId, newStatus) => {
+    const { error } = await supabase
+      .from('service_requests')
+      .update({ 
+        status: newStatus,
+        ...(newStatus === 'parts_ordered' ? { parts_ordered_at: new Date().toISOString() } : {}),
+        ...(newStatus === 'parts_received' ? { parts_received_at: new Date().toISOString() } : {}),
+        ...(newStatus === 'ready_to_ship' ? { ready_to_ship_at: new Date().toISOString() } : {})
+      })
+      .eq('id', orderId);
+    
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Statut mis à jour');
+      reload();
+    }
+  };
+
+  // Parts order status styles
+  const PARTS_STATUS_STYLES = {
+    submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Nouvelle demande' },
+    quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
+    quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: 'Révision demandée' },
+    bc_review: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'BC à vérifier' },
+    parts_ordered: { bg: 'bg-orange-100', text: 'text-orange-700', label: '📦 Pièces commandées' },
+    parts_received: { bg: 'bg-teal-100', text: 'text-teal-700', label: '✓ Pièces reçues' },
+    ready_to_ship: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: '🚚 Prêt à expédier' },
+    shipped: { bg: 'bg-green-100', text: 'text-green-700', label: '✈️ Expédié' },
+    delivered: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Livré' },
+    completed: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Terminé' }
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">🔩 Commandes de Pièces Détachées</h1>
-        <div className="flex gap-2">
-          <button onClick={() => setFilter('pending')} className={`px-4 py-2 rounded-lg text-sm font-medium ${filter === 'pending' ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}>
-            En attente ({allPending.length})
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => setFilter('pending')} className={`px-3 py-2 rounded-lg text-sm font-medium ${filter === 'pending' ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}>
+            À traiter ({allPending.length})
           </button>
-          <button onClick={() => setFilter('quote_sent')} className={`px-4 py-2 rounded-lg text-sm font-medium ${filter === 'quote_sent' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
+          <button onClick={() => setFilter('quote_sent')} className={`px-3 py-2 rounded-lg text-sm font-medium ${filter === 'quote_sent' ? 'bg-purple-500 text-white' : 'bg-gray-200'}`}>
             Devis envoyé ({quoteSentOrders.length})
           </button>
-          <button onClick={() => setFilter('all')} className={`px-4 py-2 rounded-lg text-sm font-medium ${filter === 'all' ? 'bg-gray-700 text-white' : 'bg-gray-200'}`}>
+          <button onClick={() => setFilter('in_progress')} className={`px-3 py-2 rounded-lg text-sm font-medium ${filter === 'in_progress' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
+            En cours ({allInProgress.length})
+          </button>
+          <button onClick={() => setFilter('shipped')} className={`px-3 py-2 rounded-lg text-sm font-medium ${filter === 'shipped' ? 'bg-green-500 text-white' : 'bg-gray-200'}`}>
+            Expédiées ({shippedOrders.length})
+          </button>
+          <button onClick={() => setFilter('all')} className={`px-3 py-2 rounded-lg text-sm font-medium ${filter === 'all' ? 'bg-gray-700 text-white' : 'bg-gray-200'}`}>
             Toutes ({requests.length})
           </button>
         </div>
       </div>
       
-      {/* Revision Requests Alert */}
+      {/* Alerts */}
       {revisionOrders.length > 0 && filter === 'pending' && (
         <div className="bg-red-50 border-2 border-red-300 p-4 rounded-xl">
           <p className="font-bold text-red-800">🔴 {revisionOrders.length} demande(s) de modification de devis</p>
@@ -5039,35 +5088,51 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
         </div>
       )}
       
+      {bcReviewOrders.length > 0 && filter === 'in_progress' && (
+        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+          <p className="font-medium text-blue-800">📋 {bcReviewOrders.length} BC à vérifier - Acceptez pour lancer la commande</p>
+        </div>
+      )}
+      
+      {/* Orders Table */}
       <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">ID / N°</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">N°</th>
               <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Client</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Pièces demandées</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Pièces</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Montant</th>
               <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Statut</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Soumis</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Date</th>
               <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {displayOrders.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">{filter === 'pending' ? 'Aucune commande en attente' : 'Aucune commande'}</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                {filter === 'pending' ? 'Aucune commande en attente' : 
+                 filter === 'in_progress' ? 'Aucune commande en cours' :
+                 filter === 'shipped' ? 'Aucune commande expédiée' : 'Aucune commande'}
+              </td></tr>
             ) : displayOrders.map(order => {
-              const style = STATUS_STYLES[order.status] || STATUS_STYLES.submitted;
+              const style = PARTS_STATUS_STYLES[order.status] || PARTS_STATUS_STYLES.submitted;
               const isPending = order.status === 'submitted' && !order.request_number;
               const needsRevision = order.status === 'quote_revision_requested';
+              const isBCReview = order.status === 'bc_review';
+              const isPartsOrdered = order.status === 'parts_ordered';
+              const isPartsReceived = order.status === 'parts_received';
+              const isReadyToShip = order.status === 'ready_to_ship';
               
-              // Parse parts from description
-              const partsLines = (order.problem_description || '').split('\n').filter(Boolean);
-              const partsCount = partsLines.length;
+              const quoteData = order.quote_data || {};
+              const partsCount = quoteData.parts?.length || 0;
+              const total = quoteData.grandTotal || 0;
               
               return (
-                <tr key={order.id} className={`hover:bg-gray-50 ${needsRevision ? 'bg-red-50' : isPending ? 'bg-amber-50/50' : ''}`}>
+                <tr key={order.id} className={`hover:bg-gray-50 ${needsRevision ? 'bg-red-50' : isPending ? 'bg-amber-50/50' : isBCReview ? 'bg-blue-50/50' : ''}`}>
                   <td className="px-4 py-3">
                     {order.request_number ? (
-                      <span className="font-mono font-bold text-[#00A651]">{order.request_number}</span>
+                      <span className="font-mono font-bold text-amber-600">{order.request_number}</span>
                     ) : (
                       <span className="text-amber-600 font-medium">Nouvelle</span>
                     )}
@@ -5076,7 +5141,14 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
                     <p className="font-medium text-gray-800">{order.companies?.name || '—'}</p>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="text-sm text-gray-600">{partsCount} pièce(s)</span>
+                    <span className="text-sm text-gray-600">{partsCount || '?'} pièce(s)</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {total > 0 ? (
+                      <span className="font-medium text-gray-800">{total.toFixed(2)} €</span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
@@ -5087,15 +5159,58 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
                     {new Date(order.created_at).toLocaleDateString('fr-FR')}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
+                      {/* Pending: Create Quote */}
                       {(isPending || needsRevision) && (
                         <button 
                           onClick={() => setQuoteOrder(order)} 
                           className={`px-3 py-1 text-sm text-white rounded font-medium ${needsRevision ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}
                         >
-                          {needsRevision ? '🔴 Réviser Devis' : '💰 Créer Devis'}
+                          {needsRevision ? '🔴 Réviser' : '💰 Devis'}
                         </button>
                       )}
+                      
+                      {/* BC Review: Accept BC */}
+                      {isBCReview && (
+                        <button 
+                          onClick={() => updateOrderStatus(order.id, 'parts_ordered')} 
+                          className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded font-medium"
+                        >
+                          ✓ Accepter BC
+                        </button>
+                      )}
+                      
+                      {/* Parts Ordered: Mark Received */}
+                      {isPartsOrdered && (
+                        <button 
+                          onClick={() => updateOrderStatus(order.id, 'parts_received')} 
+                          className="px-3 py-1 text-sm bg-teal-500 hover:bg-teal-600 text-white rounded font-medium"
+                        >
+                          📥 Reçu
+                        </button>
+                      )}
+                      
+                      {/* Parts Received: Mark Ready to Ship */}
+                      {isPartsReceived && (
+                        <button 
+                          onClick={() => updateOrderStatus(order.id, 'ready_to_ship')} 
+                          className="px-3 py-1 text-sm bg-indigo-500 hover:bg-indigo-600 text-white rounded font-medium"
+                        >
+                          🚚 Prêt
+                        </button>
+                      )}
+                      
+                      {/* Ready to Ship: Create Shipment */}
+                      {isReadyToShip && (
+                        <button 
+                          onClick={() => setShippingOrder(order)} 
+                          className="px-3 py-1 text-sm bg-green-500 hover:bg-green-600 text-white rounded font-medium"
+                        >
+                          📦 Expédier
+                        </button>
+                      )}
+                      
+                      {/* View button always */}
                       <button onClick={() => setSelectedOrder(order)} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">
                         Voir
                       </button>
@@ -5108,6 +5223,29 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
         </table>
       </div>
       
+      {/* Progress Overview for In Progress filter */}
+      {filter === 'in_progress' && allInProgress.length > 0 && (
+        <div className="grid grid-cols-4 gap-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+            <p className="text-3xl font-bold text-blue-600">{bcReviewOrders.length}</p>
+            <p className="text-sm text-blue-700">BC à vérifier</p>
+          </div>
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 text-center">
+            <p className="text-3xl font-bold text-orange-600">{requests.filter(r => r.status === 'parts_ordered').length}</p>
+            <p className="text-sm text-orange-700">En attente pièces</p>
+          </div>
+          <div className="bg-teal-50 border border-teal-200 rounded-lg p-4 text-center">
+            <p className="text-3xl font-bold text-teal-600">{requests.filter(r => r.status === 'parts_received').length}</p>
+            <p className="text-sm text-teal-700">Pièces reçues</p>
+          </div>
+          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-center">
+            <p className="text-3xl font-bold text-indigo-600">{requests.filter(r => r.status === 'ready_to_ship').length}</p>
+            <p className="text-sm text-indigo-700">Prêt à expédier</p>
+          </div>
+        </div>
+      )}
+      
+      {/* Modals */}
       {selectedOrder && (
         <PartsOrderDetailModal 
           order={selectedOrder} 
@@ -5122,6 +5260,15 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
           notify={notify} 
           reload={reload} 
           profile={profile} 
+        />
+      )}
+      {shippingOrder && (
+        <PartsShippingModal
+          order={shippingOrder}
+          onClose={() => setShippingOrder(null)}
+          notify={notify}
+          reload={reload}
+          profile={profile}
         />
       )}
     </div>
@@ -5960,6 +6107,457 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
               </button>
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// PARTS ORDER SHIPPING MODAL
+// ============================================
+function PartsShippingModal({ order, onClose, notify, reload, profile }) {
+  const [step, setStep] = useState(1); // 1: Address, 2: UPS Label, 3: BL
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  
+  const [address, setAddress] = useState({
+    company_name: '',
+    attention: '',
+    address_line1: '',
+    city: '',
+    postal_code: '',
+    country: 'France',
+    phone: ''
+  });
+  
+  const [shipmentData, setShipmentData] = useState({
+    parcels: 1,
+    weight: '1.0',
+    trackingNumber: '',
+    notes: ''
+  });
+  
+  const [blNumber, setBlNumber] = useState('');
+  const [upsLabelUrl, setUpsLabelUrl] = useState(null);
+  const [blUrl, setBlUrl] = useState(null);
+  
+  const quoteData = order.quote_data || {};
+  const parts = quoteData.parts || [];
+  
+  // Load shipping address on mount
+  useEffect(() => {
+    const loadAddress = async () => {
+      let addr = {
+        company_name: order.companies?.name || 'Client',
+        attention: '',
+        address_line1: order.companies?.billing_address || '',
+        city: order.companies?.billing_city || '',
+        postal_code: order.companies?.billing_postal_code || '',
+        country: 'France',
+        phone: ''
+      };
+      
+      if (order.shipping_address_id) {
+        const { data: shippingAddr } = await supabase
+          .from('shipping_addresses')
+          .select('*')
+          .eq('id', order.shipping_address_id)
+          .single();
+        
+        if (shippingAddr) {
+          addr = {
+            company_name: shippingAddr.company_name || shippingAddr.label || order.companies?.name,
+            attention: shippingAddr.attention || '',
+            address_line1: shippingAddr.address_line1 || '',
+            city: shippingAddr.city || '',
+            postal_code: shippingAddr.postal_code || '',
+            country: shippingAddr.country || 'France',
+            phone: shippingAddr.phone || ''
+          };
+        }
+      }
+      
+      setAddress(addr);
+      
+      // Generate BL number
+      const { data: lastBL } = await supabase
+        .from('bons_livraison')
+        .select('bl_number')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      
+      const lastNum = lastBL?.[0]?.bl_number ? parseInt(lastBL[0].bl_number.replace('BL-', '')) : 0;
+      setBlNumber(`BL-${String(lastNum + 1).padStart(5, '0')}`);
+      
+      setLoading(false);
+    };
+    
+    loadAddress();
+  }, [order]);
+  
+  // Save UPS label
+  const saveUpsLabel = async () => {
+    if (!shipmentData.trackingNumber) {
+      notify('Entrez le numéro de suivi UPS', 'error');
+      return;
+    }
+    
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('service_requests')
+        .update({
+          ups_tracking_number: shipmentData.trackingNumber,
+          shipping_weight: parseFloat(shipmentData.weight) || 1,
+          parcels_count: shipmentData.parcels
+        })
+        .eq('id', order.id);
+      
+      if (error) throw error;
+      
+      notify('Numéro UPS enregistré');
+      setStep(3);
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+    setSaving(false);
+  };
+  
+  // Generate BL and mark shipped
+  const generateBLAndShip = async () => {
+    setSaving(true);
+    try {
+      // Create BL record
+      const { data: bl, error: blError } = await supabase
+        .from('bons_livraison')
+        .insert({
+          bl_number: blNumber,
+          request_id: order.id,
+          company_id: order.company_id,
+          shipped_by: profile.id,
+          shipping_address: address,
+          parts_shipped: parts.map(p => ({
+            partNumber: p.partNumber,
+            description: p.description,
+            quantity: p.quantity
+          })),
+          parcels_count: shipmentData.parcels,
+          tracking_number: shipmentData.trackingNumber,
+          notes: shipmentData.notes
+        })
+        .select()
+        .single();
+      
+      if (blError) throw blError;
+      
+      // Update order status to shipped
+      const { error: updateError } = await supabase
+        .from('service_requests')
+        .update({
+          status: 'shipped',
+          shipped_at: new Date().toISOString(),
+          bl_number: blNumber
+        })
+        .eq('id', order.id);
+      
+      if (updateError) throw updateError;
+      
+      notify(`Commande expédiée - ${blNumber}`);
+      reload();
+      onClose();
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+    setSaving(false);
+  };
+  
+  if (loading) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="bg-white rounded-xl p-8 text-center">
+          <div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Chargement...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b bg-gradient-to-r from-green-500 to-teal-500 text-white rounded-t-xl flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold">📦 Expédition Pièces</h2>
+            <p className="text-green-100">{order.request_number} • {order.companies?.name}</p>
+          </div>
+          <button onClick={onClose} className="text-white/80 hover:text-white text-2xl">&times;</button>
+        </div>
+        
+        {/* Progress Steps */}
+        <div className="px-6 py-4 border-b bg-gray-50">
+          <div className="flex items-center justify-center gap-4">
+            {[
+              { num: 1, label: 'Adresse' },
+              { num: 2, label: 'UPS' },
+              { num: 3, label: 'BL & Envoi' }
+            ].map((s, i) => (
+              <div key={s.num} className="flex items-center">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                  step >= s.num ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'
+                }`}>
+                  {step > s.num ? '✓' : s.num}
+                </div>
+                <span className={`ml-2 text-sm ${step >= s.num ? 'text-green-700 font-medium' : 'text-gray-500'}`}>
+                  {s.label}
+                </span>
+                {i < 2 && <div className={`w-12 h-1 mx-3 ${step > s.num ? 'bg-green-500' : 'bg-gray-200'}`} />}
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {/* Step 1: Address Confirmation */}
+          {step === 1 && (
+            <div className="space-y-6">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <h3 className="font-bold text-green-800 mb-3">📍 Adresse de livraison</h3>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm text-gray-600">Société</label>
+                    <input
+                      type="text"
+                      value={address.company_name}
+                      onChange={e => setAddress({...address, company_name: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">À l'attention de</label>
+                    <input
+                      type="text"
+                      value={address.attention}
+                      onChange={e => setAddress({...address, attention: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-sm text-gray-600">Adresse</label>
+                    <input
+                      type="text"
+                      value={address.address_line1}
+                      onChange={e => setAddress({...address, address_line1: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">Code postal</label>
+                    <input
+                      type="text"
+                      value={address.postal_code}
+                      onChange={e => setAddress({...address, postal_code: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">Ville</label>
+                    <input
+                      type="text"
+                      value={address.city}
+                      onChange={e => setAddress({...address, city: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                </div>
+              </div>
+              
+              {/* Parts Summary */}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <h3 className="font-bold text-amber-800 mb-3">📦 Pièces à expédier</h3>
+                <div className="space-y-2">
+                  {parts.map((part, idx) => (
+                    <div key={idx} className="flex justify-between items-center bg-white rounded p-2">
+                      <div>
+                        <span className="font-mono text-sm text-amber-700">{part.partNumber || '—'}</span>
+                        <span className="ml-2 text-gray-600">{part.description}</span>
+                      </div>
+                      <span className="font-medium">x{part.quantity}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Step 2: UPS Label */}
+          {step === 2 && (
+            <div className="space-y-6">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <h3 className="font-bold text-amber-800 mb-3">🏷️ Informations UPS</h3>
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-sm text-gray-600">Nombre de colis</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={shipmentData.parcels}
+                      onChange={e => setShipmentData({...shipmentData, parcels: parseInt(e.target.value) || 1})}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">Poids (kg)</label>
+                    <input
+                      type="text"
+                      value={shipmentData.weight}
+                      onChange={e => setShipmentData({...shipmentData, weight: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">N° Suivi UPS *</label>
+                    <input
+                      type="text"
+                      value={shipmentData.trackingNumber}
+                      onChange={e => setShipmentData({...shipmentData, trackingNumber: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg"
+                      placeholder="1Z..."
+                    />
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-blue-800">
+                  <strong>Instructions:</strong> Créez l'étiquette UPS manuellement sur ups.com, 
+                  puis entrez le numéro de suivi ci-dessus.
+                </p>
+              </div>
+            </div>
+          )}
+          
+          {/* Step 3: BL Generation */}
+          {step === 3 && (
+            <div className="space-y-6">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <h3 className="font-bold text-green-800 mb-3">📄 Bon de Livraison</h3>
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="text-sm text-gray-600">Numéro BL</label>
+                    <input
+                      type="text"
+                      value={blNumber}
+                      onChange={e => setBlNumber(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg font-mono font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">N° Suivi UPS</label>
+                    <p className="px-3 py-2 bg-gray-100 rounded-lg font-mono">{shipmentData.trackingNumber}</p>
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="text-sm text-gray-600">Notes</label>
+                  <textarea
+                    value={shipmentData.notes}
+                    onChange={e => setShipmentData({...shipmentData, notes: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-lg"
+                    rows={2}
+                    placeholder="Notes optionnelles..."
+                  />
+                </div>
+              </div>
+              
+              {/* BL Preview */}
+              <div className="bg-white border-2 border-gray-300 rounded-lg p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-800">BON DE LIVRAISON</h2>
+                    <p className="text-gray-500">{blNumber}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold">LIGHTHOUSE France</p>
+                    <p className="text-sm text-gray-500">Pièces Détachées</p>
+                  </div>
+                </div>
+                
+                <div className="border-t pt-4 mb-4">
+                  <p className="text-sm text-gray-500">Destinataire:</p>
+                  <p className="font-medium">{address.company_name}</p>
+                  {address.attention && <p>{address.attention}</p>}
+                  <p>{address.address_line1}</p>
+                  <p>{address.postal_code} {address.city}</p>
+                </div>
+                
+                <table className="w-full mb-4">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="px-3 py-2 text-left text-sm">Qté</th>
+                      <th className="px-3 py-2 text-left text-sm">Référence</th>
+                      <th className="px-3 py-2 text-left text-sm">Désignation</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parts.map((part, idx) => (
+                      <tr key={idx} className="border-b">
+                        <td className="px-3 py-2">{part.quantity}</td>
+                        <td className="px-3 py-2 font-mono text-sm">{part.partNumber || '—'}</td>
+                        <td className="px-3 py-2">{part.description}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                
+                <div className="border-t pt-4 text-sm text-gray-500">
+                  <p>Suivi UPS: {shipmentData.trackingNumber}</p>
+                  <p>Colis: {shipmentData.parcels} • Poids: {shipmentData.weight} kg</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        
+        {/* Footer */}
+        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between rounded-b-xl">
+          <button
+            onClick={() => step > 1 ? setStep(step - 1) : onClose()}
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
+          >
+            {step > 1 ? '← Retour' : 'Annuler'}
+          </button>
+          
+          {step === 1 && (
+            <button
+              onClick={() => setStep(2)}
+              className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
+            >
+              Continuer →
+            </button>
+          )}
+          
+          {step === 2 && (
+            <button
+              onClick={saveUpsLabel}
+              disabled={saving || !shipmentData.trackingNumber}
+              className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
+            >
+              {saving ? 'Enregistrement...' : 'Enregistrer & Continuer →'}
+            </button>
+          )}
+          
+          {step === 3 && (
+            <button
+              onClick={generateBLAndShip}
+              disabled={saving}
+              className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50"
+            >
+              {saving ? 'Envoi...' : '✅ Créer BL & Marquer Expédié'}
+            </button>
+          )}
         </div>
       </div>
     </div>
