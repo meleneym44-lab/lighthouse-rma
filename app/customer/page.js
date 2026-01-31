@@ -8667,14 +8667,13 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                         { id: 'submitted', label: 'Demande soumise', icon: '📝' },
                         { id: 'quote_sent', label: 'Devis envoyé', icon: '💰' },
                         { id: 'bc_review', label: 'BC en vérification', icon: '📋' },
-                        { id: 'processing', label: 'Pièces commandées', icon: '🛒' },
-                        { id: 'in_progress', label: 'Pièces reçues', icon: '📥' },
-                        { id: 'ready_to_ship', label: 'Prêt à expédier', icon: '📦' },
-                        { id: 'shipped', label: 'Expédié', icon: '🚚' },
-                        { id: 'delivered', label: 'Livré', icon: '✅' }
+                        { id: 'in_progress', label: 'En cours', icon: '📦' },
+                        { id: 'ready_to_ship', label: 'Prêt à expédier', icon: '🚚' },
+                        { id: 'shipped', label: 'Expédié', icon: '✅' },
+                        { id: 'delivered', label: 'Livré', icon: '🏠' }
                       ];
                       
-                      const statusOrder = ['submitted', 'quote_sent', 'bc_review', 'processing', 'in_progress', 'ready_to_ship', 'shipped', 'delivered', 'completed'];
+                      const statusOrder = ['submitted', 'quote_sent', 'bc_review', 'in_progress', 'ready_to_ship', 'shipped', 'delivered', 'completed'];
                       const currentIdx = statusOrder.indexOf(request.status);
                       
                       return (
