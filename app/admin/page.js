@@ -5370,7 +5370,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {quoteParts.map((part, idx) => (
-                        <tr key={part.id} className="hover:bg-gray-50">>
+                        <tr key={part.id} className="hover:bg-gray-50">
                           <td className="px-3 py-2">
                             <input
                               type="text"
