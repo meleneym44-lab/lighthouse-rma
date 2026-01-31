@@ -4990,258 +4990,299 @@ function RequestDetailModal({ request, onClose, onCreateQuote }) {
 function PartsOrdersSheet({ requests, notify, reload, profile }) {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [quoteOrder, setQuoteOrder] = useState(null);
-  const [shippingOrder, setShippingOrder] = useState(null);
-  const [filter, setFilter] = useState('pending');
+  const [bcReviewOrder, setBcReviewOrder] = useState(null);
+  const [processOrder, setProcessOrder] = useState(null);
   
   // Categorize orders
   const pendingOrders = requests.filter(r => r.status === 'submitted' && !r.request_number);
   const revisionOrders = requests.filter(r => r.status === 'quote_revision_requested');
   const quoteSentOrders = requests.filter(r => r.status === 'quote_sent');
   const bcReviewOrders = requests.filter(r => r.status === 'bc_review');
-  const inFulfillment = requests.filter(r => ['parts_ordered', 'parts_received', 'ready_to_ship'].includes(r.status));
+  
+  // Approved orders ready for processing (after BC approved)
+  const approvedOrders = requests.filter(r => 
+    ['parts_ordered', 'parts_received', 'ready_to_ship'].includes(r.status)
+  );
   const shippedOrders = requests.filter(r => ['shipped', 'delivered', 'completed'].includes(r.status));
   
   const allPending = [...revisionOrders, ...pendingOrders];
-  const allInProgress = [...bcReviewOrders, ...inFulfillment];
-  
-  const getDisplayOrders = () => {
-    switch (filter) {
-      case 'pending': return allPending;
-      case 'quote_sent': return quoteSentOrders;
-      case 'in_progress': return allInProgress;
-      case 'shipped': return shippedOrders;
-      case 'all': return requests;
-      default: return allPending;
-    }
-  };
-  
-  const displayOrders = getDisplayOrders();
-  
-  // Status update function
-  const updateOrderStatus = async (orderId, newStatus) => {
-    const { error } = await supabase
-      .from('service_requests')
-      .update({ 
-        status: newStatus,
-        ...(newStatus === 'parts_ordered' ? { parts_ordered_at: new Date().toISOString() } : {}),
-        ...(newStatus === 'parts_received' ? { parts_received_at: new Date().toISOString() } : {}),
-        ...(newStatus === 'ready_to_ship' ? { ready_to_ship_at: new Date().toISOString() } : {})
-      })
-      .eq('id', orderId);
-    
-    if (error) {
-      notify(`Erreur: ${error.message}`, 'error');
-    } else {
-      notify('Statut mis à jour');
-      reload();
-    }
-  };
 
   // Parts order status styles
-  const PARTS_STATUS_STYLES = {
+  const PARTS_STATUS = {
     submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Nouvelle demande' },
     quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
     quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: 'Révision demandée' },
     bc_review: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'BC à vérifier' },
-    parts_ordered: { bg: 'bg-orange-100', text: 'text-orange-700', label: '📦 Pièces commandées' },
-    parts_received: { bg: 'bg-teal-100', text: 'text-teal-700', label: '✓ Pièces reçues' },
-    ready_to_ship: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: '🚚 Prêt à expédier' },
-    shipped: { bg: 'bg-green-100', text: 'text-green-700', label: '✈️ Expédié' },
-    delivered: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Livré' },
-    completed: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Terminé' }
+    parts_ordered: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Pièces commandées' },
+    parts_received: { bg: 'bg-teal-100', text: 'text-teal-700', label: 'Pièces reçues' },
+    ready_to_ship: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Prêt à expédier' },
+    shipped: { bg: 'bg-green-100', text: 'text-green-700', label: 'Expédié' },
+    delivered: { bg: 'bg-green-100', text: 'text-green-700', label: 'Livré' },
+    completed: { bg: 'bg-green-100', text: 'text-green-700', label: 'Terminé' }
   };
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">🔩 Commandes de Pièces Détachées</h1>
-        <div className="flex gap-2 flex-wrap">
-          <button onClick={() => setFilter('pending')} className={`px-3 py-2 rounded-lg text-sm font-medium ${filter === 'pending' ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}>
-            À traiter ({allPending.length})
-          </button>
-          <button onClick={() => setFilter('quote_sent')} className={`px-3 py-2 rounded-lg text-sm font-medium ${filter === 'quote_sent' ? 'bg-purple-500 text-white' : 'bg-gray-200'}`}>
-            Devis envoyé ({quoteSentOrders.length})
-          </button>
-          <button onClick={() => setFilter('in_progress')} className={`px-3 py-2 rounded-lg text-sm font-medium ${filter === 'in_progress' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
-            En cours ({allInProgress.length})
-          </button>
-          <button onClick={() => setFilter('shipped')} className={`px-3 py-2 rounded-lg text-sm font-medium ${filter === 'shipped' ? 'bg-green-500 text-white' : 'bg-gray-200'}`}>
-            Expédiées ({shippedOrders.length})
-          </button>
-          <button onClick={() => setFilter('all')} className={`px-3 py-2 rounded-lg text-sm font-medium ${filter === 'all' ? 'bg-gray-700 text-white' : 'bg-gray-200'}`}>
-            Toutes ({requests.length})
-          </button>
+        <div className="flex gap-4 text-sm">
+          <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full">{allPending.length} à traiter</span>
+          <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full">{bcReviewOrders.length} BC à vérifier</span>
+          <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full">{approvedOrders.length} en cours</span>
+          <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full">{shippedOrders.length} expédiées</span>
         </div>
       </div>
       
-      {/* Alerts */}
-      {revisionOrders.length > 0 && filter === 'pending' && (
-        <div className="bg-red-50 border-2 border-red-300 p-4 rounded-xl">
-          <p className="font-bold text-red-800">🔴 {revisionOrders.length} demande(s) de modification de devis</p>
-          <p className="text-sm text-red-600">Le client a demandé des modifications - veuillez réviser et renvoyer</p>
-        </div>
-      )}
-      
-      {pendingOrders.length > 0 && filter === 'pending' && (
-        <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg">
-          <p className="font-medium text-amber-800">⚠️ {pendingOrders.length} nouvelle(s) commande(s) de pièces - Créez un devis pour traiter</p>
-        </div>
-      )}
-      
-      {bcReviewOrders.length > 0 && filter === 'in_progress' && (
-        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
-          <p className="font-medium text-blue-800">📋 {bcReviewOrders.length} BC à vérifier - Acceptez pour lancer la commande</p>
-        </div>
-      )}
-      
-      {/* Orders Table */}
-      <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">N°</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Client</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Pièces</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Montant</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Statut</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Date</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {displayOrders.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">
-                {filter === 'pending' ? 'Aucune commande en attente' : 
-                 filter === 'in_progress' ? 'Aucune commande en cours' :
-                 filter === 'shipped' ? 'Aucune commande expédiée' : 'Aucune commande'}
-              </td></tr>
-            ) : displayOrders.map(order => {
-              const style = PARTS_STATUS_STYLES[order.status] || PARTS_STATUS_STYLES.submitted;
-              const isPending = order.status === 'submitted' && !order.request_number;
-              const needsRevision = order.status === 'quote_revision_requested';
-              const isBCReview = order.status === 'bc_review';
-              const isPartsOrdered = order.status === 'parts_ordered';
-              const isPartsReceived = order.status === 'parts_received';
-              const isReadyToShip = order.status === 'ready_to_ship';
-              
+      {/* ============================================ */}
+      {/* SECTION 1: BC À VÉRIFIER (like RMA/Contracts) */}
+      {/* ============================================ */}
+      {bcReviewOrders.length > 0 && (
+        <div className="bg-blue-50 border-2 border-blue-300 rounded-xl overflow-hidden">
+          <div className="bg-blue-100 px-6 py-4 border-b border-blue-300">
+            <h2 className="text-lg font-bold text-blue-800 flex items-center gap-2">
+              📋 Bons de Commande à Vérifier
+              <span className="px-2 py-0.5 bg-blue-500 text-white text-sm rounded-full">{bcReviewOrders.length}</span>
+            </h2>
+            <p className="text-sm text-blue-600">Le client a soumis son BC - Vérifiez et approuvez pour continuer</p>
+          </div>
+          <div className="divide-y divide-blue-200">
+            {bcReviewOrders.map(order => {
               const quoteData = order.quote_data || {};
-              const partsCount = quoteData.parts?.length || 0;
-              const total = quoteData.grandTotal || 0;
-              
               return (
-                <tr key={order.id} className={`hover:bg-gray-50 ${needsRevision ? 'bg-red-50' : isPending ? 'bg-amber-50/50' : isBCReview ? 'bg-blue-50/50' : ''}`}>
-                  <td className="px-4 py-3">
-                    {order.request_number ? (
-                      <span className="font-mono font-bold text-amber-600">{order.request_number}</span>
-                    ) : (
-                      <span className="text-amber-600 font-medium">Nouvelle</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-gray-800">{order.companies?.name || '—'}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="text-sm text-gray-600">{partsCount || '?'} pièce(s)</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    {total > 0 ? (
-                      <span className="font-medium text-gray-800">{total.toFixed(2)} €</span>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
-                      {style.label}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {new Date(order.created_at).toLocaleDateString('fr-FR')}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-2 flex-wrap">
-                      {/* Pending: Create Quote */}
-                      {(isPending || needsRevision) && (
-                        <button 
-                          onClick={() => setQuoteOrder(order)} 
-                          className={`px-3 py-1 text-sm text-white rounded font-medium ${needsRevision ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}
-                        >
-                          {needsRevision ? '🔴 Réviser' : '💰 Devis'}
-                        </button>
-                      )}
-                      
-                      {/* BC Review: Accept BC */}
-                      {isBCReview && (
-                        <button 
-                          onClick={() => updateOrderStatus(order.id, 'parts_ordered')} 
-                          className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded font-medium"
-                        >
-                          ✓ Accepter BC
-                        </button>
-                      )}
-                      
-                      {/* Parts Ordered: Mark Received */}
-                      {isPartsOrdered && (
-                        <button 
-                          onClick={() => updateOrderStatus(order.id, 'parts_received')} 
-                          className="px-3 py-1 text-sm bg-teal-500 hover:bg-teal-600 text-white rounded font-medium"
-                        >
-                          📥 Reçu
-                        </button>
-                      )}
-                      
-                      {/* Parts Received: Mark Ready to Ship */}
-                      {isPartsReceived && (
-                        <button 
-                          onClick={() => updateOrderStatus(order.id, 'ready_to_ship')} 
-                          className="px-3 py-1 text-sm bg-indigo-500 hover:bg-indigo-600 text-white rounded font-medium"
-                        >
-                          🚚 Prêt
-                        </button>
-                      )}
-                      
-                      {/* Ready to Ship: Create Shipment */}
-                      {isReadyToShip && (
-                        <button 
-                          onClick={() => setShippingOrder(order)} 
-                          className="px-3 py-1 text-sm bg-green-500 hover:bg-green-600 text-white rounded font-medium"
-                        >
-                          📦 Expédier
-                        </button>
-                      )}
-                      
-                      {/* View button always */}
-                      <button onClick={() => setSelectedOrder(order)} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">
-                        Voir
-                      </button>
+                <div 
+                  key={order.id}
+                  className="p-4 hover:bg-blue-100/50 cursor-pointer transition-colors"
+                  onClick={() => setBcReviewOrder(order)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-blue-500 rounded-lg flex items-center justify-center text-white font-bold">
+                        📋
+                      </div>
+                      <div>
+                        <p className="font-bold text-blue-900">{order.request_number}</p>
+                        <p className="text-sm text-blue-700">{order.companies?.name}</p>
+                      </div>
                     </div>
-                  </td>
-                </tr>
+                    <div className="text-right">
+                      <p className="font-bold text-blue-800">{(quoteData.grandTotal || 0).toFixed(2)} €</p>
+                      <p className="text-xs text-blue-600">
+                        {order.bc_submitted_at ? `BC soumis le ${new Date(order.bc_submitted_at).toLocaleDateString('fr-FR')}` : ''}
+                      </p>
+                    </div>
+                    <button className="ml-4 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">
+                      Vérifier →
+                    </button>
+                  </div>
+                </div>
               );
             })}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        </div>
+      )}
       
-      {/* Progress Overview for In Progress filter */}
-      {filter === 'in_progress' && allInProgress.length > 0 && (
-        <div className="grid grid-cols-4 gap-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-            <p className="text-3xl font-bold text-blue-600">{bcReviewOrders.length}</p>
-            <p className="text-sm text-blue-700">BC à vérifier</p>
+      {/* ============================================ */}
+      {/* SECTION 2: NOUVELLES DEMANDES (create quote) */}
+      {/* ============================================ */}
+      {allPending.length > 0 && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl overflow-hidden">
+          <div className="bg-amber-100 px-6 py-4 border-b border-amber-300">
+            <h2 className="text-lg font-bold text-amber-800 flex items-center gap-2">
+              ⏳ Nouvelles Demandes
+              <span className="px-2 py-0.5 bg-amber-500 text-white text-sm rounded-full">{allPending.length}</span>
+            </h2>
+            <p className="text-sm text-amber-600">Créez un devis pour ces demandes</p>
           </div>
-          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 text-center">
-            <p className="text-3xl font-bold text-orange-600">{requests.filter(r => r.status === 'parts_ordered').length}</p>
-            <p className="text-sm text-orange-700">En attente pièces</p>
+          <div className="divide-y divide-amber-200">
+            {allPending.map(order => {
+              const needsRevision = order.status === 'quote_revision_requested';
+              return (
+                <div 
+                  key={order.id}
+                  className={`p-4 hover:bg-amber-100/50 cursor-pointer transition-colors ${needsRevision ? 'bg-red-50' : ''}`}
+                  onClick={() => setSelectedOrder(order)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-12 h-12 ${needsRevision ? 'bg-red-500' : 'bg-amber-500'} rounded-lg flex items-center justify-center text-white font-bold`}>
+                        {needsRevision ? '🔴' : '📦'}
+                      </div>
+                      <div>
+                        <p className="font-bold text-amber-900">{order.companies?.name}</p>
+                        <p className="text-sm text-amber-700">
+                          {needsRevision ? 'Modification demandée' : 'Nouvelle commande'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right text-sm text-amber-600">
+                      {new Date(order.created_at).toLocaleDateString('fr-FR')}
+                    </div>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); setQuoteOrder(order); }}
+                      className={`ml-4 px-4 py-2 ${needsRevision ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'} text-white rounded-lg font-medium`}
+                    >
+                      {needsRevision ? '🔴 Réviser' : '💰 Créer Devis'}
+                    </button>
+                  </div>
+                  {needsRevision && order.revision_notes && (
+                    <div className="mt-3 p-3 bg-red-100 rounded-lg">
+                      <p className="text-sm text-red-800"><strong>Note client:</strong> {order.revision_notes}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-          <div className="bg-teal-50 border border-teal-200 rounded-lg p-4 text-center">
-            <p className="text-3xl font-bold text-teal-600">{requests.filter(r => r.status === 'parts_received').length}</p>
-            <p className="text-sm text-teal-700">Pièces reçues</p>
+        </div>
+      )}
+      
+      {/* ============================================ */}
+      {/* SECTION 3: DEVIS ENVOYÉS (waiting for BC) */}
+      {/* ============================================ */}
+      {quoteSentOrders.length > 0 && (
+        <div className="bg-purple-50 border border-purple-200 rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-purple-200">
+            <h2 className="text-lg font-bold text-purple-800 flex items-center gap-2">
+              💰 Devis Envoyés - En attente BC
+              <span className="px-2 py-0.5 bg-purple-500 text-white text-sm rounded-full">{quoteSentOrders.length}</span>
+            </h2>
           </div>
-          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-center">
-            <p className="text-3xl font-bold text-indigo-600">{requests.filter(r => r.status === 'ready_to_ship').length}</p>
-            <p className="text-sm text-indigo-700">Prêt à expédier</p>
+          <div className="divide-y divide-purple-100">
+            {quoteSentOrders.map(order => {
+              const quoteData = order.quote_data || {};
+              return (
+                <div 
+                  key={order.id}
+                  className="p-4 hover:bg-purple-100/50 cursor-pointer transition-colors"
+                  onClick={() => setSelectedOrder(order)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-mono font-bold text-purple-700">{order.request_number}</p>
+                      <p className="text-sm text-purple-600">{order.companies?.name}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-purple-800">{(quoteData.grandTotal || 0).toFixed(2)} €</p>
+                      <p className="text-xs text-purple-500">
+                        Envoyé le {order.quote_sent_at ? new Date(order.quote_sent_at).toLocaleDateString('fr-FR') : '—'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
+        </div>
+      )}
+      
+      {/* ============================================ */}
+      {/* SECTION 4: COMMANDES EN COURS (approved, processing) */}
+      {/* ============================================ */}
+      {approvedOrders.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+          <div className="px-6 py-4 border-b bg-gradient-to-r from-orange-500 to-amber-500 text-white">
+            <h2 className="text-lg font-bold flex items-center gap-2">
+              🚀 Commandes en Cours
+              <span className="px-2 py-0.5 bg-white/20 text-sm rounded-full">{approvedOrders.length}</span>
+            </h2>
+            <p className="text-sm text-orange-100">Cliquez sur une commande pour la traiter</p>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {approvedOrders.map(order => {
+              const style = PARTS_STATUS[order.status] || PARTS_STATUS.parts_ordered;
+              const quoteData = order.quote_data || {};
+              const partsCount = quoteData.parts?.length || 0;
+              
+              return (
+                <div 
+                  key={order.id}
+                  className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                  onClick={() => setProcessOrder(order)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-2xl ${
+                        order.status === 'parts_ordered' ? 'bg-orange-100' :
+                        order.status === 'parts_received' ? 'bg-teal-100' :
+                        'bg-indigo-100'
+                      }`}>
+                        {order.status === 'parts_ordered' ? '📦' :
+                         order.status === 'parts_received' ? '✓' : '🚚'}
+                      </div>
+                      <div>
+                        <p className="font-mono font-bold text-gray-800">{order.request_number}</p>
+                        <p className="text-sm text-gray-600">{order.companies?.name}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <p className="text-sm text-gray-500">{partsCount} pièce(s)</p>
+                        <p className="font-bold text-gray-800">{(quoteData.grandTotal || 0).toFixed(2)} €</p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>
+                        {style.label}
+                      </span>
+                      <span className="text-gray-400">→</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      
+      {/* ============================================ */}
+      {/* SECTION 5: COMMANDES EXPÉDIÉES */}
+      {/* ============================================ */}
+      {shippedOrders.length > 0 && (
+        <div className="bg-green-50 border border-green-200 rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-green-200">
+            <h2 className="text-lg font-bold text-green-800 flex items-center gap-2">
+              ✅ Commandes Expédiées
+              <span className="px-2 py-0.5 bg-green-500 text-white text-sm rounded-full">{shippedOrders.length}</span>
+            </h2>
+          </div>
+          <div className="divide-y divide-green-100">
+            {shippedOrders.slice(0, 5).map(order => {
+              const quoteData = order.quote_data || {};
+              return (
+                <div 
+                  key={order.id}
+                  className="p-4 hover:bg-green-100/50 cursor-pointer transition-colors"
+                  onClick={() => setSelectedOrder(order)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-mono font-bold text-green-700">{order.request_number}</p>
+                      <p className="text-sm text-green-600">{order.companies?.name}</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      {order.bl_number && (
+                        <span className="text-sm text-green-600">BL: {order.bl_number}</span>
+                      )}
+                      {order.ups_tracking_number && (
+                        <span className="text-sm text-green-600">UPS: {order.ups_tracking_number}</span>
+                      )}
+                      <span className="text-xs text-green-500">
+                        {order.shipped_at ? new Date(order.shipped_at).toLocaleDateString('fr-FR') : ''}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      
+      {/* Empty State */}
+      {requests.length === 0 && (
+        <div className="bg-white rounded-xl shadow-sm p-12 text-center">
+          <p className="text-4xl mb-4">📦</p>
+          <p className="text-gray-500 text-lg">Aucune commande de pièces</p>
+          <p className="text-gray-400 text-sm mt-2">Les commandes de pièces des clients apparaîtront ici</p>
         </div>
       )}
       
@@ -5262,15 +5303,422 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
           profile={profile} 
         />
       )}
-      {shippingOrder && (
-        <PartsShippingModal
-          order={shippingOrder}
-          onClose={() => setShippingOrder(null)}
+      {bcReviewOrder && (
+        <PartsBCReviewModal
+          order={bcReviewOrder}
+          onClose={() => setBcReviewOrder(null)}
+          notify={notify}
+          reload={reload}
+        />
+      )}
+      {processOrder && (
+        <PartsProcessModal
+          order={processOrder}
+          onClose={() => setProcessOrder(null)}
           notify={notify}
           reload={reload}
           profile={profile}
         />
       )}
+    </div>
+  );
+}
+
+// ============================================
+// PARTS BC REVIEW MODAL (like RMA BC Review)
+// ============================================
+function PartsBCReviewModal({ order, onClose, notify, reload }) {
+  const [approving, setApproving] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [showRejectForm, setShowRejectForm] = useState(false);
+  
+  const quoteData = order.quote_data || {};
+  const parts = quoteData.parts || [];
+  
+  const approveBC = async () => {
+    setApproving(true);
+    try {
+      const { error } = await supabase
+        .from('service_requests')
+        .update({
+          status: 'parts_ordered',
+          bc_approved_at: new Date().toISOString(),
+          parts_ordered_at: new Date().toISOString()
+        })
+        .eq('id', order.id);
+      
+      if (error) throw error;
+      
+      notify('BC approuvé - Commande de pièces lancée');
+      reload();
+      onClose();
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+    setApproving(false);
+  };
+  
+  const rejectBC = async () => {
+    if (!rejectReason.trim()) {
+      notify('Veuillez indiquer la raison du rejet', 'error');
+      return;
+    }
+    
+    setRejecting(true);
+    try {
+      const { error } = await supabase
+        .from('service_requests')
+        .update({
+          status: 'quote_revision_requested',
+          revision_notes: rejectReason,
+          bc_rejected_at: new Date().toISOString()
+        })
+        .eq('id', order.id);
+      
+      if (error) throw error;
+      
+      notify('BC rejeté - Le client sera notifié');
+      reload();
+      onClose();
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+    setRejecting(false);
+  };
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-bold">📋 Vérification Bon de Commande</h2>
+              <p className="text-blue-100">{order.request_number} • {order.companies?.name}</p>
+            </div>
+            <button onClick={onClose} className="text-white/80 hover:text-white text-2xl">&times;</button>
+          </div>
+        </div>
+        
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* BC Info */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="grid md:grid-cols-3 gap-4">
+              <div>
+                <p className="text-sm text-blue-600">Signé par</p>
+                <p className="font-bold text-blue-900">{order.bc_signed_by || '—'}</p>
+              </div>
+              <div>
+                <p className="text-sm text-blue-600">Date de signature</p>
+                <p className="font-bold text-blue-900">
+                  {order.bc_signature_date ? new Date(order.bc_signature_date).toLocaleDateString('fr-FR') : '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-blue-600">BC soumis le</p>
+                <p className="font-bold text-blue-900">
+                  {order.bc_submitted_at ? new Date(order.bc_submitted_at).toLocaleDateString('fr-FR') : '—'}
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          {/* Documents */}
+          <div className="flex gap-4">
+            {order.quote_url && (
+              <a 
+                href={order.quote_url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex-1 flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100"
+              >
+                <div className="w-10 h-10 bg-amber-500 rounded flex items-center justify-center text-white font-bold text-xs">PDF</div>
+                <div>
+                  <p className="font-medium text-amber-900">Devis Original</p>
+                  <p className="text-xs text-amber-600">Cliquez pour voir</p>
+                </div>
+              </a>
+            )}
+            {order.signed_quote_url && (
+              <a 
+                href={order.signed_quote_url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex-1 flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100"
+              >
+                <div className="w-10 h-10 bg-green-500 rounded flex items-center justify-center text-white font-bold text-xs">PDF</div>
+                <div>
+                  <p className="font-medium text-green-900">Devis Signé</p>
+                  <p className="text-xs text-green-600">Cliquez pour voir</p>
+                </div>
+              </a>
+            )}
+            {order.bc_file_url && (
+              <a 
+                href={order.bc_file_url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex-1 flex items-center gap-3 p-4 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100"
+              >
+                <div className="w-10 h-10 bg-purple-500 rounded flex items-center justify-center text-white font-bold text-xs">PDF</div>
+                <div>
+                  <p className="font-medium text-purple-900">Bon de Commande</p>
+                  <p className="text-xs text-purple-600">Cliquez pour voir</p>
+                </div>
+              </a>
+            )}
+          </div>
+          
+          {/* Parts Summary */}
+          <div>
+            <h3 className="font-bold text-gray-800 mb-3">📦 Pièces commandées</h3>
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="px-3 py-2 text-left text-sm font-bold">Qté</th>
+                  <th className="px-3 py-2 text-left text-sm font-bold">Référence</th>
+                  <th className="px-3 py-2 text-left text-sm font-bold">Désignation</th>
+                  <th className="px-3 py-2 text-right text-sm font-bold">Prix</th>
+                </tr>
+              </thead>
+              <tbody>
+                {parts.map((part, idx) => (
+                  <tr key={idx} className="border-b">
+                    <td className="px-3 py-2">{part.quantity}</td>
+                    <td className="px-3 py-2 font-mono text-sm">{part.partNumber || '—'}</td>
+                    <td className="px-3 py-2">{part.description}</td>
+                    <td className="px-3 py-2 text-right">{(part.lineTotal || 0).toFixed(2)} €</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-amber-100 font-bold">
+                  <td colSpan={3} className="px-3 py-2 text-right">TOTAL HT</td>
+                  <td className="px-3 py-2 text-right">{(quoteData.grandTotal || 0).toFixed(2)} €</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          
+          {/* Reject Form */}
+          {showRejectForm && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <h4 className="font-bold text-red-800 mb-2">Raison du rejet</h4>
+              <textarea
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+                className="w-full px-3 py-2 border border-red-300 rounded-lg"
+                rows={3}
+                placeholder="Expliquez pourquoi le BC est rejeté..."
+              />
+            </div>
+          )}
+        </div>
+        
+        {/* Footer */}
+        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between">
+          {!showRejectForm ? (
+            <>
+              <button
+                onClick={() => setShowRejectForm(true)}
+                className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-medium"
+              >
+                ✕ Rejeter BC
+              </button>
+              <button
+                onClick={approveBC}
+                disabled={approving}
+                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50"
+              >
+                {approving ? 'Approbation...' : '✓ Approuver BC & Lancer Commande'}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setShowRejectForm(false)}
+                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={rejectBC}
+                disabled={rejecting}
+                className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold disabled:opacity-50"
+              >
+                {rejecting ? 'Envoi...' : 'Confirmer le Rejet'}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// PARTS PROCESS MODAL (for approved orders)
+// ============================================
+function PartsProcessModal({ order, onClose, notify, reload, profile }) {
+  const [saving, setSaving] = useState(false);
+  const [showShipping, setShowShipping] = useState(false);
+  
+  const quoteData = order.quote_data || {};
+  const parts = quoteData.parts || [];
+  
+  const updateStatus = async (newStatus, extraFields = {}) => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('service_requests')
+        .update({
+          status: newStatus,
+          ...extraFields
+        })
+        .eq('id', order.id);
+      
+      if (error) throw error;
+      
+      notify('Statut mis à jour');
+      reload();
+      if (newStatus !== 'ready_to_ship') onClose();
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+    setSaving(false);
+  };
+  
+  if (showShipping) {
+    return (
+      <PartsShippingModal
+        order={order}
+        onClose={() => { setShowShipping(false); onClose(); }}
+        notify={notify}
+        reload={reload}
+        profile={profile}
+      />
+    );
+  }
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b bg-gradient-to-r from-orange-500 to-amber-500 text-white">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-bold">🚀 Traitement Commande</h2>
+              <p className="text-orange-100">{order.request_number} • {order.companies?.name}</p>
+            </div>
+            <button onClick={onClose} className="text-white/80 hover:text-white text-2xl">&times;</button>
+          </div>
+        </div>
+        
+        {/* Progress */}
+        <div className="px-6 py-4 border-b bg-gray-50">
+          <div className="flex items-center justify-between">
+            {[
+              { id: 'parts_ordered', label: 'Commandé', icon: '🛒' },
+              { id: 'parts_received', label: 'Reçu', icon: '📥' },
+              { id: 'ready_to_ship', label: 'Prêt', icon: '📦' },
+              { id: 'shipped', label: 'Expédié', icon: '🚚' }
+            ].map((step, idx) => {
+              const statusOrder = ['parts_ordered', 'parts_received', 'ready_to_ship', 'shipped'];
+              const currentIdx = statusOrder.indexOf(order.status);
+              const stepIdx = statusOrder.indexOf(step.id);
+              const isComplete = currentIdx >= stepIdx;
+              const isCurrent = order.status === step.id;
+              
+              return (
+                <div key={step.id} className="flex items-center">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${
+                    isCurrent ? 'bg-orange-500 text-white ring-4 ring-orange-200' :
+                    isComplete ? 'bg-green-500 text-white' : 'bg-gray-200'
+                  }`}>
+                    {isComplete && !isCurrent ? '✓' : step.icon}
+                  </div>
+                  <span className={`ml-2 text-sm ${isCurrent ? 'font-bold text-orange-700' : isComplete ? 'text-green-700' : 'text-gray-400'}`}>
+                    {step.label}
+                  </span>
+                  {idx < 3 && <div className={`w-8 h-1 mx-2 ${isComplete && !isCurrent ? 'bg-green-500' : 'bg-gray-200'}`} />}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* Parts List */}
+          <div>
+            <h3 className="font-bold text-gray-800 mb-3">📦 Pièces à expédier</h3>
+            <div className="bg-amber-50 rounded-lg p-4 space-y-2">
+              {parts.map((part, idx) => (
+                <div key={idx} className="flex justify-between items-center bg-white rounded p-2">
+                  <div>
+                    <span className="font-mono text-sm text-amber-700">{part.partNumber || '—'}</span>
+                    <span className="ml-2 text-gray-600">{part.description}</span>
+                  </div>
+                  <span className="font-bold">x{part.quantity}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Action based on status */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            {order.status === 'parts_ordered' && (
+              <>
+                <h4 className="font-bold text-blue-800 mb-2">📦 Pièces commandées aux USA</h4>
+                <p className="text-blue-600 text-sm mb-4">Cliquez sur "Pièces Reçues" quand vous recevez les pièces.</p>
+                <button
+                  onClick={() => updateStatus('parts_received', { parts_received_at: new Date().toISOString() })}
+                  disabled={saving}
+                  className="w-full px-4 py-3 bg-teal-500 hover:bg-teal-600 text-white rounded-lg font-bold disabled:opacity-50"
+                >
+                  {saving ? '...' : '📥 Marquer comme Pièces Reçues'}
+                </button>
+              </>
+            )}
+            
+            {order.status === 'parts_received' && (
+              <>
+                <h4 className="font-bold text-blue-800 mb-2">✓ Pièces reçues</h4>
+                <p className="text-blue-600 text-sm mb-4">Préparez le colis et marquez comme prêt à expédier.</p>
+                <button
+                  onClick={() => updateStatus('ready_to_ship', { ready_to_ship_at: new Date().toISOString() })}
+                  disabled={saving}
+                  className="w-full px-4 py-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-bold disabled:opacity-50"
+                >
+                  {saving ? '...' : '📦 Marquer Prêt à Expédier'}
+                </button>
+              </>
+            )}
+            
+            {order.status === 'ready_to_ship' && (
+              <>
+                <h4 className="font-bold text-blue-800 mb-2">🚚 Prêt à expédier</h4>
+                <p className="text-blue-600 text-sm mb-4">Créez l'étiquette UPS et le bon de livraison.</p>
+                <button
+                  onClick={() => setShowShipping(true)}
+                  className="w-full px-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold"
+                >
+                  📦 Créer Expédition & BL
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+        
+        {/* Footer */}
+        <div className="px-6 py-4 border-t bg-gray-50">
+          <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+            Fermer
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
