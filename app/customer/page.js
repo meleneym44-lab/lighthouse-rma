@@ -3573,7 +3573,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
           company_id: profile.company_id,
           submitted_by: profile.id,
           request_type: 'parts',
-          requested_service: 'other', // Use valid enum value, request_type='parts' identifies it
+          requested_service: 'calibration', // Use valid enum, request_type='parts' identifies it as parts order
           problem_description: partsDescription,
           urgency: 'normal',
           shipping_address_id: addressId,
