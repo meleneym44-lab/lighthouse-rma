@@ -5328,8 +5328,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
       .from('service_requests')
       .update({ 
         status: 'parts_ordered', 
-        bc_approved_at: new Date().toISOString(),
-        parts_ordered_at: new Date().toISOString()
+        bc_approved_at: new Date().toISOString()
       })
       .eq('id', order.id);
     
@@ -5647,7 +5646,7 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
                 <h4 className="font-bold text-blue-800 mb-2">📦 Pièces commandées aux USA</h4>
                 <p className="text-blue-600 text-sm mb-4">Cliquez sur "Pièces Reçues" quand vous recevez les pièces.</p>
                 <button
-                  onClick={() => updateStatus('parts_received', { parts_received_at: new Date().toISOString() })}
+                  onClick={() => updateStatus('parts_received', {})}
                   disabled={saving}
                   className="w-full px-4 py-3 bg-teal-500 hover:bg-teal-600 text-white rounded-lg font-bold disabled:opacity-50"
                 >
@@ -5661,7 +5660,7 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
                 <h4 className="font-bold text-blue-800 mb-2">✓ Pièces reçues</h4>
                 <p className="text-blue-600 text-sm mb-4">Préparez le colis et marquez comme prêt à expédier.</p>
                 <button
-                  onClick={() => updateStatus('ready_to_ship', { ready_to_ship_at: new Date().toISOString() })}
+                  onClick={() => updateStatus('ready_to_ship', {})}
                   disabled={saving}
                   className="w-full px-4 py-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-bold disabled:opacity-50"
                 >
