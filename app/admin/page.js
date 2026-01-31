@@ -1803,11 +1803,12 @@ export default function AdminPortal() {
     r.status === 'bc_review'
   ).length;
   
-  // Parts Orders count - pending parts requests
+  // Parts Orders count - pending parts requests AND BC to review
   const partsOrders = requests.filter(r => r.request_type === 'parts');
   const partsOrdersActionCount = partsOrders.filter(r => 
     r.status === 'submitted' || 
-    r.status === 'quote_revision_requested'
+    r.status === 'quote_revision_requested' ||
+    r.status === 'bc_review'
   ).length;
   
   const sheets = [
@@ -6521,9 +6522,10 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
 // PARTS ORDER SHIPPING MODAL
 // ============================================
 function PartsShippingModal({ order, onClose, notify, reload, profile }) {
-  const [step, setStep] = useState(1); // 1: Address, 2: UPS Label, 3: BL
+  const [step, setStep] = useState(1); // 1: Address & UPS, 2: BL & Confirm
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [upsLoading, setUpsLoading] = useState(false);
   
   const [address, setAddress] = useState({
     company_name: '',
@@ -6543,8 +6545,8 @@ function PartsShippingModal({ order, onClose, notify, reload, profile }) {
   });
   
   const [blNumber, setBlNumber] = useState('');
-  const [upsLabelUrl, setUpsLabelUrl] = useState(null);
-  const [blUrl, setBlUrl] = useState(null);
+  const [upsLabel, setUpsLabel] = useState(null); // Base64 PDF label
+  const [labelPrinted, setLabelPrinted] = useState(false);
   
   const quoteData = order.quote_data || {};
   const parts = quoteData.parts || [];
@@ -6559,7 +6561,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile }) {
         city: order.companies?.billing_city || '',
         postal_code: order.companies?.billing_postal_code || '',
         country: 'France',
-        phone: ''
+        phone: order.companies?.phone || ''
       };
       
       if (order.shipping_address_id) {
@@ -6585,14 +6587,10 @@ function PartsShippingModal({ order, onClose, notify, reload, profile }) {
       setAddress(addr);
       
       // Generate BL number
-      const { data: lastBL } = await supabase
-        .from('bons_livraison')
-        .select('bl_number')
-        .order('created_at', { ascending: false })
-        .limit(1);
-      
-      const lastNum = lastBL?.[0]?.bl_number ? parseInt(lastBL[0].bl_number.replace('BL-', '')) : 0;
-      setBlNumber(`BL-${String(lastNum + 1).padStart(5, '0')}`);
+      const poNum = order.request_number?.replace('PO-', '') || '00000';
+      const date = new Date();
+      const dateStr = `${String(date.getDate()).padStart(2, '0')}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getFullYear()).slice(-2)}`;
+      setBlNumber(`BL-${poNum}-${dateStr}`);
       
       setLoading(false);
     };
@@ -6600,74 +6598,230 @@ function PartsShippingModal({ order, onClose, notify, reload, profile }) {
     loadAddress();
   }, [order]);
   
-  // Save UPS label
-  const saveUpsLabel = async () => {
+  // Create UPS Label via API
+  const createUPSLabel = async () => {
+    if (!address.address_line1 || !address.city || !address.postal_code) {
+      notify('Veuillez compléter l\'adresse de livraison', 'error');
+      return;
+    }
+    
+    setUpsLoading(true);
+    try {
+      // Build packages array
+      const packagesList = [];
+      for (let p = 0; p < (shipmentData.parcels || 1); p++) {
+        packagesList.push({
+          weight: parseFloat(shipmentData.weight) || 1,
+          length: 30,
+          width: 30,
+          height: 20,
+          description: `${order.request_number} - Pièces - Colis ${p + 1}/${shipmentData.parcels || 1}`
+        });
+      }
+      
+      // Call UPS Edge Function
+      const { data, error } = await supabase.functions.invoke('ups-shipping', {
+        body: {
+          action: 'create_shipment',
+          shipTo: {
+            name: address.attention || address.company_name || 'Customer',
+            company: address.company_name || 'Customer',
+            attentionName: address.attention || address.company_name || 'Customer',
+            phone: address.phone || '0100000000',
+            addressLine1: address.address_line1 || '',
+            city: address.city || '',
+            postalCode: address.postal_code || '',
+            countryCode: address.country === 'France' ? 'FR' : 'FR'
+          },
+          packages: packagesList,
+          serviceCode: '11', // UPS Standard
+          description: `${order.request_number} - ${parts.length} pièce(s)`,
+          isReturn: false
+        }
+      });
+      
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error || 'UPS API error');
+      
+      // Store tracking number and label
+      setShipmentData(prev => ({ ...prev, trackingNumber: data.trackingNumber }));
+      
+      // Store label PDF data
+      if (data.packages?.[0]?.labelData) {
+        setUpsLabel(data.packages[0].labelData);
+      }
+      
+      notify(`✅ Étiquette UPS créée: ${data.trackingNumber}`);
+      setStep(2);
+    } catch (err) {
+      console.error('UPS Label creation error:', err);
+      notify('❌ Erreur UPS: ' + (err.message || 'Erreur inconnue'), 'error');
+    }
+    setUpsLoading(false);
+  };
+  
+  // Print UPS Label
+  const printLabel = () => {
+    if (upsLabel) {
+      try {
+        const byteCharacters = atob(upsLabel);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        
+        const w = window.open(url, '_blank');
+        if (!w) {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `UPS-Label-${shipmentData.trackingNumber}.pdf`;
+          a.click();
+        }
+        
+        setLabelPrinted(true);
+        notify('📄 Étiquette UPS ouverte');
+      } catch (err) {
+        console.error('Error opening label:', err);
+        notify('Erreur ouverture étiquette', 'error');
+      }
+    } else {
+      // Fallback - generate simple label
+      const w = window.open('', '_blank');
+      if (!w) { notify('Popup bloqué', 'error'); return; }
+      w.document.write(`<html><head><title>UPS Label</title><style>body{font-family:Arial;padding:20px}.label{border:3px solid #351C15;padding:20px;max-width:400px;margin:0 auto}.ups{font-size:32px;font-weight:bold;color:#351C15;text-align:center}.tracking{font-size:18px;font-family:monospace;text-align:center;margin:20px 0;padding:10px;background:#f5f5f5}.addr{margin:15px 0;padding:15px;border:1px solid #ddd}</style></head><body><div class="label"><div class="ups">UPS</div><div class="tracking">${shipmentData.trackingNumber}</div><div class="addr"><small>DESTINATAIRE:</small><br><strong>${address.company_name}</strong><br>${address.attention ? 'À l\'att. de: ' + address.attention + '<br>' : ''}${address.address_line1}<br>${address.postal_code} ${address.city}<br>${address.country}</div><div class="addr"><small>EXPÉDITEUR:</small><br><strong>LIGHTHOUSE FRANCE</strong><br>16 rue Paul Sejourne<br>94000 Créteil<br>France</div><p style="text-align:center;font-size:20px;font-weight:bold">${shipmentData.parcels} COLIS - ${shipmentData.weight} KG</p><p style="text-align:center;color:#666">${order.request_number}</p></div><script>window.print()</script></body></html>`);
+      w.document.close();
+      setLabelPrinted(true);
+    }
+  };
+  
+  // Print BL
+  const printBL = () => {
+    const employeeName = profile?.full_name || 'Lighthouse France';
+    const w = window.open('', '_blank');
+    if (!w) { notify('Popup bloqué', 'error'); return; }
+    
+    const frenchMonths = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+    const d = new Date();
+    const dateStr = `${d.getDate()} ${frenchMonths[d.getMonth()]} ${d.getFullYear()}`;
+    
+    w.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>BL - ${blNumber}</title>
+  <style>
+    @page { margin: 15mm; size: A4; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 11pt; color: #333; padding: 20px; }
+    .header { display: flex; justify-content: space-between; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #00A651; }
+    .logo { font-size: 24px; font-weight: bold; color: #00A651; }
+    .bl-title { text-align: right; }
+    .bl-title h1 { font-size: 18px; color: #1a1a2e; }
+    .bl-title .bl-num { font-family: monospace; font-size: 16px; color: #00A651; }
+    .section { margin: 20px 0; }
+    .section-title { font-size: 12px; color: #666; text-transform: uppercase; margin-bottom: 8px; }
+    .client-info { background: #f9f9f9; padding: 15px; border-radius: 5px; }
+    .client-info strong { font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    th { background: #1a1a2e; color: white; padding: 10px; text-align: left; font-size: 11px; }
+    td { padding: 10px; border-bottom: 1px solid #eee; }
+    .footer { margin-top: 30px; padding-top: 15px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; }
+    .signature { border: 1px dashed #ccc; padding: 30px; text-align: center; width: 200px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">LIGHTHOUSE France</div>
+    <div class="bl-title">
+      <h1>BON DE LIVRAISON</h1>
+      <div class="bl-num">${blNumber}</div>
+      <div style="font-size:11px;color:#666;margin-top:5px">${dateStr}</div>
+    </div>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">Destinataire</div>
+    <div class="client-info">
+      <strong>${address.company_name}</strong><br>
+      ${address.attention ? 'À l\'attention de: ' + address.attention + '<br>' : ''}
+      ${address.address_line1}<br>
+      ${address.postal_code} ${address.city}<br>
+      ${address.country}
+    </div>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">Pièces expédiées</div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:60px">Qté</th>
+          <th style="width:120px">Référence</th>
+          <th>Désignation</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${parts.map(p => `
+          <tr>
+            <td>${p.quantity}</td>
+            <td style="font-family:monospace;font-size:10px">${p.partNumber || '—'}</td>
+            <td>${p.description}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">Informations d'expédition</div>
+    <div style="background:#f0f7ff;padding:15px;border-radius:5px">
+      <strong>Transporteur:</strong> UPS<br>
+      <strong>N° Suivi:</strong> ${shipmentData.trackingNumber}<br>
+      <strong>Colis:</strong> ${shipmentData.parcels} • <strong>Poids:</strong> ${shipmentData.weight} kg
+    </div>
+  </div>
+  
+  <div class="footer">
+    <div>
+      <div class="section-title">Préparé par</div>
+      <strong>${employeeName}</strong><br>
+      Lighthouse France
+    </div>
+    <div class="signature">
+      Signature client<br>
+      <small style="color:#999">Date: ___/___/______</small>
+    </div>
+  </div>
+  
+  <script>window.print()</script>
+</body>
+</html>`);
+    w.document.close();
+  };
+  
+  // Generate BL and mark shipped
+  const generateBLAndShip = async () => {
     if (!shipmentData.trackingNumber) {
-      notify('Entrez le numéro de suivi UPS', 'error');
+      notify('Veuillez d\'abord créer l\'étiquette UPS', 'error');
       return;
     }
     
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('service_requests')
-        .update({
-          ups_tracking_number: shipmentData.trackingNumber,
-          shipping_weight: parseFloat(shipmentData.weight) || 1,
-          parcels_count: shipmentData.parcels
-        })
-        .eq('id', order.id);
-      
-      if (error) throw error;
-      
-      notify('Numéro UPS enregistré');
-      setStep(3);
-    } catch (err) {
-      notify(`Erreur: ${err.message}`, 'error');
-    }
-    setSaving(false);
-  };
-  
-  // Generate BL and mark shipped
-  const generateBLAndShip = async () => {
-    setSaving(true);
-    try {
-      // Create BL record
-      const { data: bl, error: blError } = await supabase
-        .from('bons_livraison')
-        .insert({
-          bl_number: blNumber,
-          request_id: order.id,
-          company_id: order.company_id,
-          shipped_by: profile.id,
-          shipping_address: address,
-          parts_shipped: parts.map(p => ({
-            partNumber: p.partNumber,
-            description: p.description,
-            quantity: p.quantity
-          })),
-          parcels_count: shipmentData.parcels,
-          tracking_number: shipmentData.trackingNumber,
-          notes: shipmentData.notes
-        })
-        .select()
-        .single();
-      
-      if (blError) throw blError;
-      
       // Update order status to shipped
       const { error: updateError } = await supabase
         .from('service_requests')
         .update({
           status: 'shipped',
-          shipped_at: new Date().toISOString(),
           bl_number: blNumber
         })
         .eq('id', order.id);
       
       if (updateError) throw updateError;
       
-      notify(`Commande expédiée - ${blNumber}`);
+      notify(`✅ Commande expédiée - ${blNumber}`);
       reload();
       onClose();
     } catch (err) {
@@ -6701,22 +6855,21 @@ function PartsShippingModal({ order, onClose, notify, reload, profile }) {
         
         {/* Progress Steps */}
         <div className="px-6 py-4 border-b bg-gray-50">
-          <div className="flex items-center justify-center gap-4">
+          <div className="flex items-center justify-center gap-8">
             {[
-              { num: 1, label: 'Adresse' },
-              { num: 2, label: 'UPS' },
-              { num: 3, label: 'BL & Envoi' }
+              { num: 1, label: 'Adresse & UPS' },
+              { num: 2, label: 'BL & Expédition' }
             ].map((s, i) => (
               <div key={s.num} className="flex items-center">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg ${
                   step >= s.num ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'
                 }`}>
                   {step > s.num ? '✓' : s.num}
                 </div>
-                <span className={`ml-2 text-sm ${step >= s.num ? 'text-green-700 font-medium' : 'text-gray-500'}`}>
+                <span className={`ml-3 font-medium ${step >= s.num ? 'text-green-700' : 'text-gray-500'}`}>
                   {s.label}
                 </span>
-                {i < 2 && <div className={`w-12 h-1 mx-3 ${step > s.num ? 'bg-green-500' : 'bg-gray-200'}`} />}
+                {i < 1 && <div className={`w-16 h-1 mx-4 ${step > s.num ? 'bg-green-500' : 'bg-gray-200'}`} />}
               </div>
             ))}
           </div>
@@ -6724,9 +6877,10 @@ function PartsShippingModal({ order, onClose, notify, reload, profile }) {
         
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* Step 1: Address Confirmation */}
+          {/* Step 1: Address & Create UPS Label */}
           {step === 1 && (
             <div className="space-y-6">
+              {/* Address */}
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <h3 className="font-bold text-green-800 mb-3">📍 Adresse de livraison</h3>
                 <div className="grid md:grid-cols-2 gap-4">
@@ -6775,33 +6929,23 @@ function PartsShippingModal({ order, onClose, notify, reload, profile }) {
                       className="w-full px-3 py-2 border rounded-lg"
                     />
                   </div>
+                  <div>
+                    <label className="text-sm text-gray-600">Téléphone</label>
+                    <input
+                      type="text"
+                      value={address.phone}
+                      onChange={e => setAddress({...address, phone: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg"
+                      placeholder="01 23 45 67 89"
+                    />
+                  </div>
                 </div>
               </div>
               
-              {/* Parts Summary */}
+              {/* Shipment Info */}
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <h3 className="font-bold text-amber-800 mb-3">📦 Pièces à expédier</h3>
-                <div className="space-y-2">
-                  {parts.map((part, idx) => (
-                    <div key={idx} className="flex justify-between items-center bg-white rounded p-2">
-                      <div>
-                        <span className="font-mono text-sm text-amber-700">{part.partNumber || '—'}</span>
-                        <span className="ml-2 text-gray-600">{part.description}</span>
-                      </div>
-                      <span className="font-medium">x{part.quantity}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {/* Step 2: UPS Label */}
-          {step === 2 && (
-            <div className="space-y-6">
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <h3 className="font-bold text-amber-800 mb-3">🏷️ Informations UPS</h3>
-                <div className="grid md:grid-cols-3 gap-4">
+                <h3 className="font-bold text-amber-800 mb-3">📦 Informations colis</h3>
+                <div className="grid md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm text-gray-600">Nombre de colis</label>
                     <input
@@ -6813,7 +6957,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile }) {
                     />
                   </div>
                   <div>
-                    <label className="text-sm text-gray-600">Poids (kg)</label>
+                    <label className="text-sm text-gray-600">Poids total (kg)</label>
                     <input
                       type="text"
                       value={shipmentData.weight}
@@ -6821,104 +6965,94 @@ function PartsShippingModal({ order, onClose, notify, reload, profile }) {
                       className="w-full px-3 py-2 border rounded-lg"
                     />
                   </div>
-                  <div>
-                    <label className="text-sm text-gray-600">N° Suivi UPS *</label>
-                    <input
-                      type="text"
-                      value={shipmentData.trackingNumber}
-                      onChange={e => setShipmentData({...shipmentData, trackingNumber: e.target.value})}
-                      className="w-full px-3 py-2 border rounded-lg"
-                      placeholder="1Z..."
-                    />
-                  </div>
                 </div>
               </div>
               
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-blue-800">
-                  <strong>Instructions:</strong> Créez l'étiquette UPS manuellement sur ups.com, 
-                  puis entrez le numéro de suivi ci-dessus.
-                </p>
+              {/* Parts Summary */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <h3 className="font-bold text-gray-700 mb-3">🔩 Pièces à expédier ({parts.length})</h3>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {parts.map((part, idx) => (
+                    <div key={idx} className="flex justify-between items-center bg-white rounded p-2 border">
+                      <div>
+                        <span className="font-mono text-sm text-amber-700">{part.partNumber || '—'}</span>
+                        <span className="ml-2 text-gray-600">{part.description}</span>
+                      </div>
+                      <span className="font-bold">x{part.quantity}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}
           
-          {/* Step 3: BL Generation */}
-          {step === 3 && (
+          {/* Step 2: Print Label, Print BL, Confirm */}
+          {step === 2 && (
             <div className="space-y-6">
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <h3 className="font-bold text-green-800 mb-3">📄 Bon de Livraison</h3>
-                <div className="grid md:grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label className="text-sm text-gray-600">Numéro BL</label>
-                    <input
-                      type="text"
-                      value={blNumber}
-                      onChange={e => setBlNumber(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-lg font-mono font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm text-gray-600">N° Suivi UPS</label>
-                    <p className="px-3 py-2 bg-gray-100 rounded-lg font-mono">{shipmentData.trackingNumber}</p>
-                  </div>
+              {/* UPS Label */}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-amber-800">🏷️ Étiquette UPS</h3>
+                  <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                    ✓ {shipmentData.trackingNumber}
+                  </span>
                 </div>
-                
-                <div>
-                  <label className="text-sm text-gray-600">Notes</label>
+                <button
+                  onClick={printLabel}
+                  className={`w-full px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 ${
+                    labelPrinted 
+                      ? 'bg-green-100 text-green-700 border-2 border-green-300' 
+                      : 'bg-amber-500 hover:bg-amber-600 text-white'
+                  }`}
+                >
+                  {labelPrinted ? '✓ Étiquette imprimée' : '🖨️ Imprimer Étiquette UPS'}
+                </button>
+              </div>
+              
+              {/* BL */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-blue-800">📄 Bon de Livraison</h3>
+                  <span className="font-mono text-blue-700">{blNumber}</span>
+                </div>
+                <div className="mb-3">
+                  <label className="text-sm text-gray-600">Notes (optionnel)</label>
                   <textarea
                     value={shipmentData.notes}
                     onChange={e => setShipmentData({...shipmentData, notes: e.target.value})}
                     className="w-full px-3 py-2 border rounded-lg"
                     rows={2}
-                    placeholder="Notes optionnelles..."
+                    placeholder="Notes pour le BL..."
                   />
                 </div>
+                <button
+                  onClick={printBL}
+                  className="w-full px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center justify-center gap-2"
+                >
+                  🖨️ Imprimer Bon de Livraison
+                </button>
               </div>
               
-              {/* BL Preview */}
-              <div className="bg-white border-2 border-gray-300 rounded-lg p-6">
-                <div className="flex justify-between items-start mb-4">
+              {/* Summary */}
+              <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4">
+                <h3 className="font-bold text-green-800 mb-3">📋 Récapitulatif</h3>
+                <div className="grid md:grid-cols-2 gap-4 text-sm">
                   <div>
-                    <h2 className="text-xl font-bold text-gray-800">BON DE LIVRAISON</h2>
-                    <p className="text-gray-500">{blNumber}</p>
+                    <p className="text-gray-500">Commande</p>
+                    <p className="font-bold">{order.request_number}</p>
                   </div>
-                  <div className="text-right">
-                    <p className="font-bold">LIGHTHOUSE France</p>
-                    <p className="text-sm text-gray-500">Pièces Détachées</p>
+                  <div>
+                    <p className="text-gray-500">Client</p>
+                    <p className="font-bold">{order.companies?.name}</p>
                   </div>
-                </div>
-                
-                <div className="border-t pt-4 mb-4">
-                  <p className="text-sm text-gray-500">Destinataire:</p>
-                  <p className="font-medium">{address.company_name}</p>
-                  {address.attention && <p>{address.attention}</p>}
-                  <p>{address.address_line1}</p>
-                  <p>{address.postal_code} {address.city}</p>
-                </div>
-                
-                <table className="w-full mb-4">
-                  <thead>
-                    <tr className="bg-gray-100">
-                      <th className="px-3 py-2 text-left text-sm">Qté</th>
-                      <th className="px-3 py-2 text-left text-sm">Référence</th>
-                      <th className="px-3 py-2 text-left text-sm">Désignation</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {parts.map((part, idx) => (
-                      <tr key={idx} className="border-b">
-                        <td className="px-3 py-2">{part.quantity}</td>
-                        <td className="px-3 py-2 font-mono text-sm">{part.partNumber || '—'}</td>
-                        <td className="px-3 py-2">{part.description}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                
-                <div className="border-t pt-4 text-sm text-gray-500">
-                  <p>Suivi UPS: {shipmentData.trackingNumber}</p>
-                  <p>Colis: {shipmentData.parcels} • Poids: {shipmentData.weight} kg</p>
+                  <div>
+                    <p className="text-gray-500">Suivi UPS</p>
+                    <p className="font-mono font-bold text-amber-700">{shipmentData.trackingNumber}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">BL</p>
+                    <p className="font-mono font-bold">{blNumber}</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -6929,37 +7063,35 @@ function PartsShippingModal({ order, onClose, notify, reload, profile }) {
         <div className="px-6 py-4 border-t bg-gray-50 flex justify-between rounded-b-xl">
           <button
             onClick={() => step > 1 ? setStep(step - 1) : onClose()}
-            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium"
           >
             {step > 1 ? '← Retour' : 'Annuler'}
           </button>
           
           {step === 1 && (
             <button
-              onClick={() => setStep(2)}
-              className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
+              onClick={createUPSLabel}
+              disabled={upsLoading}
+              className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold disabled:opacity-50 flex items-center gap-2"
             >
-              Continuer →
+              {upsLoading ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Création étiquette...
+                </>
+              ) : (
+                <>🏷️ Créer Étiquette UPS</>
+              )}
             </button>
           )}
           
           {step === 2 && (
             <button
-              onClick={saveUpsLabel}
-              disabled={saving || !shipmentData.trackingNumber}
-              className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
-            >
-              {saving ? 'Enregistrement...' : 'Enregistrer & Continuer →'}
-            </button>
-          )}
-          
-          {step === 3 && (
-            <button
               onClick={generateBLAndShip}
               disabled={saving}
-              className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50"
+              className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50"
             >
-              {saving ? 'Envoi...' : '✅ Créer BL & Marquer Expédié'}
+              {saving ? 'Envoi...' : '✅ Confirmer Expédition'}
             </button>
           )}
         </div>
