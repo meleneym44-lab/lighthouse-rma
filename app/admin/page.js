@@ -5061,26 +5061,8 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
     loadParts();
   }, []);
   
-  // Parse requested parts from order description
-  useEffect(() => {
-    if (order.problem_description) {
-      const lines = order.problem_description.split('\n').filter(Boolean);
-      const parsed = lines.map((line, i) => {
-        // Try to extract part number and quantity from line
-        const qtyMatch = line.match(/Qté:\s*(\d+)/i);
-        const refMatch = line.match(/\(Réf:\s*([^)]+)\)/i);
-        return {
-          id: `req_${i}`,
-          partNumber: refMatch ? refMatch[1].trim() : '',
-          description: line,
-          quantity: qtyMatch ? parseInt(qtyMatch[1]) : 1,
-          unitPrice: 0,
-          isFromRequest: true
-        };
-      });
-      setQuoteParts(parsed);
-    }
-  }, [order.problem_description]);
+  // DON'T auto-add customer request as quote lines - admin builds quote from scratch
+  // Quote starts empty, admin adds parts based on what customer requested
   
   // Search parts
   const handleSearch = (term) => {
@@ -5266,15 +5248,77 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                 </div>
               )}
               
-              {/* Customer Request */}
+              {/* Customer Request - Structured Display */}
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <h3 className="font-bold text-amber-800 mb-2">📋 Demande du client</h3>
-                <p className="text-amber-700 whitespace-pre-wrap text-sm">{order.problem_description}</p>
+                <h3 className="font-bold text-amber-800 mb-3">📋 Demande du client</h3>
+                
+                {/* Check for structured parts_data first */}
+                {order.parts_data?.parts ? (
+                  <div className="space-y-4">
+                    {order.parts_data.parts.map((part, idx) => (
+                      <div key={idx} className="bg-white rounded-lg p-4 border border-amber-200">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="font-bold text-amber-900">Pièce #{part.num || idx + 1}</span>
+                          <span className="text-sm text-amber-600">Qté: {part.quantity || 1}</span>
+                        </div>
+                        
+                        <div className="grid md:grid-cols-2 gap-3 text-sm">
+                          {part.device_for && (
+                            <div>
+                              <span className="text-gray-500">Pour appareil:</span>
+                              <span className="ml-2 font-medium text-gray-800">{part.device_for}</span>
+                            </div>
+                          )}
+                          {part.part_number && (
+                            <div>
+                              <span className="text-gray-500">N° pièce:</span>
+                              <span className="ml-2 font-mono font-medium text-amber-700">{part.part_number}</span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {part.description && (
+                          <div className="mt-2">
+                            <span className="text-gray-500 text-sm">Description:</span>
+                            <p className="text-gray-800 mt-1">{part.description}</p>
+                          </div>
+                        )}
+                        
+                        {/* Photos */}
+                        {part.photos && part.photos.length > 0 && (
+                          <div className="mt-3">
+                            <span className="text-gray-500 text-sm">Photos:</span>
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {part.photos.map((photoUrl, pIdx) => (
+                                <a 
+                                  key={pIdx} 
+                                  href={photoUrl} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="block"
+                                >
+                                  <img 
+                                    src={photoUrl} 
+                                    alt={`Photo ${pIdx + 1}`}
+                                    className="w-24 h-24 object-cover rounded-lg border-2 border-amber-300 hover:border-amber-500 transition-colors"
+                                  />
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  /* Fallback to plain text description */
+                  <p className="text-amber-700 whitespace-pre-wrap text-sm">{order.problem_description}</p>
+                )}
               </div>
               
               {/* Parts Search */}
               <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-bold text-gray-700 mb-3">🔍 Ajouter des pièces</h3>
+                <h3 className="font-bold text-gray-700 mb-3">🔍 Ajouter des pièces au devis</h3>
                 <div className="relative">
                   <input
                     type="text"
@@ -5326,7 +5370,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {quoteParts.map((part, idx) => (
-                        <tr key={part.id} className={part.isFromRequest ? 'bg-amber-50/50' : ''}>
+                        <tr key={part.id} className="hover:bg-gray-50">>
                           <td className="px-3 py-2">
                             <input
                               type="text"
