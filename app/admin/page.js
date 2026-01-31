@@ -1573,9 +1573,17 @@ export default function AdminPortal() {
     r.status === 'bc_review'
   ).length;
   
+  // Parts Orders count - pending parts requests
+  const partsOrders = requests.filter(r => r.request_type === 'parts' || r.requested_service === 'parts_order');
+  const partsOrdersActionCount = partsOrders.filter(r => 
+    r.status === 'submitted' || 
+    r.status === 'quote_revision_requested'
+  ).length;
+  
   const sheets = [
     { id: 'dashboard', label: 'Tableau de Bord', icon: '📊' },
     { id: 'requests', label: 'Demandes', icon: '📋', badge: totalBadge > 0 ? totalBadge : null },
+    { id: 'parts', label: 'Pièces Détachées', icon: '🔩', badge: partsOrdersActionCount > 0 ? partsOrdersActionCount : null },
     { id: 'clients', label: 'Clients', icon: '👥' },
     { id: 'messages', label: 'Messages', icon: '💬', badge: totalUnreadMessages > 0 ? totalUnreadMessages : (openChatsCount > 0 ? openChatsCount : null) },
     { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
@@ -1664,7 +1672,8 @@ export default function AdminPortal() {
               filter={dashboardFilter} 
               setFilter={setDashboardFilter} 
             />}
-            {activeSheet === 'requests' && <RequestsSheet requests={requests} notify={notify} reload={loadData} profile={profile} />}
+            {activeSheet === 'requests' && <RequestsSheet requests={requests.filter(r => r.request_type !== 'parts' && r.requested_service !== 'parts_order')} notify={notify} reload={loadData} profile={profile} />}
+            {activeSheet === 'parts' && <PartsOrdersSheet requests={partsOrders} notify={notify} reload={loadData} profile={profile} />}
             {activeSheet === 'clients' && <ClientsSheet 
               clients={clients} 
               requests={requests} 
@@ -4739,6 +4748,855 @@ function RequestDetailModal({ request, onClose, onCreateQuote }) {
               💰 Créer Devis
             </button>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// PARTS ORDERS SHEET - Manage spare parts orders
+// ============================================
+function PartsOrdersSheet({ requests, notify, reload, profile }) {
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [quoteOrder, setQuoteOrder] = useState(null);
+  const [filter, setFilter] = useState('pending');
+  
+  const pendingOrders = requests.filter(r => r.status === 'submitted' && !r.request_number);
+  const revisionOrders = requests.filter(r => r.status === 'quote_revision_requested');
+  const quoteSentOrders = requests.filter(r => r.status === 'quote_sent' || r.status === 'waiting_bc');
+  const allPending = [...revisionOrders, ...pendingOrders];
+  
+  const getDisplayOrders = () => {
+    switch (filter) {
+      case 'pending': return allPending;
+      case 'quote_sent': return quoteSentOrders;
+      case 'all': return requests;
+      default: return allPending;
+    }
+  };
+  
+  const displayOrders = getDisplayOrders();
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-800">🔩 Commandes de Pièces Détachées</h1>
+        <div className="flex gap-2">
+          <button onClick={() => setFilter('pending')} className={`px-4 py-2 rounded-lg text-sm font-medium ${filter === 'pending' ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}>
+            En attente ({allPending.length})
+          </button>
+          <button onClick={() => setFilter('quote_sent')} className={`px-4 py-2 rounded-lg text-sm font-medium ${filter === 'quote_sent' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
+            Devis envoyé ({quoteSentOrders.length})
+          </button>
+          <button onClick={() => setFilter('all')} className={`px-4 py-2 rounded-lg text-sm font-medium ${filter === 'all' ? 'bg-gray-700 text-white' : 'bg-gray-200'}`}>
+            Toutes ({requests.length})
+          </button>
+        </div>
+      </div>
+      
+      {/* Revision Requests Alert */}
+      {revisionOrders.length > 0 && filter === 'pending' && (
+        <div className="bg-red-50 border-2 border-red-300 p-4 rounded-xl">
+          <p className="font-bold text-red-800">🔴 {revisionOrders.length} demande(s) de modification de devis</p>
+          <p className="text-sm text-red-600">Le client a demandé des modifications - veuillez réviser et renvoyer</p>
+        </div>
+      )}
+      
+      {pendingOrders.length > 0 && filter === 'pending' && (
+        <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg">
+          <p className="font-medium text-amber-800">⚠️ {pendingOrders.length} nouvelle(s) commande(s) de pièces - Créez un devis pour traiter</p>
+        </div>
+      )}
+      
+      <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">ID / N°</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Client</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Pièces demandées</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Statut</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Soumis</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {displayOrders.length === 0 ? (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">{filter === 'pending' ? 'Aucune commande en attente' : 'Aucune commande'}</td></tr>
+            ) : displayOrders.map(order => {
+              const style = STATUS_STYLES[order.status] || STATUS_STYLES.submitted;
+              const isPending = order.status === 'submitted' && !order.request_number;
+              const needsRevision = order.status === 'quote_revision_requested';
+              
+              // Parse parts from description
+              const partsLines = (order.problem_description || '').split('\n').filter(Boolean);
+              const partsCount = partsLines.length;
+              
+              return (
+                <tr key={order.id} className={`hover:bg-gray-50 ${needsRevision ? 'bg-red-50' : isPending ? 'bg-amber-50/50' : ''}`}>
+                  <td className="px-4 py-3">
+                    {order.request_number ? (
+                      <span className="font-mono font-bold text-[#00A651]">{order.request_number}</span>
+                    ) : (
+                      <span className="text-amber-600 font-medium">Nouvelle</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-gray-800">{order.companies?.name || '—'}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-sm text-gray-600">{partsCount} pièce(s)</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                      {style.label}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-500">
+                    {new Date(order.created_at).toLocaleDateString('fr-FR')}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      {(isPending || needsRevision) && (
+                        <button 
+                          onClick={() => setQuoteOrder(order)} 
+                          className={`px-3 py-1 text-sm text-white rounded font-medium ${needsRevision ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}
+                        >
+                          {needsRevision ? '🔴 Réviser Devis' : '💰 Créer Devis'}
+                        </button>
+                      )}
+                      <button onClick={() => setSelectedOrder(order)} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">
+                        Voir
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      
+      {selectedOrder && (
+        <PartsOrderDetailModal 
+          order={selectedOrder} 
+          onClose={() => setSelectedOrder(null)} 
+          onCreateQuote={() => { setSelectedOrder(null); setQuoteOrder(selectedOrder); }} 
+        />
+      )}
+      {quoteOrder && (
+        <PartsQuoteEditor 
+          order={quoteOrder} 
+          onClose={() => setQuoteOrder(null)} 
+          notify={notify} 
+          reload={reload} 
+          profile={profile} 
+        />
+      )}
+    </div>
+  );
+}
+
+// Parts Order Detail Modal
+function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
+  const style = STATUS_STYLES[order.status] || STATUS_STYLES.submitted;
+  const isPending = order.status === 'submitted' && !order.request_number;
+  const needsRevision = order.status === 'quote_revision_requested';
+  
+  // Parse parts from description
+  const partsLines = (order.problem_description || '').split('\n').filter(Boolean);
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b sticky top-0 bg-white flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">
+              {order.request_number || 'Nouvelle Commande de Pièces'}
+            </h2>
+            <p className="text-sm text-gray-500">{order.companies?.name}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>
+              {style.label}
+            </span>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+          </div>
+        </div>
+        
+        <div className="p-6 space-y-6">
+          {/* Revision Notes */}
+          {order.revision_notes && (
+            <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
+              <h3 className="font-bold text-red-800 mb-2">🔴 Demande de modification du client</h3>
+              <p className="text-red-700 whitespace-pre-wrap">{order.revision_notes}</p>
+            </div>
+          )}
+          
+          {/* Requested Parts */}
+          <div>
+            <h3 className="font-bold text-gray-700 mb-3">📦 Pièces demandées</h3>
+            <div className="bg-gray-50 rounded-lg divide-y divide-gray-200">
+              {partsLines.map((line, i) => (
+                <div key={i} className="p-3">
+                  <p className="text-gray-800">{line}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Shipping Address */}
+          {order.shipping_address_id && (
+            <div>
+              <h3 className="font-bold text-gray-700 mb-3">📍 Adresse de livraison</h3>
+              <div className="bg-blue-50 rounded-lg p-4">
+                <p className="text-gray-600">ID: {order.shipping_address_id}</p>
+              </div>
+            </div>
+          )}
+          
+          {/* Order Info */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs text-gray-500 uppercase mb-1">Soumis le</p>
+              <p className="font-medium">{new Date(order.created_at).toLocaleDateString('fr-FR', { dateStyle: 'full' })}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs text-gray-500 uppercase mb-1">Urgence</p>
+              <p className="font-medium">{order.urgency || 'Normal'}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between">
+          <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Fermer</button>
+          {(isPending || needsRevision) && (
+            <button onClick={onCreateQuote} className={`px-6 py-2 text-white rounded-lg font-medium ${needsRevision ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}>
+              💰 {needsRevision ? 'Réviser Devis' : 'Créer Devis'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// PARTS QUOTE EDITOR - Build parts quote
+// ============================================
+function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
+  const [step, setStep] = useState(1); // 1=Edit Parts, 2=Preview, 3=Confirm
+  const [quoteParts, setQuoteParts] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [quoteRef, setQuoteRef] = useState('');
+  const [partsCache, setPartsCache] = useState({});
+  const [partsDescriptionCache, setPartsDescriptionCache] = useState({});
+  const [loadingParts, setLoadingParts] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  
+  // Shipping
+  const [shippingData, setShippingData] = useState({
+    unitPrice: 45,
+    parcels: 1,
+    total: 45
+  });
+  
+  const signatory = profile?.full_name || 'Lighthouse France';
+  const today = new Date();
+  
+  // Generate quote reference
+  useEffect(() => {
+    const year = new Date().getFullYear();
+    const random = Math.floor(Math.random() * 9000) + 1000;
+    setQuoteRef(`PO-${year}-${random}`);
+  }, []);
+  
+  // Load parts pricing from database
+  useEffect(() => {
+    const loadParts = async () => {
+      setLoadingParts(true);
+      try {
+        let allParts = [];
+        let offset = 0;
+        const batchSize = 1000;
+        let hasMore = true;
+        
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from('parts_pricing')
+            .select('part_number, unit_price, description, description_fr')
+            .range(offset, offset + batchSize - 1);
+          
+          if (error) break;
+          if (data && data.length > 0) {
+            allParts = [...allParts, ...data];
+            offset += batchSize;
+            hasMore = data.length === batchSize;
+          } else {
+            hasMore = false;
+          }
+        }
+        
+        const cache = {};
+        const descCache = {};
+        allParts.forEach(p => {
+          cache[p.part_number] = p.unit_price;
+          descCache[p.part_number] = p.description_fr || p.description || p.part_number;
+        });
+        
+        setPartsCache(cache);
+        setPartsDescriptionCache(descCache);
+        
+        // Get shipping price
+        if (cache['Shipping1']) {
+          setShippingData(prev => ({ ...prev, unitPrice: cache['Shipping1'], total: cache['Shipping1'] * prev.parcels }));
+        }
+      } catch (err) {
+        console.error('Parts load error:', err);
+      }
+      setLoadingParts(false);
+    };
+    loadParts();
+  }, []);
+  
+  // Parse requested parts from order description
+  useEffect(() => {
+    if (order.problem_description) {
+      const lines = order.problem_description.split('\n').filter(Boolean);
+      const parsed = lines.map((line, i) => {
+        // Try to extract part number and quantity from line
+        const qtyMatch = line.match(/Qté:\s*(\d+)/i);
+        const refMatch = line.match(/\(Réf:\s*([^)]+)\)/i);
+        return {
+          id: `req_${i}`,
+          partNumber: refMatch ? refMatch[1].trim() : '',
+          description: line,
+          quantity: qtyMatch ? parseInt(qtyMatch[1]) : 1,
+          unitPrice: 0,
+          isFromRequest: true
+        };
+      });
+      setQuoteParts(parsed);
+    }
+  }, [order.problem_description]);
+  
+  // Search parts
+  const handleSearch = (term) => {
+    setSearchTerm(term);
+    if (term.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    const lowerTerm = term.toLowerCase();
+    const results = Object.entries(partsDescriptionCache)
+      .filter(([pn, desc]) => 
+        pn.toLowerCase().includes(lowerTerm) || 
+        (desc && desc.toLowerCase().includes(lowerTerm))
+      )
+      .slice(0, 20)
+      .map(([pn, desc]) => ({
+        partNumber: pn,
+        description: desc,
+        unitPrice: partsCache[pn] || 0
+      }));
+    setSearchResults(results);
+  };
+  
+  // Add part from search
+  const addPart = (part) => {
+    setQuoteParts([...quoteParts, {
+      id: `part_${Date.now()}`,
+      partNumber: part.partNumber,
+      description: part.description,
+      quantity: 1,
+      unitPrice: part.unitPrice,
+      isFromRequest: false
+    }]);
+    setSearchTerm('');
+    setSearchResults([]);
+  };
+  
+  // Add blank part
+  const addBlankPart = () => {
+    setQuoteParts([...quoteParts, {
+      id: `part_${Date.now()}`,
+      partNumber: '',
+      description: '',
+      quantity: 1,
+      unitPrice: 0,
+      isFromRequest: false
+    }]);
+  };
+  
+  // Update part
+  const updatePart = (id, field, value) => {
+    setQuoteParts(quoteParts.map(p => {
+      if (p.id !== id) return p;
+      const updated = { ...p, [field]: value };
+      // Auto-fill price if part number matches
+      if (field === 'partNumber' && partsCache[value]) {
+        updated.unitPrice = partsCache[value];
+        updated.description = partsDescriptionCache[value] || updated.description;
+      }
+      return updated;
+    }));
+  };
+  
+  // Remove part
+  const removePart = (id) => {
+    setQuoteParts(quoteParts.filter(p => p.id !== id));
+  };
+  
+  // Calculate totals
+  const partsTotal = quoteParts.reduce((sum, p) => sum + (p.quantity * p.unitPrice), 0);
+  const grandTotal = partsTotal + shippingData.total;
+  
+  // Send quote
+  const sendQuote = async () => {
+    if (quoteParts.length === 0) {
+      notify('Ajoutez au moins une pièce au devis', 'error');
+      return;
+    }
+    
+    setSaving(true);
+    try {
+      // Generate RMA number if not exists
+      let rmaNumber = order.request_number;
+      if (!rmaNumber) {
+        const { data: lastReq } = await supabase
+          .from('service_requests')
+          .select('request_number')
+          .like('request_number', 'FR-%')
+          .order('request_number', { ascending: false })
+          .limit(1);
+        
+        const lastNum = lastReq?.[0]?.request_number;
+        let nextNum = 1;
+        if (lastNum) {
+          const match = lastNum.match(/FR-(\d+)/);
+          if (match) nextNum = parseInt(match[1]) + 1;
+        }
+        rmaNumber = `FR-${String(nextNum).padStart(5, '0')}`;
+      }
+      
+      // Build quote_data
+      const quoteData = {
+        parts: quoteParts.map(p => ({
+          partNumber: p.partNumber,
+          description: p.description,
+          quantity: p.quantity,
+          unitPrice: p.unitPrice,
+          lineTotal: p.quantity * p.unitPrice
+        })),
+        shipping: shippingData,
+        partsTotal,
+        grandTotal,
+        quoteRef,
+        createdBy: signatory,
+        createdAt: new Date().toISOString()
+      };
+      
+      // Update order
+      const { error } = await supabase
+        .from('service_requests')
+        .update({
+          request_number: rmaNumber,
+          status: 'quote_sent',
+          quote_sent_at: new Date().toISOString(),
+          quote_data: quoteData,
+          revision_notes: null
+        })
+        .eq('id', order.id);
+      
+      if (error) throw error;
+      
+      notify(`Devis ${quoteRef} envoyé pour ${order.companies?.name}`);
+      reload();
+      onClose();
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+    setSaving(false);
+  };
+
+  if (loadingParts) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="bg-white rounded-xl p-8 text-center">
+          <div className="w-12 h-12 border-4 border-[#00A651] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Chargement des pièces...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-xl w-full max-w-5xl max-h-[95vh] flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-t-xl flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold">🔩 Devis Pièces Détachées</h2>
+            <p className="text-amber-100">{order.companies?.name} • {quoteRef}</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex gap-1">
+              {[1, 2, 3].map(s => (
+                <div key={s} className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${step >= s ? 'bg-white text-amber-600' : 'bg-amber-400/50 text-white'}`}>
+                  {s}
+                </div>
+              ))}
+            </div>
+            <button onClick={onClose} className="text-white/80 hover:text-white text-2xl">&times;</button>
+          </div>
+        </div>
+        
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {/* Step 1: Edit Parts */}
+          {step === 1 && (
+            <div className="space-y-6">
+              {/* Revision Notes Alert */}
+              {order.revision_notes && (
+                <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
+                  <h3 className="font-bold text-red-800 mb-2">🔴 Modifications demandées par le client</h3>
+                  <p className="text-red-700 whitespace-pre-wrap">{order.revision_notes}</p>
+                </div>
+              )}
+              
+              {/* Customer Request */}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <h3 className="font-bold text-amber-800 mb-2">📋 Demande du client</h3>
+                <p className="text-amber-700 whitespace-pre-wrap text-sm">{order.problem_description}</p>
+              </div>
+              
+              {/* Parts Search */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="font-bold text-gray-700 mb-3">🔍 Ajouter des pièces</h3>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => handleSearch(e.target.value)}
+                    placeholder="Rechercher par référence ou description..."
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
+                  />
+                  {searchResults.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                      {searchResults.map((part, i) => (
+                        <button
+                          key={i}
+                          onClick={() => addPart(part)}
+                          className="w-full px-4 py-2 text-left hover:bg-amber-50 flex justify-between items-center"
+                        >
+                          <div>
+                            <span className="font-mono text-sm text-amber-600">{part.partNumber}</span>
+                            <span className="text-gray-600 ml-2">{part.description}</span>
+                          </div>
+                          <span className="font-medium">{part.unitPrice.toFixed(2)} €</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={addBlankPart}
+                  className="mt-3 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm"
+                >
+                  + Ajouter ligne vide
+                </button>
+              </div>
+              
+              {/* Parts List */}
+              <div>
+                <h3 className="font-bold text-gray-700 mb-3">📦 Pièces du devis</h3>
+                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 w-32">Référence</th>
+                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-600">Description</th>
+                        <th className="px-3 py-2 text-center text-xs font-bold text-gray-600 w-20">Qté</th>
+                        <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 w-24">Prix Unit.</th>
+                        <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 w-24">Total</th>
+                        <th className="px-3 py-2 w-12"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {quoteParts.map((part, idx) => (
+                        <tr key={part.id} className={part.isFromRequest ? 'bg-amber-50/50' : ''}>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={part.partNumber}
+                              onChange={(e) => updatePart(part.id, 'partNumber', e.target.value)}
+                              className="w-full px-2 py-1 border border-gray-200 rounded text-sm font-mono"
+                              placeholder="Réf..."
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={part.description}
+                              onChange={(e) => updatePart(part.id, 'description', e.target.value)}
+                              className="w-full px-2 py-1 border border-gray-200 rounded text-sm"
+                              placeholder="Description..."
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              min="1"
+                              value={part.quantity}
+                              onChange={(e) => updatePart(part.id, 'quantity', parseInt(e.target.value) || 1)}
+                              className="w-full px-2 py-1 border border-gray-200 rounded text-sm text-center"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={part.unitPrice}
+                              onChange={(e) => updatePart(part.id, 'unitPrice', parseFloat(e.target.value) || 0)}
+                              className="w-full px-2 py-1 border border-gray-200 rounded text-sm text-right"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-right font-medium text-sm">
+                            {(part.quantity * part.unitPrice).toFixed(2)} €
+                          </td>
+                          <td className="px-3 py-2">
+                            <button
+                              onClick={() => removePart(part.id)}
+                              className="text-red-500 hover:text-red-700"
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {quoteParts.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                            Aucune pièce ajoutée. Utilisez la recherche ci-dessus.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              
+              {/* Shipping */}
+              <div className="bg-blue-50 rounded-lg p-4">
+                <h3 className="font-bold text-blue-800 mb-3">🚚 Frais de port</h3>
+                <div className="flex items-center gap-4">
+                  <div>
+                    <label className="text-sm text-blue-600">Nombre de colis</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={shippingData.parcels}
+                      onChange={(e) => {
+                        const p = parseInt(e.target.value) || 0;
+                        setShippingData({ ...shippingData, parcels: p, total: p * shippingData.unitPrice });
+                      }}
+                      className="w-20 px-3 py-2 border border-blue-200 rounded-lg text-center ml-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-blue-600">Prix unitaire</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={shippingData.unitPrice}
+                      onChange={(e) => {
+                        const u = parseFloat(e.target.value) || 0;
+                        setShippingData({ ...shippingData, unitPrice: u, total: u * shippingData.parcels });
+                      }}
+                      className="w-24 px-3 py-2 border border-blue-200 rounded-lg text-right ml-2"
+                    />
+                  </div>
+                  <div className="text-right flex-1">
+                    <span className="text-blue-600">Total port:</span>
+                    <span className="font-bold text-blue-800 ml-2">{shippingData.total.toFixed(2)} €</span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Totals */}
+              <div className="bg-gray-100 rounded-lg p-4">
+                <div className="flex justify-between text-lg">
+                  <span>Sous-total pièces:</span>
+                  <span className="font-medium">{partsTotal.toFixed(2)} €</span>
+                </div>
+                <div className="flex justify-between text-lg">
+                  <span>Frais de port:</span>
+                  <span className="font-medium">{shippingData.total.toFixed(2)} €</span>
+                </div>
+                <div className="flex justify-between text-xl font-bold text-[#00A651] mt-2 pt-2 border-t border-gray-300">
+                  <span>TOTAL HT:</span>
+                  <span>{grandTotal.toFixed(2)} €</span>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Step 2: Preview */}
+          {step === 2 && (
+            <div className="bg-gray-200 p-6 rounded-lg">
+              <div className="bg-white shadow-lg mx-auto" style={{ width: '210mm', minHeight: '280mm' }}>
+                {/* PDF Preview Header */}
+                <div className="border-b-4 border-[#00A651] p-6">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h1 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h1>
+                      <p className="text-gray-500">France</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xl font-bold text-[#00A651]">DEVIS PIÈCES</p>
+                      <p className="text-gray-500">{quoteRef}</p>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Info Bar */}
+                <div className="bg-gray-100 px-6 py-3 flex justify-between text-sm">
+                  <div>
+                    <span className="text-gray-500">Date: </span>
+                    <span className="font-medium">{today.toLocaleDateString('fr-FR')}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Validité: </span>
+                    <span className="font-medium">30 jours</span>
+                  </div>
+                </div>
+                
+                {/* Client Info */}
+                <div className="px-6 py-4 border-b">
+                  <p className="text-xs text-gray-500 uppercase">Client</p>
+                  <p className="font-bold text-lg">{order.companies?.name}</p>
+                  {order.companies?.billing_address && <p className="text-gray-600">{order.companies.billing_address}</p>}
+                  <p className="text-gray-600">{order.companies?.billing_postal_code} {order.companies?.billing_city}</p>
+                </div>
+                
+                {/* Parts Table */}
+                <div className="px-6 py-4">
+                  <h3 className="font-bold text-[#1a1a2e] mb-3">Récapitulatif des Pièces</h3>
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-[#1a1a2e] text-white">
+                        <th className="px-3 py-2 text-left text-sm w-12">Qté</th>
+                        <th className="px-3 py-2 text-left text-sm">Référence</th>
+                        <th className="px-3 py-2 text-left text-sm">Désignation</th>
+                        <th className="px-3 py-2 text-right text-sm w-20">Prix Unit.</th>
+                        <th className="px-3 py-2 text-right text-sm w-20">Total HT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {quoteParts.map((part, idx) => (
+                        <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-3 py-2 text-center">{part.quantity}</td>
+                          <td className="px-3 py-2 font-mono text-sm">{part.partNumber || '—'}</td>
+                          <td className="px-3 py-2 text-sm">{part.description}</td>
+                          <td className="px-3 py-2 text-right">{part.unitPrice.toFixed(2)} €</td>
+                          <td className="px-3 py-2 text-right font-medium">{(part.quantity * part.unitPrice).toFixed(2)} €</td>
+                        </tr>
+                      ))}
+                      {shippingData.total > 0 && (
+                        <tr className="bg-blue-50">
+                          <td className="px-3 py-2 text-center">{shippingData.parcels}</td>
+                          <td className="px-3 py-2 font-mono text-sm">Shipping1</td>
+                          <td className="px-3 py-2 text-sm text-blue-800">Frais de port ({shippingData.parcels} colis)</td>
+                          <td className="px-3 py-2 text-right">{shippingData.unitPrice.toFixed(2)} €</td>
+                          <td className="px-3 py-2 text-right font-medium">{shippingData.total.toFixed(2)} €</td>
+                        </tr>
+                      )}
+                      <tr className="bg-[#00A651] text-white">
+                        <td colSpan={4} className="px-3 py-2 text-right font-bold">TOTAL HT</td>
+                        <td className="px-3 py-2 text-right font-bold">{grandTotal.toFixed(2)} €</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                
+                {/* Signature */}
+                <div className="px-6 py-6 border-t mt-8">
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
+                      <p className="font-bold text-lg">{signatory}</p>
+                      <p className="text-gray-500">Lighthouse France</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-gray-500 uppercase mb-1">Bon pour accord</p>
+                      <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded"></div>
+                      <p className="text-xs text-gray-400 mt-1">Signature et cachet</p>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Footer */}
+                <div className="bg-[#1a1a2e] text-white px-6 py-3 text-center text-xs mt-auto">
+                  <p>Lighthouse France SAS • 16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Step 3: Confirm */}
+          {step === 3 && (
+            <div className="text-center py-12">
+              <p className="text-6xl mb-4">📧</p>
+              <h3 className="text-2xl font-bold text-gray-800 mb-2">Prêt à envoyer</h3>
+              <p className="text-gray-600 mb-6">
+                Le devis sera envoyé au client {order.companies?.name}.
+                <br />
+                Montant total: <strong className="text-[#00A651]">{grandTotal.toFixed(2)} € HT</strong>
+              </p>
+              <div className="bg-gray-50 rounded-lg p-4 max-w-md mx-auto text-left">
+                <p className="text-sm text-gray-600"><strong>Référence:</strong> {quoteRef}</p>
+                <p className="text-sm text-gray-600"><strong>Pièces:</strong> {quoteParts.length}</p>
+                <p className="text-sm text-gray-600"><strong>Port:</strong> {shippingData.total.toFixed(2)} €</p>
+              </div>
+            </div>
+          )}
+        </div>
+        
+        {/* Footer Actions */}
+        <div className="px-6 py-4 bg-gray-50 border-t flex justify-between rounded-b-xl">
+          <div>
+            {step > 1 && (
+              <button onClick={() => setStep(step - 1)} className="px-4 py-2 text-gray-600 hover:text-gray-800">
+                ← Retour
+              </button>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+              Annuler
+            </button>
+            {step < 3 ? (
+              <button
+                onClick={() => setStep(step + 1)}
+                disabled={step === 1 && quoteParts.length === 0}
+                className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                {step === 1 ? 'Aperçu →' : 'Confirmer →'}
+              </button>
+            ) : (
+              <button
+                onClick={sendQuote}
+                disabled={saving}
+                className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                {saving ? 'Envoi...' : '📧 Envoyer le Devis'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
