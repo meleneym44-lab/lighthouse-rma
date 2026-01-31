@@ -1940,6 +1940,10 @@ const STATUS_STYLES = {
   repair_in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'Réparation en cours', icon: '◉', progress: 65 },
   repair_complete: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-300', label: 'Réparation terminée', icon: '●', progress: 75 },
   
+  // === PARTS ORDER STATUSES ===
+  parts_ordered: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-300', label: 'Pièces commandées', icon: '📦', progress: 50 },
+  parts_received: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-300', label: 'Pièces reçues', icon: '✓', progress: 75 },
+  
   // === LEGACY (for backwards compatibility) ===
   received: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', label: 'Reçu', icon: '◕', progress: 40 },
   in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'En cours', icon: '◉', progress: 60 },
@@ -8643,6 +8647,100 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   </div>
                 </div>
               </div>
+
+              {/* Parts Order Progress Tracker */}
+              {isPartsOrder && (
+                <div className="bg-white border border-gray-200 rounded-xl p-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                      <span className="text-lg">📦</span>
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-[#1E3A5F]">Suivi de votre commande</h2>
+                      <p className="text-sm text-gray-500">Progression en temps réel</p>
+                    </div>
+                  </div>
+                  
+                  {/* Progress Steps */}
+                  <div className="relative">
+                    {(() => {
+                      const partsSteps = [
+                        { id: 'submitted', label: 'Demande soumise', icon: '📝' },
+                        { id: 'quote_sent', label: 'Devis envoyé', icon: '💰' },
+                        { id: 'bc_review', label: 'BC en vérification', icon: '📋' },
+                        { id: 'parts_ordered', label: 'Pièces commandées', icon: '🛒' },
+                        { id: 'parts_received', label: 'Pièces reçues', icon: '📥' },
+                        { id: 'ready_to_ship', label: 'Prêt à expédier', icon: '📦' },
+                        { id: 'shipped', label: 'Expédié', icon: '🚚' },
+                        { id: 'delivered', label: 'Livré', icon: '✅' }
+                      ];
+                      
+                      const statusOrder = ['submitted', 'quote_sent', 'bc_review', 'parts_ordered', 'parts_received', 'ready_to_ship', 'shipped', 'delivered', 'completed'];
+                      const currentIdx = statusOrder.indexOf(request.status);
+                      
+                      return (
+                        <div className="flex items-center justify-between">
+                          {partsSteps.map((step, idx) => {
+                            const stepIdx = statusOrder.indexOf(step.id);
+                            const isComplete = currentIdx >= stepIdx && currentIdx !== -1;
+                            const isCurrent = request.status === step.id;
+                            
+                            return (
+                              <div key={step.id} className="flex flex-col items-center flex-1 relative">
+                                {/* Connector line */}
+                                {idx > 0 && (
+                                  <div className={`absolute top-5 right-1/2 w-full h-1 -z-10 ${
+                                    isComplete ? 'bg-green-500' : 'bg-gray-200'
+                                  }`} />
+                                )}
+                                
+                                {/* Circle */}
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg z-10 ${
+                                  isCurrent ? 'bg-amber-500 text-white ring-4 ring-amber-200' :
+                                  isComplete ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'
+                                }`}>
+                                  {isComplete && !isCurrent ? '✓' : step.icon}
+                                </div>
+                                
+                                {/* Label */}
+                                <p className={`text-xs mt-2 text-center ${
+                                  isCurrent ? 'font-bold text-amber-700' :
+                                  isComplete ? 'text-green-700' : 'text-gray-400'
+                                }`}>
+                                  {step.label}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  
+                  {/* Tracking Info */}
+                  {request.ups_tracking_number && (
+                    <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-sm text-blue-700 font-medium">🚚 Suivi UPS</p>
+                      <a 
+                        href={`https://www.ups.com/track?tracknum=${request.ups_tracking_number}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline font-mono"
+                      >
+                        {request.ups_tracking_number}
+                      </a>
+                    </div>
+                  )}
+                  
+                  {/* BL Info */}
+                  {request.bl_number && (
+                    <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                      <p className="text-sm text-green-700 font-medium">📄 Bon de Livraison</p>
+                      <p className="font-mono text-green-800">{request.bl_number}</p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Devices Section */}
               {!isPartsOrder && (
