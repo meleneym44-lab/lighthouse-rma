@@ -5035,46 +5035,36 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
       </div>
       
       {/* ============================================ */}
-      {/* SECTION 1: BC À VÉRIFIER (like RMA/Contracts) */}
+      {/* SECTION 1: BC À VÉRIFIER (identical to RMA Dashboard) */}
       {/* ============================================ */}
       {bcReviewOrders.length > 0 && (
-        <div className="bg-blue-50 border-2 border-blue-300 rounded-xl overflow-hidden">
-          <div className="bg-blue-100 px-6 py-4 border-b border-blue-300">
-            <h2 className="text-lg font-bold text-blue-800 flex items-center gap-2">
-              📋 Bons de Commande à Vérifier
-              <span className="px-2 py-0.5 bg-blue-500 text-white text-sm rounded-full">{bcReviewOrders.length}</span>
-            </h2>
-            <p className="text-sm text-blue-600">Le client a soumis son BC - Vérifiez et approuvez pour continuer</p>
+        <div className="bg-red-50 border-2 border-red-300 rounded-xl shadow-lg">
+          <div className="px-6 py-4 border-b border-red-200 bg-red-100 rounded-t-xl">
+            <h2 className="font-bold text-red-800 text-lg">⚠️ Bons de Commande à Vérifier ({bcReviewOrders.length})</h2>
+            <p className="text-sm text-red-600">Cliquez sur "Examiner" pour vérifier le document et approuver</p>
           </div>
-          <div className="divide-y divide-blue-200">
+          <div className="p-4 space-y-3">
             {bcReviewOrders.map(order => {
               const quoteData = order.quote_data || {};
               return (
-                <div 
-                  key={order.id}
-                  className="p-4 hover:bg-blue-100/50 cursor-pointer transition-colors"
-                  onClick={() => setBcReviewOrder(order)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-blue-500 rounded-lg flex items-center justify-center text-white font-bold">
-                        📋
-                      </div>
-                      <div>
-                        <p className="font-bold text-blue-900">{order.request_number}</p>
-                        <p className="text-sm text-blue-700">{order.companies?.name}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-blue-800">{(quoteData.grandTotal || 0).toFixed(2)} €</p>
-                      <p className="text-xs text-blue-600">
-                        {order.bc_submitted_at ? `BC soumis le ${new Date(order.bc_submitted_at).toLocaleDateString('fr-FR')}` : ''}
+                <div key={order.id} className="bg-white rounded-lg p-4 flex items-center justify-between shadow-sm border border-red-100">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
+                    <div>
+                      <span className="font-mono font-bold text-amber-600 text-lg">{order.request_number}</span>
+                      <p className="font-medium text-gray-800">{order.companies?.name}</p>
+                      <p className="text-sm text-gray-500">
+                        BC soumis le {order.bc_submitted_at ? new Date(order.bc_submitted_at).toLocaleDateString('fr-FR') : new Date(order.updated_at).toLocaleDateString('fr-FR')}
+                        {order.bc_signed_by && <span className="ml-2">• Signé par: {order.bc_signed_by}</span>}
                       </p>
                     </div>
-                    <button className="ml-4 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">
-                      Vérifier →
-                    </button>
                   </div>
+                  <button
+                    onClick={() => setBcReviewOrder(order)}
+                    className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium flex items-center gap-2"
+                  >
+                    🔍 Examiner
+                  </button>
                 </div>
               );
             })}
@@ -5325,233 +5315,216 @@ function PartsOrdersSheet({ requests, notify, reload, profile }) {
 }
 
 // ============================================
-// PARTS BC REVIEW MODAL (like RMA BC Review)
+// PARTS BC REVIEW MODAL (identical to RMA BCReviewModal)
 // ============================================
 function PartsBCReviewModal({ order, onClose, notify, reload }) {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
-  const [showRejectForm, setShowRejectForm] = useState(false);
-  
-  const quoteData = order.quote_data || {};
-  const parts = quoteData.parts || [];
   
   const approveBC = async () => {
     setApproving(true);
-    try {
-      const { error } = await supabase
-        .from('service_requests')
-        .update({
-          status: 'parts_ordered',
-          bc_approved_at: new Date().toISOString(),
-          parts_ordered_at: new Date().toISOString()
-        })
-        .eq('id', order.id);
-      
-      if (error) throw error;
-      
-      notify('BC approuvé - Commande de pièces lancée');
+    const { error } = await supabase
+      .from('service_requests')
+      .update({ 
+        status: 'parts_ordered', 
+        bc_approved_at: new Date().toISOString(),
+        parts_ordered_at: new Date().toISOString()
+      })
+      .eq('id', order.id);
+    
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('✅ BC approuvé! Commande de pièces lancée.');
       reload();
       onClose();
-    } catch (err) {
-      notify(`Erreur: ${err.message}`, 'error');
     }
     setApproving(false);
   };
   
   const rejectBC = async () => {
     if (!rejectReason.trim()) {
-      notify('Veuillez indiquer la raison du rejet', 'error');
+      notify('Veuillez indiquer la raison du refus', 'error');
       return;
     }
-    
     setRejecting(true);
-    try {
-      const { error } = await supabase
-        .from('service_requests')
-        .update({
-          status: 'quote_revision_requested',
-          revision_notes: rejectReason,
-          bc_rejected_at: new Date().toISOString()
-        })
-        .eq('id', order.id);
-      
-      if (error) throw error;
-      
-      notify('BC rejeté - Le client sera notifié');
+    const { error } = await supabase
+      .from('service_requests')
+      .update({ 
+        status: 'bc_rejected',
+        bc_rejected_at: new Date().toISOString(),
+        bc_rejection_reason: rejectReason,
+        bc_file_url: null,
+        bc_signature_url: null,
+        bc_submitted_at: null
+      })
+      .eq('id', order.id);
+    
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('BC refusé. Le client devra soumettre un nouveau BC.');
       reload();
       onClose();
-    } catch (err) {
-      notify(`Erreur: ${err.message}`, 'error');
     }
     setRejecting(false);
   };
   
+  const quoteData = order.quote_data || {};
+  const parts = quoteData.parts || [];
+  
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={onClose}>
+      <div className="bg-white w-full h-full max-w-[98vw] max-h-[98vh] m-auto rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="px-6 py-4 border-b bg-gradient-to-r from-blue-500 to-blue-600 text-white">
-          <div className="flex justify-between items-center">
-            <div>
-              <h2 className="text-xl font-bold">📋 Vérification Bon de Commande</h2>
-              <p className="text-blue-100">{order.request_number} • {order.companies?.name}</p>
-            </div>
-            <button onClick={onClose} className="text-white/80 hover:text-white text-2xl">&times;</button>
+        <div className="px-6 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white flex justify-between items-center flex-shrink-0">
+          <div>
+            <h2 className="text-xl font-bold">Vérification du Bon de Commande</h2>
+            <p className="text-red-100">{order.request_number} • {order.companies?.name}</p>
           </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white text-3xl">&times;</button>
         </div>
         
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* BC Info */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="grid md:grid-cols-3 gap-4">
-              <div>
-                <p className="text-sm text-blue-600">Signé par</p>
-                <p className="font-bold text-blue-900">{order.bc_signed_by || '—'}</p>
+        <div className="flex-1 overflow-hidden flex">
+          {/* Left: Document Preview - Takes most of the space */}
+          <div className="flex-1 flex flex-col bg-gray-800 p-4">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-bold text-white text-lg">📄 Document BC</h3>
+              {order.bc_file_url && (
+                <a href={order.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">
+                  Ouvrir dans nouvel onglet ↗
+                </a>
+              )}
+            </div>
+            
+            {/* BC File - Full height PDF viewer */}
+            {order.bc_file_url ? (
+              <div className="flex-1 rounded-lg overflow-hidden bg-white">
+                {order.bc_file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                  <img src={order.bc_file_url} alt="BC Document" className="w-full h-full object-contain" />
+                ) : order.bc_file_url.match(/\.pdf$/i) ? (
+                  <object
+                    data={`${order.bc_file_url}#view=Fit`}
+                    type="application/pdf"
+                    className="w-full h-full"
+                    style={{ minHeight: '100%' }}
+                  >
+                    <iframe 
+                      src={`${order.bc_file_url}#view=Fit`} 
+                      className="w-full h-full" 
+                      title="BC PDF"
+                    />
+                  </object>
+                ) : (
+                  <div className="h-full flex items-center justify-center">
+                    <a href={order.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-8 py-4 bg-blue-500 text-white rounded-lg text-lg font-medium">
+                      📥 Télécharger le fichier
+                    </a>
+                  </div>
+                )}
               </div>
-              <div>
-                <p className="text-sm text-blue-600">Date de signature</p>
-                <p className="font-bold text-blue-900">
-                  {order.bc_signature_date ? new Date(order.bc_signature_date).toLocaleDateString('fr-FR') : '—'}
-                </p>
+            ) : (
+              <div className="flex-1 border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center text-gray-400 text-lg">
+                Aucun fichier BC uploadé
               </div>
-              <div>
-                <p className="text-sm text-blue-600">BC soumis le</p>
-                <p className="font-bold text-blue-900">
-                  {order.bc_submitted_at ? new Date(order.bc_submitted_at).toLocaleDateString('fr-FR') : '—'}
-                </p>
+            )}
+          </div>
+          
+          {/* Right: Order Details - Sidebar */}
+          <div className="w-96 flex-shrink-0 bg-gray-50 overflow-y-auto p-4 space-y-4">
+            <h3 className="font-bold text-gray-800 text-lg">📋 Détails de la Commande</h3>
+            
+            {/* Order Info */}
+            <div className="bg-white rounded-lg p-4 border">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-gray-500">N° Commande</p>
+                  <p className="font-mono font-bold text-amber-600">{order.request_number}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Type</p>
+                  <p className="font-medium">Pièces détachées</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Soumission BC</p>
+                  <p className="font-medium">{order.bc_submitted_at ? new Date(order.bc_submitted_at).toLocaleString('fr-FR') : '—'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Client</p>
+                  <p className="font-medium">{order.companies?.name}</p>
+                </div>
               </div>
             </div>
-          </div>
-          
-          {/* Documents */}
-          <div className="flex gap-4">
-            {order.quote_url && (
-              <a 
-                href={order.quote_url} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex-1 flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100"
-              >
-                <div className="w-10 h-10 bg-amber-500 rounded flex items-center justify-center text-white font-bold text-xs">PDF</div>
-                <div>
-                  <p className="font-medium text-amber-900">Devis Original</p>
-                  <p className="text-xs text-amber-600">Cliquez pour voir</p>
-                </div>
-              </a>
+            
+            {/* Signature */}
+            {order.bc_signature_url && (
+              <div className="bg-white rounded-lg p-4 border">
+                <h4 className="font-medium text-gray-700 mb-2">✍️ Signature</h4>
+                <img src={order.bc_signature_url} alt="Signature" className="max-h-20 mx-auto bg-gray-50 rounded p-2" />
+                <p className="text-center text-xs text-gray-500 mt-1">
+                  {order.bc_signed_by || '—'} {order.bc_signature_date && `• ${new Date(order.bc_signature_date).toLocaleDateString('fr-FR')}`}
+                </p>
+              </div>
             )}
-            {order.signed_quote_url && (
-              <a 
-                href={order.signed_quote_url} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex-1 flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100"
-              >
-                <div className="w-10 h-10 bg-green-500 rounded flex items-center justify-center text-white font-bold text-xs">PDF</div>
-                <div>
-                  <p className="font-medium text-green-900">Devis Signé</p>
-                  <p className="text-xs text-green-600">Cliquez pour voir</p>
-                </div>
-              </a>
-            )}
-            {order.bc_file_url && (
-              <a 
-                href={order.bc_file_url} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex-1 flex items-center gap-3 p-4 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100"
-              >
-                <div className="w-10 h-10 bg-purple-500 rounded flex items-center justify-center text-white font-bold text-xs">PDF</div>
-                <div>
-                  <p className="font-medium text-purple-900">Bon de Commande</p>
-                  <p className="text-xs text-purple-600">Cliquez pour voir</p>
-                </div>
-              </a>
-            )}
-          </div>
-          
-          {/* Parts Summary */}
-          <div>
-            <h3 className="font-bold text-gray-800 mb-3">📦 Pièces commandées</h3>
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="px-3 py-2 text-left text-sm font-bold">Qté</th>
-                  <th className="px-3 py-2 text-left text-sm font-bold">Référence</th>
-                  <th className="px-3 py-2 text-left text-sm font-bold">Désignation</th>
-                  <th className="px-3 py-2 text-right text-sm font-bold">Prix</th>
-                </tr>
-              </thead>
-              <tbody>
-                {parts.map((part, idx) => (
-                  <tr key={idx} className="border-b">
-                    <td className="px-3 py-2">{part.quantity}</td>
-                    <td className="px-3 py-2 font-mono text-sm">{part.partNumber || '—'}</td>
-                    <td className="px-3 py-2">{part.description}</td>
-                    <td className="px-3 py-2 text-right">{(part.lineTotal || 0).toFixed(2)} €</td>
-                  </tr>
+            
+            {/* Parts */}
+            <div className="bg-white rounded-lg p-4 border">
+              <h4 className="font-medium text-gray-700 mb-2">📦 Pièces ({parts.length})</h4>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {parts.map((p, i) => (
+                  <div key={i} className="bg-gray-50 rounded p-2 text-sm">
+                    <p className="font-medium">{p.description}</p>
+                    <p className="text-gray-500">Réf: {p.partNumber || '—'} • Qté: {p.quantity}</p>
+                  </div>
                 ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-amber-100 font-bold">
-                  <td colSpan={3} className="px-3 py-2 text-right">TOTAL HT</td>
-                  <td className="px-3 py-2 text-right">{(quoteData.grandTotal || 0).toFixed(2)} €</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-          
-          {/* Reject Form */}
-          {showRejectForm && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <h4 className="font-bold text-red-800 mb-2">Raison du rejet</h4>
+              </div>
+            </div>
+            
+            {/* Quote Info */}
+            <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+              <h4 className="font-medium text-blue-800 mb-1">💰 Devis</h4>
+              <p className="text-xl font-bold text-blue-700">{(quoteData.grandTotal || 0).toFixed(2)} €</p>
+              {order.quote_url && (
+                <a href={order.quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
+                  Voir le devis ↗
+                </a>
+              )}
+            </div>
+            
+            {/* Reject Reason */}
+            <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+              <h4 className="font-medium text-red-800 mb-2">Refuser le BC?</h4>
               <textarea
                 value={rejectReason}
                 onChange={e => setRejectReason(e.target.value)}
-                className="w-full px-3 py-2 border border-red-300 rounded-lg"
-                rows={3}
-                placeholder="Expliquez pourquoi le BC est rejeté..."
+                placeholder="Raison du refus..."
+                className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm h-20 resize-none"
               />
             </div>
-          )}
-        </div>
-        
-        {/* Footer */}
-        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between">
-          {!showRejectForm ? (
-            <>
-              <button
-                onClick={() => setShowRejectForm(true)}
-                className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-medium"
-              >
-                ✕ Rejeter BC
-              </button>
+            
+            {/* Actions */}
+            <div className="space-y-2 pt-2">
               <button
                 onClick={approveBC}
                 disabled={approving}
-                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50"
+                className="w-full px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50"
               >
-                {approving ? 'Approbation...' : '✓ Approuver BC & Lancer Commande'}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => setShowRejectForm(false)}
-                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
-              >
-                Annuler
+                {approving ? 'Approbation...' : '✅ Approuver BC'}
               </button>
               <button
                 onClick={rejectBC}
                 disabled={rejecting}
-                className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold disabled:opacity-50"
+                className="w-full px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50"
               >
-                {rejecting ? 'Envoi...' : 'Confirmer le Rejet'}
+                {rejecting ? 'Refus...' : '❌ Refuser BC'}
               </button>
-            </>
-          )}
+              <button onClick={onClose} className="w-full px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
+                Annuler
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
