@@ -2704,7 +2704,9 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
                       <div className="flex items-center gap-3">
-                        <span className="font-mono font-bold text-amber-600">{req.request_number}</span>
+                        <span className="font-mono font-bold text-amber-600">
+                          {req.request_number || 'En attente'}
+                        </span>
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
                           {style.label}
                         </span>
@@ -7541,6 +7543,138 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         {/* Quote Review Modal */}
         {showQuoteModal && (() => {
           const quoteData = request.quote_data || {};
+          
+          // Check if this is a parts order
+          if (isPartsOrder) {
+            // Parts Order Quote Modal
+            const parts = quoteData.parts || [];
+            const shipping = quoteData.shipping || { parcels: 1, unitPrice: 45, total: 45 };
+            const grandTotal = quoteData.grandTotal || 0;
+            
+            return (
+              <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  {/* Modal Header */}
+                  <div className="sticky top-0 bg-amber-600 text-white px-6 py-4 flex justify-between items-center z-10">
+                    <div>
+                      <h2 className="text-xl font-bold">Devis Pièces Détachées</h2>
+                      <p className="text-amber-200">{request.request_number || 'En attente'}</p>
+                    </div>
+                    <button onClick={() => setShowQuoteModal(false)} className="text-amber-200 hover:text-white text-2xl">&times;</button>
+                  </div>
+
+                  {/* Parts Quote Content */}
+                  <div className="p-6">
+                    {/* Header */}
+                    <div className="flex justify-between items-start mb-6 pb-4 border-b-4 border-amber-500">
+                      <div>
+                        <img 
+                          src="/images/logos/lighthouse-logo.png" 
+                          alt="Lighthouse France" 
+                          className="h-14 w-auto mb-1"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            e.target.nextSibling.style.display = 'block';
+                          }}
+                        />
+                        <div style={{ display: 'none' }}>
+                          <h1 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h1>
+                          <p className="text-gray-500">France</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xl font-bold text-amber-600">DEVIS PIÈCES</p>
+                        <p className="text-gray-500">{quoteData.quoteRef || request.request_number}</p>
+                        <p className="text-sm text-gray-400 mt-1">
+                          {quoteData.createdAt ? new Date(quoteData.createdAt).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Client Info */}
+                    <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                      <p className="text-xs text-gray-500 uppercase mb-1">Client</p>
+                      <p className="font-bold text-lg">{request.companies?.name}</p>
+                    </div>
+
+                    {/* Parts Table */}
+                    <div className="mb-6">
+                      <h3 className="font-bold text-gray-800 mb-3">Pièces commandées</h3>
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-[#1a1a2e] text-white">
+                            <th className="px-4 py-2 text-left">Qté</th>
+                            <th className="px-4 py-2 text-left">Référence</th>
+                            <th className="px-4 py-2 text-left">Désignation</th>
+                            <th className="px-4 py-2 text-right">Prix Unit.</th>
+                            <th className="px-4 py-2 text-right">Total HT</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {parts.map((part, idx) => (
+                            <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-4 py-2 border-b">{part.quantity}</td>
+                              <td className="px-4 py-2 border-b font-mono text-sm">{part.partNumber || '—'}</td>
+                              <td className="px-4 py-2 border-b">{part.description}</td>
+                              <td className="px-4 py-2 border-b text-right">{(part.unitPrice || 0).toFixed(2)} €</td>
+                              <td className="px-4 py-2 border-b text-right font-medium">{(part.lineTotal || 0).toFixed(2)} €</td>
+                            </tr>
+                          ))}
+                          {shipping.total > 0 && (
+                            <tr className="bg-blue-50">
+                              <td className="px-4 py-2 border-b">{shipping.parcels}</td>
+                              <td className="px-4 py-2 border-b font-mono text-sm">Shipping</td>
+                              <td className="px-4 py-2 border-b text-blue-800">Frais de port ({shipping.parcels} colis)</td>
+                              <td className="px-4 py-2 border-b text-right">{(shipping.unitPrice || 0).toFixed(2)} €</td>
+                              <td className="px-4 py-2 border-b text-right font-medium">{(shipping.total || 0).toFixed(2)} €</td>
+                            </tr>
+                          )}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-amber-500 text-white font-bold">
+                            <td colSpan={4} className="px-4 py-3 text-right">TOTAL HT</td>
+                            <td className="px-4 py-3 text-right">{grandTotal.toFixed(2)} €</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+
+                    {/* Signatory */}
+                    <div className="flex justify-between items-end pt-6 border-t">
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
+                        <p className="font-bold">{quoteData.createdBy || 'Lighthouse France'}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-gray-500 uppercase mb-1">Bon pour accord</p>
+                        <div className="w-40 h-14 border-2 border-dashed border-gray-300 rounded"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="sticky bottom-0 bg-gray-50 px-6 py-4 border-t flex justify-between items-center">
+                    <button
+                      onClick={() => setShowQuoteModal(false)}
+                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                    >
+                      Fermer
+                    </button>
+                    {request.status === 'quote_sent' && (
+                      <button
+                        onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
+                        className="px-6 py-2 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45]"
+                      >
+                        ✅ Approuver et soumettre BC
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          }
+          
+          // RMA Quote Modal (existing code)
           const devices = quoteData.devices || request.request_devices || [];
           
           // Detect required sections from quote_data or devices
