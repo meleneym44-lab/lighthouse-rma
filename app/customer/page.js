@@ -2611,7 +2611,11 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
   const completedService = serviceRequests.filter(r => ['shipped', 'completed', 'delivered'].includes(r.status));
 
   const pendingParts = partsOrders.filter(r => r.status === 'submitted');
-  const inProgressParts = partsOrders.filter(r => !['submitted', 'shipped', 'completed', 'delivered', 'cancelled'].includes(r.status));
+  // All parts orders that are not completed/cancelled and not needing action (quote_sent without bc)
+  const activePartsOrders = partsOrders.filter(r => 
+    !['shipped', 'completed', 'delivered', 'cancelled'].includes(r.status) &&
+    !(r.status === 'quote_sent' && !r.bc_submitted_at)
+  );
   const completedParts = partsOrders.filter(r => ['shipped', 'completed', 'delivered'].includes(r.status));
   const partsNeedingAction = partsOrders.filter(r => r.status === 'quote_sent' && !r.bc_submitted_at);
 
@@ -2785,28 +2789,6 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
             </div>
           )}
 
-          {/* Pending Parts Orders - Only submitted ones waiting for quote */}
-          {pendingParts.length > 0 && (
-            <div className="bg-orange-50 border-l-4 border-orange-400 rounded-lg p-4">
-              <h3 className="font-bold text-orange-800 mb-2">📦 Commandes pièces en attente de devis</h3>
-              <p className="text-xs text-orange-600 mb-3">En cours de traitement par notre équipe</p>
-              <div className="space-y-2">
-                {pendingParts.map(req => (
-                  <div 
-                    key={req.id}
-                    onClick={() => viewRequest(req)}
-                    className="flex justify-between items-center p-2 bg-white rounded cursor-pointer hover:bg-orange-100"
-                  >
-                    <span className="font-mono font-medium text-orange-700">{req.request_number || 'En attente'}</span>
-                    <span className="text-sm text-gray-500">
-                      {new Date(req.created_at).toLocaleDateString('fr-FR')}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* In Progress Service */}
           {inProgressService.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-100">
@@ -2861,15 +2843,15 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
             </div>
           )}
 
-          {/* In Progress Parts */}
-          {inProgressParts.length > 0 && (
+          {/* Parts Orders - All active (not completed, not needing action) */}
+          {activePartsOrders.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-100">
               <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-                <h2 className="font-bold text-[#1E3A5F] text-lg">📦 Commandes pièces en cours</h2>
-                <span className="text-sm text-gray-500">{inProgressParts.length} commande(s)</span>
+                <h2 className="font-bold text-[#1E3A5F] text-lg">📦 Commandes pièces</h2>
+                <span className="text-sm text-gray-500">{activePartsOrders.length} commande(s)</span>
               </div>
               <div className="divide-y divide-gray-100">
-                {inProgressParts.slice(0, 3).map(req => {
+                {activePartsOrders.slice(0, 5).map(req => {
                   const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
                   return (
                     <div 
@@ -2879,7 +2861,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                     >
                       <div className="flex justify-between items-center">
                         <div className="flex items-center gap-3">
-                          <span className="font-mono font-bold text-amber-600">{req.request_number}</span>
+                          <span className="font-mono font-bold text-amber-600">{req.request_number || 'En attente'}</span>
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
                             {style.label}
                           </span>
@@ -2888,10 +2870,18 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                           {new Date(req.created_at).toLocaleDateString('fr-FR')}
                         </span>
                       </div>
+                      <p className="text-sm text-gray-600 mt-1 line-clamp-1">{req.problem_description}</p>
                     </div>
                   );
                 })}
               </div>
+              {activePartsOrders.length > 5 && (
+                <div className="px-6 py-3 bg-gray-50 text-center">
+                  <button onClick={() => setActiveTab('parts')} className="text-amber-600 text-sm font-medium">
+                    Voir toutes les commandes pièces →
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
