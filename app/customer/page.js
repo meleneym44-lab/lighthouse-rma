@@ -2245,8 +2245,8 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
   }, [profile, requests]);
 
   // Separate service requests from parts orders
-  const serviceRequests = requests.filter(r => r.request_type !== 'parts' && r.requested_service !== 'parts_order');
-  const partsOrders = requests.filter(r => r.request_type === 'parts' || r.requested_service === 'parts_order');
+  const serviceRequests = requests.filter(r => r.request_type !== 'parts');
+  const partsOrders = requests.filter(r => r.request_type === 'parts');
 
   // Get all devices from service requests
   const allDevices = serviceRequests.flatMap(req => 
@@ -2591,7 +2591,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                       <div className="flex items-center gap-2">
                         <span className="font-mono font-medium text-gray-700">{req.request_number}</span>
                         <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">
-                          {req.request_type === 'parts' || req.requested_service === 'parts_order' ? 'Pièces' : 'Service'}
+                          {req.request_type === 'parts' ? 'Pièces' : 'Service'}
                         </span>
                       </div>
                       <span className="text-green-600 text-sm font-medium">Terminé</span>
@@ -3573,7 +3573,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
           company_id: profile.company_id,
           submitted_by: profile.id,
           request_type: 'parts',
-          requested_service: 'parts_order',
+          requested_service: 'other', // Use valid enum value, request_type='parts' identifies it
           problem_description: partsDescription,
           urgency: 'normal',
           shipping_address_id: addressId,
@@ -6643,7 +6643,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   const [approvingQuote, setApprovingQuote] = useState(false);
   
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
-  const isPartsOrder = request.request_type === 'parts' || request.requested_service === 'parts_order';
+  const isPartsOrder = request.request_type === 'parts';
   const isQuoteSent = request.status === 'quote_sent';
   const needsQuoteAction = isQuoteSent && !request.bc_submitted_at;
   const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
