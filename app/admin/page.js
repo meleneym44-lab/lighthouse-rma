@@ -1574,7 +1574,7 @@ export default function AdminPortal() {
   ).length;
   
   // Parts Orders count - pending parts requests
-  const partsOrders = requests.filter(r => r.request_type === 'parts' || r.requested_service === 'parts_order');
+  const partsOrders = requests.filter(r => r.request_type === 'parts');
   const partsOrdersActionCount = partsOrders.filter(r => 
     r.status === 'submitted' || 
     r.status === 'quote_revision_requested'
@@ -1672,7 +1672,7 @@ export default function AdminPortal() {
               filter={dashboardFilter} 
               setFilter={setDashboardFilter} 
             />}
-            {activeSheet === 'requests' && <RequestsSheet requests={requests.filter(r => r.request_type !== 'parts' && r.requested_service !== 'parts_order')} notify={notify} reload={loadData} profile={profile} />}
+            {activeSheet === 'requests' && <RequestsSheet requests={requests.filter(r => r.request_type !== 'parts')} notify={notify} reload={loadData} profile={profile} />}
             {activeSheet === 'parts' && <PartsOrdersSheet requests={partsOrders} notify={notify} reload={loadData} profile={profile} />}
             {activeSheet === 'clients' && <ClientsSheet 
               clients={clients} 
