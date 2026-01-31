@@ -5198,23 +5198,23 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
     
     setSaving(true);
     try {
-      // Generate RMA number if not exists
-      let rmaNumber = order.request_number;
-      if (!rmaNumber) {
+      // Generate Parts Order number if not exists (PO-XXXXX format, separate from FR-XXXXX RMAs)
+      let poNumber = order.request_number;
+      if (!poNumber) {
         const { data: lastReq } = await supabase
           .from('service_requests')
           .select('request_number')
-          .like('request_number', 'FR-%')
+          .like('request_number', 'PO-%')
           .order('request_number', { ascending: false })
           .limit(1);
         
         const lastNum = lastReq?.[0]?.request_number;
         let nextNum = 1;
         if (lastNum) {
-          const match = lastNum.match(/FR-(\d+)/);
+          const match = lastNum.match(/PO-(\d+)/);
           if (match) nextNum = parseInt(match[1]) + 1;
         }
-        rmaNumber = `FR-${String(nextNum).padStart(5, '0')}`;
+        poNumber = `PO-${String(nextNum).padStart(5, '0')}`;
       }
       
       // Build quote_data
@@ -5238,7 +5238,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
       const { error } = await supabase
         .from('service_requests')
         .update({
-          request_number: rmaNumber,
+          request_number: poNumber,
           status: 'quote_sent',
           quote_sent_at: new Date().toISOString(),
           quote_data: quoteData,
