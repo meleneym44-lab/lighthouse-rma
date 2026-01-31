@@ -9048,27 +9048,6 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                         </svg>
                       </a>
                     )}
-                    {request.signed_quote_url && (
-                      <a 
-                        href={request.signed_quote_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 p-3 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors border border-amber-200"
-                      >
-                        <div className="w-10 h-10 bg-amber-600 rounded flex items-center justify-center text-white font-bold text-xs">
-                          PDF
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-amber-900">Devis Signé</p>
-                          <p className="text-xs text-amber-600">
-                            {request.bc_signed_by ? `Approuvé par ${request.bc_signed_by}` : 'Télécharger le devis signé'}
-                          </p>
-                        </div>
-                        <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                      </a>
-                    )}
                     {request.certificate_url && (
                       <a 
                         href={request.certificate_url}
