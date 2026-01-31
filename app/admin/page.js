@@ -1778,9 +1778,10 @@ export default function AdminPortal() {
   const logout = async () => { await supabase.auth.signOut(); window.location.href = '/'; };
   const isAdmin = profile?.role === 'lh_admin';
   
-  // Count pending requests and modification requests
-  const pendingCount = requests.filter(r => r.status === 'submitted' && !r.request_number).length;
-  const modificationCount = requests.filter(r => r.status === 'quote_revision_requested').length;
+  // Count pending requests and modification requests - EXCLUDE parts orders
+  const rmaRequests = requests.filter(r => r.request_type !== 'parts');
+  const pendingCount = rmaRequests.filter(r => r.status === 'submitted' && !r.request_number).length;
+  const modificationCount = rmaRequests.filter(r => r.status === 'quote_revision_requested').length;
   const totalBadge = pendingCount + modificationCount;
   // Contract badge: new requests, BC pending review, OR quote revision requested
   const contractActionCount = contracts.filter(c => 
