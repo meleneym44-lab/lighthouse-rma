@@ -2610,9 +2610,10 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
   const inProgressService = serviceRequests.filter(r => !['submitted', 'waiting_approval', 'shipped', 'completed', 'delivered', 'repair_declined', 'cancelled'].includes(r.status));
   const completedService = serviceRequests.filter(r => ['shipped', 'completed', 'delivered'].includes(r.status));
 
-  const pendingParts = partsOrders.filter(r => ['submitted', 'waiting_approval'].includes(r.status));
-  const inProgressParts = partsOrders.filter(r => !['submitted', 'waiting_approval', 'shipped', 'completed', 'delivered', 'cancelled'].includes(r.status));
+  const pendingParts = partsOrders.filter(r => r.status === 'submitted');
+  const inProgressParts = partsOrders.filter(r => !['submitted', 'shipped', 'completed', 'delivered', 'cancelled'].includes(r.status));
   const completedParts = partsOrders.filter(r => ['shipped', 'completed', 'delivered'].includes(r.status));
+  const partsNeedingAction = partsOrders.filter(r => r.status === 'quote_sent' && !r.bc_submitted_at);
 
   return (
     <div>
@@ -2681,8 +2682,9 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
       {/* Overview Tab */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* ACTION REQUIRED - Combined RMA and Contracts */}
+          {/* ACTION REQUIRED - Combined RMA, Parts Orders, and Contracts */}
           {(serviceRequests.filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at).length > 0 || 
+            partsNeedingAction.length > 0 ||
             (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0)) && (
             <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4">
               <h3 className="font-bold text-red-800 mb-2 flex items-center gap-2">
@@ -2710,6 +2712,23 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                       </span>
                     </div>
                     <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
+                      Agir →
+                    </span>
+                  </div>
+                ))}
+                {/* Parts Orders needing action */}
+                {partsNeedingAction.map(req => (
+                  <div 
+                    key={req.id}
+                    onClick={() => viewRequest(req)}
+                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-orange-100 border border-orange-200"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-amber-500">📦</span>
+                      <span className="font-mono font-bold text-orange-700">{req.request_number || 'En attente'}</span>
+                      <span className="text-sm text-orange-600">Approuver le devis pièces</span>
+                    </div>
+                    <span className="px-3 py-1 bg-orange-500 text-white text-xs font-bold rounded-full">
                       Agir →
                     </span>
                   </div>
@@ -2766,10 +2785,11 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
             </div>
           )}
 
-          {/* Pending Parts Orders */}
+          {/* Pending Parts Orders - Only submitted ones waiting for quote */}
           {pendingParts.length > 0 && (
             <div className="bg-orange-50 border-l-4 border-orange-400 rounded-lg p-4">
-              <h3 className="font-bold text-orange-800 mb-2">📦 Commandes pièces en attente</h3>
+              <h3 className="font-bold text-orange-800 mb-2">📦 Commandes pièces en attente de devis</h3>
+              <p className="text-xs text-orange-600 mb-3">En cours de traitement par notre équipe</p>
               <div className="space-y-2">
                 {pendingParts.map(req => (
                   <div 
@@ -2777,7 +2797,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                     onClick={() => viewRequest(req)}
                     className="flex justify-between items-center p-2 bg-white rounded cursor-pointer hover:bg-orange-100"
                   >
-                    <span className="font-mono font-medium">{req.request_number}</span>
+                    <span className="font-mono font-medium text-orange-700">{req.request_number || 'En attente'}</span>
                     <span className="text-sm text-gray-500">
                       {new Date(req.created_at).toLocaleDateString('fr-FR')}
                     </span>
@@ -7868,6 +7888,28 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             const partsTotal = quoteData.partsTotal || parts.reduce((sum, p) => sum + (p.lineTotal || 0), 0);
             const grandTotal = quoteData.grandTotal || (partsTotal + (shipping.total || 0));
             
+            // Print function
+            const handlePrint = () => {
+              window.print();
+            };
+            
+            // Download PDF function
+            const handleDownload = async () => {
+              try {
+                const pdfBlob = await generatePartsQuotePDF({ request, isSigned: false });
+                const url = URL.createObjectURL(pdfBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `devis_pieces_${request.request_number || 'draft'}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              } catch (e) {
+                console.error('PDF generation error:', e);
+              }
+            };
+            
             return (
               <div className="fixed inset-0 bg-black/70 z-50 overflow-hidden flex flex-col">
                 {/* Fixed Header */}
@@ -7876,13 +7918,27 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     <h2 className="text-xl font-bold">Devis Pièces Détachées</h2>
                     <p className="text-amber-200">{request.request_number || 'En attente'}</p>
                   </div>
-                  <button onClick={() => setShowQuoteModal(false)} className="text-amber-200 hover:text-white text-2xl">&times;</button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handlePrint}
+                      className="px-3 py-1.5 bg-amber-700 hover:bg-amber-800 rounded text-sm flex items-center gap-1"
+                    >
+                      🖨️ Imprimer
+                    </button>
+                    <button
+                      onClick={handleDownload}
+                      className="px-3 py-1.5 bg-amber-700 hover:bg-amber-800 rounded text-sm flex items-center gap-1"
+                    >
+                      📥 Télécharger PDF
+                    </button>
+                    <button onClick={() => setShowQuoteModal(false)} className="text-amber-200 hover:text-white text-2xl ml-2">&times;</button>
+                  </div>
                 </div>
 
                 {/* Scrollable Content Area */}
                 <div className="flex-1 overflow-y-auto bg-gray-400 p-6">
                   {/* A4 Paper Container */}
-                  <div className="bg-white shadow-2xl mx-auto flex flex-col" style={{ width: '210mm', minHeight: '297mm', maxWidth: '100%' }}>
+                  <div id="parts-quote-print" className="bg-white shadow-2xl mx-auto flex flex-col" style={{ width: '210mm', minHeight: '297mm', maxWidth: '100%' }}>
                     
                     {/* Quote Header */}
                     <div className="px-8 pt-8 pb-4">
@@ -7927,11 +7983,18 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     {/* Client Info */}
                     <div className="px-8 py-4 border-b">
                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Client</p>
-                      <p className="font-bold text-lg text-[#1a1a2e]">{request.companies?.name}</p>
+                      <p className="font-bold text-lg text-[#1a1a2e]">{request.companies?.name || 'Client'}</p>
                       {request.companies?.billing_address && (
                         <p className="text-gray-600">{request.companies.billing_address}</p>
                       )}
-                      <p className="text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
+                      {(request.companies?.billing_postal_code || request.companies?.billing_city) && (
+                        <p className="text-gray-600">
+                          {request.companies?.billing_postal_code} {request.companies?.billing_city}
+                        </p>
+                      )}
+                      {request.companies?.siret && (
+                        <p className="text-gray-500 text-sm mt-1">SIRET: {request.companies.siret}</p>
+                      )}
                     </div>
                     
                     {/* Main content area - flex-1 to push footer down */}
@@ -7941,37 +8004,37 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                       <table className="w-full border-collapse mb-6">
                         <thead>
                           <tr className="bg-[#1a1a2e] text-white">
-                            <th className="px-4 py-3 text-left text-sm w-16">Qté</th>
-                            <th className="px-4 py-3 text-left text-sm">Référence</th>
-                            <th className="px-4 py-3 text-left text-sm">Désignation</th>
-                            <th className="px-4 py-3 text-right text-sm w-24">Prix Unit.</th>
-                            <th className="px-4 py-3 text-right text-sm w-24">Total HT</th>
+                            <th className="px-3 py-2 text-left text-sm w-12">Qté</th>
+                            <th className="px-3 py-2 text-left text-sm w-28">Référence</th>
+                            <th className="px-3 py-2 text-left text-sm">Désignation</th>
+                            <th className="px-3 py-2 text-right text-sm w-20">P.U. HT</th>
+                            <th className="px-3 py-2 text-right text-sm w-20">Total</th>
                           </tr>
                         </thead>
                         <tbody>
                           {parts.map((part, idx) => (
                             <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-4 py-3 border-b border-gray-200">{part.quantity}</td>
-                              <td className="px-4 py-3 border-b border-gray-200 font-mono text-sm">{part.partNumber || '—'}</td>
-                              <td className="px-4 py-3 border-b border-gray-200">{part.description}</td>
-                              <td className="px-4 py-3 border-b border-gray-200 text-right">{(part.unitPrice || 0).toFixed(2)} €</td>
-                              <td className="px-4 py-3 border-b border-gray-200 text-right font-medium">{(part.lineTotal || 0).toFixed(2)} €</td>
+                              <td className="px-3 py-2 border-b border-gray-200 text-center">{part.quantity}</td>
+                              <td className="px-3 py-2 border-b border-gray-200 font-mono text-xs">{part.partNumber || '—'}</td>
+                              <td className="px-3 py-2 border-b border-gray-200 text-sm">{part.description}</td>
+                              <td className="px-3 py-2 border-b border-gray-200 text-right text-sm">{(part.unitPrice || 0).toFixed(2)} €</td>
+                              <td className="px-3 py-2 border-b border-gray-200 text-right font-medium text-sm">{(part.lineTotal || 0).toFixed(2)} €</td>
                             </tr>
                           ))}
                           {shipping.total > 0 && (
                             <tr className="bg-blue-50">
-                              <td className="px-4 py-3 border-b border-blue-200">{shipping.parcels}</td>
-                              <td className="px-4 py-3 border-b border-blue-200 font-mono text-sm">Shipping</td>
-                              <td className="px-4 py-3 border-b border-blue-200 text-blue-800">Frais de port ({shipping.parcels} colis)</td>
-                              <td className="px-4 py-3 border-b border-blue-200 text-right">{(shipping.unitPrice || 0).toFixed(2)} €</td>
-                              <td className="px-4 py-3 border-b border-blue-200 text-right font-medium">{(shipping.total || 0).toFixed(2)} €</td>
+                              <td className="px-3 py-2 border-b border-blue-200 text-center">{shipping.parcels}</td>
+                              <td className="px-3 py-2 border-b border-blue-200 font-mono text-xs">SHIPPING</td>
+                              <td className="px-3 py-2 border-b border-blue-200 text-sm text-blue-800">Frais de port ({shipping.parcels} colis)</td>
+                              <td className="px-3 py-2 border-b border-blue-200 text-right text-sm">{(shipping.unitPrice || 0).toFixed(2)} €</td>
+                              <td className="px-3 py-2 border-b border-blue-200 text-right font-medium text-sm">{(shipping.total || 0).toFixed(2)} €</td>
                             </tr>
                           )}
                         </tbody>
                         <tfoot>
                           <tr className="bg-amber-500 text-white">
-                            <td colSpan={4} className="px-4 py-3 text-right font-bold">TOTAL HT</td>
-                            <td className="px-4 py-3 text-right font-bold text-lg">{grandTotal.toFixed(2)} €</td>
+                            <td colSpan={4} className="px-3 py-2 text-right font-bold text-sm">TOTAL HT</td>
+                            <td className="px-3 py-2 text-right font-bold">{grandTotal.toFixed(2)} €</td>
                           </tr>
                         </tfoot>
                       </table>
@@ -7995,17 +8058,17 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                         </div>
                         <div className="text-center">
                           <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Bon pour accord</p>
-                          <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
-                            <span className="text-gray-300 text-sm">Signature et cachet</span>
+                          <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
+                            <span className="text-gray-300 text-xs">Signature et cachet</span>
                           </div>
                         </div>
                       </div>
                     </div>
                     
                     {/* Footer */}
-                    <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center">
-                      <p className="font-medium">Lighthouse France SAS</p>
-                      <p className="text-gray-400 text-sm">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+                    <div className="bg-[#1a1a2e] text-white px-8 py-3 text-center">
+                      <p className="font-medium text-sm">Lighthouse France SAS</p>
+                      <p className="text-gray-400 text-xs">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
                     </div>
                   </div>
                 </div>
