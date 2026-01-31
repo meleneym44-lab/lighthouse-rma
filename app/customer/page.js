@@ -3491,6 +3491,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
     newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' }
   });
   const [saving, setSaving] = useState(false);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
 
   function createNewPart(num) {
     return {
@@ -3499,7 +3500,8 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
       device_for: '',
       part_number: '',
       description: '',
-      quantity: 1
+      quantity: 1,
+      photos: [] // Array of { file, preview, url }
     };
   }
 
@@ -3514,6 +3516,61 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
 
   const updatePart = (id, field, value) => {
     setParts(parts.map(p => p.id === id ? { ...p, [field]: value } : p));
+  };
+
+  // Handle photo selection
+  const handlePhotoSelect = (partId, files) => {
+    const fileArray = Array.from(files);
+    const photosWithPreview = fileArray.map(file => ({
+      file,
+      preview: URL.createObjectURL(file),
+      url: null
+    }));
+    
+    setParts(parts.map(p => {
+      if (p.id !== partId) return p;
+      return { ...p, photos: [...p.photos, ...photosWithPreview] };
+    }));
+  };
+
+  // Remove photo
+  const removePhoto = (partId, photoIndex) => {
+    setParts(parts.map(p => {
+      if (p.id !== partId) return p;
+      const newPhotos = [...p.photos];
+      // Revoke object URL to prevent memory leaks
+      if (newPhotos[photoIndex]?.preview) {
+        URL.revokeObjectURL(newPhotos[photoIndex].preview);
+      }
+      newPhotos.splice(photoIndex, 1);
+      return { ...p, photos: newPhotos };
+    }));
+  };
+
+  // Upload photos to storage
+  const uploadPhotos = async (partPhotos, requestId) => {
+    const uploadedUrls = [];
+    for (const photo of partPhotos) {
+      if (!photo.file) continue;
+      const fileExt = photo.file.name.split('.').pop();
+      const fileName = `${requestId}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+      
+      const { data, error } = await supabase.storage
+        .from('request-attachments')
+        .upload(fileName, photo.file);
+      
+      if (error) {
+        console.error('Photo upload error:', error);
+        continue;
+      }
+      
+      const { data: urlData } = supabase.storage
+        .from('request-attachments')
+        .getPublicUrl(fileName);
+      
+      uploadedUrls.push(urlData.publicUrl);
+    }
+    return uploadedUrls;
   };
 
   const handleSubmit = async (e) => {
@@ -3562,6 +3619,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
     setSaving(true);
     
     try {
+      // Create initial request to get ID for photo uploads
       const partsDescription = parts.map(p => 
         `Pièce ${p.num}: ${p.description}${p.part_number ? ` (Réf: ${p.part_number})` : ''}${p.device_for ? ` - Pour: ${p.device_for}` : ''} - Qté: ${p.quantity}`
       ).join('\n');
@@ -3573,7 +3631,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
           company_id: profile.company_id,
           submitted_by: profile.id,
           request_type: 'parts',
-          requested_service: 'calibration', // Use valid enum, request_type='parts' identifies it as parts order
+          requested_service: 'calibration',
           problem_description: partsDescription,
           urgency: 'normal',
           shipping_address_id: addressId,
@@ -3590,6 +3648,33 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
         return;
       }
 
+      // Upload photos for each part
+      setUploadingPhotos(true);
+      const partsWithPhotos = [];
+      for (const part of parts) {
+        let photoUrls = [];
+        if (part.photos && part.photos.length > 0) {
+          photoUrls = await uploadPhotos(part.photos, data.id);
+        }
+        partsWithPhotos.push({
+          num: part.num,
+          device_for: part.device_for,
+          part_number: part.part_number,
+          description: part.description,
+          quantity: part.quantity,
+          photos: photoUrls
+        });
+      }
+
+      // Update request with structured parts_data
+      await supabase
+        .from('service_requests')
+        .update({
+          parts_data: { parts: partsWithPhotos }
+        })
+        .eq('id', data.id);
+
+      setUploadingPhotos(false);
       console.log('Parts order created:', data);
       notify('Commande de pièces soumise avec succès!');
       refresh();
@@ -3679,11 +3764,34 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
                     type="file"
                     multiple
                     accept="image/*"
+                    onChange={(e) => handlePhotoSelect(part.id, e.target.files)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
                   />
                   <p className="text-sm text-gray-500 mt-1">
                     Ajoutez des photos de la pièce ou de son emplacement sur l'appareil
                   </p>
+                  
+                  {/* Photo previews */}
+                  {part.photos && part.photos.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {part.photos.map((photo, idx) => (
+                        <div key={idx} className="relative">
+                          <img 
+                            src={photo.preview} 
+                            alt={`Photo ${idx + 1}`}
+                            className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removePhoto(part.id, idx)}
+                            className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -3825,7 +3933,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
             disabled={saving}
             className="flex-1 py-3 bg-amber-500 text-white rounded-lg font-medium hover:bg-amber-600 disabled:opacity-50"
           >
-            {saving ? 'Envoi en cours...' : 'Soumettre la Commande'}
+            {saving ? (uploadingPhotos ? 'Envoi des photos...' : 'Envoi en cours...') : 'Soumettre la Commande'}
           </button>
         </div>
       </form>
