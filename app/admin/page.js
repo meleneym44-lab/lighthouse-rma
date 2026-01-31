@@ -5695,20 +5695,30 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings 
     { id: 'shipped', label: 'Expédiées', value: shippedOrders.length, color: 'bg-green-500', icon: '✅' }
   ];
   
+  // Orders for the table (excluding pending and bc_review which have their own sections)
+  const tableOrders = activeOrders.filter(r => 
+    r.status !== 'submitted' && 
+    r.status !== 'quote_revision_requested' && 
+    r.status !== 'bc_review'
+  );
+  
   // Filter orders
   const getFilteredOrders = () => {
-    if (!filter) return activeOrders;
+    if (!filter) return tableOrders; // Default shows table orders only
     if (filter === 'pending') return allPending;
     if (filter === 'bc') return bcReviewOrders;
     if (filter === 'quote_sent') return quoteSentOrders;
     if (filter === 'in_progress') return inProgressOrders;
     if (filter === 'ready') return readyToShipOrders;
     if (filter === 'shipped') return shippedOrders;
-    return activeOrders;
+    return tableOrders;
   };
   
   const filteredOrders = getFilteredOrders();
   const filterLabel = filter ? stats.find(s => s.id === filter)?.label : null;
+  
+  // For the table, we show different orders based on filter
+  const showTable = !filter || (filter !== 'bc' && filter !== 'pending');
 
   // If a full page order is selected, show the full page view
   if (fullPageOrder) {
@@ -5796,12 +5806,62 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings 
         </div>
       )}
       
-      {/* Orders Table - Like RMA Dashboard */}
-      {filter !== 'bc' && (
+      {/* NEW REQUESTS SECTION - Prominent like before */}
+      {allPending.length > 0 && (!filter || filter === 'pending') && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl shadow-lg">
+          <div className="px-6 py-4 border-b border-amber-200 bg-amber-100 rounded-t-xl">
+            <h2 className="font-bold text-amber-800 text-lg">📋 Nouvelles Demandes ({allPending.length})</h2>
+            <p className="text-sm text-amber-600">Créez un devis pour ces demandes</p>
+          </div>
+          <div className="p-4 space-y-3">
+            {allPending.map(order => {
+              const needsRevision = order.status === 'quote_revision_requested';
+              return (
+                <div 
+                  key={order.id} 
+                  className={`bg-white rounded-lg p-4 flex items-center justify-between shadow-sm border ${needsRevision ? 'border-red-300 bg-red-50' : 'border-amber-100'}`}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 ${needsRevision ? 'bg-red-500' : 'bg-amber-500'} rounded-lg flex items-center justify-center text-2xl text-white`}>
+                      {needsRevision ? '🔴' : '📦'}
+                    </div>
+                    <div>
+                      <p className="font-bold text-gray-800">{order.companies?.name}</p>
+                      <p className="text-sm text-gray-500">
+                        {needsRevision ? 'Modification demandée' : 'Nouvelle commande'} • {new Date(order.created_at).toLocaleDateString('fr-FR')}
+                      </p>
+                      {needsRevision && order.revision_notes && (
+                        <p className="text-sm text-red-600 mt-1">💬 {order.revision_notes.substring(0, 100)}{order.revision_notes.length > 100 ? '...' : ''}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={() => setFullPageOrder(order)}
+                      className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium"
+                    >
+                      Voir
+                    </button>
+                    <button 
+                      onClick={() => setQuoteOrder(order)}
+                      className={`px-6 py-2 ${needsRevision ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'} text-white rounded-lg font-medium`}
+                    >
+                      💰 {needsRevision ? 'Réviser Devis' : 'Créer Devis'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      
+      {/* Orders Table - Like RMA Dashboard (exclude pending and bc_review from table since they have their own sections) */}
+      {showTable && (
         <div className="bg-white rounded-xl shadow-sm">
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="font-bold text-gray-800">
-              {filterLabel ? `${filterLabel} (${filteredOrders.length})` : `Commandes Actives (${activeOrders.length})`}
+              {filterLabel ? `${filterLabel} (${filteredOrders.length})` : `Autres Commandes (${tableOrders.length})`}
             </h2>
           </div>
           
@@ -7859,25 +7919,27 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       
       if (updateError) throw updateError;
       
-      // Also save as attachments for easy access
+      // Also save as attachments for easy access (errors are non-critical)
       if (upsLabelUrl) {
-        await supabase.from('request_attachments').insert({
+        const { error: attErr1 } = await supabase.from('request_attachments').insert({
           request_id: order.id,
           file_name: `UPS-Label-${shipment.trackingNumber}.pdf`,
           file_url: upsLabelUrl,
           file_type: 'ups_label',
           uploaded_by: profile?.id || null
-        }).catch(e => console.error('Attachment error:', e));
+        });
+        if (attErr1) console.error('UPS label attachment error:', attErr1);
       }
       
       if (blUrl) {
-        await supabase.from('request_attachments').insert({
+        const { error: attErr2 } = await supabase.from('request_attachments').insert({
           request_id: order.id,
           file_name: `${blNumber}.pdf`,
           file_url: blUrl,
           file_type: 'bl',
           uploaded_by: profile?.id || null
-        }).catch(e => console.error('Attachment error:', e));
+        });
+        if (attErr2) console.error('BL attachment error:', attErr2);
       }
       
       notify('🚚 Commande expédiée! Documents sauvegardés.');
@@ -8805,20 +8867,22 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
         
         // Save PDF URLs as attachments instead of device columns
         if (blUrl) {
-          await supabase.from('request_attachments').insert({
+          const { error: blAttErr } = await supabase.from('request_attachments').insert({
             request_id: rma.id,
             file_name: `BL-${bl.blNumber}.pdf`,
             file_url: blUrl,
             file_type: 'bl'
-          }).catch(e => console.error('BL attachment error:', e));
+          });
+          if (blAttErr) console.error('BL attachment error:', blAttErr);
         }
         if (upsLabelUrl) {
-          await supabase.from('request_attachments').insert({
+          const { error: upsAttErr } = await supabase.from('request_attachments').insert({
             request_id: rma.id,
             file_name: `UPS-Label-${s.trackingNumber}.pdf`,
             file_url: upsLabelUrl,
             file_type: 'ups_label'
-          }).catch(e => console.error('UPS label attachment error:', e));
+          });
+          if (upsAttErr) console.error('UPS label attachment error:', upsAttErr);
         }
       }
       
