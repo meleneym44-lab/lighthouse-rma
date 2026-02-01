@@ -2229,6 +2229,15 @@ function KPISheet({ requests = [], clients = [] }) {
   });
   const [dateTo, setDateTo] = useState(() => new Date().toISOString().split('T')[0]);
   
+  // Filters
+  const [serviceFilter, setServiceFilter] = useState('all'); // 'all', 'calibration', 'repair'
+  const [statusFilter, setStatusFilter] = useState('shipped'); // 'all', 'shipped'
+  const [selectedTech, setSelectedTech] = useState(null);
+  
+  // Stage-to-stage analysis
+  const [stageFrom, setStageFrom] = useState('received');
+  const [stageTo, setStageTo] = useState('shipped');
+  
   // Quick date presets
   const setPreset = (days) => {
     const to = new Date();
@@ -2242,6 +2251,39 @@ function KPISheet({ requests = [], clients = [] }) {
     setDateTo(to.toISOString().split('T')[0]);
   };
   
+  // Stage options
+  const stageOptions = [
+    { value: 'created', label: 'Créé (RMA soumis)' },
+    { value: 'received', label: 'Reçu' },
+    { value: 'calibration_start', label: 'Début étalonnage' },
+    { value: 'report_complete', label: 'Rapport terminé' },
+    { value: 'qc_complete', label: 'QC terminé' },
+    { value: 'shipped', label: 'Expédié' }
+  ];
+  
+  // Get stage timestamp
+  const getStageDate = (device, stage) => {
+    const rma = device.rma;
+    switch(stage) {
+      case 'created': return rma?.created_at;
+      case 'received': return device.received_at || rma?.received_at;
+      case 'calibration_start': return device.calibration_started_at;
+      case 'report_complete': return device.report_complete ? (device.report_completed_at || device.updated_at) : null;
+      case 'qc_complete': return device.qc_complete ? (device.qc_completed_at || device.updated_at) : null;
+      case 'shipped': return device.shipped_at || rma?.shipped_at;
+      default: return null;
+    }
+  };
+  
+  // Calculate days between stages
+  const calculateDays = (device, from, to) => {
+    const fromDate = getStageDate(device, from);
+    const toDate = getStageDate(device, to);
+    if (!fromDate || !toDate) return null;
+    const diff = (new Date(toDate) - new Date(fromDate)) / (1000 * 60 * 60 * 24);
+    return diff >= 0 && diff < 365 ? diff : null;
+  };
+  
   // Safe data
   const safeRequests = Array.isArray(requests) ? requests : [];
   const rmaRequests = safeRequests.filter(r => r && r.request_type !== 'parts' && r.request_number);
@@ -2251,7 +2293,7 @@ function KPISheet({ requests = [], clients = [] }) {
   const toDate = new Date(dateTo);
   toDate.setHours(23, 59, 59, 999);
   
-  // Get all devices
+  // Get all devices with RMA reference
   const allDevices = [];
   rmaRequests.forEach(r => {
     if (r && Array.isArray(r.request_devices)) {
@@ -2261,277 +2303,330 @@ function KPISheet({ requests = [], clients = [] }) {
     }
   });
   
-  // Shipped devices in period
-  const shippedInPeriod = allDevices.filter(d => {
-    const shippedAt = d.shipped_at || d.rma?.shipped_at;
-    if (!shippedAt) return false;
-    const date = new Date(shippedAt);
+  // Filter by service type
+  const filteredByService = allDevices.filter(d => {
+    if (serviceFilter === 'all') return true;
+    const service = d.rma?.requested_service || '';
+    if (serviceFilter === 'calibration') return service === 'calibration';
+    if (serviceFilter === 'repair') return service === 'repair';
+    return true;
+  });
+  
+  // Filter by status (shipped or all)
+  const filteredByStatus = filteredByService.filter(d => {
+    if (statusFilter === 'all') return true;
+    return d.shipped_at || d.rma?.shipped_at;
+  });
+  
+  // Filter by date range (based on the "from" stage date)
+  const filteredByDate = filteredByStatus.filter(d => {
+    const stageDate = getStageDate(d, stageFrom);
+    if (!stageDate) return false;
+    const date = new Date(stageDate);
     return date >= fromDate && date <= toDate;
   });
   
-  // RMAs shipped in period
-  const rmasShippedInPeriod = rmaRequests.filter(r => {
-    if (!r.shipped_at) return false;
-    const date = new Date(r.shipped_at);
-    return date >= fromDate && date <= toDate;
+  // Get unique technicians from filtered devices
+  const technicianSet = new Set();
+  filteredByDate.forEach(d => {
+    const tech = d.assigned_to || d.technician;
+    if (tech) technicianSet.add(tech);
   });
+  const technicians = Array.from(technicianSet).sort();
   
-  // Revenue per device (RMA total / device count)
+  // Filter by selected technician
+  const filteredByTech = selectedTech 
+    ? filteredByDate.filter(d => (d.assigned_to || d.technician) === selectedTech)
+    : filteredByDate;
+  
+  // Calculate duration for each device
+  const devicesWithDuration = filteredByTech.map(d => ({
+    ...d,
+    duration: calculateDays(d, stageFrom, stageTo)
+  }));
+  
+  // Devices that have valid duration (both stages completed)
+  const devicesWithValidDuration = devicesWithDuration.filter(d => d.duration !== null);
+  
+  // Calculate totals
+  const totalDevices = devicesWithDuration.length;
+  const devicesWithData = devicesWithValidDuration.length;
+  const totalDays = devicesWithValidDuration.reduce((sum, d) => sum + d.duration, 0);
+  const avgDays = devicesWithData > 0 ? totalDays / devicesWithData : 0;
+  
+  // Revenue calculation
   const rmaRevenueMap = {};
-  rmasShippedInPeriod.forEach(r => {
+  rmaRequests.forEach(r => {
     const quoteData = r.quote_data || {};
     const total = parseFloat(quoteData.grandTotal || quoteData.total || 0) || 0;
     const deviceCount = (r.request_devices || []).length || 1;
     rmaRevenueMap[r.id] = total / deviceCount;
   });
   
-  // Technician stats - ONLY shipped devices
+  const totalRevenue = devicesWithDuration.reduce((sum, d) => sum + (rmaRevenueMap[d.rma?.id] || 0), 0);
+  
+  // Technician summary stats (for the sidebar)
   const techStats = {};
-  shippedInPeriod.forEach(d => {
+  filteredByDate.forEach(d => {
     const tech = d.assigned_to || d.technician || 'Non assigné';
     if (!techStats[tech]) {
-      techStats[tech] = { count: 0, revenue: 0, totalDays: 0 };
+      techStats[tech] = { count: 0, revenue: 0 };
     }
     techStats[tech].count++;
     techStats[tech].revenue += rmaRevenueMap[d.rma?.id] || 0;
-    
-    // Calculate turnaround
-    if (d.received_at && (d.shipped_at || d.rma?.shipped_at)) {
-      const received = new Date(d.received_at);
-      const shipped = new Date(d.shipped_at || d.rma?.shipped_at);
-      const days = (shipped - received) / (1000 * 60 * 60 * 24);
-      if (days >= 0 && days < 365) techStats[tech].totalDays += days;
-    }
   });
   
   const techArray = Object.entries(techStats)
-    .map(([name, s]) => ({
-      name,
-      count: s.count,
-      revenue: s.revenue,
-      avgDays: s.count > 0 ? s.totalDays / s.count : 0
-    }))
+    .map(([name, s]) => ({ name, count: s.count, revenue: s.revenue }))
     .sort((a, b) => b.count - a.count);
-  
-  const totalTechRevenue = techArray.reduce((sum, t) => sum + t.revenue, 0);
-  
-  // Total revenue
-  const totalRevenue = rmasShippedInPeriod.reduce((sum, r) => {
-    const quoteData = r.quote_data || {};
-    return sum + (parseFloat(quoteData.grandTotal || quoteData.total || 0) || 0);
-  }, 0);
-  
-  // Average turnaround
-  let totalTurnaround = 0;
-  let turnaroundCount = 0;
-  shippedInPeriod.forEach(d => {
-    if (d.received_at && (d.shipped_at || d.rma?.shipped_at)) {
-      const received = new Date(d.received_at);
-      const shipped = new Date(d.shipped_at || d.rma?.shipped_at);
-      const days = (shipped - received) / (1000 * 60 * 60 * 24);
-      if (days >= 0 && days < 365) {
-        totalTurnaround += days;
-        turnaroundCount++;
-      }
-    }
-  });
-  const avgTurnaround = turnaroundCount > 0 ? totalTurnaround / turnaroundCount : 0;
-  
-  // Pipeline counts (current, not filtered by date)
-  const pipeline = {
-    waiting: allDevices.filter(d => !d.received_at && !d.shipped_at && !d.rma?.shipped_at).length,
-    received: allDevices.filter(d => d.received_at && !d.report_complete && !d.shipped_at && !d.rma?.shipped_at).length,
-    qc: allDevices.filter(d => d.report_complete && !d.qc_complete && !d.shipped_at && !d.rma?.shipped_at).length,
-    ready: allDevices.filter(d => d.qc_complete && !d.shipped_at && !d.rma?.shipped_at).length,
-    shipped: allDevices.filter(d => d.shipped_at || d.rma?.shipped_at).length
-  };
-  
-  // Stuck devices (>7 days without update, not shipped)
-  const stuckDevices = allDevices.filter(d => {
-    if (d.shipped_at || d.rma?.shipped_at) return false;
-    const lastUpdate = d.updated_at || d.created_at;
-    if (!lastUpdate) return false;
-    const days = (new Date() - new Date(lastUpdate)) / (1000 * 60 * 60 * 24);
-    return days > 7;
-  });
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">📈 Tableau de Bord KPI</h1>
-        <div className="text-sm text-gray-500">
-          {new Date(dateFrom).toLocaleDateString('fr-FR')} - {new Date(dateTo).toLocaleDateString('fr-FR')}
-        </div>
+        <h1 className="text-2xl font-bold text-gray-800">📈 Analyse KPI</h1>
       </div>
       
-      {/* Date Range */}
+      {/* Filters Row */}
       <div className="bg-white rounded-xl shadow-sm p-4">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-600">Du:</label>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-600">Au:</label>
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-          </div>
-          <div className="flex gap-2 ml-4">
-            <button onClick={() => setPreset(7)} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">7j</button>
-            <button onClick={() => setPreset(30)} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">30j</button>
-            <button onClick={() => setPreset(90)} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">3 mois</button>
-            <button onClick={() => setPreset('ytd')} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">Année</button>
-            <button onClick={() => setPreset(365)} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">12 mois</button>
-          </div>
-        </div>
-      </div>
-      
-      {/* Main KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-green-500">
-          <p className="text-3xl font-bold text-gray-800">{shippedInPeriod.length}</p>
-          <p className="text-sm text-gray-500">Appareils expédiés</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-blue-500">
-          <p className="text-3xl font-bold text-gray-800">{rmasShippedInPeriod.length}</p>
-          <p className="text-sm text-gray-500">RMAs complétés</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-purple-500">
-          <p className="text-3xl font-bold text-gray-800">{avgTurnaround.toFixed(1)}j</p>
-          <p className="text-sm text-gray-500">Délai moyen</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-amber-500">
-          <p className="text-3xl font-bold text-gray-800">{totalRevenue.toLocaleString('fr-FR')} €</p>
-          <p className="text-sm text-gray-500">Chiffre d'affaires</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-indigo-500">
-          <p className="text-3xl font-bold text-gray-800">{techArray.length}</p>
-          <p className="text-sm text-gray-500">Techniciens actifs</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-red-500">
-          <p className="text-3xl font-bold text-gray-800">{stuckDevices.length}</p>
-          <p className="text-sm text-gray-500">Bloqués &gt;7j</p>
-        </div>
-      </div>
-      
-      {/* Pipeline */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-lg font-bold text-gray-800 mb-4">📊 Pipeline Actuel</h2>
-        <div className="flex items-center gap-2">
-          {[
-            { label: 'En attente', value: pipeline.waiting, color: 'bg-amber-500' },
-            { label: 'Reçus', value: pipeline.received, color: 'bg-blue-500' },
-            { label: 'QC', value: pipeline.qc, color: 'bg-purple-500' },
-            { label: 'Prêt', value: pipeline.ready, color: 'bg-green-500' },
-            { label: 'Expédiés', value: pipeline.shipped, color: 'bg-gray-400' }
-          ].map((stage, i, arr) => (
-            <div key={stage.label} className="flex items-center gap-2">
-              <div className={`${stage.color} text-white px-4 py-3 rounded-lg text-center min-w-20`}>
-                <p className="text-2xl font-bold">{stage.value}</p>
-                <p className="text-xs opacity-90">{stage.label}</p>
-              </div>
-              {i < arr.length - 1 && <span className="text-gray-300 text-2xl">→</span>}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Date Range */}
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Période</label>
+            <div className="flex items-center gap-2">
+              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              <span className="text-gray-400">→</span>
+              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
             </div>
-          ))}
-        </div>
-      </div>
-      
-      {/* Technician Performance */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-lg font-bold text-gray-800 mb-4">👨‍🔧 Performance par Technicien (Appareils Expédiés)</h2>
-        {techArray.length > 0 ? (
-          <div className="space-y-3">
-            {techArray.map((tech, i) => (
-              <div key={tech.name} className="p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-4 mb-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
-                    i === 0 ? 'bg-amber-500' : i === 1 ? 'bg-gray-400' : i === 2 ? 'bg-amber-700' : 'bg-gray-300'
-                  }`}>
-                    {i + 1}
-                  </div>
-                  <p className="font-bold text-gray-800 text-lg flex-1">{tech.name}</p>
-                </div>
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  <div className="bg-white rounded-lg p-3 border">
-                    <p className="text-2xl font-bold text-blue-600">{tech.count}</p>
-                    <p className="text-xs text-gray-500">Appareils</p>
-                  </div>
-                  <div className="bg-white rounded-lg p-3 border">
-                    <p className="text-2xl font-bold text-green-600">{tech.revenue.toLocaleString('fr-FR')} €</p>
-                    <p className="text-xs text-gray-500">CA Généré</p>
-                  </div>
-                  <div className="bg-white rounded-lg p-3 border">
-                    <p className="text-2xl font-bold text-purple-600">{tech.avgDays.toFixed(1)}j</p>
-                    <p className="text-xs text-gray-500">Délai Moy.</p>
-                  </div>
-                </div>
-                <div className="mt-3">
-                  <div className="flex justify-between text-xs text-gray-500 mb-1">
-                    <span>Part du CA total</span>
-                    <span>{totalTechRevenue > 0 ? ((tech.revenue / totalTechRevenue) * 100).toFixed(1) : 0}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div className="bg-green-500 h-2 rounded-full" style={{ width: `${totalTechRevenue > 0 ? (tech.revenue / totalTechRevenue * 100) : 0}%` }}></div>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {/* Totals */}
-            <div className="p-4 bg-gray-100 rounded-lg border-2 border-gray-300">
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <div>
-                  <p className="text-2xl font-bold text-gray-800">{techArray.reduce((s, t) => s + t.count, 0)}</p>
-                  <p className="text-xs text-gray-600 font-medium">Total Appareils</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-800">{totalTechRevenue.toLocaleString('fr-FR')} €</p>
-                  <p className="text-xs text-gray-600 font-medium">Total CA</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-800">{avgTurnaround.toFixed(1)}j</p>
-                  <p className="text-xs text-gray-600 font-medium">Moy. Globale</p>
-                </div>
-              </div>
+            <div className="flex gap-1 mt-2">
+              <button onClick={() => setPreset(7)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">7j</button>
+              <button onClick={() => setPreset(30)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">30j</button>
+              <button onClick={() => setPreset(90)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">3m</button>
+              <button onClick={() => setPreset(365)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">1an</button>
             </div>
           </div>
-        ) : (
-          <p className="text-gray-400 text-center py-8">Aucun appareil expédié pour cette période</p>
-        )}
+          
+          {/* Service Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Type de service</label>
+            <select value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="all">Tous</option>
+              <option value="calibration">Étalonnage uniquement</option>
+              <option value="repair">Réparation uniquement</option>
+            </select>
+          </div>
+          
+          {/* Status Filter */}
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Statut</label>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="shipped">Expédiés uniquement (clôturés)</option>
+              <option value="all">Tous les appareils</option>
+            </select>
+          </div>
+          
+          {/* Stage Analysis */}
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Analyse étapes</label>
+            <div className="flex items-center gap-2">
+              <select value={stageFrom} onChange={(e) => setStageFrom(e.target.value)}
+                className="flex-1 px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                {stageOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              </select>
+              <span className="text-gray-400">→</span>
+              <select value={stageTo} onChange={(e) => setStageTo(e.target.value)}
+                className="flex-1 px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                {stageOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
       </div>
       
-      {/* Stuck Devices Alert */}
-      {stuckDevices.length > 0 && (
-        <div className="bg-red-50 border-2 border-red-300 rounded-xl p-6">
-          <h2 className="text-lg font-bold text-red-800 mb-4">⚠️ Appareils Bloqués (&gt;7 jours)</h2>
-          <div className="max-h-60 overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-red-100 sticky top-0">
-                <tr>
-                  <th className="px-4 py-2 text-left font-medium text-red-800">RMA</th>
-                  <th className="px-4 py-2 text-left font-medium text-red-800">Client</th>
-                  <th className="px-4 py-2 text-left font-medium text-red-800">Appareil</th>
-                  <th className="px-4 py-2 text-right font-medium text-red-800">Jours</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-red-200">
-                {stuckDevices.slice(0, 20).map((d, i) => {
-                  const days = Math.floor((new Date() - new Date(d.updated_at || d.created_at)) / (1000 * 60 * 60 * 24));
-                  return (
-                    <tr key={i} className="hover:bg-red-100">
-                      <td className="px-4 py-2 font-mono text-red-700">{d.rma?.request_number || '—'}</td>
-                      <td className="px-4 py-2">{d.rma?.companies?.name || '—'}</td>
-                      <td className="px-4 py-2">{d.model_name || d.model || '—'}</td>
-                      <td className="px-4 py-2 text-right font-bold text-red-700">{days}j</td>
+      {/* Main Content - Two Columns */}
+      <div className="grid lg:grid-cols-4 gap-6">
+        {/* Left Sidebar - Technician List */}
+        <div className="lg:col-span-1">
+          <div className="bg-white rounded-xl shadow-sm p-4">
+            <h2 className="text-lg font-bold text-gray-800 mb-3">👨‍🔧 Techniciens</h2>
+            
+            {/* All Technicians option */}
+            <button
+              onClick={() => setSelectedTech(null)}
+              className={`w-full text-left p-3 rounded-lg mb-2 transition ${
+                selectedTech === null ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-50 hover:bg-gray-100'
+              }`}
+            >
+              <p className="font-medium text-gray-800">Tous les techniciens</p>
+              <p className="text-sm text-gray-500">{filteredByDate.length} appareils</p>
+            </button>
+            
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {techArray.map((tech, i) => (
+                <button
+                  key={tech.name}
+                  onClick={() => setSelectedTech(tech.name)}
+                  className={`w-full text-left p-3 rounded-lg transition ${
+                    selectedTech === tech.name ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-50 hover:bg-gray-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold ${
+                      i === 0 ? 'bg-amber-500' : i === 1 ? 'bg-gray-400' : i === 2 ? 'bg-amber-700' : 'bg-gray-300'
+                    }`}>
+                      {i + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-800 truncate">{tech.name}</p>
+                      <p className="text-xs text-gray-500">{tech.count} appareils • {tech.revenue.toLocaleString('fr-FR')} €</p>
+                    </div>
+                  </div>
+                </button>
+              ))}
+              {techArray.length === 0 && (
+                <p className="text-gray-400 text-center py-4 text-sm">Aucun technicien</p>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        {/* Right Side - Data Table */}
+        <div className="lg:col-span-3">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-blue-500">
+              <p className="text-2xl font-bold text-gray-800">{totalDevices}</p>
+              <p className="text-sm text-gray-500">Appareils total</p>
+            </div>
+            <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-green-500">
+              <p className="text-2xl font-bold text-gray-800">{devicesWithData}</p>
+              <p className="text-sm text-gray-500">Avec données timing</p>
+            </div>
+            <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-purple-500">
+              <p className="text-2xl font-bold text-gray-800">{avgDays.toFixed(1)}j</p>
+              <p className="text-sm text-gray-500">Moyenne {stageOptions.find(s => s.value === stageFrom)?.label} → {stageOptions.find(s => s.value === stageTo)?.label}</p>
+            </div>
+            <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-amber-500">
+              <p className="text-2xl font-bold text-gray-800">{totalRevenue.toLocaleString('fr-FR')} €</p>
+              <p className="text-sm text-gray-500">CA Total</p>
+            </div>
+          </div>
+          
+          {/* Selected Technician Header */}
+          {selectedTech && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm text-blue-600">Technicien sélectionné</p>
+                <p className="text-xl font-bold text-blue-800">{selectedTech}</p>
+              </div>
+              <button onClick={() => setSelectedTech(null)} className="text-blue-600 hover:text-blue-800 text-sm">
+                ✕ Effacer la sélection
+              </button>
+            </div>
+          )}
+          
+          {/* Data Table */}
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-gray-200">
+              <h2 className="text-lg font-bold text-gray-800">
+                📋 Détail des appareils
+                <span className="text-sm font-normal text-gray-500 ml-2">
+                  ({stageOptions.find(s => s.value === stageFrom)?.label} → {stageOptions.find(s => s.value === stageTo)?.label})
+                </span>
+              </h2>
+            </div>
+            
+            <div className="max-h-96 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">RMA</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Client</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Appareil</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">N° Série</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Technicien</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Service</th>
+                    <th className="px-4 py-3 text-right font-medium text-gray-600">Durée</th>
+                    <th className="px-4 py-3 text-right font-medium text-gray-600">CA</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {devicesWithDuration.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
+                        Aucun appareil trouvé pour ces critères
+                      </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ) : (
+                    devicesWithDuration.slice(0, 100).map((d, i) => (
+                      <tr key={i} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 font-mono text-green-600 text-xs">{d.rma?.request_number || '—'}</td>
+                        <td className="px-4 py-2 truncate max-w-32">{d.rma?.companies?.name || '—'}</td>
+                        <td className="px-4 py-2">{d.model_name || d.model || '—'}</td>
+                        <td className="px-4 py-2 font-mono text-gray-500 text-xs">{d.serial_number || '—'}</td>
+                        <td className="px-4 py-2">{d.assigned_to || d.technician || '—'}</td>
+                        <td className="px-4 py-2">
+                          <span className={`px-2 py-0.5 rounded text-xs ${
+                            d.rma?.requested_service === 'calibration' ? 'bg-blue-100 text-blue-700' :
+                            d.rma?.requested_service === 'repair' ? 'bg-orange-100 text-orange-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {d.rma?.requested_service === 'calibration' ? 'Cal' : 
+                             d.rma?.requested_service === 'repair' ? 'Rép' : '—'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          {d.duration !== null ? (
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                              d.duration <= 3 ? 'bg-green-100 text-green-700' :
+                              d.duration <= 7 ? 'bg-amber-100 text-amber-700' :
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              {d.duration.toFixed(1)}j
+                            </span>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-right font-medium">
+                          {(rmaRevenueMap[d.rma?.id] || 0).toLocaleString('fr-FR')} €
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+                {devicesWithDuration.length > 0 && (
+                  <tfoot className="bg-gray-100 border-t-2 border-gray-300">
+                    <tr className="font-bold">
+                      <td colSpan={6} className="px-4 py-3 text-right text-gray-700">
+                        TOTAL ({totalDevices} appareils, {devicesWithData} avec timing)
+                      </td>
+                      <td className="px-4 py-3 text-right text-purple-700">
+                        Moy: {avgDays.toFixed(1)}j
+                        <br />
+                        <span className="font-normal text-xs text-gray-500">Total: {totalDays.toFixed(1)}j</span>
+                      </td>
+                      <td className="px-4 py-3 text-right text-green-700">
+                        {totalRevenue.toLocaleString('fr-FR')} €
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+            
+            {devicesWithDuration.length > 100 && (
+              <div className="p-3 bg-amber-50 text-amber-700 text-sm text-center border-t">
+                Affichage limité aux 100 premiers résultats sur {devicesWithDuration.length}
+              </div>
+            )}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
