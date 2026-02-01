@@ -2369,331 +2369,26 @@ function KPISheet({ requests = [], clients = [] }) {
   
   const totalRevenue = devicesWithDuration.reduce((sum, d) => sum + (rmaRevenueMap[d.rma?.id] || 0), 0);
   
-  // NEW: Average price per device
-  const avgPricePerDevice = totalDevices > 0 ? totalRevenue / totalDevices : 0;
-  
-  // NEW: Calculate working days in period and avg devices per day
-  const periodDays = Math.max(1, Math.ceil((toDate - fromDate) / (1000 * 60 * 60 * 24)));
-  // Approximate working days (exclude weekends roughly)
-  const workingDays = Math.max(1, Math.floor(periodDays * 5 / 7));
-  const avgDevicesPerDay = totalDevices / workingDays;
-  
   // Technician summary stats (for the sidebar)
   const techStats = {};
   filteredByDate.forEach(d => {
     const tech = d.technician_name || 'Non assigné';
     if (!techStats[tech]) {
-      techStats[tech] = { count: 0, revenue: 0, totalDuration: 0, durationCount: 0 };
+      techStats[tech] = { count: 0, revenue: 0 };
     }
     techStats[tech].count++;
     techStats[tech].revenue += rmaRevenueMap[d.rma?.id] || 0;
-    
-    // Track duration for this tech
-    const dur = calculateDays(d, stageFrom, stageTo);
-    if (dur !== null && dur >= 0) {
-      techStats[tech].totalDuration += dur;
-      techStats[tech].durationCount++;
-    }
   });
   
   const techArray = Object.entries(techStats)
-    .map(([name, s]) => ({ 
-      name, 
-      count: s.count, 
-      revenue: s.revenue,
-      avgDuration: s.durationCount > 0 ? s.totalDuration / s.durationCount : 0,
-      devicesPerDay: s.count / workingDays
-    }))
+    .map(([name, s]) => ({ name, count: s.count, revenue: s.revenue }))
     .sort((a, b) => b.count - a.count);
-  
-  // PDF Report Generation
-  const generateKPIReport = async () => {
-    try {
-      const jsPDF = await loadJsPDF();
-      if (!jsPDF) throw new Error('jsPDF failed to load');
-      
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pageWidth = 210;
-      const pageHeight = 297;
-      const margin = 15;
-      const contentWidth = pageWidth - margin * 2;
-      
-      // Safe values
-      const safeTotal = totalDevices || 0;
-      const safeAvgDays = avgDays || 0;
-      const safeRevenue = totalRevenue || 0;
-      const safeAvgPrice = avgPricePerDevice || 0;
-      const safeAvgPerDay = avgDevicesPerDay || 0;
-      const safeWorkDays = workingDays || 1;
-      const safeWithData = devicesWithData || 0;
-      const safeTechArray = Array.isArray(techArray) ? techArray : [];
-      
-      // ===== HEADER =====
-      pdf.setFillColor(17, 24, 39);
-      pdf.rect(0, 0, pageWidth, 52, 'F');
-      pdf.setFillColor(0, 166, 81);
-      pdf.rect(0, 52, pageWidth, 3, 'F');
-      
-      // Logo text
-      pdf.setFontSize(18);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(255, 255, 255);
-      pdf.text('LIGHTHOUSE', margin, 21);
-      
-      // Title
-      pdf.setFontSize(22);
-      pdf.text('Performance Report', margin, 38);
-      
-      // Date & Period
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(156, 163, 175);
-      pdf.text(new Date().toLocaleDateString('fr-FR'), pageWidth - margin, 16, { align: 'right' });
-      
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(10);
-      pdf.text((dateFrom || '') + ' - ' + (dateTo || ''), pageWidth - margin, 38, { align: 'right' });
-      pdf.setFontSize(8);
-      pdf.setTextColor(156, 163, 175);
-      pdf.text(safeWorkDays + ' jours ouvres', pageWidth - margin, 46, { align: 'right' });
-      
-      // ===== KPI CARDS =====
-      let y = 65;
-      const cardW = (contentWidth - 8) / 2;
-      const cardH = 38;
-      
-      // Card 1 - Appareils
-      pdf.setFillColor(243, 244, 246);
-      pdf.roundedRect(margin, y, cardW, cardH, 4, 4, 'F');
-      pdf.setFillColor(0, 166, 81);
-      pdf.rect(margin, y, 4, cardH, 'F');
-      pdf.setFontSize(26);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(17, 24, 39);
-      pdf.text(String(safeTotal), margin + 14, y + 22);
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(75, 85, 99);
-      pdf.text('APPAREILS TRAITES', margin + 14, y + 32);
-      
-      // Card 2 - Delai
-      pdf.setFillColor(243, 244, 246);
-      pdf.roundedRect(margin + cardW + 8, y, cardW, cardH, 4, 4, 'F');
-      pdf.setFillColor(168, 85, 247);
-      pdf.rect(margin + cardW + 8, y, 4, cardH, 'F');
-      pdf.setFontSize(26);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(17, 24, 39);
-      pdf.text(safeAvgDays.toFixed(1) + ' j', margin + cardW + 22, y + 22);
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(75, 85, 99);
-      pdf.text('DELAI MOYEN', margin + cardW + 22, y + 32);
-      
-      y += cardH + 8;
-      
-      // Card 3 - CA
-      pdf.setFillColor(243, 244, 246);
-      pdf.roundedRect(margin, y, cardW, cardH, 4, 4, 'F');
-      pdf.setFillColor(249, 115, 22);
-      pdf.rect(margin, y, 4, cardH, 'F');
-      pdf.setFontSize(26);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(17, 24, 39);
-      pdf.text(Math.round(safeRevenue).toLocaleString('fr-FR') + ' E', margin + 14, y + 22);
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(75, 85, 99);
-      pdf.text('CHIFFRE D\'AFFAIRES', margin + 14, y + 32);
-      
-      // Card 4 - Prix moyen
-      pdf.setFillColor(243, 244, 246);
-      pdf.roundedRect(margin + cardW + 8, y, cardW, cardH, 4, 4, 'F');
-      pdf.setFillColor(59, 130, 246);
-      pdf.rect(margin + cardW + 8, y, 4, cardH, 'F');
-      pdf.setFontSize(26);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(17, 24, 39);
-      pdf.text(safeAvgPrice.toFixed(0) + ' E', margin + cardW + 22, y + 22);
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(75, 85, 99);
-      pdf.text('PRIX MOYEN / UNITE', margin + cardW + 22, y + 32);
-      
-      // ===== STATS BAR =====
-      y += cardH + 12;
-      pdf.setFillColor(17, 24, 39);
-      pdf.roundedRect(margin, y, contentWidth, 22, 4, 4, 'F');
-      
-      const statW = contentWidth / 4;
-      const statsData = [
-        { v: safeAvgPerDay.toFixed(1), l: 'APP/JOUR' },
-        { v: String(safeTechArray.length), l: 'TECHNICIENS' },
-        { v: String(safeWithData), l: 'AVEC TIMING' },
-        { v: (safeTotal > 0 ? Math.round(safeWithData / safeTotal * 100) : 0) + '%', l: 'COMPLETION' }
-      ];
-      
-      statsData.forEach((s, i) => {
-        const x = margin + i * statW + statW / 2;
-        if (i > 0) {
-          pdf.setDrawColor(60, 60, 60);
-          pdf.setLineWidth(0.3);
-          pdf.line(margin + i * statW, y + 4, margin + i * statW, y + 18);
-        }
-        pdf.setFontSize(14);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(255, 255, 255);
-        pdf.text(s.v, x, y + 10, { align: 'center' });
-        pdf.setFontSize(6);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(156, 163, 175);
-        pdf.text(s.l, x, y + 17, { align: 'center' });
-      });
-      
-      // ===== TECHNICIAN TABLE =====
-      y += 32;
-      pdf.setFontSize(12);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(17, 24, 39);
-      pdf.text('Performance Techniciens', margin, y);
-      y += 8;
-      
-      if (safeTechArray.length > 0) {
-        pdf.setFillColor(17, 24, 39);
-        pdf.roundedRect(margin, y, contentWidth, 10, 2, 2, 'F');
-        pdf.setFontSize(7);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(255, 255, 255);
-        pdf.text('TECHNICIEN', margin + 8, y + 7);
-        pdf.text('APPAREILS', margin + 80, y + 7);
-        pdf.text('DELAI', margin + 115, y + 7);
-        pdf.text('CA', margin + 150, y + 7);
-        y += 12;
-        
-        const maxCount = Math.max(1, ...safeTechArray.map(t => t.count || 0));
-        
-        safeTechArray.slice(0, 7).forEach((tech, i) => {
-          const rowY = y + i * 11;
-          
-          if (i % 2 === 0) {
-            pdf.setFillColor(249, 250, 251);
-            pdf.rect(margin, rowY - 2, contentWidth, 11, 'F');
-          }
-          
-          // Rank circle
-          if (i < 3) {
-            pdf.setFillColor(0, 166, 81);
-          } else {
-            pdf.setFillColor(156, 163, 175);
-          }
-          pdf.circle(margin + 8, rowY + 4, 3.5, 'F');
-          pdf.setFontSize(7);
-          pdf.setFont('helvetica', 'bold');
-          pdf.setTextColor(255, 255, 255);
-          pdf.text(String(i + 1), margin + 8, rowY + 5.5, { align: 'center' });
-          
-          // Name
-          pdf.setFontSize(9);
-          pdf.setFont('helvetica', 'normal');
-          pdf.setTextColor(17, 24, 39);
-          pdf.text((tech.name || 'N/A').substring(0, 20), margin + 16, rowY + 5);
-          
-          // Bar + count
-          const cnt = tech.count || 0;
-          pdf.setFillColor(230, 230, 230);
-          pdf.rect(margin + 80, rowY + 2, 25, 4, 'F');
-          pdf.setFillColor(0, 166, 81);
-          pdf.rect(margin + 80, rowY + 2, Math.max(1, (cnt / maxCount) * 25), 4, 'F');
-          pdf.setFontSize(8);
-          pdf.setFont('helvetica', 'bold');
-          pdf.setTextColor(17, 24, 39);
-          pdf.text(String(cnt), margin + 80, rowY + 10);
-          
-          // Duration
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(9);
-          pdf.text((tech.avgDuration || 0).toFixed(1) + ' j', margin + 115, rowY + 5);
-          
-          // Revenue
-          pdf.setFont('helvetica', 'bold');
-          pdf.text(Math.round(tech.revenue || 0).toLocaleString('fr-FR') + ' E', margin + 150, rowY + 5);
-        });
-        
-        // Total
-        const totY = y + Math.min(safeTechArray.length, 7) * 11;
-        pdf.setFillColor(17, 24, 39);
-        pdf.roundedRect(margin, totY - 2, contentWidth, 11, 2, 2, 'F');
-        pdf.setFontSize(8);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(255, 255, 255);
-        pdf.text('TOTAL', margin + 8, totY + 5);
-        pdf.text(String(safeTotal), margin + 80, totY + 5);
-        pdf.text(safeAvgDays.toFixed(1) + ' j', margin + 115, totY + 5);
-        pdf.text(Math.round(safeRevenue).toLocaleString('fr-FR') + ' E', margin + 150, totY + 5);
-        
-        y = totY + 18;
-      } else {
-        pdf.setFontSize(9);
-        pdf.setTextColor(156, 163, 175);
-        pdf.text('Aucune donnee disponible', margin, y + 5);
-        y += 20;
-      }
-      
-      // ===== INSIGHTS =====
-      if (y < 240) {
-        pdf.setFontSize(12);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(17, 24, 39);
-        pdf.text('Insights', margin, y);
-        y += 6;
-        
-        pdf.setFillColor(240, 253, 244);
-        pdf.roundedRect(margin, y, contentWidth, 28, 4, 4, 'F');
-        pdf.setFillColor(0, 166, 81);
-        pdf.rect(margin, y, 3, 28, 'F');
-        
-        y += 10;
-        pdf.setFontSize(9);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(17, 24, 39);
-        
-        pdf.text('Productivite: ' + safeAvgPerDay.toFixed(1) + ' appareils/jour', margin + 10, y);
-        pdf.text('Delai moyen: ' + safeAvgDays.toFixed(1) + ' jours', margin + 10, y + 8);
-      }
-      
-      // ===== FOOTER =====
-      pdf.setFillColor(243, 244, 246);
-      pdf.rect(0, pageHeight - 16, pageWidth, 16, 'F');
-      pdf.setFillColor(0, 166, 81);
-      pdf.rect(0, pageHeight - 16, pageWidth, 1, 'F');
-      
-      pdf.setFontSize(7);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(75, 85, 99);
-      pdf.text('LIGHTHOUSE FRANCE - Service Etalonnage & Reparation', margin, pageHeight - 6);
-      pdf.setTextColor(156, 163, 175);
-      pdf.text('Confidentiel', pageWidth - margin, pageHeight - 6, { align: 'right' });
-      
-      // Save
-      pdf.save('Rapport_Performance.pdf');
-      
-    } catch (error) {
-      console.error('PDF Error:', error);
-      alert('Erreur: ' + (error && error.message ? error.message : 'Erreur inconnue'));
-    }
-  };
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">📈 Analyse KPI</h1>
-        <button
-          onClick={generateKPIReport}
-          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium flex items-center gap-2"
-        >
-          📄 Générer Rapport PDF
-        </button>
       </div>
       
       {/* Filters Row */}
@@ -2791,7 +2486,7 @@ function KPISheet({ requests = [], clients = [] }) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-gray-800 truncate">{tech.name}</p>
-                      <p className="text-xs text-gray-500">{tech.count} app. • {tech.devicesPerDay.toFixed(2)}/j • {tech.revenue.toLocaleString('fr-FR')} €</p>
+                      <p className="text-xs text-gray-500">{tech.count} appareils • {tech.revenue.toLocaleString('fr-FR')} €</p>
                     </div>
                   </div>
                 </button>
@@ -2806,30 +2501,22 @@ function KPISheet({ requests = [], clients = [] }) {
         {/* Right Side - Data Table */}
         <div className="lg:col-span-3">
           {/* Summary Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-blue-500">
               <p className="text-2xl font-bold text-gray-800">{totalDevices}</p>
-              <p className="text-xs text-gray-500">Appareils total</p>
+              <p className="text-sm text-gray-500">Appareils total</p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-green-500">
-              <p className="text-2xl font-bold text-gray-800">{avgDevicesPerDay.toFixed(2)}</p>
-              <p className="text-xs text-gray-500">Appareils/jour</p>
+              <p className="text-2xl font-bold text-gray-800">{devicesWithData}</p>
+              <p className="text-sm text-gray-500">Avec données timing</p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-purple-500">
               <p className="text-2xl font-bold text-gray-800">{avgDays.toFixed(1)}j</p>
-              <p className="text-xs text-gray-500">Durée moyenne</p>
+              <p className="text-sm text-gray-500">Moyenne {stageOptions.find(s => s.value === stageFrom)?.label} → {stageOptions.find(s => s.value === stageTo)?.label}</p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-amber-500">
               <p className="text-2xl font-bold text-gray-800">{totalRevenue.toLocaleString('fr-FR')} €</p>
-              <p className="text-xs text-gray-500">CA Total</p>
-            </div>
-            <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-indigo-500">
-              <p className="text-2xl font-bold text-gray-800">{avgPricePerDevice.toFixed(0)} €</p>
-              <p className="text-xs text-gray-500">Prix moy./appareil</p>
-            </div>
-            <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-cyan-500">
-              <p className="text-2xl font-bold text-gray-800">{workingDays}j</p>
-              <p className="text-xs text-gray-500">Jours ouvrés</p>
+              <p className="text-sm text-gray-500">CA Total</p>
             </div>
           </div>
           
@@ -2920,8 +2607,7 @@ function KPISheet({ requests = [], clients = [] }) {
                   <tfoot className="bg-gray-100 border-t-2 border-gray-300">
                     <tr className="font-bold">
                       <td colSpan={6} className="px-4 py-3 text-right text-gray-700">
-                        <div>TOTAL: {totalDevices} appareils</div>
-                        <div className="text-xs font-normal text-gray-500">{avgDevicesPerDay.toFixed(2)} app/jour • {workingDays} jours ouvrés</div>
+                        TOTAL ({totalDevices} appareils, {devicesWithData} avec timing)
                       </td>
                       <td className="px-4 py-3 text-right text-purple-700">
                         Moy: {avgDays.toFixed(1)}j
@@ -2930,8 +2616,6 @@ function KPISheet({ requests = [], clients = [] }) {
                       </td>
                       <td className="px-4 py-3 text-right text-green-700">
                         {totalRevenue.toLocaleString('fr-FR')} €
-                        <br />
-                        <span className="font-normal text-xs text-gray-500">Moy: {avgPricePerDevice.toFixed(0)} €/app</span>
                       </td>
                     </tr>
                   </tfoot>
@@ -3274,8 +2958,26 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
             const qcStatuses = ['final_qc', 'qc', 'quality_check'];
             const readyStatuses = ['ready_to_ship', 'ready'];
             
+            // Early stages = before device physically arrives (use RMA status)
+            const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 
+                                   'approved', 'bc_pending', 'bc_review', 'waiting_bc', 'waiting_po', 'waiting_device', 'bc_approved'];
+            
             // Helper to get device's effective status
-            const getDeviceStatus = (device) => device.status || device.rma.status;
+            // Before devices arrive: use RMA status
+            // After devices arrive: use device.status individually
+            const getDeviceStatus = (device) => {
+              const rmaStatus = device.rma?.status;
+              const rmaIsEarly = earlyStatuses.includes(rmaStatus);
+              
+              // Priority overrides based on device flags
+              if (device.shipped_at) return 'shipped';
+              if (device.qc_complete) return 'ready_to_ship';
+              if (device.report_complete && !device.qc_complete) return 'final_qc';
+              
+              // If RMA is in early stages, all devices show RMA status
+              // Once RMA moves past waiting_device (i.e. received), each device tracks independently
+              return rmaIsEarly ? rmaStatus : (device.status || rmaStatus);
+            };
             
             // Helper to determine device category
             const getDeviceCategory = (device) => {
@@ -3378,15 +3080,22 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                 }
               };
               
-              // Get the actual status to use - prioritize device.status as it's updated per-device
-              // Also check report_complete flag to determine if in QC
+              // Get the actual status to use
+              // Before devices arrive: use RMA status
+              // After devices arrive: use device.status individually
+              const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 
+                                     'approved', 'bc_pending', 'bc_review', 'waiting_bc', 'waiting_po', 'waiting_device', 'bc_approved'];
+              const rmaIsEarly = earlyStatuses.includes(rma.status);
+              
               const effectiveStatus = (() => {
-                // If report is complete but QC not done, device is in QC
-                if (device.report_complete && !device.qc_complete) return 'final_qc';
-                // If QC is complete, device is ready
+                // Priority overrides based on device flags
+                if (device.shipped_at) return 'shipped';
                 if (device.qc_complete) return 'ready_to_ship';
-                // Otherwise use device status, falling back to RMA status
-                return device.status || rma.status;
+                if (device.report_complete && !device.qc_complete) return 'final_qc';
+                
+                // If RMA is in early stages, all devices show RMA status
+                // Once RMA moves past early stages, each device tracks independently
+                return rmaIsEarly ? rma.status : (device.status || rma.status);
               })();
               const currentIndex = getStepIndex(effectiveStatus);
               
@@ -3440,7 +3149,9 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                     {allDevices.length === 0 ? (
                       <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Aucun appareil</td></tr>
                     ) : allDevices.map((device, idx) => {
-                      const deviceStyle = STATUS_STYLES[device.status] || STATUS_STYLES[device.rma.status] || STATUS_STYLES.submitted;
+                      // Get effective status using same logic as getDeviceStatus
+                      const effectiveDeviceStatus = getDeviceStatus(device);
+                      const deviceStyle = STATUS_STYLES[effectiveDeviceStatus] || STATUS_STYLES.submitted;
                       const serviceType = device.service_type || device.rma.requested_service || 'calibration';
                       
                       return (
@@ -4277,11 +3988,25 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
 
   // Get device status label
   const getDeviceStatusLabel = (device) => {
-    const status = device.status || rma.status;
+    // Early stages = before device physically arrives
+    const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 
+                           'approved', 'bc_pending', 'bc_review', 'waiting_bc', 'waiting_po', 'waiting_device', 'bc_approved'];
+    const rmaIsEarly = earlyStatuses.includes(rma.status);
+    
+    // Priority overrides
+    if (device.shipped_at) return 'Expédié';
+    if (device.qc_complete) return 'Prêt';
+    if (device.report_complete && !device.qc_complete) return 'Contrôle QC';
+    
+    // If RMA is early, use RMA status; otherwise use device status
+    const status = rmaIsEarly ? rma.status : (device.status || rma.status);
+    
     const labels = {
       'submitted': 'Soumis',
       'approved': 'Approuvé',
       'waiting_bc': 'Attente BC',
+      'bc_review': 'BC en revue',
+      'bc_approved': 'BC Approuvé',
       'waiting_device': 'Attente appareil',
       'received': 'Reçu',
       'in_queue': 'En file',
