@@ -2410,328 +2410,256 @@ function KPISheet({ requests = [], clients = [] }) {
   const generateKPIReport = async () => {
     try {
       const jsPDF = await loadJsPDF();
-      const pdf = new jsPDF('l', 'mm', 'a4'); // Landscape for presentation
-      const pageWidth = 297;
-      const pageHeight = 210;
+      const pdf = new jsPDF('p', 'mm', 'a4'); // Portrait A4
+      const pageWidth = 210;
+      const pageHeight = 297;
       const margin = 20;
+      const contentWidth = pageWidth - margin * 2;
+      
+      // Load logo
+      let logo = null;
+      try {
+        logo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+      } catch (e) { console.log('Logo not loaded'); }
       
       // Colors
       const green = [0, 166, 81];
-      const darkGray = [51, 51, 51];
-      const lightGray = [150, 150, 150];
-      const blue = [59, 130, 246];
-      const purple = [139, 92, 246];
-      const amber = [245, 158, 11];
-      const red = [239, 68, 68];
+      const darkGray = [45, 45, 45];
+      const mediumGray = [100, 100, 100];
+      const lightGray = [180, 180, 180];
+      const bgGray = [248, 249, 250];
       const white = [255, 255, 255];
       
-      // Helper: Draw rounded box
-      const drawBox = (x, y, w, h, color, radius = 5) => {
-        pdf.setFillColor(...color);
-        pdf.roundedRect(x, y, w, h, radius, radius, 'F');
-      };
+      // ===== HEADER SECTION =====
+      let y = 15;
       
-      // Helper: Draw horizontal bar
-      const drawHBar = (x, y, maxWidth, percent, color, height = 8) => {
-        // Background
-        pdf.setFillColor(230, 230, 230);
-        pdf.roundedRect(x, y, maxWidth, height, 2, 2, 'F');
-        // Fill
-        if (percent > 0) {
-          pdf.setFillColor(...color);
-          pdf.roundedRect(x, y, maxWidth * Math.min(percent, 1), height, 2, 2, 'F');
+      // Logo
+      if (logo) {
+        try {
+          const format = logo.includes('image/png') ? 'PNG' : 'JPEG';
+          pdf.addImage(logo, format, margin, y, 50, 13);
+        } catch (e) {
+          pdf.setFontSize(16);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(...green);
+          pdf.text('LIGHTHOUSE', margin, y + 10);
+        }
+      } else {
+        pdf.setFontSize(16);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...green);
+        pdf.text('LIGHTHOUSE FRANCE', margin, y + 10);
+      }
+      
+      // Report title on right
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...mediumGray);
+      pdf.text('RAPPORT DE PERFORMANCE', pageWidth - margin, y + 5, { align: 'right' });
+      pdf.setFontSize(8);
+      pdf.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, pageWidth - margin, y + 10, { align: 'right' });
+      
+      // Divider line
+      y = 35;
+      pdf.setDrawColor(...green);
+      pdf.setLineWidth(0.8);
+      pdf.line(margin, y, pageWidth - margin, y);
+      
+      // ===== PERIOD INFO =====
+      y = 45;
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...darkGray);
+      pdf.text('Période d\'analyse', margin, y);
+      
+      y += 8;
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...mediumGray);
+      
+      const periodStr = `${new Date(dateFrom).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })} — ${new Date(dateTo).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+      pdf.text(periodStr, margin, y);
+      
+      y += 6;
+      const filterParts = [];
+      filterParts.push(`${workingDays} jours ouvrés`);
+      if (serviceFilter !== 'all') filterParts.push(serviceFilter === 'calibration' ? 'Étalonnage' : 'Réparation');
+      if (selectedTech) filterParts.push(`Technicien: ${selectedTech}`);
+      pdf.setFontSize(9);
+      pdf.text(filterParts.join('  •  '), margin, y);
+      
+      // ===== MAIN KPIs - Clean Cards =====
+      y = 70;
+      
+      // KPI Card function
+      const drawKPICard = (x, y, width, value, label, sublabel = null) => {
+        // Card background
+        pdf.setFillColor(...bgGray);
+        pdf.roundedRect(x, y, width, 35, 3, 3, 'F');
+        
+        // Value
+        pdf.setFontSize(24);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...darkGray);
+        pdf.text(String(value), x + width/2, y + 18, { align: 'center' });
+        
+        // Label
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(...mediumGray);
+        pdf.text(label, x + width/2, y + 28, { align: 'center' });
+        
+        if (sublabel) {
+          pdf.setFontSize(7);
+          pdf.setTextColor(...lightGray);
+          pdf.text(sublabel, x + width/2, y + 33, { align: 'center' });
         }
       };
       
-      // Helper: Draw pie slice (simplified as stacked bar for PDF)
-      const drawPieBar = (x, y, width, height, segments) => {
-        let currentX = x;
-        segments.forEach(seg => {
-          if (seg.percent > 0) {
-            pdf.setFillColor(...seg.color);
-            const segWidth = width * seg.percent;
-            pdf.rect(currentX, y, segWidth, height, 'F');
-            currentX += segWidth;
-          }
-        });
-        // Border
-        pdf.setDrawColor(200, 200, 200);
-        pdf.roundedRect(x, y, width, height, 2, 2, 'S');
-      };
+      // Row 1 - 2 cards
+      const cardWidth = (contentWidth - 10) / 2;
+      drawKPICard(margin, y, cardWidth, totalDevices, 'Appareils traités');
+      drawKPICard(margin + cardWidth + 10, y, cardWidth, `${avgDays.toFixed(1)} j`, 'Délai moyen', `${stageOptions.find(s => s.value === stageFrom)?.label} → ${stageOptions.find(s => s.value === stageTo)?.label}`);
       
-      // ============ PAGE 1: Executive Summary ============
+      y += 45;
       
-      // Green header bar
-      drawBox(0, 0, pageWidth, 35, green, 0);
-      pdf.setTextColor(...white);
-      pdf.setFontSize(28);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('RAPPORT DE PERFORMANCE', margin, 24);
-      pdf.setFontSize(12);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text('LIGHTHOUSE FRANCE', pageWidth - margin, 18, { align: 'right' });
-      pdf.setFontSize(10);
-      pdf.text('Service Étalonnage & Réparation', pageWidth - margin, 28, { align: 'right' });
+      // Row 2 - 2 cards
+      drawKPICard(margin, y, cardWidth, `${Math.round(totalRevenue).toLocaleString('fr-FR')} €`, 'Chiffre d\'affaires');
+      drawKPICard(margin + cardWidth + 10, y, cardWidth, `${avgPricePerDevice.toFixed(0)} €`, 'Prix moyen / appareil');
       
-      // Period & filters line
-      let y = 45;
-      pdf.setTextColor(...darkGray);
+      y += 45;
+      
+      // Row 3 - 2 cards
+      drawKPICard(margin, y, cardWidth, avgDevicesPerDay.toFixed(1), 'Appareils / jour ouvré');
+      drawKPICard(margin + cardWidth + 10, y, cardWidth, techArray.length, 'Techniciens actifs');
+      
+      // ===== TECHNICIAN RANKING =====
+      y += 50;
+      
       pdf.setFontSize(11);
-      const periodLabel = `Période: ${new Date(dateFrom).toLocaleDateString('fr-FR')} au ${new Date(dateTo).toLocaleDateString('fr-FR')} (${workingDays} jours ouvrés)`;
-      pdf.text(periodLabel, margin, y);
-      
-      const filters = [];
-      if (serviceFilter !== 'all') filters.push(serviceFilter === 'calibration' ? 'Étalonnage' : 'Réparation');
-      if (selectedTech) filters.push(`Tech: ${selectedTech}`);
-      if (filters.length > 0) {
-        pdf.setTextColor(...lightGray);
-        pdf.text(`Filtres: ${filters.join(' | ')}`, pageWidth - margin, y, { align: 'right' });
-      }
-      
-      // ===== BIG KPI CARDS ROW =====
-      y = 55;
-      const cardWidth = 60;
-      const cardHeight = 50;
-      const cardGap = 8;
-      
-      const kpiCards = [
-        { value: totalDevices, unit: '', label: 'Appareils Traités', color: green },
-        { value: avgDevicesPerDay.toFixed(1), unit: '/jour', label: 'Productivité', color: blue },
-        { value: avgDays.toFixed(1), unit: ' jours', label: 'Délai Moyen', color: purple },
-        { value: Math.round(totalRevenue).toLocaleString('fr-FR'), unit: ' €', label: 'Chiffre d\'Affaires', color: amber }
-      ];
-      
-      kpiCards.forEach((card, i) => {
-        const x = margin + i * (cardWidth + cardGap);
-        drawBox(x, y, cardWidth, cardHeight, card.color);
-        
-        pdf.setTextColor(...white);
-        pdf.setFontSize(22);
-        pdf.setFont('helvetica', 'bold');
-        pdf.text(`${card.value}${card.unit}`, x + cardWidth/2, y + 25, { align: 'center' });
-        
-        pdf.setFontSize(9);
-        pdf.setFont('helvetica', 'normal');
-        pdf.text(card.label, x + cardWidth/2, y + 40, { align: 'center' });
-      });
-      
-      // ===== SECONDARY METRICS =====
-      const secondaryX = margin + 4 * (cardWidth + cardGap) + 5;
-      const secondaryWidth = pageWidth - secondaryX - margin;
-      
-      drawBox(secondaryX, y, secondaryWidth, cardHeight, [248, 250, 252]);
-      pdf.setTextColor(...darkGray);
-      pdf.setFontSize(10);
       pdf.setFont('helvetica', 'bold');
-      pdf.text('Indicateurs Clés', secondaryX + 10, y + 12);
+      pdf.setTextColor(...darkGray);
+      pdf.text('Performance par technicien', margin, y);
       
-      const secondaryMetrics = [
-        { label: 'Prix moyen / appareil', value: `${avgPricePerDevice.toFixed(0)} €` },
-        { label: 'Techniciens actifs', value: String(techArray.length) },
-        { label: 'Taux de complétion timing', value: `${totalDevices > 0 ? Math.round(devicesWithData / totalDevices * 100) : 0}%` }
-      ];
-      
-      secondaryMetrics.forEach((m, i) => {
-        const my = y + 22 + i * 9;
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(9);
-        pdf.setTextColor(...lightGray);
-        pdf.text(m.label, secondaryX + 10, my);
-        pdf.setTextColor(...darkGray);
-        pdf.setFont('helvetica', 'bold');
-        pdf.text(m.value, secondaryX + secondaryWidth - 10, my, { align: 'right' });
-      });
-      
-      // ===== TECHNICIAN PERFORMANCE SECTION =====
-      y = 115;
+      y += 8;
       
       if (techArray.length > 0) {
-        pdf.setTextColor(...darkGray);
-        pdf.setFontSize(14);
+        // Table header
+        pdf.setFillColor(...green);
+        pdf.rect(margin, y, contentWidth, 8, 'F');
+        pdf.setFontSize(8);
         pdf.setFont('helvetica', 'bold');
-        pdf.text('Performance par Technicien', margin, y);
+        pdf.setTextColor(...white);
+        pdf.text('Technicien', margin + 4, y + 5.5);
+        pdf.text('Appareils', margin + 65, y + 5.5);
+        pdf.text('Délai moy.', margin + 95, y + 5.5);
+        pdf.text('CA généré', margin + 130, y + 5.5);
         y += 10;
         
-        // Horizontal bar chart for technicians
-        const maxCount = Math.max(...techArray.map(t => t.count), 1);
-        const maxRevenue = Math.max(...techArray.map(t => t.revenue), 1);
-        const barMaxWidth = 80;
-        const rowHeight = 12;
-        
-        // Headers
-        pdf.setFontSize(8);
-        pdf.setTextColor(...lightGray);
-        pdf.text('Technicien', margin, y + 3);
-        pdf.text('Appareils', margin + 75, y + 3);
-        pdf.text('CA Généré', margin + 165, y + 3);
-        y += 8;
-        
-        techArray.slice(0, 6).forEach((tech, i) => {
-          const rowY = y + i * rowHeight;
-          
+        // Table rows
+        techArray.slice(0, 8).forEach((tech, i) => {
           // Alternating background
           if (i % 2 === 0) {
-            drawBox(margin - 3, rowY - 3, pageWidth - margin * 2 + 6, rowHeight, [250, 250, 250], 2);
+            pdf.setFillColor(252, 252, 252);
+            pdf.rect(margin, y - 4, contentWidth, 10, 'F');
           }
           
-          // Name
-          pdf.setFont('helvetica', 'normal');
           pdf.setFontSize(9);
+          pdf.setFont('helvetica', 'normal');
           pdf.setTextColor(...darkGray);
-          const name = tech.name.length > 18 ? tech.name.substring(0, 18) + '...' : tech.name;
-          pdf.text(name, margin, rowY + 5);
           
-          // Devices bar
-          const devicePercent = tech.count / maxCount;
-          drawHBar(margin + 75, rowY, barMaxWidth, devicePercent, green, 6);
-          pdf.setFontSize(8);
-          pdf.setFont('helvetica', 'bold');
-          pdf.text(String(tech.count), margin + 75 + barMaxWidth + 5, rowY + 5);
+          // Rank indicator
+          if (i < 3) {
+            pdf.setFillColor(...green);
+            pdf.circle(margin + 6, y, 2.5, 'F');
+            pdf.setTextColor(...white);
+            pdf.setFontSize(7);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text(String(i + 1), margin + 6, y + 0.8, { align: 'center' });
+          }
           
-          // Revenue bar
-          const revenuePercent = tech.revenue / maxRevenue;
-          drawHBar(margin + 165, rowY, barMaxWidth, revenuePercent, amber, 6);
-          pdf.text(`${Math.round(tech.revenue).toLocaleString('fr-FR')} €`, margin + 165 + barMaxWidth + 5, rowY + 5);
+          pdf.setTextColor(...darkGray);
+          pdf.setFontSize(9);
+          pdf.setFont('helvetica', 'normal');
+          const name = tech.name.length > 20 ? tech.name.substring(0, 20) + '...' : tech.name;
+          pdf.text(name, margin + 12, y + 1);
+          
+          pdf.text(String(tech.count), margin + 65, y + 1);
+          pdf.text(`${tech.avgDuration.toFixed(1)} j`, margin + 95, y + 1);
+          pdf.text(`${Math.round(tech.revenue).toLocaleString('fr-FR')} €`, margin + 130, y + 1);
+          
+          y += 10;
         });
         
-        // Summary row
-        const summaryY = y + Math.min(techArray.length, 6) * rowHeight + 5;
-        drawBox(margin - 3, summaryY - 2, pageWidth - margin * 2 + 6, 12, [230, 230, 230], 2);
+        // Totals row
+        pdf.setFillColor(240, 240, 240);
+        pdf.rect(margin, y - 4, contentWidth, 10, 'F');
         pdf.setFont('helvetica', 'bold');
         pdf.setFontSize(9);
         pdf.setTextColor(...darkGray);
-        pdf.text('TOTAL', margin, summaryY + 6);
-        pdf.text(String(totalDevices), margin + 75 + barMaxWidth + 5, summaryY + 6);
-        pdf.text(`${Math.round(totalRevenue).toLocaleString('fr-FR')} €`, margin + 165 + barMaxWidth + 5, summaryY + 6);
+        pdf.text('TOTAL', margin + 4, y + 1);
+        pdf.text(String(totalDevices), margin + 65, y + 1);
+        pdf.text(`${avgDays.toFixed(1)} j`, margin + 95, y + 1);
+        pdf.text(`${Math.round(totalRevenue).toLocaleString('fr-FR')} €`, margin + 130, y + 1);
+        
+        y += 15;
+      } else {
+        pdf.setFontSize(9);
+        pdf.setTextColor(...lightGray);
+        pdf.text('Aucune donnée technicien disponible', margin, y + 5);
+        y += 15;
+      }
+      
+      // ===== KEY INSIGHTS BOX =====
+      if (y < 240) {
+        pdf.setFontSize(11);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...darkGray);
+        pdf.text('Points clés', margin, y);
+        y += 6;
+        
+        // Light green box
+        pdf.setFillColor(240, 253, 244);
+        pdf.setDrawColor(...green);
+        pdf.setLineWidth(0.3);
+        pdf.roundedRect(margin, y, contentWidth, 40, 3, 3, 'FD');
+        
+        y += 10;
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(...darkGray);
+        
+        // Generate insights
+        const insights = [];
+        if (avgDevicesPerDay >= 2.5) {
+          insights.push(`✓  Productivité élevée avec ${avgDevicesPerDay.toFixed(1)} appareils traités par jour ouvré`);
+        } else {
+          insights.push(`○  Productivité: ${avgDevicesPerDay.toFixed(1)} appareils traités par jour ouvré`);
+        }
+        
+        if (avgDays <= 7) {
+          insights.push(`✓  Délai de traitement rapide: ${avgDays.toFixed(1)} jours en moyenne`);
+        } else {
+          insights.push(`○  Délai de traitement: ${avgDays.toFixed(1)} jours en moyenne`);
+        }
+        
+        if (techArray.length > 0) {
+          insights.push(`★  Top performer: ${techArray[0].name} (${techArray[0].count} appareils)`);
+        }
+        
+        insights.forEach((insight, i) => {
+          pdf.text(insight, margin + 8, y + i * 9);
+        });
       }
       
       // ===== FOOTER =====
-      pdf.setFontSize(8);
+      pdf.setFontSize(7);
       pdf.setTextColor(...lightGray);
-      pdf.text(`Rapport généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, margin, pageHeight - 10);
-      pdf.text('Lighthouse France - Données confidentielles', pageWidth - margin, pageHeight - 10, { align: 'right' });
+      pdf.text('Lighthouse France  •  Service Étalonnage & Réparation  •  Données confidentielles', pageWidth / 2, pageHeight - 12, { align: 'center' });
       
-      // ============ PAGE 2: Insights & Analysis ============
-      pdf.addPage();
-      
-      // Header
-      drawBox(0, 0, pageWidth, 25, green, 0);
-      pdf.setTextColor(...white);
-      pdf.setFontSize(20);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('ANALYSE & INSIGHTS', margin, 17);
-      
-      y = 40;
-      
-      // Left column - Time Analysis
-      pdf.setTextColor(...darkGray);
-      pdf.setFontSize(12);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Analyse des Délais', margin, y);
-      y += 8;
-      
-      drawBox(margin, y, 125, 70, [248, 250, 252]);
-      
-      const stageLabel = `${stageOptions.find(s => s.value === stageFrom)?.label || stageFrom} → ${stageOptions.find(s => s.value === stageTo)?.label || stageTo}`;
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...lightGray);
-      pdf.text(`Étapes analysées: ${stageLabel}`, margin + 8, y + 12);
-      
-      // Time metrics
-      const timeMetrics = [
-        { label: 'Délai moyen', value: `${avgDays.toFixed(1)} jours`, color: purple },
-        { label: 'Total jours cumulés', value: `${totalDays.toFixed(0)} jours`, color: blue },
-        { label: 'Appareils avec données', value: `${devicesWithData} / ${totalDevices}`, color: green }
-      ];
-      
-      timeMetrics.forEach((tm, i) => {
-        const ty = y + 25 + i * 15;
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(...lightGray);
-        pdf.text(tm.label, margin + 8, ty);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(...tm.color);
-        pdf.text(tm.value, margin + 117, ty, { align: 'right' });
-      });
-      
-      // Right column - Financial Analysis
-      const rightX = margin + 140;
-      pdf.setTextColor(...darkGray);
-      pdf.setFontSize(12);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Analyse Financière', rightX, 40);
-      
-      drawBox(rightX, y, 125, 70, [248, 250, 252]);
-      
-      const finMetrics = [
-        { label: 'Chiffre d\'affaires total', value: `${Math.round(totalRevenue).toLocaleString('fr-FR')} €`, color: amber },
-        { label: 'Prix moyen par appareil', value: `${avgPricePerDevice.toFixed(0)} €`, color: green },
-        { label: 'CA par jour ouvré', value: `${Math.round(totalRevenue / Math.max(workingDays, 1)).toLocaleString('fr-FR')} €`, color: blue }
-      ];
-      
-      finMetrics.forEach((fm, i) => {
-        const fy = y + 25 + i * 15;
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(...lightGray);
-        pdf.text(fm.label, rightX + 8, fy);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(...fm.color);
-        pdf.text(fm.value, rightX + 117, fy, { align: 'right' });
-      });
-      
-      // Bottom section - Key Takeaways
-      y = 125;
-      pdf.setTextColor(...darkGray);
-      pdf.setFontSize(12);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Points Clés à Retenir', margin, y);
-      y += 8;
-      
-      drawBox(margin, y, pageWidth - margin * 2, 55, [255, 251, 235]); // Amber tint
-      
-      // Auto-generate insights
-      const insights = [];
-      
-      // Productivity insight
-      if (avgDevicesPerDay >= 3) {
-        insights.push(`✓ Excellente productivité: ${avgDevicesPerDay.toFixed(1)} appareils traités par jour ouvré`);
-      } else if (avgDevicesPerDay >= 2) {
-        insights.push(`● Bonne productivité: ${avgDevicesPerDay.toFixed(1)} appareils traités par jour ouvré`);
-      } else {
-        insights.push(`○ Productivité à améliorer: ${avgDevicesPerDay.toFixed(1)} appareils par jour ouvré`);
-      }
-      
-      // Turnaround insight
-      if (avgDays <= 5) {
-        insights.push(`✓ Délai de traitement rapide: ${avgDays.toFixed(1)} jours en moyenne`);
-      } else if (avgDays <= 10) {
-        insights.push(`● Délai de traitement correct: ${avgDays.toFixed(1)} jours en moyenne`);
-      } else {
-        insights.push(`○ Délai de traitement long: ${avgDays.toFixed(1)} jours - à optimiser`);
-      }
-      
-      // Top performer
-      if (techArray.length > 0) {
-        const topTech = techArray[0];
-        insights.push(`★ Meilleur technicien: ${topTech.name} avec ${topTech.count} appareils (${Math.round(topTech.revenue).toLocaleString('fr-FR')} € CA)`);
-      }
-      
-      // Revenue insight
-      insights.push(`💰 Ticket moyen: ${avgPricePerDevice.toFixed(0)} € par appareil traité`);
-      
-      pdf.setFontSize(10);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkGray);
-      insights.forEach((insight, i) => {
-        pdf.text(insight, margin + 10, y + 15 + i * 11);
-      });
-      
-      // Footer
-      pdf.setFontSize(8);
-      pdf.setTextColor(...lightGray);
-      pdf.text(`Rapport généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, margin, pageHeight - 10);
-      pdf.text('Lighthouse France - Données confidentielles', pageWidth - margin, pageHeight - 10, { align: 'right' });
+      // Green accent line at bottom
+      pdf.setFillColor(...green);
+      pdf.rect(0, pageHeight - 5, pageWidth, 5, 'F');
       
       // Save
       const fileName = `Rapport_Performance_${dateFrom}_${dateTo}.pdf`;
