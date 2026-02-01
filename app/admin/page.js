@@ -9659,21 +9659,24 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           console.error('UPS Label PDF save error:', pdfErr);
         }
         
-        // Update devices with tracking info (columns that exist)
+        // Update devices with tracking info AND PDF URLs
         for (const d of s.devices) {
           await supabase.from('request_devices').update({ 
             tracking_number: s.trackingNumber || null, 
-            bl_number: bl.blNumber
+            bl_number: bl.blNumber,
+            bl_url: blUrl || null,
+            ups_label_url: upsLabelUrl || null
           }).eq('id', d.id);
         }
         
-        // Save PDF URLs as attachments instead of device columns
+        // Also save PDF URLs as attachments for backup/history
         if (blUrl) {
           const { error: blAttErr } = await supabase.from('request_attachments').insert({
             request_id: rma.id,
             file_name: `BL-${bl.blNumber}.pdf`,
             file_url: blUrl,
-            file_type: 'bl'
+            file_type: 'bl',
+            device_serial: s.devices.map(d => d.serial_number).join(', ')
           });
           if (blAttErr) console.error('BL attachment error:', blAttErr);
         }
@@ -9682,7 +9685,8 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
             request_id: rma.id,
             file_name: `UPS-Label-${s.trackingNumber}.pdf`,
             file_url: upsLabelUrl,
-            file_type: 'ups_label'
+            file_type: 'ups_label',
+            device_serial: s.devices.map(d => d.serial_number).join(', ')
           });
           if (upsAttErr) console.error('UPS label attachment error:', upsAttErr);
         }
