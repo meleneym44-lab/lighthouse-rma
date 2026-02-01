@@ -3349,38 +3349,54 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
           <div className="flex-1 flex flex-col bg-gray-800 p-4">
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-bold text-white text-lg">📄 Document BC {isAvenantBC && '(Avenant)'}</h3>
-              {rma.bc_file_url && (
-                <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">
-                  Ouvrir dans nouvel onglet ↗
-                </a>
-              )}
+              <div className="flex gap-2">
+                {rma.signed_quote_url && (
+                  <a href={rma.signed_quote_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium">
+                    📄 Devis Signé ↗
+                  </a>
+                )}
+                {rma.bc_file_url && (
+                  <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">
+                    📋 BC Uploadé ↗
+                  </a>
+                )}
+              </div>
             </div>
             
-            {/* BC File - Full height PDF viewer */}
-            {rma.bc_file_url ? (
+            {/* BC File or Signed Quote - Full height PDF viewer */}
+            {(rma.signed_quote_url || rma.bc_file_url) ? (
               <div className="flex-1 rounded-lg overflow-hidden bg-white">
-                {rma.bc_file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                  <img src={rma.bc_file_url} alt="BC Document" className="w-full h-full object-contain" />
-                ) : rma.bc_file_url.match(/\.pdf$/i) ? (
-                  <object
-                    data={`${rma.bc_file_url}#view=Fit`}
-                    type="application/pdf"
-                    className="w-full h-full"
-                    style={{ minHeight: '100%' }}
-                  >
-                    <iframe 
-                      src={`${rma.bc_file_url}#view=Fit`} 
-                      className="w-full h-full" 
-                      title="BC PDF"
-                    />
-                  </object>
-                ) : (
-                  <div className="h-full flex items-center justify-center">
-                    <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-8 py-4 bg-blue-500 text-white rounded-lg text-lg font-medium">
-                      📥 Télécharger le fichier
-                    </a>
-                  </div>
-                )}
+                {(() => {
+                  // Prefer signed quote for display, fallback to BC file
+                  const displayUrl = rma.signed_quote_url || rma.bc_file_url;
+                  
+                  if (displayUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+                    return <img src={displayUrl} alt="BC Document" className="w-full h-full object-contain" />;
+                  } else if (displayUrl.match(/\.pdf$/i) || displayUrl.includes('pdf')) {
+                    return (
+                      <object
+                        data={`${displayUrl}#view=Fit`}
+                        type="application/pdf"
+                        className="w-full h-full"
+                        style={{ minHeight: '100%' }}
+                      >
+                        <iframe 
+                          src={`${displayUrl}#view=Fit`} 
+                          className="w-full h-full" 
+                          title="BC PDF"
+                        />
+                      </object>
+                    );
+                  } else {
+                    return (
+                      <div className="h-full flex items-center justify-center">
+                        <a href={displayUrl} target="_blank" rel="noopener noreferrer" className="px-8 py-4 bg-blue-500 text-white rounded-lg text-lg font-medium">
+                          📥 Télécharger le fichier
+                        </a>
+                      </div>
+                    );
+                  }
+                })()}
               </div>
             ) : (
               <div className="flex-1 border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center text-gray-400 text-lg">
