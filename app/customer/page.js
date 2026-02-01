@@ -7072,6 +7072,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
   const isPartsOrder = request.request_type === 'parts';
   const isQuoteSent = request.status === 'quote_sent';
+  
+  // Detect if this is an avenant quote (quote_sent status + avenant_sent_at set)
+  const isAvenantQuote = isQuoteSent && !!request.avenant_sent_at && !request.avenant_approved_at;
+  
   const needsQuoteAction = isQuoteSent && !request.bc_submitted_at;
   const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
   
@@ -7083,15 +7087,26 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   // Quote approval/revision handlers
   const handleApproveQuote = async () => {
     setApprovingQuote(true);
-    const { error } = await supabase.from('service_requests').update({
-      status: 'waiting_bc',
-      quote_approved_at: new Date().toISOString()
-    }).eq('id', request.id);
+    
+    // Different update for avenant vs regular quote
+    const updatePayload = isAvenantQuote
+      ? {
+          status: 'waiting_bc',
+          // Don't set avenant_approved_at yet - that happens after BC is approved by admin
+        }
+      : {
+          status: 'waiting_bc',
+          quote_approved_at: new Date().toISOString()
+        };
+    
+    const { error } = await supabase.from('service_requests').update(updatePayload).eq('id', request.id);
     
     if (error) {
       notify('Erreur: ' + error.message, 'error');
     } else {
-      notify('✅ Devis approuvé! Veuillez soumettre votre bon de commande.', 'success');
+      notify(isAvenantQuote 
+        ? '✅ Avenant approuvé! Veuillez soumettre votre bon de commande.' 
+        : '✅ Devis approuvé! Veuillez soumettre votre bon de commande.', 'success');
       setShowQuoteModal(false);
       refresh();
     }
@@ -7598,26 +7613,30 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
 
         {/* Customer Action Required Alert */}
         {needsCustomerAction && (
-          <div className="bg-red-50 border-b border-red-200 px-6 py-4">
+          <div className={`${isAvenantQuote ? 'bg-amber-50 border-b border-amber-200' : 'bg-red-50 border-b border-red-200'} px-6 py-4`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                  <span className="text-red-600 font-bold text-lg">!</span>
+                <div className={`w-10 h-10 rounded-full ${isAvenantQuote ? 'bg-amber-100' : 'bg-red-100'} flex items-center justify-center`}>
+                  <span className={`${isAvenantQuote ? 'text-amber-600' : 'text-red-600'} font-bold text-lg`}>{isAvenantQuote ? '📄' : '!'}</span>
                 </div>
                 <div>
-                  <p className="font-semibold text-red-800">Action requise</p>
-                  <p className="text-sm text-red-600">
-                    {request.status === 'inspection_complete' || request.status === 'quote_sent' 
-                      ? 'Veuillez approuver le devis ou soumettre votre bon de commande'
-                      : 'Veuillez soumettre votre bon de commande pour continuer'}
+                  <p className={`font-semibold ${isAvenantQuote ? 'text-amber-800' : 'text-red-800'}`}>
+                    {isAvenantQuote ? 'Avenant à approuver' : 'Action requise'}
+                  </p>
+                  <p className={`text-sm ${isAvenantQuote ? 'text-amber-600' : 'text-red-600'}`}>
+                    {isAvenantQuote 
+                      ? 'Des travaux supplémentaires ont été identifiés. Veuillez approuver l\'avenant.'
+                      : request.status === 'inspection_complete' || request.status === 'quote_sent' 
+                        ? 'Veuillez approuver le devis ou soumettre votre bon de commande'
+                        : 'Veuillez soumettre votre bon de commande pour continuer'}
                   </p>
                 </div>
               </div>
               <button
-                onClick={() => setShowBCModal(true)}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+                onClick={() => setShowQuoteModal(true)}
+                className={`px-4 py-2 ${isAvenantQuote ? 'bg-amber-500 hover:bg-amber-600' : 'bg-red-600 hover:bg-red-700'} text-white rounded-lg font-medium transition-colors`}
               >
-                Soumettre BC / Approuver
+                {isAvenantQuote ? 'Voir l\'avenant' : 'Soumettre BC / Approuver'}
               </button>
             </div>
           </div>
@@ -8126,6 +8145,120 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           const shippingTotal = isFullyContractCovered ? 0 : (quoteData.shippingTotal || request.quote_shipping || 0);
           const grandTotal = isFullyContractCovered ? 0 : (quoteData.grandTotal || request.quote_total || 0);
 
+          // ===== AVENANT QUOTE MODAL =====
+          // If this is an avenant quote, show avenant-specific modal
+          if (isAvenantQuote) {
+            // Find avenant quote from attachments
+            const avenantQuote = attachments.find(a => a.category === 'avenant_quote');
+            
+            return (
+              <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  {/* Avenant Modal Header */}
+                  <div className="sticky top-0 bg-amber-600 text-white px-6 py-4 flex justify-between items-center z-10">
+                    <div>
+                      <h2 className="text-xl font-bold">📄 Avenant au Devis</h2>
+                      <p className="text-amber-200">{request.request_number} • Travaux supplémentaires</p>
+                    </div>
+                    <button onClick={() => setShowQuoteModal(false)} className="text-amber-200 hover:text-white text-2xl">&times;</button>
+                  </div>
+
+                  {/* Avenant Info */}
+                  <div className="p-6">
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+                      <p className="text-amber-800">
+                        <strong>Information:</strong> Suite à l'inspection de vos appareils, notre équipe technique a identifié des travaux supplémentaires nécessaires. 
+                        Veuillez examiner le devis ci-dessous et approuver pour continuer.
+                      </p>
+                    </div>
+
+                    {/* Avenant Total */}
+                    <div className="bg-amber-500 text-white rounded-lg p-4 mb-6 flex justify-between items-center">
+                      <span className="text-lg font-bold">Total Avenant HT</span>
+                      <span className="text-2xl font-bold">€{(request.avenant_total || 0).toFixed(2)}</span>
+                    </div>
+
+                    {/* Link to PDF if available */}
+                    {avenantQuote?.file_url && (
+                      <div className="mb-6">
+                        <a 
+                          href={avenantQuote.file_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200"
+                        >
+                          📄 Voir le devis avenant complet (PDF)
+                        </a>
+                      </div>
+                    )}
+
+                    {/* Devices with additional work */}
+                    {request.request_devices?.filter(d => d.additional_work_needed).map(device => (
+                      <div key={device.id} className="border rounded-lg p-4 mb-4">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <p className="font-bold text-gray-800">{device.model_name}</p>
+                            <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
+                          </div>
+                        </div>
+                        {device.service_findings && (
+                          <div className="bg-gray-100 rounded p-3 mb-2">
+                            <p className="text-xs text-gray-500 uppercase font-medium mb-1">Constatations</p>
+                            <p className="text-gray-700 text-sm">{device.service_findings}</p>
+                          </div>
+                        )}
+                        {device.additional_work_items?.length > 0 && (
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-gray-500 border-b">
+                                <th className="py-1">Description</th>
+                                <th className="py-1 text-center w-16">Qté</th>
+                                <th className="py-1 text-right w-24">Prix</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {device.additional_work_items.map((item, idx) => (
+                                <tr key={idx} className="border-b border-gray-100">
+                                  <td className="py-2">{item.description}</td>
+                                  <td className="py-2 text-center">{item.quantity}</td>
+                                  <td className="py-2 text-right">€{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    ))}
+
+                    {/* Terms */}
+                    <div className="text-xs text-gray-500 space-y-1 mt-6">
+                      <p>• Ce devis complémentaire est valable 30 jours.</p>
+                      <p>• Les travaux seront effectués après réception de votre accord.</p>
+                      <p>• Conditions de règlement: 30 jours fin de mois.</p>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex justify-between items-center">
+                    <button
+                      onClick={() => setShowQuoteModal(false)}
+                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                    >
+                      Fermer
+                    </button>
+                    <button
+                      onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
+                      className="px-6 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600"
+                    >
+                      ✅ Approuver et soumettre BC
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          // ===== REGULAR RMA QUOTE MODAL =====
           return (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
