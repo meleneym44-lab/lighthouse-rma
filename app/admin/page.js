@@ -2408,8 +2408,6 @@ function KPISheet({ requests = [], clients = [] }) {
   
   // PDF Report Generation
   const generateKPIReport = async () => {
-    const loadJsPDF = () => import('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js').then(() => window.jspdf.jsPDF);
-    
     try {
       const jsPDF = await loadJsPDF();
       const pdf = new jsPDF('p', 'mm', 'a4');
