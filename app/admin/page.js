@@ -2329,14 +2329,14 @@ function KPISheet({ requests = [], clients = [] }) {
   // Get unique technicians from filtered devices
   const technicianSet = new Set();
   filteredByDate.forEach(d => {
-    const tech = d.assigned_to || d.technician;
+    const tech = d.technician_name;
     if (tech) technicianSet.add(tech);
   });
   const technicians = Array.from(technicianSet).sort();
   
   // Filter by selected technician
   const filteredByTech = selectedTech 
-    ? filteredByDate.filter(d => (d.assigned_to || d.technician) === selectedTech)
+    ? filteredByDate.filter(d => d.technician_name === selectedTech)
     : filteredByDate;
   
   // Calculate duration for each device
@@ -2368,7 +2368,7 @@ function KPISheet({ requests = [], clients = [] }) {
   // Technician summary stats (for the sidebar)
   const techStats = {};
   filteredByDate.forEach(d => {
-    const tech = d.assigned_to || d.technician || 'Non assigné';
+    const tech = d.technician_name || 'Non assigné';
     if (!techStats[tech]) {
       techStats[tech] = { count: 0, revenue: 0 };
     }
@@ -2568,7 +2568,7 @@ function KPISheet({ requests = [], clients = [] }) {
                         <td className="px-4 py-2 truncate max-w-32">{d.rma?.companies?.name || '—'}</td>
                         <td className="px-4 py-2">{d.model_name || d.model || '—'}</td>
                         <td className="px-4 py-2 font-mono text-gray-500 text-xs">{d.serial_number || '—'}</td>
-                        <td className="px-4 py-2">{d.assigned_to || d.technician || '—'}</td>
+                        <td className="px-4 py-2">{d.technician_name || '—'}</td>
                         <td className="px-4 py-2">
                           <span className={`px-2 py-0.5 rounded text-xs ${
                             d.rma?.requested_service === 'calibration' ? 'bg-blue-100 text-blue-700' :
