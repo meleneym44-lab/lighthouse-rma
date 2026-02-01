@@ -2689,8 +2689,12 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
       {/* Overview Tab */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* ACTION REQUIRED - Combined RMA, Parts Orders, and Contracts */}
-          {(serviceRequests.filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at).length > 0 || 
+          {/* ACTION REQUIRED - Combined RMA, Parts Orders, Avenants, and Contracts */}
+          {(serviceRequests.filter(r => 
+            (['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at) ||
+            // Include avenants pending approval
+            (r.avenant_sent_at && !r.avenant_approved_at)
+          ).length > 0 || 
             partsNeedingAction.length > 0 ||
             (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0)) && (
             <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4">
@@ -2699,9 +2703,33 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
               </h3>
               <p className="text-sm text-red-600 mb-3">Les demandes suivantes nécessitent votre attention</p>
               <div className="space-y-2">
-                {/* RMA Requests */}
+                {/* Avenant Requests - Show first with amber styling */}
                 {serviceRequests
-                  .filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at)
+                  .filter(r => r.avenant_sent_at && !r.avenant_approved_at)
+                  .map(req => (
+                  <div 
+                    key={`avenant-${req.id}`}
+                    onClick={() => viewRequest(req)}
+                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-amber-100 border border-amber-300"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-amber-500">📄</span>
+                      <span className="font-mono font-bold text-amber-700">{req.request_number || 'En attente'}</span>
+                      <span className="text-sm text-amber-600">Avenant à approuver - €{(req.avenant_total || 0).toFixed(2)}</span>
+                    </div>
+                    <span className="px-3 py-1 bg-amber-500 text-white text-xs font-bold rounded-full">
+                      Voir →
+                    </span>
+                  </div>
+                ))}
+                {/* RMA Requests (excluding those with pending avenant - already shown above) */}
+                {serviceRequests
+                  .filter(r => 
+                    ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && 
+                    r.status !== 'bc_review' && 
+                    !r.bc_submitted_at &&
+                    !(r.avenant_sent_at && !r.avenant_approved_at) // Exclude avenant pending
+                  )
                   .map(req => (
                   <div 
                     key={req.id}
