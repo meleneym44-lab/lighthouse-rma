@@ -8025,13 +8025,39 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
         }
       }
       
-      // Generate and save BL PDF using professional format
+      // Generate BL PDF by capturing the visible preview element (like RMA does)
       try {
-        const blPdfBlob = await generatePartsBLPDF(order, parts, shipment, blNumber, businessSettings);
-        const safeBLNumber = blNumber.replace(/[^a-zA-Z0-9-_]/g, '');
-        const blFileName = `${order.request_number}_BL_${safeBLNumber}_${Date.now()}.pdf`;
-        blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${order.request_number}`, blFileName);
-        console.log('BL uploaded:', blUrl);
+        // Load html2canvas if not already loaded
+        if (!window.html2canvas) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+        }
+        
+        // Capture the visible BL preview element
+        const element = document.getElementById('bl-preview-parts');
+        if (element) {
+          const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+          const jsPDF = await loadJsPDF();
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          const imgData = canvas.toDataURL('image/jpeg', 0.9);
+          const pdfWidth = 210;
+          const imgRatio = canvas.height / canvas.width;
+          const imgHeight = pdfWidth * imgRatio;
+          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
+          
+          const blPdfBlob = pdf.output('blob');
+          const safeBLNumber = blNumber.replace(/[^a-zA-Z0-9-_]/g, '');
+          const blFileName = `${order.request_number}_BL_${safeBLNumber}_${Date.now()}.pdf`;
+          blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${order.request_number}`, blFileName);
+          console.log('BL uploaded:', blUrl);
+        } else {
+          console.error('BL preview element not found');
+        }
       } catch (err) {
         console.error('Error saving BL:', err);
       }
