@@ -2221,80 +2221,317 @@ function LoginPage() {
 // KPI SHEET - Business Analytics Dashboard
 // ============================================
 function KPISheet({ requests = [], clients = [] }) {
-  // Minimal version to debug
-  const [dateFrom, setDateFrom] = useState('2025-01-01');
-  const [dateTo, setDateTo] = useState('2025-12-31');
+  // Date range state
+  const [dateFrom, setDateFrom] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().split('T')[0];
+  });
+  const [dateTo, setDateTo] = useState(() => new Date().toISOString().split('T')[0]);
   
-  // Safe counts
+  // Quick date presets
+  const setPreset = (days) => {
+    const to = new Date();
+    const from = new Date();
+    if (days === 'ytd') {
+      from.setMonth(0, 1);
+    } else {
+      from.setDate(from.getDate() - days);
+    }
+    setDateFrom(from.toISOString().split('T')[0]);
+    setDateTo(to.toISOString().split('T')[0]);
+  };
+  
+  // Safe data
   const safeRequests = Array.isArray(requests) ? requests : [];
-  const rmaCount = safeRequests.filter(r => r && r.request_type !== 'parts').length;
-  const partsCount = safeRequests.filter(r => r && r.request_type === 'parts').length;
+  const rmaRequests = safeRequests.filter(r => r && r.request_type !== 'parts' && r.request_number);
   
-  // Count devices safely
-  let deviceCount = 0;
-  let shippedCount = 0;
-  safeRequests.forEach(r => {
+  // Parse dates
+  const fromDate = new Date(dateFrom);
+  const toDate = new Date(dateTo);
+  toDate.setHours(23, 59, 59, 999);
+  
+  // Get all devices
+  const allDevices = [];
+  rmaRequests.forEach(r => {
     if (r && Array.isArray(r.request_devices)) {
-      deviceCount += r.request_devices.length;
       r.request_devices.forEach(d => {
-        if (d && (d.shipped_at || r.shipped_at)) shippedCount++;
+        if (d) allDevices.push({ ...d, rma: r });
       });
     }
+  });
+  
+  // Shipped devices in period
+  const shippedInPeriod = allDevices.filter(d => {
+    const shippedAt = d.shipped_at || d.rma?.shipped_at;
+    if (!shippedAt) return false;
+    const date = new Date(shippedAt);
+    return date >= fromDate && date <= toDate;
+  });
+  
+  // RMAs shipped in period
+  const rmasShippedInPeriod = rmaRequests.filter(r => {
+    if (!r.shipped_at) return false;
+    const date = new Date(r.shipped_at);
+    return date >= fromDate && date <= toDate;
+  });
+  
+  // Revenue per device (RMA total / device count)
+  const rmaRevenueMap = {};
+  rmasShippedInPeriod.forEach(r => {
+    const quoteData = r.quote_data || {};
+    const total = parseFloat(quoteData.grandTotal || quoteData.total || 0) || 0;
+    const deviceCount = (r.request_devices || []).length || 1;
+    rmaRevenueMap[r.id] = total / deviceCount;
+  });
+  
+  // Technician stats - ONLY shipped devices
+  const techStats = {};
+  shippedInPeriod.forEach(d => {
+    const tech = d.assigned_to || d.technician || 'Non assigné';
+    if (!techStats[tech]) {
+      techStats[tech] = { count: 0, revenue: 0, totalDays: 0 };
+    }
+    techStats[tech].count++;
+    techStats[tech].revenue += rmaRevenueMap[d.rma?.id] || 0;
+    
+    // Calculate turnaround
+    if (d.received_at && (d.shipped_at || d.rma?.shipped_at)) {
+      const received = new Date(d.received_at);
+      const shipped = new Date(d.shipped_at || d.rma?.shipped_at);
+      const days = (shipped - received) / (1000 * 60 * 60 * 24);
+      if (days >= 0 && days < 365) techStats[tech].totalDays += days;
+    }
+  });
+  
+  const techArray = Object.entries(techStats)
+    .map(([name, s]) => ({
+      name,
+      count: s.count,
+      revenue: s.revenue,
+      avgDays: s.count > 0 ? s.totalDays / s.count : 0
+    }))
+    .sort((a, b) => b.count - a.count);
+  
+  const totalTechRevenue = techArray.reduce((sum, t) => sum + t.revenue, 0);
+  
+  // Total revenue
+  const totalRevenue = rmasShippedInPeriod.reduce((sum, r) => {
+    const quoteData = r.quote_data || {};
+    return sum + (parseFloat(quoteData.grandTotal || quoteData.total || 0) || 0);
+  }, 0);
+  
+  // Average turnaround
+  let totalTurnaround = 0;
+  let turnaroundCount = 0;
+  shippedInPeriod.forEach(d => {
+    if (d.received_at && (d.shipped_at || d.rma?.shipped_at)) {
+      const received = new Date(d.received_at);
+      const shipped = new Date(d.shipped_at || d.rma?.shipped_at);
+      const days = (shipped - received) / (1000 * 60 * 60 * 24);
+      if (days >= 0 && days < 365) {
+        totalTurnaround += days;
+        turnaroundCount++;
+      }
+    }
+  });
+  const avgTurnaround = turnaroundCount > 0 ? totalTurnaround / turnaroundCount : 0;
+  
+  // Pipeline counts (current, not filtered by date)
+  const pipeline = {
+    waiting: allDevices.filter(d => !d.received_at && !d.shipped_at && !d.rma?.shipped_at).length,
+    received: allDevices.filter(d => d.received_at && !d.report_complete && !d.shipped_at && !d.rma?.shipped_at).length,
+    qc: allDevices.filter(d => d.report_complete && !d.qc_complete && !d.shipped_at && !d.rma?.shipped_at).length,
+    ready: allDevices.filter(d => d.qc_complete && !d.shipped_at && !d.rma?.shipped_at).length,
+    shipped: allDevices.filter(d => d.shipped_at || d.rma?.shipped_at).length
+  };
+  
+  // Stuck devices (>7 days without update, not shipped)
+  const stuckDevices = allDevices.filter(d => {
+    if (d.shipped_at || d.rma?.shipped_at) return false;
+    const lastUpdate = d.updated_at || d.created_at;
+    if (!lastUpdate) return false;
+    const days = (new Date() - new Date(lastUpdate)) / (1000 * 60 * 60 * 24);
+    return days > 7;
   });
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">📈 Tableau de Bord KPI</h1>
+        <div className="text-sm text-gray-500">
+          {new Date(dateFrom).toLocaleDateString('fr-FR')} - {new Date(dateTo).toLocaleDateString('fr-FR')}
+        </div>
       </div>
       
       {/* Date Range */}
       <div className="bg-white rounded-xl shadow-sm p-4">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-gray-600">Du:</label>
-            <input 
-              type="date" 
-              value={dateFrom} 
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
           </div>
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-gray-600">Au:</label>
-            <input 
-              type="date" 
-              value={dateTo} 
-              onChange={(e) => setDateTo(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <div className="flex gap-2 ml-4">
+            <button onClick={() => setPreset(7)} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">7j</button>
+            <button onClick={() => setPreset(30)} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">30j</button>
+            <button onClick={() => setPreset(90)} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">3 mois</button>
+            <button onClick={() => setPreset('ytd')} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">Année</button>
+            <button onClick={() => setPreset(365)} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">12 mois</button>
           </div>
         </div>
       </div>
       
-      {/* Basic Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Main KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-green-500">
-          <p className="text-3xl font-bold text-gray-800">{rmaCount}</p>
-          <p className="text-sm text-gray-500">RMAs Total</p>
+          <p className="text-3xl font-bold text-gray-800">{shippedInPeriod.length}</p>
+          <p className="text-sm text-gray-500">Appareils expédiés</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-blue-500">
-          <p className="text-3xl font-bold text-gray-800">{partsCount}</p>
-          <p className="text-sm text-gray-500">Commandes Pièces</p>
+          <p className="text-3xl font-bold text-gray-800">{rmasShippedInPeriod.length}</p>
+          <p className="text-sm text-gray-500">RMAs complétés</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-purple-500">
-          <p className="text-3xl font-bold text-gray-800">{deviceCount}</p>
-          <p className="text-sm text-gray-500">Appareils Total</p>
+          <p className="text-3xl font-bold text-gray-800">{avgTurnaround.toFixed(1)}j</p>
+          <p className="text-sm text-gray-500">Délai moyen</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-amber-500">
-          <p className="text-3xl font-bold text-gray-800">{shippedCount}</p>
-          <p className="text-sm text-gray-500">Appareils Expédiés</p>
+          <p className="text-3xl font-bold text-gray-800">{totalRevenue.toLocaleString('fr-FR')} €</p>
+          <p className="text-sm text-gray-500">Chiffre d'affaires</p>
+        </div>
+        <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-indigo-500">
+          <p className="text-3xl font-bold text-gray-800">{techArray.length}</p>
+          <p className="text-sm text-gray-500">Techniciens actifs</p>
+        </div>
+        <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-red-500">
+          <p className="text-3xl font-bold text-gray-800">{stuckDevices.length}</p>
+          <p className="text-sm text-gray-500">Bloqués &gt;7j</p>
         </div>
       </div>
       
+      {/* Pipeline */}
       <div className="bg-white rounded-xl shadow-sm p-6">
-        <p className="text-gray-500 text-center">KPI complet en cours de développement...</p>
+        <h2 className="text-lg font-bold text-gray-800 mb-4">📊 Pipeline Actuel</h2>
+        <div className="flex items-center gap-2">
+          {[
+            { label: 'En attente', value: pipeline.waiting, color: 'bg-amber-500' },
+            { label: 'Reçus', value: pipeline.received, color: 'bg-blue-500' },
+            { label: 'QC', value: pipeline.qc, color: 'bg-purple-500' },
+            { label: 'Prêt', value: pipeline.ready, color: 'bg-green-500' },
+            { label: 'Expédiés', value: pipeline.shipped, color: 'bg-gray-400' }
+          ].map((stage, i, arr) => (
+            <React.Fragment key={stage.label}>
+              <div className={`${stage.color} text-white px-4 py-3 rounded-lg text-center min-w-20`}>
+                <p className="text-2xl font-bold">{stage.value}</p>
+                <p className="text-xs opacity-90">{stage.label}</p>
+              </div>
+              {i < arr.length - 1 && <span className="text-gray-300 text-2xl">→</span>}
+            </React.Fragment>
+          ))}
+        </div>
       </div>
+      
+      {/* Technician Performance */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h2 className="text-lg font-bold text-gray-800 mb-4">👨‍🔧 Performance par Technicien (Appareils Expédiés)</h2>
+        {techArray.length > 0 ? (
+          <div className="space-y-3">
+            {techArray.map((tech, i) => (
+              <div key={tech.name} className="p-4 bg-gray-50 rounded-lg">
+                <div className="flex items-center gap-4 mb-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
+                    i === 0 ? 'bg-amber-500' : i === 1 ? 'bg-gray-400' : i === 2 ? 'bg-amber-700' : 'bg-gray-300'
+                  }`}>
+                    {i + 1}
+                  </div>
+                  <p className="font-bold text-gray-800 text-lg flex-1">{tech.name}</p>
+                </div>
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="bg-white rounded-lg p-3 border">
+                    <p className="text-2xl font-bold text-blue-600">{tech.count}</p>
+                    <p className="text-xs text-gray-500">Appareils</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 border">
+                    <p className="text-2xl font-bold text-green-600">{tech.revenue.toLocaleString('fr-FR')} €</p>
+                    <p className="text-xs text-gray-500">CA Généré</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 border">
+                    <p className="text-2xl font-bold text-purple-600">{tech.avgDays.toFixed(1)}j</p>
+                    <p className="text-xs text-gray-500">Délai Moy.</p>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <div className="flex justify-between text-xs text-gray-500 mb-1">
+                    <span>Part du CA total</span>
+                    <span>{totalTechRevenue > 0 ? ((tech.revenue / totalTechRevenue) * 100).toFixed(1) : 0}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="bg-green-500 h-2 rounded-full" style={{ width: `${totalTechRevenue > 0 ? (tech.revenue / totalTechRevenue * 100) : 0}%` }}></div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {/* Totals */}
+            <div className="p-4 bg-gray-100 rounded-lg border-2 border-gray-300">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <p className="text-2xl font-bold text-gray-800">{techArray.reduce((s, t) => s + t.count, 0)}</p>
+                  <p className="text-xs text-gray-600 font-medium">Total Appareils</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-gray-800">{totalTechRevenue.toLocaleString('fr-FR')} €</p>
+                  <p className="text-xs text-gray-600 font-medium">Total CA</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-gray-800">{avgTurnaround.toFixed(1)}j</p>
+                  <p className="text-xs text-gray-600 font-medium">Moy. Globale</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-gray-400 text-center py-8">Aucun appareil expédié pour cette période</p>
+        )}
+      </div>
+      
+      {/* Stuck Devices Alert */}
+      {stuckDevices.length > 0 && (
+        <div className="bg-red-50 border-2 border-red-300 rounded-xl p-6">
+          <h2 className="text-lg font-bold text-red-800 mb-4">⚠️ Appareils Bloqués (&gt;7 jours)</h2>
+          <div className="max-h-60 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-red-100 sticky top-0">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium text-red-800">RMA</th>
+                  <th className="px-4 py-2 text-left font-medium text-red-800">Client</th>
+                  <th className="px-4 py-2 text-left font-medium text-red-800">Appareil</th>
+                  <th className="px-4 py-2 text-right font-medium text-red-800">Jours</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-red-200">
+                {stuckDevices.slice(0, 20).map((d, i) => {
+                  const days = Math.floor((new Date() - new Date(d.updated_at || d.created_at)) / (1000 * 60 * 60 * 24));
+                  return (
+                    <tr key={i} className="hover:bg-red-100">
+                      <td className="px-4 py-2 font-mono text-red-700">{d.rma?.request_number || '—'}</td>
+                      <td className="px-4 py-2">{d.rma?.companies?.name || '—'}</td>
+                      <td className="px-4 py-2">{d.model_name || d.model || '—'}</td>
+                      <td className="px-4 py-2 text-right font-bold text-red-700">{days}j</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
