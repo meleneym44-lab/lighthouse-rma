@@ -7987,14 +7987,17 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       });
     }
     
-    // Sort by date ascending
+    // Sort by date ascending (oldest first)
     statusHistory.sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
     
-    // Reverse for display (most recent first)
-    return statusHistory.reverse();
+    return statusHistory;
   };
 
-  const displayHistory = history.length > 0 ? history : getStatusHistory();
+  // Always sort oldest first (top to bottom timeline)
+  const sortedHistory = history.length > 0 
+    ? [...history].sort((a, b) => new Date(a.event_date) - new Date(b.event_date))
+    : getStatusHistory();
+  const displayHistory = sortedHistory;
 
   return (
     <div>
@@ -9779,26 +9782,29 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             <div>
               {displayHistory.length === 0 ? (
                 <div className="text-center text-gray-400 py-12">
-                  <p className="text-4xl mb-2">📜</p>
-                  <p>Aucun historique disponible</p>
+                  <p className="text-lg">Aucun historique disponible</p>
                 </div>
               ) : (
-                <div className="relative">
-                  <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
-                  <div className="space-y-6">
+                <div className="relative pl-6">
+                  {/* Timeline line */}
+                  <div className="absolute left-[11px] top-2 bottom-2 w-0.5 bg-gradient-to-b from-gray-200 via-[#3B7AB4] to-[#1E3A5F]"></div>
+                  
+                  <div className="space-y-4">
                     {displayHistory.map((event, i) => {
-                      const eventStyle = STATUS_STYLES[event.event_type] || {};
+                      const isLast = i === displayHistory.length - 1;
                       return (
-                        <div key={event.id || i} className="flex gap-4 ml-4">
-                          <div className={`w-3 h-3 rounded-full border-2 border-white shadow -ml-[7px] mt-1.5 z-10 ${
-                            i === 0 ? 'bg-[#3B7AB4]' : 'bg-gray-400'
+                        <div key={event.id || i} className="flex gap-4 relative">
+                          {/* Timeline dot */}
+                          <div className={`w-2.5 h-2.5 rounded-full absolute -left-[19px] top-1.5 ${
+                            isLast ? 'bg-[#1E3A5F] ring-4 ring-[#1E3A5F]/20' : 'bg-[#3B7AB4]'
                           }`}></div>
-                          <div className="flex-1 pb-4">
-                            <div className="flex items-center gap-2">
-                              {eventStyle.icon && <span>{eventStyle.icon}</span>}
-                              <p className="font-medium text-[#1E3A5F]">{event.event_description}</p>
-                            </div>
-                            <p className="text-sm text-gray-500">
+                          
+                          {/* Event content */}
+                          <div className={`flex-1 pb-1 ${isLast ? 'font-medium' : ''}`}>
+                            <p className={`${isLast ? 'text-[#1E3A5F] font-semibold' : 'text-gray-700'}`}>
+                              {event.event_description}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-0.5">
                               {new Date(event.event_date).toLocaleString('fr-FR', {
                                 day: '2-digit',
                                 month: 'long',
