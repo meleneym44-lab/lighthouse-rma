@@ -7101,10 +7101,11 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   const isPartsOrder = request.request_type === 'parts';
   const isQuoteSent = request.status === 'quote_sent';
   
-  // Detect if this is an avenant quote (quote_sent status + avenant_sent_at set)
-  const isAvenantQuote = isQuoteSent && !!request.avenant_sent_at && !request.avenant_approved_at;
+  // Detect if this is an avenant quote - avenant sent but not approved (independent of status)
+  const isAvenantQuote = !!request.avenant_sent_at && !request.avenant_approved_at;
   
-  const needsQuoteAction = isQuoteSent && !request.bc_submitted_at;
+  // Regular quote action needed (not avenant)
+  const needsQuoteAction = isQuoteSent && !request.bc_submitted_at && !isAvenantQuote;
   const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
   
   // Check if submission is valid - need EITHER file OR signature (not both required)
@@ -7584,7 +7585,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         </div>
 
         {/* Quote Sent - Review Required */}
-        {needsQuoteAction && (
+        {needsQuoteAction && !isAvenantQuote && (
           <div className="bg-blue-50 border-b border-blue-300 px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -7608,6 +7609,39 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 <button
                   onClick={() => setShowBCModal(true)}
                   className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors"
+                >
+                  ✅ Approuver et soumettre BC
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* AVENANT - Review Required */}
+        {isAvenantQuote && (
+          <div className="bg-amber-50 border-b border-amber-300 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-amber-500 flex items-center justify-center">
+                  <span className="text-white text-2xl">📄</span>
+                </div>
+                <div>
+                  <p className="font-bold text-amber-800 text-lg">Avenant reçu - Action requise</p>
+                  <p className="text-sm text-amber-600">
+                    Des travaux supplémentaires ont été identifiés (€{(request.avenant_total || 0).toFixed(2)}). Veuillez approuver pour continuer.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowQuoteModal(true)}
+                  className="px-4 py-2 bg-white border border-amber-300 text-amber-700 rounded-lg font-medium hover:bg-amber-50 transition-colors"
+                >
+                  👁️ Voir l'Avenant
+                </button>
+                <button
+                  onClick={() => setShowBCModal(true)}
+                  className="px-6 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600 transition-colors"
                 >
                   ✅ Approuver et soumettre BC
                 </button>
@@ -8174,95 +8208,171 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           const grandTotal = isFullyContractCovered ? 0 : (quoteData.grandTotal || request.quote_total || 0);
 
           // ===== AVENANT QUOTE MODAL =====
-          // If this is an avenant quote, show avenant-specific modal
+          // If this is an avenant quote, show avenant-specific modal styled like RMA quote
           if (isAvenantQuote) {
             // Find avenant quote from attachments
             const avenantQuote = attachments.find(a => a.category === 'avenant_quote');
+            const devicesWithWork = (request.request_devices || []).filter(d => d.additional_work_needed);
             
             return (
               <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
                 <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                  {/* Avenant Modal Header */}
-                  <div className="sticky top-0 bg-amber-600 text-white px-6 py-4 flex justify-between items-center z-10">
+                  {/* Modal Header */}
+                  <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
                     <div>
-                      <h2 className="text-xl font-bold">📄 Avenant au Devis</h2>
-                      <p className="text-amber-200">{request.request_number} • Travaux supplémentaires</p>
+                      <h2 className="text-xl font-bold">Avenant au Devis</h2>
+                      <p className="text-gray-400">{request.request_number}</p>
                     </div>
-                    <button onClick={() => setShowQuoteModal(false)} className="text-amber-200 hover:text-white text-2xl">&times;</button>
+                    <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
                   </div>
 
-                  {/* Avenant Info */}
-                  <div className="p-6">
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+                  {/* Quote Document */}
+                  <div id="avenant-print-content">
+                    {/* Quote Header */}
+                    <div className="px-8 pt-8 pb-4 border-b-4 border-amber-500">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <img 
+                            src="/images/logos/lighthouse-logo.png" 
+                            alt="Lighthouse France" 
+                            className="h-14 w-auto mb-1"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              e.target.nextSibling.style.display = 'block';
+                            }}
+                          />
+                          <div className="hidden">
+                            <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
+                            <p className="text-gray-500">Worldwide Solutions</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-2xl font-bold text-amber-500">AVENANT</p>
+                          <p className="text-gray-500">Réf. {request.request_number}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Info Bar */}
+                    <div className="bg-amber-50 px-8 py-3 flex justify-between text-sm border-b">
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase">Date</p>
+                        <p className="font-medium">{request.avenant_sent_at ? new Date(request.avenant_sent_at).toLocaleDateString('fr-FR') : '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase">Validité</p>
+                        <p className="font-medium">30 jours</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase">Conditions</p>
+                        <p className="font-medium">À réception de facture</p>
+                      </div>
+                    </div>
+
+                    {/* Client Info */}
+                    <div className="px-8 py-4 border-b">
+                      <p className="text-xs text-gray-500 uppercase">Client</p>
+                      <p className="font-bold text-xl text-[#1a1a2e]">{request.companies?.name}</p>
+                      {request.companies?.billing_address && <p className="text-gray-600">{request.companies?.billing_address}</p>}
+                      <p className="text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
+                    </div>
+
+                    {/* Introduction */}
+                    <div className="px-8 py-4 bg-amber-50 border-b">
                       <p className="text-amber-800">
-                        <strong>Information:</strong> Suite à l'inspection de vos appareils, notre équipe technique a identifié des travaux supplémentaires nécessaires. 
-                        Veuillez examiner le devis ci-dessous et approuver pour continuer.
+                        <strong>Objet :</strong> Suite à l'inspection de vos appareils, notre équipe technique a identifié des travaux supplémentaires nécessaires. 
+                        Veuillez trouver ci-dessous le détail des interventions recommandées.
                       </p>
                     </div>
 
-                    {/* Avenant Total */}
-                    <div className="bg-amber-500 text-white rounded-lg p-4 mb-6 flex justify-between items-center">
-                      <span className="text-lg font-bold">Total Avenant HT</span>
-                      <span className="text-2xl font-bold">€{(request.avenant_total || 0).toFixed(2)}</span>
+                    {/* Devices with additional work */}
+                    <div className="px-8 py-6 space-y-6">
+                      {devicesWithWork.map(device => {
+                        const deviceTotal = (device.additional_work_items || []).reduce((sum, item) => 
+                          sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
+                        );
+                        
+                        return (
+                          <div key={device.id} className="border-l-4 border-amber-500 pl-4">
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <h3 className="font-bold text-lg text-[#1a1a2e]">{device.model_name}</h3>
+                                <p className="text-gray-500 text-sm">N° de série: {device.serial_number}</p>
+                              </div>
+                              <span className="text-xl font-bold text-amber-600">€{deviceTotal.toFixed(2)}</span>
+                            </div>
+                            
+                            {device.service_findings && (
+                              <div className="bg-gray-100 rounded-lg p-3 mb-3">
+                                <p className="text-xs text-gray-500 uppercase font-medium mb-1">Constatations du technicien</p>
+                                <p className="text-gray-700">{device.service_findings}</p>
+                              </div>
+                            )}
+                            
+                            {device.additional_work_items?.length > 0 && (
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="border-b-2 border-gray-200">
+                                    <th className="text-left py-2 text-gray-600 font-medium">Description</th>
+                                    <th className="text-center py-2 text-gray-600 font-medium w-16">Qté</th>
+                                    <th className="text-right py-2 text-gray-600 font-medium w-24">Prix Unit.</th>
+                                    <th className="text-right py-2 text-gray-600 font-medium w-24">Total</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {device.additional_work_items.map((item, idx) => (
+                                    <tr key={idx} className="border-b border-gray-100">
+                                      <td className="py-2">{item.description}</td>
+                                      <td className="py-2 text-center">{item.quantity}</td>
+                                      <td className="py-2 text-right">€{(parseFloat(item.price) || 0).toFixed(2)}</td>
+                                      <td className="py-2 text-right font-medium">€{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
 
-                    {/* Link to PDF if available */}
-                    {avenantQuote?.file_url && (
-                      <div className="mb-6">
-                        <a 
-                          href={avenantQuote.file_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200"
-                        >
-                          📄 Voir le devis avenant complet (PDF)
-                        </a>
+                    {/* Total Section */}
+                    <div className="px-8 py-4 bg-amber-500">
+                      <div className="flex justify-between items-center text-white">
+                        <span className="text-lg font-bold">TOTAL AVENANT HT</span>
+                        <span className="text-3xl font-bold">€{(request.avenant_total || 0).toFixed(2)}</span>
                       </div>
-                    )}
+                    </div>
 
-                    {/* Devices with additional work */}
-                    {request.request_devices?.filter(d => d.additional_work_needed).map(device => (
-                      <div key={device.id} className="border rounded-lg p-4 mb-4">
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <p className="font-bold text-gray-800">{device.model_name}</p>
-                            <p className="text-sm text-gray-500">SN: {device.serial_number}</p>
-                          </div>
+                    {/* Conditions */}
+                    <div className="px-8 py-4 border-b">
+                      <p className="font-bold text-[#1a1a2e] text-sm mb-2">Conditions:</p>
+                      <ul className="text-sm text-gray-600 space-y-1">
+                        <li>• Ce devis complémentaire est valable 30 jours</li>
+                        <li>• Les travaux seront effectués après réception de votre accord</li>
+                        <li>• Conditions de règlement: 30 jours fin de mois</li>
+                      </ul>
+                    </div>
+
+                    {/* Signature Section */}
+                    <div className="px-8 py-6 flex justify-between items-end">
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Établi par</p>
+                        <p className="font-bold text-lg text-[#1a1a2e]">Service Technique</p>
+                        <p className="text-gray-500">Lighthouse France</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Bon pour accord</p>
+                        <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
+                          <span className="text-gray-300 text-xs">Signature et cachet</span>
                         </div>
-                        {device.service_findings && (
-                          <div className="bg-gray-100 rounded p-3 mb-2">
-                            <p className="text-xs text-gray-500 uppercase font-medium mb-1">Constatations</p>
-                            <p className="text-gray-700 text-sm">{device.service_findings}</p>
-                          </div>
-                        )}
-                        {device.additional_work_items?.length > 0 && (
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="text-left text-gray-500 border-b">
-                                <th className="py-1">Description</th>
-                                <th className="py-1 text-center w-16">Qté</th>
-                                <th className="py-1 text-right w-24">Prix</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {device.additional_work_items.map((item, idx) => (
-                                <tr key={idx} className="border-b border-gray-100">
-                                  <td className="py-2">{item.description}</td>
-                                  <td className="py-2 text-center">{item.quantity}</td>
-                                  <td className="py-2 text-right">€{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        )}
                       </div>
-                    ))}
+                    </div>
 
-                    {/* Terms */}
-                    <div className="text-xs text-gray-500 space-y-1 mt-6">
-                      <p>• Ce devis complémentaire est valable 30 jours.</p>
-                      <p>• Les travaux seront effectués après réception de votre accord.</p>
-                      <p>• Conditions de règlement: 30 jours fin de mois.</p>
+                    {/* Footer */}
+                    <div className="bg-[#1a1a2e] text-white px-8 py-3 text-center">
+                      <p className="font-medium text-sm">Lighthouse France SAS</p>
+                      <p className="text-gray-400 text-xs">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
                     </div>
                   </div>
 
@@ -8274,12 +8384,24 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     >
                       Fermer
                     </button>
-                    <button
-                      onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
-                      className="px-6 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600"
-                    >
-                      ✅ Approuver et soumettre BC
-                    </button>
+                    <div className="flex gap-2">
+                      {avenantQuote?.file_url && (
+                        <a 
+                          href={avenantQuote.file_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="px-4 py-2 bg-white border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-50"
+                        >
+                          📄 Télécharger PDF
+                        </a>
+                      )}
+                      <button
+                        onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
+                        className="px-6 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600"
+                      >
+                        ✅ Approuver et soumettre BC
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
