@@ -7756,12 +7756,13 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       const updatePayload = isSubmittingAvenantBC
         ? {
             // Avenant BC - DON'T change status, device continues its work
+            // DON'T overwrite signed_quote_url - that's the original devis signé!
             bc_submitted_at: new Date().toISOString(),
             bc_signed_by: signatureName,
             bc_signature_date: signatureDateISO,
             bc_file_url: fileUrl,
-            bc_signature_url: signatureUrl,
-            signed_quote_url: signedQuotePdfUrl
+            bc_signature_url: signatureUrl
+            // The signed avenant PDF goes to attachments with category 'avenant_signe', not to signed_quote_url
             // Note: avenant_approved_at will be set by admin when they approve
           }
         : {
@@ -9796,80 +9797,237 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   </svg>
                   {isPartsOrder ? 'Devis et Documents' : 'Certificats et Devis'}
                 </h3>
-                {request.quote_url || request.certificate_url || request.bc_file_url || request.signed_quote_url ? (
-                  <div className="space-y-2">
-                    {request.quote_url && (
-                      <a 
-                        href={request.quote_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200"
-                      >
-                        <div className="w-10 h-10 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">
-                          PDF
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-blue-900">Devis</p>
-                          <p className="text-xs text-blue-600">Télécharger le devis</p>
-                        </div>
-                        <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                      </a>
-                    )}
-                    {request.bc_file_url && (
-                      <a 
-                        href={request.bc_file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors border border-purple-200"
-                      >
-                        <div className="w-10 h-10 bg-purple-600 rounded flex items-center justify-center text-white font-bold text-xs">
-                          PDF
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-purple-900">
-                            {request.is_contract_rma ? 'Bon de Commande (Contrat)' : 'Bon de Commande'}
-                          </p>
-                          <p className="text-xs text-purple-600">
-                            {request.bc_signed_by ? `Signé par ${request.bc_signed_by}` : 'Télécharger le BC'}
-                          </p>
-                        </div>
-                        <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                      </a>
-                    )}
-                    {request.certificate_url && (
-                      <a 
-                        href={request.certificate_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 p-3 bg-green-50 rounded-lg hover:bg-green-100 transition-colors border border-green-200"
-                      >
-                        <div className="w-10 h-10 bg-green-600 rounded flex items-center justify-center text-white font-bold text-xs">
-                          PDF
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-green-900">Certificat d'étalonnage</p>
-                          <p className="text-xs text-green-600">Télécharger le certificat</p>
-                        </div>
-                        <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                      </a>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
-                    <svg className="w-12 h-12 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <p className="text-gray-500">
-                      {isPartsOrder ? 'Les devis apparaîtront ici une fois disponibles' : 'Les certificats et devis apparaîtront ici une fois disponibles'}
-                    </p>
-                  </div>
-                )}
+                <div className="space-y-2">
+                  {/* DEVIS (Quote) */}
+                  {request.quote_url && (
+                    <a 
+                      href={request.quote_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200"
+                    >
+                      <div className="w-10 h-10 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                        PDF
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-blue-900">Devis</p>
+                        <p className="text-xs text-blue-600">Offre de prix originale</p>
+                      </div>
+                      <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </a>
+                  )}
+                  
+                  {/* DEVIS SIGNÉ (Signed Quote PDF) */}
+                  {request.signed_quote_url && (
+                    <a 
+                      href={request.signed_quote_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-3 bg-green-50 rounded-lg hover:bg-green-100 transition-colors border border-green-200"
+                    >
+                      <div className="w-10 h-10 bg-green-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                        PDF
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-green-900">Devis Signé</p>
+                        <p className="text-xs text-green-600">
+                          {request.bc_signed_by ? `Signé par ${request.bc_signed_by}` : 'Document approuvé'}
+                        </p>
+                      </div>
+                      <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </a>
+                  )}
+                  
+                  {/* BON DE COMMANDE (BC File) */}
+                  {request.bc_file_url && (
+                    <a 
+                      href={request.bc_file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors border border-purple-200"
+                    >
+                      <div className="w-10 h-10 bg-purple-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                        PDF
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-purple-900">
+                          {request.is_contract_rma ? 'Bon de Commande (Contrat)' : 'Bon de Commande'}
+                        </p>
+                        <p className="text-xs text-purple-600">BC uploadé</p>
+                      </div>
+                      <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </a>
+                  )}
+                  
+                  {/* AVENANT (Not signed) - from attachments */}
+                  {attachments.filter(a => a.category === 'avenant_quote' && a.file_url).map(att => (
+                    <a 
+                      key={att.id}
+                      href={att.file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-3 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors border border-orange-200"
+                    >
+                      <div className="w-10 h-10 bg-orange-500 rounded flex items-center justify-center text-white font-bold text-xs">
+                        PDF
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-orange-900">Avenant</p>
+                        <p className="text-xs text-orange-600">
+                          {request.avenant_approved_at ? '✅ Approuvé' : '⏳ En attente'} • €{(request.avenant_total || 0).toFixed(2)}
+                        </p>
+                      </div>
+                      <svg className="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </a>
+                  ))}
+                  
+                  {/* AVENANT SIGNÉ - from attachments */}
+                  {attachments.filter(a => a.category === 'avenant_signe' && a.file_url).map(att => (
+                    <a 
+                      key={att.id}
+                      href={att.file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-3 bg-green-50 rounded-lg hover:bg-green-100 transition-colors border border-green-200"
+                    >
+                      <div className="w-10 h-10 bg-green-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                        PDF
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-green-900">Avenant Signé</p>
+                        <p className="text-xs text-green-600">Approuvé par client</p>
+                      </div>
+                      <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </a>
+                  ))}
+                  
+                  {/* CERTIFICAT D'ÉTALONNAGE */}
+                  {request.certificate_url && (
+                    <a 
+                      href={request.certificate_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-3 bg-green-50 rounded-lg hover:bg-green-100 transition-colors border border-green-200"
+                    >
+                      <div className="w-10 h-10 bg-green-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                        PDF
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-green-900">Certificat d'étalonnage</p>
+                        <p className="text-xs text-green-600">Document officiel ISO</p>
+                      </div>
+                      <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </a>
+                  )}
+                  
+                  {/* DEVICE DOCUMENTS (BL, UPS, Report, Certificate) */}
+                  {request.request_devices?.map(device => (
+                    <React.Fragment key={device.id}>
+                      {device.bl_url && (
+                        <a 
+                          href={device.bl_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 p-3 bg-cyan-50 rounded-lg hover:bg-cyan-100 transition-colors border border-cyan-200"
+                        >
+                          <div className="w-10 h-10 bg-cyan-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                            PDF
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium text-cyan-900">Bon de Livraison</p>
+                            <p className="text-xs text-cyan-600">{device.model_name} - {device.serial_number}</p>
+                          </div>
+                          <svg className="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                        </a>
+                      )}
+                      {device.ups_label_url && (
+                        <a 
+                          href={device.ups_label_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 p-3 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors border border-amber-200"
+                        >
+                          <div className="w-10 h-10 bg-amber-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                            PDF
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium text-amber-900">Étiquette UPS</p>
+                            <p className="text-xs text-amber-600">{device.model_name} - {device.serial_number}</p>
+                          </div>
+                          <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                        </a>
+                      )}
+                      {device.calibration_certificate_url && (
+                        <a 
+                          href={device.calibration_certificate_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 p-3 bg-green-50 rounded-lg hover:bg-green-100 transition-colors border border-green-200"
+                        >
+                          <div className="w-10 h-10 bg-green-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                            PDF
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium text-green-900">Certificat d'Étalonnage</p>
+                            <p className="text-xs text-green-600">{device.model_name} - {device.serial_number}</p>
+                          </div>
+                          <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                        </a>
+                      )}
+                      {device.report_url && (
+                        <a 
+                          href={device.report_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200"
+                        >
+                          <div className="w-10 h-10 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                            PDF
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium text-blue-900">Rapport de Service</p>
+                            <p className="text-xs text-blue-600">{device.model_name} - {device.serial_number}</p>
+                          </div>
+                          <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                        </a>
+                      )}
+                    </React.Fragment>
+                  ))}
+                  
+                  {/* Empty state if nothing */}
+                  {!request.quote_url && !request.certificate_url && !request.bc_file_url && !request.signed_quote_url && 
+                   attachments.filter(a => ['avenant_quote', 'avenant_signe'].includes(a.category) && a.file_url).length === 0 &&
+                   !request.request_devices?.some(d => d.bl_url || d.ups_label_url || d.calibration_certificate_url || d.report_url) && (
+                    <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+                      <svg className="w-12 h-12 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p className="text-gray-500">
+                        {isPartsOrder ? 'Les devis apparaîtront ici une fois disponibles' : 'Les documents apparaîtront ici une fois disponibles'}
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Empty state if no attachments at all */}
