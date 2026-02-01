@@ -2698,16 +2698,8 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
     ready: activeRMAs.filter(r => getJobType(r) === 'ready')
   };
   
-  // Avenant pending approval - sent but not approved yet
-  const avenantPending = activeRMAs.filter(r => r.avenant_sent_at && !r.avenant_approved_at);
-  
-  // Avenant BC needs review - avenant sent, customer submitted BC, needs admin approval
-  const avenantBCReview = activeRMAs.filter(r => 
-    r.avenant_sent_at && 
-    !r.avenant_approved_at && 
-    r.bc_submitted_at &&
-    r.status !== 'bc_rejected'
-  );
+  // Avenant pending - sent but customer hasn't submitted BC yet
+  const avenantPending = activeRMAs.filter(r => r.avenant_sent_at && !r.avenant_approved_at && !r.bc_submitted_at);
   
   // Stats for the cards
   const stats = [
@@ -3263,42 +3255,42 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
     setApproving(true);
     
     // Different update depending on whether this is avenant BC or regular BC
-    const updatePayload = isAvenantBC 
-      ? {
-          // Avenant BC approved - tech can continue with additional work
-          status: 'in_progress',
+    if (isAvenantBC) {
+      // Avenant BC approved - DON'T change RMA status, just mark avenant as approved
+      // The device continues from wherever it was (in_progress, calibration_in_progress, etc.)
+      const { error } = await supabase
+        .from('service_requests')
+        .update({
           avenant_approved_at: new Date().toISOString(),
-          avenant_bc_url: rma.bc_file_url // Save BC to avenant-specific field
-        }
-      : {
-          // Regular BC approved - waiting for device
+          avenant_bc_url: rma.bc_file_url || rma.bc_signature_url // Save BC to avenant-specific field
+        })
+        .eq('id', rma.id);
+      
+      if (error) {
+        notify('Erreur: ' + error.message, 'error');
+      } else {
+        // Don't change device statuses - they stay where they were
+        notify('✅ Avenant approuvé! Le technicien peut continuer les travaux supplémentaires.');
+        reload();
+        onClose();
+      }
+    } else {
+      // Regular BC approved - waiting for device
+      const { error } = await supabase
+        .from('service_requests')
+        .update({
           status: 'waiting_device', 
           bc_approved_at: new Date().toISOString()
-        };
-    
-    const { error } = await supabase
-      .from('service_requests')
-      .update(updatePayload)
-      .eq('id', rma.id);
-    
-    if (error) {
-      notify('Erreur: ' + error.message, 'error');
-    } else {
-      if (isAvenantBC) {
-        // Save avenant BC URL to each device with additional work
-        const devicesWithWork = (rma.request_devices || []).filter(d => d.additional_work_needed);
-        for (const device of devicesWithWork) {
-          await supabase
-            .from('request_devices')
-            .update({ status: 'in_progress' })
-            .eq('id', device.id);
-        }
-        notify('✅ Avenant approuvé! Le technicien peut continuer les travaux.');
+        })
+        .eq('id', rma.id);
+      
+      if (error) {
+        notify('Erreur: ' + error.message, 'error');
       } else {
         notify('✅ BC approuvé! En attente de l\'appareil.');
+        reload();
+        onClose();
       }
-      reload();
-      onClose();
     }
     setApproving(false);
   };
