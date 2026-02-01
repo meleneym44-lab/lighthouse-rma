@@ -2369,26 +2369,276 @@ function KPISheet({ requests = [], clients = [] }) {
   
   const totalRevenue = devicesWithDuration.reduce((sum, d) => sum + (rmaRevenueMap[d.rma?.id] || 0), 0);
   
+  // NEW: Average price per device
+  const avgPricePerDevice = totalDevices > 0 ? totalRevenue / totalDevices : 0;
+  
+  // NEW: Calculate working days in period and avg devices per day
+  const periodDays = Math.max(1, Math.ceil((toDate - fromDate) / (1000 * 60 * 60 * 24)));
+  // Approximate working days (exclude weekends roughly)
+  const workingDays = Math.max(1, Math.floor(periodDays * 5 / 7));
+  const avgDevicesPerDay = totalDevices / workingDays;
+  
   // Technician summary stats (for the sidebar)
   const techStats = {};
   filteredByDate.forEach(d => {
     const tech = d.technician_name || 'Non assigné';
     if (!techStats[tech]) {
-      techStats[tech] = { count: 0, revenue: 0 };
+      techStats[tech] = { count: 0, revenue: 0, totalDuration: 0, durationCount: 0 };
     }
     techStats[tech].count++;
     techStats[tech].revenue += rmaRevenueMap[d.rma?.id] || 0;
+    
+    // Track duration for this tech
+    const dur = calculateDays(d, stageFrom, stageTo);
+    if (dur !== null && dur >= 0) {
+      techStats[tech].totalDuration += dur;
+      techStats[tech].durationCount++;
+    }
   });
   
   const techArray = Object.entries(techStats)
-    .map(([name, s]) => ({ name, count: s.count, revenue: s.revenue }))
+    .map(([name, s]) => ({ 
+      name, 
+      count: s.count, 
+      revenue: s.revenue,
+      avgDuration: s.durationCount > 0 ? s.totalDuration / s.durationCount : 0,
+      devicesPerDay: s.count / workingDays
+    }))
     .sort((a, b) => b.count - a.count);
+  
+  // PDF Report Generation
+  const generateKPIReport = async () => {
+    const loadJsPDF = () => import('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js').then(() => window.jspdf.jsPDF);
+    
+    try {
+      const jsPDF = await loadJsPDF();
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = 210;
+      const margin = 15;
+      const contentWidth = pageWidth - (margin * 2);
+      let y = 20;
+      
+      // Colors
+      const green = [0, 166, 81];
+      const darkGray = [51, 51, 51];
+      const lightGray = [128, 128, 128];
+      
+      // Header
+      pdf.setFillColor(...green);
+      pdf.rect(0, 0, pageWidth, 35, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(22);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('RAPPORT KPI - LIGHTHOUSE FRANCE', margin, 22);
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, margin, 30);
+      
+      y = 45;
+      
+      // Period Info
+      pdf.setTextColor(...darkGray);
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Période analysée', margin, y);
+      y += 7;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      pdf.text(`Du ${new Date(dateFrom).toLocaleDateString('fr-FR')} au ${new Date(dateTo).toLocaleDateString('fr-FR')} (${periodDays} jours, ~${workingDays} jours ouvrés)`, margin, y);
+      y += 5;
+      pdf.text(`Type de service: ${serviceFilter === 'all' ? 'Tous' : serviceFilter === 'calibration' ? 'Étalonnage' : 'Réparation'}`, margin, y);
+      y += 5;
+      pdf.text(`Statut: ${statusFilter === 'shipped' ? 'Expédiés uniquement' : 'Tous les appareils'}`, margin, y);
+      y += 5;
+      pdf.text(`Analyse: ${stageOptions.find(s => s.value === stageFrom)?.label} → ${stageOptions.find(s => s.value === stageTo)?.label}`, margin, y);
+      if (selectedTech) {
+        y += 5;
+        pdf.text(`Technicien: ${selectedTech}`, margin, y);
+      }
+      
+      y += 12;
+      
+      // Key Metrics Box
+      pdf.setFillColor(245, 245, 245);
+      pdf.roundedRect(margin, y, contentWidth, 45, 3, 3, 'F');
+      y += 8;
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...green);
+      pdf.text('MÉTRIQUES CLÉS', margin + 5, y);
+      y += 8;
+      
+      pdf.setTextColor(...darkGray);
+      pdf.setFontSize(10);
+      
+      // Row 1
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`${totalDevices}`, margin + 5, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('appareils', margin + 20, y);
+      
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`${avgDays.toFixed(1)}j`, margin + 55, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('durée moyenne', margin + 70, y);
+      
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`${totalRevenue.toLocaleString('fr-FR')} €`, margin + 115, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('CA total', margin + 145, y);
+      
+      y += 10;
+      
+      // Row 2
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`${avgDevicesPerDay.toFixed(2)}`, margin + 5, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('appareils/jour', margin + 20, y);
+      
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`${avgPricePerDevice.toFixed(0)} €`, margin + 55, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('prix moy./appareil', margin + 75, y);
+      
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`${techArray.length}`, margin + 115, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('techniciens actifs', margin + 125, y);
+      
+      y += 20;
+      
+      // Technician Performance
+      if (techArray.length > 0) {
+        pdf.setFontSize(11);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...green);
+        pdf.text('PERFORMANCE PAR TECHNICIEN', margin, y);
+        y += 8;
+        
+        // Table header
+        pdf.setFillColor(0, 166, 81);
+        pdf.rect(margin, y - 4, contentWidth, 8, 'F');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(9);
+        pdf.text('Technicien', margin + 3, y);
+        pdf.text('Appareils', margin + 60, y);
+        pdf.text('App/Jour', margin + 85, y);
+        pdf.text('Durée Moy.', margin + 110, y);
+        pdf.text('CA', margin + 140, y);
+        pdf.text('Prix Moy.', margin + 160, y);
+        y += 6;
+        
+        pdf.setTextColor(...darkGray);
+        techArray.slice(0, 10).forEach((tech, i) => {
+          if (y > 270) {
+            pdf.addPage();
+            y = 20;
+          }
+          
+          // Alternating row background
+          if (i % 2 === 0) {
+            pdf.setFillColor(250, 250, 250);
+            pdf.rect(margin, y - 4, contentWidth, 7, 'F');
+          }
+          
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(tech.name.substring(0, 25), margin + 3, y);
+          pdf.text(tech.count.toString(), margin + 60, y);
+          pdf.text(tech.devicesPerDay.toFixed(2), margin + 85, y);
+          pdf.text(`${tech.avgDuration.toFixed(1)}j`, margin + 110, y);
+          pdf.text(`${tech.revenue.toLocaleString('fr-FR')} €`, margin + 140, y);
+          const avgPrice = tech.count > 0 ? tech.revenue / tech.count : 0;
+          pdf.text(`${avgPrice.toFixed(0)} €`, margin + 160, y);
+          y += 7;
+        });
+        
+        // Totals row
+        pdf.setFillColor(230, 230, 230);
+        pdf.rect(margin, y - 4, contentWidth, 8, 'F');
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('TOTAL', margin + 3, y);
+        pdf.text(totalDevices.toString(), margin + 60, y);
+        pdf.text(avgDevicesPerDay.toFixed(2), margin + 85, y);
+        pdf.text(`${avgDays.toFixed(1)}j`, margin + 110, y);
+        pdf.text(`${totalRevenue.toLocaleString('fr-FR')} €`, margin + 140, y);
+        pdf.text(`${avgPricePerDevice.toFixed(0)} €`, margin + 160, y);
+        y += 15;
+      }
+      
+      // Device List (first 30)
+      if (devicesWithDuration.length > 0 && y < 200) {
+        pdf.setFontSize(11);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...green);
+        pdf.text(`DÉTAIL DES APPAREILS (${Math.min(30, devicesWithDuration.length)} sur ${devicesWithDuration.length})`, margin, y);
+        y += 8;
+        
+        // Table header
+        pdf.setFillColor(0, 166, 81);
+        pdf.rect(margin, y - 4, contentWidth, 8, 'F');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(8);
+        pdf.text('RMA', margin + 2, y);
+        pdf.text('Client', margin + 25, y);
+        pdf.text('Appareil', margin + 70, y);
+        pdf.text('Tech', margin + 110, y);
+        pdf.text('Durée', margin + 145, y);
+        pdf.text('CA', margin + 165, y);
+        y += 6;
+        
+        pdf.setTextColor(...darkGray);
+        devicesWithDuration.slice(0, 30).forEach((d, i) => {
+          if (y > 280) {
+            pdf.addPage();
+            y = 20;
+          }
+          
+          if (i % 2 === 0) {
+            pdf.setFillColor(250, 250, 250);
+            pdf.rect(margin, y - 3, contentWidth, 6, 'F');
+          }
+          
+          pdf.setFont('helvetica', 'normal');
+          pdf.text((d.rma?.request_number || '—').substring(0, 12), margin + 2, y);
+          pdf.text((d.rma?.companies?.name || '—').substring(0, 20), margin + 25, y);
+          pdf.text((d.model_name || d.model || '—').substring(0, 18), margin + 70, y);
+          pdf.text((d.technician_name || '—').substring(0, 15), margin + 110, y);
+          pdf.text(d.duration !== null ? `${d.duration.toFixed(1)}j` : '—', margin + 145, y);
+          pdf.text(`${(rmaRevenueMap[d.rma?.id] || 0).toFixed(0)} €`, margin + 165, y);
+          y += 6;
+        });
+      }
+      
+      // Footer on each page
+      const pageCount = pdf.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        pdf.setPage(i);
+        pdf.setFontSize(8);
+        pdf.setTextColor(...lightGray);
+        pdf.text(`Lighthouse France - Rapport KPI - Page ${i}/${pageCount}`, pageWidth / 2, 290, { align: 'center' });
+      }
+      
+      // Save
+      const fileName = `KPI_Report_${dateFrom}_${dateTo}${selectedTech ? '_' + selectedTech.replace(/\s/g, '_') : ''}.pdf`;
+      pdf.save(fileName);
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Erreur lors de la génération du PDF');
+    }
+  };
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">📈 Analyse KPI</h1>
+        <button
+          onClick={generateKPIReport}
+          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium flex items-center gap-2"
+        >
+          📄 Générer Rapport PDF
+        </button>
       </div>
       
       {/* Filters Row */}
@@ -2486,7 +2736,7 @@ function KPISheet({ requests = [], clients = [] }) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-gray-800 truncate">{tech.name}</p>
-                      <p className="text-xs text-gray-500">{tech.count} appareils • {tech.revenue.toLocaleString('fr-FR')} €</p>
+                      <p className="text-xs text-gray-500">{tech.count} app. • {tech.devicesPerDay.toFixed(2)}/j • {tech.revenue.toLocaleString('fr-FR')} €</p>
                     </div>
                   </div>
                 </button>
@@ -2501,22 +2751,30 @@ function KPISheet({ requests = [], clients = [] }) {
         {/* Right Side - Data Table */}
         <div className="lg:col-span-3">
           {/* Summary Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
             <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-blue-500">
               <p className="text-2xl font-bold text-gray-800">{totalDevices}</p>
-              <p className="text-sm text-gray-500">Appareils total</p>
+              <p className="text-xs text-gray-500">Appareils total</p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-green-500">
-              <p className="text-2xl font-bold text-gray-800">{devicesWithData}</p>
-              <p className="text-sm text-gray-500">Avec données timing</p>
+              <p className="text-2xl font-bold text-gray-800">{avgDevicesPerDay.toFixed(2)}</p>
+              <p className="text-xs text-gray-500">Appareils/jour</p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-purple-500">
               <p className="text-2xl font-bold text-gray-800">{avgDays.toFixed(1)}j</p>
-              <p className="text-sm text-gray-500">Moyenne {stageOptions.find(s => s.value === stageFrom)?.label} → {stageOptions.find(s => s.value === stageTo)?.label}</p>
+              <p className="text-xs text-gray-500">Durée moyenne</p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-amber-500">
               <p className="text-2xl font-bold text-gray-800">{totalRevenue.toLocaleString('fr-FR')} €</p>
-              <p className="text-sm text-gray-500">CA Total</p>
+              <p className="text-xs text-gray-500">CA Total</p>
+            </div>
+            <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-indigo-500">
+              <p className="text-2xl font-bold text-gray-800">{avgPricePerDevice.toFixed(0)} €</p>
+              <p className="text-xs text-gray-500">Prix moy./appareil</p>
+            </div>
+            <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-cyan-500">
+              <p className="text-2xl font-bold text-gray-800">{workingDays}j</p>
+              <p className="text-xs text-gray-500">Jours ouvrés</p>
             </div>
           </div>
           
@@ -2607,7 +2865,8 @@ function KPISheet({ requests = [], clients = [] }) {
                   <tfoot className="bg-gray-100 border-t-2 border-gray-300">
                     <tr className="font-bold">
                       <td colSpan={6} className="px-4 py-3 text-right text-gray-700">
-                        TOTAL ({totalDevices} appareils, {devicesWithData} avec timing)
+                        <div>TOTAL: {totalDevices} appareils</div>
+                        <div className="text-xs font-normal text-gray-500">{avgDevicesPerDay.toFixed(2)} app/jour • {workingDays} jours ouvrés</div>
                       </td>
                       <td className="px-4 py-3 text-right text-purple-700">
                         Moy: {avgDays.toFixed(1)}j
@@ -2616,6 +2875,8 @@ function KPISheet({ requests = [], clients = [] }) {
                       </td>
                       <td className="px-4 py-3 text-right text-green-700">
                         {totalRevenue.toLocaleString('fr-FR')} €
+                        <br />
+                        <span className="font-normal text-xs text-gray-500">Moy: {avgPricePerDevice.toFixed(0)} €/app</span>
                       </td>
                     </tr>
                   </tfoot>
