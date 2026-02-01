@@ -9805,7 +9805,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                       });
                     
                     // Add URL-based documents only if not already in attachments
-                    const hasDevis = docs.some(d => d.label === 'Devis' || d.label.includes('Devis'));
+                    const hasDevis = docs.some(d => d.label === 'Devis');
                     const hasDevisSigne = docs.some(d => d.label === 'Devis Signé');
                     const hasBC = docs.some(d => d.label === 'Bon de Commande');
                     const hasCert = docs.some(d => d.label.includes('Certificat'));
