@@ -9934,7 +9934,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   
                   {/* DEVICE DOCUMENTS (BL, UPS, Report, Certificate) */}
                   {request.request_devices?.map(device => (
-                    <React.Fragment key={device.id}>
+                    <div key={device.id} className="contents">
                       {device.bl_url && (
                         <a 
                           href={device.bl_url}
@@ -10011,7 +10011,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                           </svg>
                         </a>
                       )}
-                    </React.Fragment>
+                    </div>
                   ))}
                   
                   {/* Empty state if nothing */}
