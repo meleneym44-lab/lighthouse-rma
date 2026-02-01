@@ -3155,7 +3155,11 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                       const serviceType = device.service_type || device.rma.requested_service || 'calibration';
                       
                       return (
-                        <tr key={`${device.rma.id}-${device.id || idx}`} className="hover:bg-gray-50">
+                        <tr 
+                          key={`${device.rma.id}-${device.id || idx}`} 
+                          className="hover:bg-gray-50 cursor-pointer"
+                          onClick={() => onSelectDevice(device, device.rma)}
+                        >
                           <td className="px-4 py-3">
                             <span className="font-mono font-bold text-[#00A651]">{device.rma.request_number}</span>
                             <p className="text-xs text-gray-400">{device.rma.companies?.name}</p>
@@ -3174,7 +3178,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                           <td className="px-4 py-3">
                             <DeviceProgressBar device={device} rma={device.rma} />
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                             {(() => {
                               const category = getDeviceCategory(device);
                               if (category === 'qc') {
@@ -3669,12 +3673,18 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
 // RMA ACTIONS COMPONENT - RMA-level action buttons
 // ============================================
 function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenant, onStartService, saving, setSaving }) {
+  const [showReceiveModal, setShowReceiveModal] = React.useState(false);
+  const [selectedToReceive, setSelectedToReceive] = React.useState(new Set());
+  
+  // Devices that haven't been received yet
+  const unreceiveDevices = devices.filter(d => !d.received_at && d.status !== 'received' && !['calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped'].includes(d.status));
+  const receivedDevices = devices.filter(d => d.received_at || d.status === 'received' || ['calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped'].includes(d.status));
+  
   // Determine what actions are available based on RMA/device state
   const isWaitingForDevice = ['approved', 'waiting_bc', 'waiting_device', 'waiting_po', 'bc_review', 'bc_approved'].includes(rma.status) && 
-    !devices.some(d => d.status === 'received' || d.status === 'in_queue');
+    unreceiveDevices.length > 0;
   
-  const isReceived = rma.status === 'received' || rma.status === 'in_queue' || 
-    devices.some(d => ['received', 'in_queue'].includes(d.status));
+  const hasReceivedDevices = receivedDevices.length > 0;
   
   const allQCComplete = devices.length > 0 && devices.every(d => d.qc_complete);
   const allReadyToShip = devices.length > 0 && devices.every(d => d.status === 'ready_to_ship' || d.qc_complete);
@@ -3686,24 +3696,42 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
     return sum + d.additional_work_items.reduce((s, item) => s + (parseFloat(item.price) || 0), 0);
   }, 0);
   
-  // Mark RMA as received
-  const markAsReceived = async () => {
+  // Mark selected devices as received
+  const markSelectedAsReceived = async () => {
+    if (selectedToReceive.size === 0) {
+      notify('Sélectionnez au moins un appareil', 'error');
+      return;
+    }
+    
     setSaving(true);
     try {
-      await supabase.from('service_requests').update({ 
-        status: 'received', 
-        received_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }).eq('id', rma.id);
+      const now = new Date().toISOString();
       
-      // Also update all devices
-      for (const device of devices) {
+      // Update selected devices
+      for (const deviceId of selectedToReceive) {
         await supabase.from('request_devices').update({ 
-          status: 'received'
-        }).eq('id', device.id);
+          status: 'received',
+          received_at: now
+        }).eq('id', deviceId);
       }
       
-      notify('✅ RMA marqué comme reçu!');
+      // If this is the first device(s) being received, update RMA status
+      if (!rma.received_at) {
+        await supabase.from('service_requests').update({ 
+          status: 'received', 
+          received_at: now,
+          updated_at: now
+        }).eq('id', rma.id);
+      } else {
+        // Just update the timestamp
+        await supabase.from('service_requests').update({ 
+          updated_at: now
+        }).eq('id', rma.id);
+      }
+      
+      notify(`✅ ${selectedToReceive.size} appareil(s) marqué(s) comme reçu(s)!`);
+      setShowReceiveModal(false);
+      setSelectedToReceive(new Set());
       reload();
     } catch (err) {
       notify('Erreur: ' + err.message, 'error');
@@ -3723,9 +3751,10 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
       notify('✅ Service démarré!');
       reload();
       
-      // Open service modal for first device
-      if (devices.length > 0 && onStartService) {
-        onStartService(devices[0]);
+      // Open service modal for first received device
+      const firstReceived = devices.find(d => d.status === 'received' || d.received_at);
+      if (firstReceived && onStartService) {
+        onStartService(firstReceived);
       }
     } catch (err) {
       notify('Erreur: ' + err.message, 'error');
@@ -3739,110 +3768,235 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
   }
   
   return (
-    <div className="bg-white rounded-xl shadow-sm border p-4">
-      <div className="flex flex-wrap items-center gap-3">
-        {/* Waiting for device - show receive button */}
-        {isWaitingForDevice && (
-          <button
-            onClick={markAsReceived}
-            disabled={saving}
-            className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
-          >
-            {saving ? '⏳' : '📦'} Marquer comme Reçu
-          </button>
-        )}
-        
-        {/* Received - show start service button */}
-        {isReceived && !devices.some(d => d.service_findings || d.report_complete) && (
-          <button
-            onClick={startService}
-            disabled={saving}
-            className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
-          >
-            {saving ? '⏳' : '🔧'} Démarrer Service
-          </button>
-        )}
-        
-        {/* Additional work found - show avenant button */}
-        {hasAdditionalWork && (
-          <button
-            onClick={onOpenAvenant}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium flex items-center gap-2"
-          >
-            📄 Créer Avenant (€{totalAdditionalWork.toFixed(2)})
-          </button>
-        )}
-        
-        {/* Avenant sent indicator */}
-        {rma.avenant_sent_at && (
-          <span className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium">
-            📄 Avenant envoyé {rma.avenant_approved_at ? '✓ Approuvé' : '⏳ En attente'}
-          </span>
-        )}
-        
-        {/* Ready to ship - show shipping button */}
-        {isReadyToShip && (
-          <div className="flex items-center gap-3">
+    <>
+      <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Waiting for device - show receive button */}
+          {isWaitingForDevice && (
             <button
-              onClick={onOpenShipping}
-              className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium flex items-center gap-2"
-            >
-              🚚 Préparer Expédition
-            </button>
-            <button
-              onClick={async () => {
-                if (!confirm('Marquer tous les appareils comme expédiés et fermer le RMA?')) return;
-                setSaving(true);
-                try {
-                  console.log('Marking devices as shipped...');
-                  for (const device of devices) {
-                    const { error: deviceError } = await supabase.from('request_devices').update({ 
-                      status: 'shipped', 
-                      shipped_at: new Date().toISOString()
-                    }).eq('id', device.id);
-                    if (deviceError) {
-                      console.error('Device update error:', deviceError);
-                      throw deviceError;
-                    }
-                    console.log('Device', device.id, 'marked as shipped');
-                  }
-                  
-                  console.log('Marking RMA as shipped...');
-                  const { error: rmaError } = await supabase.from('service_requests').update({ 
-                    status: 'shipped', 
-                    shipped_at: new Date().toISOString(), 
-                    updated_at: new Date().toISOString() 
-                  }).eq('id', rma.id);
-                  if (rmaError) {
-                    console.error('RMA update error:', rmaError);
-                    throw rmaError;
-                  }
-                  console.log('RMA', rma.id, 'marked as shipped');
-                  
-                  notify('🚚 RMA marqué comme expédié!');
-                  reload();
-                } catch (err) {
-                  console.error('Mark shipped error:', err);
-                  notify('Erreur: ' + (err.message || JSON.stringify(err)), 'error');
-                }
-                setSaving(false);
+              onClick={() => {
+                setSelectedToReceive(new Set());
+                setShowReceiveModal(true);
               }}
               disabled={saving}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center gap-2 disabled:opacity-50"
+              className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
             >
-              {saving ? '⏳...' : '📦 Marquer Expédié'}
+              {saving ? '⏳' : '📦'} Réceptionner Appareils ({unreceiveDevices.length})
             </button>
-          </div>
-        )}
-        
-        {/* Status indicator when no actions available */}
-        {!isWaitingForDevice && !isReceived && !isReadyToShip && !hasAdditionalWork && devices.length > 0 && (
-          <span className="text-sm text-gray-500">
-            Service en cours... Cliquez sur un appareil pour voir/modifier les détails.
-          </span>
-        )}
+          )}
+          
+          {/* Some devices received - show receive more + start service */}
+          {hasReceivedDevices && unreceiveDevices.length > 0 && (
+            <button
+              onClick={() => {
+                setSelectedToReceive(new Set());
+                setShowReceiveModal(true);
+              }}
+              disabled={saving}
+              className="px-4 py-2 bg-cyan-400 hover:bg-cyan-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
+            >
+              📦 + Réceptionner ({unreceiveDevices.length} restant)
+            </button>
+          )}
+          
+          {/* Received - show start service button */}
+          {hasReceivedDevices && !devices.some(d => d.service_findings || d.report_complete) && (
+            <button
+              onClick={startService}
+              disabled={saving}
+              className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
+            >
+              {saving ? '⏳' : '🔧'} Démarrer Service
+            </button>
+          )}
+          
+          {/* Additional work found - show avenant button */}
+          {hasAdditionalWork && (
+            <button
+              onClick={onOpenAvenant}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium flex items-center gap-2"
+            >
+              📄 Créer Avenant (€{totalAdditionalWork.toFixed(2)})
+            </button>
+          )}
+          
+          {/* Avenant sent indicator */}
+          {rma.avenant_sent_at && (
+            <span className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium">
+              📄 Avenant envoyé {rma.avenant_approved_at ? '✓ Approuvé' : '⏳ En attente'}
+            </span>
+          )}
+          
+          {/* Ready to ship - show shipping button */}
+          {isReadyToShip && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onOpenShipping}
+                className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium flex items-center gap-2"
+              >
+                🚚 Préparer Expédition
+              </button>
+              <button
+                onClick={async () => {
+                  if (!confirm('Marquer tous les appareils comme expédiés et fermer le RMA?')) return;
+                  setSaving(true);
+                  try {
+                    console.log('Marking devices as shipped...');
+                    for (const device of devices) {
+                      const { error: deviceError } = await supabase.from('request_devices').update({ 
+                        status: 'shipped', 
+                        shipped_at: new Date().toISOString()
+                      }).eq('id', device.id);
+                      if (deviceError) {
+                        console.error('Device update error:', deviceError);
+                        throw deviceError;
+                      }
+                      console.log('Device', device.id, 'marked as shipped');
+                    }
+                    
+                    console.log('Marking RMA as shipped...');
+                    const { error: rmaError } = await supabase.from('service_requests').update({ 
+                      status: 'shipped', 
+                      shipped_at: new Date().toISOString(), 
+                      updated_at: new Date().toISOString() 
+                    }).eq('id', rma.id);
+                    if (rmaError) {
+                      console.error('RMA update error:', rmaError);
+                      throw rmaError;
+                    }
+                    console.log('RMA', rma.id, 'marked as shipped');
+                    
+                    notify('🚚 RMA marqué comme expédié!');
+                    reload();
+                  } catch (err) {
+                    console.error('Mark shipped error:', err);
+                    notify('Erreur: ' + (err.message || JSON.stringify(err)), 'error');
+                  }
+                  setSaving(false);
+                }}
+                disabled={saving}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center gap-2 disabled:opacity-50"
+              >
+                {saving ? '⏳...' : '📦 Marquer Expédié'}
+              </button>
+            </div>
+          )}
+          
+          {/* Status indicator */}
+          {receivedDevices.length > 0 && unreceiveDevices.length > 0 && (
+            <span className="text-sm text-amber-600 bg-amber-50 px-3 py-1 rounded-lg">
+              ⚠️ {receivedDevices.length}/{devices.length} appareils reçus
+            </span>
+          )}
+          
+          {/* Status indicator when no actions available */}
+          {!isWaitingForDevice && !hasReceivedDevices && !isReadyToShip && !hasAdditionalWork && devices.length > 0 && (
+            <span className="text-sm text-gray-500">
+              Service en cours... Cliquez sur un appareil pour voir/modifier les détails.
+            </span>
+          )}
+        </div>
       </div>
-    </div>
+      
+      {/* Device Receiving Modal */}
+      {showReceiveModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[80vh] overflow-hidden">
+            <div className="p-4 border-b bg-cyan-50">
+              <h3 className="text-lg font-bold text-gray-800">📦 Réceptionner les appareils</h3>
+              <p className="text-sm text-gray-600 mt-1">Sélectionnez les appareils qui sont arrivés</p>
+            </div>
+            
+            <div className="p-4 max-h-[50vh] overflow-y-auto">
+              {unreceiveDevices.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">Tous les appareils ont été reçus</p>
+              ) : (
+                <div className="space-y-2">
+                  {/* Select all button */}
+                  <button
+                    onClick={() => {
+                      if (selectedToReceive.size === unreceiveDevices.length) {
+                        setSelectedToReceive(new Set());
+                      } else {
+                        setSelectedToReceive(new Set(unreceiveDevices.map(d => d.id)));
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg text-left font-medium"
+                  >
+                    {selectedToReceive.size === unreceiveDevices.length ? '☑️ Tout désélectionner' : '☐ Tout sélectionner'}
+                  </button>
+                  
+                  {unreceiveDevices.map(device => (
+                    <label 
+                      key={device.id}
+                      className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                        selectedToReceive.has(device.id) ? 'bg-cyan-50 border-cyan-300' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedToReceive.has(device.id)}
+                        onChange={(e) => {
+                          const newSet = new Set(selectedToReceive);
+                          if (e.target.checked) {
+                            newSet.add(device.id);
+                          } else {
+                            newSet.delete(device.id);
+                          }
+                          setSelectedToReceive(newSet);
+                        }}
+                        className="w-5 h-5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                      />
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-800">{device.model_name || 'Appareil'}</p>
+                        <p className="text-sm text-gray-500 font-mono">SN: {device.serial_number || '—'}</p>
+                      </div>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {device.service_type === 'repair' ? '🔧 Rép.' : '🔬 Étal.'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              
+              {/* Already received devices */}
+              {receivedDevices.length > 0 && (
+                <div className="mt-4 pt-4 border-t">
+                  <p className="text-sm text-gray-500 mb-2">Déjà reçus:</p>
+                  <div className="space-y-1">
+                    {receivedDevices.map(device => (
+                      <div key={device.id} className="flex items-center gap-2 text-sm text-gray-400 bg-gray-50 p-2 rounded">
+                        <span>✓</span>
+                        <span>{device.model_name || 'Appareil'}</span>
+                        <span className="font-mono text-xs">SN: {device.serial_number}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t bg-gray-50 flex items-center justify-between">
+              <button
+                onClick={() => setShowReceiveModal(false)}
+                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={markSelectedAsReceived}
+                disabled={saving || selectedToReceive.size === 0}
+                className="px-6 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-bold disabled:opacity-50 flex items-center gap-2"
+              >
+                {saving ? '⏳ Enregistrement...' : `📦 Réceptionner (${selectedToReceive.size})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
