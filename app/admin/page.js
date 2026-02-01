@@ -2094,6 +2094,7 @@ export default function AdminPortal() {
         {/* Full-page RMA View */}
         {selectedRMA ? (
           <RMAFullPage 
+            key={`rma-${selectedRMA.id}-${selectedDeviceFromDashboard?.device?.id || 'none'}`}
             rma={selectedRMA} 
             onBack={() => { setSelectedRMA(null); setSelectedDeviceFromDashboard(null); }} 
             notify={notify} 
@@ -3673,8 +3674,8 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
 // RMA ACTIONS COMPONENT - RMA-level action buttons
 // ============================================
 function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenant, onStartService, saving, setSaving }) {
-  const [showReceiveModal, setShowReceiveModal] = React.useState(false);
-  const [selectedToReceive, setSelectedToReceive] = React.useState(new Set());
+  const [showReceiveModal, setShowReceiveModal] = useState(false);
+  const [selectedToReceive, setSelectedToReceive] = useState(new Set());
   
   // Devices that haven't been received yet
   const unreceiveDevices = devices.filter(d => !d.received_at && d.status !== 'received' && !['calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped'].includes(d.status));
@@ -4016,6 +4017,21 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   const [showShippingModal, setShowShippingModal] = useState(false);
   const [showServiceModal, setShowServiceModal] = useState(null); // Device to show service modal for
   
+  // Effect to handle initialDevice changes (when coming from dashboard)
+  useEffect(() => {
+    if (initialDevice) {
+      setSelectedDevice(initialDevice);
+      setViewMode('device');
+    }
+  }, [initialDevice?.id]); // Only trigger when device ID changes
+  
+  // Safe back to overview handler
+  const handleBackToOverview = () => {
+    setSelectedDevice(null);
+    setViewMode('overview');
+    setDeviceTab('details');
+  };
+  
   // Safety check
   if (!rma) {
     return (
@@ -4217,7 +4233,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         {/* Back to RMA Overview */}
         <div className="flex items-center gap-4">
           <button 
-            onClick={() => { setViewMode('overview'); setSelectedDevice(null); setDeviceTab('details'); }}
+            onClick={handleBackToOverview}
             className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-gray-700 font-medium"
           >
             ← Retour au RMA
