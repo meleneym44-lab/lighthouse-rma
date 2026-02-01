@@ -2026,14 +2026,14 @@ export default function AdminPortal() {
   
   const sheets = [
     { id: 'dashboard', label: 'Tableau de Bord', icon: '📊' },
-    { id: 'kpi', label: 'KPIs', icon: '📈' },
+    { id: 'messages', label: 'Messages', icon: '💬', badge: totalUnreadMessages > 0 ? totalUnreadMessages : (openChatsCount > 0 ? openChatsCount : null) },
     { id: 'requests', label: 'Demandes', icon: '📋', badge: totalBadge > 0 ? totalBadge : null },
     { id: 'parts', label: 'Pièces Détachées', icon: '🔩', badge: partsOrdersActionCount > 0 ? partsOrdersActionCount : null },
-    { id: 'clients', label: 'Clients', icon: '👥' },
-    { id: 'messages', label: 'Messages', icon: '💬', badge: totalUnreadMessages > 0 ? totalUnreadMessages : (openChatsCount > 0 ? openChatsCount : null) },
-    { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
-    { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
     { id: 'rentals', label: 'Locations', icon: '📅', badge: rentalActionCount > 0 ? rentalActionCount : null },
+    { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
+    { id: 'clients', label: 'Clients', icon: '👥' },
+    { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
+    { id: 'kpi', label: 'KPIs', icon: '📈' },
     { id: 'settings', label: 'Paramètres', icon: '⚙️' },
     ...(isAdmin ? [{ id: 'admin', label: 'Admin', icon: '🔐' }] : [])
   ];
