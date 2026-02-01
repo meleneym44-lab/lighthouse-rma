@@ -2235,8 +2235,8 @@ function KPISheet({ requests = [], clients = [] }) {
   const [selectedTech, setSelectedTech] = useState(null);
   
   // Stage-to-stage analysis
-  const [stageFrom, setStageFrom] = useState('received');
-  const [stageTo, setStageTo] = useState('shipped');
+  const [stageFrom, setStageFrom] = useState('file_attente');
+  const [stageTo, setStageTo] = useState('qc_complete');
   
   // Quick date presets
   const setPreset = (days) => {
@@ -2255,6 +2255,8 @@ function KPISheet({ requests = [], clients = [] }) {
   const stageOptions = [
     { value: 'created', label: 'Créé (RMA soumis)' },
     { value: 'received', label: 'Reçu' },
+    { value: 'file_attente', label: 'File d\'attente (en attente BC)' },
+    { value: 'bc_approved', label: 'BC approuvé' },
     { value: 'calibration_start', label: 'Début étalonnage' },
     { value: 'report_complete', label: 'Rapport terminé' },
     { value: 'qc_complete', label: 'QC terminé' },
@@ -2267,6 +2269,8 @@ function KPISheet({ requests = [], clients = [] }) {
     switch(stage) {
       case 'created': return rma?.created_at;
       case 'received': return device.received_at || rma?.received_at;
+      case 'file_attente': return device.received_at || rma?.received_at; // Same as received - when they enter queue
+      case 'bc_approved': return rma?.bc_approved_at;
       case 'calibration_start': return device.calibration_started_at;
       case 'report_complete': return device.report_complete ? (device.report_completed_at || device.updated_at) : null;
       case 'qc_complete': return device.qc_complete ? (device.qc_completed_at || device.updated_at) : null;
