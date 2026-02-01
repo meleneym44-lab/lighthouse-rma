@@ -7870,8 +7870,9 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   // Generate history from status if no history in DB
   const getStatusHistory = () => {
     const statusHistory = [];
+    const devices = request.request_devices || [];
     
-    // Always add submission
+    // 1. Submission
     statusHistory.push({
       id: 'submitted',
       event_type: 'submitted',
@@ -7879,17 +7880,118 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       event_date: request.submitted_at || request.created_at
     });
     
-    // Add current status if different from submitted
-    if (request.status !== 'submitted') {
+    // 2. RMA/Quote created
+    if (request.request_number) {
       statusHistory.push({
-        id: 'current',
-        event_type: request.status,
-        event_description: style.label,
-        event_date: request.updated_at || request.created_at
+        id: 'rma_created',
+        event_type: 'quote_sent',
+        event_description: `RMA ${request.request_number} créé`,
+        event_date: request.validated_at || request.created_at
       });
     }
     
-    return statusHistory;
+    // 3. Quote sent
+    if (request.quote_sent_at) {
+      statusHistory.push({
+        id: 'quote_sent',
+        event_type: 'quote_sent',
+        event_description: 'Devis envoyé',
+        event_date: request.quote_sent_at
+      });
+    }
+    
+    // 4. BC/Quote approved
+    if (request.bc_approved_at || request.quote_approved_at) {
+      statusHistory.push({
+        id: 'approved',
+        event_type: 'approved',
+        event_description: 'Devis approuvé',
+        event_date: request.bc_approved_at || request.quote_approved_at
+      });
+    }
+    
+    // 5. Device received
+    const receivedDevice = devices.find(d => d.received_at);
+    if (receivedDevice?.received_at) {
+      statusHistory.push({
+        id: 'received',
+        event_type: 'received',
+        event_description: 'Appareil(s) reçu(s)',
+        event_date: receivedDevice.received_at
+      });
+    }
+    
+    // 6. Work started (in_progress, calibration_in_progress, repair_in_progress)
+    const inProgressDevice = devices.find(d => 
+      ['in_progress', 'calibration_in_progress', 'repair_in_progress'].includes(d.status) ||
+      d.work_started_at
+    );
+    if (inProgressDevice?.work_started_at) {
+      const serviceLabel = inProgressDevice.service_type === 'repair' ? 'Réparation' : 'Étalonnage';
+      statusHistory.push({
+        id: 'in_progress',
+        event_type: 'in_progress',
+        event_description: `${serviceLabel} en cours`,
+        event_date: inProgressDevice.work_started_at
+      });
+    }
+    
+    // 7. QC Complete
+    const qcDevice = devices.find(d => d.qc_complete || d.qc_completed_at);
+    if (qcDevice?.qc_completed_at) {
+      statusHistory.push({
+        id: 'qc_complete',
+        event_type: 'quality_check',
+        event_description: 'Contrôle qualité terminé',
+        event_date: qcDevice.qc_completed_at
+      });
+    }
+    
+    // 8. Ready to ship
+    const readyDevice = devices.find(d => d.status === 'ready_to_ship' || d.ready_at);
+    if (readyDevice?.ready_at) {
+      statusHistory.push({
+        id: 'ready',
+        event_type: 'ready_to_ship',
+        event_description: 'Prêt pour expédition',
+        event_date: readyDevice.ready_at
+      });
+    }
+    
+    // 9. Shipped
+    const shippedDevice = devices.find(d => d.status === 'shipped' || d.shipped_at);
+    if (shippedDevice?.shipped_at) {
+      statusHistory.push({
+        id: 'shipped',
+        event_type: 'shipped',
+        event_description: 'Appareil(s) expédié(s)',
+        event_date: shippedDevice.shipped_at
+      });
+    }
+    
+    // 10. Avenant if applicable
+    if (request.avenant_sent_at) {
+      statusHistory.push({
+        id: 'avenant_sent',
+        event_type: 'avenant',
+        event_description: `Avenant envoyé (€${(request.avenant_total || 0).toFixed(2)})`,
+        event_date: request.avenant_sent_at
+      });
+    }
+    if (request.avenant_approved_at) {
+      statusHistory.push({
+        id: 'avenant_approved',
+        event_type: 'avenant_approved',
+        event_description: 'Avenant approuvé',
+        event_date: request.avenant_approved_at
+      });
+    }
+    
+    // Sort by date ascending
+    statusHistory.sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
+    
+    // Reverse for display (most recent first)
+    return statusHistory.reverse();
   };
 
   const displayHistory = history.length > 0 ? history : getStatusHistory();
@@ -7922,12 +8024,6 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 {isPartsOrder ? 'Commande de pièces' : 'Demande de service'} • Soumis le {new Date(request.created_at).toLocaleDateString('fr-FR')}
               </p>
             </div>
-            {request.quote_total && (
-              <div className="text-right">
-                <p className="text-sm text-gray-500">Total</p>
-                <p className="text-2xl font-bold text-[#1E3A5F]">{request.quote_total.toFixed(2)} €</p>
-              </div>
-            )}
           </div>
           
           {/* Per-Device Progress Bars */}
