@@ -2222,9 +2222,15 @@ function LoginPage() {
 // ============================================
 function KPISheet({ requests = [], clients = [] }) {
   // Date range state
-  const [dateRange, setDateRange] = useState({
-    from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    to: new Date().toISOString().split('T')[0]
+  const [dateRange, setDateRange] = useState(() => {
+    try {
+      return {
+        from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        to: new Date().toISOString().split('T')[0]
+      };
+    } catch {
+      return { from: '2025-01-01', to: '2025-12-31' };
+    }
   });
   
   // Stage filter for time analysis
@@ -2233,33 +2239,37 @@ function KPISheet({ requests = [], clients = [] }) {
   
   // Quick date presets
   const setPreset = (preset) => {
-    const now = new Date();
-    let from;
-    
-    switch(preset) {
-      case 'week':
-        from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        break;
-      case 'month':
-        from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        break;
-      case '3months':
-        from = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-        break;
-      case 'year':
-        from = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
-        break;
-      case 'ytd':
-        from = new Date(now.getFullYear(), 0, 1);
-        break;
-      default:
-        from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    try {
+      let from;
+      const now = new Date();
+      
+      switch(preset) {
+        case 'week':
+          from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case 'month':
+          from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+          break;
+        case '3months':
+          from = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+          break;
+        case 'year':
+          from = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+          break;
+        case 'ytd':
+          from = new Date(now.getFullYear(), 0, 1);
+          break;
+        default:
+          from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      }
+      
+      setDateRange({
+        from: from.toISOString().split('T')[0],
+        to: new Date().toISOString().split('T')[0]
+      });
+    } catch (e) {
+      console.error('Preset error:', e);
     }
-    
-    setDateRange({
-      from: from.toISOString().split('T')[0],
-      to: new Date().toISOString().split('T')[0]
-    });
   };
   
   // Safeguard requests
@@ -2273,79 +2283,98 @@ function KPISheet({ requests = [], clients = [] }) {
     (r.request_devices || []).map(d => ({ ...d, rma: r }))
   );
   
-  // Filter by date range - devices completed (shipped) in the period
-  const fromDate = new Date(dateRange.from);
-  const toDate = new Date(dateRange.to);
-  toDate.setHours(23, 59, 59, 999);
+  // Safe date parsing
+  let fromDate, toDate;
+  try {
+    fromDate = new Date(dateRange.from);
+    toDate = new Date(dateRange.to);
+    toDate.setHours(23, 59, 59, 999);
+  } catch {
+    fromDate = new Date('2025-01-01');
+    toDate = new Date();
+  }
   
   const devicesInPeriod = allDevices.filter(d => {
-    const shippedAt = d.shipped_at ? new Date(d.shipped_at) : null;
-    return shippedAt && shippedAt >= fromDate && shippedAt <= toDate;
+    try {
+      const shippedAt = d?.shipped_at ? new Date(d.shipped_at) : null;
+      return shippedAt && shippedAt >= fromDate && shippedAt <= toDate;
+    } catch { return false; }
   });
   
   const rmasInPeriod = rmaRequests.filter(r => {
-    const shippedAt = r.shipped_at ? new Date(r.shipped_at) : null;
-    return shippedAt && shippedAt >= fromDate && shippedAt <= toDate;
+    try {
+      const shippedAt = r?.shipped_at ? new Date(r.shipped_at) : null;
+      return shippedAt && shippedAt >= fromDate && shippedAt <= toDate;
+    } catch { return false; }
   });
   
   // Stage timestamp mapping
   const getStageTimestamp = (device, stage) => {
-    const rma = device.rma;
-    switch(stage) {
-      case 'submitted': return rma?.created_at;
-      case 'received': return device.received_at || rma?.received_at;
-      case 'quote_sent': return rma?.quote_sent_at;
-      case 'bc_approved': return rma?.bc_approved_at;
-      case 'calibration': return device.calibration_started_at;
-      case 'report': return device.report_complete ? (device.report_completed_at || device.updated_at) : null;
-      case 'qc': return device.qc_complete ? (device.qc_completed_at || device.updated_at) : null;
-      case 'ready': return device.qc_complete ? (device.qc_completed_at || device.updated_at) : null;
-      case 'shipped': return device.shipped_at || rma?.shipped_at;
-      default: return null;
-    }
+    try {
+      const rma = device?.rma;
+      switch(stage) {
+        case 'submitted': return rma?.created_at;
+        case 'received': return device?.received_at || rma?.received_at;
+        case 'quote_sent': return rma?.quote_sent_at;
+        case 'bc_approved': return rma?.bc_approved_at;
+        case 'calibration': return device?.calibration_started_at;
+        case 'report': return device?.report_complete ? (device?.report_completed_at || device?.updated_at) : null;
+        case 'qc': return device?.qc_complete ? (device?.qc_completed_at || device?.updated_at) : null;
+        case 'ready': return device?.qc_complete ? (device?.qc_completed_at || device?.updated_at) : null;
+        case 'shipped': return device?.shipped_at || rma?.shipped_at;
+        default: return null;
+      }
+    } catch { return null; }
   };
   
   // Calculate time between stages (in days)
   const calculateStageDuration = (device, fromStage, toStage) => {
-    const fromTime = getStageTimestamp(device, fromStage);
-    const toTime = getStageTimestamp(device, toStage);
-    
-    if (!fromTime || !toTime) return null;
-    
-    const diff = new Date(toTime) - new Date(fromTime);
-    return diff / (1000 * 60 * 60 * 24); // Convert to days
+    try {
+      const fromTime = getStageTimestamp(device, fromStage);
+      const toTime = getStageTimestamp(device, toStage);
+      
+      if (!fromTime || !toTime) return null;
+      
+      const diff = new Date(toTime) - new Date(fromTime);
+      const days = diff / (1000 * 60 * 60 * 24);
+      return isNaN(days) ? null : days;
+    } catch { return null; }
   };
   
   // Get devices with stage duration data
   const devicesWithDuration = allDevices
-    .filter(d => d.shipped_at) // Only completed devices
-    .map(d => ({
-      ...d,
-      duration: calculateStageDuration(d, stageFrom, stageTo)
-    }))
-    .filter(d => d.duration !== null && d.duration >= 0);
+    .filter(d => d && d.shipped_at)
+    .map(d => {
+      try {
+        return { ...d, duration: calculateStageDuration(d, stageFrom, stageTo) };
+      } catch { return { ...d, duration: null }; }
+    })
+    .filter(d => d.duration !== null && d.duration >= 0 && !isNaN(d.duration));
   
   // Filter by date range for stage analysis
   const filteredDevicesForStage = devicesWithDuration.filter(d => {
-    const shippedAt = new Date(d.shipped_at);
-    return shippedAt >= fromDate && shippedAt <= toDate;
+    try {
+      const shippedAt = new Date(d.shipped_at);
+      return shippedAt >= fromDate && shippedAt <= toDate;
+    } catch { return false; }
   });
   
   // Calculate averages
   const avgDuration = filteredDevicesForStage.length > 0 
-    ? filteredDevicesForStage.reduce((sum, d) => sum + d.duration, 0) / filteredDevicesForStage.length 
+    ? filteredDevicesForStage.reduce((sum, d) => sum + (d.duration || 0), 0) / filteredDevicesForStage.length 
     : 0;
   
   // Full turnaround time (received to shipped)
   const devicesWithTurnaround = devicesInPeriod
-    .map(d => ({
-      ...d,
-      turnaround: calculateStageDuration(d, 'received', 'shipped')
-    }))
-    .filter(d => d.turnaround !== null && d.turnaround >= 0);
+    .map(d => {
+      try {
+        return { ...d, turnaround: calculateStageDuration(d, 'received', 'shipped') };
+      } catch { return { ...d, turnaround: null }; }
+    })
+    .filter(d => d.turnaround !== null && d.turnaround >= 0 && !isNaN(d.turnaround));
   
   const avgTurnaround = devicesWithTurnaround.length > 0
-    ? devicesWithTurnaround.reduce((sum, d) => sum + d.turnaround, 0) / devicesWithTurnaround.length
+    ? devicesWithTurnaround.reduce((sum, d) => sum + (d.turnaround || 0), 0) / devicesWithTurnaround.length
     : 0;
   
   // Technician performance - ONLY shipped devices with revenue
@@ -2354,102 +2383,110 @@ function KPISheet({ requests = [], clients = [] }) {
   // First, create a map of RMA revenue (divide by device count for per-device revenue)
   const rmaRevenuePerDevice = {};
   rmasInPeriod.forEach(r => {
-    const quoteData = r.quote_data || {};
-    const totalAmount = parseFloat(quoteData.grandTotal || quoteData.total || 0) || 0;
-    const deviceCount = (r.request_devices || []).length || 1;
-    rmaRevenuePerDevice[r.id] = totalAmount / deviceCount;
+    try {
+      const quoteData = r?.quote_data || {};
+      const totalAmount = parseFloat(quoteData.grandTotal || quoteData.total || 0) || 0;
+      const deviceCount = (r?.request_devices || []).length || 1;
+      rmaRevenuePerDevice[r.id] = totalAmount / deviceCount;
+    } catch { /* ignore */ }
   });
   
   // Only count shipped devices in the period
   devicesInPeriod.forEach(d => {
-    // Only include if device is shipped
-    if (!d.shipped_at && !d.rma?.shipped_at) return;
-    
-    const tech = d.assigned_to || d.technician || 'Non assigné';
-    if (!technicianStats[tech]) {
-      technicianStats[tech] = { count: 0, totalTime: 0, totalRevenue: 0, devices: [] };
-    }
-    technicianStats[tech].count++;
-    
-    // Add turnaround time
-    const turnaround = calculateStageDuration(d, 'received', 'shipped');
-    if (turnaround && !isNaN(turnaround) && turnaround >= 0) {
-      technicianStats[tech].totalTime += turnaround;
-    }
-    
-    // Add revenue (proportional share of RMA revenue)
-    const deviceRevenue = parseFloat(rmaRevenuePerDevice[d.rma?.id] || 0) || 0;
-    technicianStats[tech].totalRevenue += deviceRevenue;
-    
-    technicianStats[tech].devices.push(d);
+    try {
+      if (!d?.shipped_at && !d?.rma?.shipped_at) return;
+      
+      const tech = d?.assigned_to || d?.technician || 'Non assigné';
+      if (!technicianStats[tech]) {
+        technicianStats[tech] = { count: 0, totalTime: 0, totalRevenue: 0, devices: [] };
+      }
+      technicianStats[tech].count++;
+      
+      const turnaround = calculateStageDuration(d, 'received', 'shipped');
+      if (turnaround && !isNaN(turnaround) && turnaround >= 0) {
+        technicianStats[tech].totalTime += turnaround;
+      }
+      
+      const deviceRevenue = parseFloat(rmaRevenuePerDevice[d?.rma?.id] || 0) || 0;
+      technicianStats[tech].totalRevenue += deviceRevenue;
+      
+      technicianStats[tech].devices.push(d);
+    } catch { /* ignore */ }
   });
   
   const technicianArray = Object.entries(technicianStats)
     .map(([name, stats]) => ({
-      name,
-      count: stats.count || 0,
-      avgTime: (stats.count > 0 && stats.totalTime > 0) ? stats.totalTime / stats.count : 0,
-      totalRevenue: stats.totalRevenue || 0,
-      devices: stats.devices || []
+      name: name || 'Unknown',
+      count: stats?.count || 0,
+      avgTime: (stats?.count > 0 && stats?.totalTime > 0) ? stats.totalTime / stats.count : 0,
+      totalRevenue: stats?.totalRevenue || 0,
+      devices: stats?.devices || []
     }))
-    .sort((a, b) => b.count - a.count);
+    .sort((a, b) => (b.count || 0) - (a.count || 0));
   
-  // Total technician revenue (for percentage calculation)
-  const totalTechRevenue = technicianArray.reduce((sum, t) => sum + (t.totalRevenue || 0), 0) || 0;
+  const totalTechRevenue = technicianArray.reduce((sum, t) => sum + (t?.totalRevenue || 0), 0) || 0;
   
   // Revenue calculation (from quote_data)
   const totalRevenue = rmasInPeriod.reduce((sum, r) => {
-    const quoteData = r.quote_data || {};
-    return sum + (quoteData.grandTotal || quoteData.total || 0);
+    try {
+      const quoteData = r?.quote_data || {};
+      return sum + (parseFloat(quoteData.grandTotal || quoteData.total || 0) || 0);
+    } catch { return sum; }
   }, 0);
   
   // Revenue by service type
   const revenueByService = { calibration: 0, repair: 0, other: 0 };
   rmasInPeriod.forEach(r => {
-    const quoteData = r.quote_data || {};
-    const amount = quoteData.grandTotal || quoteData.total || 0;
-    const service = r.requested_service || 'other';
-    if (service === 'calibration') revenueByService.calibration += amount;
-    else if (service === 'repair') revenueByService.repair += amount;
-    else revenueByService.other += amount;
+    try {
+      const quoteData = r?.quote_data || {};
+      const amount = parseFloat(quoteData.grandTotal || quoteData.total || 0) || 0;
+      const service = r?.requested_service || 'other';
+      if (service === 'calibration') revenueByService.calibration += amount;
+      else if (service === 'repair') revenueByService.repair += amount;
+      else revenueByService.other += amount;
+    } catch { /* ignore */ }
   });
   
   // Revenue by client (top 10)
   const revenueByClient = {};
   rmasInPeriod.forEach(r => {
-    const clientName = r.companies?.name || 'Unknown';
-    const quoteData = r.quote_data || {};
-    const amount = quoteData.grandTotal || quoteData.total || 0;
-    revenueByClient[clientName] = (revenueByClient[clientName] || 0) + amount;
+    try {
+      const clientName = r?.companies?.name || 'Unknown';
+      const quoteData = r?.quote_data || {};
+      const amount = parseFloat(quoteData.grandTotal || quoteData.total || 0) || 0;
+      revenueByClient[clientName] = (revenueByClient[clientName] || 0) + amount;
+    } catch { /* ignore */ }
   });
   
   const topClients = Object.entries(revenueByClient)
-    .map(([name, revenue]) => ({ name, revenue }))
-    .sort((a, b) => b.revenue - a.revenue)
+    .map(([name, revenue]) => ({ name: name || 'Unknown', revenue: revenue || 0 }))
+    .sort((a, b) => (b.revenue || 0) - (a.revenue || 0))
     .slice(0, 10);
   
   // Current pipeline (devices in each stage)
   const pipeline = {
-    waiting: allDevices.filter(d => !d.received_at && !d.rma?.shipped_at).length,
-    received: allDevices.filter(d => d.received_at && !d.report_complete && !d.rma?.shipped_at).length,
-    service: allDevices.filter(d => d.received_at && !d.report_complete && !d.rma?.shipped_at).length,
-    qc: allDevices.filter(d => d.report_complete && !d.qc_complete && !d.rma?.shipped_at).length,
-    ready: allDevices.filter(d => d.qc_complete && !d.shipped_at && !d.rma?.shipped_at).length,
-    shipped: allDevices.filter(d => d.shipped_at || d.rma?.shipped_at).length
+    waiting: allDevices.filter(d => !d?.received_at && !d?.rma?.shipped_at).length || 0,
+    received: allDevices.filter(d => d?.received_at && !d?.report_complete && !d?.rma?.shipped_at).length || 0,
+    service: allDevices.filter(d => d?.received_at && !d?.report_complete && !d?.rma?.shipped_at).length || 0,
+    qc: allDevices.filter(d => d?.report_complete && !d?.qc_complete && !d?.rma?.shipped_at).length || 0,
+    ready: allDevices.filter(d => d?.qc_complete && !d?.shipped_at && !d?.rma?.shipped_at).length || 0,
+    shipped: allDevices.filter(d => d?.shipped_at || d?.rma?.shipped_at).length || 0
   };
   
   // Bottleneck detection (devices stuck > 7 days in current stage)
   const stuckDevices = allDevices.filter(d => {
-    if (d.shipped_at || d.rma?.shipped_at) return false; // Completed
-    
-    const lastUpdate = d.updated_at || d.created_at;
-    const daysSinceUpdate = (new Date() - new Date(lastUpdate)) / (1000 * 60 * 60 * 24);
-    return daysSinceUpdate > 7;
+    try {
+      if (d?.shipped_at || d?.rma?.shipped_at) return false;
+      const lastUpdate = d?.updated_at || d?.created_at;
+      if (!lastUpdate) return false;
+      const daysSinceUpdate = (new Date() - new Date(lastUpdate)) / (1000 * 60 * 60 * 24);
+      return daysSinceUpdate > 7;
+    } catch { return false; }
   });
   
   // Quote conversion rate
-  const quoteSent = rmaRequests.filter(r => r.quote_sent_at).length;
-  const quoteApproved = rmaRequests.filter(r => r.bc_approved_at).length;
+  const quoteSent = rmaRequests.filter(r => r?.quote_sent_at).length || 0;
+  const quoteApproved = rmaRequests.filter(r => r?.bc_approved_at).length || 0;
   const conversionRate = quoteSent > 0 ? (quoteApproved / quoteSent * 100) : 0;
   
   // Stage options for dropdown
