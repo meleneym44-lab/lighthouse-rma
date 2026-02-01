@@ -2427,13 +2427,13 @@ function KPISheet({ requests = [], clients = [] }) {
             { label: 'Prêt', value: pipeline.ready, color: 'bg-green-500' },
             { label: 'Expédiés', value: pipeline.shipped, color: 'bg-gray-400' }
           ].map((stage, i, arr) => (
-            <React.Fragment key={stage.label}>
+            <div key={stage.label} className="flex items-center gap-2">
               <div className={`${stage.color} text-white px-4 py-3 rounded-lg text-center min-w-20`}>
                 <p className="text-2xl font-bold">{stage.value}</p>
                 <p className="text-xs opacity-90">{stage.label}</p>
               </div>
               {i < arr.length - 1 && <span className="text-gray-300 text-2xl">→</span>}
-            </React.Fragment>
+            </div>
           ))}
         </div>
       </div>
