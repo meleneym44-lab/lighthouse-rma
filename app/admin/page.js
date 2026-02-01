@@ -2220,10 +2220,10 @@ function LoginPage() {
 // ============================================
 // KPI SHEET - Business Analytics Dashboard
 // ============================================
-function KPISheet({ requests, clients }) {
+function KPISheet({ requests = [], clients = [] }) {
   // Date range state
   const [dateRange, setDateRange] = useState({
-    from: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
+    from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     to: new Date().toISOString().split('T')[0]
   });
   
@@ -2233,27 +2233,27 @@ function KPISheet({ requests, clients }) {
   
   // Quick date presets
   const setPreset = (preset) => {
-    const today = new Date();
-    let from, to = today;
+    const now = new Date();
+    let from;
     
     switch(preset) {
       case 'week':
-        from = new Date(today.setDate(today.getDate() - 7));
+        from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
         break;
       case 'month':
-        from = new Date(today.setMonth(today.getMonth() - 1));
+        from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         break;
       case '3months':
-        from = new Date(today.setMonth(today.getMonth() - 3));
+        from = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
         break;
       case 'year':
-        from = new Date(today.setFullYear(today.getFullYear() - 1));
+        from = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
         break;
       case 'ytd':
-        from = new Date(new Date().getFullYear(), 0, 1);
+        from = new Date(now.getFullYear(), 0, 1);
         break;
       default:
-        from = new Date(today.setDate(today.getDate() - 30));
+        from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     }
     
     setDateRange({
@@ -2262,8 +2262,11 @@ function KPISheet({ requests, clients }) {
     });
   };
   
+  // Safeguard requests
+  const safeRequests = Array.isArray(requests) ? requests : [];
+  
   // Filter RMAs (exclude parts orders)
-  const rmaRequests = requests.filter(r => r.request_type !== 'parts' && r.request_number);
+  const rmaRequests = safeRequests.filter(r => r && r.request_type !== 'parts' && r.request_number);
   
   // Get all devices from RMAs
   const allDevices = rmaRequests.flatMap(r => 
@@ -2352,7 +2355,7 @@ function KPISheet({ requests, clients }) {
   const rmaRevenuePerDevice = {};
   rmasInPeriod.forEach(r => {
     const quoteData = r.quote_data || {};
-    const totalAmount = quoteData.grandTotal || quoteData.total || 0;
+    const totalAmount = parseFloat(quoteData.grandTotal || quoteData.total || 0) || 0;
     const deviceCount = (r.request_devices || []).length || 1;
     rmaRevenuePerDevice[r.id] = totalAmount / deviceCount;
   });
@@ -2370,12 +2373,12 @@ function KPISheet({ requests, clients }) {
     
     // Add turnaround time
     const turnaround = calculateStageDuration(d, 'received', 'shipped');
-    if (turnaround && turnaround >= 0) {
+    if (turnaround && !isNaN(turnaround) && turnaround >= 0) {
       technicianStats[tech].totalTime += turnaround;
     }
     
     // Add revenue (proportional share of RMA revenue)
-    const deviceRevenue = rmaRevenuePerDevice[d.rma?.id] || 0;
+    const deviceRevenue = parseFloat(rmaRevenuePerDevice[d.rma?.id] || 0) || 0;
     technicianStats[tech].totalRevenue += deviceRevenue;
     
     technicianStats[tech].devices.push(d);
@@ -2384,15 +2387,15 @@ function KPISheet({ requests, clients }) {
   const technicianArray = Object.entries(technicianStats)
     .map(([name, stats]) => ({
       name,
-      count: stats.count,
-      avgTime: stats.count > 0 ? stats.totalTime / stats.count : 0,
-      totalRevenue: stats.totalRevenue,
-      devices: stats.devices
+      count: stats.count || 0,
+      avgTime: (stats.count > 0 && stats.totalTime > 0) ? stats.totalTime / stats.count : 0,
+      totalRevenue: stats.totalRevenue || 0,
+      devices: stats.devices || []
     }))
     .sort((a, b) => b.count - a.count);
   
   // Total technician revenue (for percentage calculation)
-  const totalTechRevenue = technicianArray.reduce((sum, t) => sum + t.totalRevenue, 0);
+  const totalTechRevenue = technicianArray.reduce((sum, t) => sum + (t.totalRevenue || 0), 0) || 0;
   
   // Revenue calculation (from quote_data)
   const totalRevenue = rmasInPeriod.reduce((sum, r) => {
@@ -2506,27 +2509,27 @@ function KPISheet({ requests, clients }) {
       {/* Main KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-green-500">
-          <p className="text-3xl font-bold text-gray-800">{devicesInPeriod.length}</p>
+          <p className="text-3xl font-bold text-gray-800">{devicesInPeriod.length || 0}</p>
           <p className="text-sm text-gray-500">Appareils terminés</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-blue-500">
-          <p className="text-3xl font-bold text-gray-800">{rmasInPeriod.length}</p>
+          <p className="text-3xl font-bold text-gray-800">{rmasInPeriod.length || 0}</p>
           <p className="text-sm text-gray-500">RMAs complétés</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-purple-500">
-          <p className="text-3xl font-bold text-gray-800">{avgTurnaround.toFixed(1)}j</p>
+          <p className="text-3xl font-bold text-gray-800">{(avgTurnaround || 0).toFixed(1)}j</p>
           <p className="text-sm text-gray-500">Délai moyen (réception→expédition)</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-amber-500">
-          <p className="text-3xl font-bold text-gray-800">{totalRevenue.toLocaleString('fr-FR')} €</p>
+          <p className="text-3xl font-bold text-gray-800">{(totalRevenue || 0).toLocaleString('fr-FR')} €</p>
           <p className="text-sm text-gray-500">Chiffre d'affaires</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-indigo-500">
-          <p className="text-3xl font-bold text-gray-800">{conversionRate.toFixed(0)}%</p>
+          <p className="text-3xl font-bold text-gray-800">{(conversionRate || 0).toFixed(0)}%</p>
           <p className="text-sm text-gray-500">Taux conversion devis</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border-l-4 border-red-500">
-          <p className="text-3xl font-bold text-gray-800">{stuckDevices.length}</p>
+          <p className="text-3xl font-bold text-gray-800">{stuckDevices.length || 0}</p>
           <p className="text-sm text-gray-500">Appareils bloqués (&gt;7j)</p>
         </div>
       </div>
@@ -2575,15 +2578,15 @@ function KPISheet({ requests, clients }) {
                   </div>
                   <div className="grid grid-cols-3 gap-3 text-center">
                     <div className="bg-white rounded-lg p-3 border">
-                      <p className="text-2xl font-bold text-blue-600">{tech.count}</p>
+                      <p className="text-2xl font-bold text-blue-600">{tech.count || 0}</p>
                       <p className="text-xs text-gray-500">Appareils</p>
                     </div>
                     <div className="bg-white rounded-lg p-3 border">
-                      <p className="text-2xl font-bold text-green-600">{tech.totalRevenue.toLocaleString('fr-FR')} €</p>
+                      <p className="text-2xl font-bold text-green-600">{(tech.totalRevenue || 0).toLocaleString('fr-FR')} €</p>
                       <p className="text-xs text-gray-500">CA Généré</p>
                     </div>
                     <div className="bg-white rounded-lg p-3 border">
-                      <p className="text-2xl font-bold text-purple-600">{tech.avgTime.toFixed(1)}j</p>
+                      <p className="text-2xl font-bold text-purple-600">{(tech.avgTime || 0).toFixed(1)}j</p>
                       <p className="text-xs text-gray-500">Délai Moy.</p>
                     </div>
                   </div>
@@ -2591,10 +2594,10 @@ function KPISheet({ requests, clients }) {
                   <div className="mt-3">
                     <div className="flex justify-between text-xs text-gray-500 mb-1">
                       <span>Part du CA total</span>
-                      <span>{totalTechRevenue > 0 ? ((tech.totalRevenue / totalTechRevenue) * 100).toFixed(1) : 0}%</span>
+                      <span>{totalTechRevenue > 0 ? (((tech.totalRevenue || 0) / totalTechRevenue) * 100).toFixed(1) : 0}%</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div className="bg-green-500 h-2 rounded-full" style={{ width: `${totalTechRevenue > 0 ? (tech.totalRevenue / totalTechRevenue * 100) : 0}%` }}></div>
+                      <div className="bg-green-500 h-2 rounded-full" style={{ width: `${totalTechRevenue > 0 ? ((tech.totalRevenue || 0) / totalTechRevenue * 100) : 0}%` }}></div>
                     </div>
                   </div>
                 </div>
@@ -2603,16 +2606,16 @@ function KPISheet({ requests, clients }) {
               <div className="p-4 bg-gray-100 rounded-lg border-2 border-gray-300">
                 <div className="grid grid-cols-3 gap-3 text-center">
                   <div>
-                    <p className="text-2xl font-bold text-gray-800">{technicianArray.reduce((sum, t) => sum + t.count, 0)}</p>
+                    <p className="text-2xl font-bold text-gray-800">{technicianArray.reduce((sum, t) => sum + (t.count || 0), 0)}</p>
                     <p className="text-xs text-gray-600 font-medium">Total Appareils</p>
                   </div>
                   <div>
-                    <p className="text-2xl font-bold text-gray-800">{totalTechRevenue.toLocaleString('fr-FR')} €</p>
+                    <p className="text-2xl font-bold text-gray-800">{(totalTechRevenue || 0).toLocaleString('fr-FR')} €</p>
                     <p className="text-xs text-gray-600 font-medium">Total CA</p>
                   </div>
                   <div>
                     <p className="text-2xl font-bold text-gray-800">
-                      {technicianArray.length > 0 ? (technicianArray.reduce((sum, t) => sum + t.avgTime, 0) / technicianArray.length).toFixed(1) : 0}j
+                      {technicianArray.length > 0 ? (technicianArray.reduce((sum, t) => sum + (t.avgTime || 0), 0) / technicianArray.length).toFixed(1) : 0}j
                     </p>
                     <p className="text-xs text-gray-600 font-medium">Moy. Globale</p>
                   </div>
@@ -2631,28 +2634,28 @@ function KPISheet({ requests, clients }) {
             <div className="flex items-center gap-4">
               <div className="w-4 h-4 bg-blue-500 rounded"></div>
               <span className="flex-1">Étalonnage</span>
-              <span className="font-bold">{revenueByService.calibration.toLocaleString('fr-FR')} €</span>
+              <span className="font-bold">{(revenueByService.calibration || 0).toLocaleString('fr-FR')} €</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-3">
-              <div className="bg-blue-500 h-3 rounded-full" style={{ width: `${totalRevenue > 0 ? (revenueByService.calibration / totalRevenue * 100) : 0}%` }}></div>
+              <div className="bg-blue-500 h-3 rounded-full" style={{ width: `${totalRevenue > 0 ? ((revenueByService.calibration || 0) / totalRevenue * 100) : 0}%` }}></div>
             </div>
             
             <div className="flex items-center gap-4">
               <div className="w-4 h-4 bg-orange-500 rounded"></div>
               <span className="flex-1">Réparation</span>
-              <span className="font-bold">{revenueByService.repair.toLocaleString('fr-FR')} €</span>
+              <span className="font-bold">{(revenueByService.repair || 0).toLocaleString('fr-FR')} €</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-3">
-              <div className="bg-orange-500 h-3 rounded-full" style={{ width: `${totalRevenue > 0 ? (revenueByService.repair / totalRevenue * 100) : 0}%` }}></div>
+              <div className="bg-orange-500 h-3 rounded-full" style={{ width: `${totalRevenue > 0 ? ((revenueByService.repair || 0) / totalRevenue * 100) : 0}%` }}></div>
             </div>
             
             <div className="flex items-center gap-4">
               <div className="w-4 h-4 bg-gray-500 rounded"></div>
               <span className="flex-1">Autre</span>
-              <span className="font-bold">{revenueByService.other.toLocaleString('fr-FR')} €</span>
+              <span className="font-bold">{(revenueByService.other || 0).toLocaleString('fr-FR')} €</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-3">
-              <div className="bg-gray-500 h-3 rounded-full" style={{ width: `${totalRevenue > 0 ? (revenueByService.other / totalRevenue * 100) : 0}%` }}></div>
+              <div className="bg-gray-500 h-3 rounded-full" style={{ width: `${totalRevenue > 0 ? ((revenueByService.other || 0) / totalRevenue * 100) : 0}%` }}></div>
             </div>
           </div>
         </div>
@@ -2690,11 +2693,11 @@ function KPISheet({ requests, clients }) {
           </div>
           <div className="ml-auto flex items-center gap-4">
             <div className="text-center">
-              <p className="text-3xl font-bold text-indigo-600">{avgDuration.toFixed(1)}j</p>
+              <p className="text-3xl font-bold text-indigo-600">{(avgDuration || 0).toFixed(1)}j</p>
               <p className="text-xs text-gray-500">Durée moyenne</p>
             </div>
             <div className="text-center">
-              <p className="text-3xl font-bold text-gray-600">{filteredDevicesForStage.length}</p>
+              <p className="text-3xl font-bold text-gray-600">{filteredDevicesForStage.length || 0}</p>
               <p className="text-xs text-gray-500">Appareils analysés</p>
             </div>
           </div>
@@ -2717,17 +2720,17 @@ function KPISheet({ requests, clients }) {
                 <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">Aucune donnée pour cette période et ces étapes</td></tr>
               ) : filteredDevicesForStage.slice(0, 50).map((d, i) => (
                 <tr key={i} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 font-mono text-green-600">{d.rma?.request_number}</td>
+                  <td className="px-4 py-2 font-mono text-green-600">{d.rma?.request_number || '—'}</td>
                   <td className="px-4 py-2">{d.rma?.companies?.name || '—'}</td>
                   <td className="px-4 py-2">{d.model_name || d.model || '—'}</td>
-                  <td className="px-4 py-2 font-mono text-gray-500">{d.serial_number}</td>
+                  <td className="px-4 py-2 font-mono text-gray-500">{d.serial_number || '—'}</td>
                   <td className="px-4 py-2 text-right">
                     <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      d.duration <= 3 ? 'bg-green-100 text-green-700' :
-                      d.duration <= 7 ? 'bg-amber-100 text-amber-700' :
+                      (d.duration || 0) <= 3 ? 'bg-green-100 text-green-700' :
+                      (d.duration || 0) <= 7 ? 'bg-amber-100 text-amber-700' :
                       'bg-red-100 text-red-700'
                     }`}>
-                      {d.duration.toFixed(1)} jours
+                      {(d.duration || 0).toFixed(1)} jours
                     </span>
                   </td>
                 </tr>
@@ -2755,7 +2758,7 @@ function KPISheet({ requests, clients }) {
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-800 truncate">{client.name}</p>
                 </div>
-                <p className="font-bold text-green-600">{client.revenue.toLocaleString('fr-FR')} €</p>
+                <p className="font-bold text-green-600">{(client.revenue || 0).toLocaleString('fr-FR')} €</p>
               </div>
             ))}
           </div>
