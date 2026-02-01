@@ -3247,9 +3247,28 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [attachments, setAttachments] = useState([]);
   
   // Detect if this is an avenant BC (avenant was sent and we're reviewing its BC)
   const isAvenantBC = !!rma.avenant_sent_at && !rma.avenant_approved_at;
+  
+  // Fetch attachments to get avenant documents
+  useEffect(() => {
+    const fetchAttachments = async () => {
+      const { data } = await supabase
+        .from('request_attachments')
+        .select('*')
+        .eq('request_id', rma.id)
+        .order('created_at', { ascending: false });
+      if (data) setAttachments(data);
+    };
+    fetchAttachments();
+  }, [rma.id]);
+  
+  // Get the correct documents for display
+  const avenantSigneUrl = attachments.find(a => a.category === 'avenant_signe' && a.file_url)?.file_url;
+  const avenantQuoteUrl = attachments.find(a => a.category === 'avenant_quote' && a.file_url)?.file_url;
+  const avenantBcUrl = attachments.find(a => a.category === 'avenant_bc' && a.file_url)?.file_url;
   
   const approveBC = async () => {
     setApproving(true);
@@ -3350,30 +3369,61 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-bold text-white text-lg">📄 Document BC {isAvenantBC && '(Avenant)'}</h3>
               <div className="flex gap-2">
-                {rma.signed_quote_url && (
-                  <a href={rma.signed_quote_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium">
-                    📄 Devis Signé ↗
-                  </a>
-                )}
-                {rma.bc_file_url && (
-                  <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">
-                    📋 BC Uploadé ↗
-                  </a>
+                {isAvenantBC ? (
+                  <>
+                    {/* Avenant documents */}
+                    {avenantSigneUrl && (
+                      <a href={avenantSigneUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium">
+                        ✅ Avenant Signé ↗
+                      </a>
+                    )}
+                    {avenantQuoteUrl && (
+                      <a href={avenantQuoteUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium">
+                        📄 Avenant ↗
+                      </a>
+                    )}
+                    {(rma.bc_file_url || avenantBcUrl) && (
+                      <a href={avenantBcUrl || rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">
+                        📋 BC Avenant ↗
+                      </a>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {/* Regular BC documents */}
+                    {rma.signed_quote_url && (
+                      <a href={rma.signed_quote_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium">
+                        📄 Devis Signé ↗
+                      </a>
+                    )}
+                    {rma.bc_file_url && (
+                      <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">
+                        📋 BC Uploadé ↗
+                      </a>
+                    )}
+                  </>
                 )}
               </div>
             </div>
             
             {/* BC File or Signed Quote - Full height PDF viewer */}
-            {(rma.signed_quote_url || rma.bc_file_url) ? (
-              <div className="flex-1 rounded-lg overflow-hidden bg-white">
-                {(() => {
-                  // Prefer signed quote for display, fallback to BC file
-                  const displayUrl = rma.signed_quote_url || rma.bc_file_url;
-                  
-                  if (displayUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
-                    return <img src={displayUrl} alt="BC Document" className="w-full h-full object-contain" />;
-                  } else if (displayUrl.match(/\.pdf$/i) || displayUrl.includes('pdf')) {
-                    return (
+            {(() => {
+              // Determine which document to display based on whether it's avenant or regular BC
+              let displayUrl;
+              if (isAvenantBC) {
+                // For avenant: prefer signed avenant > avenant BC > avenant quote
+                displayUrl = avenantSigneUrl || avenantBcUrl || rma.bc_file_url || avenantQuoteUrl;
+              } else {
+                // For regular BC: prefer signed quote > BC file
+                displayUrl = rma.signed_quote_url || rma.bc_file_url;
+              }
+              
+              if (displayUrl) {
+                return (
+                  <div className="flex-1 rounded-lg overflow-hidden bg-white">
+                    {displayUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                      <img src={displayUrl} alt="BC Document" className="w-full h-full object-contain" />
+                    ) : displayUrl.match(/\.pdf$/i) || displayUrl.includes('pdf') ? (
                       <object
                         data={`${displayUrl}#view=Fit`}
                         type="application/pdf"
@@ -3386,23 +3436,23 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
                           title="BC PDF"
                         />
                       </object>
-                    );
-                  } else {
-                    return (
+                    ) : (
                       <div className="h-full flex items-center justify-center">
                         <a href={displayUrl} target="_blank" rel="noopener noreferrer" className="px-8 py-4 bg-blue-500 text-white rounded-lg text-lg font-medium">
                           📥 Télécharger le fichier
                         </a>
                       </div>
-                    );
-                  }
-                })()}
-              </div>
-            ) : (
-              <div className="flex-1 border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center text-gray-400 text-lg">
-                Aucun fichier BC uploadé
-              </div>
-            )}
+                    )}
+                  </div>
+                );
+              } else {
+                return (
+                  <div className="flex-1 border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center text-gray-400 text-lg">
+                    {isAvenantBC ? 'Chargement des documents avenant...' : 'Aucun fichier BC uploadé'}
+                  </div>
+                );
+              }
+            })()}
           </div>
           
           {/* Right: Order Details - Sidebar */}
@@ -3455,8 +3505,21 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
               </div>
             </div>
             
-            {/* Quote Info */}
-            {(rma.quote_total || rma.quote_url) && (
+            {/* Quote/Avenant Info */}
+            {isAvenantBC ? (
+              <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
+                <h4 className="font-medium text-orange-800 mb-1">📄 Avenant</h4>
+                {rma.avenant_total && <p className="text-xl font-bold text-orange-700">{rma.avenant_total.toFixed(2)} €</p>}
+                {avenantQuoteUrl && (
+                  <a href={avenantQuoteUrl} target="_blank" rel="noopener noreferrer" className="text-orange-600 hover:underline text-sm">
+                    Voir l'avenant ↗
+                  </a>
+                )}
+                <p className="text-xs text-orange-500 mt-1">
+                  Envoyé le {rma.avenant_sent_at ? new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR') : '—'}
+                </p>
+              </div>
+            ) : (rma.quote_total || rma.quote_url) && (
               <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
                 <h4 className="font-medium text-blue-800 mb-1">💰 Devis</h4>
                 {rma.quote_total && <p className="text-xl font-bold text-blue-700">{rma.quote_total.toFixed(2)} €</p>}
