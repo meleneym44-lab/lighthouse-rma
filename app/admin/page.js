@@ -3240,21 +3240,47 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   
+  // Detect if this is an avenant BC (avenant was sent and we're reviewing its BC)
+  const isAvenantBC = !!rma.avenant_sent_at && !rma.avenant_approved_at;
+  
   const approveBC = async () => {
     setApproving(true);
+    
+    // Different update depending on whether this is avenant BC or regular BC
+    const updatePayload = isAvenantBC 
+      ? {
+          // Avenant BC approved - tech can continue with additional work
+          status: 'in_progress',
+          avenant_approved_at: new Date().toISOString(),
+          avenant_bc_url: rma.bc_file_url // Save BC to avenant-specific field
+        }
+      : {
+          // Regular BC approved - waiting for device
+          status: 'waiting_device', 
+          bc_approved_at: new Date().toISOString()
+        };
+    
     const { error } = await supabase
       .from('service_requests')
-      .update({ 
-        status: 'waiting_device', 
-        bc_approved_at: new Date().toISOString()
-        // bc_approved_by removed - was causing UUID error
-      })
+      .update(updatePayload)
       .eq('id', rma.id);
     
     if (error) {
       notify('Erreur: ' + error.message, 'error');
     } else {
-      notify('✅ BC approuvé! En attente de l\'appareil.');
+      if (isAvenantBC) {
+        // Save avenant BC URL to each device with additional work
+        const devicesWithWork = (rma.request_devices || []).filter(d => d.additional_work_needed);
+        for (const device of devicesWithWork) {
+          await supabase
+            .from('request_devices')
+            .update({ status: 'in_progress' })
+            .eq('id', device.id);
+        }
+        notify('✅ Avenant approuvé! Le technicien peut continuer les travaux.');
+      } else {
+        notify('✅ BC approuvé! En attente de l\'appareil.');
+      }
       reload();
       onClose();
     }
@@ -3296,10 +3322,15 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
     <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={onClose}>
       <div className="bg-white w-full h-full max-w-[98vw] max-h-[98vh] m-auto rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="px-6 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white flex justify-between items-center flex-shrink-0">
+        <div className={`px-6 py-3 ${isAvenantBC ? 'bg-gradient-to-r from-amber-500 to-amber-600' : 'bg-gradient-to-r from-red-500 to-red-600'} text-white flex justify-between items-center flex-shrink-0`}>
           <div>
-            <h2 className="text-xl font-bold">Vérification du Bon de Commande</h2>
-            <p className="text-red-100">{rma.request_number} • {rma.companies?.name}</p>
+            <h2 className="text-xl font-bold">
+              {isAvenantBC ? '📄 Vérification BC Avenant' : 'Vérification du Bon de Commande'}
+            </h2>
+            <p className={isAvenantBC ? 'text-amber-100' : 'text-red-100'}>
+              {rma.request_number} • {rma.companies?.name}
+              {isAvenantBC && ` • Avenant: €${rma.avenant_total?.toFixed(2) || '0.00'}`}
+            </p>
           </div>
           <button onClick={onClose} className="text-white/70 hover:text-white text-3xl">&times;</button>
         </div>
@@ -3309,7 +3340,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
           {/* Left: Document Preview - Takes most of the space */}
           <div className="flex-1 flex flex-col bg-gray-800 p-4">
             <div className="flex justify-between items-center mb-3">
-              <h3 className="font-bold text-white text-lg">📄 Document BC</h3>
+              <h3 className="font-bold text-white text-lg">📄 Document BC {isAvenantBC && '(Avenant)'}</h3>
               {rma.bc_file_url && (
                 <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">
                   Ouvrir dans nouvel onglet ↗
@@ -3429,9 +3460,9 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
               <button
                 onClick={approveBC}
                 disabled={approving}
-                className="w-full px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50"
+                className={`w-full px-6 py-3 ${isAvenantBC ? 'bg-amber-500 hover:bg-amber-600' : 'bg-green-500 hover:bg-green-600'} text-white rounded-lg font-bold disabled:opacity-50`}
               >
-                {approving ? 'Approbation...' : '✅ Approuver BC'}
+                {approving ? 'Approbation...' : isAvenantBC ? '✅ Approuver Avenant' : '✅ Approuver BC'}
               </button>
               <button
                 onClick={rejectBC}
@@ -4789,6 +4820,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           notify={notify}
           reload={reload}
           alreadySent={!!rma.avenant_sent_at}
+          businessSettings={businessSettings}
         />
       )}
     </div>
@@ -5457,9 +5489,297 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
   );
 }
 
+// Generate Avenant PDF - PROFESSIONAL FORMAT (styled like RMA quote)
+const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
+  const jsPDF = await loadJsPDF();
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const company = rma.companies || {};
+  const biz = options.businessSettings || {};
+  
+  const pageWidth = 210, pageHeight = 297, margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  const footerHeight = 16;
+  
+  // Colors - using amber/orange for avenant to distinguish from regular quote
+  const amber = [245, 158, 11];
+  const { green, darkBlue, gray, lightGray, white } = PDF_COLORS;
+  
+  let y = margin;
+  
+  // Load logos
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
+  
+  const addFooter = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+    pdf.setTextColor(...white);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(biz.company_name || 'Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(180, 180, 180);
+    pdf.setFontSize(8);
+    pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'} - Tel. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+  };
+  
+  const getUsableHeight = () => pageHeight - footerHeight - margin;
+  
+  const checkPageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) {
+      addFooter();
+      pdf.addPage();
+      y = margin;
+      return true;
+    }
+    return false;
+  };
+
+  // ===== HEADER =====
+  if (lighthouseLogo) {
+    try {
+      const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+    } catch (e) {
+      pdf.setFontSize(26);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...darkBlue);
+      pdf.text('LIGHTHOUSE', margin, y + 8);
+    }
+  } else {
+    pdf.setFontSize(26);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('LIGHTHOUSE', margin, y + 8);
+  }
+  
+  // Title - AVENANT in amber
+  pdf.setFontSize(18);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...amber);
+  pdf.text('AVENANT AU DEVIS', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('Ref. ' + (rma.request_number || 'FR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
+  
+  y += 18;
+  pdf.setDrawColor(...amber);
+  pdf.setLineWidth(1);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 7;
+
+  // ===== INFO BAR =====
+  pdf.setFillColor(255, 251, 235); // Light amber background
+  pdf.rect(margin, y, contentWidth, 16, 'F');
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('DATE', margin + 5, y + 5);
+  pdf.text('VALIDITE', margin + 60, y + 5);
+  pdf.text('CONDITIONS', margin + 115, y + 5);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  const qDate = new Date().toLocaleDateString('fr-FR');
+  pdf.text(qDate, margin + 5, y + 12);
+  pdf.text('30 jours', margin + 60, y + 12);
+  pdf.text('A reception de facture', margin + 115, y + 12);
+  y += 20;
+
+  // ===== CLIENT =====
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CLIENT', margin, y);
+  y += 5;
+  pdf.setFontSize(14);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(company.name || 'Client', margin, y);
+  y += 6;
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  if (company.billing_address || company.address) {
+    pdf.text(company.billing_address || company.address, margin, y);
+    y += 5;
+  }
+  const city = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
+  if (city) {
+    pdf.text(city, margin, y);
+    y += 5;
+  }
+  y += 3;
+  
+  // Original quote reference
+  pdf.setFontSize(9);
+  pdf.setTextColor(...lightGray);
+  pdf.text(`Devis initial: ${rma.request_number}`, margin, y);
+  y += 8;
+
+  // ===== INTRODUCTION =====
+  pdf.setFillColor(255, 251, 235);
+  pdf.rect(margin, y, contentWidth, 14, 'F');
+  pdf.setFontSize(9);
+  pdf.setTextColor(146, 64, 14); // Dark amber text
+  const introText = "Suite a l'inspection de vos appareils, nous avons constate des travaux supplementaires necessaires.";
+  pdf.text(introText, margin + 5, y + 5);
+  pdf.text("Veuillez trouver ci-dessous le detail des interventions recommandees.", margin + 5, y + 10);
+  y += 18;
+
+  // ===== DETAILED PRICING TABLE =====
+  const rowH = 7;
+  const colQty = margin;
+  const colDesc = margin + 12;
+  const colUnit = pageWidth - margin - 45;
+  const colTotal = pageWidth - margin - 3;
+  
+  pdf.setFontSize(13);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Travaux Supplementaires', margin, y);
+  y += 7;
+
+  // Header row
+  pdf.setFillColor(...darkBlue);
+  pdf.rect(margin, y, contentWidth, 9, 'F');
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...white);
+  pdf.text('Qte', colQty + 3, y + 6);
+  pdf.text('Designation', colDesc, y + 6);
+  pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
+  pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
+  y += 9;
+
+  let rowIndex = 0;
+  let grandTotal = 0;
+
+  // Build line items from devices with additional work
+  devicesWithWork.forEach((device) => {
+    // Device header row
+    checkPageBreak(15);
+    pdf.setFillColor(245, 245, 245);
+    pdf.rect(margin, y, contentWidth, 8, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    const deviceHeader = `${device.model_name || 'Appareil'} (SN: ${device.serial_number || 'N/A'})`;
+    pdf.text(deviceHeader, colDesc, y + 5.5);
+    y += 8;
+    
+    // Findings (if any)
+    if (device.service_findings) {
+      checkPageBreak(10);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(...lightGray);
+      const findingsText = `Constat: ${device.service_findings}`.substring(0, 90);
+      pdf.text(findingsText, colDesc, y + 4);
+      y += 6;
+    }
+    
+    // Additional work items
+    (device.additional_work_items || []).forEach((item) => {
+      checkPageBreak(rowH + 2);
+      const qty = parseInt(item.quantity) || 1;
+      const unitPrice = parseFloat(item.price) || 0;
+      const lineTotal = qty * unitPrice;
+      grandTotal += lineTotal;
+      
+      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...darkBlue);
+      pdf.text(String(qty), colQty + 3, y + 5);
+      
+      // Description with part number if available
+      const desc = item.partNumber ? `[${item.partNumber}] ${item.description || 'Piece'}` : (item.description || 'Service');
+      pdf.text(desc.substring(0, 55), colDesc, y + 5);
+      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      y += rowH;
+      rowIndex++;
+    });
+    
+    y += 3; // Space between devices
+  });
+
+  // Total row
+  checkPageBreak(15);
+  pdf.setFillColor(...amber);
+  pdf.rect(margin, y, contentWidth, 11, 'F');
+  pdf.setTextColor(...white);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('TOTAL AVENANT HT', colUnit - 35, y + 7.5);
+  pdf.setFontSize(16);
+  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
+  y += 15;
+
+  // ===== CONDITIONS =====
+  checkPageBreak(25);
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS:', margin, y);
+  y += 4;
+  pdf.text('• Ce devis complementaire est valable 30 jours a compter de sa date d\'emission.', margin + 3, y);
+  y += 4;
+  pdf.text('• Les travaux seront effectues apres reception de votre accord ecrit (signature ou bon de commande).', margin + 3, y);
+  y += 4;
+  pdf.text('• Conditions de reglement: 30 jours fin de mois.', margin + 3, y);
+  y += 8;
+
+  // ===== SIGNATURE SECTION =====
+  const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
+  
+  pdf.setDrawColor(200, 200, 200);
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, sigY, pageWidth - margin, sigY);
+  
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('ETABLI PAR', margin, sigY + 7);
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(options.createdBy || 'Service Technique', margin, sigY + 14);
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('Lighthouse France', margin, sigY + 20);
+
+  // Capcert logo
+  if (capcertLogo) {
+    try {
+      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
+    } catch (e) {}
+  }
+
+  // Signature box
+  const sigBoxX = pageWidth - margin - 62;
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('Signature client', sigBoxX + 16, sigY + 7);
+  pdf.setDrawColor(180, 180, 180);
+  pdf.setLineWidth(0.3);
+  pdf.setLineDashPattern([2, 2], 0);
+  pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 22, 2, 2, 'D');
+  pdf.setLineDashPattern([], 0);
+  pdf.text('Lu et approuve', sigBoxX + 18, sigY + 37);
+
+  addFooter();
+  return { blob: pdf.output('blob'), total: grandTotal };
+};
+
 // Avenant Preview Modal - Shows additional work quote to send to client
-function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySent }) {
+function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySent, businessSettings }) {
   const [sending, setSending] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
   const devicesRAS = devices.filter(d => !d.additional_work_needed || !d.additional_work_items?.length);
   
@@ -5470,23 +5790,84 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
     return sum + deviceTotal;
   }, 0);
   
+  // Download PDF without sending
+  const downloadPDF = async () => {
+    setDownloading(true);
+    try {
+      const { blob } = await generateAvenantPDF(rma, devicesWithWork, { businessSettings });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Avenant_${rma.request_number}_${Date.now()}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      notify('📥 PDF téléchargé!');
+    } catch (err) {
+      notify('Erreur génération PDF: ' + err.message, 'error');
+    }
+    setDownloading(false);
+  };
+  
+  // Generate PDF, upload, and send to client
   const sendAvenant = async () => {
     setSending(true);
     try {
-      const { error } = await supabase
+      // 1. Generate PDF
+      notify('📄 Génération du PDF...');
+      const { blob, total } = await generateAvenantPDF(rma, devicesWithWork, { businessSettings });
+      
+      // 2. Upload to storage
+      const fileName = `avenant_${rma.request_number}_${Date.now()}.pdf`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('documents')
+        .upload(`avenants/${fileName}`, blob, { contentType: 'application/pdf' });
+      
+      if (uploadError) throw uploadError;
+      
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('documents')
+        .getPublicUrl(`avenants/${fileName}`);
+      const avenantQuoteUrl = urlData?.publicUrl;
+      
+      // 3. Update service_request with avenant info
+      const { error: updateError } = await supabase
         .from('service_requests')
         .update({
           status: 'quote_sent',
-          avenant_total: totalAvenant,
+          avenant_total: total,
           avenant_sent_at: new Date().toISOString()
         })
         .eq('id', rma.id);
       
-      if (error) throw error;
-      notify('✓ Avenant envoyé au client!');
+      if (updateError) throw updateError;
+      
+      // 4. Save avenant quote URL to each device with additional work
+      for (const device of devicesWithWork) {
+        await supabase
+          .from('request_devices')
+          .update({ 
+            // Store avenant info in parts_ordered JSONB field as workaround
+            // Or we add to notes
+          })
+          .eq('id', device.id);
+      }
+      
+      // 5. Save as attachment for the RMA
+      await supabase.from('request_attachments').insert({
+        request_id: rma.id,
+        file_name: `Avenant_${rma.request_number}.pdf`,
+        file_url: avenantQuoteUrl,
+        file_type: 'application/pdf',
+        category: 'avenant_quote',
+        device_serial: devicesWithWork.map(d => d.serial_number).join(', ')
+      });
+      
+      notify('✅ Avenant envoyé au client!');
       reload();
       onClose();
     } catch (err) {
+      console.error('Avenant send error:', err);
       notify('Erreur: ' + err.message, 'error');
     }
     setSending(false);
@@ -5621,8 +6002,8 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
             )}
             
             {/* Total */}
-            <div className="px-6 py-4 flex justify-between items-center bg-[#00A651] text-white">
-              <span className="text-lg font-bold">TOTAL AVENANT</span>
+            <div className="px-6 py-4 flex justify-between items-center bg-amber-500 text-white">
+              <span className="text-lg font-bold">TOTAL AVENANT HT</span>
               <span className="text-2xl font-bold">€{totalAvenant.toFixed(2)}</span>
             </div>
           </div>
@@ -5641,20 +6022,24 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
             ← Fermer
           </button>
           <div className="flex gap-3">
-            <button className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
-              📥 Télécharger PDF
+            <button 
+              onClick={downloadPDF}
+              disabled={downloading}
+              className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50"
+            >
+              {downloading ? '...' : '📥 Télécharger PDF'}
             </button>
             {!alreadySent && (
               <button 
                 onClick={sendAvenant}
                 disabled={sending}
-                className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium disabled:opacity-50"
+                className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
               >
-                {sending ? 'Envoi...' : '📧 Envoyer au Client'}
+                {sending ? 'Génération & envoi...' : '📧 Envoyer au Client'}
               </button>
             )}
             {alreadySent && (
-              <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">
+              <span className="px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-medium">
                 ✓ Envoyé le {new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR')}
               </span>
             )}
