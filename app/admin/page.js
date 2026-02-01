@@ -5855,29 +5855,26 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
       const avenantQuoteUrl = urlData?.publicUrl;
       
       // 3. Update service_request with avenant info
-      // NOTE: Do NOT change status - RMA stays in progress, just avenant is pending
+      // IMPORTANT: Clear BC fields so customer can submit NEW BC for avenant
+      // Keep original bc_approved_at as historical record
       const { error: updateError } = await supabase
         .from('service_requests')
         .update({
           avenant_total: total,
-          avenant_sent_at: new Date().toISOString()
+          avenant_sent_at: new Date().toISOString(),
+          // Clear these so customer needs to submit new BC for avenant
+          bc_submitted_at: null,
+          bc_file_url: null,
+          bc_signature_url: null,
+          signed_quote_url: null,
+          bc_signed_by: null,
+          bc_signature_date: null
         })
         .eq('id', rma.id);
       
       if (updateError) throw updateError;
       
-      // 4. Save avenant quote URL to each device with additional work
-      for (const device of devicesWithWork) {
-        await supabase
-          .from('request_devices')
-          .update({ 
-            // Store avenant info in parts_ordered JSONB field as workaround
-            // Or we add to notes
-          })
-          .eq('id', device.id);
-      }
-      
-      // 5. Save as attachment for the RMA
+      // 4. Save as attachment for the RMA
       await supabase.from('request_attachments').insert({
         request_id: rma.id,
         file_name: `Avenant_${rma.request_number}.pdf`,
