@@ -4066,12 +4066,27 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   const [viewMode, setViewMode] = useState(initialDevice ? 'device' : 'overview'); // 'overview' or 'device'
   const [deviceTab, setDeviceTab] = useState('details'); // For device detail view tabs
   const [saving, setSaving] = useState(false);
+  const [attachments, setAttachments] = useState([]);
   
   // Modal state
   const [showAvenantPreview, setShowAvenantPreview] = useState(false);
   const [showQCReview, setShowQCReview] = useState(null);
   const [showShippingModal, setShowShippingModal] = useState(false);
   const [showServiceModal, setShowServiceModal] = useState(null); // Device to show service modal for
+  
+  // Fetch attachments for this RMA
+  useEffect(() => {
+    const fetchAttachments = async () => {
+      if (!rma?.id) return;
+      const { data } = await supabase
+        .from('request_attachments')
+        .select('*')
+        .eq('request_id', rma.id)
+        .order('created_at', { ascending: false });
+      if (data) setAttachments(data);
+    };
+    fetchAttachments();
+  }, [rma?.id]);
   
   // Effect to handle initialDevice changes (when coming from dashboard)
   useEffect(() => {
@@ -4555,92 +4570,95 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             {/* Documents Tab */}
             {deviceTab === 'documents' && (
               <div className="space-y-4">
-                <h3 className="font-bold text-gray-800">Documents</h3>
+                <h3 className="font-bold text-gray-800">📁 Documents</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Device-specific documents */}
-                  {device.calibration_certificate_url && (
-                    <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">🏆</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Certificat d'étalonnage</p>
-                        <p className="text-sm text-gray-500">Document officiel</p>
-                      </div>
-                    </a>
-                  )}
                   
-                  {/* RMA-level documents (shared across devices) */}
+                  {/* === 1. DEVIS (QUOTE) === */}
                   {rma.quote_url && (
                     <a href={rma.quote_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
+                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
                       <div>
                         <p className="font-medium text-gray-800">Devis</p>
-                        <p className="text-sm text-gray-500">Offre de prix</p>
+                        <p className="text-sm text-gray-500">Offre de prix originale</p>
                       </div>
                     </a>
                   )}
                   
+                  {/* === 2. DEVIS SIGNÉ (from signed_quote_url or devis_signe attachment) === */}
+                  {rma.signed_quote_url && (
+                    <a href={rma.signed_quote_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
+                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Devis Signé</p>
+                        <p className="text-sm text-green-600">{rma.bc_signed_by ? `Signé par ${rma.bc_signed_by}` : 'Document signé'}</p>
+                      </div>
+                    </a>
+                  )}
+                  {/* Also show devis_signe from attachments if no signed_quote_url */}
+                  {!rma.signed_quote_url && attachments.filter(a => a.category === 'devis_signe' && a.file_url).map(att => (
+                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
+                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Devis Signé</p>
+                        <p className="text-sm text-green-600">{att.file_name}</p>
+                      </div>
+                    </a>
+                  ))}
+                  
+                  {/* === 3. BON DE COMMANDE (BC uploaded by customer) === */}
                   {rma.bc_file_url && (
                     <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
                       <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
                       <div>
                         <p className="font-medium text-gray-800">Bon de Commande</p>
-                        <p className="text-sm text-gray-500">BC client</p>
+                        <p className="text-sm text-purple-600">{rma.is_contract_rma ? 'BC Contrat' : 'BC client'}</p>
                       </div>
                     </a>
                   )}
+                  {/* Also show bon_commande from attachments */}
+                  {attachments.filter(a => a.category === 'bon_commande' && a.file_url).map(att => (
+                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Bon de Commande</p>
+                        <p className="text-sm text-purple-600">{att.file_name}</p>
+                      </div>
+                    </a>
+                  ))}
                   
-                  {/* Service Report PDF */}
+                  {/* === 4. RAPPORT DE SERVICE === */}
                   {device.report_url && (
                     <a href={device.report_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
                       <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
                       <div>
                         <p className="font-medium text-gray-800">Rapport de Service</p>
-                        <p className="text-sm text-gray-500">Détails du service</p>
+                        <p className="text-sm text-gray-500">Détails du service effectué</p>
                       </div>
                     </a>
                   )}
                   
-                  {/* Avenant if sent */}
-                  {rma.avenant_sent_at && (
-                    <div className="flex items-center gap-4 p-4 border rounded-lg bg-orange-50">
-                      <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Avenant</p>
-                        <p className="text-sm text-gray-500">
-                          {rma.avenant_approved_at ? '✅ Approuvé' : '⏳ En attente'} • {new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR')}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* BL PDF */}
-                  {device.bl_url ? (
+                  {/* === 5. BON DE LIVRAISON === */}
+                  {device.bl_url && (
                     <a href={device.bl_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-cyan-50 transition-colors">
+                      <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
                       <div>
                         <p className="font-medium text-gray-800">Bon de Livraison</p>
-                        <p className="text-sm text-gray-600 font-mono">{device.bl_number}</p>
+                        <p className="text-sm text-gray-600 font-mono">{device.bl_number || 'BL'}</p>
                       </div>
                     </a>
-                  ) : device.bl_number && (
-                    <div className="flex items-center gap-4 p-4 border rounded-lg bg-blue-50">
-                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Bon de Livraison</p>
-                        <p className="text-sm text-gray-600 font-mono">{device.bl_number}</p>
-                      </div>
-                    </div>
                   )}
                   
-                  {/* UPS Label PDF */}
+                  {/* === 6. UPS LABEL === */}
                   {device.ups_label_url && (
                     <a href={device.ups_label_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors">
                       <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">🏷️</div>
                       <div>
                         <p className="font-medium text-gray-800">Étiquette UPS</p>
@@ -4648,10 +4666,60 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       </div>
                     </a>
                   )}
+                  
+                  {/* === 7. CALIBRATION CERTIFICATE === */}
+                  {device.calibration_certificate_url && (
+                    <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-300">
+                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">🏆</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Certificat d'Étalonnage</p>
+                        <p className="text-sm text-green-600">Document officiel ISO</p>
+                      </div>
+                    </a>
+                  )}
+                  
+                  {/* === 8. AVENANT (NOT SIGNED) === */}
+                  {attachments.filter(a => a.category === 'avenant_quote' && a.file_url).map(att => (
+                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-orange-50 transition-colors border-orange-300">
+                      <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Avenant</p>
+                        <p className="text-sm text-orange-600">
+                          {rma.avenant_approved_at ? '✅ Approuvé' : '⏳ En attente'} • €{(rma.avenant_total || 0).toFixed(2)}
+                        </p>
+                      </div>
+                    </a>
+                  ))}
+                  
+                  {/* === 9. AVENANT SIGNÉ === */}
+                  {attachments.filter(a => a.category === 'avenant_signe' && a.file_url).map(att => (
+                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-300">
+                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Avenant Signé</p>
+                        <p className="text-sm text-green-600">Approuvé par client</p>
+                      </div>
+                    </a>
+                  ))}
+                  
+                  {/* === 10. AVENANT BC (BC submitted for avenant) === */}
+                  {attachments.filter(a => a.category === 'avenant_bc' && a.file_url).map(att => (
+                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-orange-50 transition-colors border-orange-200">
+                      <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
+                      <div>
+                        <p className="font-medium text-gray-800">BC Avenant</p>
+                        <p className="text-sm text-orange-600">{att.file_name}</p>
+                      </div>
+                    </a>
+                  ))}
                 </div>
                 
                 {/* No documents message */}
-                {!device.calibration_certificate_url && !device.report_url && !rma.quote_url && !rma.bc_file_url && !device.bl_number && !device.bl_url && !device.ups_label_url && !rma.avenant_sent_at && (
+                {!device.calibration_certificate_url && !device.report_url && !rma.quote_url && !rma.bc_file_url && !rma.signed_quote_url && !device.bl_url && !device.ups_label_url && attachments.filter(a => a.file_url).length === 0 && (
                   <p className="text-gray-400 text-center py-8">Aucun document disponible</p>
                 )}
               </div>
@@ -5855,20 +5923,21 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
       const avenantQuoteUrl = urlData?.publicUrl;
       
       // 3. Update service_request with avenant info
-      // IMPORTANT: Clear BC fields so customer can submit NEW BC for avenant
-      // Keep original bc_approved_at as historical record
+      // IMPORTANT: Clear BC submission fields so customer can submit NEW BC for avenant
+      // BUT preserve signed_quote_url as that's the original devis signé
       const { error: updateError } = await supabase
         .from('service_requests')
         .update({
           avenant_total: total,
           avenant_sent_at: new Date().toISOString(),
           // Clear these so customer needs to submit new BC for avenant
+          // The original BC info is preserved in signed_quote_url and attachments
           bc_submitted_at: null,
           bc_file_url: null,
           bc_signature_url: null,
-          signed_quote_url: null,
           bc_signed_by: null,
           bc_signature_date: null
+          // DO NOT clear signed_quote_url - that's the original devis signé!
         })
         .eq('id', rma.id);
       
