@@ -2252,17 +2252,20 @@ function KPISheet({ requests = [], clients = [] }) {
     setDateTo(to.toISOString().split('T')[0]);
   };
   
-  // Stage options
+  // Stage options - full labels for dropdowns, short for display
   const stageOptions = [
-    { value: 'created', label: 'Créé (RMA soumis)' },
-    { value: 'received', label: 'Reçu' },
-    { value: 'file_attente', label: 'File d\'attente (en attente BC)' },
-    { value: 'bc_approved', label: 'BC approuvé' },
-    { value: 'calibration_start', label: 'Début étalonnage' },
-    { value: 'report_complete', label: 'Rapport terminé' },
-    { value: 'qc_complete', label: 'QC terminé' },
-    { value: 'shipped', label: 'Expédié' }
+    { value: 'created', label: 'Créé (RMA soumis)', short: 'Créé' },
+    { value: 'received', label: 'Reçu', short: 'Reçu' },
+    { value: 'file_attente', label: 'File d\'attente (en attente BC)', short: 'File' },
+    { value: 'bc_approved', label: 'BC approuvé', short: 'BC' },
+    { value: 'calibration_start', label: 'Début étalonnage', short: 'Étal.' },
+    { value: 'report_complete', label: 'Rapport terminé', short: 'Rapport' },
+    { value: 'qc_complete', label: 'QC terminé', short: 'QC' },
+    { value: 'shipped', label: 'Expédié', short: 'Expédié' }
   ];
+  
+  // Helper to get short label
+  const getShortLabel = (value) => stageOptions.find(s => s.value === value)?.short || value;
   
   // Get stage timestamp
   const getStageDate = (device, stage) => {
@@ -2394,7 +2397,7 @@ function KPISheet({ requests = [], clients = [] }) {
       
       {/* Filters Row */}
       <div className="bg-white rounded-xl shadow-sm p-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Date Range */}
           <div>
             <label className="block text-sm font-medium text-gray-600 mb-1">Période</label>
@@ -2413,25 +2416,25 @@ function KPISheet({ requests = [], clients = [] }) {
             </div>
           </div>
           
-          {/* Service Type */}
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">Type de service</label>
-            <select value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-              <option value="all">Tous</option>
-              <option value="calibration">Étalonnage uniquement</option>
-              <option value="repair">Réparation uniquement</option>
-            </select>
-          </div>
-          
-          {/* Status Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">Statut</label>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-              <option value="shipped">Expédiés uniquement (clôturés)</option>
-              <option value="all">Tous les appareils</option>
-            </select>
+          {/* Service Type + Status (Combined - smaller) */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Service</label>
+              <select value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value)}
+                className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                <option value="all">Tous</option>
+                <option value="calibration">Étalonnage</option>
+                <option value="repair">Réparation</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Statut</label>
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                <option value="shipped">Clôturés</option>
+                <option value="all">Tous</option>
+              </select>
+            </div>
           </div>
           
           {/* Stage Analysis */}
@@ -2513,7 +2516,7 @@ function KPISheet({ requests = [], clients = [] }) {
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-purple-500">
               <p className="text-2xl font-bold text-gray-800">{avgDays.toFixed(1)}j</p>
-              <p className="text-sm text-gray-500">Moyenne {stageOptions.find(s => s.value === stageFrom)?.label} → {stageOptions.find(s => s.value === stageTo)?.label}</p>
+              <p className="text-sm text-gray-500">Moyenne {getShortLabel(stageFrom)} → {getShortLabel(stageTo)}</p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-amber-500">
               <p className="text-2xl font-bold text-gray-800">{totalRevenue.toLocaleString('fr-FR')} €</p>
@@ -2540,7 +2543,7 @@ function KPISheet({ requests = [], clients = [] }) {
               <h2 className="text-lg font-bold text-gray-800">
                 📋 Détail des appareils
                 <span className="text-sm font-normal text-gray-500 ml-2">
-                  ({stageOptions.find(s => s.value === stageFrom)?.label} → {stageOptions.find(s => s.value === stageTo)?.label})
+                  ({getShortLabel(stageFrom)} → {getShortLabel(stageTo)})
                 </span>
               </h2>
             </div>
