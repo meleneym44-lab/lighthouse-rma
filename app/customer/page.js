@@ -2692,8 +2692,8 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
           {/* ACTION REQUIRED - Combined RMA, Parts Orders, Avenants, and Contracts */}
           {(serviceRequests.filter(r => 
             (['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at) ||
-            // Include avenants pending approval
-            (r.avenant_sent_at && !r.avenant_approved_at)
+            // Include avenants pending approval (BC not yet submitted)
+            (r.avenant_sent_at && !r.avenant_approved_at && !r.bc_submitted_at)
           ).length > 0 || 
             partsNeedingAction.length > 0 ||
             (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0)) && (
@@ -2703,9 +2703,9 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
               </h3>
               <p className="text-sm text-red-600 mb-3">Les demandes suivantes nécessitent votre attention</p>
               <div className="space-y-2">
-                {/* Avenant Requests - Show first with amber styling */}
+                {/* Avenant Requests needing BC - Show first with amber styling */}
                 {serviceRequests
-                  .filter(r => r.avenant_sent_at && !r.avenant_approved_at)
+                  .filter(r => r.avenant_sent_at && !r.avenant_approved_at && !r.bc_submitted_at)
                   .map(req => (
                   <div 
                     key={`avenant-${req.id}`}
@@ -7102,10 +7102,14 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   const isQuoteSent = request.status === 'quote_sent';
   
   // Detect if this is an avenant quote - avenant sent but not approved (independent of status)
-  const isAvenantQuote = !!request.avenant_sent_at && !request.avenant_approved_at;
+  // AND BC not yet submitted for this avenant
+  const isAvenantQuote = !!request.avenant_sent_at && !request.avenant_approved_at && !request.bc_submitted_at;
+  
+  // Avenant BC submitted, waiting for admin approval
+  const isAvenantBCPending = !!request.avenant_sent_at && !request.avenant_approved_at && !!request.bc_submitted_at;
   
   // Regular quote action needed (not avenant)
-  const needsQuoteAction = isQuoteSent && !request.bc_submitted_at && !isAvenantQuote;
+  const needsQuoteAction = isQuoteSent && !request.bc_submitted_at && !isAvenantQuote && !isAvenantBCPending;
   const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
   
   // Check if submission is valid - need EITHER file OR signature (not both required)
@@ -7375,19 +7379,33 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       }
       
       // Update request status - set to bc_review so admin can verify
-      // Also record quote approval if coming from quote_sent status
-      const updatePayload = { 
-        status: 'bc_review',
-        bc_submitted_at: new Date().toISOString(),
-        bc_signed_by: signatureName,
-        bc_signature_date: signatureDateISO,
-        bc_file_url: fileUrl,
-        bc_signature_url: signatureUrl,
-        signed_quote_url: signedQuotePdfUrl,
-        quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
-      };
+      // BUT for avenant, DON'T change status - the device is already in progress
+      const isSubmittingAvenantBC = !!request.avenant_sent_at && !request.avenant_approved_at;
       
-      console.log('📝 Updating service_request with:', updatePayload);
+      const updatePayload = isSubmittingAvenantBC
+        ? {
+            // Avenant BC - DON'T change status, device continues its work
+            bc_submitted_at: new Date().toISOString(),
+            bc_signed_by: signatureName,
+            bc_signature_date: signatureDateISO,
+            bc_file_url: fileUrl,
+            bc_signature_url: signatureUrl,
+            signed_quote_url: signedQuotePdfUrl
+            // Note: avenant_approved_at will be set by admin when they approve
+          }
+        : {
+            // Regular BC - set to bc_review for admin verification
+            status: 'bc_review',
+            bc_submitted_at: new Date().toISOString(),
+            bc_signed_by: signatureName,
+            bc_signature_date: signatureDateISO,
+            bc_file_url: fileUrl,
+            bc_signature_url: signatureUrl,
+            signed_quote_url: signedQuotePdfUrl,
+            quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
+          };
+      
+      console.log('📝 Updating service_request with:', updatePayload, 'isAvenantBC:', isSubmittingAvenantBC);
       
       const { error: updateError } = await supabase
         .from('service_requests')
@@ -7617,7 +7635,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           </div>
         )}
 
-        {/* AVENANT - Review Required */}
+        {/* AVENANT - Review Required (BC not yet submitted) */}
         {isAvenantQuote && (
           <div className="bg-amber-50 border-b border-amber-300 px-6 py-4">
             <div className="flex items-center justify-between">
@@ -7645,6 +7663,28 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 >
                   ✅ Approuver et soumettre BC
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* AVENANT BC Submitted - Pending Admin Approval */}
+        {isAvenantBCPending && (
+          <div className="bg-amber-50 border-b border-amber-200 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                <span className="text-amber-600 text-lg">📄</span>
+              </div>
+              <div>
+                <p className="font-semibold text-amber-800">Avenant - BC soumis</p>
+                <p className="text-sm text-amber-600">
+                  Votre bon de commande pour l'avenant (€{(request.avenant_total || 0).toFixed(2)}) est en cours de vérification.
+                </p>
+                {request.bc_submitted_at && (
+                  <p className="text-xs text-amber-500 mt-1">
+                    Soumis le {new Date(request.bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(request.bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                )}
               </div>
             </div>
           </div>
