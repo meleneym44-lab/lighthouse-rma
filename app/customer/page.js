@@ -974,6 +974,359 @@ async function generateQuotePDF(options) {
 }
 
 // ============================================
+// SIGNED AVENANT PDF GENERATOR
+// ============================================
+async function generateSignedAvenantPDF(options) {
+  const {
+    request, isSigned = false,
+    signatureName = '', signatureDate = '', signatureImage = null
+  } = options;
+
+  // Load jsPDF
+  await new Promise((resolve, reject) => {
+    if (window.jspdf) { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  
+  const company = request.companies || {};
+  const devices = (request.request_devices || []).filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
+  
+  const pageWidth = 210, pageHeight = 297, margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  const footerHeight = 16;
+  
+  // Colors - amber/orange for avenant
+  const amber = [245, 158, 11];
+  const darkBlue = [26, 26, 46];
+  const gray = [80, 80, 80];
+  const lightGray = [130, 130, 130];
+  const white = [255, 255, 255];
+  
+  let y = margin;
+  
+  // Load logos
+  const loadImageAsBase64 = async (url) => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      return null;
+    }
+  };
+  
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
+  
+  const addFooter = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+    pdf.setTextColor(...white);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(180, 180, 180);
+    pdf.setFontSize(8);
+    pdf.text('16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07', pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+  };
+  
+  const getUsableHeight = () => pageHeight - footerHeight - margin;
+  
+  const checkPageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) {
+      addFooter();
+      pdf.addPage();
+      y = margin;
+      return true;
+    }
+    return false;
+  };
+
+  // ===== HEADER =====
+  if (lighthouseLogo) {
+    try {
+      const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+    } catch (e) {
+      pdf.setFontSize(26);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...darkBlue);
+      pdf.text('LIGHTHOUSE', margin, y + 8);
+    }
+  } else {
+    pdf.setFontSize(26);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('LIGHTHOUSE', margin, y + 8);
+  }
+  
+  // Title - AVENANT SIGNE in amber
+  pdf.setFontSize(18);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...amber);
+  pdf.text(isSigned ? 'AVENANT SIGNE' : 'AVENANT AU DEVIS', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('Ref. ' + (request.request_number || 'FR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
+  
+  y += 18;
+  pdf.setDrawColor(...amber);
+  pdf.setLineWidth(1);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 7;
+
+  // ===== INFO BAR =====
+  pdf.setFillColor(255, 251, 235); // Light amber background
+  pdf.rect(margin, y, contentWidth, 16, 'F');
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('DATE', margin + 5, y + 5);
+  pdf.text('VALIDITE', margin + 60, y + 5);
+  pdf.text('CONDITIONS', margin + 115, y + 5);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  const qDate = request.avenant_sent_at ? new Date(request.avenant_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
+  pdf.text(qDate, margin + 5, y + 12);
+  pdf.text('30 jours', margin + 60, y + 12);
+  pdf.text('A reception de facture', margin + 115, y + 12);
+  y += 20;
+
+  // ===== CLIENT =====
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CLIENT', margin, y);
+  y += 5;
+  pdf.setFontSize(14);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(company.name || 'Client', margin, y);
+  y += 6;
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  if (company.billing_address || company.address) {
+    pdf.text(company.billing_address || company.address, margin, y);
+    y += 5;
+  }
+  const city = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
+  if (city) {
+    pdf.text(city, margin, y);
+    y += 5;
+  }
+  y += 3;
+  
+  // Original quote reference
+  pdf.setFontSize(9);
+  pdf.setTextColor(...lightGray);
+  pdf.text('Devis initial: ' + request.request_number, margin, y);
+  y += 8;
+
+  // ===== INTRODUCTION =====
+  pdf.setFillColor(255, 251, 235);
+  pdf.rect(margin, y, contentWidth, 14, 'F');
+  pdf.setFontSize(9);
+  pdf.setTextColor(146, 64, 14); // Dark amber text
+  pdf.text("Suite a l'inspection de vos appareils, nous avons constate des travaux supplementaires necessaires.", margin + 5, y + 5);
+  pdf.text("Veuillez trouver ci-dessous le detail des interventions recommandees.", margin + 5, y + 10);
+  y += 18;
+
+  // ===== DETAILED PRICING TABLE =====
+  const rowH = 7;
+  const colQty = margin;
+  const colDesc = margin + 12;
+  const colUnit = pageWidth - margin - 45;
+  const colTotal = pageWidth - margin - 3;
+  
+  pdf.setFontSize(13);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Travaux Supplementaires', margin, y);
+  y += 7;
+
+  // Header row
+  pdf.setFillColor(...darkBlue);
+  pdf.rect(margin, y, contentWidth, 9, 'F');
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...white);
+  pdf.text('Qte', colQty + 3, y + 6);
+  pdf.text('Designation', colDesc, y + 6);
+  pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
+  pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
+  y += 9;
+
+  let rowIndex = 0;
+  let grandTotal = 0;
+
+  // Build line items from devices with additional work
+  devices.forEach((device) => {
+    // Device header row
+    checkPageBreak(15);
+    pdf.setFillColor(245, 245, 245);
+    pdf.rect(margin, y, contentWidth, 8, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    const deviceHeader = (device.model_name || 'Appareil') + ' (SN: ' + (device.serial_number || 'N/A') + ')';
+    pdf.text(deviceHeader, colDesc, y + 5.5);
+    y += 8;
+    
+    // Findings (if any)
+    if (device.service_findings) {
+      checkPageBreak(10);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(...lightGray);
+      const findingsText = ('Constat: ' + device.service_findings).substring(0, 90);
+      pdf.text(findingsText, colDesc, y + 4);
+      y += 6;
+    }
+    
+    // Additional work items
+    (device.additional_work_items || []).forEach((item) => {
+      checkPageBreak(rowH + 2);
+      const qty = parseInt(item.quantity) || 1;
+      const unitPrice = parseFloat(item.price) || 0;
+      const lineTotal = qty * unitPrice;
+      grandTotal += lineTotal;
+      
+      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
+      pdf.rect(margin, y, contentWidth, rowH, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...darkBlue);
+      pdf.text(String(qty), colQty + 3, y + 5);
+      
+      // Description with part number if available
+      const desc = item.partNumber ? '[' + item.partNumber + '] ' + (item.description || 'Piece') : (item.description || 'Service');
+      pdf.text(desc.substring(0, 55), colDesc, y + 5);
+      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      y += rowH;
+      rowIndex++;
+    });
+    
+    y += 3; // Space between devices
+  });
+
+  // Total row
+  checkPageBreak(15);
+  pdf.setFillColor(...amber);
+  pdf.rect(margin, y, contentWidth, 11, 'F');
+  pdf.setTextColor(...white);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('TOTAL AVENANT HT', colUnit - 35, y + 7.5);
+  pdf.setFontSize(16);
+  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
+  y += 15;
+
+  // ===== CONDITIONS =====
+  checkPageBreak(25);
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS:', margin, y);
+  y += 4;
+  pdf.text("• Ce devis complementaire est valable 30 jours a compter de sa date d'emission.", margin + 3, y);
+  y += 4;
+  pdf.text('• Les travaux seront effectues apres reception de votre accord ecrit.', margin + 3, y);
+  y += 4;
+  pdf.text('• Conditions de reglement: 30 jours fin de mois.', margin + 3, y);
+  y += 8;
+
+  // ===== SIGNATURE SECTION =====
+  const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
+  
+  pdf.setDrawColor(200, 200, 200);
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, sigY, pageWidth - margin, sigY);
+  
+  pdf.setFontSize(8);
+  pdf.setTextColor(...lightGray);
+  pdf.text('ETABLI PAR', margin, sigY + 7);
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Service Technique', margin, sigY + 14);
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('Lighthouse France', margin, sigY + 20);
+
+  // Capcert logo
+  if (capcertLogo) {
+    try {
+      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
+    } catch (e) {}
+  }
+
+  // Signature box
+  const sigBoxX = pageWidth - margin - 62;
+  
+  if (isSigned && signatureName) {
+    // Signed version - amber box with signature
+    pdf.setFillColor(255, 251, 235); // Light amber background
+    pdf.setDrawColor(...amber);
+    pdf.setLineWidth(0.5);
+    pdf.roundedRect(sigBoxX, sigY + 3, 62, 36, 2, 2, 'FD');
+    
+    pdf.setFontSize(8);
+    pdf.setTextColor(...amber);
+    pdf.text('APPROUVE PAR', sigBoxX + 4, sigY + 10);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(signatureName, sigBoxX + 4, sigY + 17);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Date: ' + signatureDate, sigBoxX + 4, sigY + 24);
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(...amber);
+    pdf.text('Lu et approuve', sigBoxX + 4, sigY + 30);
+    
+    if (signatureImage) {
+      try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 40, sigY + 9, 18, 16); } catch(e) {}
+    }
+  } else {
+    // Unsigned version - dashed box
+    pdf.setFontSize(8);
+    pdf.setTextColor(...lightGray);
+    pdf.text('Signature client', sigBoxX + 16, sigY + 7);
+    pdf.setDrawColor(180, 180, 180);
+    pdf.setLineWidth(0.3);
+    pdf.setLineDashPattern([2, 2], 0);
+    pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 22, 2, 2, 'D');
+    pdf.setLineDashPattern([], 0);
+    pdf.text('Lu et approuve', sigBoxX + 18, sigY + 37);
+  }
+
+  addFooter();
+  return pdf.output('blob');
+}
+
+// ============================================
 // PARTS ORDER QUOTE PDF GENERATOR
 // ============================================
 async function generatePartsQuotePDF(options) {
@@ -7334,28 +7687,46 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         try {
           console.log('📄 Generating signed quote PDF...');
           
-          // Check if this is a parts order
+          // Check if this is a parts order or avenant
           const isPartsRequest = request.request_type === 'parts';
+          const isAvenantSubmission = !!request.avenant_sent_at && !request.avenant_approved_at;
           
-          const pdfBlob = isPartsRequest 
-            ? await generatePartsQuotePDF({
-                request,
-                isSigned: true,
-                signatureName: signatureName,
-                signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
-                signatureImage: signatureData
-              })
-            : await generateQuotePDF({
-                request,
-                isSigned: true,
-                signatureName: signatureName,
-                signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
-                signatureImage: signatureData
-              });
+          let pdfBlob;
+          let pdfFileName;
+          
+          if (isAvenantSubmission) {
+            // Generate signed avenant PDF
+            console.log('📄 Generating AVENANT signed PDF...');
+            pdfBlob = await generateSignedAvenantPDF({
+              request,
+              isSigned: true,
+              signatureName: signatureName,
+              signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+              signatureImage: signatureData
+            });
+            pdfFileName = `avenant_signe_${request.request_number}_${Date.now()}.pdf`;
+          } else if (isPartsRequest) {
+            pdfBlob = await generatePartsQuotePDF({
+              request,
+              isSigned: true,
+              signatureName: signatureName,
+              signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+              signatureImage: signatureData
+            });
+            pdfFileName = `devis_pieces_signe_${request.request_number}_${Date.now()}.pdf`;
+          } else {
+            pdfBlob = await generateQuotePDF({
+              request,
+              isSigned: true,
+              signatureName: signatureName,
+              signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+              signatureImage: signatureData
+            });
+            pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
+          }
           
           console.log('📄 PDF blob generated, size:', pdfBlob?.size);
           
-          const pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
           const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
             .from('documents')
             .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
@@ -7428,7 +7799,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           file_type: bcFile?.type || 'application/pdf',
           file_size: bcFile?.size || 0,
           uploaded_by: profile.id,
-          category: 'bon_commande'
+          category: isSubmittingAvenantBC ? 'avenant_bc' : 'bon_commande'
         });
         console.log('📎 BC attachment saved:', { fileUrl, error: bcAttachError });
       }
@@ -7437,12 +7808,14 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       if (signedQuotePdfUrl) {
         const { error: pdfAttachError } = await supabase.from('request_attachments').insert({
           request_id: request.id,
-          file_name: `Devis_Signé_${request.request_number}.pdf`,
+          file_name: isSubmittingAvenantBC 
+            ? `Avenant_Signé_${request.request_number}.pdf`
+            : `Devis_Signé_${request.request_number}.pdf`,
           file_url: signedQuotePdfUrl,
           file_type: 'application/pdf',
           file_size: 0,
           uploaded_by: profile.id,
-          category: 'devis_signe'
+          category: isSubmittingAvenantBC ? 'avenant_signe' : 'devis_signe'
         });
         console.log('📎 Signed PDF attachment saved:', { signedQuotePdfUrl, error: pdfAttachError });
       } else {
