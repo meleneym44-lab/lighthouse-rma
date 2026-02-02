@@ -58,6 +58,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   const company = rma.companies || {};
   const biz = options.businessSettings || {};
   const shippingInfo = options.shipping || { parcels: 1, unitPrice: 45, total: 45 };
+  const quoteNumber = options.quoteNumber || rma.quote_number || null; // DEV-0226-001 format
   
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
@@ -116,13 +117,23 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...green);
-  pdf.text('OFFRE DE PRIX', pageWidth - margin, y + 8, { align: 'right' });
-  pdf.setFontSize(11);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  pdf.text('N. ' + (rma.request_number || 'FR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
+  pdf.text('OFFRE DE PRIX', pageWidth - margin, y + 5, { align: 'right' });
   
-  y += 18;
+  // Document number (DEV-0226-001) - primary identifier
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('N° ' + (quoteNumber || '—'), pageWidth - margin, y + 11, { align: 'right' });
+  
+  // RMA reference (FR-00327) - secondary reference
+  if (rma.request_number) {
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('RMA: ' + rma.request_number, pageWidth - margin, y + 16, { align: 'right' });
+  }
+  
+  y += 20;
   pdf.setDrawColor(...green);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
@@ -590,10 +601,21 @@ const generatePartsQuotePDF = async (order, quoteData) => {
   pdf.setFontSize(14);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...amber);
-  pdf.text('DEVIS PIECES', pageWidth - margin, y + 5, { align: 'right' });
+  pdf.text('DEVIS PIECES', pageWidth - margin, y + 3, { align: 'right' });
+  
+  // Document number (DEV-0226-001)
   pdf.setFontSize(10);
-  pdf.setTextColor(...gray);
-  pdf.text(quoteRef, pageWidth - margin, y + 11, { align: 'right' });
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('N° ' + (quoteRef || '—'), pageWidth - margin, y + 9, { align: 'right' });
+  
+  // PO reference if exists
+  if (order.request_number) {
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Réf: ' + order.request_number, pageWidth - margin, y + 14, { align: 'right' });
+  }
   
   y += 18;
   
@@ -8611,6 +8633,17 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
         poNumber = `PO-${String(nextNum).padStart(5, '0')}`;
       }
       
+      // Get next document number for quote (DEV-MMYY-NNN)
+      let quoteNumber = null;
+      try {
+        const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'DEV' });
+        if (!docNumError && docNumData) {
+          quoteNumber = docNumData;
+        }
+      } catch (e) {
+        console.error('Could not generate document number:', e);
+      }
+      
       // Build quote_data
       const quoteData = {
         parts: quoteParts.map(p => ({
@@ -8623,7 +8656,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
         shipping: shippingData,
         partsTotal,
         grandTotal,
-        quoteRef,
+        quoteRef: quoteNumber || quoteRef,
         createdBy: signatory,
         createdAt: new Date().toISOString()
       };
@@ -8631,7 +8664,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
       // Generate quote PDF
       let quoteUrl = null;
       try {
-        const pdfBlob = await generatePartsQuotePDF(order, quoteData);
+        const pdfBlob = await generatePartsQuotePDF(order, { ...quoteData, quoteRef: quoteNumber || quoteRef });
         const pdfFileName = `devis_pieces_${poNumber}_${Date.now()}.pdf`;
         
         const { data: uploadData, error: uploadError } = await supabase.storage
@@ -8655,6 +8688,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
         .from('service_requests')
         .update({
           request_number: poNumber,
+          quote_number: quoteNumber,
           status: 'quote_sent',
           quote_sent_at: new Date().toISOString(),
           quote_data: quoteData,
@@ -8665,7 +8699,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
       
       if (error) throw error;
       
-      notify(`Devis ${quoteRef} envoyé pour ${order.companies?.name}`);
+      notify(`Devis ${quoteNumber || quoteRef} envoyé pour ${order.companies?.name}`);
       reload();
       onClose();
     } catch (err) {
@@ -14943,7 +14977,283 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
   );
 }
 
-function SettingsSheet({ profile, staffMembers, notify, reload }) { return <div className="space-y-6"><h1 className="text-2xl font-bold text-gray-800">Paramètres</h1><div className="bg-white rounded-xl shadow-sm"><div className="px-6 py-4 border-b"><h2 className="font-bold text-gray-800">Équipe Lighthouse</h2></div><div className="p-6 space-y-3">{staffMembers.map(member => <div key={member.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-[#00A651] text-white flex items-center justify-center font-bold">{member.full_name?.charAt(0)?.toUpperCase()}</div><div><p className="font-medium">{member.full_name}</p><p className="text-sm text-gray-500">{member.email}</p></div></div><span className={`px-3 py-1 rounded-full text-sm ${member.role === 'lh_admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>{member.role === 'lh_admin' ? '👑 Admin' : '👤 Employé'}</span></div>)}</div></div></div>; }
+function SettingsSheet({ profile, staffMembers, notify, reload }) {
+  const [activeTab, setActiveTab] = useState('team');
+  const [documentTypes, setDocumentTypes] = useState([]);
+  const [counters, setCounters] = useState([]);
+  const [loadingCounters, setLoadingCounters] = useState(false);
+  const [editingCounter, setEditingCounter] = useState(null);
+  const [newValue, setNewValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  
+  // Get current MMYY
+  const currentYearMonth = (() => {
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yy = String(now.getFullYear()).slice(-2);
+    return mm + yy;
+  })();
+  
+  // Load document types and counters
+  const loadCounters = async () => {
+    setLoadingCounters(true);
+    
+    // Load document types
+    const { data: types } = await supabase
+      .from('document_types')
+      .select('*')
+      .order('sort_order');
+    if (types) setDocumentTypes(types);
+    
+    // Load all counters
+    const { data: ctrs } = await supabase
+      .from('document_counters')
+      .select('*')
+      .order('year_month', { ascending: false });
+    if (ctrs) setCounters(ctrs);
+    
+    setLoadingCounters(false);
+  };
+  
+  useEffect(() => {
+    if (activeTab === 'documents') {
+      loadCounters();
+    }
+  }, [activeTab]);
+  
+  // Save counter value
+  const saveCounter = async (docType, yearMonth, value) => {
+    setSaving(true);
+    try {
+      const numValue = parseInt(value) || 0;
+      
+      // Use RPC to call the set_doc_counter function
+      const { data, error } = await supabase.rpc('set_doc_counter', {
+        p_doc_type: docType,
+        p_year_month: yearMonth,
+        p_value: numValue
+      });
+      
+      if (error) throw error;
+      
+      notify('Compteur mis à jour', 'success');
+      loadCounters();
+      setEditingCounter(null);
+      setNewValue('');
+    } catch (err) {
+      console.error('Error saving counter:', err);
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSaving(false);
+  };
+  
+  // Get counter for specific doc type and month
+  const getCounter = (docType, yearMonth) => {
+    return counters.find(c => c.doc_type === docType && c.year_month === yearMonth);
+  };
+  
+  // Format year_month for display
+  const formatYearMonth = (ym) => {
+    if (!ym || ym.length !== 4) return ym;
+    const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
+    const mm = parseInt(ym.slice(0, 2)) - 1;
+    const yy = ym.slice(2);
+    return `${months[mm]} 20${yy}`;
+  };
+
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-gray-800">Paramètres</h1>
+      
+      {/* Tabs */}
+      <div className="bg-white rounded-xl shadow-sm">
+        <div className="border-b flex">
+          <button
+            onClick={() => setActiveTab('team')}
+            className={`px-6 py-3 font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'team' 
+                ? 'border-[#00A651] text-[#00A651]' 
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            👥 Équipe
+          </button>
+          <button
+            onClick={() => setActiveTab('documents')}
+            className={`px-6 py-3 font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'documents' 
+                ? 'border-[#00A651] text-[#00A651]' 
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            📄 Numérotation Documents
+          </button>
+        </div>
+        
+        {/* Team Tab */}
+        {activeTab === 'team' && (
+          <div className="p-6 space-y-3">
+            {staffMembers.map(member => (
+              <div key={member.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-[#00A651] text-white flex items-center justify-center font-bold">
+                    {member.full_name?.charAt(0)?.toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="font-medium">{member.full_name}</p>
+                    <p className="text-sm text-gray-500">{member.email}</p>
+                  </div>
+                </div>
+                <span className={`px-3 py-1 rounded-full text-sm ${
+                  member.role === 'lh_admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'
+                }`}>
+                  {member.role === 'lh_admin' ? '👑 Admin' : '👤 Employé'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {/* Documents Tab */}
+        {activeTab === 'documents' && (
+          <div className="p-6">
+            {loadingCounters ? (
+              <div className="text-center py-8 text-gray-500">Chargement...</div>
+            ) : (
+              <div className="space-y-6">
+                {/* Current Month Overview */}
+                <div>
+                  <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                    <span className="text-lg">📊</span>
+                    Compteurs du mois actuel ({formatYearMonth(currentYearMonth)})
+                  </h3>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Format: PREFIX-MMYY-NNN (ex: DEV-0226-001). Les compteurs se réinitialisent chaque mois.
+                  </p>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {documentTypes.map(docType => {
+                      const counter = getCounter(docType.doc_type, currentYearMonth);
+                      const currentNum = counter?.current_number || 0;
+                      const nextNum = currentNum + 1;
+                      const isEditing = editingCounter === `${docType.doc_type}-${currentYearMonth}`;
+                      
+                      return (
+                        <div key={docType.doc_type} className="bg-gray-50 rounded-xl p-4 border">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-medium text-gray-500">{docType.description_fr}</span>
+                            <span className="text-xs bg-gray-200 px-2 py-0.5 rounded font-mono">{docType.prefix}</span>
+                          </div>
+                          
+                          {isEditing ? (
+                            <div className="space-y-2">
+                              <input
+                                type="number"
+                                value={newValue}
+                                onChange={e => setNewValue(e.target.value)}
+                                className="w-full px-3 py-2 border rounded-lg text-center font-mono"
+                                placeholder="Valeur actuelle"
+                                min="0"
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => { setEditingCounter(null); setNewValue(''); }}
+                                  className="flex-1 px-3 py-1.5 bg-gray-200 rounded-lg text-sm"
+                                >
+                                  Annuler
+                                </button>
+                                <button
+                                  onClick={() => saveCounter(docType.doc_type, currentYearMonth, newValue)}
+                                  disabled={saving}
+                                  className="flex-1 px-3 py-1.5 bg-[#00A651] text-white rounded-lg text-sm disabled:opacity-50"
+                                >
+                                  {saving ? '...' : 'OK'}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="text-center mb-2">
+                                <p className="text-2xl font-bold text-[#1E3A5F] font-mono">
+                                  {String(currentNum).padStart(3, '0')}
+                                </p>
+                                <p className="text-xs text-gray-400">dernier utilisé</p>
+                              </div>
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-gray-500">
+                                  Prochain: <span className="font-mono font-medium text-green-600">{docType.prefix}-{currentYearMonth}-{String(nextNum).padStart(3, '0')}</span>
+                                </span>
+                                <button
+                                  onClick={() => { setEditingCounter(`${docType.doc_type}-${currentYearMonth}`); setNewValue(String(currentNum)); }}
+                                  className="text-blue-600 hover:text-blue-800"
+                                >
+                                  ✏️
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                
+                {/* History */}
+                {counters.length > 0 && (
+                  <div>
+                    <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                      <span className="text-lg">📜</span>
+                      Historique des compteurs
+                    </h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left py-2 px-3">Période</th>
+                            {documentTypes.map(dt => (
+                              <th key={dt.doc_type} className="text-center py-2 px-3">{dt.prefix}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {/* Group counters by year_month */}
+                          {[...new Set(counters.map(c => c.year_month))].slice(0, 6).map(ym => (
+                            <tr key={ym} className="border-b hover:bg-gray-50">
+                              <td className="py-2 px-3 font-medium">{formatYearMonth(ym)}</td>
+                              {documentTypes.map(dt => {
+                                const c = getCounter(dt.doc_type, ym);
+                                return (
+                                  <td key={dt.doc_type} className="text-center py-2 px-3 font-mono text-gray-600">
+                                    {c ? String(c.current_number).padStart(3, '0') : '—'}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Help */}
+                <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                  <h4 className="font-medium text-blue-800 mb-2">💡 Comment ça marche</h4>
+                  <ul className="text-sm text-blue-700 space-y-1">
+                    <li>• Chaque document reçoit un numéro unique au format <span className="font-mono">PREFIX-MMYY-NNN</span></li>
+                    <li>• Les compteurs se réinitialisent automatiquement chaque mois</li>
+                    <li>• Le numéro RMA reste séparé (<span className="font-mono">FR-XXXXX</span>) et apparaît comme référence</li>
+                    <li>• Utilisez le bouton ✏️ pour corriger un compteur si nécessaire</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, setBusinessSettings }) {
   const [editingSettings, setEditingSettings] = useState(false);
@@ -16050,6 +16360,18 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
       const lastNum = data?.[0]?.request_number ? parseInt(data[0].request_number.replace('FR-', '')) : 0;
       rmaNumber = 'FR-' + String(lastNum + 1).padStart(5, '0');
     }
+    
+    // Get next document number for quote (DEV-MMYY-NNN)
+    let quoteNumber = null;
+    try {
+      const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'DEV' });
+      if (!docNumError && docNumData) {
+        quoteNumber = docNumData;
+      }
+    } catch (e) {
+      console.error('Could not generate document number:', e);
+      // Continue without document number if it fails
+    }
 
     // Save complete quote data
     const quoteData = {
@@ -16109,7 +16431,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           shippingTotal: shippingTotal,
           grandTotal: grandTotal,
           isContractRMA: hasContractCoveredDevices,
-          isFullyContractCovered: isFullyContractCovered
+          isFullyContractCovered: isFullyContractCovered,
+          quoteNumber: quoteNumber
         });
         const fileName = `${rmaNumber}_devis_${Date.now()}.pdf`;
         quoteUrl = await uploadPDFToStorage(pdfBlob, `quotes/${rmaNumber}`, fileName);
@@ -16138,6 +16461,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
 
       const updateData = {
         request_number: rmaNumber,
+        quote_number: quoteNumber,
         status: newStatus,
         quoted_at: new Date().toISOString(),
         quote_total: grandTotal,
