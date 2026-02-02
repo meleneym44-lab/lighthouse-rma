@@ -306,21 +306,6 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     drawServiceBlock(REPAIR_DATA, [249, 115, 22]);
   }
 
-  // ===== CONDITIONS/DISCLAIMERS =====
-  checkPageBreak(25);
-  pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...lightGray);
-  pdf.text('CONDITIONS', margin, y);
-  y += 4;
-  pdf.setFontSize(8);
-  pdf.setTextColor(...gray);
-  DISCLAIMERS.forEach(d => {
-    pdf.text('- ' + d, margin, y);
-    y += 4;
-  });
-  y += 5;
-
   // ===== DETAILED PRICING TABLE (Qté | Désignation | Prix Unit. | Total HT) =====
   const rowH = 7;
   const colQty = margin;
@@ -499,6 +484,23 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     pdf.text('* Le nettoyage cellule sera facture uniquement si necessaire selon l\'etat du capteur a reception.', margin, y);
     y += 5;
   }
+
+  // ===== CONDITIONS/DISCLAIMERS (after pricing) =====
+  y += 3;
+  checkPageBreak(25);
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS', margin, y);
+  y += 4;
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  DISCLAIMERS.forEach(d => {
+    pdf.text('- ' + d, margin, y);
+    y += 4;
+  });
+  y += 3;
 
   // ===== SIGNATURE SECTION =====
   const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
