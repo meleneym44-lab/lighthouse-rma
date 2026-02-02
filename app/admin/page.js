@@ -6183,17 +6183,12 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setTextColor(...darkBlue);
   pdf.text('N° ' + (supNumber || '—'), pageWidth - margin, y + 11, { align: 'right' });
   
-  // RMA and original quote references
+  // RMA reference only (no Devis reference)
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  let refY = y + 16;
-  if (rma.quote_number) {
-    pdf.text('Devis: ' + rma.quote_number, pageWidth - margin, refY, { align: 'right' });
-    refY += 4;
-  }
   if (rma.request_number) {
-    pdf.text('RMA: ' + rma.request_number, pageWidth - margin, refY, { align: 'right' });
+    pdf.text('RMA: ' + rma.request_number, pageWidth - margin, y + 16, { align: 'right' });
   }
   
   y += 20;
@@ -6242,13 +6237,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
     pdf.text(city, margin, y);
     y += 5;
   }
-  y += 3;
-  
-  // Original quote reference
-  pdf.setFontSize(9);
-  pdf.setTextColor(...lightGray);
-  pdf.text(`Devis initial: ${rma.request_number}`, margin, y);
-  y += 8;
+  y += 5;
 
   // ===== INTRODUCTION =====
   pdf.setFillColor(240, 253, 244); // Light green background
@@ -6342,25 +6331,29 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
     y += 3; // Space between devices
   });
 
-  // Total row
-  checkPageBreak(15);
+  // Add some space before total
+  y += 5;
+
+  // Total row - taller box with better spacing
+  checkPageBreak(20);
   pdf.setFillColor(...green);
-  pdf.rect(margin, y, contentWidth, 11, 'F');
+  pdf.rect(margin, y, contentWidth, 14, 'F');
   pdf.setTextColor(...white);
-  pdf.setFontSize(11);
+  pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('TOTAL SUPPLÉMENT HT', colUnit - 35, y + 7.5);
-  pdf.setFontSize(16);
-  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
-  y += 15;
+  pdf.text('TOTAL SUPPLÉMENT HT', margin + 10, y + 9);
+  pdf.setFontSize(18);
+  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 10, { align: 'right' });
+  y += 18;
 
   // ===== CONDITIONS =====
   checkPageBreak(25);
   pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'normal');
+  pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...lightGray);
   pdf.text('CONDITIONS:', margin, y);
-  y += 4;
+  y += 5;
+  pdf.setFont('helvetica', 'normal');
   pdf.text('• Ce devis complementaire est valable 30 jours a compter de sa date d\'emission.', margin + 3, y);
   y += 4;
   pdf.text('• Les travaux seront effectues apres reception de votre accord ecrit (signature ou bon de commande).', margin + 3, y);
@@ -6560,7 +6553,6 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
               <div className="text-right">
                 <p className="text-2xl font-bold text-[#00A651]">SUPPLÉMENT AU DEVIS</p>
                 <p className="text-sm font-bold text-[#1E3A5F]">N° {rma.supplement_number || '(Généré à l\'envoi)'}</p>
-                {rma.quote_number && <p className="text-xs text-gray-500">Devis: {rma.quote_number}</p>}
                 <p className="text-xs text-gray-500">RMA: {rma.request_number}</p>
               </div>
             </div>
