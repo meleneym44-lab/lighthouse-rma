@@ -9630,10 +9630,10 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
     .watermark img { width: 500px; height: auto; }
     
     .content { flex: 1 0 auto; }
-    .header { margin-bottom: 15px; padding-bottom: 12px; border-bottom: 2px solid #00A651; display: flex; justify-content: space-between; align-items: flex-start; }
+    .header { margin-bottom: 15px; padding-bottom: 12px; border-bottom: 2px solid #333; display: flex; justify-content: space-between; align-items: flex-start; }
     .header img { height: 50px; }
     .header-right { text-align: right; }
-    .doc-title { font-size: 18pt; font-weight: bold; color: #00A651; margin: 0; }
+    .doc-title { font-size: 18pt; font-weight: bold; color: #1E3A5F; margin: 0; }
     .doc-number { font-size: 12pt; font-weight: bold; color: #1E3A5F; margin-top: 4px; }
     .doc-ref { font-size: 9pt; color: #666; margin-top: 2px; }
     .info-row { display: flex; justify-content: space-between; margin: 12px 0; }
@@ -10142,7 +10142,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                       <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#00A651' }}>BON DE LIVRAISON</div>
+                          <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#1E3A5F' }}>BON DE LIVRAISON</div>
                           <div style={{ fontSize: '12pt', fontWeight: 'bold', color: '#1E3A5F', marginTop: '4px' }}>N° {bl.blNumber}</div>
                           <div style={{ fontSize: '9pt', color: '#666', marginTop: '4px' }}>Réf: {bl.orderNumber}</div>
                         </div>
@@ -10153,14 +10153,22 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                         <div><span style={{ color: '#666' }}>{biz.city || 'Créteil'}, le</span> <strong>{bl.date}</strong></div>
                       </div>
 
-                      {/* Client box - semi-transparent */}
-                      <div style={{ background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px', margin: '12px 0' }}>
-                        <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Destinataire</div>
-                        <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{bl.client.name}</div>
-                        {bl.client.attention && <div>À l'attention de: <strong>{bl.client.attention}</strong></div>}
-                        <div>{bl.client.street}</div>
-                        <div>{bl.client.city}</div>
-                        <div>{bl.client.country}</div>
+                      {/* Two column layout: Client + Références */}
+                      <div style={{ display: 'flex', gap: '15px', margin: '12px 0' }}>
+                        {/* Client box */}
+                        <div style={{ flex: '1.5', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
+                          <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Destinataire</div>
+                          <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{bl.client.name}</div>
+                          {bl.client.attention && <div>À l'attention de: <strong>{bl.client.attention}</strong></div>}
+                          <div>{bl.client.street}</div>
+                          <div>{bl.client.city}</div>
+                          <div>{bl.client.country}</div>
+                        </div>
+                        {/* Références box */}
+                        <div style={{ flex: '1', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
+                          <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Références Commande</div>
+                          <div style={{ fontSize: '11pt', fontWeight: 'bold', color: '#1E3A5F' }}>{bl.orderNumber}</div>
+                        </div>
                       </div>
 
                       {/* Table - semi-transparent header */}
@@ -10598,10 +10606,10 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     .watermark img { width: 500px; height: auto; }
     
     .content { flex: 1 0 auto; }
-    .header { margin-bottom: 15px; padding-bottom: 12px; border-bottom: 2px solid #00A651; display: flex; justify-content: space-between; align-items: flex-start; }
+    .header { margin-bottom: 15px; padding-bottom: 12px; border-bottom: 2px solid #333; display: flex; justify-content: space-between; align-items: flex-start; }
     .header img { height: 50px; }
     .header-right { text-align: right; }
-    .doc-title { font-size: 18pt; font-weight: bold; color: #00A651; margin: 0; }
+    .doc-title { font-size: 18pt; font-weight: bold; color: #1E3A5F; margin: 0; }
     .doc-number { font-size: 12pt; font-weight: bold; color: #1E3A5F; margin-top: 4px; }
     .doc-ref { font-size: 9pt; color: #666; margin-top: 2px; }
     .info-row { display: flex; justify-content: space-between; margin: 12px 0; }
@@ -11262,16 +11270,11 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                     {/* Content area */}
                     <div style={{ flex: '1 0 auto' }}>
                       {/* Header */}
-                      <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #00A651', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#00A651' }}>BON DE LIVRAISON</div>
+                          <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#1E3A5F' }}>BON DE LIVRAISON</div>
                           <div style={{ fontSize: '12pt', fontWeight: 'bold', color: '#1E3A5F', marginTop: '4px' }}>N° {bl.blNumber}</div>
-                          {bl.bcNumbers && bl.bcNumbers.length > 0 && (
-                            <div style={{ fontSize: '9pt', color: '#666', marginTop: '2px' }}>
-                              {bl.bcNumbers.length === 1 ? 'Commande: ' : 'Commandes: '}{bl.bcNumbers.join(', ')}
-                            </div>
-                          )}
                           <div style={{ fontSize: '9pt', color: '#666', marginTop: '2px' }}>RMA: {bl.rmaNumber}</div>
                         </div>
                       </div>
@@ -11281,14 +11284,28 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                         <div><span style={{ color: '#666' }}>{biz.city || 'Créteil'}, le</span> <strong>{bl.date}</strong></div>
                       </div>
 
-                      {/* Client box - semi-transparent */}
-                      <div style={{ background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px', margin: '12px 0' }}>
-                        <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Destinataire</div>
-                        <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{bl.client.name}</div>
-                        {bl.client.attention && <div>À l'attention de: <strong>{bl.client.attention}</strong></div>}
-                        <div>{bl.client.street}</div>
-                        <div>{bl.client.city}</div>
-                        <div>{bl.client.country}</div>
+                      {/* Two column layout: Client + Références */}
+                      <div style={{ display: 'flex', gap: '15px', margin: '12px 0' }}>
+                        {/* Client box */}
+                        <div style={{ flex: '1.5', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
+                          <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Destinataire</div>
+                          <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{bl.client.name}</div>
+                          {bl.client.attention && <div>À l'attention de: <strong>{bl.client.attention}</strong></div>}
+                          <div>{bl.client.street}</div>
+                          <div>{bl.client.city}</div>
+                          <div>{bl.client.country}</div>
+                        </div>
+                        {/* Références box */}
+                        <div style={{ flex: '1', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
+                          <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Références Commande</div>
+                          {bl.bcNumbers && bl.bcNumbers.length > 0 ? (
+                            bl.bcNumbers.map((bc, i) => (
+                              <div key={i} style={{ fontSize: '11pt', fontWeight: 'bold', color: '#1E3A5F' }}>{bc}</div>
+                            ))
+                          ) : (
+                            <div style={{ fontSize: '11pt', color: '#999' }}>—</div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Table - semi-transparent header */}
