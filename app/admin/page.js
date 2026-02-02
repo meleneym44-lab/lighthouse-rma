@@ -5128,27 +5128,22 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                   ))}
                   
                   {/* === 3. BON DE COMMANDE (BC uploaded by customer) === */}
-                  {rma.bc_file_url && (
-                    <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
-                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Bon de Commande</p>
-                        <p className="text-sm text-purple-600">{rma.is_contract_rma ? 'BC Contrat' : 'BC client'}</p>
-                      </div>
-                    </a>
-                  )}
-                  {/* Also show bon_commande from attachments */}
-                  {attachments.filter(a => a.category === 'bon_commande' && a.file_url).map(att => (
-                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
-                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Bon de Commande</p>
-                        <p className="text-sm text-purple-600">{att.file_name}</p>
-                      </div>
-                    </a>
-                  ))}
+                  {/* Show BC with the BC number - prefer bc_file_url, fallback to attachment */}
+                  {(() => {
+                    const bcAttachment = attachments.find(a => a.category === 'bon_commande' && a.file_url);
+                    const bcUrl = rma.bc_file_url || bcAttachment?.file_url;
+                    if (!bcUrl) return null;
+                    return (
+                      <a href={bcUrl} target="_blank" rel="noopener noreferrer"
+                         className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                        <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
+                        <div>
+                          <p className="font-medium text-gray-800">Bon de Commande</p>
+                          <p className="text-sm text-purple-600">{rma.bc_number ? `N° ${rma.bc_number}` : (rma.is_contract_rma ? 'BC Contrat' : 'BC client')}</p>
+                        </div>
+                      </a>
+                    );
+                  })()}
                   
                   {/* === 4. RAPPORT DE SERVICE === */}
                   {device.report_url && (
