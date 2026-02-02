@@ -273,10 +273,11 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     const blockH = titleH + textH;
     checkPageBreak(blockH + 5);
     
-    // Draw vertical line - ends exactly at last text line
+    // Draw vertical line - stops at last text line (subtract more to end earlier)
     pdf.setDrawColor(...color);
     pdf.setLineWidth(1);
-    pdf.line(margin, y, margin, y + blockH - 2);
+    const lineEndY = y + blockH - 7; // End 7mm before block ends
+    pdf.line(margin, y, margin, lineEndY);
     
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
