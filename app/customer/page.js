@@ -566,13 +566,21 @@ async function generateQuotePDF(options) {
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...green);
-  pdf.text(isSigned ? 'DEVIS SIGNE' : 'OFFRE DE PRIX', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.text(isSigned ? 'DEVIS SIGNE' : 'OFFRE DE PRIX', pageWidth - margin, y + 5, { align: 'right' });
+  
+  // Document number (DEV-0226-001) - primary
   pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('N° ' + (request.quote_number || '—'), pageWidth - margin, y + 11, { align: 'right' });
+  
+  // RMA reference
+  pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text('N. ' + (request.request_number || 'FR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
+  pdf.text('RMA: ' + (request.request_number || 'FR-XXXXX'), pageWidth - margin, y + 16, { align: 'right' });
   
-  y += 18;
+  y += 20;
   pdf.setDrawColor(...green);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
@@ -733,21 +741,6 @@ async function generateQuotePDF(options) {
     drawServiceBlock(REPAIR_DATA, [249, 115, 22]);
   }
 
-  // ===== CONDITIONS/DISCLAIMERS =====
-  checkPageBreak(25);
-  pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...lightGray);
-  pdf.text('CONDITIONS', margin, y);
-  y += 4;
-  pdf.setFontSize(8);
-  pdf.setTextColor(...gray);
-  DISCLAIMERS.forEach(d => {
-    pdf.text('- ' + d, margin, y);
-    y += 4;
-  });
-  y += 5;
-
   // ===== DETAILED PRICING TABLE (Qté | Désignation | Prix Unit. | Total HT) =====
   const rowH = 7;
   const colQty = margin;
@@ -900,6 +893,23 @@ async function generateQuotePDF(options) {
     y += 5;
   }
 
+  // ===== CONDITIONS/DISCLAIMERS (after pricing) =====
+  y += 3;
+  checkPageBreak(25);
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS', margin, y);
+  y += 4;
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  DISCLAIMERS.forEach(d => {
+    pdf.text('- ' + d, margin, y);
+    y += 4;
+  });
+  y += 3;
+
   // ===== SIGNATURE SECTION =====
   const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
   
@@ -951,359 +961,6 @@ async function generateQuotePDF(options) {
     pdf.setFontSize(8);
     pdf.setFont('helvetica', 'italic');
     pdf.setTextColor(...green);
-    pdf.text('Lu et approuve', sigBoxX + 4, sigY + 30);
-    
-    if (signatureImage) {
-      try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 40, sigY + 9, 18, 16); } catch(e) {}
-    }
-  } else {
-    // Unsigned version - dashed box
-    pdf.setFontSize(8);
-    pdf.setTextColor(...lightGray);
-    pdf.text('Signature client', sigBoxX + 16, sigY + 7);
-    pdf.setDrawColor(180, 180, 180);
-    pdf.setLineWidth(0.3);
-    pdf.setLineDashPattern([2, 2], 0);
-    pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 22, 2, 2, 'D');
-    pdf.setLineDashPattern([], 0);
-    pdf.text('Lu et approuve', sigBoxX + 18, sigY + 37);
-  }
-
-  addFooter();
-  return pdf.output('blob');
-}
-
-// ============================================
-// SIGNED AVENANT PDF GENERATOR
-// ============================================
-async function generateSignedAvenantPDF(options) {
-  const {
-    request, isSigned = false,
-    signatureName = '', signatureDate = '', signatureImage = null
-  } = options;
-
-  // Load jsPDF
-  await new Promise((resolve, reject) => {
-    if (window.jspdf) { resolve(); return; }
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-    script.onload = resolve;
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF('p', 'mm', 'a4');
-  
-  const company = request.companies || {};
-  const devices = (request.request_devices || []).filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
-  
-  const pageWidth = 210, pageHeight = 297, margin = 15;
-  const contentWidth = pageWidth - (margin * 2);
-  const footerHeight = 16;
-  
-  // Colors - amber/orange for avenant
-  const amber = [245, 158, 11];
-  const darkBlue = [26, 26, 46];
-  const gray = [80, 80, 80];
-  const lightGray = [130, 130, 130];
-  const white = [255, 255, 255];
-  
-  let y = margin;
-  
-  // Load logos
-  const loadImageAsBase64 = async (url) => {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) return null;
-      const blob = await response.blob();
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = () => resolve(null);
-        reader.readAsDataURL(blob);
-      });
-    } catch (e) {
-      return null;
-    }
-  };
-  
-  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
-  let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
-  
-  const addFooter = () => {
-    pdf.setFillColor(...darkBlue);
-    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
-    pdf.setTextColor(...white);
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(180, 180, 180);
-    pdf.setFontSize(8);
-    pdf.text('16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07', pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
-  };
-  
-  const getUsableHeight = () => pageHeight - footerHeight - margin;
-  
-  const checkPageBreak = (needed) => {
-    if (y + needed > getUsableHeight()) {
-      addFooter();
-      pdf.addPage();
-      y = margin;
-      return true;
-    }
-    return false;
-  };
-
-  // ===== HEADER =====
-  if (lighthouseLogo) {
-    try {
-      const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
-    } catch (e) {
-      pdf.setFontSize(26);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(...darkBlue);
-      pdf.text('LIGHTHOUSE', margin, y + 8);
-    }
-  } else {
-    pdf.setFontSize(26);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...darkBlue);
-    pdf.text('LIGHTHOUSE', margin, y + 8);
-  }
-  
-  // Title - AVENANT SIGNE in amber
-  pdf.setFontSize(18);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...amber);
-  pdf.text(isSigned ? 'AVENANT SIGNE' : 'AVENANT AU DEVIS', pageWidth - margin, y + 8, { align: 'right' });
-  pdf.setFontSize(11);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  pdf.text('Ref. ' + (request.request_number || 'FR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
-  
-  y += 18;
-  pdf.setDrawColor(...amber);
-  pdf.setLineWidth(1);
-  pdf.line(margin, y, pageWidth - margin, y);
-  y += 7;
-
-  // ===== INFO BAR =====
-  pdf.setFillColor(255, 251, 235); // Light amber background
-  pdf.rect(margin, y, contentWidth, 16, 'F');
-  pdf.setFontSize(8);
-  pdf.setTextColor(...lightGray);
-  pdf.text('DATE', margin + 5, y + 5);
-  pdf.text('VALIDITE', margin + 60, y + 5);
-  pdf.text('CONDITIONS', margin + 115, y + 5);
-  pdf.setFontSize(11);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  const qDate = request.avenant_sent_at ? new Date(request.avenant_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
-  pdf.text(qDate, margin + 5, y + 12);
-  pdf.text('30 jours', margin + 60, y + 12);
-  pdf.text('A reception de facture', margin + 115, y + 12);
-  y += 20;
-
-  // ===== CLIENT =====
-  pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...lightGray);
-  pdf.text('CLIENT', margin, y);
-  y += 5;
-  pdf.setFontSize(14);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  pdf.text(company.name || 'Client', margin, y);
-  y += 6;
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  if (company.billing_address || company.address) {
-    pdf.text(company.billing_address || company.address, margin, y);
-    y += 5;
-  }
-  const city = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
-  if (city) {
-    pdf.text(city, margin, y);
-    y += 5;
-  }
-  y += 3;
-  
-  // Original quote reference
-  pdf.setFontSize(9);
-  pdf.setTextColor(...lightGray);
-  pdf.text('Devis initial: ' + request.request_number, margin, y);
-  y += 8;
-
-  // ===== INTRODUCTION =====
-  pdf.setFillColor(255, 251, 235);
-  pdf.rect(margin, y, contentWidth, 14, 'F');
-  pdf.setFontSize(9);
-  pdf.setTextColor(146, 64, 14); // Dark amber text
-  pdf.text("Suite a l'inspection de vos appareils, nous avons constate des travaux supplementaires necessaires.", margin + 5, y + 5);
-  pdf.text("Veuillez trouver ci-dessous le detail des interventions recommandees.", margin + 5, y + 10);
-  y += 18;
-
-  // ===== DETAILED PRICING TABLE =====
-  const rowH = 7;
-  const colQty = margin;
-  const colDesc = margin + 12;
-  const colUnit = pageWidth - margin - 45;
-  const colTotal = pageWidth - margin - 3;
-  
-  pdf.setFontSize(13);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  pdf.text('Travaux Supplementaires', margin, y);
-  y += 7;
-
-  // Header row
-  pdf.setFillColor(...darkBlue);
-  pdf.rect(margin, y, contentWidth, 9, 'F');
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...white);
-  pdf.text('Qte', colQty + 3, y + 6);
-  pdf.text('Designation', colDesc, y + 6);
-  pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
-  pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
-  y += 9;
-
-  let rowIndex = 0;
-  let grandTotal = 0;
-
-  // Build line items from devices with additional work
-  devices.forEach((device) => {
-    // Device header row
-    checkPageBreak(15);
-    pdf.setFillColor(245, 245, 245);
-    pdf.rect(margin, y, contentWidth, 8, 'F');
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...darkBlue);
-    const deviceHeader = (device.model_name || 'Appareil') + ' (SN: ' + (device.serial_number || 'N/A') + ')';
-    pdf.text(deviceHeader, colDesc, y + 5.5);
-    y += 8;
-    
-    // Findings (if any)
-    if (device.service_findings) {
-      checkPageBreak(10);
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'italic');
-      pdf.setTextColor(...lightGray);
-      const findingsText = ('Constat: ' + device.service_findings).substring(0, 90);
-      pdf.text(findingsText, colDesc, y + 4);
-      y += 6;
-    }
-    
-    // Additional work items
-    (device.additional_work_items || []).forEach((item) => {
-      checkPageBreak(rowH + 2);
-      const qty = parseInt(item.quantity) || 1;
-      const unitPrice = parseFloat(item.price) || 0;
-      const lineTotal = qty * unitPrice;
-      grandTotal += lineTotal;
-      
-      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
-      pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkBlue);
-      pdf.text(String(qty), colQty + 3, y + 5);
-      
-      // Description with part number if available
-      const desc = item.partNumber ? '[' + item.partNumber + '] ' + (item.description || 'Piece') : (item.description || 'Service');
-      pdf.text(desc.substring(0, 55), colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
-      y += rowH;
-      rowIndex++;
-    });
-    
-    y += 3; // Space between devices
-  });
-
-  // Total row
-  checkPageBreak(15);
-  pdf.setFillColor(...amber);
-  pdf.rect(margin, y, contentWidth, 11, 'F');
-  pdf.setTextColor(...white);
-  pdf.setFontSize(11);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('TOTAL AVENANT HT', colUnit - 35, y + 7.5);
-  pdf.setFontSize(16);
-  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
-  y += 15;
-
-  // ===== CONDITIONS =====
-  checkPageBreak(25);
-  pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...lightGray);
-  pdf.text('CONDITIONS:', margin, y);
-  y += 4;
-  pdf.text("• Ce devis complementaire est valable 30 jours a compter de sa date d'emission.", margin + 3, y);
-  y += 4;
-  pdf.text('• Les travaux seront effectues apres reception de votre accord ecrit.', margin + 3, y);
-  y += 4;
-  pdf.text('• Conditions de reglement: 30 jours fin de mois.', margin + 3, y);
-  y += 8;
-
-  // ===== SIGNATURE SECTION =====
-  const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
-  
-  pdf.setDrawColor(200, 200, 200);
-  pdf.setLineWidth(0.3);
-  pdf.line(margin, sigY, pageWidth - margin, sigY);
-  
-  pdf.setFontSize(8);
-  pdf.setTextColor(...lightGray);
-  pdf.text('ETABLI PAR', margin, sigY + 7);
-  pdf.setFontSize(12);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  pdf.text('Service Technique', margin, sigY + 14);
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  pdf.text('Lighthouse France', margin, sigY + 20);
-
-  // Capcert logo
-  if (capcertLogo) {
-    try {
-      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
-    } catch (e) {}
-  }
-
-  // Signature box
-  const sigBoxX = pageWidth - margin - 62;
-  
-  if (isSigned && signatureName) {
-    // Signed version - amber box with signature
-    pdf.setFillColor(255, 251, 235); // Light amber background
-    pdf.setDrawColor(...amber);
-    pdf.setLineWidth(0.5);
-    pdf.roundedRect(sigBoxX, sigY + 3, 62, 36, 2, 2, 'FD');
-    
-    pdf.setFontSize(8);
-    pdf.setTextColor(...amber);
-    pdf.text('APPROUVE PAR', sigBoxX + 4, sigY + 10);
-    pdf.setFontSize(11);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...darkBlue);
-    pdf.text(signatureName, sigBoxX + 4, sigY + 17);
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...gray);
-    pdf.text('Date: ' + signatureDate, sigBoxX + 4, sigY + 24);
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'italic');
-    pdf.setTextColor(...amber);
     pdf.text('Lu et approuve', sigBoxX + 4, sigY + 30);
     
     if (signatureImage) {
@@ -3042,12 +2699,8 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
       {/* Overview Tab */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* ACTION REQUIRED - Combined RMA, Parts Orders, Avenants, and Contracts */}
-          {(serviceRequests.filter(r => 
-            (['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at) ||
-            // Include avenants pending approval (BC not yet submitted)
-            (r.avenant_sent_at && !r.avenant_approved_at && !r.bc_submitted_at)
-          ).length > 0 || 
+          {/* ACTION REQUIRED - Combined RMA, Parts Orders, and Contracts */}
+          {(serviceRequests.filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at).length > 0 || 
             partsNeedingAction.length > 0 ||
             (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0)) && (
             <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4">
@@ -3056,33 +2709,9 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
               </h3>
               <p className="text-sm text-red-600 mb-3">Les demandes suivantes nécessitent votre attention</p>
               <div className="space-y-2">
-                {/* Avenant Requests needing BC - Show first with amber styling */}
+                {/* RMA Requests */}
                 {serviceRequests
-                  .filter(r => r.avenant_sent_at && !r.avenant_approved_at && !r.bc_submitted_at)
-                  .map(req => (
-                  <div 
-                    key={`avenant-${req.id}`}
-                    onClick={() => viewRequest(req)}
-                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-amber-100 border border-amber-300"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-amber-500">📄</span>
-                      <span className="font-mono font-bold text-amber-700">{req.request_number || 'En attente'}</span>
-                      <span className="text-sm text-amber-600">Avenant à approuver - €{(req.avenant_total || 0).toFixed(2)}</span>
-                    </div>
-                    <span className="px-3 py-1 bg-amber-500 text-white text-xs font-bold rounded-full">
-                      Voir →
-                    </span>
-                  </div>
-                ))}
-                {/* RMA Requests (excluding those with pending avenant - already shown above) */}
-                {serviceRequests
-                  .filter(r => 
-                    ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && 
-                    r.status !== 'bc_review' && 
-                    !r.bc_submitted_at &&
-                    !(r.avenant_sent_at && !r.avenant_approved_at) // Exclude avenant pending
-                  )
+                  .filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at)
                   .map(req => (
                   <div 
                     key={req.id}
@@ -7453,16 +7082,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
   const isPartsOrder = request.request_type === 'parts';
   const isQuoteSent = request.status === 'quote_sent';
-  
-  // Detect if this is an avenant quote - avenant sent but not approved (independent of status)
-  // AND BC not yet submitted for this avenant
-  const isAvenantQuote = !!request.avenant_sent_at && !request.avenant_approved_at && !request.bc_submitted_at;
-  
-  // Avenant BC submitted, waiting for admin approval
-  const isAvenantBCPending = !!request.avenant_sent_at && !request.avenant_approved_at && !!request.bc_submitted_at;
-  
-  // Regular quote action needed (not avenant)
-  const needsQuoteAction = isQuoteSent && !request.bc_submitted_at && !isAvenantQuote && !isAvenantBCPending;
+  const needsQuoteAction = isQuoteSent && !request.bc_submitted_at;
   const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
   
   // Check if submission is valid - need EITHER file OR signature (not both required)
@@ -7473,26 +7093,15 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   // Quote approval/revision handlers
   const handleApproveQuote = async () => {
     setApprovingQuote(true);
-    
-    // Different update for avenant vs regular quote
-    const updatePayload = isAvenantQuote
-      ? {
-          status: 'waiting_bc',
-          // Don't set avenant_approved_at yet - that happens after BC is approved by admin
-        }
-      : {
-          status: 'waiting_bc',
-          quote_approved_at: new Date().toISOString()
-        };
-    
-    const { error } = await supabase.from('service_requests').update(updatePayload).eq('id', request.id);
+    const { error } = await supabase.from('service_requests').update({
+      status: 'waiting_bc',
+      quote_approved_at: new Date().toISOString()
+    }).eq('id', request.id);
     
     if (error) {
       notify('Erreur: ' + error.message, 'error');
     } else {
-      notify(isAvenantQuote 
-        ? '✅ Avenant approuvé! Veuillez soumettre votre bon de commande.' 
-        : '✅ Devis approuvé! Veuillez soumettre votre bon de commande.', 'success');
+      notify('✅ Devis approuvé! Veuillez soumettre votre bon de commande.', 'success');
       setShowQuoteModal(false);
       refresh();
     }
@@ -7687,46 +7296,28 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         try {
           console.log('📄 Generating signed quote PDF...');
           
-          // Check if this is a parts order or avenant
+          // Check if this is a parts order
           const isPartsRequest = request.request_type === 'parts';
-          const isAvenantSubmission = !!request.avenant_sent_at && !request.avenant_approved_at;
           
-          let pdfBlob;
-          let pdfFileName;
-          
-          if (isAvenantSubmission) {
-            // Generate signed avenant PDF
-            console.log('📄 Generating AVENANT signed PDF...');
-            pdfBlob = await generateSignedAvenantPDF({
-              request,
-              isSigned: true,
-              signatureName: signatureName,
-              signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
-              signatureImage: signatureData
-            });
-            pdfFileName = `avenant_signe_${request.request_number}_${Date.now()}.pdf`;
-          } else if (isPartsRequest) {
-            pdfBlob = await generatePartsQuotePDF({
-              request,
-              isSigned: true,
-              signatureName: signatureName,
-              signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
-              signatureImage: signatureData
-            });
-            pdfFileName = `devis_pieces_signe_${request.request_number}_${Date.now()}.pdf`;
-          } else {
-            pdfBlob = await generateQuotePDF({
-              request,
-              isSigned: true,
-              signatureName: signatureName,
-              signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
-              signatureImage: signatureData
-            });
-            pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
-          }
+          const pdfBlob = isPartsRequest 
+            ? await generatePartsQuotePDF({
+                request,
+                isSigned: true,
+                signatureName: signatureName,
+                signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+                signatureImage: signatureData
+              })
+            : await generateQuotePDF({
+                request,
+                isSigned: true,
+                signatureName: signatureName,
+                signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+                signatureImage: signatureData
+              });
           
           console.log('📄 PDF blob generated, size:', pdfBlob?.size);
           
+          const pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
           const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
             .from('documents')
             .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
@@ -7750,34 +7341,19 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       }
       
       // Update request status - set to bc_review so admin can verify
-      // BUT for avenant, DON'T change status - the device is already in progress
-      const isSubmittingAvenantBC = !!request.avenant_sent_at && !request.avenant_approved_at;
+      // Also record quote approval if coming from quote_sent status
+      const updatePayload = { 
+        status: 'bc_review',
+        bc_submitted_at: new Date().toISOString(),
+        bc_signed_by: signatureName,
+        bc_signature_date: signatureDateISO,
+        bc_file_url: fileUrl,
+        bc_signature_url: signatureUrl,
+        signed_quote_url: signedQuotePdfUrl,
+        quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
+      };
       
-      const updatePayload = isSubmittingAvenantBC
-        ? {
-            // Avenant BC - DON'T change status, device continues its work
-            // DON'T overwrite signed_quote_url - that's the original devis signé!
-            bc_submitted_at: new Date().toISOString(),
-            bc_signed_by: signatureName,
-            bc_signature_date: signatureDateISO,
-            bc_file_url: fileUrl,
-            bc_signature_url: signatureUrl
-            // The signed avenant PDF goes to attachments with category 'avenant_signe', not to signed_quote_url
-            // Note: avenant_approved_at will be set by admin when they approve
-          }
-        : {
-            // Regular BC - set to bc_review for admin verification
-            status: 'bc_review',
-            bc_submitted_at: new Date().toISOString(),
-            bc_signed_by: signatureName,
-            bc_signature_date: signatureDateISO,
-            bc_file_url: fileUrl,
-            bc_signature_url: signatureUrl,
-            signed_quote_url: signedQuotePdfUrl,
-            quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
-          };
-      
-      console.log('📝 Updating service_request with:', updatePayload, 'isAvenantBC:', isSubmittingAvenantBC);
+      console.log('📝 Updating service_request with:', updatePayload);
       
       const { error: updateError } = await supabase
         .from('service_requests')
@@ -7800,7 +7376,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           file_type: bcFile?.type || 'application/pdf',
           file_size: bcFile?.size || 0,
           uploaded_by: profile.id,
-          category: isSubmittingAvenantBC ? 'avenant_bc' : 'bon_commande'
+          category: 'bon_commande'
         });
         console.log('📎 BC attachment saved:', { fileUrl, error: bcAttachError });
       }
@@ -7809,14 +7385,12 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       if (signedQuotePdfUrl) {
         const { error: pdfAttachError } = await supabase.from('request_attachments').insert({
           request_id: request.id,
-          file_name: isSubmittingAvenantBC 
-            ? `Avenant_Signé_${request.request_number}.pdf`
-            : `Devis_Signé_${request.request_number}.pdf`,
+          file_name: `Devis_Signé_${request.request_number}.pdf`,
           file_url: signedQuotePdfUrl,
           file_type: 'application/pdf',
           file_size: 0,
           uploaded_by: profile.id,
-          category: isSubmittingAvenantBC ? 'avenant_signe' : 'devis_signe'
+          category: 'devis_signe'
         });
         console.log('📎 Signed PDF attachment saved:', { signedQuotePdfUrl, error: pdfAttachError });
       } else {
@@ -7870,9 +7444,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   // Generate history from status if no history in DB
   const getStatusHistory = () => {
     const statusHistory = [];
-    const devices = request.request_devices || [];
     
-    // 1. Submission
+    // Always add submission
     statusHistory.push({
       id: 'submitted',
       event_type: 'submitted',
@@ -7880,124 +7453,20 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       event_date: request.submitted_at || request.created_at
     });
     
-    // 2. RMA/Quote created
-    if (request.request_number) {
+    // Add current status if different from submitted
+    if (request.status !== 'submitted') {
       statusHistory.push({
-        id: 'rma_created',
-        event_type: 'quote_sent',
-        event_description: `RMA ${request.request_number} créé`,
-        event_date: request.validated_at || request.created_at
+        id: 'current',
+        event_type: request.status,
+        event_description: style.label,
+        event_date: request.updated_at || request.created_at
       });
     }
-    
-    // 3. Quote sent
-    if (request.quote_sent_at) {
-      statusHistory.push({
-        id: 'quote_sent',
-        event_type: 'quote_sent',
-        event_description: 'Devis envoyé',
-        event_date: request.quote_sent_at
-      });
-    }
-    
-    // 4. BC/Quote approved
-    if (request.bc_approved_at || request.quote_approved_at) {
-      statusHistory.push({
-        id: 'approved',
-        event_type: 'approved',
-        event_description: 'Devis approuvé',
-        event_date: request.bc_approved_at || request.quote_approved_at
-      });
-    }
-    
-    // 5. Device received
-    const receivedDevice = devices.find(d => d.received_at);
-    if (receivedDevice?.received_at) {
-      statusHistory.push({
-        id: 'received',
-        event_type: 'received',
-        event_description: 'Appareil(s) reçu(s)',
-        event_date: receivedDevice.received_at
-      });
-    }
-    
-    // 6. Work started (in_progress, calibration_in_progress, repair_in_progress)
-    const inProgressDevice = devices.find(d => 
-      ['in_progress', 'calibration_in_progress', 'repair_in_progress'].includes(d.status) ||
-      d.work_started_at
-    );
-    if (inProgressDevice?.work_started_at) {
-      const serviceLabel = inProgressDevice.service_type === 'repair' ? 'Réparation' : 'Étalonnage';
-      statusHistory.push({
-        id: 'in_progress',
-        event_type: 'in_progress',
-        event_description: `${serviceLabel} en cours`,
-        event_date: inProgressDevice.work_started_at
-      });
-    }
-    
-    // 7. QC Complete
-    const qcDevice = devices.find(d => d.qc_complete || d.qc_completed_at);
-    if (qcDevice?.qc_completed_at) {
-      statusHistory.push({
-        id: 'qc_complete',
-        event_type: 'quality_check',
-        event_description: 'Contrôle qualité terminé',
-        event_date: qcDevice.qc_completed_at
-      });
-    }
-    
-    // 8. Ready to ship
-    const readyDevice = devices.find(d => d.status === 'ready_to_ship' || d.ready_at);
-    if (readyDevice?.ready_at) {
-      statusHistory.push({
-        id: 'ready',
-        event_type: 'ready_to_ship',
-        event_description: 'Prêt pour expédition',
-        event_date: readyDevice.ready_at
-      });
-    }
-    
-    // 9. Shipped
-    const shippedDevice = devices.find(d => d.status === 'shipped' || d.shipped_at);
-    if (shippedDevice?.shipped_at) {
-      statusHistory.push({
-        id: 'shipped',
-        event_type: 'shipped',
-        event_description: 'Appareil(s) expédié(s)',
-        event_date: shippedDevice.shipped_at
-      });
-    }
-    
-    // 10. Avenant if applicable
-    if (request.avenant_sent_at) {
-      statusHistory.push({
-        id: 'avenant_sent',
-        event_type: 'avenant',
-        event_description: `Avenant envoyé (€${(request.avenant_total || 0).toFixed(2)})`,
-        event_date: request.avenant_sent_at
-      });
-    }
-    if (request.avenant_approved_at) {
-      statusHistory.push({
-        id: 'avenant_approved',
-        event_type: 'avenant_approved',
-        event_description: 'Avenant approuvé',
-        event_date: request.avenant_approved_at
-      });
-    }
-    
-    // Sort by date ascending (oldest first)
-    statusHistory.sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
     
     return statusHistory;
   };
 
-  // Always sort oldest first (top to bottom timeline)
-  const sortedHistory = history.length > 0 
-    ? [...history].sort((a, b) => new Date(a.event_date) - new Date(b.event_date))
-    : getStatusHistory();
-  const displayHistory = sortedHistory;
+  const displayHistory = history.length > 0 ? history : getStatusHistory();
 
   return (
     <div>
@@ -8027,6 +7496,12 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 {isPartsOrder ? 'Commande de pièces' : 'Demande de service'} • Soumis le {new Date(request.created_at).toLocaleDateString('fr-FR')}
               </p>
             </div>
+            {request.quote_total && (
+              <div className="text-right">
+                <p className="text-sm text-gray-500">Total</p>
+                <p className="text-2xl font-bold text-[#1E3A5F]">{request.quote_total.toFixed(2)} €</p>
+              </div>
+            )}
           </div>
           
           {/* Per-Device Progress Bars */}
@@ -8076,7 +7551,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         </div>
 
         {/* Quote Sent - Review Required */}
-        {needsQuoteAction && !isAvenantQuote && (
+        {needsQuoteAction && (
           <div className="bg-blue-50 border-b border-blue-300 px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -8108,61 +7583,6 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           </div>
         )}
 
-        {/* AVENANT - Review Required (BC not yet submitted) */}
-        {isAvenantQuote && (
-          <div className="bg-amber-50 border-b border-amber-300 px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-amber-500 flex items-center justify-center">
-                  <span className="text-white text-2xl">📄</span>
-                </div>
-                <div>
-                  <p className="font-bold text-amber-800 text-lg">Avenant reçu - Action requise</p>
-                  <p className="text-sm text-amber-600">
-                    Des travaux supplémentaires ont été identifiés (€{(request.avenant_total || 0).toFixed(2)}). Veuillez approuver pour continuer.
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowQuoteModal(true)}
-                  className="px-4 py-2 bg-white border border-amber-300 text-amber-700 rounded-lg font-medium hover:bg-amber-50 transition-colors"
-                >
-                  👁️ Voir l'Avenant
-                </button>
-                <button
-                  onClick={() => setShowBCModal(true)}
-                  className="px-6 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600 transition-colors"
-                >
-                  ✅ Approuver et soumettre BC
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* AVENANT BC Submitted - Pending Admin Approval */}
-        {isAvenantBCPending && (
-          <div className="bg-amber-50 border-b border-amber-200 px-6 py-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
-                <span className="text-amber-600 text-lg">📄</span>
-              </div>
-              <div>
-                <p className="font-semibold text-amber-800">Avenant - BC soumis</p>
-                <p className="text-sm text-amber-600">
-                  Votre bon de commande pour l'avenant (€{(request.avenant_total || 0).toFixed(2)}) est en cours de vérification.
-                </p>
-                {request.bc_submitted_at && (
-                  <p className="text-xs text-amber-500 mt-1">
-                    Soumis le {new Date(request.bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(request.bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Quote Revision Requested */}
         {request.status === 'quote_revision_requested' && (
           <div className="bg-orange-50 border-b border-orange-300 px-6 py-4">
@@ -8188,30 +7608,26 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
 
         {/* Customer Action Required Alert */}
         {needsCustomerAction && (
-          <div className={`${isAvenantQuote ? 'bg-amber-50 border-b border-amber-200' : 'bg-red-50 border-b border-red-200'} px-6 py-4`}>
+          <div className="bg-red-50 border-b border-red-200 px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-full ${isAvenantQuote ? 'bg-amber-100' : 'bg-red-100'} flex items-center justify-center`}>
-                  <span className={`${isAvenantQuote ? 'text-amber-600' : 'text-red-600'} font-bold text-lg`}>{isAvenantQuote ? '📄' : '!'}</span>
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <span className="text-red-600 font-bold text-lg">!</span>
                 </div>
                 <div>
-                  <p className={`font-semibold ${isAvenantQuote ? 'text-amber-800' : 'text-red-800'}`}>
-                    {isAvenantQuote ? 'Avenant à approuver' : 'Action requise'}
-                  </p>
-                  <p className={`text-sm ${isAvenantQuote ? 'text-amber-600' : 'text-red-600'}`}>
-                    {isAvenantQuote 
-                      ? 'Des travaux supplémentaires ont été identifiés. Veuillez approuver l\'avenant.'
-                      : request.status === 'inspection_complete' || request.status === 'quote_sent' 
-                        ? 'Veuillez approuver le devis ou soumettre votre bon de commande'
-                        : 'Veuillez soumettre votre bon de commande pour continuer'}
+                  <p className="font-semibold text-red-800">Action requise</p>
+                  <p className="text-sm text-red-600">
+                    {request.status === 'inspection_complete' || request.status === 'quote_sent' 
+                      ? 'Veuillez approuver le devis ou soumettre votre bon de commande'
+                      : 'Veuillez soumettre votre bon de commande pour continuer'}
                   </p>
                 </div>
               </div>
               <button
-                onClick={() => setShowQuoteModal(true)}
-                className={`px-4 py-2 ${isAvenantQuote ? 'bg-amber-500 hover:bg-amber-600' : 'bg-red-600 hover:bg-red-700'} text-white rounded-lg font-medium transition-colors`}
+                onClick={() => setShowBCModal(true)}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
               >
-                {isAvenantQuote ? 'Voir l\'avenant' : 'Soumettre BC / Approuver'}
+                Soumettre BC / Approuver
               </button>
             </div>
           </div>
@@ -8720,208 +8136,6 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           const shippingTotal = isFullyContractCovered ? 0 : (quoteData.shippingTotal || request.quote_shipping || 0);
           const grandTotal = isFullyContractCovered ? 0 : (quoteData.grandTotal || request.quote_total || 0);
 
-          // ===== AVENANT QUOTE MODAL =====
-          // If this is an avenant quote, show avenant-specific modal styled like RMA quote
-          if (isAvenantQuote) {
-            // Find avenant quote from attachments
-            const avenantQuote = attachments.find(a => a.category === 'avenant_quote');
-            const devicesWithWork = (request.request_devices || []).filter(d => d.additional_work_needed);
-            
-            return (
-              <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-                <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                  {/* Modal Header */}
-                  <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
-                    <div>
-                      <h2 className="text-xl font-bold">Avenant au Devis</h2>
-                      <p className="text-gray-400">{request.request_number}</p>
-                    </div>
-                    <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
-                  </div>
-
-                  {/* Quote Document */}
-                  <div id="avenant-print-content">
-                    {/* Quote Header */}
-                    <div className="px-8 pt-8 pb-4 border-b-4 border-amber-500">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <img 
-                            src="/images/logos/lighthouse-logo.png" 
-                            alt="Lighthouse France" 
-                            className="h-14 w-auto mb-1"
-                            onError={(e) => {
-                              e.target.style.display = 'none';
-                              e.target.nextSibling.style.display = 'block';
-                            }}
-                          />
-                          <div className="hidden">
-                            <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
-                            <p className="text-gray-500">Worldwide Solutions</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-2xl font-bold text-amber-500">AVENANT</p>
-                          <p className="text-gray-500">Réf. {request.request_number}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Info Bar */}
-                    <div className="bg-amber-50 px-8 py-3 flex justify-between text-sm border-b">
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase">Date</p>
-                        <p className="font-medium">{request.avenant_sent_at ? new Date(request.avenant_sent_at).toLocaleDateString('fr-FR') : '—'}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase">Validité</p>
-                        <p className="font-medium">30 jours</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase">Conditions</p>
-                        <p className="font-medium">À réception de facture</p>
-                      </div>
-                    </div>
-
-                    {/* Client Info */}
-                    <div className="px-8 py-4 border-b">
-                      <p className="text-xs text-gray-500 uppercase">Client</p>
-                      <p className="font-bold text-xl text-[#1a1a2e]">{request.companies?.name}</p>
-                      {request.companies?.billing_address && <p className="text-gray-600">{request.companies?.billing_address}</p>}
-                      <p className="text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
-                    </div>
-
-                    {/* Introduction */}
-                    <div className="px-8 py-4 bg-amber-50 border-b">
-                      <p className="text-amber-800">
-                        <strong>Objet :</strong> Suite à l'inspection de vos appareils, notre équipe technique a identifié des travaux supplémentaires nécessaires. 
-                        Veuillez trouver ci-dessous le détail des interventions recommandées.
-                      </p>
-                    </div>
-
-                    {/* Devices with additional work */}
-                    <div className="px-8 py-6 space-y-6">
-                      {devicesWithWork.map(device => {
-                        const deviceTotal = (device.additional_work_items || []).reduce((sum, item) => 
-                          sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
-                        );
-                        
-                        return (
-                          <div key={device.id} className="border-l-4 border-amber-500 pl-4">
-                            <div className="flex justify-between items-start mb-3">
-                              <div>
-                                <h3 className="font-bold text-lg text-[#1a1a2e]">{device.model_name}</h3>
-                                <p className="text-gray-500 text-sm">N° de série: {device.serial_number}</p>
-                              </div>
-                              <span className="text-xl font-bold text-amber-600">€{deviceTotal.toFixed(2)}</span>
-                            </div>
-                            
-                            {device.service_findings && (
-                              <div className="bg-gray-100 rounded-lg p-3 mb-3">
-                                <p className="text-xs text-gray-500 uppercase font-medium mb-1">Constatations du technicien</p>
-                                <p className="text-gray-700">{device.service_findings}</p>
-                              </div>
-                            )}
-                            
-                            {device.additional_work_items?.length > 0 && (
-                              <table className="w-full text-sm">
-                                <thead>
-                                  <tr className="border-b-2 border-gray-200">
-                                    <th className="text-left py-2 text-gray-600 font-medium">Description</th>
-                                    <th className="text-center py-2 text-gray-600 font-medium w-16">Qté</th>
-                                    <th className="text-right py-2 text-gray-600 font-medium w-24">Prix Unit.</th>
-                                    <th className="text-right py-2 text-gray-600 font-medium w-24">Total</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {device.additional_work_items.map((item, idx) => (
-                                    <tr key={idx} className="border-b border-gray-100">
-                                      <td className="py-2">{item.description}</td>
-                                      <td className="py-2 text-center">{item.quantity}</td>
-                                      <td className="py-2 text-right">€{(parseFloat(item.price) || 0).toFixed(2)}</td>
-                                      <td className="py-2 text-right font-medium">€{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Total Section */}
-                    <div className="px-8 py-4 bg-amber-500">
-                      <div className="flex justify-between items-center text-white">
-                        <span className="text-lg font-bold">TOTAL AVENANT HT</span>
-                        <span className="text-3xl font-bold">€{(request.avenant_total || 0).toFixed(2)}</span>
-                      </div>
-                    </div>
-
-                    {/* Conditions */}
-                    <div className="px-8 py-4 border-b">
-                      <p className="font-bold text-[#1a1a2e] text-sm mb-2">Conditions:</p>
-                      <ul className="text-sm text-gray-600 space-y-1">
-                        <li>• Ce devis complémentaire est valable 30 jours</li>
-                        <li>• Les travaux seront effectués après réception de votre accord</li>
-                        <li>• Conditions de règlement: 30 jours fin de mois</li>
-                      </ul>
-                    </div>
-
-                    {/* Signature Section */}
-                    <div className="px-8 py-6 flex justify-between items-end">
-                      <div>
-                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Établi par</p>
-                        <p className="font-bold text-lg text-[#1a1a2e]">Service Technique</p>
-                        <p className="text-gray-500">Lighthouse France</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Bon pour accord</p>
-                        <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
-                          <span className="text-gray-300 text-xs">Signature et cachet</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Footer */}
-                    <div className="bg-[#1a1a2e] text-white px-8 py-3 text-center">
-                      <p className="font-medium text-sm">Lighthouse France SAS</p>
-                      <p className="text-gray-400 text-xs">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex justify-between items-center">
-                    <button
-                      onClick={() => setShowQuoteModal(false)}
-                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-                    >
-                      Fermer
-                    </button>
-                    <div className="flex gap-2">
-                      {avenantQuote?.file_url && (
-                        <a 
-                          href={avenantQuote.file_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="px-4 py-2 bg-white border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-50"
-                        >
-                          📄 Télécharger PDF
-                        </a>
-                      )}
-                      <button
-                        onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
-                        className="px-6 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600"
-                      >
-                        ✅ Approuver et soumettre BC
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          }
-
-          // ===== REGULAR RMA QUOTE MODAL =====
           return (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -8956,7 +8170,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
-                      <p className="text-gray-500">N° {request.request_number}</p>
+                      <p className="text-sm font-bold text-[#1E3A5F]">N° {request.quote_number || '—'}</p>
+                      <p className="text-xs text-gray-500">RMA: {request.request_number}</p>
                     </div>
                   </div>
                 </div>
@@ -9782,29 +8997,26 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             <div>
               {displayHistory.length === 0 ? (
                 <div className="text-center text-gray-400 py-12">
-                  <p className="text-lg">Aucun historique disponible</p>
+                  <p className="text-4xl mb-2">📜</p>
+                  <p>Aucun historique disponible</p>
                 </div>
               ) : (
-                <div className="relative pl-6">
-                  {/* Timeline line */}
-                  <div className="absolute left-[11px] top-2 bottom-2 w-0.5 bg-gradient-to-b from-gray-200 via-[#3B7AB4] to-[#1E3A5F]"></div>
-                  
-                  <div className="space-y-4">
+                <div className="relative">
+                  <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
+                  <div className="space-y-6">
                     {displayHistory.map((event, i) => {
-                      const isLast = i === displayHistory.length - 1;
+                      const eventStyle = STATUS_STYLES[event.event_type] || {};
                       return (
-                        <div key={event.id || i} className="flex gap-4 relative">
-                          {/* Timeline dot */}
-                          <div className={`w-2.5 h-2.5 rounded-full absolute -left-[19px] top-1.5 ${
-                            isLast ? 'bg-[#1E3A5F] ring-4 ring-[#1E3A5F]/20' : 'bg-[#3B7AB4]'
+                        <div key={event.id || i} className="flex gap-4 ml-4">
+                          <div className={`w-3 h-3 rounded-full border-2 border-white shadow -ml-[7px] mt-1.5 z-10 ${
+                            i === 0 ? 'bg-[#3B7AB4]' : 'bg-gray-400'
                           }`}></div>
-                          
-                          {/* Event content */}
-                          <div className={`flex-1 pb-1 ${isLast ? 'font-medium' : ''}`}>
-                            <p className={`${isLast ? 'text-[#1E3A5F] font-semibold' : 'text-gray-700'}`}>
-                              {event.event_description}
-                            </p>
-                            <p className="text-xs text-gray-400 mt-0.5">
+                          <div className="flex-1 pb-4">
+                            <div className="flex items-center gap-2">
+                              {eventStyle.icon && <span>{eventStyle.icon}</span>}
+                              <p className="font-medium text-[#1E3A5F]">{event.event_description}</p>
+                            </div>
+                            <p className="text-sm text-gray-500">
                               {new Date(event.event_date).toLocaleString('fr-FR', {
                                 day: '2-digit',
                                 month: 'long',
@@ -9855,137 +9067,138 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 </div>
               )}
 
-              {/* All Documents - Single unified list */}
-              <div>
-                <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  Documents
-                </h3>
-                <div className="space-y-2">
-                  {/* Build unified document list - no duplicates */}
-                  {(() => {
-                    // Collect all documents with labels
-                    const docs = [];
-                    
-                    // From attachments (PDF documents only, not images)
-                    attachments
-                      .filter(a => !a.file_type?.startsWith('image/') && a.file_url)
-                      .forEach(att => {
-                        // Map category to nice label
-                        let label = att.file_name;
-                        let subtitle = new Date(att.created_at).toLocaleDateString('fr-FR');
-                        
-                        if (att.category === 'avenant_quote') {
-                          label = 'Avenant';
-                          subtitle = request.avenant_approved_at ? '✅ Approuvé' : '⏳ En attente d\'approbation';
-                        } else if (att.category === 'avenant_signe') {
-                          label = 'Avenant Signé';
-                          subtitle = 'Approuvé par client';
-                        } else if (att.category === 'devis_signe') {
-                          label = 'Devis Signé';
-                          subtitle = request.bc_signed_by ? 'Signé par ' + request.bc_signed_by : 'Document signé';
-                        } else if (att.category === 'bon_commande' || att.category === 'avenant_bc') {
-                          label = 'Bon de Commande';
-                          subtitle = 'BC client';
-                        } else if (att.category === 'bl' || att.file_name?.includes('BL-')) {
-                          label = 'Bon de Livraison';
-                          subtitle = att.device_serial || 'Document d\'expédition';
-                        } else if (att.category === 'ups_label' || att.file_name?.includes('UPS-Label')) {
-                          label = 'Étiquette UPS';
-                          subtitle = 'Label d\'expédition';
-                        }
-                        
-                        docs.push({
-                          id: att.id,
-                          url: att.file_url,
-                          label,
-                          subtitle,
-                          date: new Date(att.created_at)
-                        });
-                      });
-                    
-                    // Add URL-based documents only if not already in attachments
-                    const hasDevis = docs.some(d => d.label === 'Devis');
-                    const hasDevisSigne = docs.some(d => d.label === 'Devis Signé');
-                    const hasBC = docs.some(d => d.label === 'Bon de Commande');
-                    const hasCert = docs.some(d => d.label.includes('Certificat'));
-                    
-                    if (request.quote_url && !hasDevis) {
-                      docs.push({ id: 'quote', url: request.quote_url, label: 'Devis', subtitle: 'Offre de prix', date: new Date(request.quote_sent_at || request.created_at) });
-                    }
-                    if (request.signed_quote_url && !hasDevisSigne) {
-                      docs.push({ id: 'signed_quote', url: request.signed_quote_url, label: 'Devis Signé', subtitle: request.bc_signed_by ? 'Signé par ' + request.bc_signed_by : 'Document signé', date: new Date(request.bc_submitted_at || request.created_at) });
-                    }
-                    if (request.bc_file_url && !hasBC) {
-                      docs.push({ id: 'bc', url: request.bc_file_url, label: 'Bon de Commande', subtitle: 'BC client', date: new Date(request.bc_submitted_at || request.created_at) });
-                    }
-                    if (request.certificate_url && !hasCert) {
-                      docs.push({ id: 'cert', url: request.certificate_url, label: 'Certificat d\'Étalonnage', subtitle: 'Document officiel', date: new Date() });
-                    }
-                    
-                    // Add device-level documents
-                    request.request_devices?.forEach(device => {
-                      if (device.bl_url) {
-                        docs.push({ id: 'bl-' + device.id, url: device.bl_url, label: 'Bon de Livraison', subtitle: device.model_name + ' - ' + device.serial_number, date: new Date() });
-                      }
-                      if (device.ups_label_url) {
-                        docs.push({ id: 'ups-' + device.id, url: device.ups_label_url, label: 'Étiquette UPS', subtitle: device.model_name + ' - ' + device.serial_number, date: new Date() });
-                      }
-                      if (device.calibration_certificate_url) {
-                        docs.push({ id: 'cert-' + device.id, url: device.calibration_certificate_url, label: 'Certificat d\'Étalonnage', subtitle: device.model_name + ' - ' + device.serial_number, date: new Date() });
-                      }
-                      if (device.report_url) {
-                        docs.push({ id: 'report-' + device.id, url: device.report_url, label: 'Rapport de Service', subtitle: device.model_name + ' - ' + device.serial_number, date: new Date() });
-                      }
-                    });
-                    
-                    // Sort by date descending
-                    docs.sort((a, b) => b.date - a.date);
-                    
-                    // Remove duplicates by URL
-                    const seen = new Set();
-                    const uniqueDocs = docs.filter(d => {
-                      if (seen.has(d.url)) return false;
-                      seen.add(d.url);
-                      return true;
-                    });
-                    
-                    if (uniqueDocs.length === 0) {
-                      return (
-                        <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
-                          <svg className="w-12 h-12 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          <p className="text-gray-500">Aucun document disponible</p>
-                        </div>
-                      );
-                    }
-                    
-                    return uniqueDocs.map(doc => (
+              {/* Other documents */}
+              {attachments.filter(a => !a.file_type?.startsWith('image/')).length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Documents
+                  </h3>
+                  <div className="space-y-2">
+                    {attachments.filter(a => !a.file_type?.startsWith('image/')).map((doc) => (
                       <a 
                         key={doc.id}
-                        href={doc.url}
+                        href={doc.file_url}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
                       >
                         <div className="w-10 h-10 bg-[#3B7AB4] rounded flex items-center justify-center text-white font-bold text-xs">
-                          PDF
+                          {doc.file_name?.split('.').pop()?.toUpperCase() || 'DOC'}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-[#1E3A5F]">{doc.label}</p>
-                          <p className="text-xs text-gray-500">{doc.subtitle}</p>
+                          <p className="font-medium text-[#1E3A5F] truncate">{doc.file_name}</p>
+                          <p className="text-xs text-gray-500">
+                            Ajouté le {new Date(doc.created_at).toLocaleDateString('fr-FR')}
+                          </p>
                         </div>
                         <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                         </svg>
                       </a>
-                    ));
-                  })()}
+                    ))}
+                  </div>
                 </div>
+              )}
+
+              {/* Certificates and Quotes - from Lighthouse */}
+              <div>
+                <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                  </svg>
+                  {isPartsOrder ? 'Devis et Documents' : 'Certificats et Devis'}
+                </h3>
+                {request.quote_url || request.certificate_url || request.bc_file_url || request.signed_quote_url ? (
+                  <div className="space-y-2">
+                    {request.quote_url && (
+                      <a 
+                        href={request.quote_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200"
+                      >
+                        <div className="w-10 h-10 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                          PDF
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-blue-900">Devis</p>
+                          <p className="text-xs text-blue-600">Télécharger le devis</p>
+                        </div>
+                        <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </a>
+                    )}
+                    {request.bc_file_url && (
+                      <a 
+                        href={request.bc_file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors border border-purple-200"
+                      >
+                        <div className="w-10 h-10 bg-purple-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                          PDF
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-purple-900">
+                            {request.is_contract_rma ? 'Bon de Commande (Contrat)' : 'Bon de Commande'}
+                          </p>
+                          <p className="text-xs text-purple-600">
+                            {request.bc_signed_by ? `Signé par ${request.bc_signed_by}` : 'Télécharger le BC'}
+                          </p>
+                        </div>
+                        <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </a>
+                    )}
+                    {request.certificate_url && (
+                      <a 
+                        href={request.certificate_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-green-50 rounded-lg hover:bg-green-100 transition-colors border border-green-200"
+                      >
+                        <div className="w-10 h-10 bg-green-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                          PDF
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-green-900">Certificat d'étalonnage</p>
+                          <p className="text-xs text-green-600">Télécharger le certificat</p>
+                        </div>
+                        <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+                    <svg className="w-12 h-12 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p className="text-gray-500">
+                      {isPartsOrder ? 'Les devis apparaîtront ici une fois disponibles' : 'Les certificats et devis apparaîtront ici une fois disponibles'}
+                    </p>
+                  </div>
+                )}
               </div>
+
+              {/* Empty state if no attachments at all */}
+              {attachments.length === 0 && !request.quote_url && !request.certificate_url && !request.bc_file_url && !request.signed_quote_url && (
+                <div className="text-center py-12">
+                  <svg className="w-16 h-16 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-gray-500">Aucun document disponible</p>
+                  <p className="text-sm text-gray-400">
+                    {isPartsOrder ? 'Les devis et bons de commande apparaîtront ici' : 'Les photos, devis et certificats apparaîtront ici'}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
