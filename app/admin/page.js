@@ -3588,9 +3588,15 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [attachments, setAttachments] = useState([]);
+  const [bcNumber, setBcNumber] = useState('');
+  const [useAutoNumber, setUseAutoNumber] = useState(!rma.bc_file_url); // Auto-generate if no file uploaded
+  const [generatingNumber, setGeneratingNumber] = useState(false);
   
   // Detect if this is an avenant BC (avenant was sent and we're reviewing its BC)
   const isAvenantBC = !!rma.avenant_sent_at && !rma.avenant_approved_at;
+  
+  // Detect if customer uploaded their own BC file (vs just signing our quote)
+  const hasCustomerBCFile = !!rma.bc_file_url && rma.bc_file_url !== rma.signed_quote_url;
   
   // Fetch attachments to get avenant documents
   useEffect(() => {
@@ -3605,12 +3611,38 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
     fetchAttachments();
   }, [rma.id]);
   
+  // Auto-generate BC number on mount if needed
+  useEffect(() => {
+    if (useAutoNumber && !bcNumber) {
+      generateBCNumber();
+    }
+  }, [useAutoNumber]);
+  
+  const generateBCNumber = async () => {
+    setGeneratingNumber(true);
+    try {
+      const { data, error } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'BC' });
+      if (!error && data) {
+        setBcNumber(data);
+      }
+    } catch (e) {
+      console.error('Could not generate BC number:', e);
+    }
+    setGeneratingNumber(false);
+  };
+  
   // Get the correct documents for display
   const avenantSigneUrl = attachments.find(a => a.category === 'avenant_signe' && a.file_url)?.file_url;
   const avenantQuoteUrl = attachments.find(a => a.category === 'avenant_quote' && a.file_url)?.file_url;
   const avenantBcUrl = attachments.find(a => a.category === 'avenant_bc' && a.file_url)?.file_url;
   
   const approveBC = async () => {
+    // Validate BC number
+    if (!bcNumber.trim()) {
+      notify('Veuillez entrer un numéro de BC', 'error');
+      return;
+    }
+    
     setApproving(true);
     
     // Different update depending on whether this is avenant BC or regular BC
@@ -3621,7 +3653,8 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
         .from('service_requests')
         .update({
           avenant_approved_at: new Date().toISOString(),
-          avenant_bc_url: rma.bc_file_url || rma.bc_signature_url // Save BC to avenant-specific field
+          avenant_bc_url: rma.bc_file_url || rma.bc_signature_url, // Save BC to avenant-specific field
+          supplement_number: bcNumber // Save supplement number
         })
         .eq('id', rma.id);
       
@@ -3629,7 +3662,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
         notify('Erreur: ' + error.message, 'error');
       } else {
         // Don't change device statuses - they stay where they were
-        notify('✅ Avenant approuvé! Le technicien peut continuer les travaux supplémentaires.');
+        notify(`✅ Avenant approuvé! BC N° ${bcNumber}`);
         reload();
         onClose();
       }
@@ -3639,14 +3672,15 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
         .from('service_requests')
         .update({
           status: 'waiting_device', 
-          bc_approved_at: new Date().toISOString()
+          bc_approved_at: new Date().toISOString(),
+          bc_number: bcNumber
         })
         .eq('id', rma.id);
       
       if (error) {
         notify('Erreur: ' + error.message, 'error');
       } else {
-        notify('✅ BC approuvé! En attente de l\'appareil.');
+        notify(`✅ BC N° ${bcNumber} approuvé! En attente de l'appareil.`);
         reload();
         onClose();
       }
@@ -3862,6 +3896,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
             ) : (rma.quote_total || rma.quote_url) && (
               <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
                 <h4 className="font-medium text-blue-800 mb-1">💰 Devis</h4>
+                {rma.quote_number && <p className="text-sm font-mono text-blue-600">N° {rma.quote_number}</p>}
                 {rma.quote_total && <p className="text-xl font-bold text-blue-700">{rma.quote_total.toFixed(2)} €</p>}
                 {rma.quote_url && (
                   <a href={rma.quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
@@ -3870,6 +3905,64 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
                 )}
               </div>
             )}
+            
+            {/* BC Number Input - Critical for BL reference */}
+            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+              <h4 className="font-medium text-green-800 mb-2">📋 Numéro de Bon de Commande</h4>
+              <p className="text-xs text-green-600 mb-3">
+                {hasCustomerBCFile 
+                  ? 'Le client a fourni son propre BC. Entrez le numéro du client.'
+                  : 'Devis signé par le client. Auto-générer ou entrer un numéro.'}
+              </p>
+              
+              {/* Toggle for auto-generate vs manual */}
+              {!hasCustomerBCFile && (
+                <div className="flex items-center gap-2 mb-3">
+                  <button
+                    onClick={() => { setUseAutoNumber(true); generateBCNumber(); }}
+                    className={`flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                      useAutoNumber ? 'bg-green-600 text-white' : 'bg-white border border-green-300 text-green-700'
+                    }`}
+                  >
+                    Auto
+                  </button>
+                  <button
+                    onClick={() => { setUseAutoNumber(false); setBcNumber(''); }}
+                    className={`flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                      !useAutoNumber ? 'bg-green-600 text-white' : 'bg-white border border-green-300 text-green-700'
+                    }`}
+                  >
+                    Manuel
+                  </button>
+                </div>
+              )}
+              
+              <div className="relative">
+                <input
+                  type="text"
+                  value={bcNumber}
+                  onChange={e => setBcNumber(e.target.value)}
+                  placeholder={hasCustomerBCFile ? "N° BC du client (requis)" : "BC-0226-001"}
+                  className={`w-full px-3 py-2 border rounded-lg font-mono text-center text-lg ${
+                    hasCustomerBCFile && !bcNumber ? 'border-red-300 bg-red-50' : 'border-green-300'
+                  }`}
+                  disabled={generatingNumber}
+                />
+                {generatingNumber && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+              </div>
+              
+              {hasCustomerBCFile && !bcNumber && (
+                <p className="text-xs text-red-600 mt-1">⚠️ Numéro BC requis pour le Bon de Livraison</p>
+              )}
+              
+              {useAutoNumber && bcNumber && !hasCustomerBCFile && (
+                <p className="text-xs text-green-600 mt-1">✓ Ce numéro sera utilisé pour le BL</p>
+              )}
+            </div>
             
             {/* Reject Reason */}
             <div className="bg-red-50 rounded-lg p-4 border border-red-200">
@@ -15121,7 +15214,85 @@ function SettingsSheet({ profile, staffMembers, notify, reload }) {
               <div className="text-center py-8 text-gray-500">Chargement...</div>
             ) : (
               <div className="space-y-6">
-                {/* Current Month Overview */}
+                {/* RMA Counter - Special (doesn't reset monthly) */}
+                {(() => {
+                  const rmaType = documentTypes.find(d => d.doc_type === 'RMA');
+                  if (!rmaType) return null;
+                  
+                  const rmaCounter = getCounter('RMA', 'GLOBAL');
+                  const rmaCurrentNum = rmaCounter?.current_number || 0;
+                  const rmaNextNum = rmaCurrentNum + 1;
+                  const isEditingRMA = editingCounter === 'RMA-GLOBAL';
+                  
+                  return (
+                    <div>
+                      <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                        <span className="text-lg">🔢</span>
+                        Numéro RMA (FR-XXXXX)
+                      </h3>
+                      <p className="text-sm text-gray-500 mb-4">
+                        Le numéro RMA est séquentiel et ne se réinitialise pas chaque mois.
+                      </p>
+                      
+                      <div className="bg-[#00A651]/10 rounded-xl p-4 border border-[#00A651]/30 max-w-xs">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-gray-500">RMA</span>
+                          <span className="text-xs bg-[#00A651] text-white px-2 py-0.5 rounded font-mono">FR</span>
+                        </div>
+                        
+                        {isEditingRMA ? (
+                          <div className="space-y-2">
+                            <input
+                              type="number"
+                              value={newValue}
+                              onChange={e => setNewValue(e.target.value)}
+                              className="w-full px-3 py-2 border rounded-lg text-center font-mono"
+                              placeholder="Valeur actuelle"
+                              min="0"
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => { setEditingCounter(null); setNewValue(''); }}
+                                className="flex-1 px-3 py-1.5 bg-gray-200 rounded-lg text-sm"
+                              >
+                                Annuler
+                              </button>
+                              <button
+                                onClick={() => saveCounter('RMA', 'GLOBAL', newValue)}
+                                disabled={saving}
+                                className="flex-1 px-3 py-1.5 bg-[#00A651] text-white rounded-lg text-sm disabled:opacity-50"
+                              >
+                                {saving ? '...' : 'OK'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="text-center mb-2">
+                              <p className="text-2xl font-bold text-[#00A651] font-mono">
+                                {String(rmaCurrentNum).padStart(5, '0')}
+                              </p>
+                              <p className="text-xs text-gray-400">dernier utilisé</p>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-gray-500">
+                                Prochain: <span className="font-mono font-medium text-[#00A651]">FR-{String(rmaNextNum).padStart(5, '0')}</span>
+                              </span>
+                              <button
+                                onClick={() => { setEditingCounter('RMA-GLOBAL'); setNewValue(String(rmaCurrentNum)); }}
+                                className="text-blue-600 hover:text-blue-800"
+                              >
+                                ✏️
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+                
+                {/* Current Month Overview - Monthly counters */}
                 <div>
                   <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
                     <span className="text-lg">📊</span>
@@ -15131,8 +15302,8 @@ function SettingsSheet({ profile, staffMembers, notify, reload }) {
                     Format: PREFIX-MMYY-NNN (ex: DEV-0226-001). Les compteurs se réinitialisent chaque mois.
                   </p>
                   
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {documentTypes.map(docType => {
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                    {documentTypes.filter(dt => dt.doc_type !== 'RMA').map(docType => {
                       const counter = getCounter(docType.doc_type, currentYearMonth);
                       const currentNum = counter?.current_number || 0;
                       const nextNum = currentNum + 1;
@@ -15199,7 +15370,7 @@ function SettingsSheet({ profile, staffMembers, notify, reload }) {
                 </div>
                 
                 {/* History */}
-                {counters.length > 0 && (
+                {counters.filter(c => c.year_month !== 'GLOBAL').length > 0 && (
                   <div>
                     <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
                       <span className="text-lg">📜</span>
@@ -15210,17 +15381,17 @@ function SettingsSheet({ profile, staffMembers, notify, reload }) {
                         <thead>
                           <tr className="border-b">
                             <th className="text-left py-2 px-3">Période</th>
-                            {documentTypes.map(dt => (
+                            {documentTypes.filter(dt => dt.doc_type !== 'RMA').map(dt => (
                               <th key={dt.doc_type} className="text-center py-2 px-3">{dt.prefix}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {/* Group counters by year_month */}
-                          {[...new Set(counters.map(c => c.year_month))].slice(0, 6).map(ym => (
+                          {/* Group counters by year_month - exclude GLOBAL (RMA) */}
+                          {[...new Set(counters.filter(c => c.year_month !== 'GLOBAL').map(c => c.year_month))].slice(0, 6).map(ym => (
                             <tr key={ym} className="border-b hover:bg-gray-50">
                               <td className="py-2 px-3 font-medium">{formatYearMonth(ym)}</td>
-                              {documentTypes.map(dt => {
+                              {documentTypes.filter(dt => dt.doc_type !== 'RMA').map(dt => {
                                 const c = getCounter(dt.doc_type, ym);
                                 return (
                                   <td key={dt.doc_type} className="text-center py-2 px-3 font-mono text-gray-600">
@@ -15240,9 +15411,10 @@ function SettingsSheet({ profile, staffMembers, notify, reload }) {
                 <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
                   <h4 className="font-medium text-blue-800 mb-2">💡 Comment ça marche</h4>
                   <ul className="text-sm text-blue-700 space-y-1">
-                    <li>• Chaque document reçoit un numéro unique au format <span className="font-mono">PREFIX-MMYY-NNN</span></li>
-                    <li>• Les compteurs se réinitialisent automatiquement chaque mois</li>
-                    <li>• Le numéro RMA reste séparé (<span className="font-mono">FR-XXXXX</span>) et apparaît comme référence</li>
+                    <li>• <strong>RMA (FR-XXXXX)</strong>: Numéro séquentiel continu, ne se réinitialise pas</li>
+                    <li>• <strong>Documents (DEV, BC, BL, FAC, CTR, SUP)</strong>: Format PREFIX-MMYY-NNN, réinitialisation mensuelle</li>
+                    <li>• Le BC peut être le numéro du client (si fourni) ou auto-généré</li>
+                    <li>• Le numéro BC est référencé sur le Bon de Livraison (BL)</li>
                     <li>• Utilisez le bouton ✏️ pour corriger un compteur si nécessaire</li>
                   </ul>
                 </div>
@@ -16356,9 +16528,22 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
     
     let rmaNumber = request.request_number;
     if (!rmaNumber) {
-      const { data } = await supabase.from('service_requests').select('request_number').like('request_number', 'FR-%').order('request_number', { ascending: false }).limit(1);
-      const lastNum = data?.[0]?.request_number ? parseInt(data[0].request_number.replace('FR-', '')) : 0;
-      rmaNumber = 'FR-' + String(lastNum + 1).padStart(5, '0');
+      // Try to use database function first
+      try {
+        const { data: rmaData, error: rmaError } = await supabase.rpc('get_next_rma_number');
+        if (!rmaError && rmaData) {
+          rmaNumber = rmaData;
+        }
+      } catch (e) {
+        console.error('Could not use get_next_rma_number:', e);
+      }
+      
+      // Fallback to old method if function doesn't exist
+      if (!rmaNumber) {
+        const { data } = await supabase.from('service_requests').select('request_number').like('request_number', 'FR-%').order('request_number', { ascending: false }).limit(1);
+        const lastNum = data?.[0]?.request_number ? parseInt(data[0].request_number.replace('FR-', '')) : 0;
+        rmaNumber = 'FR-' + String(lastNum + 1).padStart(5, '0');
+      }
     }
     
     // Get next document number for quote (DEV-MMYY-NNN)
