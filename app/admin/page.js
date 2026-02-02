@@ -6548,8 +6548,10 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-2xl font-bold text-amber-500">AVENANT</p>
-                <p className="text-gray-500">Réf. {rma.request_number}</p>
+                <p className="text-2xl font-bold text-amber-500">SUPPLÉMENT AU DEVIS</p>
+                <p className="text-sm font-bold text-[#1E3A5F]">N° {rma.supplement_number || '(Généré à l\'envoi)'}</p>
+                {rma.quote_number && <p className="text-xs text-gray-500">Devis: {rma.quote_number}</p>}
+                <p className="text-xs text-gray-500">RMA: {rma.request_number}</p>
               </div>
             </div>
           </div>
@@ -9154,7 +9156,8 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                     </div>
                     <div className="text-right">
                       <p className="text-xl font-bold text-[#00A651]">DEVIS PIÈCES</p>
-                      <p className="text-gray-500">{quoteRef}</p>
+                      <p className="text-sm font-bold text-[#1E3A5F]">N° {order.quote_number || quoteRef}</p>
+                      <p className="text-xs text-gray-500">Réf: {order.request_number}</p>
                     </div>
                   </div>
                 </div>
@@ -9572,11 +9575,12 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
     .watermark img { width: 500px; height: auto; }
     
     .content { flex: 1 0 auto; }
-    .header { margin-bottom: 15px; padding-bottom: 12px; border-bottom: 2px solid #333; }
+    .header { margin-bottom: 15px; padding-bottom: 12px; border-bottom: 2px solid #00A651; display: flex; justify-content: space-between; align-items: flex-start; }
     .header img { height: 50px; }
-    .title-section { text-align: center; margin: 20px 0; }
-    .title { font-size: 20pt; font-weight: bold; color: #333; margin: 0; }
-    .bl-number { font-size: 14pt; color: #333; font-weight: bold; margin-top: 8px; }
+    .header-right { text-align: right; }
+    .doc-title { font-size: 18pt; font-weight: bold; color: #00A651; margin: 0; }
+    .doc-number { font-size: 12pt; font-weight: bold; color: #1E3A5F; margin-top: 4px; }
+    .doc-ref { font-size: 9pt; color: #666; margin-top: 2px; }
     .info-row { display: flex; justify-content: space-between; margin: 12px 0; }
     .client-box { background: rgba(248,249,250,0.85); border: 1px solid #ddd; padding: 15px; margin: 12px 0; }
     .client-label { font-size: 9pt; color: #666; text-transform: uppercase; font-weight: 600; margin-bottom: 5px; }
@@ -9625,16 +9629,15 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
     <div class="content">
       <div class="header">
         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" onerror="this.outerHTML='<div style=\\'font-size:24px;font-weight:bold;color:#333\\'>LIGHTHOUSE<div style=\\'font-size:10px;color:#666\\'>FRANCE</div></div>'">
-      </div>
-
-      <div class="title-section">
-        <h1 class="title">BON DE LIVRAISON</h1>
-        <div class="bl-number">${bl.blNumber}</div>
+        <div class="header-right">
+          <div class="doc-title">BON DE LIVRAISON</div>
+          <div class="doc-number">N° ${bl.blNumber}</div>
+          <div class="doc-ref">Réf: ${bl.orderNumber}</div>
+        </div>
       </div>
 
       <div class="info-row">
         <div><span style="color:#666">${biz.city || 'Créteil'}, le</span> <strong>${bl.date}</strong></div>
-        <div><span style="color:#666">Commande:</span> <strong>${bl.orderNumber}</strong></div>
       </div>
 
       <div class="client-box">
@@ -10081,20 +10084,18 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                     {/* Content area */}
                     <div style={{ flex: '1 0 auto' }}>
                       {/* Header */}
-                      <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333' }}>
+                      <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
-                      </div>
-
-                      {/* Title */}
-                      <div style={{ textAlign: 'center', margin: '20px 0' }}>
-                        <div style={{ fontSize: '20pt', fontWeight: 'bold', color: '#333' }}>BON DE LIVRAISON</div>
-                        <div style={{ fontSize: '14pt', color: '#333', fontWeight: 'bold', marginTop: '8px' }}>{bl.blNumber}</div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#00A651' }}>BON DE LIVRAISON</div>
+                          <div style={{ fontSize: '12pt', fontWeight: 'bold', color: '#1E3A5F', marginTop: '4px' }}>N° {bl.blNumber}</div>
+                          <div style={{ fontSize: '9pt', color: '#666', marginTop: '4px' }}>Réf: {bl.orderNumber}</div>
+                        </div>
                       </div>
 
                       {/* Info row */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', margin: '12px 0' }}>
                         <div><span style={{ color: '#666' }}>{biz.city || 'Créteil'}, le</span> <strong>{bl.date}</strong></div>
-                        <div><span style={{ color: '#666' }}>Commande:</span> <strong>{bl.orderNumber}</strong></div>
                       </div>
 
                       {/* Client box - semi-transparent */}
@@ -10444,6 +10445,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
   
   const generateBLContent = (shipment, index) => ({
     blNumber: generateBLNumber(index),
+    bcNumber: rma.bc_number || null,
     date: getFrenchDate(),
     rmaNumber: rma.request_number,
     client: { name: shipment.address.company_name, attention: shipment.address.attention, street: shipment.address.address_line1, city: `${shipment.address.postal_code} ${shipment.address.city}`, country: shipment.address.country || 'France' },
@@ -10532,11 +10534,12 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     .watermark img { width: 500px; height: auto; }
     
     .content { flex: 1 0 auto; }
-    .header { margin-bottom: 15px; padding-bottom: 12px; border-bottom: 2px solid #333; }
+    .header { margin-bottom: 15px; padding-bottom: 12px; border-bottom: 2px solid #00A651; display: flex; justify-content: space-between; align-items: flex-start; }
     .header img { height: 50px; }
-    .title-section { text-align: center; margin: 20px 0; }
-    .title { font-size: 20pt; font-weight: bold; color: #333; margin: 0; }
-    .bl-number { font-size: 14pt; color: #333; font-weight: bold; margin-top: 8px; }
+    .header-right { text-align: right; }
+    .doc-title { font-size: 18pt; font-weight: bold; color: #00A651; margin: 0; }
+    .doc-number { font-size: 12pt; font-weight: bold; color: #1E3A5F; margin-top: 4px; }
+    .doc-ref { font-size: 9pt; color: #666; margin-top: 2px; }
     .info-row { display: flex; justify-content: space-between; margin: 12px 0; }
     .client-box { background: rgba(248,249,250,0.85); border: 1px solid #ddd; padding: 15px; margin: 12px 0; }
     .client-label { font-size: 9pt; color: #666; text-transform: uppercase; font-weight: 600; margin-bottom: 5px; }
@@ -10585,16 +10588,16 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     <div class="content">
       <div class="header">
         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" onerror="this.outerHTML='<div style=\\'font-size:24px;font-weight:bold;color:#333\\'>LIGHTHOUSE<div style=\\'font-size:10px;color:#666\\'>FRANCE</div></div>'">
-      </div>
-
-      <div class="title-section">
-        <h1 class="title">BON DE LIVRAISON</h1>
-        <div class="bl-number">${bl.blNumber}</div>
+        <div class="header-right">
+          <div class="doc-title">BON DE LIVRAISON</div>
+          <div class="doc-number">N° ${bl.blNumber}</div>
+          ${bl.bcNumber ? `<div class="doc-ref">BC: ${bl.bcNumber}</div>` : ''}
+          <div class="doc-ref">RMA: ${bl.rmaNumber}</div>
+        </div>
       </div>
 
       <div class="info-row">
         <div><span style="color:#666">${biz.city || 'Créteil'}, le</span> <strong>${bl.date}</strong></div>
-        <div><span style="color:#666">RMA:</span> <strong>${bl.rmaNumber}</strong></div>
       </div>
 
       <div class="client-box">
@@ -11189,20 +11192,19 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                     {/* Content area */}
                     <div style={{ flex: '1 0 auto' }}>
                       {/* Header */}
-                      <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333' }}>
+                      <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
-                      </div>
-
-                      {/* Title */}
-                      <div style={{ textAlign: 'center', margin: '20px 0' }}>
-                        <div style={{ fontSize: '20pt', fontWeight: 'bold', color: '#333' }}>BON DE LIVRAISON</div>
-                        <div style={{ fontSize: '14pt', color: '#333', fontWeight: 'bold', marginTop: '8px' }}>{bl.blNumber}</div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#00A651' }}>BON DE LIVRAISON</div>
+                          <div style={{ fontSize: '12pt', fontWeight: 'bold', color: '#1E3A5F', marginTop: '4px' }}>N° {bl.blNumber}</div>
+                          {bl.bcNumber && <div style={{ fontSize: '9pt', color: '#666', marginTop: '2px' }}>BC: {bl.bcNumber}</div>}
+                          <div style={{ fontSize: '9pt', color: '#666', marginTop: '2px' }}>RMA: {bl.rmaNumber}</div>
+                        </div>
                       </div>
 
                       {/* Info row */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', margin: '12px 0' }}>
                         <div><span style={{ color: '#666' }}>{biz.city || 'Créteil'}, le</span> <strong>{bl.date}</strong></div>
-                        <div><span style={{ color: '#666' }}>RMA:</span> <strong>{bl.rmaNumber}</strong></div>
                       </div>
 
                       {/* Client box - semi-transparent */}
@@ -13773,7 +13775,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 </div>
                 <div className="text-right">
                   <p className="text-lg font-bold text-[#00A651]">DEVIS CONTRAT</p>
-                  <p className="text-gray-500 text-sm">{quoteRef}</p>
+                  <p className="text-sm font-bold text-[#1E3A5F]">N° {contract.contract_number || '(Généré à l\'envoi)'}</p>
                 </div>
               </div>
               {pageNum === 1 && (
@@ -17529,7 +17531,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
-                      <p className="text-gray-500">Ref: {quoteRef}</p>
+                      <p className="text-sm font-bold text-[#1E3A5F]">N° {request.quote_number || '(Généré à l\'envoi)'}</p>
+                      <p className="text-xs text-gray-500">RMA: {request.request_number}</p>
                     </div>
                   </div>
                 </div>
