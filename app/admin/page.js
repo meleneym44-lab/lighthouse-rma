@@ -1349,20 +1349,38 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings,
   let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
   
   const addFooter = () => {
-    // Footer at the very bottom of the page
-    const footerY = pageHeight - footerHeight;
-    pdf.setFillColor(...darkBlue);
-    pdf.rect(0, footerY, pageWidth, footerHeight, 'F');
-    pdf.setTextColor(...white);
-    pdf.setFontSize(8);
+    // Footer section at the absolute bottom of the page
+    // Matches the HTML preview style with capcert logo + company info
+    const footerTopY = pageHeight - 35; // Start footer section 35mm from bottom
+    
+    // Separator line
+    pdf.setDrawColor(200, 200, 200);
+    pdf.setLineWidth(0.5);
+    pdf.line(margin, footerTopY, pageWidth - margin, footerTopY);
+    
+    // Capcert logo on left
+    if (capcertLogo) {
+      try {
+        const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
+        pdf.addImage(capcertLogo, format, margin, footerTopY + 3, 28, 28);
+      } catch (e) {}
+    }
+    
+    // Company info centered
+    const infoX = pageWidth / 2;
+    const infoStartY = footerTopY + 8;
+    
+    pdf.setFontSize(9);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(biz.company_name || 'Lighthouse France SAS', margin, footerY + 4);
+    pdf.setTextColor(...darkBlue);
+    pdf.text(`${biz.company_name || 'Lighthouse France SAS'} au capital de ${biz.capital || '10 000'} €`, infoX, infoStartY, { align: 'center' });
+    
+    pdf.setFontSize(8);
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7);
-    pdf.setTextColor(200, 200, 200);
-    pdf.text(`${biz.address || '16 rue Paul Séjourné'}, ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} | Tél. ${biz.phone || '01 43 77 28 07'}`, margin, footerY + 8);
-    pdf.text(`SIRET ${biz.siret || '50178134800013'} | TVA FR ${biz.tva || '86501781348'}`, pageWidth / 2, footerY + 8, { align: 'center' });
-    pdf.text(`${biz.email || 'France@golighthouse.com'} | ${biz.website || 'www.golighthouse.fr'}`, pageWidth - margin, footerY + 8, { align: 'right' });
+    pdf.setTextColor(...gray);
+    pdf.text(`${biz.address || '16 rue Paul Séjourné'}, ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} | Tél. ${biz.phone || '01 43 77 28 07'}`, infoX, infoStartY + 5, { align: 'center' });
+    pdf.text(`SIRET ${biz.siret || '50178134800013'} | TVA FR ${biz.tva || '86501781348'}`, infoX, infoStartY + 10, { align: 'center' });
+    pdf.text(`${biz.email || 'France@golighthouse.com'} | ${biz.website || 'www.golighthouse.fr'}`, infoX, infoStartY + 15, { align: 'center' });
   };
 
   // ===== HEADER =====
@@ -1558,14 +1576,6 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings,
   pdf.setFontSize(20);
   pdf.text('WORLDWIDE SOLUTIONS', pageWidth / 2, pageHeight / 2 + 45, { align: 'center' });
 
-  // ===== CAPCERT LOGO =====
-  if (capcertLogo) {
-    try {
-      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(capcertLogo, format, margin, pageHeight - footerHeight - 35, 28, 28);
-    } catch (e) {}
-  }
-
   addFooter();
   return pdf.output('blob');
 };
@@ -1589,19 +1599,37 @@ const generatePartsBLPDF = async (order, parts, shipment, blNumber, businessSett
   let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
   
   const addFooter = () => {
-    const footerY = pageHeight - footerHeight;
-    pdf.setFillColor(...darkBlue);
-    pdf.rect(0, footerY, pageWidth, footerHeight, 'F');
-    pdf.setTextColor(...white);
-    pdf.setFontSize(8);
+    // Footer section at the absolute bottom of the page
+    const footerTopY = pageHeight - 35;
+    
+    // Separator line
+    pdf.setDrawColor(200, 200, 200);
+    pdf.setLineWidth(0.5);
+    pdf.line(margin, footerTopY, pageWidth - margin, footerTopY);
+    
+    // Capcert logo on left
+    if (capcertLogo) {
+      try {
+        const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
+        pdf.addImage(capcertLogo, format, margin, footerTopY + 3, 28, 28);
+      } catch (e) {}
+    }
+    
+    // Company info centered
+    const infoX = pageWidth / 2;
+    const infoStartY = footerTopY + 8;
+    
+    pdf.setFontSize(9);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(biz.company_name || 'Lighthouse France SAS', margin, footerY + 4);
+    pdf.setTextColor(...darkBlue);
+    pdf.text(`${biz.company_name || 'Lighthouse France SAS'} au capital de ${biz.capital || '10 000'} €`, infoX, infoStartY, { align: 'center' });
+    
+    pdf.setFontSize(8);
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7);
-    pdf.setTextColor(200, 200, 200);
-    pdf.text(`${biz.address || '16 rue Paul Séjourné'}, ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} | Tél. ${biz.phone || '01 43 77 28 07'}`, margin, footerY + 8);
-    pdf.text(`SIRET ${biz.siret || '50178134800013'} | TVA FR ${biz.tva || '86501781348'}`, pageWidth / 2, footerY + 8, { align: 'center' });
-    pdf.text(`${biz.email || 'France@golighthouse.com'} | ${biz.website || 'www.golighthouse.fr'}`, pageWidth - margin, footerY + 8, { align: 'right' });
+    pdf.setTextColor(...gray);
+    pdf.text(`${biz.address || '16 rue Paul Séjourné'}, ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} | Tél. ${biz.phone || '01 43 77 28 07'}`, infoX, infoStartY + 5, { align: 'center' });
+    pdf.text(`SIRET ${biz.siret || '50178134800013'} | TVA FR ${biz.tva || '86501781348'}`, infoX, infoStartY + 10, { align: 'center' });
+    pdf.text(`${biz.email || 'France@golighthouse.com'} | ${biz.website || 'www.golighthouse.fr'}`, infoX, infoStartY + 15, { align: 'center' });
   };
 
   // ===== HEADER =====
@@ -1763,14 +1791,6 @@ const generatePartsBLPDF = async (order, parts, shipment, blNumber, businessSett
   pdf.text('LIGHTHOUSE', pageWidth / 2, pageHeight / 2 + 30, { align: 'center' });
   pdf.setFontSize(20);
   pdf.text('WORLDWIDE SOLUTIONS', pageWidth / 2, pageHeight / 2 + 45, { align: 'center' });
-
-  // ===== CAPCERT LOGO =====
-  if (capcertLogo) {
-    try {
-      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(capcertLogo, format, margin, pageHeight - footerHeight - 35, 28, 28);
-    } catch (e) {}
-  }
 
   addFooter();
   return pdf.output('blob');
