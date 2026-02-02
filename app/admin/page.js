@@ -4820,8 +4820,9 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     const isDeviceShipped = device.status === 'shipped';
     const isDeviceReadyToShip = device.status === 'ready_to_ship' || device.qc_complete;
     const needsQC = device.report_complete && !device.qc_complete;
-    const canStartService = ['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress'].includes(device.status || rma.status) || 
-      (!device.report_complete && !isDeviceShipped);
+    // Device must be received (have received_at or be in service status) before starting service
+    const isDeviceReceived = device.received_at || ['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship'].includes(device.status);
+    const canStartService = isDeviceReceived && !device.report_complete && !isDeviceShipped;
     
     return (
       <div className="space-y-6">
@@ -4875,6 +4876,13 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         {!isDeviceShipped && (
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="flex flex-wrap items-center gap-3">
+              {/* Not received message */}
+              {!isDeviceReceived && !device.report_complete && (
+                <span className="px-3 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium flex items-center gap-2">
+                  📦 Appareil non réceptionné - Marquer comme reçu pour démarrer le service
+                </span>
+              )}
+              
               {/* Service button - Edit or Start */}
               {canStartService && (
                 <button
@@ -6111,8 +6119,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   const contentWidth = pageWidth - (margin * 2);
   const footerHeight = 16;
   
-  // Colors - using amber/orange for supplement to distinguish from regular quote
-  const amber = [245, 158, 11];
+  // Colors - using green theme to match main quote
   const { green, darkBlue, gray, lightGray, white } = PDF_COLORS;
   
   let y = margin;
@@ -6164,10 +6171,10 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
     pdf.text('LIGHTHOUSE', margin, y + 8);
   }
   
-  // Title - SUPPLÉMENT in amber
+  // Title - SUPPLÉMENT in green
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...amber);
+  pdf.setTextColor(...green);
   pdf.text('SUPPLÉMENT AU DEVIS', pageWidth - margin, y + 5, { align: 'right' });
   
   // Document number (SUP-0226-001) - primary
@@ -6190,13 +6197,13 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   }
   
   y += 20;
-  pdf.setDrawColor(...amber);
+  pdf.setDrawColor(...green);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
   y += 7;
 
   // ===== INFO BAR =====
-  pdf.setFillColor(255, 251, 235); // Light amber background
+  pdf.setFillColor(245, 245, 245); // Light gray background
   pdf.rect(margin, y, contentWidth, 16, 'F');
   pdf.setFontSize(8);
   pdf.setTextColor(...lightGray);
@@ -6244,10 +6251,12 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   y += 8;
 
   // ===== INTRODUCTION =====
-  pdf.setFillColor(255, 251, 235);
-  pdf.rect(margin, y, contentWidth, 14, 'F');
+  pdf.setFillColor(240, 253, 244); // Light green background
+  pdf.setDrawColor(...green);
+  pdf.setLineWidth(0.5);
+  pdf.rect(margin, y, contentWidth, 14, 'FD');
   pdf.setFontSize(9);
-  pdf.setTextColor(146, 64, 14); // Dark amber text
+  pdf.setTextColor(22, 101, 52); // Dark green text
   const introText = "Suite a l'inspection de vos appareils, nous avons constate des travaux supplementaires necessaires.";
   pdf.text(introText, margin + 5, y + 5);
   pdf.text("Veuillez trouver ci-dessous le detail des interventions recommandees.", margin + 5, y + 10);
@@ -6335,7 +6344,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
 
   // Total row
   checkPageBreak(15);
-  pdf.setFillColor(...amber);
+  pdf.setFillColor(...green);
   pdf.rect(margin, y, contentWidth, 11, 'F');
   pdf.setTextColor(...white);
   pdf.setFontSize(11);
@@ -6520,7 +6529,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           </div>
           <div className="flex items-center gap-3">
             {alreadySent && (
-              <span className="px-3 py-1 bg-amber-500 rounded-full text-xs font-bold">
+              <span className="px-3 py-1 bg-green-500 rounded-full text-xs font-bold">
                 ✓ Envoyé le {new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR')}
               </span>
             )}
@@ -6531,7 +6540,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
         {/* Quote Document - Like RMA Quote PDF */}
         <div id="avenant-preview-content">
           {/* Quote Header */}
-          <div className="px-8 pt-8 pb-4 border-b-4 border-amber-500">
+          <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
             <div className="flex justify-between items-start">
               <div>
                 <img 
@@ -6549,7 +6558,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-2xl font-bold text-amber-500">SUPPLÉMENT AU DEVIS</p>
+                <p className="text-2xl font-bold text-[#00A651]">SUPPLÉMENT AU DEVIS</p>
                 <p className="text-sm font-bold text-[#1E3A5F]">N° {rma.supplement_number || '(Généré à l\'envoi)'}</p>
                 {rma.quote_number && <p className="text-xs text-gray-500">Devis: {rma.quote_number}</p>}
                 <p className="text-xs text-gray-500">RMA: {rma.request_number}</p>
@@ -6558,7 +6567,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           </div>
 
           {/* Info Bar */}
-          <div className="bg-amber-50 px-8 py-3 flex justify-between text-sm border-b">
+          <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
             <div>
               <p className="text-xs text-gray-500 uppercase">Date</p>
               <p className="font-medium">{alreadySent ? new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
@@ -6582,8 +6591,8 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           </div>
 
           {/* Introduction */}
-          <div className="px-8 py-4 bg-amber-50 border-b">
-            <p className="text-amber-800">
+          <div className="px-8 py-4 bg-green-50 border-b border-green-200">
+            <p className="text-green-800">
               <strong>Objet :</strong> Suite à l'inspection de vos appareils, notre équipe technique a identifié des travaux supplémentaires nécessaires. 
               Veuillez trouver ci-dessous le détail des interventions recommandées.
             </p>
@@ -6597,13 +6606,13 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
               );
               
               return (
-                <div key={device.id} className="border-l-4 border-amber-500 pl-4">
+                <div key={device.id} className="border-l-4 border-blue-500 pl-4">
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <h3 className="font-bold text-lg text-[#1a1a2e]">{device.model_name}</h3>
                       <p className="text-gray-500 text-sm">N° de série: {device.serial_number}</p>
                     </div>
-                    <span className="text-xl font-bold text-amber-600">€{deviceTotal.toFixed(2)}</span>
+                    <span className="text-xl font-bold text-[#00A651]">€{deviceTotal.toFixed(2)}</span>
                   </div>
                   
                   {device.service_findings && (
@@ -6655,7 +6664,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           )}
 
           {/* Total Section */}
-          <div className="px-8 py-4 bg-amber-500">
+          <div className="px-8 py-4 bg-[#00A651]">
             <div className="flex justify-between items-center text-white">
               <span className="text-lg font-bold">TOTAL SUPPLÉMENT HT</span>
               <span className="text-3xl font-bold">€{totalAvenant.toFixed(2)}</span>
@@ -6711,13 +6720,13 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
               <button 
                 onClick={sendAvenant}
                 disabled={sending}
-                className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
+                className="px-6 py-2 bg-[#00A651] hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50"
               >
                 {sending ? 'Génération & envoi...' : '📧 Envoyer au Client'}
               </button>
             )}
             {alreadySent && (
-              <span className="px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-medium">
+              <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">
                 ✓ Envoyé
               </span>
             )}
