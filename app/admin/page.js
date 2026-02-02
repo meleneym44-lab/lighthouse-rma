@@ -1337,8 +1337,8 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings,
   
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
-  const footerHeight = 16;
-  const { green, darkBlue, gray, lightGray, white } = PDF_COLORS;
+  const footerHeight = 12; // Smaller footer, positioned at very bottom
+  const { darkBlue, gray, lightGray, white } = PDF_COLORS;
   
   let y = margin;
   
@@ -1349,16 +1349,20 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings,
   let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
   
   const addFooter = () => {
+    // Footer at the very bottom of the page
+    const footerY = pageHeight - footerHeight;
     pdf.setFillColor(...darkBlue);
-    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+    pdf.rect(0, footerY, pageWidth, footerHeight, 'F');
     pdf.setTextColor(...white);
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(biz.company_name || 'Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(180, 180, 180);
     pdf.setFontSize(8);
-    pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'} - Tel. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(biz.company_name || 'Lighthouse France SAS', margin, footerY + 4);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7);
+    pdf.setTextColor(200, 200, 200);
+    pdf.text(`${biz.address || '16 rue Paul Séjourné'}, ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} | Tél. ${biz.phone || '01 43 77 28 07'}`, margin, footerY + 8);
+    pdf.text(`SIRET ${biz.siret || '50178134800013'} | TVA FR ${biz.tva || '86501781348'}`, pageWidth / 2, footerY + 8, { align: 'center' });
+    pdf.text(`${biz.email || 'France@golighthouse.com'} | ${biz.website || 'www.golighthouse.fr'}`, pageWidth - margin, footerY + 8, { align: 'right' });
   };
 
   // ===== HEADER =====
@@ -1379,91 +1383,91 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings,
     pdf.text('LIGHTHOUSE', margin, y + 8);
   }
   
+  // Title - BLACK instead of green
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...green);
+  pdf.setTextColor(...darkBlue);
   pdf.text('BON DE LIVRAISON', pageWidth - margin, y + 5, { align: 'right' });
   
-  // Document number (BL-0226-001) - primary
+  // Document number (BL-0226-001)
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   pdf.text('N° ' + (blNumber || '—'), pageWidth - margin, y + 11, { align: 'right' });
   
-  // BC references (can be multiple) and RMA
+  // RMA reference
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  let refY = y + 16;
-  if (bcList.length > 0) {
-    // Show "Commande:" with all BC numbers
-    const bcLabel = bcList.length === 1 ? 'Commande: ' : 'Commandes: ';
-    pdf.text(bcLabel + bcList.join(', '), pageWidth - margin, refY, { align: 'right' });
-    refY += 4;
-  }
   if (rma.request_number) {
-    pdf.text('RMA: ' + rma.request_number, pageWidth - margin, refY, { align: 'right' });
+    pdf.text('RMA: ' + rma.request_number, pageWidth - margin, y + 16, { align: 'right' });
   }
   
   y += 20;
-  pdf.setDrawColor(...green);
-  pdf.setLineWidth(1);
+  pdf.setDrawColor(...darkBlue);
+  pdf.setLineWidth(0.5);
   pdf.line(margin, y, pageWidth - margin, y);
+  y += 8;
+
+  // ===== DATE LINE =====
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('CRÉTEIL, le ' + new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }), margin, y);
   y += 10;
 
-  // ===== INFO BAR =====
-  pdf.setFillColor(245, 245, 245);
-  pdf.rect(margin, y, contentWidth, 12, 'F');
+  // ===== TWO COLUMN LAYOUT: DESTINATAIRE + RÉFÉRENCES =====
+  const boxHeight = 42;
+  const leftBoxWidth = contentWidth * 0.6 - 5;
+  const rightBoxWidth = contentWidth * 0.4 - 5;
+  const rightBoxX = margin + leftBoxWidth + 10;
+  
+  // DESTINATAIRE box (left)
+  pdf.setFillColor(248, 248, 248);
+  pdf.setDrawColor(220, 220, 220);
+  pdf.setLineWidth(0.3);
+  pdf.rect(margin, y, leftBoxWidth, boxHeight, 'FD');
   pdf.setFontSize(8);
-  pdf.setTextColor(...lightGray);
-  pdf.text('DATE', margin + 5, y + 4);
-  pdf.text('RMA', margin + 60, y + 4);
-  pdf.text('N° SUIVI UPS', margin + 110, y + 4);
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(new Date().toLocaleDateString('fr-FR'), margin + 5, y + 10);
-  pdf.text(rma.request_number || 'N/A', margin + 60, y + 10);
-  pdf.setFont('courier', 'normal');
-  pdf.text(shipment.trackingNumber || 'N/A', margin + 110, y + 10);
-  y += 18;
-
-  // ===== ADDRESSES =====
-  // Destinataire
-  pdf.setFillColor(245, 245, 245);
-  pdf.rect(margin, y, contentWidth / 2 - 5, 38, 'F');
-  pdf.setFontSize(8);
-  pdf.setTextColor(...lightGray);
+  pdf.setFont('helvetica', 'bold');
   pdf.text('DESTINATAIRE', margin + 5, y + 6);
-  pdf.setFontSize(12);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
+  pdf.setFontSize(11);
   pdf.text(address.company_name || company.name || 'N/A', margin + 5, y + 14);
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  if (address.attention) pdf.text("À l'att. de: " + address.attention, margin + 5, y + 20);
-  pdf.text(address.address_line1 || '', margin + 5, y + 26);
-  pdf.text((address.postal_code || '') + ' ' + (address.city || ''), margin + 5, y + 32);
+  let addrY = y + 20;
+  if (address.attention) { pdf.text("À l'attention de: " + address.attention, margin + 5, addrY); addrY += 5; }
+  pdf.text(address.address_line1 || '', margin + 5, addrY); addrY += 5;
+  pdf.text((address.postal_code || '') + ' ' + (address.city || '').toUpperCase(), margin + 5, addrY); addrY += 5;
+  pdf.text(address.country || 'France', margin + 5, addrY);
   
-  // Expéditeur
-  pdf.setFillColor(240, 249, 255);
-  pdf.rect(margin + contentWidth / 2 + 5, y, contentWidth / 2 - 5, 38, 'F');
+  // RÉFÉRENCES COMMANDE box (right)
+  pdf.setFillColor(248, 248, 248);
+  pdf.setDrawColor(220, 220, 220);
+  pdf.rect(rightBoxX, y, rightBoxWidth, boxHeight, 'FD');
   pdf.setFontSize(8);
-  pdf.setTextColor(...lightGray);
-  pdf.text('EXPÉDITEUR', margin + contentWidth / 2 + 10, y + 6);
-  pdf.setFontSize(12);
-  pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(biz.company_name || 'LIGHTHOUSE FRANCE', margin + contentWidth / 2 + 10, y + 14);
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  pdf.text(biz.address || '16 rue Paul Séjourné', margin + contentWidth / 2 + 10, y + 20);
-  pdf.text((biz.postal_code || '94000') + ' ' + (biz.city || 'Créteil'), margin + contentWidth / 2 + 10, y + 26);
-  pdf.text('France', margin + contentWidth / 2 + 10, y + 32);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('RÉFÉRENCES COMMANDE', rightBoxX + 5, y + 6);
   
-  y += 45;
+  let refY = y + 14;
+  if (bcList.length > 0) {
+    bcList.forEach((bc, i) => {
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...darkBlue);
+      pdf.text(bc, rightBoxX + 5, refY);
+      refY += 6;
+    });
+  } else {
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('—', rightBoxX + 5, refY);
+  }
+  
+  y += boxHeight + 10;
 
   // ===== DEVICES TABLE =====
   const rowH = 10;
@@ -1476,8 +1480,8 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings,
   pdf.setTextColor(...white);
   pdf.text('Qté', margin + 5, y + 6);
   pdf.text('Désignation', margin + 20, y + 6);
-  pdf.text('N° Série', margin + 100, y + 6);
-  pdf.text('Service', margin + 150, y + 6);
+  pdf.text('N° Série', margin + 115, y + 6);
+  pdf.text('Service', margin + 155, y + 6);
   y += 9;
 
   const devicesToList = shipment.devices || devices;
@@ -1489,69 +1493,76 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings,
     pdf.setTextColor(...darkBlue);
     pdf.text('1', margin + 7, y + 7);
     pdf.setFont('helvetica', 'normal');
-    pdf.text('Compteur LIGHTHOUSE ' + (d.model_name || d.model || ''), margin + 20, y + 7);
+    const deviceName = 'Compteur de particules LIGHTHOUSE ' + (d.model_name || d.model || '');
+    pdf.text(deviceName.substring(0, 50), margin + 20, y + 7);
     pdf.setFont('courier', 'normal');
-    pdf.text(d.serial_number || d.serial || '', margin + 100, y + 7);
+    pdf.text(d.serial_number || d.serial || '', margin + 115, y + 7);
     pdf.setFont('helvetica', 'normal');
     const svc = d.service_type === 'calibration' ? 'Étalonnage' : d.service_type === 'repair' ? 'Réparation' : 'Service';
-    pdf.text(svc, margin + 150, y + 7);
+    pdf.text(svc, margin + 155, y + 7);
     y += rowH;
   });
   
-  y += 5;
+  y += 8;
 
   // ===== SHIPPING INFO =====
-  pdf.setDrawColor(...green);
-  pdf.setLineWidth(0.5);
+  pdf.setDrawColor(...darkBlue);
+  pdf.setLineWidth(0.3);
   pdf.line(margin, y, pageWidth - margin, y);
   y += 8;
   
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text('Informations d\'expédition', margin, y);
-  y += 7;
+  pdf.text("Informations d'expédition", margin, y);
+  y += 8;
   
+  // Shipping details in two columns
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
+  
   pdf.text('Transporteur:', margin, y);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('UPS', margin + 35, y);
+  pdf.text('UPS', margin + 30, y);
   
   pdf.setFont('helvetica', 'normal');
-  pdf.text('Nombre de colis:', margin + 80, y);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(String(shipment.parcels || 1), margin + 120, y);
+  pdf.text('N° de suivi:', margin + 60, y);
+  pdf.setFont('courier', 'bold');
+  pdf.text(shipment.trackingNumber || 'N/A', margin + 85, y);
+  
+  y += 8;
   
   pdf.setFont('helvetica', 'normal');
-  pdf.text('Poids:', margin + 140, y);
+  pdf.text('Nombre de colis:', margin, y);
   pdf.setFont('helvetica', 'bold');
-  pdf.text((shipment.weight || '1') + ' kg', margin + 155, y);
+  pdf.text(String(shipment.parcels || 1), margin + 35, y);
   
-  y += 15;
+  pdf.setFont('helvetica', 'normal');
+  pdf.text('Poids:', margin + 60, y);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text((shipment.weight || '1.0') + ' kg', margin + 75, y);
+  
+  y += 8;
+  
+  pdf.setFont('helvetica', 'normal');
+  pdf.text('Préparé par:', margin, y);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(biz.prepared_by || 'M. Meleney', margin + 30, y);
 
-  // ===== SIGNATURE SECTION =====
-  const sigY = Math.max(y, pageHeight - footerHeight - 50);
-  
-  pdf.setDrawColor(200, 200, 200);
-  pdf.setLineWidth(0.3);
-  pdf.line(margin, sigY, pageWidth - margin, sigY);
-  
-  // Signature boxes
-  pdf.setFontSize(8);
-  pdf.setTextColor(...lightGray);
-  pdf.text('Signature Expéditeur', margin + 20, sigY + 8);
-  pdf.setDrawColor(180, 180, 180);
-  pdf.roundedRect(margin, sigY + 12, 80, 25, 2, 2, 'D');
-  
-  pdf.text('Signature Destinataire', margin + contentWidth / 2 + 20, sigY + 8);
-  pdf.roundedRect(margin + contentWidth / 2, sigY + 12, 80, 25, 2, 2, 'D');
+  // ===== WATERMARK - faded lighthouse text =====
+  pdf.setTextColor(240, 240, 240);
+  pdf.setFontSize(50);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('LIGHTHOUSE', pageWidth / 2, pageHeight / 2 + 30, { align: 'center' });
+  pdf.setFontSize(20);
+  pdf.text('WORLDWIDE SOLUTIONS', pageWidth / 2, pageHeight / 2 + 45, { align: 'center' });
 
+  // ===== CAPCERT LOGO =====
   if (capcertLogo) {
     try {
       const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(capcertLogo, format, pageWidth - margin - 25, sigY + 10, 22, 22);
+      pdf.addImage(capcertLogo, format, margin, pageHeight - footerHeight - 35, 28, 28);
     } catch (e) {}
   }
 
@@ -1569,8 +1580,8 @@ const generatePartsBLPDF = async (order, parts, shipment, blNumber, businessSett
   
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
-  const footerHeight = 16;
-  const { green, darkBlue, gray, lightGray, white } = PDF_COLORS;
+  const footerHeight = 12;
+  const { darkBlue, gray, lightGray, white } = PDF_COLORS;
   
   let y = margin;
   
@@ -1578,16 +1589,19 @@ const generatePartsBLPDF = async (order, parts, shipment, blNumber, businessSett
   let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
   
   const addFooter = () => {
+    const footerY = pageHeight - footerHeight;
     pdf.setFillColor(...darkBlue);
-    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+    pdf.rect(0, footerY, pageWidth, footerHeight, 'F');
     pdf.setTextColor(...white);
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(biz.company_name || 'Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(180, 180, 180);
     pdf.setFontSize(8);
-    pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'} - Tel. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(biz.company_name || 'Lighthouse France SAS', margin, footerY + 4);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7);
+    pdf.setTextColor(200, 200, 200);
+    pdf.text(`${biz.address || '16 rue Paul Séjourné'}, ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} | Tél. ${biz.phone || '01 43 77 28 07'}`, margin, footerY + 8);
+    pdf.text(`SIRET ${biz.siret || '50178134800013'} | TVA FR ${biz.tva || '86501781348'}`, pageWidth / 2, footerY + 8, { align: 'center' });
+    pdf.text(`${biz.email || 'France@golighthouse.com'} | ${biz.website || 'www.golighthouse.fr'}`, pageWidth - margin, footerY + 8, { align: 'right' });
   };
 
   // ===== HEADER =====
@@ -1608,77 +1622,69 @@ const generatePartsBLPDF = async (order, parts, shipment, blNumber, businessSett
     pdf.text('LIGHTHOUSE', margin, y + 8);
   }
   
+  // Title - BLACK
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...green);
-  pdf.text('BON DE LIVRAISON', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.setTextColor(...darkBlue);
+  pdf.text('BON DE LIVRAISON', pageWidth - margin, y + 5, { align: 'right' });
   pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('N° ' + blNumber, pageWidth - margin, y + 11, { align: 'right' });
+  pdf.setFontSize(9);
+  pdf.setTextColor(...gray);
+  pdf.text('Pièces Détachées', pageWidth - margin, y + 17, { align: 'right' });
+  
+  y += 20;
+  pdf.setDrawColor(...darkBlue);
+  pdf.setLineWidth(0.5);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 8;
+
+  // ===== DATE LINE =====
+  pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text(blNumber, pageWidth - margin, y + 14, { align: 'right' });
-  pdf.setFontSize(9);
-  pdf.setTextColor(...lightGray);
-  pdf.text('Pièces Détachées', pageWidth - margin, y + 20, { align: 'right' });
-  
-  y += 22;
-  pdf.setDrawColor(...green);
-  pdf.setLineWidth(1);
-  pdf.line(margin, y, pageWidth - margin, y);
+  pdf.text('CRÉTEIL, le ' + new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }), margin, y);
   y += 10;
 
-  // ===== INFO BAR =====
-  pdf.setFillColor(245, 245, 245);
-  pdf.rect(margin, y, contentWidth, 12, 'F');
+  // ===== TWO COLUMN LAYOUT: DESTINATAIRE + RÉFÉRENCES =====
+  const boxHeight = 42;
+  const leftBoxWidth = contentWidth * 0.6 - 5;
+  const rightBoxWidth = contentWidth * 0.4 - 5;
+  const rightBoxX = margin + leftBoxWidth + 10;
+  
+  // DESTINATAIRE box (left)
+  pdf.setFillColor(248, 248, 248);
+  pdf.setDrawColor(220, 220, 220);
+  pdf.setLineWidth(0.3);
+  pdf.rect(margin, y, leftBoxWidth, boxHeight, 'FD');
   pdf.setFontSize(8);
-  pdf.setTextColor(...lightGray);
-  pdf.text('DATE', margin + 5, y + 4);
-  pdf.text('COMMANDE', margin + 50, y + 4);
-  pdf.text('N° SUIVI UPS', margin + 110, y + 4);
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(new Date().toLocaleDateString('fr-FR'), margin + 5, y + 10);
-  pdf.text(order.request_number || 'N/A', margin + 50, y + 10);
-  pdf.setFont('courier', 'normal');
-  pdf.text(shipment.trackingNumber || 'N/A', margin + 110, y + 10);
-  y += 18;
-
-  // ===== ADDRESSES =====
-  // Destinataire
-  pdf.setFillColor(245, 245, 245);
-  pdf.rect(margin, y, contentWidth / 2 - 5, 38, 'F');
-  pdf.setFontSize(8);
-  pdf.setTextColor(...lightGray);
+  pdf.setFont('helvetica', 'bold');
   pdf.text('DESTINATAIRE', margin + 5, y + 6);
-  pdf.setFontSize(12);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
+  pdf.setFontSize(11);
   pdf.text(address.company_name || company.name || 'N/A', margin + 5, y + 14);
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  if (address.attention) pdf.text("À l'att. de: " + address.attention, margin + 5, y + 20);
-  pdf.text(address.address_line1 || '', margin + 5, y + 26);
-  pdf.text((address.postal_code || '') + ' ' + (address.city || ''), margin + 5, y + 32);
+  let addrY = y + 20;
+  if (address.attention) { pdf.text("À l'attention de: " + address.attention, margin + 5, addrY); addrY += 5; }
+  pdf.text(address.address_line1 || '', margin + 5, addrY); addrY += 5;
+  pdf.text((address.postal_code || '') + ' ' + (address.city || '').toUpperCase(), margin + 5, addrY); addrY += 5;
+  pdf.text(address.country || 'France', margin + 5, addrY);
   
-  // Expéditeur
-  pdf.setFillColor(240, 249, 255);
-  pdf.rect(margin + contentWidth / 2 + 5, y, contentWidth / 2 - 5, 38, 'F');
+  // RÉFÉRENCES COMMANDE box (right)
+  pdf.setFillColor(248, 248, 248);
+  pdf.setDrawColor(220, 220, 220);
+  pdf.rect(rightBoxX, y, rightBoxWidth, boxHeight, 'FD');
   pdf.setFontSize(8);
-  pdf.setTextColor(...lightGray);
-  pdf.text('EXPÉDITEUR', margin + contentWidth / 2 + 10, y + 6);
-  pdf.setFontSize(12);
-  pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(biz.company_name || 'LIGHTHOUSE FRANCE', margin + contentWidth / 2 + 10, y + 14);
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  pdf.text(biz.address || '16 rue Paul Séjourné', margin + contentWidth / 2 + 10, y + 20);
-  pdf.text((biz.postal_code || '94000') + ' ' + (biz.city || 'Créteil'), margin + contentWidth / 2 + 10, y + 26);
-  pdf.text('France', margin + contentWidth / 2 + 10, y + 32);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('RÉFÉRENCES COMMANDE', rightBoxX + 5, y + 6);
+  pdf.setFontSize(10);
+  pdf.text(order.request_number || order.bc_number || '—', rightBoxX + 5, y + 14);
   
-  y += 45;
+  y += boxHeight + 10;
 
   // ===== PARTS TABLE =====
   const rowH = 10;
@@ -1711,60 +1717,58 @@ const generatePartsBLPDF = async (order, parts, shipment, blNumber, businessSett
     y += rowH;
   });
   
-  y += 5;
+  y += 8;
 
   // ===== SHIPPING INFO =====
-  pdf.setDrawColor(...green);
-  pdf.setLineWidth(0.5);
+  pdf.setDrawColor(...darkBlue);
+  pdf.setLineWidth(0.3);
   pdf.line(margin, y, pageWidth - margin, y);
   y += 8;
   
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text('Informations d\'expédition', margin, y);
-  y += 7;
+  pdf.text("Informations d'expédition", margin, y);
+  y += 8;
   
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
+  
   pdf.text('Transporteur:', margin, y);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('UPS', margin + 35, y);
+  pdf.text('UPS', margin + 30, y);
   
   pdf.setFont('helvetica', 'normal');
-  pdf.text('Nombre de colis:', margin + 80, y);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(String(shipment.parcels || 1), margin + 120, y);
+  pdf.text('N° de suivi:', margin + 60, y);
+  pdf.setFont('courier', 'bold');
+  pdf.text(shipment.trackingNumber || 'N/A', margin + 85, y);
+  
+  y += 8;
   
   pdf.setFont('helvetica', 'normal');
-  pdf.text('Poids:', margin + 140, y);
+  pdf.text('Nombre de colis:', margin, y);
   pdf.setFont('helvetica', 'bold');
-  pdf.text((shipment.weight || '1') + ' kg', margin + 155, y);
+  pdf.text(String(shipment.parcels || 1), margin + 35, y);
   
-  y += 15;
+  pdf.setFont('helvetica', 'normal');
+  pdf.text('Poids:', margin + 60, y);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text((shipment.weight || '1.0') + ' kg', margin + 75, y);
 
-  // ===== SIGNATURE SECTION =====
-  const sigY = Math.max(y, pageHeight - footerHeight - 50);
-  
-  pdf.setDrawColor(200, 200, 200);
-  pdf.setLineWidth(0.3);
-  pdf.line(margin, sigY, pageWidth - margin, sigY);
-  
-  // Signature boxes
-  pdf.setFontSize(8);
-  pdf.setTextColor(...lightGray);
-  pdf.text('Signature Expéditeur', margin + 20, sigY + 8);
-  pdf.setDrawColor(180, 180, 180);
-  pdf.roundedRect(margin, sigY + 12, 80, 25, 2, 2, 'D');
-  
-  pdf.text('Signature Destinataire', margin + contentWidth / 2 + 20, sigY + 8);
-  pdf.roundedRect(margin + contentWidth / 2, sigY + 12, 80, 25, 2, 2, 'D');
+  // ===== WATERMARK =====
+  pdf.setTextColor(240, 240, 240);
+  pdf.setFontSize(50);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('LIGHTHOUSE', pageWidth / 2, pageHeight / 2 + 30, { align: 'center' });
+  pdf.setFontSize(20);
+  pdf.text('WORLDWIDE SOLUTIONS', pageWidth / 2, pageHeight / 2 + 45, { align: 'center' });
 
+  // ===== CAPCERT LOGO =====
   if (capcertLogo) {
     try {
       const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(capcertLogo, format, pageWidth - margin - 25, sigY + 10, 22, 22);
+      pdf.addImage(capcertLogo, format, margin, pageHeight - footerHeight - 35, 28, 28);
     } catch (e) {}
   }
 
