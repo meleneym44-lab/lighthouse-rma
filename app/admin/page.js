@@ -1349,12 +1349,14 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings,
   let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
   
   const addFooter = () => {
-    // Footer section at the absolute bottom of the page
-    // Matches the HTML preview style with capcert logo + company info
-    const footerTopY = pageHeight - 35; // Start footer section 35mm from bottom
+    // Footer section at the ABSOLUTE bottom of A4 page (297mm)
+    // A4 = 297mm height, we want footer to end at 297mm with small margin
+    const footerBottomMargin = 8; // 8mm from absolute bottom
+    const footerHeight = 30; // Total footer section height
+    const footerTopY = pageHeight - footerBottomMargin - footerHeight; // ~259mm
     
     // Separator line
-    pdf.setDrawColor(200, 200, 200);
+    pdf.setDrawColor(51, 51, 51);
     pdf.setLineWidth(0.5);
     pdf.line(margin, footerTopY, pageWidth - margin, footerTopY);
     
@@ -1362,20 +1364,20 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings,
     if (capcertLogo) {
       try {
         const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-        pdf.addImage(capcertLogo, format, margin, footerTopY + 3, 28, 28);
+        pdf.addImage(capcertLogo, format, margin + 5, footerTopY + 2, 25, 25);
       } catch (e) {}
     }
     
     // Company info centered
-    const infoX = pageWidth / 2;
-    const infoStartY = footerTopY + 8;
+    const infoX = pageWidth / 2 + 10; // Offset slightly right to account for logo
+    const infoStartY = footerTopY + 6;
     
-    pdf.setFontSize(9);
+    pdf.setFontSize(8);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
     pdf.text(`${biz.company_name || 'Lighthouse France SAS'} au capital de ${biz.capital || '10 000'} €`, infoX, infoStartY, { align: 'center' });
     
-    pdf.setFontSize(8);
+    pdf.setFontSize(7);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...gray);
     pdf.text(`${biz.address || '16 rue Paul Séjourné'}, ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} | Tél. ${biz.phone || '01 43 77 28 07'}`, infoX, infoStartY + 5, { align: 'center' });
@@ -10150,14 +10152,14 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                 
                 {/* Clean PDF Preview with Watermark */}
                 <div className="bg-white border-2 border-t-0 rounded-b-xl overflow-hidden shadow-lg">
-                  <div id="bl-preview-parts" style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', minHeight: '270mm', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+                  <div id="bl-preview-parts" style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', height: '270mm', position: 'relative', overflow: 'hidden' }}>
                     {/* Watermark - on top of everything */}
                     <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.12, pointerEvents: 'none', zIndex: 999 }}>
                       <img src="/images/logos/Lighthouse-Square-logo.png" alt="" style={{ width: '500px', height: 'auto' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:150px;font-weight:bold;color:#000">LWS</div>'; }} />
                     </div>
                     
                     {/* Content area */}
-                    <div style={{ flex: '1 0 auto' }}>
+                    <div>
                       {/* Header */}
                       <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
@@ -10228,11 +10230,11 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                       </div>
                     </div>
 
-                    {/* Footer - at bottom */}
-                    <div style={{ flexShrink: 0, marginTop: 'auto', paddingTop: '15px', borderTop: '2px solid #333' }}>
+                    {/* Footer - ABSOLUTE positioned at bottom */}
+                    <div style={{ position: 'absolute', bottom: '15px', left: '30px', right: '30px', paddingTop: '15px', borderTop: '2px solid #333' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '30px' }}>
                         <div>
-                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '100px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
+                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '80px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
                         </div>
                         <div style={{ fontSize: '8pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
                           <strong style={{ color: '#333', fontSize: '9pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
@@ -11281,14 +11283,14 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                 
                 {/* Clean PDF Preview with Watermark */}
                 <div className="bg-white border-2 border-t-0 rounded-b-xl overflow-hidden shadow-lg">
-                  <div id={`bl-preview-${idx}`} style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', minHeight: '270mm', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+                  <div id={`bl-preview-${idx}`} style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', height: '270mm', position: 'relative', overflow: 'hidden' }}>
                     {/* Watermark - on top of everything */}
                     <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.12, pointerEvents: 'none', zIndex: 999 }}>
                       <img src="/images/logos/Lighthouse-Square-logo.png" alt="" style={{ width: '500px', height: 'auto' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:150px;font-weight:bold;color:#000">LWS</div>'; }} />
                     </div>
                     
                     {/* Content area */}
-                    <div style={{ flex: '1 0 auto' }}>
+                    <div>
                       {/* Header */}
                       <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
@@ -11367,11 +11369,11 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                       </div>
                     </div>
 
-                    {/* Footer - at bottom */}
-                    <div style={{ flexShrink: 0, marginTop: 'auto', paddingTop: '15px', borderTop: '2px solid #333' }}>
+                    {/* Footer - ABSOLUTE positioned at bottom */}
+                    <div style={{ position: 'absolute', bottom: '15px', left: '30px', right: '30px', paddingTop: '15px', borderTop: '2px solid #333' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '30px' }}>
                         <div>
-                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '100px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
+                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '80px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
                         </div>
                         <div style={{ fontSize: '8pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
                           <strong style={{ color: '#333', fontSize: '9pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
