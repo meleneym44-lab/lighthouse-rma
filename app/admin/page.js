@@ -1328,7 +1328,7 @@ const generateServiceReportPDF = async (device, rma, technicianName, calType, re
 };
 
 // Generate Bon de Livraison PDF - PROFESSIONAL FORMAT
-const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings, bcNumber) => {
+const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings, bcNumbers) => {
   const jsPDF = await loadJsPDF();
   const pdf = new jsPDF('p', 'mm', 'a4');
   const company = rma.companies || {};
@@ -1341,6 +1341,9 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings,
   const { green, darkBlue, gray, lightGray, white } = PDF_COLORS;
   
   let y = margin;
+  
+  // Normalize bcNumbers to array
+  const bcList = Array.isArray(bcNumbers) ? bcNumbers.filter(Boolean) : (bcNumbers ? [bcNumbers] : []);
   
   let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
   let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
@@ -1387,13 +1390,15 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings,
   pdf.setTextColor(...darkBlue);
   pdf.text('N° ' + (blNumber || '—'), pageWidth - margin, y + 11, { align: 'right' });
   
-  // BC and RMA references
+  // BC references (can be multiple) and RMA
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
   let refY = y + 16;
-  if (bcNumber) {
-    pdf.text('BC: ' + bcNumber, pageWidth - margin, refY, { align: 'right' });
+  if (bcList.length > 0) {
+    // Show "Commande:" with all BC numbers
+    const bcLabel = bcList.length === 1 ? 'Commande: ' : 'Commandes: ';
+    pdf.text(bcLabel + bcList.join(', '), pageWidth - margin, refY, { align: 'right' });
     refY += 4;
   }
   if (rma.request_number) {
@@ -5099,19 +5104,19 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
                       <div>
                         <p className="font-medium text-gray-800">Devis</p>
-                        <p className="text-sm text-gray-500">Offre de prix originale</p>
+                        <p className="text-sm text-blue-600">{rma.quote_number ? `N° ${rma.quote_number}` : rma.request_number}</p>
                       </div>
                     </a>
                   )}
                   
-                  {/* === 2. DEVIS SIGNÉ (from signed_quote_url or devis_signe attachment) === */}
+                  {/* === 2. DEVIS SIGNÉ / BON DE COMMANDE (signed quote = BC) === */}
                   {rma.signed_quote_url && (
                     <a href={rma.signed_quote_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
                       <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
                       <div>
-                        <p className="font-medium text-gray-800">Devis Signé</p>
-                        <p className="text-sm text-green-600">{rma.bc_signed_by ? `Signé par ${rma.bc_signed_by}` : 'Document signé'}</p>
+                        <p className="font-medium text-gray-800">Devis Signé / BC</p>
+                        <p className="text-sm text-green-600">{rma.bc_number ? `N° ${rma.bc_number}` : 'Signé'}</p>
                       </div>
                     </a>
                   )}
@@ -5121,29 +5126,24 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
                       <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
                       <div>
-                        <p className="font-medium text-gray-800">Devis Signé</p>
-                        <p className="text-sm text-green-600">{att.file_name}</p>
+                        <p className="font-medium text-gray-800">Devis Signé / BC</p>
+                        <p className="text-sm text-green-600">{rma.bc_number ? `N° ${rma.bc_number}` : 'Signé'}</p>
                       </div>
                     </a>
                   ))}
                   
-                  {/* === 3. BON DE COMMANDE (BC uploaded by customer) === */}
-                  {/* Show BC with the BC number - prefer bc_file_url, fallback to attachment */}
-                  {(() => {
-                    const bcAttachment = attachments.find(a => a.category === 'bon_commande' && a.file_url);
-                    const bcUrl = rma.bc_file_url || bcAttachment?.file_url;
-                    if (!bcUrl) return null;
-                    return (
-                      <a href={bcUrl} target="_blank" rel="noopener noreferrer"
-                         className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
-                        <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
-                        <div>
-                          <p className="font-medium text-gray-800">Bon de Commande</p>
-                          <p className="text-sm text-purple-600">{rma.bc_number ? `N° ${rma.bc_number}` : (rma.is_contract_rma ? 'BC Contrat' : 'BC client')}</p>
-                        </div>
-                      </a>
-                    );
-                  })()}
+                  {/* === 3. BON DE COMMANDE (BC file uploaded separately by customer) === */}
+                  {/* Only show if bc_file_url is different from signed_quote_url (customer uploaded their own BC) */}
+                  {rma.bc_file_url && rma.bc_file_url !== rma.signed_quote_url && (
+                    <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Bon de Commande Client</p>
+                        <p className="text-sm text-purple-600">{rma.bc_number ? `N° ${rma.bc_number}` : 'BC client'}</p>
+                      </div>
+                    </a>
+                  )}
                   
                   {/* === 4. RAPPORT DE SERVICE === */}
                   {device.report_url && (
@@ -5152,7 +5152,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
                       <div>
                         <p className="font-medium text-gray-800">Rapport de Service</p>
-                        <p className="text-sm text-gray-500">Détails du service effectué</p>
+                        <p className="text-sm text-blue-600">{device.serial_number}</p>
                       </div>
                     </a>
                   )}
@@ -5164,7 +5164,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
                       <div>
                         <p className="font-medium text-gray-800">Bon de Livraison</p>
-                        <p className="text-sm text-gray-600 font-mono">{device.bl_number || 'BL'}</p>
+                        <p className="text-sm text-cyan-600">{device.bl_number ? `N° ${device.bl_number}` : 'BL'}</p>
                       </div>
                     </a>
                   )}
@@ -5176,7 +5176,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">🏷️</div>
                       <div>
                         <p className="font-medium text-gray-800">Étiquette UPS</p>
-                        <p className="text-sm text-gray-500">Label d'expédition</p>
+                        <p className="text-sm text-amber-600">{device.tracking_number || 'Label d\'expédition'}</p>
                       </div>
                     </a>
                   )}
@@ -5188,33 +5188,31 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">🏆</div>
                       <div>
                         <p className="font-medium text-gray-800">Certificat d'Étalonnage</p>
-                        <p className="text-sm text-green-600">Document officiel ISO</p>
+                        <p className="text-sm text-green-600">{device.certificate_number || device.serial_number}</p>
                       </div>
                     </a>
                   )}
                   
-                  {/* === 8. AVENANT (NOT SIGNED) === */}
+                  {/* === 8. SUPPLÉMENT (not signed yet) === */}
                   {attachments.filter(a => a.category === 'avenant_quote' && a.file_url).map(att => (
                     <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-orange-50 transition-colors border-orange-300">
                       <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
                       <div>
-                        <p className="font-medium text-gray-800">Avenant</p>
-                        <p className="text-sm text-orange-600">
-                          {rma.avenant_approved_at ? '✅ Approuvé' : '⏳ En attente'} • €{(rma.avenant_total || 0).toFixed(2)}
-                        </p>
+                        <p className="font-medium text-gray-800">Supplément</p>
+                        <p className="text-sm text-orange-600">{rma.supplement_number ? `N° ${rma.supplement_number}` : `€${(rma.avenant_total || 0).toFixed(2)}`}</p>
                       </div>
                     </a>
                   ))}
                   
-                  {/* === 9. AVENANT SIGNÉ === */}
+                  {/* === 9. SUPPLÉMENT SIGNÉ / BC (signed supplement = another BC) === */}
                   {attachments.filter(a => a.category === 'avenant_signe' && a.file_url).map(att => (
                     <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-300">
                       <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
                       <div>
-                        <p className="font-medium text-gray-800">Avenant Signé</p>
-                        <p className="text-sm text-green-600">Approuvé par client</p>
+                        <p className="font-medium text-gray-800">Supplément Signé / BC</p>
+                        <p className="text-sm text-green-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : (rma.supplement_number ? `N° ${rma.supplement_number}` : 'Approuvé')}</p>
                       </div>
                     </a>
                   ))}
@@ -10446,9 +10444,18 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     return `${d.getDate()} ${frenchMonths[d.getMonth()]} ${d.getFullYear()}`;
   };
   
+  // Collect all BC numbers for this RMA
+  const getAllBcNumbers = () => {
+    const bcList = [];
+    if (rma.bc_number) bcList.push(rma.bc_number);
+    if (rma.supplement_bc_number && rma.supplement_bc_number !== rma.bc_number) bcList.push(rma.supplement_bc_number);
+    return bcList;
+  };
+  
   const generateBLContent = (shipment, index) => ({
     blNumber: generateBLNumber(index),
-    bcNumber: rma.bc_number || null,
+    bcNumbers: getAllBcNumbers(),
+    bcNumber: rma.bc_number || null, // Keep for backwards compatibility
     date: getFrenchDate(),
     rmaNumber: rma.request_number,
     client: { name: shipment.address.company_name, attention: shipment.address.attention, street: shipment.address.address_line1, city: `${shipment.address.postal_code} ${shipment.address.city}`, country: shipment.address.country || 'France' },
@@ -10594,7 +10601,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
         <div class="header-right">
           <div class="doc-title">BON DE LIVRAISON</div>
           <div class="doc-number">N° ${bl.blNumber}</div>
-          ${bl.bcNumber ? `<div class="doc-ref">BC: ${bl.bcNumber}</div>` : ''}
+          ${bl.bcNumbers && bl.bcNumbers.length > 0 ? `<div class="doc-ref">${bl.bcNumbers.length === 1 ? 'Commande: ' : 'Commandes: '}${bl.bcNumbers.join(', ')}</div>` : ''}
           <div class="doc-ref">RMA: ${bl.rmaNumber}</div>
         </div>
       </div>
@@ -10695,10 +10702,16 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           blNumber = `BL-${rmaNum}-${dateStr}${shipments.length > 1 ? `-${i + 1}` : ''}`;
         }
         
+        // Collect all BC numbers for this RMA
+        const bcList = [];
+        if (rma.bc_number) bcList.push(rma.bc_number);
+        if (rma.supplement_bc_number && rma.supplement_bc_number !== rma.bc_number) bcList.push(rma.supplement_bc_number);
+        
         // Generate BL content with database number
         const bl = {
           blNumber: blNumber,
-          bcNumber: rma.bc_number || null,
+          bcNumbers: bcList,
+          bcNumber: rma.bc_number || null, // Keep for backwards compatibility
           date: getFrenchDate(),
           rmaNumber: rma.request_number,
           client: { 
@@ -11195,12 +11208,16 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                     {/* Content area */}
                     <div style={{ flex: '1 0 auto' }}>
                       {/* Header */}
-                      <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #00A651', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#00A651' }}>BON DE LIVRAISON</div>
                           <div style={{ fontSize: '12pt', fontWeight: 'bold', color: '#1E3A5F', marginTop: '4px' }}>N° {bl.blNumber}</div>
-                          {bl.bcNumber && <div style={{ fontSize: '9pt', color: '#666', marginTop: '2px' }}>BC: {bl.bcNumber}</div>}
+                          {bl.bcNumbers && bl.bcNumbers.length > 0 && (
+                            <div style={{ fontSize: '9pt', color: '#666', marginTop: '2px' }}>
+                              {bl.bcNumbers.length === 1 ? 'Commande: ' : 'Commandes: '}{bl.bcNumbers.join(', ')}
+                            </div>
+                          )}
                           <div style={{ fontSize: '9pt', color: '#666', marginTop: '2px' }}>RMA: {bl.rmaNumber}</div>
                         </div>
                       </div>
