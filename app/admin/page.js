@@ -15219,7 +15219,7 @@ function SettingsSheet({ profile, staffMembers, notify, reload }) {
                   const rmaType = documentTypes.find(d => d.doc_type === 'RMA');
                   if (!rmaType) return null;
                   
-                  const rmaCounter = getCounter('RMA', 'GLOBAL');
+                  const rmaCounter = getCounter('RMA', 'RMA');
                   const rmaCurrentNum = rmaCounter?.current_number || 0;
                   const rmaNextNum = rmaCurrentNum + 1;
                   const isEditingRMA = editingCounter === 'RMA-GLOBAL';
@@ -15258,7 +15258,7 @@ function SettingsSheet({ profile, staffMembers, notify, reload }) {
                                 Annuler
                               </button>
                               <button
-                                onClick={() => saveCounter('RMA', 'GLOBAL', newValue)}
+                                onClick={() => saveCounter('RMA', 'RMA', newValue)}
                                 disabled={saving}
                                 className="flex-1 px-3 py-1.5 bg-[#00A651] text-white rounded-lg text-sm disabled:opacity-50"
                               >
@@ -15370,7 +15370,7 @@ function SettingsSheet({ profile, staffMembers, notify, reload }) {
                 </div>
                 
                 {/* History */}
-                {counters.filter(c => c.year_month !== 'GLOBAL').length > 0 && (
+                {counters.filter(c => c.year_month !== 'RMA').length > 0 && (
                   <div>
                     <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
                       <span className="text-lg">📜</span>
@@ -15388,7 +15388,7 @@ function SettingsSheet({ profile, staffMembers, notify, reload }) {
                         </thead>
                         <tbody>
                           {/* Group counters by year_month - exclude GLOBAL (RMA) */}
-                          {[...new Set(counters.filter(c => c.year_month !== 'GLOBAL').map(c => c.year_month))].slice(0, 6).map(ym => (
+                          {[...new Set(counters.filter(c => c.year_month !== 'RMA').map(c => c.year_month))].slice(0, 6).map(ym => (
                             <tr key={ym} className="border-b hover:bg-gray-50">
                               <td className="py-2 px-3 font-medium">{formatYearMonth(ym)}</td>
                               {documentTypes.filter(dt => dt.doc_type !== 'RMA').map(dt => {
