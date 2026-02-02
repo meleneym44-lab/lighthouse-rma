@@ -761,6 +761,324 @@ const generatePartsQuotePDF = async (order, quoteData) => {
   return pdf.output('blob');
 };
 
+// ============================================
+// TECH TRANSLATE MODAL - English→Corrected English→Technical French
+// For calibration/particle counter service reports
+// ============================================
+function TechTranslateModal({ isOpen, onClose, onInsert }) {
+  const [input, setInput] = useState('');
+  const [correctedEnglish, setCorrectedEnglish] = useState('');
+  const [technicalFrench, setTechnicalFrench] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState(1); // 1=input, 2=review, 3=done
+  const [mode, setMode] = useState('english'); // 'english' or 'french'
+
+  const resetModal = () => {
+    setInput('');
+    setCorrectedEnglish('');
+    setTechnicalFrench('');
+    setStep(1);
+    setLoading(false);
+  };
+
+  const handleClose = () => {
+    resetModal();
+    onClose();
+  };
+
+  const processEnglish = async () => {
+    if (!input.trim()) return;
+    setLoading(true);
+    
+    try {
+      const response = await fetch('/api/tech-translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: input.trim(),
+          mode: 'english-to-french'
+        })
+      });
+      
+      if (!response.ok) throw new Error('Translation failed');
+      
+      const data = await response.json();
+      setCorrectedEnglish(data.correctedEnglish || input);
+      setTechnicalFrench(data.technicalFrench || '');
+      setStep(2);
+    } catch (error) {
+      console.error('Translation error:', error);
+      alert('Erreur de traduction. Veuillez réessayer.');
+    }
+    setLoading(false);
+  };
+
+  const processFrench = async () => {
+    if (!input.trim()) return;
+    setLoading(true);
+    
+    try {
+      const response = await fetch('/api/tech-translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: input.trim(),
+          mode: 'french-correct'
+        })
+      });
+      
+      if (!response.ok) throw new Error('Correction failed');
+      
+      const data = await response.json();
+      setTechnicalFrench(data.correctedFrench || input);
+      setStep(3);
+    } catch (error) {
+      console.error('Correction error:', error);
+      alert('Erreur de correction. Veuillez réessayer.');
+    }
+    setLoading(false);
+  };
+
+  const handleInsert = () => {
+    if (technicalFrench.trim()) {
+      onInsert(technicalFrench.trim());
+      handleClose();
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                <span className="text-xl">🔬</span>
+              </div>
+              <div>
+                <h3 className="text-white font-bold text-lg">Traduction Technique</h3>
+                <p className="text-purple-200 text-xs">Service Calibration & Réparation</p>
+              </div>
+            </div>
+            <button onClick={handleClose} className="text-white/80 hover:text-white text-2xl leading-none">&times;</button>
+          </div>
+        </div>
+
+        {/* Mode Toggle */}
+        <div className="px-6 py-3 bg-gray-50 border-b flex gap-2">
+          <button
+            onClick={() => { setMode('english'); resetModal(); }}
+            className={`flex-1 px-4 py-2.5 rounded-xl font-medium text-sm transition-all ${
+              mode === 'english' 
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' 
+                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            🇬🇧 English → French
+          </button>
+          <button
+            onClick={() => { setMode('french'); resetModal(); }}
+            className={`flex-1 px-4 py-2.5 rounded-xl font-medium text-sm transition-all ${
+              mode === 'french' 
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' 
+                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            🇫🇷 Corriger le français
+          </button>
+        </div>
+
+        <div className="p-6">
+          {mode === 'english' ? (
+            <>
+              {/* ENGLISH MODE - 3 Step Process */}
+              
+              {/* Step 1: Input */}
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${step >= 1 ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-500'}`}>1</div>
+                  <label className="text-sm font-medium text-gray-700">Your English (rough is OK)</label>
+                </div>
+                <textarea
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  placeholder="Type what you want to say in English... e.g. 'checked the laser, it was dirty so i cleaned it and recalibrated'"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl h-24 resize-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  disabled={step > 1}
+                />
+              </div>
+
+              {/* Step 2: Corrected English */}
+              {step >= 2 && (
+                <div className="mb-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-6 h-6 rounded-full bg-green-500 text-white flex items-center justify-center text-xs font-bold">2</div>
+                    <label className="text-sm font-medium text-gray-700">Corrected English</label>
+                    <span className="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded-full">✓ Verified</span>
+                  </div>
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                    <p className="text-gray-800 whitespace-pre-wrap">{correctedEnglish}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Technical French */}
+              {step >= 2 && technicalFrench && (
+                <div className="mb-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-bold">3</div>
+                    <label className="text-sm font-medium text-gray-700">Technical French</label>
+                    <span className="text-xs text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">🔬 Vocabulaire technique</span>
+                  </div>
+                  <textarea
+                    value={technicalFrench}
+                    onChange={e => setTechnicalFrench(e.target.value)}
+                    className="w-full px-4 py-3 bg-indigo-50 border border-indigo-200 rounded-xl h-24 resize-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Vous pouvez modifier le texte si nécessaire</p>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3 mt-6">
+                {step === 1 && (
+                  <button
+                    onClick={processEnglish}
+                    disabled={loading || !input.trim()}
+                    className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {loading ? (
+                      <><span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> Traitement...</>
+                    ) : (
+                      <>✨ Traduire</>
+                    )}
+                  </button>
+                )}
+                {step >= 2 && (
+                  <>
+                    <button
+                      onClick={resetModal}
+                      className="px-4 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl font-medium"
+                    >
+                      ← Recommencer
+                    </button>
+                    <button
+                      onClick={handleInsert}
+                      className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+                    >
+                      ✓ Insérer le français
+                    </button>
+                  </>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* FRENCH MODE - Simple correction */}
+              
+              {/* Input */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Votre texte en français (à corriger)
+                </label>
+                <textarea
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  placeholder="Tapez votre texte en français..."
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl h-28 resize-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  disabled={step === 3}
+                />
+              </div>
+
+              {/* Result */}
+              {step === 3 && technicalFrench && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Texte corrigé
+                  </label>
+                  <textarea
+                    value={technicalFrench}
+                    onChange={e => setTechnicalFrench(e.target.value)}
+                    className="w-full px-4 py-3 bg-green-50 border border-green-200 rounded-xl h-28 resize-none focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3 mt-6">
+                {step === 1 && (
+                  <button
+                    onClick={processFrench}
+                    disabled={loading || !input.trim()}
+                    className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {loading ? (
+                      <><span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> Correction...</>
+                    ) : (
+                      <>✨ Corriger le texte</>
+                    )}
+                  </button>
+                )}
+                {step === 3 && (
+                  <>
+                    <button
+                      onClick={resetModal}
+                      className="px-4 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl font-medium"
+                    >
+                      ← Recommencer
+                    </button>
+                    <button
+                      onClick={handleInsert}
+                      className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+                    >
+                      ✓ Insérer le texte
+                    </button>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Footer tip */}
+        <div className="px-6 py-3 bg-gray-50 border-t text-xs text-gray-500 flex items-center gap-2">
+          <span>💡</span>
+          <span>Le vocabulaire technique pour compteurs de particules, étalonnage et réparation est automatiquement utilisé.</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Tech Translate Button - Opens the modal
+function TechTranslateButton({ onInsert }) {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="p-2 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors flex items-center gap-1.5"
+        title="Traduction Technique"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+        </svg>
+        <span className="text-xs font-medium">AI</span>
+      </button>
+      <TechTranslateModal 
+        isOpen={isOpen} 
+        onClose={() => setIsOpen(false)} 
+        onInsert={onInsert} 
+      />
+    </>
+  );
+}
+
 // Generate Service Report PDF - PROFESSIONAL FORMAT
 const generateServiceReportPDF = async (device, rma, technicianName, calType, receptionResult, findings, workCompleted, checklist, businessSettings) => {
   const jsPDF = await loadJsPDF();
@@ -5352,7 +5670,10 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
 
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-white rounded-xl shadow-sm border p-4">
-            <h3 className="font-bold text-gray-700 mb-2">1. CONSTATATIONS *</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-bold text-gray-700">1. CONSTATATIONS *</h3>
+              <TechTranslateButton onInsert={(text) => setFindings(prev => prev ? prev + '\n' + text : text)} />
+            </div>
             <p className="text-sm text-gray-500 mb-3">Ce que vous avez observé (apparaît sur rapport et avenant)</p>
             <textarea value={findings} onChange={e => setFindings(e.target.value)} placeholder="Ex: Calibration effectuée selon les spécifications..." className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
           </div>
@@ -5436,7 +5757,10 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border p-4">
-            <h3 className="font-bold text-gray-700 mb-2">3. TRAVAUX RÉALISÉS *</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-bold text-gray-700">3. TRAVAUX RÉALISÉS *</h3>
+              <TechTranslateButton onInsert={(text) => setWorkCompleted(prev => prev ? prev + '\n' + text : text)} />
+            </div>
             <p className="text-sm text-gray-500 mb-4">Cochez et décrivez le travail effectué</p>
             <div className="bg-gray-50 rounded-lg p-4 mb-4">
               <p className="text-xs text-gray-500 uppercase mb-3">Checklist</p>
@@ -6820,7 +7144,8 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
                         placeholder="Écrire un message..."
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none h-20"
                       />
-                      <div className="flex justify-end mt-2">
+                      <div className="flex justify-between items-center mt-2">
+                        <TechTranslateButton onInsert={(text) => setNewMessage(prev => prev ? prev + '\n' + text : text)} />
                         <button
                           onClick={sendMessage}
                           disabled={sendingMessage || !newMessage.trim()}
