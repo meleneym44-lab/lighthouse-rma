@@ -5157,7 +5157,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                   ))}
                   
                   {/* === 3. BON DE COMMANDE (BC file uploaded separately by customer) === */}
-                  {/* Only show if bc_file_url is different from signed_quote_url (customer uploaded their own BC) */}
+                  {/* Show from bc_file_url if different from signed_quote_url */}
                   {rma.bc_file_url && rma.bc_file_url !== rma.signed_quote_url && (
                     <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
@@ -5168,6 +5168,17 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       </div>
                     </a>
                   )}
+                  {/* Also show bon_commande from attachments if no bc_file_url or it was overwritten */}
+                  {(!rma.bc_file_url || rma.bc_file_url === rma.signed_quote_url) && attachments.filter(a => a.category === 'bon_commande' && a.file_url).map(att => (
+                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Bon de Commande Client</p>
+                        <p className="text-sm text-purple-600">{rma.bc_number ? `N° ${rma.bc_number}` : att.file_name}</p>
+                      </div>
+                    </a>
+                  ))}
                   
                   {/* === 4. RAPPORT DE SERVICE === */}
                   {device.report_url && (
