@@ -2706,7 +2706,12 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
       {activeTab === 'overview' && (
         <div className="space-y-6">
           {/* ACTION REQUIRED - Combined RMA, Parts Orders, and Contracts */}
-          {(serviceRequests.filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at).length > 0 || 
+          {(serviceRequests.filter(r => 
+            // Regular action needed
+            (['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at) ||
+            // Supplement pending - needs customer action
+            (r.avenant_sent_at && r.avenant_total > 0 && !r.avenant_approved_at)
+          ).length > 0 || 
             partsNeedingAction.length > 0 ||
             (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0)) && (
             <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4">
@@ -2715,7 +2720,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
               </h3>
               <p className="text-sm text-red-600 mb-3">Les demandes suivantes nécessitent votre attention</p>
               <div className="space-y-2">
-                {/* RMA Requests */}
+                {/* RMA Requests - Regular Actions */}
                 {serviceRequests
                   .filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at)
                   .map(req => (
@@ -2735,6 +2740,28 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                       </span>
                     </div>
                     <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
+                      Agir →
+                    </span>
+                  </div>
+                ))}
+                {/* RMA Requests - Supplement Pending */}
+                {serviceRequests
+                  .filter(r => r.avenant_sent_at && r.avenant_total > 0 && !r.avenant_approved_at && 
+                    !(['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && !r.bc_submitted_at))
+                  .map(req => (
+                  <div 
+                    key={`sup-${req.id}`}
+                    onClick={() => viewRequest(req)}
+                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-orange-100 border border-orange-200"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-orange-500">📄</span>
+                      <span className="font-mono font-bold text-orange-700">{req.request_number}</span>
+                      <span className="text-sm text-orange-600">
+                        Supplément à approuver ({req.avenant_total?.toFixed(2)} €)
+                      </span>
+                    </div>
+                    <span className="px-3 py-1 bg-orange-500 text-white text-xs font-bold rounded-full">
                       Agir →
                     </span>
                   </div>
@@ -2819,11 +2846,12 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                 {inProgressService.slice(0, 5).map(req => {
                   const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
                   const needsAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(req.status);
+                  const hasSupplementPending = req.avenant_sent_at && req.avenant_total > 0 && !req.avenant_approved_at;
                   return (
                     <div 
                       key={req.id}
                       onClick={() => viewRequest(req)}
-                      className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${needsAction ? 'bg-red-50/50' : ''}`}
+                      className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${(needsAction || hasSupplementPending) ? 'bg-red-50/50' : ''}`}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
@@ -2834,6 +2862,11 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                           {needsAction && (
                             <span className="px-2 py-1 rounded-full text-xs font-bold bg-red-500 text-white animate-pulse">
                               ⚠ Action requise
+                            </span>
+                          )}
+                          {hasSupplementPending && !needsAction && (
+                            <span className="px-2 py-1 rounded-full text-xs font-bold bg-orange-500 text-white animate-pulse">
+                              📄 Supplément à approuver
                             </span>
                           )}
                         </div>
@@ -7084,11 +7117,17 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   const [showRevisionModal, setShowRevisionModal] = useState(false);
   const [revisionNotes, setRevisionNotes] = useState('');
   const [approvingQuote, setApprovingQuote] = useState(false);
+  const [showSupplementModal, setShowSupplementModal] = useState(false);
   
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
   const isPartsOrder = request.request_type === 'parts';
   const isQuoteSent = request.status === 'quote_sent';
   const needsQuoteAction = isQuoteSent && !request.bc_submitted_at;
+  
+  // Supplement requires action if sent but not yet approved (no BC submitted after it was sent)
+  const hasSupplementPending = request.avenant_sent_at && request.avenant_total > 0 && !request.avenant_approved_at;
+  const needsSupplementAction = hasSupplementPending;
+  
   const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
   
   // Check if submission is valid - need EITHER file OR signature (not both required)
@@ -7348,6 +7387,9 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       
       // Update request status - set to bc_review so admin can verify
       // Also record quote approval if coming from quote_sent status
+      // Handle supplement approval if supplement is pending
+      const isSupplementBC = request.avenant_sent_at && request.avenant_total > 0 && !request.avenant_approved_at;
+      
       const updatePayload = { 
         status: 'bc_review',
         bc_submitted_at: new Date().toISOString(),
@@ -7356,10 +7398,12 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         bc_file_url: fileUrl,
         bc_signature_url: signatureUrl,
         signed_quote_url: signedQuotePdfUrl,
-        quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
+        quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at,
+        // If this is a supplement BC, mark it as approved
+        ...(isSupplementBC && { avenant_approved_at: new Date().toISOString() })
       };
       
-      console.log('📝 Updating service_request with:', updatePayload);
+      console.log('📝 Updating service_request with:', updatePayload, 'isSupplementBC:', isSupplementBC);
       
       const { error: updateError } = await supabase
         .from('service_requests')
@@ -7382,23 +7426,24 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           file_type: bcFile?.type || 'application/pdf',
           file_size: bcFile?.size || 0,
           uploaded_by: profile.id,
-          category: 'bon_commande'
+          category: isSupplementBC ? 'avenant_bc' : 'bon_commande'
         });
         console.log('📎 BC attachment saved:', { fileUrl, error: bcAttachError });
       }
       
       // Save signed quote PDF to attachments (this is the main document)
       if (signedQuotePdfUrl) {
+        const isSupplementBC = request.avenant_sent_at && request.avenant_total > 0 && !request.avenant_approved_at;
         const { error: pdfAttachError } = await supabase.from('request_attachments').insert({
           request_id: request.id,
-          file_name: `Devis_Signé_${request.request_number}.pdf`,
+          file_name: isSupplementBC ? `Supplement_Signé_${request.request_number}.pdf` : `Devis_Signé_${request.request_number}.pdf`,
           file_url: signedQuotePdfUrl,
           file_type: 'application/pdf',
           file_size: 0,
           uploaded_by: profile.id,
-          category: 'devis_signe'
+          category: isSupplementBC ? 'avenant_signe' : 'devis_signe'
         });
-        console.log('📎 Signed PDF attachment saved:', { signedQuotePdfUrl, error: pdfAttachError });
+        console.log('📎 Signed PDF attachment saved:', { signedQuotePdfUrl, error: pdfAttachError, isSupplementBC });
       } else {
         console.log('📎 No signed PDF URL to save as attachment');
       }
@@ -7577,6 +7622,39 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   className="px-4 py-2 bg-white border border-blue-300 text-blue-700 rounded-lg font-medium hover:bg-blue-50 transition-colors"
                 >
                   👁️ Voir le Devis
+                </button>
+                <button
+                  onClick={() => setShowBCModal(true)}
+                  className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors"
+                >
+                  ✅ Approuver et soumettre BC
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Supplement Pending - Customer Action Required */}
+        {needsSupplementAction && (
+          <div className="bg-red-50 border-b border-red-300 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center">
+                  <span className="text-white text-2xl">⚠️</span>
+                </div>
+                <div>
+                  <p className="font-bold text-red-800 text-lg">Travaux supplémentaires - Action requise</p>
+                  <p className="text-sm text-red-600">
+                    Des travaux supplémentaires ont été identifiés ({request.avenant_total?.toFixed(2)} €). Veuillez approuver le supplément.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowSupplementModal(true)}
+                  className="px-4 py-2 bg-white border border-red-300 text-red-700 rounded-lg font-medium hover:bg-red-50 transition-colors"
+                >
+                  👁️ Voir le Supplément
                 </button>
                 <button
                   onClick={() => setShowBCModal(true)}
@@ -8588,6 +8666,91 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+          );
+        })()}
+
+        {/* Supplement Modal */}
+        {showSupplementModal && (() => {
+          const supplementDoc = attachments.find(a => a.category === 'avenant_quote');
+          const supplementUrl = supplementDoc?.file_url;
+          
+          return (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowSupplementModal(false)}>
+            <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[95vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="bg-gradient-to-r from-[#00A651] to-[#008f45] p-6 text-white">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h2 className="text-2xl font-bold">Supplément au Devis</h2>
+                    <p className="text-white/80 mt-1">
+                      {request.supplement_number || request.request_number} • {request.avenant_total?.toFixed(2)} € HT
+                    </p>
+                  </div>
+                  <button onClick={() => setShowSupplementModal(false)} className="text-white/80 hover:text-white text-3xl">×</button>
+                </div>
+              </div>
+              
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl">⚠️</span>
+                    <div>
+                      <p className="font-bold text-red-800">Travaux supplémentaires identifiés</p>
+                      <p className="text-red-600 text-sm mt-1">
+                        Suite à l'inspection de vos appareils, notre équipe technique a identifié des travaux supplémentaires nécessaires. 
+                        Veuillez examiner le supplément ci-dessous et soumettre votre bon de commande pour approuver.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                {supplementUrl ? (
+                  <div className="border rounded-xl overflow-hidden">
+                    <iframe 
+                      src={supplementUrl}
+                      className="w-full h-[500px]"
+                      title="Supplément au Devis"
+                    />
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-gray-500">
+                    <p className="text-4xl mb-4">📄</p>
+                    <p>Document de supplément non disponible</p>
+                    <p className="text-sm mt-2">Montant: {request.avenant_total?.toFixed(2)} € HT</p>
+                  </div>
+                )}
+              </div>
+              
+              {/* Footer */}
+              <div className="border-t p-6 flex justify-between items-center bg-gray-50">
+                <button 
+                  onClick={() => setShowSupplementModal(false)}
+                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
+                >
+                  Fermer
+                </button>
+                <div className="flex gap-3">
+                  {supplementUrl && (
+                    <a 
+                      href={supplementUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                    >
+                      📥 Télécharger PDF
+                    </a>
+                  )}
+                  <button 
+                    onClick={() => { setShowSupplementModal(false); setShowBCModal(true); }}
+                    className="px-6 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold"
+                  >
+                    ✅ Approuver et soumettre BC
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
           );
