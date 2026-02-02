@@ -7390,7 +7390,19 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       // Handle supplement approval if supplement is pending
       const isSupplementBC = request.avenant_sent_at && request.avenant_total > 0 && !request.avenant_approved_at;
       
-      const updatePayload = { 
+      // Build update payload - for supplement BC, use different fields to preserve original BC
+      const updatePayload = isSupplementBC ? {
+        // Supplement BC - store in supplement-specific fields, preserve original BC
+        status: 'bc_review',
+        avenant_approved_at: new Date().toISOString(),
+        supplement_bc_submitted_at: new Date().toISOString(),
+        supplement_bc_signed_by: signatureName,
+        supplement_bc_signature_date: signatureDateISO,
+        supplement_bc_file_url: fileUrl,
+        supplement_bc_signature_url: signatureUrl,
+        supplement_signed_quote_url: signedQuotePdfUrl
+      } : {
+        // Original BC submission
         status: 'bc_review',
         bc_submitted_at: new Date().toISOString(),
         bc_signed_by: signatureName,
@@ -7398,9 +7410,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         bc_file_url: fileUrl,
         bc_signature_url: signatureUrl,
         signed_quote_url: signedQuotePdfUrl,
-        quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at,
-        // If this is a supplement BC, mark it as approved
-        ...(isSupplementBC && { avenant_approved_at: new Date().toISOString() })
+        quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
       };
       
       console.log('📝 Updating service_request with:', updatePayload, 'isSupplementBC:', isSupplementBC);
