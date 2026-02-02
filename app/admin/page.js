@@ -3019,8 +3019,8 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
     r.request_type !== 'parts' && (
       r.status === 'bc_review' || 
       ((r.bc_file_url || r.bc_signature_url) && r.status === 'waiting_bc') ||
-      // Avenant BC: avenant sent, BC submitted, not yet approved
-      (r.avenant_sent_at && !r.avenant_approved_at && r.bc_submitted_at)
+      // Avenant BC: avenant sent, BC submitted (check both old and new field), not yet approved
+      (r.avenant_sent_at && !r.avenant_approved_at && (r.avenant_bc_submitted_at || r.bc_submitted_at))
     )
   );
   
@@ -3066,8 +3066,8 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
     ready: activeRMAs.filter(r => getJobType(r) === 'ready')
   };
   
-  // Avenant pending - sent but customer hasn't submitted BC yet
-  const avenantPending = activeRMAs.filter(r => r.avenant_sent_at && !r.avenant_approved_at && !r.bc_submitted_at);
+  // Avenant pending - sent but customer hasn't submitted BC yet (check both old and new field)
+  const avenantPending = activeRMAs.filter(r => r.avenant_sent_at && !r.avenant_approved_at && !r.avenant_bc_submitted_at && !r.bc_submitted_at);
   
   // Stats for the cards
   const stats = [
@@ -3617,14 +3617,11 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
   const [rejectReason, setRejectReason] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [bcNumber, setBcNumber] = useState('');
-  const [useAutoNumber, setUseAutoNumber] = useState(!rma.bc_file_url); // Auto-generate if no file uploaded
+  const [useAutoNumber, setUseAutoNumber] = useState(false); // Will update after attachments load
   const [generatingNumber, setGeneratingNumber] = useState(false);
   
   // Detect if this is an avenant BC (avenant was sent and we're reviewing its BC)
   const isAvenantBC = !!rma.avenant_sent_at && !rma.avenant_approved_at;
-  
-  // Detect if customer uploaded their own BC file (vs just signing our quote)
-  const hasCustomerBCFile = !!rma.bc_file_url && rma.bc_file_url !== rma.signed_quote_url;
   
   // Fetch attachments to get avenant documents
   useEffect(() => {
@@ -3634,17 +3631,28 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
         .select('*')
         .eq('request_id', rma.id)
         .order('created_at', { ascending: false });
-      if (data) setAttachments(data);
+      if (data) {
+        setAttachments(data);
+        // Now check if customer uploaded their own BC file
+        const hasAvenantBc = data.some(a => a.category === 'avenant_bc' && a.file_url);
+        const hasRegularBc = !!rma.bc_file_url && rma.bc_file_url !== rma.signed_quote_url;
+        // Auto-generate if no file uploaded
+        if (isAvenantBC) {
+          setUseAutoNumber(!hasAvenantBc);
+        } else {
+          setUseAutoNumber(!hasRegularBc && !rma.bc_file_url);
+        }
+      }
     };
     fetchAttachments();
-  }, [rma.id]);
+  }, [rma.id, isAvenantBC]);
   
   // Auto-generate BC number on mount if needed
   useEffect(() => {
-    if (useAutoNumber && !bcNumber) {
+    if (useAutoNumber && !bcNumber && attachments.length >= 0) {
       generateBCNumber();
     }
-  }, [useAutoNumber]);
+  }, [useAutoNumber, attachments]);
   
   const generateBCNumber = async () => {
     setGeneratingNumber(true);
@@ -3663,6 +3671,12 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
   const avenantSigneUrl = attachments.find(a => a.category === 'avenant_signe' && a.file_url)?.file_url;
   const avenantQuoteUrl = attachments.find(a => a.category === 'avenant_quote' && a.file_url)?.file_url;
   const avenantBcUrl = attachments.find(a => a.category === 'avenant_bc' && a.file_url)?.file_url;
+  
+  // Detect if customer uploaded their own BC file (vs just signing our quote)
+  // For avenant, check attachments; for regular, check bc_file_url
+  const hasCustomerBCFile = isAvenantBC 
+    ? !!avenantBcUrl
+    : (!!rma.bc_file_url && rma.bc_file_url !== rma.signed_quote_url);
   
   const approveBC = async () => {
     // Validate BC number
@@ -5256,7 +5270,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
                       <div>
                         <p className="font-medium text-gray-800">BC Supplément (Client)</p>
-                        <p className="text-sm text-purple-600">{att.file_name}</p>
+                        <p className="text-sm text-purple-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : att.file_name}</p>
                       </div>
                     </a>
                   ))}
