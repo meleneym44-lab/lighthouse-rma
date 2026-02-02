@@ -10231,13 +10231,13 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                     </div>
 
                     {/* Footer - ABSOLUTE positioned at bottom */}
-                    <div style={{ position: 'absolute', bottom: '15px', left: '30px', right: '30px', paddingTop: '15px', borderTop: '2px solid #333' }}>
+                    <div style={{ position: 'absolute', bottom: '5px', left: '30px', right: '30px', paddingTop: '15px', borderTop: '2px solid #333' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '30px' }}>
                         <div>
-                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '80px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
+                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '60px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
                         </div>
-                        <div style={{ fontSize: '8pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
-                          <strong style={{ color: '#333', fontSize: '9pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
+                        <div style={{ fontSize: '7pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
+                          <strong style={{ color: '#333', fontSize: '8pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
                           {biz.address || '16 rue Paul Séjourné'}, {biz.postal_code || '94000'} {biz.city || 'CRÉTEIL'} | Tél. {biz.phone || '01 43 77 28 07'}<br/>
                           SIRET {biz.siret || '50178134800013'} | TVA {biz.tva || 'FR 86501781348'}<br/>
                           {biz.email || 'France@golighthouse.com'} | {biz.website || 'www.golighthouse.fr'}
@@ -11370,13 +11370,13 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                     </div>
 
                     {/* Footer - ABSOLUTE positioned at bottom */}
-                    <div style={{ position: 'absolute', bottom: '15px', left: '30px', right: '30px', paddingTop: '15px', borderTop: '2px solid #333' }}>
+                    <div style={{ position: 'absolute', bottom: '5px', left: '30px', right: '30px', paddingTop: '15px', borderTop: '2px solid #333' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '30px' }}>
                         <div>
-                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '80px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
+                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '60px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
                         </div>
-                        <div style={{ fontSize: '8pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
-                          <strong style={{ color: '#333', fontSize: '9pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
+                        <div style={{ fontSize: '7pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
+                          <strong style={{ color: '#333', fontSize: '8pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
                           {biz.address || '16 rue Paul Séjourné'}, {biz.postal_code || '94000'} {biz.city || 'CRÉTEIL'} | Tél. {biz.phone || '01 43 77 28 07'}<br/>
                           SIRET {biz.siret || '50178134800013'} | TVA {biz.tva || 'FR 86501781348'}<br/>
                           {biz.email || 'France@golighthouse.com'} | {biz.website || 'www.golighthouse.fr'}
