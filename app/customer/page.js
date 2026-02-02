@@ -703,18 +703,21 @@ async function generateQuotePDF(options) {
       const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
       wrapped.forEach(l => lines.push(l));
     });
-    const blockH = 12 + (lines.length * lineH);
-    checkPageBreak(blockH);
+    const titleH = 10; // Title height
+    const textH = lines.length * lineH; // All text lines
+    const blockH = titleH + textH;
+    checkPageBreak(blockH + 5);
     
+    // Draw vertical line - ends exactly at last text line
     pdf.setDrawColor(...color);
     pdf.setLineWidth(1);
-    pdf.line(margin, y, margin, y + blockH - 3);
+    pdf.line(margin, y, margin, y + blockH - 2);
     
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
     pdf.text(data.title, margin + 5, y + 6);
-    y += 10;
+    y += titleH;
     
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
@@ -727,7 +730,7 @@ async function generateQuotePDF(options) {
         y += lineH;
       });
     });
-    y += 3;
+    y += 5; // Space after block
   };
 
   // Draw calibration blocks (blue)
@@ -742,6 +745,8 @@ async function generateQuotePDF(options) {
   }
 
   // ===== DETAILED PRICING TABLE (Qté | Désignation | Prix Unit. | Total HT) =====
+  y += 5; // Extra space before pricing table
+  
   const rowH = 7;
   const colQty = margin;
   const colDesc = margin + 12;
