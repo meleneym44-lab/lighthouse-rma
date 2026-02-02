@@ -1320,7 +1320,7 @@ const generateServiceReportPDF = async (device, rma, technicianName, calType, re
 };
 
 // Generate Bon de Livraison PDF - PROFESSIONAL FORMAT
-const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings) => {
+const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings, bcNumber) => {
   const jsPDF = await loadJsPDF();
   const pdf = new jsPDF('p', 'mm', 'a4');
   const company = rma.companies || {};
@@ -1371,13 +1371,28 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings)
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...green);
-  pdf.text('BON DE LIVRAISON', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.text('BON DE LIVRAISON', pageWidth - margin, y + 5, { align: 'right' });
+  
+  // Document number (BL-0226-001) - primary
   pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('N° ' + (blNumber || '—'), pageWidth - margin, y + 11, { align: 'right' });
+  
+  // BC and RMA references
+  pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text(blNumber, pageWidth - margin, y + 14, { align: 'right' });
+  let refY = y + 16;
+  if (bcNumber) {
+    pdf.text('BC: ' + bcNumber, pageWidth - margin, refY, { align: 'right' });
+    refY += 4;
+  }
+  if (rma.request_number) {
+    pdf.text('RMA: ' + rma.request_number, pageWidth - margin, refY, { align: 'right' });
+  }
   
-  y += 18;
+  y += 20;
   pdf.setDrawColor(...green);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
@@ -6083,18 +6098,19 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
   );
 }
 
-// Generate Avenant PDF - PROFESSIONAL FORMAT (styled like RMA quote)
+// Generate Supplément PDF - PROFESSIONAL FORMAT (styled like RMA quote)
 const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   const jsPDF = await loadJsPDF();
   const pdf = new jsPDF('p', 'mm', 'a4');
   const company = rma.companies || {};
   const biz = options.businessSettings || {};
+  const supNumber = options.supNumber || null; // SUP-0226-001 format
   
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
   const footerHeight = 16;
   
-  // Colors - using amber/orange for avenant to distinguish from regular quote
+  // Colors - using amber/orange for supplement to distinguish from regular quote
   const amber = [245, 158, 11];
   const { green, darkBlue, gray, lightGray, white } = PDF_COLORS;
   
@@ -6147,17 +6163,32 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
     pdf.text('LIGHTHOUSE', margin, y + 8);
   }
   
-  // Title - AVENANT in amber
+  // Title - SUPPLÉMENT in amber
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...amber);
-  pdf.text('AVENANT AU DEVIS', pageWidth - margin, y + 8, { align: 'right' });
+  pdf.text('SUPPLÉMENT AU DEVIS', pageWidth - margin, y + 5, { align: 'right' });
+  
+  // Document number (SUP-0226-001) - primary
   pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('N° ' + (supNumber || '—'), pageWidth - margin, y + 11, { align: 'right' });
+  
+  // RMA and original quote references
+  pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text('Ref. ' + (rma.request_number || 'FR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
+  let refY = y + 16;
+  if (rma.quote_number) {
+    pdf.text('Devis: ' + rma.quote_number, pageWidth - margin, refY, { align: 'right' });
+    refY += 4;
+  }
+  if (rma.request_number) {
+    pdf.text('RMA: ' + rma.request_number, pageWidth - margin, refY, { align: 'right' });
+  }
   
-  y += 18;
+  y += 20;
   pdf.setDrawColor(...amber);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
@@ -6308,7 +6339,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setTextColor(...white);
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('TOTAL AVENANT HT', colUnit - 35, y + 7.5);
+  pdf.text('TOTAL SUPPLÉMENT HT', colUnit - 35, y + 7.5);
   pdf.setFontSize(16);
   pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
   y += 15;
@@ -6406,12 +6437,23 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
   const sendAvenant = async () => {
     setSending(true);
     try {
+      // 0. Get SUP document number
+      let supNumber = null;
+      try {
+        const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'SUP' });
+        if (!docNumError && docNumData) {
+          supNumber = docNumData;
+        }
+      } catch (e) {
+        console.error('Could not generate SUP number:', e);
+      }
+      
       // 1. Generate PDF
       notify('📄 Génération du PDF...');
-      const { blob, total } = await generateAvenantPDF(rma, devicesWithWork, { businessSettings });
+      const { blob, total } = await generateAvenantPDF(rma, devicesWithWork, { businessSettings, supNumber });
       
       // 2. Upload to storage
-      const fileName = `avenant_${rma.request_number}_${Date.now()}.pdf`;
+      const fileName = `supplement_${supNumber || rma.request_number}_${Date.now()}.pdf`;
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('documents')
         .upload(`avenants/${fileName}`, blob, { contentType: 'application/pdf' });
@@ -6432,6 +6474,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
         .update({
           avenant_total: total,
           avenant_sent_at: new Date().toISOString(),
+          supplement_number: supNumber,
           // Clear these so customer needs to submit new BC for avenant
           // The original BC info is preserved in signed_quote_url and attachments
           bc_submitted_at: null,
@@ -6611,7 +6654,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           {/* Total Section */}
           <div className="px-8 py-4 bg-amber-500">
             <div className="flex justify-between items-center text-white">
-              <span className="text-lg font-bold">TOTAL AVENANT HT</span>
+              <span className="text-lg font-bold">TOTAL SUPPLÉMENT HT</span>
               <span className="text-3xl font-bold">€{totalAvenant.toFixed(2)}</span>
             </div>
           </div>
@@ -9336,11 +9379,11 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
     setShipment(prev => ({ ...prev, [field]: value }));
   };
   
+  // Preview BL number format (actual number generated on save)
   const generateBLNumber = () => {
-    const poNum = order.request_number?.replace('PO-', '') || '00000';
-    const date = new Date();
-    const dateStr = `${String(date.getDate()).padStart(2, '0')}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getFullYear()).slice(-2)}`;
-    return `BL-${poNum}-${dateStr}`;
+    const now = new Date();
+    const mmyy = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getFullYear()).slice(-2)}`;
+    return `BL-${mmyy}-XXX`; // Placeholder - actual number generated on save
   };
   
   // Create REAL UPS Labels via Edge Function
@@ -9662,7 +9705,22 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
   const markAsShipped = async () => {
     setSaving(true);
     try {
-      const blNumber = generateBLNumber();
+      // Get BL number from database
+      let blNumber = null;
+      try {
+        const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'BL' });
+        if (!docNumError && docNumData) {
+          blNumber = docNumData;
+        }
+      } catch (e) {
+        console.error('Could not generate BL number:', e);
+        // Fallback to old method
+        const poNum = order.request_number?.replace('PO-', '') || '00000';
+        const date = new Date();
+        const dateStr = `${String(date.getDate()).padStart(2, '0')}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getFullYear()).slice(-2)}`;
+        blNumber = `BL-${poNum}-${dateStr}`;
+      }
+      
       let upsLabelUrl = null;
       let blUrl = null;
       
@@ -10273,10 +10331,9 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
   };
   
   const generateBLNumber = (index) => {
-    const rmaNum = rma.request_number?.replace('FR-', '') || '00000';
-    const date = new Date();
-    const dateStr = `${String(date.getDate()).padStart(2, '0')}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getFullYear()).slice(-2)}`;
-    return `BL-${rmaNum}-${dateStr}${shipments.length > 1 ? `-${index + 1}` : ''}`;
+    const now = new Date();
+    const mmyy = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getFullYear()).slice(-2)}`;
+    return `BL-${mmyy}-XXX`; // Placeholder - actual number generated on save
   };
   
   // State for UPS API
@@ -10614,7 +10671,45 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       const employeeName = profile?.full_name || 'Lighthouse France';
       
       for (let i = 0; i < shipments.length; i++) {
-        const s = shipments[i], bl = generateBLContent(s, i);
+        const s = shipments[i];
+        
+        // Get BL number from database
+        let blNumber = null;
+        try {
+          const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'BL' });
+          if (!docNumError && docNumData) {
+            blNumber = docNumData;
+          }
+        } catch (e) {
+          console.error('Could not generate BL number:', e);
+          // Fallback to old method
+          const rmaNum = rma.request_number?.replace('FR-', '') || '00000';
+          const date = new Date();
+          const dateStr = `${String(date.getDate()).padStart(2, '0')}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getFullYear()).slice(-2)}`;
+          blNumber = `BL-${rmaNum}-${dateStr}${shipments.length > 1 ? `-${i + 1}` : ''}`;
+        }
+        
+        // Generate BL content with database number
+        const bl = {
+          blNumber: blNumber,
+          bcNumber: rma.bc_number || null,
+          date: getFrenchDate(),
+          rmaNumber: rma.request_number,
+          client: { 
+            name: s.address.company_name, 
+            attention: s.address.attention, 
+            street: s.address.address_line1, 
+            city: `${s.address.postal_code} ${s.address.city}`, 
+            country: s.address.country || 'France' 
+          },
+          devices: s.devices.map(d => ({ 
+            model: d.model_name, 
+            serial: d.serial_number,
+            calType: d.calibration_type || d.device_type
+          })),
+          shipping: { carrier: 'UPS', tracking: s.trackingNumber, parcels: s.parcels, weight: s.weight }
+        };
+        
         blData.push(bl);
         
         // Generate BL PDF by capturing the visible preview element
@@ -13007,17 +13102,30 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
       // Generate contract number if not exists
       let contractNumber = contract.contract_number;
       if (!contractNumber) {
-        const year = new Date().getFullYear();
-        const { data: existing } = await supabase
-          .from('contracts')
-          .select('contract_number')
-          .like('contract_number', `CTR-${year}-%`)
-          .order('contract_number', { ascending: false })
-          .limit(1);
-        const lastNum = existing?.[0]?.contract_number 
-          ? parseInt(existing[0].contract_number.split('-')[2]) 
-          : 0;
-        contractNumber = `CTR-${year}-${String(lastNum + 1).padStart(3, '0')}`;
+        // Try to use database function first
+        try {
+          const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'CTR' });
+          if (!docNumError && docNumData) {
+            contractNumber = docNumData;
+          }
+        } catch (e) {
+          console.error('Could not use get_next_doc_number for CTR:', e);
+        }
+        
+        // Fallback to old method if function doesn't exist
+        if (!contractNumber) {
+          const year = new Date().getFullYear();
+          const { data: existing } = await supabase
+            .from('contracts')
+            .select('contract_number')
+            .like('contract_number', `CTR-${year}-%`)
+            .order('contract_number', { ascending: false })
+            .limit(1);
+          const lastNum = existing?.[0]?.contract_number 
+            ? parseInt(existing[0].contract_number.split('-')[2]) 
+            : 0;
+          contractNumber = `CTR-${year}-${String(lastNum + 1).padStart(3, '0')}`;
+        }
       }
 
       // Build quote_data in same format as RMA
