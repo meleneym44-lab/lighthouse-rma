@@ -3677,12 +3677,14 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
     if (isAvenantBC) {
       // Avenant BC approved - DON'T change RMA status, just mark avenant as approved
       // The device continues from wherever it was (in_progress, calibration_in_progress, etc.)
+      // Use supplement-specific fields to preserve original BC data
       const { error } = await supabase
         .from('service_requests')
         .update({
           avenant_approved_at: new Date().toISOString(),
-          avenant_bc_url: rma.bc_file_url || rma.bc_signature_url, // Save BC to avenant-specific field
-          supplement_number: bcNumber // Save supplement number
+          supplement_bc_number: bcNumber, // Customer's BC/PO number for supplement
+          // These may have been set by customer portal, but update them if admin has different values
+          supplement_bc_approved_at: new Date().toISOString()
         })
         .eq('id', rma.id);
       
@@ -3690,7 +3692,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
         notify('Erreur: ' + error.message, 'error');
       } else {
         // Don't change device statuses - they stay where they were
-        notify(`✅ Avenant approuvé! BC N° ${bcNumber}`);
+        notify(`✅ Supplément approuvé! BC N° ${bcNumber}`);
         reload();
         onClose();
       }
@@ -5204,17 +5206,28 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                   {/* === 8. SUPPLÉMENT (not signed yet) === */}
                   {attachments.filter(a => a.category === 'avenant_quote' && a.file_url).map(att => (
                     <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-orange-50 transition-colors border-orange-300">
-                      <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-300">
+                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
                       <div>
                         <p className="font-medium text-gray-800">Supplément</p>
-                        <p className="text-sm text-orange-600">{rma.supplement_number ? `N° ${rma.supplement_number}` : `€${(rma.avenant_total || 0).toFixed(2)}`}</p>
+                        <p className="text-sm text-green-600">{rma.supplement_number ? `N° ${rma.supplement_number}` : `€${(rma.avenant_total || 0).toFixed(2)}`}</p>
                       </div>
                     </a>
                   ))}
                   
-                  {/* === 9. SUPPLÉMENT SIGNÉ / BC (signed supplement = another BC) === */}
-                  {attachments.filter(a => a.category === 'avenant_signe' && a.file_url).map(att => (
+                  {/* === 9. SUPPLÉMENT SIGNÉ (from supplement_signed_quote_url or avenant_signe attachment) === */}
+                  {rma.supplement_signed_quote_url && (
+                    <a href={rma.supplement_signed_quote_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-300">
+                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Supplément Signé / BC</p>
+                        <p className="text-sm text-green-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : (rma.supplement_number ? `N° ${rma.supplement_number}` : 'Approuvé')}</p>
+                      </div>
+                    </a>
+                  )}
+                  {/* Fallback to attachment if no URL field */}
+                  {!rma.supplement_signed_quote_url && attachments.filter(a => a.category === 'avenant_signe' && a.file_url).map(att => (
                     <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-300">
                       <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
@@ -5225,14 +5238,25 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     </a>
                   ))}
                   
-                  {/* === 10. AVENANT BC (BC submitted for avenant) === */}
-                  {attachments.filter(a => a.category === 'avenant_bc' && a.file_url).map(att => (
-                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-orange-50 transition-colors border-orange-200">
-                      <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
+                  {/* === 10. BC SUPPLÉMENT (customer uploaded BC for supplement, different from signed supplement) === */}
+                  {rma.supplement_bc_file_url && rma.supplement_bc_file_url !== rma.supplement_signed_quote_url && (
+                    <a href={rma.supplement_bc_file_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
                       <div>
-                        <p className="font-medium text-gray-800">BC Avenant</p>
-                        <p className="text-sm text-orange-600">{att.file_name}</p>
+                        <p className="font-medium text-gray-800">BC Supplément (Client)</p>
+                        <p className="text-sm text-purple-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : 'BC client'}</p>
+                      </div>
+                    </a>
+                  )}
+                  {/* Fallback to attachment */}
+                  {!rma.supplement_bc_file_url && attachments.filter(a => a.category === 'avenant_bc' && a.file_url).map(att => (
+                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
+                      <div>
+                        <p className="font-medium text-gray-800">BC Supplément (Client)</p>
+                        <p className="text-sm text-purple-600">{att.file_name}</p>
                       </div>
                     </a>
                   ))}
