@@ -7763,14 +7763,13 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       const updatePayload = isSubmittingAvenantBC
         ? {
             // Avenant BC - DON'T change status, device continues its work
-            // DON'T overwrite signed_quote_url - that's the original devis signé!
-            bc_submitted_at: new Date().toISOString(),
-            bc_signed_by: signatureName,
-            bc_signature_date: signatureDateISO,
-            bc_file_url: fileUrl,
-            bc_signature_url: signatureUrl
-            // The signed avenant PDF goes to attachments with category 'avenant_signe', not to signed_quote_url
-            // Note: avenant_approved_at will be set by admin when they approve
+            // DON'T overwrite bc_file_url or signed_quote_url - those are the ORIGINAL BC!
+            // Avenant BC file goes to attachments with category 'avenant_bc'
+            // We just record that avenant BC was submitted, awaiting admin approval
+            avenant_bc_submitted_at: new Date().toISOString(),
+            avenant_bc_signed_by: signatureName,
+            avenant_bc_signature_date: signatureDateISO
+            // Note: avenant_approved_at and supplement_bc_number will be set by admin when they approve
           }
         : {
             // Regular BC - set to bc_review for admin verification
