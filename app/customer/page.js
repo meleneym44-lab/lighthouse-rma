@@ -7981,6 +7981,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   };
 
   const displayHistory = getStatusHistory();
+  console.log('🔍 HISTORY v56b displayHistory:', displayHistory.length, 'items', displayHistory.map(e => e.event_description));
 
   return (
     <div>
