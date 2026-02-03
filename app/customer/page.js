@@ -9765,14 +9765,18 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             // Also known attachment categories that map to structured cards
             const structuredCategories = ['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'];
             
-            // Remaining attachments = not images, not known URLs, not structured categories, not BL/UPS dupes
-            const otherAttachments = attachments.filter(a => 
-              !a.file_type?.startsWith('image/') && 
-              !knownUrls.has(a.file_url) &&
-              !structuredCategories.includes(a.category) &&
-              !['bl', 'ups_label'].includes(a.file_type) &&
-              !/^(BL-|UPS-Label)/i.test(a.file_name)
-            );
+            // Remaining attachments = not images, not known URLs, not structured categories, not BL/UPS/report dupes
+            const otherAttachments = attachments.filter(a => {
+              if (a.file_type?.startsWith('image/')) return false;
+              if (knownUrls.has(a.file_url)) return false;
+              if (structuredCategories.includes(a.category)) return false;
+              // Exclude BL/UPS by file_type field
+              if (['bl', 'ups_label', 'report', 'certificate'].includes(a.file_type)) return false;
+              // Exclude by filename patterns (anywhere in name)
+              const fn = (a.file_name || '').toLowerCase();
+              if (fn.includes('bl-') || fn.includes('ups-label') || fn.includes('ups_label')) return false;
+              return true;
+            });
             
             const devices = request.request_devices || [];
             const hasAnyDoc = request.quote_url || request.signed_quote_url || request.bc_file_url ||
