@@ -9684,8 +9684,8 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       border-top: 1px solid #ccc;
     }
     .footer-content { position: relative; }
-    .footer-logo { position: absolute; left: 0; top: 0; }
-    .footer-logo img { height: 65px; }
+    .footer-logo { position: absolute; left: 10px; top: 0; }
+    .footer-logo img { height: 75px; }
     .footer-info { font-size: 8pt; color: #555; text-align: center; line-height: 1.8; }
     .footer-info strong { color: #333; font-size: 8pt; }
     
@@ -9844,6 +9844,14 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
         // Capture the visible BL preview element
         const element = document.getElementById('bl-preview-parts');
         if (element) {
+          // Inject real BL number into preview before capture (replaces XXX placeholder)
+          const blNumberElements = element.querySelectorAll('div');
+          blNumberElements.forEach(el => {
+            if (el.textContent && el.textContent.includes('BL-') && el.textContent.includes('-XXX')) {
+              el.textContent = el.textContent.replace(/BL-\d{4}-XXX/, blNumber);
+            }
+          });
+          
           const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
           const jsPDF = await loadJsPDF();
           const pdf = new jsPDF('p', 'mm', 'a4');
@@ -10234,8 +10242,8 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                     {/* Footer - ABSOLUTE positioned at bottom */}
                     <div style={{ position: 'absolute', bottom: '15px', left: '30px', right: '30px', paddingTop: '12px', borderTop: '1px solid #ccc' }}>
                       <div style={{ position: 'relative' }}>
-                        <div style={{ position: 'absolute', left: '0', top: '0' }}>
-                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '65px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:14px;color:#333;border:2px solid #333;padding:12px 16px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
+                        <div style={{ position: 'absolute', left: '10px', top: '0' }}>
+                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '75px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:14px;color:#333;border:2px solid #333;padding:12px 16px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
                         </div>
                         <div style={{ fontSize: '8pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
                           <strong style={{ color: '#333', fontSize: '8pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
@@ -10659,8 +10667,8 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       border-top: 1px solid #ccc;
     }
     .footer-content { position: relative; }
-    .footer-logo { position: absolute; left: 0; top: 0; }
-    .footer-logo img { height: 65px; }
+    .footer-logo { position: absolute; left: 10px; top: 0; }
+    .footer-logo img { height: 75px; }
     .footer-info { font-size: 8pt; color: #555; text-align: center; line-height: 1.8; }
     .footer-info strong { color: #333; font-size: 8pt; }
     
@@ -10834,6 +10842,14 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           // Capture the visible BL preview element
           const element = document.getElementById(`bl-preview-${i}`);
           if (element) {
+            // Inject real BL number into preview before capture (replaces XXX placeholder)
+            const blNumberElements = element.querySelectorAll('div');
+            blNumberElements.forEach(el => {
+              if (el.textContent && el.textContent.includes('BL-') && el.textContent.includes('-XXX')) {
+                el.textContent = el.textContent.replace(/BL-\d{4}-XXX/, blNumber);
+              }
+            });
+            
             const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
             const jsPDF = await loadJsPDF();
             const pdf = new jsPDF('p', 'mm', 'a4');
@@ -11372,8 +11388,8 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                     {/* Footer - ABSOLUTE positioned at bottom */}
                     <div style={{ position: 'absolute', bottom: '15px', left: '30px', right: '30px', paddingTop: '12px', borderTop: '1px solid #ccc' }}>
                       <div style={{ position: 'relative' }}>
-                        <div style={{ position: 'absolute', left: '0', top: '0' }}>
-                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '65px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:14px;color:#333;border:2px solid #333;padding:12px 16px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
+                        <div style={{ position: 'absolute', left: '10px', top: '0' }}>
+                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '75px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:14px;color:#333;border:2px solid #333;padding:12px 16px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
                         </div>
                         <div style={{ fontSize: '8pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
                           <strong style={{ color: '#333', fontSize: '8pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
