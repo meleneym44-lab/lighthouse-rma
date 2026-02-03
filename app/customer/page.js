@@ -9305,9 +9305,22 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         <div className="flex border-b border-gray-100 overflow-x-auto">
           {[
             { id: 'details', label: 'Détails', icon: '📋' },
-            { id: 'messages', label: 'Messages', icon: '💬', count: messages.filter(m => !m.is_read && m.sender_id !== profile?.id).length },
+            { id: 'messages', label: 'Messages', icon: '💬', count: messages.filter(m => !m.is_read && m.sender_id !== profile?.id).length, isNotification: true },
             { id: 'history', label: 'Historique', icon: '📜' },
-            { id: 'documents', label: 'Documents', icon: '📄', count: attachments.length }
+            { id: 'documents', label: 'Documents', icon: '📄', count: (() => {
+              let c = 0;
+              if (request.quote_url) c++;
+              if (request.signed_quote_url) c++;
+              if (request.bc_file_url && request.bc_file_url !== request.signed_quote_url) c++;
+              c += attachments.filter(a => ['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande'].includes(a.category) && a.file_url).length;
+              (request.request_devices || []).forEach(d => {
+                if (d.report_url) c++;
+                if (d.calibration_certificate_url) c++;
+                if (d.bl_url) c++;
+                if (d.ups_label_url) c++;
+              });
+              return c;
+            })() }
           ].map(tab => (
             <button
               key={tab.id}
@@ -9320,8 +9333,11 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             >
               <span>{tab.icon}</span>
               {tab.label}
-              {tab.count > 0 && (
+              {tab.count > 0 && tab.isNotification && (
                 <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">{tab.count}</span>
+              )}
+              {tab.count > 0 && !tab.isNotification && (
+                <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded-full">{tab.count}</span>
               )}
             </button>
           ))}
