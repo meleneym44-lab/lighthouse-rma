@@ -1388,7 +1388,7 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   pdf.setTextColor(255, 255, 255);
   pdf.text('FACTURE', margin + 8, y + 10);
   pdf.setFontSize(14);
-  pdf.text(invoiceNumber || '', pageWidth - margin - 8, y + 10, { align: 'right' });
+  pdf.text('N\u00B0 ' + (invoiceNumber || ''), pageWidth - margin - 8, y + 10, { align: 'right' });
   y += 20;
 
   // ---- REFERENCES (left) | CLIENT BOX (right) ----
@@ -1644,10 +1644,11 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   pdf.setTextColor(...medGray);
   pdf.text(pdf.splitTextToSize(legalText, contentWidth), margin, y);
 
-  // ---- FOOTER ----
+  // ---- FOOTER (centered layout) ----
   const footerTopY = pageHeight - 36;
+  const fcx = pageWidth / 2;
   
-  // CAPCERT logo
+  // CAPCERT logo — centered above text
   try {
     const capcertImg = new Image();
     capcertImg.crossOrigin = 'anonymous';
@@ -1656,34 +1657,35 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
     pdf.addImage(capcertImg, 'PNG', margin, footerTopY - 5, 30, 28);
   } catch(e) {}
   
-  pdf.setDrawColor(...navy);
-  pdf.setLineWidth(0.6);
-  pdf.line(margin + 34, footerTopY, pageWidth - margin, footerTopY);
+  // Short centered line — starts after capcert, ends before right margin
+  pdf.setDrawColor(...lightLine);
+  pdf.setLineWidth(0.4);
+  pdf.line(margin + 36, footerTopY + 1, pageWidth - margin, footerTopY + 1);
   
-  const fcx = (margin + 34 + pageWidth - margin) / 2;
+  const textCx = (margin + 36 + pageWidth - margin) / 2;
   
   pdf.setFontSize(9.5);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...navy);
-  pdf.text(biz.company_name || 'Lighthouse France SAS', fcx, footerTopY + 6, { align: 'center' });
+  pdf.text(biz.company_name || 'Lighthouse France SAS', textCx, footerTopY + 7, { align: 'center' });
   
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(8);
   pdf.setTextColor(...darkGray);
   pdf.text(
     (biz.address || '16 rue Paul S\u00E9journ\u00E9') + ', ' + (biz.postal_code || '94000') + ' ' + (biz.city || 'CR\u00C9TEIL') + ' | T\u00E9l. ' + (biz.phone || '01 43 77 28 07'),
-    fcx, footerTopY + 12, { align: 'center' }
+    textCx, footerTopY + 13, { align: 'center' }
   );
   pdf.setFontSize(8);
   pdf.text(
     'SIRET ' + (biz.siret || '50178134800013') + ' | TVA ' + (biz.tva || 'FR 86501781348') + ' | Capital ' + (biz.capital || '10 000') + ' \u20AC',
-    fcx, footerTopY + 18, { align: 'center' }
+    textCx, footerTopY + 19, { align: 'center' }
   );
   pdf.setFontSize(8);
   pdf.setTextColor(...medGray);
   pdf.text(
     (biz.email || 'France@golighthouse.com') + ' | ' + (biz.website || 'www.golighthouse.fr'),
-    fcx, footerTopY + 24, { align: 'center' }
+    textCx, footerTopY + 25, { align: 'center' }
   );
 
   return pdf.output('blob');
