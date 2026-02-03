@@ -1328,7 +1328,7 @@ const generateServiceReportPDF = async (device, rma, technicianName, calType, re
 };
 
 // ============================================
-// INVOICE / FACTURE PDF GENERATION - v2 Professional
+// INVOICE / FACTURE PDF GENERATION - v3
 // ============================================
 const generateInvoicePDF = async (invoiceData, businessSettings) => {
   const jsPDF = await loadJsPDF();
@@ -1339,12 +1339,11 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   const margin = 18;
   const contentWidth = pageWidth - margin * 2;
   
-  // Design palette
-  const navy = [30, 58, 95];       // #1E3A5F
+  // Design palette — no green, clean navy + grays
+  const navy = [30, 58, 95];
   const darkGray = [51, 51, 51];
   const medGray = [130, 130, 130];
   const lightLine = [210, 215, 220];
-  const accentGreen = [0, 166, 81]; // #00A651 Lighthouse green
   const tableBg = [247, 249, 252];
   
   const {
@@ -1357,35 +1356,69 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
 
   const frenchMonths = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
   const formatDateFull = (dateStr) => {
-    if (!dateStr) return '—';
+    if (!dateStr) return '\u2014';
     const d = new Date(dateStr);
-    return `${d.getDate()} ${frenchMonths[d.getMonth()]} ${d.getFullYear()}`;
+    return d.getDate() + ' ' + frenchMonths[d.getMonth()] + ' ' + d.getFullYear();
   };
 
-  // ---- WATERMARK (behind everything) ----
+  // ---- WATERMARK (draw very light square logo in center) ----
+  const addWatermark = () => {
+    try {
+      const gs = new pdf.GState({ opacity: 0.07 });
+      pdf.saveGraphicsState();
+      pdf.setGState(gs);
+      // Draw a light square/circle as fallback watermark
+      pdf.setFillColor(30, 58, 95);
+      // Large L shape as brand mark
+      const cx = pageWidth / 2;
+      const cy = pageHeight / 2 - 15;
+      const sz = 50;
+      pdf.setFontSize(120);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(30, 58, 95);
+      pdf.text('L', cx - 18, cy + 20);
+      pdf.restoreGraphicsState();
+    } catch(e) {
+      // GState not supported, skip
+    }
+  };
+  
+  // Try image-based watermark first
+  let watermarkImg = null;
   try {
-    const wmImg = new Image();
-    wmImg.crossOrigin = 'anonymous';
-    wmImg.src = '/images/logos/lighthouse-square.png';
-    await new Promise((res, rej) => { wmImg.onload = res; wmImg.onerror = rej; setTimeout(rej, 2000); });
-    const wmSize = 120;
-    pdf.saveGraphicsState();
-    pdf.setGState(new pdf.GState({ opacity: 0.06 }));
-    pdf.addImage(wmImg, 'PNG', (pageWidth - wmSize) / 2, (pageHeight - wmSize) / 2 - 10, wmSize, wmSize);
-    pdf.restoreGraphicsState();
+    watermarkImg = new Image();
+    watermarkImg.crossOrigin = 'anonymous';
+    watermarkImg.src = '/images/logos/lighthouse-square.png';
+    await new Promise((res, rej) => { watermarkImg.onload = res; watermarkImg.onerror = rej; setTimeout(rej, 2000); });
   } catch(e) {
-    // Watermark optional
+    watermarkImg = null;
+  }
+  
+  if (watermarkImg) {
+    try {
+      const gs = new pdf.GState({ opacity: 0.07 });
+      pdf.saveGraphicsState();
+      pdf.setGState(gs);
+      const wmSize = 130;
+      pdf.addImage(watermarkImg, 'PNG', (pageWidth - wmSize) / 2, (pageHeight - wmSize) / 2 - 15, wmSize, wmSize);
+      pdf.restoreGraphicsState();
+    } catch(e) {
+      addWatermark();
+    }
+  } else {
+    addWatermark();
   }
 
   let y = margin;
 
-  // ---- LOGO (top left, wider) ----
+  // ---- LOGO (top left — wide but not too tall) ----
   try {
     const logoImg = new Image();
     logoImg.crossOrigin = 'anonymous';
     logoImg.src = '/images/logos/lighthouse-logo.png';
     await new Promise((res, rej) => { logoImg.onload = res; logoImg.onerror = rej; setTimeout(rej, 2000); });
-    pdf.addImage(logoImg, 'PNG', margin, y, 65, 22);
+    // Wide but flatter: 68mm wide, 15mm tall
+    pdf.addImage(logoImg, 'PNG', margin, y, 68, 15);
   } catch(e) {
     pdf.setFontSize(18);
     pdf.setFont('helvetica', 'bold');
@@ -1394,30 +1427,28 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
     pdf.setFontSize(8);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...medGray);
-    pdf.text('WORLDWIDE SOLUTIONS — FRANCE', margin, y + 16);
+    pdf.text('WORLDWIDE SOLUTIONS \u2014 FRANCE', margin, y + 16);
   }
 
-  y += 28;
+  y += 22;
 
   // ---- FACTURE TITLE BAR ----
-  // Navy gradient bar
   pdf.setFillColor(...navy);
-  pdf.roundedRect(margin, y, contentWidth, 16, 2, 2, 'F');
+  pdf.roundedRect(margin, y, contentWidth, 14, 2, 2, 'F');
   
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(255, 255, 255);
-  pdf.text('FACTURE', margin + 8, y + 11);
+  pdf.text('FACTURE', margin + 8, y + 10);
   
   pdf.setFontSize(14);
-  pdf.text(invoiceNumber || '', pageWidth - margin - 8, y + 11, { align: 'right' });
+  pdf.text(invoiceNumber || '', pageWidth - margin - 8, y + 10, { align: 'right' });
   
-  y += 22;
+  y += 20;
 
   // ---- DATE + REFERENCES (left) | CLIENT BOX (right) ----
   const blockY = y;
   
-  // Left: Reference info
   const labelX = margin;
   const valueX = margin + 36;
   let refY = blockY;
@@ -1435,30 +1466,33 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   };
   
   addRefLine('Date :', formatDateFull(invoiceDate), false);
-  addRefLine('Échéance :', formatDateFull(dueDate), true);
+  addRefLine('\u00C9ch\u00E9ance :', formatDateFull(dueDate), true);
   refY += 2;
   if (rmaNumber) addRefLine('RMA :', rmaNumber, true);
   if (quoteNumber) addRefLine('Devis :', quoteNumber, false);
   if (bcNumber) addRefLine('BC :', bcNumber, false);
-  if (supplementNumber) addRefLine('Supplément :', supplementNumber, false);
+  if (supplementNumber) addRefLine('Suppl\u00E9ment :', supplementNumber, false);
   if (supplementBCNumber && supplementBCNumber !== bcNumber) addRefLine('BC Suppl. :', supplementBCNumber, false);
-  if (clientRef) addRefLine('Vos réf. :', clientRef, false);
+  if (clientRef) addRefLine('Vos r\u00E9f. :', clientRef, false);
   
-  // Right: Client address box
+  // Right: Client address box — clean, no green accent
   const clientBoxX = pageWidth / 2 + 8;
   const clientBoxW = pageWidth / 2 - margin - 8;
   const clientBoxH = 36;
   
-  // Box with left green accent border
   pdf.setFillColor(248, 250, 252);
-  pdf.roundedRect(clientBoxX, blockY - 3, clientBoxW, clientBoxH, 2, 2, 'F');
-  pdf.setFillColor(...accentGreen);
+  pdf.setDrawColor(...lightLine);
+  pdf.setLineWidth(0.4);
+  pdf.roundedRect(clientBoxX, blockY - 3, clientBoxW, clientBoxH, 2, 2, 'FD');
+  
+  // Navy left accent line (not green)
+  pdf.setFillColor(...navy);
   pdf.rect(clientBoxX, blockY - 1, 2.5, clientBoxH - 4, 'F');
   
   pdf.setFontSize(7.5);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...medGray);
-  pdf.text('FACTURER À', clientBoxX + 7, blockY + 3);
+  pdf.text('FACTURER \u00C0', clientBoxX + 7, blockY + 3);
   
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
@@ -1488,22 +1522,22 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   const colPU = pageWidth - margin - 48;
   const colTotal = pageWidth - margin - 2;
 
-  // Table header bar
+  // Table header
   pdf.setFillColor(...navy);
   pdf.roundedRect(margin, y, contentWidth, 9, 1.5, 1.5, 'F');
   
   pdf.setFontSize(8.5);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(255, 255, 255);
-  pdf.text('Qté', colQty + 2, y + 6.5);
-  pdf.text('Désignation', colDesc, y + 6.5);
+  pdf.text('Qt\u00E9', colQty + 2, y + 6.5);
+  pdf.text('D\u00E9signation', colDesc, y + 6.5);
   pdf.text('P.U. HT', colPU, y + 6.5, { align: 'right' });
   pdf.text('TOTAL HT', colTotal, y + 6.5, { align: 'right' });
   
   y += 12;
 
   // Rows
-  const footerReserved = 70;
+  const footerReserved = 80;
   let rowAlt = false;
 
   (lines || []).forEach((line) => {
@@ -1511,21 +1545,23 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
       pdf.addPage();
       y = margin + 10;
       // Re-add watermark on new page
-      try {
-        pdf.saveGraphicsState();
-        pdf.setGState(new pdf.GState({ opacity: 0.06 }));
-        const wmSize = 120;
-        // Watermark may not be available on page 2, skip gracefully
-        pdf.restoreGraphicsState();
-      } catch(e) {}
+      if (watermarkImg) {
+        try {
+          const gs2 = new pdf.GState({ opacity: 0.07 });
+          pdf.saveGraphicsState();
+          pdf.setGState(gs2);
+          pdf.addImage(watermarkImg, 'PNG', (pageWidth - 130) / 2, (pageHeight - 130) / 2 - 15, 130, 130);
+          pdf.restoreGraphicsState();
+        } catch(e) {}
+      }
     }
 
     if (line.isDevice) {
-      // Device sub-header
-      pdf.setFillColor(240, 245, 255);
+      // Device sub-header — navy tinted, no green
+      pdf.setFillColor(235, 240, 250);
       pdf.rect(margin, y - 4, contentWidth, 7.5, 'F');
-      // Green left accent
-      pdf.setFillColor(...accentGreen);
+      // Navy left accent
+      pdf.setFillColor(...navy);
       pdf.rect(margin, y - 4, 2, 7.5, 'F');
       
       pdf.setFontSize(9);
@@ -1535,7 +1571,6 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
       y += 7;
       rowAlt = false;
     } else {
-      // Alternating row bg
       if (rowAlt) {
         pdf.setFillColor(252, 253, 255);
         pdf.rect(margin, y - 4, contentWidth, 7, 'F');
@@ -1547,20 +1582,18 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
       pdf.setTextColor(...darkGray);
       
       if (line.quantity != null) {
-        pdf.setFont('helvetica', 'normal');
         pdf.text(String(line.quantity), colQty + 5, y, { align: 'center' });
       }
       pdf.text(line.description || '', colDesc, y);
       
       if (line.unitPrice != null) {
-        pdf.text(parseFloat(line.unitPrice).toFixed(2) + ' €', colPU, y, { align: 'right' });
+        pdf.text(parseFloat(line.unitPrice).toFixed(2) + ' \u20AC', colPU, y, { align: 'right' });
       }
       if (line.total != null) {
         pdf.setFont('helvetica', 'bold');
-        pdf.text(parseFloat(line.total).toFixed(2) + ' €', colTotal, y, { align: 'right' });
+        pdf.text(parseFloat(line.total).toFixed(2) + ' \u20AC', colTotal, y, { align: 'right' });
       }
       
-      // Subtle divider
       pdf.setDrawColor(235, 238, 242);
       pdf.setLineWidth(0.15);
       pdf.line(colDesc, y + 2.5, pageWidth - margin, y + 2.5);
@@ -1570,12 +1603,11 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
 
   y += 6;
 
-  // ---- TOTALS BLOCK (right side) ----
+  // ---- TOTALS BLOCK ----
   const totalsW = 72;
   const totalsX = pageWidth - margin - totalsW;
   const totalsValX = pageWidth - margin - 4;
 
-  // HT
   pdf.setDrawColor(...lightLine);
   pdf.setLineWidth(0.3);
   pdf.line(totalsX, y, pageWidth - margin, y);
@@ -1586,38 +1618,37 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   pdf.setTextColor(...darkGray);
   pdf.text('Total HT', totalsX + 3, y);
   pdf.setFont('helvetica', 'bold');
-  pdf.text((subtotalHT || 0).toFixed(2) + ' €', totalsValX, y, { align: 'right' });
+  pdf.text((subtotalHT || 0).toFixed(2) + ' \u20AC', totalsValX, y, { align: 'right' });
   y += 7;
 
-  // TVA
   pdf.setFont('helvetica', 'normal');
   if (isExonerated) {
     pdf.text('TVA 20%', totalsX + 3, y);
     pdf.setFontSize(8);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...medGray);
-    pdf.text('EXONÉRÉ', totalsValX, y, { align: 'right' });
+    pdf.text('EXON\u00C9R\u00C9', totalsValX, y, { align: 'right' });
     y += 4;
     pdf.setFontSize(7);
     pdf.setFont('helvetica', 'normal');
-    pdf.text('Exonération TVA — Art. 262-I du CGI', totalsValX, y, { align: 'right' });
+    pdf.text('Exon\u00E9ration TVA \u2014 Art. 262-I du CGI', totalsValX, y, { align: 'right' });
     y += 7;
   } else {
     pdf.setFontSize(9.5);
     pdf.text('TVA ' + (tvaRate || 20) + '%', totalsX + 3, y);
     pdf.setFont('helvetica', 'bold');
-    pdf.text((tvaAmount || 0).toFixed(2) + ' €', totalsValX, y, { align: 'right' });
+    pdf.text((tvaAmount || 0).toFixed(2) + ' \u20AC', totalsValX, y, { align: 'right' });
     y += 7;
   }
 
-  // TOTAL TTC - bold navy bar
+  // TOTAL TTC bar
   pdf.setFillColor(...navy);
   pdf.roundedRect(totalsX, y - 1.5, totalsW, 11, 2, 2, 'F');
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(255, 255, 255);
   pdf.text('TOTAL TTC', totalsX + 4, y + 6);
-  pdf.text((totalTTC || 0).toFixed(2) + ' €', totalsValX - 3, y + 6, { align: 'right' });
+  pdf.text((totalTTC || 0).toFixed(2) + ' \u20AC', totalsValX - 3, y + 6, { align: 'right' });
   y += 16;
 
   // ---- PAYMENT TERMS ----
@@ -1627,7 +1658,7 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   pdf.text('Conditions de paiement : ' + (paymentTermsDays || 30) + ' jours date de facture, soit le ' + formatDateFull(dueDate), margin, y);
   y += 8;
 
-  // ---- BANK DETAILS (only if configured) ----
+  // ---- BANK DETAILS (only if IBAN configured) ----
   if (biz.iban && biz.iban.trim()) {
     pdf.setFillColor(248, 250, 252);
     pdf.setDrawColor(...lightLine);
@@ -1635,8 +1666,8 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
     const bankH = biz.bank_name ? 20 : 16;
     pdf.roundedRect(margin, y - 2, contentWidth, bankH, 2, 2, 'FD');
     
-    // Green left accent
-    pdf.setFillColor(...accentGreen);
+    // Navy left accent
+    pdf.setFillColor(...navy);
     pdf.rect(margin, y, 2.5, bankH - 4, 'F');
     
     let bankLabelX = margin + 8;
@@ -1646,7 +1677,7 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
     pdf.setFontSize(8);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...navy);
-    pdf.text('COORDONNÉES BANCAIRES', bankLabelX, bankY);
+    pdf.text('COORDONN\u00C9ES BANCAIRES', bankLabelX, bankY);
     bankY += 5;
     
     pdf.setFontSize(8.5);
@@ -1656,7 +1687,7 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
       pdf.setFont('helvetica', 'normal');
       pdf.text('Banque :', bankLabelX, bankY);
       pdf.setFont('helvetica', 'bold');
-      pdf.text(biz.bank_name + (biz.bank_branch ? ' — ' + biz.bank_branch : ''), bankValX, bankY);
+      pdf.text(biz.bank_name + (biz.bank_branch ? ' \u2014 ' + biz.bank_branch : ''), bankValX, bankY);
       bankY += 5;
     }
     
@@ -1677,52 +1708,55 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
 
   // ---- LEGAL TEXT ----
   const legalText = biz.invoice_legal_text ||
-    "En application des articles L441-6 et L441-3 du Code de commerce, en cas de retard de règlement : Indemnité forfaitaire pour frais de recouvrement de 40€ • Pénalité de retard à compter du 31ème jour au taux de 12% l'an. Aucun escompte ne sera accordé en cas de paiement anticipé. Tous nos prix sont exprimés en euro.";
+    "En application des articles L441-6 et L441-3 du Code de commerce, en cas de retard de r\u00E8glement : Indemnit\u00E9 forfaitaire pour frais de recouvrement de 40\u20AC \u2022 P\u00E9nalit\u00E9 de retard \u00E0 compter du 31\u00E8me jour au taux de 12% l'an. Aucun escompte ne sera accord\u00E9 en cas de paiement anticip\u00E9. Tous nos prix sont exprim\u00E9s en euro.";
   
   pdf.setFontSize(6.5);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...medGray);
-  const legalSplit = pdf.splitTextToSize(legalText.replace(/\n/g, ' '), contentWidth);
+  const legalSplit = pdf.splitTextToSize(legalText, contentWidth);
   pdf.text(legalSplit, margin, y);
 
-  // ---- FOOTER ----
-  const footerY = pageHeight - 20;
+  // ---- FOOTER (larger, prominent) ----
+  const footerTopY = pageHeight - 32;
   
-  // CAPCERT logo (left)
+  // CAPCERT logo — much bigger
   try {
     const capcertImg = new Image();
     capcertImg.crossOrigin = 'anonymous';
     capcertImg.src = '/images/logos/capcert-logo.png';
     await new Promise((res, rej) => { capcertImg.onload = res; capcertImg.onerror = rej; setTimeout(rej, 1500); });
-    pdf.addImage(capcertImg, 'PNG', margin, footerY - 2, 18, 16);
+    pdf.addImage(capcertImg, 'PNG', margin, footerTopY - 4, 28, 26);
   } catch(e) {}
   
-  // Thin separator
-  pdf.setDrawColor(...lightLine);
-  pdf.setLineWidth(0.3);
-  pdf.line(margin + 22, footerY, pageWidth - margin, footerY);
+  // Separator line
+  pdf.setDrawColor(...navy);
+  pdf.setLineWidth(0.5);
+  pdf.line(margin + 32, footerTopY, pageWidth - margin, footerTopY);
   
-  // Company info (single footer location)
-  const fcx = pageWidth / 2 + 5;
-  pdf.setFontSize(7);
+  // Footer text — bigger and bolder
+  const fcx = (margin + 32 + pageWidth - margin) / 2;
+  
+  pdf.setFontSize(8.5);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...navy);
-  pdf.text(biz.company_name || 'Lighthouse France SAS', fcx, footerY + 4, { align: 'center' });
+  pdf.text(biz.company_name || 'Lighthouse France SAS', fcx, footerTopY + 5, { align: 'center' });
   
   pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(6.5);
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(...darkGray);
+  pdf.text(
+    (biz.address || '16 rue Paul S\u00E9journ\u00E9') + ', ' + (biz.postal_code || '94000') + ' ' + (biz.city || 'CR\u00C9TEIL') + ' | T\u00E9l. ' + (biz.phone || '01 43 77 28 07'),
+    fcx, footerTopY + 10, { align: 'center' }
+  );
+  pdf.text(
+    'SIRET ' + (biz.siret || '50178134800013') + ' | TVA ' + (biz.tva || 'FR 86501781348') + ' | Capital ' + (biz.capital || '10 000') + ' \u20AC',
+    fcx, footerTopY + 15, { align: 'center' }
+  );
+  pdf.setFontSize(7);
   pdf.setTextColor(...medGray);
   pdf.text(
-    (biz.address || '16 rue Paul Séjourné') + ', ' + (biz.postal_code || '94000') + ' ' + (biz.city || 'CRÉTEIL') + ' | Tél. ' + (biz.phone || '01 43 77 28 07'),
-    fcx, footerY + 8, { align: 'center' }
-  );
-  pdf.text(
-    'SIRET ' + (biz.siret || '50178134800013') + ' | TVA ' + (biz.tva || 'FR 86501781348') + ' | Capital ' + (biz.capital || '10 000') + ' €',
-    fcx, footerY + 12, { align: 'center' }
-  );
-  pdf.text(
     (biz.email || 'France@golighthouse.com') + ' | ' + (biz.website || 'www.golighthouse.fr'),
-    fcx, footerY + 16, { align: 'center' }
+    fcx, footerTopY + 20, { align: 'center' }
   );
 
   return pdf.output('blob');
