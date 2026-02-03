@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { supabase } from '@/lib/supabase';
 
 // Expose supabase to window for debugging
@@ -10628,6 +10628,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
   const [selectedDeviceIds, setSelectedDeviceIds] = useState(new Set());
   const [destination, setDestination] = useState('hollande');
   const [deviceServices, setDeviceServices] = useState({});
+  const [deviceNotes, setDeviceNotes] = useState({}); // { deviceId: 'note text' }
   const [notes, setNotes] = useState('');
   const [parcels, setParcels] = useState(1);
   const [weight, setWeight] = useState('5');
@@ -10921,37 +10922,50 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                 </div>
                 <div className="space-y-2">
                   {devices.map(d => (
-                    <div key={d.id} className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
+                    <div key={d.id} className={`rounded-lg border transition-all ${
                       selectedDeviceIds.has(d.id) ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 hover:bg-gray-50'
                     }`}>
-                      <input 
-                        type="checkbox" 
-                        checked={selectedDeviceIds.has(d.id)}
-                        onChange={() => toggleDevice(d.id)}
-                        className="w-5 h-5 text-indigo-600 rounded cursor-pointer"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium">{d.model_name || d.model || 'Device'}</p>
-                        <p className="text-sm text-gray-500 font-mono">SN: {d.serial_number}</p>
+                      <div className="flex items-center gap-3 p-3">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedDeviceIds.has(d.id)}
+                          onChange={() => toggleDevice(d.id)}
+                          className="w-5 h-5 text-indigo-600 rounded cursor-pointer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium">{d.model_name || d.model || 'Device'}</p>
+                          <p className="text-sm text-gray-500 font-mono">SN: {d.serial_number}</p>
+                        </div>
+                        {selectedDeviceIds.has(d.id) && (
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={() => setDeviceService(d.id, 'calibration')}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                deviceServices[d.id] === 'calibration' 
+                                  ? 'bg-blue-500 text-white shadow-sm' 
+                                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                              }`}
+                            >🔬 Calibration</button>
+                            <button
+                              onClick={() => setDeviceService(d.id, 'repair')}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                deviceServices[d.id] === 'repair' 
+                                  ? 'bg-orange-500 text-white shadow-sm' 
+                                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                              }`}
+                            >🔧 Repair</button>
+                          </div>
+                        )}
                       </div>
                       {selectedDeviceIds.has(d.id) && (
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            onClick={() => setDeviceService(d.id, 'calibration')}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                              deviceServices[d.id] === 'calibration' 
-                                ? 'bg-blue-500 text-white shadow-sm' 
-                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                            }`}
-                          >🔬 Calibration</button>
-                          <button
-                            onClick={() => setDeviceService(d.id, 'repair')}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                              deviceServices[d.id] === 'repair' 
-                                ? 'bg-orange-500 text-white shadow-sm' 
-                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                            }`}
-                          >🔧 Repair</button>
+                        <div className="px-3 pb-3 pt-0 ml-8">
+                          <input
+                            type="text"
+                            value={deviceNotes[d.id] || ''}
+                            onChange={(e) => setDeviceNotes(prev => ({ ...prev, [d.id]: e.target.value }))}
+                            placeholder={`Note for ${d.serial_number} (optional)...`}
+                            className="w-full px-2 py-1.5 border rounded text-xs bg-white"
+                          />
                         </div>
                       )}
                     </div>
@@ -11012,7 +11026,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
               </div>
 
               {/* BL Preview */}
-              <h3 className="font-bold text-gray-800">📄 Delivery Note Preview</h3>
+              <h3 className="font-bold text-gray-800">📄 Bon de Livraison Preview</h3>
               <div className="border rounded-xl overflow-hidden bg-white shadow-sm">
                 <div id="internal-bl-preview" style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', height: '297mm', position: 'relative', overflow: 'hidden' }}>
                   {/* Watermark */}
@@ -11021,74 +11035,89 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                   </div>
                   
                   <div>
-                    {/* Header */}
+                    {/* Header - Logo left, Title + BL/RMA right */}
                     <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">WORLDWIDE SOLUTIONS</div></div>'; }} />
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#1E3A5F' }}>DELIVERY NOTE</div>
-                        <div style={{ fontSize: '10pt', color: '#888', fontStyle: 'italic' }}>Internal Transfer</div>
+                        <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#1E3A5F' }}>BON DE LIVRAISON</div>
+                        <div style={{ fontSize: '10pt', color: '#888', fontStyle: 'italic' }}>Internal Transfer — {destination === 'hollande' ? 'Hollande' : 'USA'}</div>
+                        <div data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#1E3A5F', marginTop: '4px' }}>N° {destination === 'hollande' ? 'Hollande' : 'USA'} BL-XXXX-XXX</div>
+                        <div style={{ fontSize: '9pt', color: '#666', marginTop: '2px' }}>RMA: {rma.request_number}</div>
                       </div>
                     </div>
 
-                    {/* To address block (right aligned like the original BL) */}
-                    <div style={{ margin: '20px 0 15px', display: 'flex', justifyContent: 'flex-end' }}>
-                      <div style={{ textAlign: 'left', minWidth: '250px' }}>
-                        <div style={{ fontSize: '11pt', fontWeight: 'bold' }}>{destOffice.company_name}</div>
-                        {destOffice.attention && <div style={{ fontSize: '10pt' }}>Attn: {destOffice.attention}</div>}
-                        <div style={{ fontSize: '10pt' }}>{destOffice.address_line1}</div>
-                        <div style={{ fontSize: '10pt' }}>{destOffice.postal_code} {destOffice.city}</div>
-                        <div style={{ fontSize: '10pt' }}>{destOffice.country}</div>
+                    {/* Date */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', margin: '12px 0' }}>
+                      <div><span style={{ color: '#666' }}>{biz.city || 'Créteil'}, le</span> <strong>{getFrenchDateShort()}</strong></div>
+                    </div>
+
+                    {/* Two column: EXPÉDITEUR (FROM) + DESTINATAIRE (TO) */}
+                    <div style={{ display: 'flex', gap: '15px', margin: '12px 0' }}>
+                      {/* FROM */}
+                      <div style={{ flex: '1', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
+                        <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Expéditeur / From</div>
+                        <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{biz.company_name || 'Lighthouse France SAS'}</div>
+                        <div>{biz.address || '16 rue Paul Séjourné'}</div>
+                        <div>{biz.postal_code || '94000'} {biz.city || 'Créteil'}</div>
+                        <div>France</div>
+                        <div style={{ marginTop: '4px', fontSize: '9pt', color: '#666' }}>Tél: {biz.phone || '01 43 77 28 07'}</div>
+                      </div>
+                      {/* TO */}
+                      <div style={{ flex: '1', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
+                        <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Destinataire / To</div>
+                        <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{destOffice.company_name}</div>
+                        {destOffice.attention && <div>Attn: <strong>{destOffice.attention}</strong></div>}
+                        <div>{destOffice.address_line1}</div>
+                        <div>{destOffice.postal_code} {destOffice.city}</div>
+                        <div>{destOffice.country}</div>
+                        {destOffice.phone && <div style={{ marginTop: '4px', fontSize: '9pt', color: '#666' }}>Tel: {destOffice.phone}</div>}
                       </div>
                     </div>
 
-                    {/* Date + BLN° */}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '10px 0' }}>
-                      <div style={{ fontSize: '10pt', color: '#666' }}>{biz.city || 'Créteil'}, le <strong>{getFrenchDateShort()}</strong></div>
+                    {/* Client reference row */}
+                    <div style={{ margin: '8px 0', padding: '5px 0', borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', fontSize: '10pt', color: '#666' }}>
+                      Client: <strong style={{ color: '#333' }}>{rma.companies?.name || '—'}</strong>
                     </div>
 
-                    <div style={{ textAlign: 'center', margin: '15px 0' }}>
-                      <span style={{ fontSize: '14pt', fontWeight: 'bold' }}>BLN°: </span>
-                      <span data-bl-number="true" style={{ fontSize: '14pt', fontWeight: 'bold', border: '1px solid #333', padding: '4px 12px', fontFamily: 'monospace' }}>{destination === 'hollande' ? 'Hollande' : 'USA'} BL-XXXX-XXX</span>
-                    </div>
-
-                    {/* Ref row */}
-                    <div style={{ margin: '10px 0', borderTop: '1px solid #999', borderBottom: '1px solid #999', padding: '6px 0' }}>
-                      <div style={{ display: 'flex', gap: '20px', fontSize: '10pt' }}>
-                        <div><span style={{ color: '#666' }}>Vos ref :</span> <strong>{destOffice.attention || '—'}</strong></div>
-                        <div><span style={{ color: '#666' }}>RMA:</span> <strong>{rma.request_number}</strong></div>
-                        <div><span style={{ color: '#666' }}>N°cpte client :</span> <strong>{rma.companies?.name || '—'}</strong></div>
-                      </div>
-                    </div>
-
-                    {/* Devices table */}
-                    <table style={{ width: '100%', borderCollapse: 'collapse', margin: '15px 0' }}>
+                    {/* Devices table with per-device notes */}
+                    <table style={{ width: '100%', borderCollapse: 'collapse', margin: '12px 0' }}>
                       <thead>
                         <tr style={{ background: 'rgba(51,51,51,0.35)' }}>
-                          <th style={{ color: '#333', padding: '8px 10px', textAlign: 'left', fontSize: '9pt', width: '40px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>Qty</th>
+                          <th style={{ color: '#333', padding: '8px 10px', textAlign: 'left', fontSize: '9pt', width: '35px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>Qty</th>
                           <th style={{ color: '#333', padding: '8px 10px', textAlign: 'left', fontSize: '9pt', fontWeight: 'bold', borderBottom: '2px solid #333' }}>Description</th>
-                          <th style={{ color: '#333', padding: '8px 10px', textAlign: 'left', fontSize: '9pt', width: '120px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>SN</th>
-                          <th style={{ color: '#333', padding: '8px 10px', textAlign: 'center', fontSize: '9pt', width: '90px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>Calibration</th>
-                          <th style={{ color: '#333', padding: '8px 10px', textAlign: 'center', fontSize: '9pt', width: '80px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>Repair</th>
+                          <th style={{ color: '#333', padding: '8px 10px', textAlign: 'left', fontSize: '9pt', width: '110px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>SN</th>
+                          <th style={{ color: '#333', padding: '8px 10px', textAlign: 'center', fontSize: '9pt', width: '80px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>Calibration</th>
+                          <th style={{ color: '#333', padding: '8px 10px', textAlign: 'center', fontSize: '9pt', width: '70px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>Repair</th>
                         </tr>
                       </thead>
                       <tbody>
                         {selectedDevices.map((d, i) => {
                           const svc = deviceServices[d.id] || 'calibration';
+                          const dNote = deviceNotes[d.id] || '';
                           return (
-                            <tr key={i}>
-                              <td style={{ padding: '8px 10px', borderBottom: '1px solid #ddd', fontSize: '10pt', textAlign: 'center', fontWeight: '600' }}>1</td>
-                              <td style={{ padding: '8px 10px', borderBottom: '1px solid #ddd', fontSize: '10pt' }}>Lighthouse {d.model_name || d.model}</td>
-                              <td style={{ padding: '8px 10px', borderBottom: '1px solid #ddd', fontSize: '10pt', fontFamily: 'monospace' }}>{d.serial_number}</td>
-                              <td style={{ padding: '8px 10px', borderBottom: '1px solid #ddd', fontSize: '10pt', textAlign: 'center' }}>{svc === 'calibration' ? '✓' : ''}</td>
-                              <td style={{ padding: '8px 10px', borderBottom: '1px solid #ddd', fontSize: '10pt', textAlign: 'center' }}>{svc === 'repair' ? '✓' : ''}</td>
-                            </tr>
+                            <Fragment key={i}>
+                              <tr>
+                                <td style={{ padding: '8px 10px', borderBottom: dNote ? 'none' : '1px solid #ddd', fontSize: '10pt', textAlign: 'center', fontWeight: '600' }}>1</td>
+                                <td style={{ padding: '8px 10px', borderBottom: dNote ? 'none' : '1px solid #ddd', fontSize: '10pt' }}>Lighthouse {d.model_name || d.model}</td>
+                                <td style={{ padding: '8px 10px', borderBottom: dNote ? 'none' : '1px solid #ddd', fontSize: '10pt', fontFamily: 'monospace' }}>{d.serial_number}</td>
+                                <td style={{ padding: '8px 10px', borderBottom: dNote ? 'none' : '1px solid #ddd', fontSize: '10pt', textAlign: 'center' }}>{svc === 'calibration' ? '✓' : ''}</td>
+                                <td style={{ padding: '8px 10px', borderBottom: dNote ? 'none' : '1px solid #ddd', fontSize: '10pt', textAlign: 'center' }}>{svc === 'repair' ? '✓' : ''}</td>
+                              </tr>
+                              {dNote && (
+                                <tr>
+                                  <td colSpan="5" style={{ padding: '2px 10px 8px 40px', borderBottom: '1px solid #ddd', fontSize: '9pt', color: '#555', fontStyle: 'italic' }}>
+                                    ↳ {dNote}
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
                           );
                         })}
                       </tbody>
                     </table>
 
                     {/* Shipping info */}
-                    <div style={{ margin: '15px 0' }}>
+                    <div style={{ margin: '12px 0' }}>
                       <div style={{ fontWeight: 'bold', fontSize: '11pt', marginBottom: '8px', borderBottom: '1px solid #333', paddingBottom: '5px' }}>Shipping Information</div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '10pt' }}>
                         <div><span style={{ color: '#666' }}>Carrier:</span> <strong>UPS</strong></div>
@@ -11098,10 +11127,10 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                       </div>
                     </div>
 
-                    {/* Notes */}
+                    {/* General notes */}
                     {notes && (
-                      <div style={{ margin: '15px 0', padding: '12px 15px', background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: '6px' }}>
-                        <div style={{ fontWeight: 'bold', fontSize: '10pt', marginBottom: '5px' }}>Notes / Instructions:</div>
+                      <div style={{ margin: '12px 0', padding: '10px 15px', background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: '6px' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '10pt', marginBottom: '4px' }}>Notes / Instructions:</div>
                         <div style={{ fontSize: '10pt', color: '#4B5563', whiteSpace: 'pre-wrap' }}>{notes}</div>
                       </div>
                     )}
