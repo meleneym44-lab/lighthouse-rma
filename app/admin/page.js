@@ -2802,6 +2802,7 @@ export default function AdminPortal() {
     { id: 'parts', label: 'Pièces Détachées', icon: '🔩', badge: partsOrdersActionCount > 0 ? partsOrdersActionCount : null },
     { id: 'rentals', label: 'Locations', icon: '📅', badge: rentalActionCount > 0 ? rentalActionCount : null },
     { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
+    { id: 'invoices', label: 'Factures', icon: '💶' },
     { id: 'clients', label: 'Clients', icon: '👥' },
     { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
     { id: 'kpi', label: 'KPIs', icon: '📈' },
@@ -2912,6 +2913,7 @@ export default function AdminPortal() {
             />}
             {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} />}
             {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} reloadMain={loadData} />}
+            {activeSheet === 'invoices' && <InvoicesSheet requests={requests} clients={clients} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} />}
             {activeSheet === 'rentals' && <RentalsSheet 
               rentals={rentalRequests} 
               clients={clients}
@@ -16615,6 +16617,856 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
     </div>
   );
 }
+
+// ============================================
+// INVOICES SHEET - Full invoicing workflow v1
+// ============================================
+function InvoicesSheet({ requests, clients, notify, reload, profile, businessSettings }) {
+  const [activeTab, setActiveTab] = useState('to_create');
+  const [invoices, setInvoices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [creatingFor, setCreatingFor] = useState(null); // RMA to create invoice for
+  const [viewingInvoice, setViewingInvoice] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const biz = businessSettings || {};
+
+  // Load invoices
+  const loadInvoices = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('invoices')
+      .select('*, companies(name), service_requests(request_number, status, quote_data, quote_total, quote_number, bc_number, request_devices(*)), invoice_lines(*)')
+      .order('created_at', { ascending: false });
+    if (data) setInvoices(data);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadInvoices(); }, []);
+
+  // RMAs ready for invoicing: all devices shipped, no invoice yet
+  const invoicedRequestIds = new Set(invoices.map(inv => inv.request_id).filter(Boolean));
+  
+  const rmasToInvoice = (requests || []).filter(r => {
+    if (!r.request_number || r.request_type === 'parts') return false;
+    if (invoicedRequestIds.has(r.id)) return false;
+    // Must have devices and all must be shipped or completed
+    const devices = r.request_devices || [];
+    if (devices.length === 0) return false;
+    const allShipped = devices.every(d => ['shipped', 'completed', 'delivered'].includes(d.status));
+    // Or overall RMA status is shipped/completed
+    return allShipped || ['shipped', 'completed'].includes(r.status);
+  });
+
+  // Split invoices by status
+  const openInvoices = invoices.filter(i => ['draft', 'sent', 'overdue', 'partially_paid'].includes(i.status));
+  const closedInvoices = invoices.filter(i => ['paid', 'cancelled'].includes(i.status));
+
+  // Filter by search
+  const filterItems = (items) => {
+    if (!searchTerm) return items;
+    const s = searchTerm.toLowerCase();
+    return items.filter(i => 
+      (i.invoice_number || '').toLowerCase().includes(s) ||
+      (i.companies?.name || '').toLowerCase().includes(s) ||
+      (i.service_requests?.request_number || '').toLowerCase().includes(s)
+    );
+  };
+
+  const filterRMAs = (items) => {
+    if (!searchTerm) return items;
+    const s = searchTerm.toLowerCase();
+    return items.filter(r =>
+      (r.request_number || '').toLowerCase().includes(s) ||
+      (r.companies?.name || '').toLowerCase().includes(s)
+    );
+  };
+
+  // Check overdue
+  const isOverdue = (inv) => {
+    if (!inv.due_date || inv.status === 'paid' || inv.status === 'cancelled') return false;
+    return new Date(inv.due_date) < new Date();
+  };
+
+  const daysPastDue = (inv) => {
+    if (!inv.due_date) return 0;
+    const diff = new Date() - new Date(inv.due_date);
+    return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+  };
+
+  const frenchDate = (dateStr) => {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    const months = ['jan.', 'fév.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  };
+
+  const getStatusBadge = (inv) => {
+    if (inv.status === 'paid') return <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">✅ Payée</span>;
+    if (inv.status === 'cancelled') return <span className="px-2 py-1 bg-gray-100 text-gray-500 rounded-full text-xs font-bold">Annulée</span>;
+    if (inv.status === 'partially_paid') return <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold">⚠️ Partiel</span>;
+    if (isOverdue(inv)) return <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-bold animate-pulse">🔴 En retard ({daysPastDue(inv)}j)</span>;
+    if (inv.status === 'sent') return <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">📤 Envoyée</span>;
+    return <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-bold">📝 Brouillon</span>;
+  };
+
+  // Mark invoice as sent
+  const markAsSent = async (inv) => {
+    await supabase.from('invoices').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', inv.id);
+    notify('✅ Facture marquée comme envoyée');
+    loadInvoices();
+  };
+
+  // Mark invoice as paid
+  const markAsPaid = async (inv) => {
+    await supabase.from('invoices').update({ 
+      status: 'paid', 
+      paid_at: new Date().toISOString(),
+      paid_amount: inv.total_ttc
+    }).eq('id', inv.id);
+    notify('✅ Facture marquée comme payée');
+    loadInvoices();
+  };
+
+  // Cancel invoice
+  const cancelInvoice = async (inv) => {
+    if (!confirm(`Annuler la facture ${inv.invoice_number} ?`)) return;
+    await supabase.from('invoices').update({ status: 'cancelled' }).eq('id', inv.id);
+    notify('Facture annulée');
+    loadInvoices();
+  };
+
+  const tabs = [
+    { id: 'to_create', label: 'À Facturer', icon: '🔔', count: rmasToInvoice.length, color: 'amber' },
+    { id: 'open', label: 'En Cours', icon: '📤', count: openInvoices.length, color: 'blue' },
+    { id: 'closed', label: 'Archivées', icon: '✅', count: closedInvoices.length, color: 'green' }
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">💶 Facturation</h1>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Rechercher facture, client, RMA..."
+              className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm w-72 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-amber-400">
+          <p className="text-sm text-gray-500">À facturer</p>
+          <p className="text-2xl font-bold text-amber-600">{rmasToInvoice.length}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-blue-400">
+          <p className="text-sm text-gray-500">En attente paiement</p>
+          <p className="text-2xl font-bold text-blue-600">{openInvoices.filter(i => i.status === 'sent').length}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-red-400">
+          <p className="text-sm text-gray-500">En retard</p>
+          <p className="text-2xl font-bold text-red-600">{openInvoices.filter(i => isOverdue(i)).length}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-green-400">
+          <p className="text-sm text-gray-500">Total ouvert</p>
+          <p className="text-2xl font-bold text-green-600">{openInvoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0).toFixed(2)} €</p>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="border-b flex">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-6 py-3 font-medium flex items-center gap-2 border-b-2 -mb-px transition-colors ${
+                activeTab === tab.id 
+                  ? 'border-[#00A651] text-[#00A651]' 
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <span>{tab.icon}</span> {tab.label}
+              {tab.count > 0 && (
+                <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
+                  tab.color === 'amber' ? 'bg-amber-100 text-amber-700' :
+                  tab.color === 'blue' ? 'bg-blue-100 text-blue-700' :
+                  'bg-green-100 text-green-700'
+                }`}>{tab.count}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-4">
+          {loading ? (
+            <div className="text-center py-12 text-gray-400">
+              <div className="animate-spin text-3xl mb-2">⏳</div>
+              Chargement...
+            </div>
+          ) : (
+            <>
+              {/* === TAB: À Facturer === */}
+              {activeTab === 'to_create' && (
+                <div>
+                  {filterRMAs(rmasToInvoice).length === 0 ? (
+                    <div className="text-center py-12 text-gray-400">
+                      <div className="text-4xl mb-2">✅</div>
+                      <p>Aucune RMA en attente de facturation</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {filterRMAs(rmasToInvoice).map(rma => {
+                        const devices = rma.request_devices || [];
+                        const total = rma.quote_total || devices.reduce((s, d) => s + (parseFloat(d.quoted_price) || parseFloat(d.unit_price) || 0), 0);
+                        const supplementTotal = devices.reduce((s, d) => {
+                          if (!d.additional_work_needed || !d.additional_work_items) return s;
+                          return s + d.additional_work_items.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
+                        }, 0);
+                        
+                        return (
+                          <div key={rma.id} className="flex items-center gap-4 p-4 border rounded-xl hover:bg-amber-50 hover:border-amber-200 transition-all group">
+                            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 font-bold text-lg shrink-0">💶</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-gray-800">{rma.request_number}</span>
+                                <span className="text-gray-400">—</span>
+                                <span className="font-medium text-gray-600">{rma.companies?.name || 'Client'}</span>
+                              </div>
+                              <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
+                                <span>{devices.length} appareil{devices.length > 1 ? 's' : ''}</span>
+                                {rma.quote_number && <span>Devis: {rma.quote_number}</span>}
+                                {rma.bc_number && <span>BC: {rma.bc_number}</span>}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="font-bold text-gray-800">{total.toFixed(2)} € HT</p>
+                              {supplementTotal > 0 && <p className="text-xs text-orange-500">+ {supplementTotal.toFixed(2)} € supplément</p>}
+                            </div>
+                            <button
+                              onClick={() => setCreatingFor(rma)}
+                              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium text-sm opacity-80 group-hover:opacity-100 transition-opacity shrink-0"
+                            >
+                              Créer Facture →
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* === TAB: En Cours === */}
+              {activeTab === 'open' && (
+                <div>
+                  {filterItems(openInvoices).length === 0 ? (
+                    <div className="text-center py-12 text-gray-400">
+                      <div className="text-4xl mb-2">📭</div>
+                      <p>Aucune facture en cours</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {filterItems(openInvoices).map(inv => (
+                        <div key={inv.id} className={`flex items-center gap-4 p-4 border rounded-xl transition-all ${
+                          isOverdue(inv) ? 'bg-red-50 border-red-200' : 'hover:bg-gray-50'
+                        }`}>
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shrink-0 ${
+                            isOverdue(inv) ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
+                          }`}>
+                            {isOverdue(inv) ? '🔴' : '📄'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-gray-800">{inv.invoice_number}</span>
+                              {getStatusBadge(inv)}
+                            </div>
+                            <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
+                              <span>{inv.companies?.name || 'Client'}</span>
+                              {inv.service_requests?.request_number && <span>RMA: {inv.service_requests.request_number}</span>}
+                              <span>Émise: {frenchDate(inv.invoice_date)}</span>
+                              <span>Échéance: {frenchDate(inv.due_date)}</span>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="font-bold text-lg text-gray-800">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
+                            {inv.paid_amount > 0 && inv.paid_amount < inv.total_ttc && (
+                              <p className="text-xs text-yellow-600">Reçu: {parseFloat(inv.paid_amount).toFixed(2)} €</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {inv.pdf_url && (
+                              <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="p-2 text-gray-400 hover:text-blue-500 rounded-lg hover:bg-blue-50" title="Voir PDF">📄</a>
+                            )}
+                            {inv.status === 'draft' && (
+                              <button onClick={() => markAsSent(inv)} className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-medium">📤 Envoyer</button>
+                            )}
+                            {(inv.status === 'sent' || isOverdue(inv)) && (
+                              <button onClick={() => markAsPaid(inv)} className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-xs font-medium">✅ Payée</button>
+                            )}
+                            <button onClick={() => cancelInvoice(inv)} className="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50" title="Annuler">🗑️</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* === TAB: Archivées === */}
+              {activeTab === 'closed' && (
+                <div>
+                  {filterItems(closedInvoices).length === 0 ? (
+                    <div className="text-center py-12 text-gray-400">
+                      <div className="text-4xl mb-2">📦</div>
+                      <p>Aucune facture archivée</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {filterItems(closedInvoices).map(inv => (
+                        <div key={inv.id} className="flex items-center gap-4 p-3 border rounded-lg hover:bg-gray-50 transition-all">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${
+                            inv.status === 'paid' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
+                          }`}>
+                            {inv.status === 'paid' ? '✅' : '⊘'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-gray-700">{inv.invoice_number}</span>
+                              {getStatusBadge(inv)}
+                              <span className="text-sm text-gray-400">{inv.companies?.name}</span>
+                            </div>
+                          </div>
+                          <div className="text-right text-sm text-gray-500 shrink-0">
+                            <p className="font-medium">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
+                            {inv.paid_at && <p className="text-xs">Payée le {frenchDate(inv.paid_at)}</p>}
+                          </div>
+                          {inv.pdf_url && (
+                            <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="p-2 text-gray-400 hover:text-blue-500 rounded-lg hover:bg-blue-50">📄</a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Invoice Creation Modal */}
+      {creatingFor && (
+        <InvoiceCreationModal
+          rma={creatingFor}
+          onClose={() => setCreatingFor(null)}
+          notify={notify}
+          reload={() => { loadInvoices(); if (reload) reload(); }}
+          profile={profile}
+          businessSettings={businessSettings}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// INVOICE CREATION MODAL
+// ============================================
+function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessSettings }) {
+  const [step, setStep] = useState(1); // 1=Edit lines, 2=Preview, 3=Saved
+  const [lines, setLines] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [clientRef, setClientRef] = useState('');
+  const [clientTVA, setClientTVA] = useState('');
+  const [isExonerated, setIsExonerated] = useState(false);
+  const [paymentTermsDays, setPaymentTermsDays] = useState(businessSettings?.payment_terms_days || 30);
+  const [notes, setNotes] = useState('');
+  const [savedInvoice, setSavedInvoice] = useState(null);
+  const [shippingPrice, setShippingPrice] = useState(0);
+
+  const biz = businessSettings || {};
+  const company = rma.companies || {};
+  const devices = rma.request_devices || [];
+  const quoteData = rma.quote_data || {};
+
+  // Build initial line items from quote_data + supplement data
+  useEffect(() => {
+    const newLines = [];
+    let sortOrder = 0;
+
+    // Get quoted devices from quote_data
+    const quotedDevices = quoteData.devices || [];
+
+    devices.forEach(device => {
+      const qd = quotedDevices.find(q => q.serial === device.serial_number) || {};
+      
+      // Device header
+      newLines.push({
+        id: `hdr-${device.id}`,
+        deviceId: device.id,
+        lineType: 'device_header',
+        description: `${device.model_name || device.model || 'Appareil'} — SN: ${device.serial_number}`,
+        quantity: null,
+        unitPrice: null,
+        total: null,
+        isDevice: true,
+        sortOrder: sortOrder++
+      });
+
+      // Calibration
+      if (qd.needsCalibration || (device.service_type || '').includes('calibration')) {
+        const price = parseFloat(qd.calibrationPrice) || parseFloat(device.quoted_price) || 0;
+        newLines.push({
+          id: `cal-${device.id}`,
+          deviceId: device.id,
+          lineType: 'calibration',
+          description: `Étalonnage${qd.calPartNumber ? ' (' + qd.calPartNumber + ')' : ''}`,
+          quantity: 1,
+          unitPrice: price,
+          total: price,
+          sortOrder: sortOrder++
+        });
+      }
+
+      // Repair
+      if (qd.needsRepair || (device.service_type || '').includes('repair')) {
+        const price = parseFloat(qd.repairPrice) || 0;
+        if (price > 0) {
+          newLines.push({
+            id: `rep-${device.id}`,
+            deviceId: device.id,
+            lineType: 'repair',
+            description: `Réparation${qd.repairPartNumber ? ' (' + qd.repairPartNumber + ')' : ''}`,
+            quantity: 1,
+            unitPrice: price,
+            total: price,
+            sortOrder: sortOrder++
+          });
+        }
+      }
+
+      // Cleaning (nettoyage)
+      if (qd.needsNettoyage && qd.nettoyagePrice > 0) {
+        newLines.push({
+          id: `net-${device.id}`,
+          deviceId: device.id,
+          lineType: 'cleaning',
+          description: `Nettoyage cellule${qd.nettoyagePartNumber ? ' (' + qd.nettoyagePartNumber + ')' : ''}`,
+          quantity: 1,
+          unitPrice: parseFloat(qd.nettoyagePrice),
+          total: parseFloat(qd.nettoyagePrice),
+          sortOrder: sortOrder++
+        });
+      }
+
+      // Additional parts from quote
+      if (qd.additionalParts && qd.additionalParts.length > 0) {
+        qd.additionalParts.forEach((part, pi) => {
+          const partTotal = (parseFloat(part.price) || 0) * (parseInt(part.quantity) || 1);
+          newLines.push({
+            id: `part-${device.id}-${pi}`,
+            deviceId: device.id,
+            lineType: 'parts',
+            description: `${part.name || part.partNumber || 'Pièce'} (${part.partNumber || ''})`,
+            quantity: parseInt(part.quantity) || 1,
+            unitPrice: parseFloat(part.price) || 0,
+            total: partTotal,
+            sortOrder: sortOrder++
+          });
+        });
+      }
+
+      // Supplement / additional work items
+      if (device.additional_work_needed && device.additional_work_items) {
+        device.additional_work_items.forEach((item, wi) => {
+          newLines.push({
+            id: `supp-${device.id}-${wi}`,
+            deviceId: device.id,
+            lineType: 'other',
+            description: `${item.description || item.name || 'Travaux supplémentaires'}`,
+            quantity: parseInt(item.quantity) || 1,
+            unitPrice: parseFloat(item.price) || 0,
+            total: (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1),
+            sortOrder: sortOrder++
+          });
+        });
+      }
+    });
+
+    // Shipping from quote_data
+    const shippingTotal = parseFloat(quoteData.shippingTotal || quoteData.shipping?.total) || 0;
+    if (shippingTotal > 0) {
+      setShippingPrice(shippingTotal);
+      newLines.push({
+        id: 'shipping',
+        lineType: 'shipping',
+        description: `Frais de port (${quoteData.shipping?.parcels || 1} colis)`,
+        quantity: 1,
+        unitPrice: shippingTotal,
+        total: shippingTotal,
+        sortOrder: sortOrder++
+      });
+    }
+
+    setLines(newLines);
+
+    // Check if client is outside EU for TVA exoneration
+    const clientCountry = company.billing_country || company.country || '';
+    if (clientCountry && !['France', 'FR', ''].includes(clientCountry)) {
+      // Could be exonerated — user decides
+    }
+  }, []);
+
+  // Update line item
+  const updateLine = (id, field, value) => {
+    setLines(prev => prev.map(l => {
+      if (l.id !== id) return l;
+      const updated = { ...l, [field]: value };
+      if (field === 'quantity' || field === 'unitPrice') {
+        updated.total = (parseFloat(updated.quantity) || 0) * (parseFloat(updated.unitPrice) || 0);
+      }
+      return updated;
+    }));
+  };
+
+  // Remove line
+  const removeLine = (id) => {
+    setLines(prev => prev.filter(l => l.id !== id));
+  };
+
+  // Add custom line
+  const addLine = () => {
+    setLines(prev => [...prev, {
+      id: `custom-${Date.now()}`,
+      lineType: 'other',
+      description: '',
+      quantity: 1,
+      unitPrice: 0,
+      total: 0,
+      sortOrder: prev.length
+    }]);
+  };
+
+  // Totals
+  const serviceLines = lines.filter(l => l.lineType !== 'device_header');
+  const subtotalHT = serviceLines.reduce((s, l) => s + (parseFloat(l.total) || 0), 0);
+  const tvaRate = isExonerated ? 0 : 20;
+  const tvaAmount = isExonerated ? 0 : subtotalHT * 0.20;
+  const totalTTC = subtotalHT + tvaAmount;
+
+  // Generate and save
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // Get invoice number
+      let invoiceNumber = null;
+      try {
+        const { data: docNum } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'FAC' });
+        if (docNum) invoiceNumber = docNum;
+      } catch (e) {
+        const now = new Date();
+        const mmyy = String(now.getMonth() + 1).padStart(2, '0') + String(now.getFullYear()).slice(-2);
+        invoiceNumber = `FAC-${mmyy}-001`;
+      }
+
+      const invoiceDate = new Date().toISOString();
+      const dueDate = new Date(Date.now() + paymentTermsDays * 24 * 60 * 60 * 1000).toISOString();
+
+      // Build invoice data for PDF
+      const pdfLines = lines.map(l => ({
+        description: l.description,
+        quantity: l.lineType === 'device_header' ? null : l.quantity,
+        unitPrice: l.lineType === 'device_header' ? null : l.unitPrice,
+        total: l.lineType === 'device_header' ? null : l.total,
+        isDevice: l.lineType === 'device_header'
+      }));
+
+      // Generate PDF
+      let pdfUrl = null;
+      try {
+        const pdfBlob = await generateInvoicePDF({
+          invoiceNumber,
+          invoiceDate,
+          dueDate,
+          company: {
+            name: company.name,
+            attention: company.billing_contact || '',
+            address: company.billing_address || '',
+            postal_code: company.billing_postal_code || '',
+            city: company.billing_city || '',
+            country: company.billing_country || 'France',
+            tva_number: clientTVA || company.tva_number || ''
+          },
+          clientRef,
+          rmaNumber: rma.request_number,
+          quoteNumber: rma.quote_number,
+          bcNumber: rma.bc_number,
+          lines: pdfLines,
+          subtotalHT,
+          tvaRate,
+          tvaAmount,
+          totalTTC,
+          isExonerated,
+          paymentTermsDays,
+          notes
+        }, businessSettings);
+
+        const fileName = `Facture_${invoiceNumber.replace(/[^a-zA-Z0-9-]/g, '_')}_${Date.now()}.pdf`;
+        pdfUrl = await uploadPDFToStorage(pdfBlob, `invoices/${rma.request_number}`, fileName);
+      } catch (pdfErr) {
+        console.error('Invoice PDF error:', pdfErr);
+      }
+
+      // Save to database
+      const { data: newInvoice, error } = await supabase
+        .from('invoices')
+        .insert({
+          invoice_number: invoiceNumber,
+          request_id: rma.id,
+          company_id: company.id,
+          status: 'draft',
+          invoice_date: invoiceDate,
+          due_date: dueDate,
+          payment_terms_days: paymentTermsDays,
+          subtotal_ht: subtotalHT,
+          tva_rate: tvaRate,
+          tva_amount: tvaAmount,
+          total_ttc: totalTTC,
+          is_tva_exonerated: isExonerated,
+          client_ref: clientRef,
+          client_tva_number: clientTVA,
+          pdf_url: pdfUrl,
+          notes,
+          created_by: profile?.id
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Save line items
+      if (newInvoice) {
+        const lineInserts = serviceLines.map((l, idx) => ({
+          invoice_id: newInvoice.id,
+          device_id: l.deviceId || null,
+          line_type: l.lineType,
+          description: l.description,
+          quantity: parseInt(l.quantity) || 1,
+          unit_price_ht: parseFloat(l.unitPrice) || 0,
+          total_ht: parseFloat(l.total) || 0,
+          sort_order: idx
+        }));
+        await supabase.from('invoice_lines').insert(lineInserts);
+      }
+
+      setSavedInvoice({ ...newInvoice, pdf_url: pdfUrl, invoice_number: invoiceNumber });
+      setStep(3);
+      notify(`✅ Facture ${invoiceNumber} créée!`);
+      if (reload) reload();
+    } catch (err) {
+      console.error('Invoice save error:', err);
+      notify('Erreur: ' + (err.message || 'Erreur'), 'error');
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b bg-gradient-to-r from-amber-500 to-orange-500 rounded-t-2xl">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-white">💶 Créer Facture</h2>
+              <p className="text-amber-100 text-sm">{rma.request_number} — {company.name}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1">
+                {[1, 2, 3].map(s => (
+                  <div key={s} className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                    s < step ? 'bg-white text-amber-600' : s === step ? 'bg-white/30 text-white ring-2 ring-white' : 'bg-white/10 text-white/50'
+                  }`}>{s < step ? '✓' : s}</div>
+                ))}
+              </div>
+              <button onClick={onClose} className="text-white/70 hover:text-white text-2xl">×</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {/* STEP 1: Edit Lines */}
+          {step === 1 && (
+            <div className="space-y-6">
+              {/* Invoice settings row */}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Vos réf. client</label>
+                  <input type="text" value={clientRef} onChange={e => setClientRef(e.target.value)} placeholder="Référence client..." className="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">N° TVA client</label>
+                  <input type="text" value={clientTVA} onChange={e => setClientTVA(e.target.value)} placeholder="FR..." className="w-full px-3 py-2 border rounded-lg text-sm font-mono" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Délai paiement</label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" value={paymentTermsDays} onChange={e => setPaymentTermsDays(parseInt(e.target.value) || 30)} className="w-20 px-3 py-2 border rounded-lg text-sm" />
+                    <span className="text-sm text-gray-500">jours</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* TVA Exoneration toggle */}
+              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={isExonerated} onChange={e => setIsExonerated(e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
+                  <span className="text-sm font-medium text-gray-700">Exonération TVA (Art. 262-I du CGI — Export hors UE)</span>
+                </label>
+              </div>
+
+              {/* Line items table */}
+              <div>
+                <h3 className="font-bold text-gray-800 mb-3">Lignes de facture</h3>
+                <div className="border rounded-xl overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-gray-50 text-left">
+                        <th className="px-3 py-2 text-xs font-bold text-gray-500 w-12">Qté</th>
+                        <th className="px-3 py-2 text-xs font-bold text-gray-500">Désignation</th>
+                        <th className="px-3 py-2 text-xs font-bold text-gray-500 w-28 text-right">P.U. HT</th>
+                        <th className="px-3 py-2 text-xs font-bold text-gray-500 w-28 text-right">Total HT</th>
+                        <th className="px-3 py-2 w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lines.map(line => (
+                        <tr key={line.id} className={`border-t ${
+                          line.lineType === 'device_header' ? 'bg-blue-50' : 'hover:bg-gray-50'
+                        }`}>
+                          {line.lineType === 'device_header' ? (
+                            <>
+                              <td colSpan="4" className="px-3 py-2">
+                                <span className="font-bold text-blue-800 text-sm">🔹 {line.description}</span>
+                              </td>
+                              <td className="px-1">
+                                <button onClick={() => removeLine(line.id)} className="text-gray-300 hover:text-red-400 text-sm">×</button>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-3 py-1.5">
+                                <input type="number" value={line.quantity || ''} onChange={e => updateLine(line.id, 'quantity', e.target.value)} className="w-12 px-1 py-1 border rounded text-sm text-center" min="1" />
+                              </td>
+                              <td className="px-3 py-1.5">
+                                <input type="text" value={line.description} onChange={e => updateLine(line.id, 'description', e.target.value)} className="w-full px-2 py-1 border rounded text-sm" />
+                              </td>
+                              <td className="px-3 py-1.5 text-right">
+                                <input type="number" value={line.unitPrice || ''} onChange={e => updateLine(line.id, 'unitPrice', e.target.value)} step="0.01" className="w-24 px-2 py-1 border rounded text-sm text-right" />
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-medium text-sm">
+                                {(parseFloat(line.total) || 0).toFixed(2)} €
+                              </td>
+                              <td className="px-1">
+                                <button onClick={() => removeLine(line.id)} className="text-gray-300 hover:text-red-400 text-lg leading-none">×</button>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button onClick={addLine} className="mt-2 px-3 py-1.5 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg font-medium">
+                  + Ajouter une ligne
+                </button>
+              </div>
+
+              {/* Totals */}
+              <div className="flex justify-end">
+                <div className="w-64 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Total HT</span>
+                    <span className="font-medium">{subtotalHT.toFixed(2)} €</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">TVA {isExonerated ? '(exonéré)' : '20%'}</span>
+                    <span className="font-medium">{isExonerated ? 'EXONÉRÉ' : tvaAmount.toFixed(2) + ' €'}</span>
+                  </div>
+                  <div className="flex justify-between text-lg font-bold border-t pt-2">
+                    <span>Total TTC</span>
+                    <span className="text-[#1E3A5F]">{totalTTC.toFixed(2)} €</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">Notes internes</label>
+                <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes internes (non visibles sur la facture)..." rows={2} className="w-full px-3 py-2 border rounded-lg text-sm" />
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: Saved */}
+          {step === 3 && savedInvoice && (
+            <div className="text-center py-8">
+              <div className="text-6xl mb-4">✅</div>
+              <h3 className="text-2xl font-bold text-green-700 mb-2">Facture Créée!</h3>
+              <p className="text-lg font-mono text-gray-700 mb-1">{savedInvoice.invoice_number}</p>
+              <p className="text-gray-500 mb-6">{company.name} — {totalTTC.toFixed(2)} € TTC</p>
+              <div className="flex items-center justify-center gap-3">
+                {savedInvoice.pdf_url && (
+                  <a href={savedInvoice.pdf_url} target="_blank" rel="noopener noreferrer" className="px-5 py-2.5 bg-[#1E3A5F] hover:bg-[#2a4f7a] text-white rounded-lg font-medium flex items-center gap-2">
+                    📄 Voir Facture PDF
+                  </a>
+                )}
+                <button onClick={async () => { 
+                  await supabase.from('invoices').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', savedInvoice.id);
+                  notify('✅ Facture envoyée!');
+                  if (reload) reload();
+                  onClose(); 
+                }} className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
+                  📤 Envoyer au client
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between rounded-b-2xl">
+          {step === 1 && (
+            <>
+              <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Annuler</button>
+              <button
+                onClick={handleSave}
+                disabled={saving || serviceLines.length === 0}
+                className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
+              >
+                {saving ? '⏳ Génération...' : '💶 Générer Facture PDF & Enregistrer'}
+              </button>
+            </>
+          )}
+          {step === 3 && (
+            <div className="ml-auto">
+              <button onClick={onClose} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium">Fermer</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function SettingsSheet({ profile, staffMembers, notify, reload }) {
   const [activeTab, setActiveTab] = useState('team');
