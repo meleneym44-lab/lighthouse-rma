@@ -5411,7 +5411,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 {attachments.filter(a => 
                   !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category) &&
                   !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category?.replace('internal_', '')) &&
-                  a.file_url && !a.file_type?.startsWith('image/')
+                  a.file_url
                 ).length > 0 && (
                   <div className="mt-4">
                     <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Documents supplémentaires</h4>
@@ -5419,15 +5419,20 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       {attachments.filter(a => 
                         !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category) &&
                         !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category?.replace('internal_', '')) &&
-                        a.file_url && !a.file_type?.startsWith('image/')
+                        a.file_url
                       ).map(doc => {
                         const isInternal = doc.category?.startsWith('internal_');
+                        const isImage = doc.file_type?.startsWith('image/');
                         return (
                           <div key={doc.id} className={`flex items-center gap-3 p-3 border rounded-lg ${isInternal ? 'bg-gray-50 border-gray-300 border-dashed' : 'bg-white'}`}>
                             <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80">
-                              <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg ${isInternal ? 'bg-gray-200' : 'bg-blue-100'}`}>
-                                {isInternal ? '🔒' : '📄'}
-                              </div>
+                              {isImage ? (
+                                <img src={doc.file_url} alt={doc.file_name} className="w-10 h-10 rounded-lg object-cover border border-gray-200" />
+                              ) : (
+                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg ${isInternal ? 'bg-gray-200' : 'bg-blue-100'}`}>
+                                  {isInternal ? '🔒' : '📄'}
+                                </div>
+                              )}
                               <div className="flex-1 min-w-0">
                                 <p className="font-medium text-gray-800 truncate text-sm">{(doc.file_name || 'Document').replace(/Avenant/gi, 'Supplément')}</p>
                                 <p className="text-xs text-gray-400">
