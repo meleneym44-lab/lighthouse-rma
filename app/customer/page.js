@@ -7806,15 +7806,29 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       console.log('✅ Service request updated successfully');
       
       // Save documents to request_attachments
-      if (fileUrl) {
+      // For regular BC: the file is already saved as bc_file_url on the request, 
+      // so only save as attachment if it's an avenant BC
+      if (fileUrl && isSubmittingAvenantBC) {
         const { error: bcAttachError } = await supabase.from('request_attachments').insert({
           request_id: request.id,
-          file_name: bcFile?.name || 'Bon de Commande.pdf',
+          file_name: bcFile?.name || 'Bon de Commande Supplément.pdf',
           file_url: fileUrl,
           file_type: bcFile?.type || 'application/pdf',
           file_size: bcFile?.size || 0,
           uploaded_by: profile.id,
-          category: isSubmittingAvenantBC ? 'avenant_bc' : 'bon_commande'
+          category: 'avenant_bc'
+        });
+        console.log('📎 Avenant BC attachment saved:', { fileUrl, error: bcAttachError });
+      } else if (fileUrl) {
+        // Regular BC - save with proper label (not client filename)
+        const { error: bcAttachError } = await supabase.from('request_attachments').insert({
+          request_id: request.id,
+          file_name: `Bon_de_Commande_${request.request_number}.pdf`,
+          file_url: fileUrl,
+          file_type: bcFile?.type || 'application/pdf',
+          file_size: bcFile?.size || 0,
+          uploaded_by: profile.id,
+          category: 'bon_commande'
         });
         console.log('📎 BC attachment saved:', { fileUrl, error: bcAttachError });
       }
@@ -9736,42 +9750,60 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           )}
 
           {/* Documents Tab */}
-          {activeTab === 'documents' && (
+          {activeTab === 'documents' && (() => {
+            // Collect ALL known URLs to avoid duplicates from attachments
+            const knownUrls = new Set();
+            if (request.quote_url) knownUrls.add(request.quote_url);
+            if (request.signed_quote_url) knownUrls.add(request.signed_quote_url);
+            if (request.bc_file_url) knownUrls.add(request.bc_file_url);
+            (request.request_devices || []).forEach(d => {
+              if (d.report_url) knownUrls.add(d.report_url);
+              if (d.calibration_certificate_url) knownUrls.add(d.calibration_certificate_url);
+              if (d.bl_url) knownUrls.add(d.bl_url);
+              if (d.ups_label_url) knownUrls.add(d.ups_label_url);
+            });
+            // Also known attachment categories that map to structured cards
+            const structuredCategories = ['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'];
+            
+            // Remaining attachments = not images, not known URLs, not structured categories, not BL/UPS dupes
+            const blUpsPattern = /^(BL-|UPS-Label)/i;
+            const otherAttachments = attachments.filter(a => 
+              !a.file_type?.startsWith('image/') && 
+              !knownUrls.has(a.file_url) &&
+              !structuredCategories.includes(a.category) &&
+              !blUpsPattern.test(a.file_name)
+            );
+            
+            const devices = request.request_devices || [];
+            const hasAnyDoc = request.quote_url || request.signed_quote_url || request.bc_file_url ||
+              attachments.some(a => structuredCategories.includes(a.category)) ||
+              devices.some(d => d.report_url || d.calibration_certificate_url || d.bl_url || d.ups_label_url) ||
+              otherAttachments.length > 0;
+            
+            return (
             <div className="space-y-6">
               {/* Photos from request */}
               {attachments.filter(a => a.file_type?.startsWith('image/')).length > 0 && (
                 <div>
-                  <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
-                    📷 Photos soumises
-                  </h3>
+                  <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">📷 Photos soumises</h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {attachments.filter(a => a.file_type?.startsWith('image/')).map((img) => (
-                      <a 
-                        key={img.id}
-                        href={img.file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition-opacity border border-gray-200"
-                      >
-                        <img 
-                          src={img.file_url} 
-                          alt={img.file_name}
-                          className="w-full h-full object-cover"
-                        />
+                      <a key={img.id} href={img.file_url} target="_blank" rel="noopener noreferrer"
+                        className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition-opacity border border-gray-200">
+                        <img src={img.file_url} alt={img.file_name} className="w-full h-full object-cover" />
                       </a>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* All Documents - Grid Layout matching admin */}
+              {/* All Documents Grid */}
               <div>
-                <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
-                  📁 Documents
-                </h3>
+                <h3 className="font-bold text-[#1E3A5F] mb-3 flex items-center gap-2">📁 Documents</h3>
+                {hasAnyDoc ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   
-                  {/* === DEVIS === */}
+                  {/* 1. DEVIS */}
                   {request.quote_url && (
                     <a href={request.quote_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors border-amber-200">
@@ -9783,7 +9815,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     </a>
                   )}
                   
-                  {/* === DEVIS SIGNÉ / BC === */}
+                  {/* 2. DEVIS SIGNÉ / BC */}
                   {request.signed_quote_url && (
                     <a href={request.signed_quote_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
@@ -9795,30 +9827,78 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     </a>
                   )}
                   
-                  {/* === BON DE COMMANDE (uploaded separately) === */}
+                  {/* 3. BON DE COMMANDE CLIENT (uploaded file, only if different from signed) */}
                   {request.bc_file_url && request.bc_file_url !== request.signed_quote_url && (
                     <a href={request.bc_file_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
                       <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
                       <div>
-                        <p className="font-medium text-gray-800">Bon de Commande</p>
+                        <p className="font-medium text-gray-800">Bon de Commande Client</p>
                         <p className="text-sm text-purple-600">{request.bc_number ? `N° ${request.bc_number}` : 'BC'}</p>
                       </div>
                     </a>
                   )}
-                  {/* BC from attachments fallback */}
-                  {(!request.bc_file_url || request.bc_file_url === request.signed_quote_url) && attachments.filter(a => a.category === 'bon_commande' && a.file_url).map(att => (
+                  {/* BC from attachments if no bc_file_url */}
+                  {!request.bc_file_url && attachments.filter(a => a.category === 'bon_commande' && a.file_url).map(att => (
                     <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
                       <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
                       <div>
-                        <p className="font-medium text-gray-800">Bon de Commande</p>
-                        <p className="text-sm text-purple-600">{request.bc_number ? `N° ${request.bc_number}` : att.file_name?.replace('.pdf', '')}</p>
+                        <p className="font-medium text-gray-800">Bon de Commande Client</p>
+                        <p className="text-sm text-purple-600">{request.bc_number ? `N° ${request.bc_number}` : 'BC'}</p>
                       </div>
                     </a>
                   ))}
                   
-                  {/* === SUPPLÉMENT === */}
+                  {/* 4. PER-DEVICE: RAPPORT DE SERVICE */}
+                  {devices.filter(d => d.report_url).map(device => (
+                    <a key={`report-${device.id}`} href={device.report_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
+                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Rapport de Service</p>
+                        <p className="text-sm text-blue-600">{device.serial_number}</p>
+                      </div>
+                    </a>
+                  ))}
+                  
+                  {/* 5. PER-DEVICE: BON DE LIVRAISON */}
+                  {devices.filter(d => d.bl_url).map(device => (
+                    <a key={`bl-${device.id}`} href={device.bl_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-cyan-50 transition-colors">
+                      <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center text-2xl">📦</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Bon de Livraison</p>
+                        <p className="text-sm text-cyan-600">{device.bl_number ? `N° ${device.bl_number}` : 'BL'}</p>
+                      </div>
+                    </a>
+                  ))}
+                  
+                  {/* 6. PER-DEVICE: ÉTIQUETTE UPS */}
+                  {devices.filter(d => d.ups_label_url).map(device => (
+                    <a key={`ups-${device.id}`} href={device.ups_label_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors">
+                      <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">🏷️</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Étiquette UPS</p>
+                        <p className="text-sm text-amber-600">{device.tracking_number || 'Label'}</p>
+                      </div>
+                    </a>
+                  ))}
+                  
+                  {/* 7. PER-DEVICE: CERTIFICAT D'ÉTALONNAGE */}
+                  {devices.filter(d => d.calibration_certificate_url).map(device => (
+                    <a key={`cert-${device.id}`} href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-teal-50 transition-colors border-teal-300">
+                      <div className="w-12 h-12 bg-teal-100 rounded-lg flex items-center justify-center text-2xl">🏆</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Certificat d'Étalonnage</p>
+                        <p className="text-sm text-teal-600">{device.certificate_number || device.serial_number}</p>
+                      </div>
+                    </a>
+                  ))}
+                  
+                  {/* 8. SUPPLÉMENT */}
                   {attachments.filter(a => a.category === 'avenant_quote' && a.file_url).map(att => (
                     <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-emerald-50 transition-colors border-emerald-200">
@@ -9830,7 +9910,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     </a>
                   ))}
                   
-                  {/* === SUPPLÉMENT SIGNÉ === */}
+                  {/* 9. SUPPLÉMENT SIGNÉ */}
                   {attachments.filter(a => a.category === 'avenant_signe' && a.file_url).map(att => (
                     <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-emerald-50 transition-colors border-emerald-200">
@@ -9842,76 +9922,20 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     </a>
                   ))}
                   
-                  {/* === BC SUPPLÉMENT === */}
+                  {/* 10. BC SUPPLÉMENT */}
                   {attachments.filter(a => a.category === 'avenant_bc' && a.file_url).map(att => (
                     <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
                       <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
                       <div>
-                        <p className="font-medium text-gray-800">BC Supplément</p>
-                        <p className="text-sm text-purple-600">{request.supplement_number ? `N° ${request.supplement_number}` : att.file_name?.replace('.pdf', '')}</p>
+                        <p className="font-medium text-gray-800">BC Supplément (Client)</p>
+                        <p className="text-sm text-purple-600">{request.supplement_number ? `N° ${request.supplement_number}` : 'BC Supplément'}</p>
                       </div>
                     </a>
                   ))}
                   
-                  {/* === PER-DEVICE DOCUMENTS === */}
-                  {(request.request_devices || []).map((device) => (
-                    <Fragment key={`docs-${device.id}`}>
-                      {/* Rapport de Service */}
-                      {device.report_url && (
-                        <a href={device.report_url} target="_blank" rel="noopener noreferrer"
-                           className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
-                          <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
-                          <div>
-                            <p className="font-medium text-gray-800">Rapport de Service</p>
-                            <p className="text-sm text-blue-600">{device.serial_number}</p>
-                          </div>
-                        </a>
-                      )}
-                      
-                      {/* Certificat d'Étalonnage */}
-                      {device.calibration_certificate_url && (
-                        <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer"
-                           className="flex items-center gap-4 p-4 border rounded-lg hover:bg-teal-50 transition-colors border-teal-300">
-                          <div className="w-12 h-12 bg-teal-100 rounded-lg flex items-center justify-center text-2xl">🏆</div>
-                          <div>
-                            <p className="font-medium text-gray-800">Certificat d'Étalonnage</p>
-                            <p className="text-sm text-teal-600">{device.certificate_number || device.serial_number}</p>
-                          </div>
-                        </a>
-                      )}
-                      
-                      {/* Bon de Livraison */}
-                      {device.bl_url && (
-                        <a href={device.bl_url} target="_blank" rel="noopener noreferrer"
-                           className="flex items-center gap-4 p-4 border rounded-lg hover:bg-cyan-50 transition-colors">
-                          <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center text-2xl">📦</div>
-                          <div>
-                            <p className="font-medium text-gray-800">Bon de Livraison</p>
-                            <p className="text-sm text-cyan-600">{device.bl_number ? `N° ${device.bl_number}` : 'BL'}</p>
-                          </div>
-                        </a>
-                      )}
-                      
-                      {/* Étiquette UPS */}
-                      {device.ups_label_url && (
-                        <a href={device.ups_label_url} target="_blank" rel="noopener noreferrer"
-                           className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors">
-                          <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">🏷️</div>
-                          <div>
-                            <p className="font-medium text-gray-800">Étiquette UPS</p>
-                            <p className="text-sm text-amber-600">{device.tracking_number || 'Label'}</p>
-                          </div>
-                        </a>
-                      )}
-                    </Fragment>
-                  ))}
-                  
-                  {/* === OTHER ATTACHMENTS (shared by admin or uncategorized) === */}
-                  {attachments.filter(a => 
-                    !a.file_type?.startsWith('image/') && 
-                    !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category)
-                  ).map((doc) => {
+                  {/* 11. OTHER ATTACHMENTS (admin-shared docs, uncategorized) */}
+                  {otherAttachments.map((doc) => {
                     const displayName = (doc.file_name || 'Document').replace(/Avenant/gi, 'Supplément');
                     const cat = doc.category || 'general';
                     const catStyle = {
@@ -9921,7 +9945,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                       facture: { icon: '💶', bg: 'bg-yellow-100', border: 'border-yellow-200', hover: 'hover:bg-yellow-50', text: 'text-yellow-600' },
                       note_technique: { icon: '🔧', bg: 'bg-indigo-100', border: 'border-indigo-200', hover: 'hover:bg-indigo-50', text: 'text-indigo-600' },
                       correspondance: { icon: '✉️', bg: 'bg-pink-100', border: 'border-pink-200', hover: 'hover:bg-pink-50', text: 'text-pink-600' },
-                    }[cat] || { icon: '📄', bg: 'bg-gray-100', border: '', hover: 'hover:bg-gray-50', text: 'text-gray-600' };
+                    }[cat] || { icon: '📄', bg: 'bg-gray-100', border: '', hover: 'hover:bg-gray-50', text: 'text-gray-500' };
                     return (
                       <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer"
                          className={`flex items-center gap-4 p-4 border rounded-lg ${catStyle.hover} transition-colors ${catStyle.border}`}>
@@ -9934,11 +9958,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     );
                   })}
                 </div>
-                
-                {/* Empty state */}
-                {!request.quote_url && !request.signed_quote_url && !request.bc_file_url && 
-                 attachments.filter(a => !a.file_type?.startsWith('image/')).length === 0 &&
-                 !(request.request_devices || []).some(d => d.report_url || d.calibration_certificate_url || d.bl_url || d.ups_label_url) && (
+                ) : (
                   <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
                     <p className="text-4xl mb-2">📄</p>
                     <p className="text-gray-500">Aucun document disponible</p>
@@ -9947,7 +9967,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 )}
               </div>
             </div>
-          )}
+            );
+          })()}
         </div>
         
         {/* Contact Support */}
