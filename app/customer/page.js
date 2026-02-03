@@ -3099,9 +3099,9 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                     </span>
                   </div>
                 ))}
-                {/* RMA Requests - Supplement Pending */}
+                {/* RMA Requests - Supplement Pending (only if BC not yet submitted) */}
                 {serviceRequests
-                  .filter(r => r.avenant_sent_at && r.avenant_total > 0 && !r.avenant_approved_at && 
+                  .filter(r => r.avenant_sent_at && r.avenant_total > 0 && !r.avenant_approved_at && !r.avenant_bc_submitted_at &&
                     !(['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && !r.bc_submitted_at))
                   .map(req => (
                   <div 
@@ -3202,11 +3202,13 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                   const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
                   const needsAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(req.status);
                   const hasSupplementPending = req.avenant_sent_at && req.avenant_total > 0 && !req.avenant_approved_at;
+                  const supplementNeedsAction = hasSupplementPending && !req.avenant_bc_submitted_at;
+                  const supplementUnderReview = hasSupplementPending && req.avenant_bc_submitted_at;
                   return (
                     <div 
                       key={req.id}
                       onClick={() => viewRequest(req)}
-                      className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${(needsAction || hasSupplementPending) ? 'bg-red-50/50' : ''}`}
+                      className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${(needsAction || supplementNeedsAction) ? 'bg-red-50/50' : ''}`}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
@@ -3219,9 +3221,14 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                               ⚠ Action requise
                             </span>
                           )}
-                          {hasSupplementPending && !needsAction && (
+                          {supplementNeedsAction && !needsAction && (
                             <span className="px-2 py-1 rounded-full text-xs font-bold bg-red-500 text-white animate-pulse">
                               ⚠️ Travaux supplémentaires - Action requise
+                            </span>
+                          )}
+                          {supplementUnderReview && !needsAction && (
+                            <span className="px-2 py-1 rounded-full text-xs font-bold bg-blue-500 text-white">
+                              📄 BC Supplément en vérification
                             </span>
                           )}
                         </div>
@@ -7479,9 +7486,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   const isQuoteSent = request.status === 'quote_sent';
   const needsQuoteAction = isQuoteSent && !request.bc_submitted_at;
   
-  // Supplement requires action if sent but not yet approved (no BC submitted after it was sent)
+  // Supplement requires action if sent but not yet approved AND customer hasn't submitted BC yet
   const hasSupplementPending = request.avenant_sent_at && request.avenant_total > 0 && !request.avenant_approved_at;
-  const needsSupplementAction = hasSupplementPending;
+  const supplementBCSubmitted = hasSupplementPending && request.avenant_bc_submitted_at;
+  const needsSupplementAction = hasSupplementPending && !request.avenant_bc_submitted_at;
   
   const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
   
@@ -8044,6 +8052,36 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   ✅ Approuver et soumettre BC
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Supplement BC Submitted - Under Review */}
+        {supplementBCSubmitted && (
+          <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                  <span className="text-blue-600 text-lg">📄</span>
+                </div>
+                <div>
+                  <p className="font-semibold text-blue-800">BC Supplément soumis - En vérification</p>
+                  <p className="text-sm text-blue-600">
+                    Votre bon de commande pour les travaux supplémentaires ({request.avenant_total?.toFixed(2)} €) est en cours de vérification.
+                  </p>
+                  {request.avenant_bc_submitted_at && (
+                    <p className="text-xs text-blue-500 mt-1">
+                      Soumis le {new Date(request.avenant_bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(request.avenant_bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setShowSupplementModal(true)}
+                className="px-4 py-2 bg-white border border-blue-300 text-blue-700 rounded-lg font-medium hover:bg-blue-50 transition-colors"
+              >
+                👁️ Voir le Supplément
+              </button>
             </div>
           </div>
         )}
