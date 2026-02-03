@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { supabase } from '@/lib/supabase';
 
 // Expose supabase to window for debugging
@@ -9181,7 +9181,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     </thead>
                     <tbody>
                       {devices.map((device, i) => (
-                        <React.Fragment key={i}>
+                        <Fragment key={i}>
                           {/* Device header row */}
                           <tr className="bg-gray-100 border-t">
                             <td colSpan={4} className="px-3 py-2 font-bold text-[#1a1a2e]">
@@ -9205,7 +9205,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                               <td className="px-3 py-2 text-right font-medium">{parseFloat(item.price || 0).toFixed(2)} EUR</td>
                             </tr>
                           ))}
-                        </React.Fragment>
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
