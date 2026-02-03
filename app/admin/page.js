@@ -1662,7 +1662,7 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   pdf.setLineWidth(0.4);
   pdf.line(margin + 36, footerTopY + 1, pageWidth - margin, footerTopY + 1);
   
-  const textCx = (margin + 36 + pageWidth - margin) / 2;
+  const textCx = pageWidth / 2 - 5;
   
   pdf.setFontSize(9.5);
   pdf.setFont('helvetica', 'bold');
