@@ -1328,7 +1328,7 @@ const generateServiceReportPDF = async (device, rma, technicianName, calType, re
 };
 
 // ============================================
-// INVOICE / FACTURE PDF GENERATION - v4
+// INVOICE / FACTURE PDF GENERATION - v5
 // ============================================
 const generateInvoicePDF = async (invoiceData, businessSettings) => {
   const jsPDF = await loadJsPDF();
@@ -1359,9 +1359,7 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
     return d.getDate() + ' ' + frenchMonths[d.getMonth()] + ' ' + d.getFullYear();
   };
 
-  // No watermark
-
-  // ---- LOGO (top left, tight to corner) ----
+  // ---- LOGO ----
   let y = 10;
   try {
     const logoImg = new Image();
@@ -1385,15 +1383,12 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   // ---- FACTURE TITLE BAR ----
   pdf.setFillColor(...navy);
   pdf.roundedRect(margin, y, contentWidth, 14, 2, 2, 'F');
-  
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(255, 255, 255);
   pdf.text('FACTURE', margin + 8, y + 10);
-  
   pdf.setFontSize(14);
   pdf.text(invoiceNumber || '', pageWidth - margin - 8, y + 10, { align: 'right' });
-  
   y += 20;
 
   // ---- REFERENCES (left) | CLIENT BOX (right) ----
@@ -1480,7 +1475,7 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   pdf.text('TOTAL HT', colTotal, y + 6.5, { align: 'right' });
   y += 12;
 
-  const footerReserved = 82;
+  const footerReserved = 90;
   let rowAlt = false;
 
   (lines || []).forEach((line) => {
@@ -1592,10 +1587,12 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
 
   // ---- BANK DETAILS ----
   if (biz.iban && biz.iban.trim()) {
+    const hasRIB = biz.rib && biz.rib.trim();
+    const bankH = (biz.bank_name ? 5 : 0) + (hasRIB ? 5 : 0) + 16;
+    
     pdf.setFillColor(248, 250, 252);
     pdf.setDrawColor(...lightLine);
     pdf.setLineWidth(0.3);
-    const bankH = biz.bank_name ? 20 : 16;
     pdf.roundedRect(margin, y - 2, contentWidth, bankH, 2, 2, 'FD');
     pdf.setFillColor(...navy);
     pdf.rect(margin, y, 2.5, bankH - 4, 'F');
@@ -1604,13 +1601,13 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
     let bkVX = margin + 42;
     let bkY = y + 3;
     
-    pdf.setFontSize(8);
+    pdf.setFontSize(8.5);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...navy);
     pdf.text('COORDONN\u00C9ES BANCAIRES', bkX, bkY);
-    bkY += 5;
+    bkY += 5.5;
     
-    pdf.setFontSize(8.5);
+    pdf.setFontSize(9);
     pdf.setTextColor(...darkGray);
     if (biz.bank_name) {
       pdf.setFont('helvetica', 'normal');
@@ -1619,66 +1616,80 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
       pdf.text(biz.bank_name + (biz.bank_branch ? ' \u2014 ' + biz.bank_branch : ''), bkVX, bkY);
       bkY += 5;
     }
+    
+    if (hasRIB) {
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('RIB :', bkX, bkY);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(biz.rib, bkVX, bkY);
+      bkY += 5;
+    }
+    
     pdf.setFont('helvetica', 'normal');
     pdf.text('IBAN :', bkX, bkY);
     pdf.setFont('helvetica', 'bold');
     pdf.text(biz.iban, bkVX, bkY);
+    
     if (biz.bic) {
       pdf.setFont('helvetica', 'normal');
-      pdf.text('BIC :', bkX + 100, bkY);
+      const bicLabelX = bkVX + pdf.getTextWidth(biz.iban) + 8;
+      pdf.text('BIC :', bicLabelX, bkY);
       pdf.setFont('helvetica', 'bold');
-      pdf.text(biz.bic, bkX + 112, bkY);
+      pdf.text(biz.bic, bicLabelX + 12, bkY);
     }
+    
     y += bankH + 4;
   }
 
   // ---- LEGAL TEXT ----
   const legalText = biz.invoice_legal_text ||
     "En application des articles L441-6 et L441-3 du Code de commerce, en cas de retard de r\u00E8glement : Indemnit\u00E9 forfaitaire pour frais de recouvrement de 40\u20AC \u2022 P\u00E9nalit\u00E9 de retard \u00E0 compter du 31\u00E8me jour au taux de 12% l'an. Aucun escompte ne sera accord\u00E9 en cas de paiement anticip\u00E9. Tous nos prix sont exprim\u00E9s en euro.";
-  pdf.setFontSize(6.5);
+  pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...medGray);
   pdf.text(pdf.splitTextToSize(legalText, contentWidth), margin, y);
 
-  // ---- FOOTER (large, prominent) ----
-  const footerTopY = pageHeight - 34;
+  // ---- FOOTER (large, readable) ----
+  const footerTopY = pageHeight - 36;
   
-  // CAPCERT logo — large
+  // CAPCERT logo
   try {
     const capcertImg = new Image();
     capcertImg.crossOrigin = 'anonymous';
     capcertImg.src = '/images/logos/capcert-logo.png';
     await new Promise((res, rej) => { capcertImg.onload = res; capcertImg.onerror = rej; setTimeout(rej, 1500); });
-    pdf.addImage(capcertImg, 'PNG', margin, footerTopY - 4, 28, 26);
+    pdf.addImage(capcertImg, 'PNG', margin, footerTopY - 5, 30, 28);
   } catch(e) {}
   
   // Navy separator
   pdf.setDrawColor(...navy);
-  pdf.setLineWidth(0.5);
-  pdf.line(margin + 32, footerTopY, pageWidth - margin, footerTopY);
+  pdf.setLineWidth(0.6);
+  pdf.line(margin + 34, footerTopY, pageWidth - margin, footerTopY);
   
-  const fcx = (margin + 32 + pageWidth - margin) / 2;
-  pdf.setFontSize(8.5);
+  const fcx = (margin + 34 + pageWidth - margin) / 2;
+  
+  pdf.setFontSize(9.5);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...navy);
-  pdf.text(biz.company_name || 'Lighthouse France SAS', fcx, footerTopY + 5, { align: 'center' });
+  pdf.text(biz.company_name || 'Lighthouse France SAS', fcx, footerTopY + 6, { align: 'center' });
   
   pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(7.5);
+  pdf.setFontSize(8);
   pdf.setTextColor(...darkGray);
   pdf.text(
     (biz.address || '16 rue Paul S\u00E9journ\u00E9') + ', ' + (biz.postal_code || '94000') + ' ' + (biz.city || 'CR\u00C9TEIL') + ' | T\u00E9l. ' + (biz.phone || '01 43 77 28 07'),
-    fcx, footerTopY + 10, { align: 'center' }
+    fcx, footerTopY + 12, { align: 'center' }
   );
+  pdf.setFontSize(8);
   pdf.text(
     'SIRET ' + (biz.siret || '50178134800013') + ' | TVA ' + (biz.tva || 'FR 86501781348') + ' | Capital ' + (biz.capital || '10 000') + ' \u20AC',
-    fcx, footerTopY + 15, { align: 'center' }
+    fcx, footerTopY + 18, { align: 'center' }
   );
-  pdf.setFontSize(7);
+  pdf.setFontSize(8);
   pdf.setTextColor(...medGray);
   pdf.text(
     (biz.email || 'France@golighthouse.com') + ' | ' + (biz.website || 'www.golighthouse.fr'),
-    fcx, footerTopY + 20, { align: 'center' }
+    fcx, footerTopY + 24, { align: 'center' }
   );
 
   return pdf.output('blob');
@@ -2678,6 +2689,7 @@ export default function AdminPortal() {
     bank_branch: '',
     iban: '',
     bic: '',
+    rib: '',
     payment_terms_days: 30,
     invoice_legal_text: ''
   });
@@ -17936,6 +17948,10 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
                   <label className="block text-sm font-medium text-gray-700 mb-1">IBAN</label>
                   <input type="text" value={tempSettings.iban || ''} onChange={e => setTempSettings({...tempSettings, iban: e.target.value})} placeholder="FR76 3000 3008 8800 0200 1313 327" className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono" />
                 </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">RIB (Code Banque / Guichet / Compte / Clé)</label>
+                  <input type="text" value={tempSettings.rib || ''} onChange={e => setTempSettings({...tempSettings, rib: e.target.value})} placeholder="30003 00888 00020013133 27" className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono" />
+                </div>
                 <div className="grid md:grid-cols-2 gap-4 mt-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">BIC / SWIFT</label>
@@ -18006,6 +18022,12 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
                       <div className="flex justify-between py-1">
                         <span className="text-gray-500">IBAN</span>
                         <span className="font-mono text-xs">{businessSettings.iban}</span>
+                      </div>
+                    )}
+                    {businessSettings.rib && (
+                      <div className="flex justify-between py-1">
+                        <span className="text-gray-500">RIB</span>
+                        <span className="font-mono text-xs">{businessSettings.rib}</span>
                       </div>
                     )}
                     {businessSettings.bic && (
