@@ -1328,7 +1328,7 @@ const generateServiceReportPDF = async (device, rma, technicianName, calType, re
 };
 
 // ============================================
-// INVOICE / FACTURE PDF GENERATION - v5
+// INVOICE / FACTURE PDF GENERATION - v6
 // ============================================
 const generateInvoicePDF = async (invoiceData, businessSettings) => {
   const jsPDF = await loadJsPDF();
@@ -1419,7 +1419,7 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   if (supplementBCNumber && supplementBCNumber !== bcNumber) addRefLine('BC Suppl. :', supplementBCNumber, false);
   if (clientRef) addRefLine('Vos r\u00E9f. :', clientRef, false);
   
-  // Client box
+  // Client box — clean border, no thick accent bar
   const clientBoxX = pageWidth / 2 + 8;
   const clientBoxW = pageWidth / 2 - margin - 8;
   const clientBoxH = 36;
@@ -1428,32 +1428,30 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   pdf.setDrawColor(...lightLine);
   pdf.setLineWidth(0.4);
   pdf.roundedRect(clientBoxX, blockY - 3, clientBoxW, clientBoxH, 2, 2, 'FD');
-  pdf.setFillColor(...navy);
-  pdf.rect(clientBoxX, blockY - 1, 2.5, clientBoxH - 4, 'F');
   
   pdf.setFontSize(7.5);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...medGray);
-  pdf.text('FACTURER \u00C0', clientBoxX + 7, blockY + 3);
+  pdf.text('FACTURER \u00C0', clientBoxX + 5, blockY + 3);
   
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...navy);
-  pdf.text(company?.name || 'Client', clientBoxX + 7, blockY + 10);
+  pdf.text(company?.name || 'Client', clientBoxX + 5, blockY + 10);
   
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...darkGray);
   let clientY = blockY + 16;
-  if (company?.attention) { pdf.text(company.attention, clientBoxX + 7, clientY); clientY += 4.5; }
-  if (company?.address) { pdf.text(company.address, clientBoxX + 7, clientY); clientY += 4.5; }
+  if (company?.attention) { pdf.text(company.attention, clientBoxX + 5, clientY); clientY += 4.5; }
+  if (company?.address) { pdf.text(company.address, clientBoxX + 5, clientY); clientY += 4.5; }
   const cityLine = [company?.postal_code, company?.city].filter(Boolean).join(' ');
-  if (cityLine) { pdf.text(cityLine, clientBoxX + 7, clientY); clientY += 4.5; }
-  if (company?.country && company.country !== 'France') { pdf.text(company.country.toUpperCase(), clientBoxX + 7, clientY); clientY += 4.5; }
+  if (cityLine) { pdf.text(cityLine, clientBoxX + 5, clientY); clientY += 4.5; }
+  if (company?.country && company.country !== 'France') { pdf.text(company.country.toUpperCase(), clientBoxX + 5, clientY); clientY += 4.5; }
   if (company?.tva_number) {
     pdf.setFontSize(8);
     pdf.setTextColor(...medGray);
-    pdf.text('TVA: ' + company.tva_number, clientBoxX + 7, clientY);
+    pdf.text('TVA: ' + company.tva_number, clientBoxX + 5, clientY);
   }
   
   y = Math.max(refY, blockY + clientBoxH) + 6;
@@ -1484,10 +1482,9 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
       y = margin + 10;
     }
     if (line.isDevice) {
-      pdf.setFillColor(235, 240, 250);
+      // Device sub-header — light bg, no vertical accent bar
+      pdf.setFillColor(240, 243, 250);
       pdf.rect(margin, y - 4, contentWidth, 7.5, 'F');
-      pdf.setFillColor(...navy);
-      pdf.rect(margin, y - 4, 2, 7.5, 'F');
       pdf.setFontSize(9);
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(...navy);
@@ -1567,13 +1564,6 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   pdf.text((totalTTC || 0).toFixed(2) + ' \u20AC', totalsValX - 3, y + 6, { align: 'right' });
   y += 16;
 
-  // ---- PAYMENT TERMS ----
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...darkGray);
-  pdf.text('Conditions de paiement : ' + (paymentTermsDays || 30) + ' jours date de facture, soit le ' + formatDateFull(dueDate), margin, y);
-  y += 6;
-
   // ---- PAYMENT REFERENCE DISCLAIMER ----
   pdf.setFillColor(245, 247, 252);
   pdf.setDrawColor(...navy);
@@ -1585,7 +1575,7 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   pdf.text('Merci de mentionner la r\u00E9f\u00E9rence ' + (invoiceNumber || 'FACTURE') + ' lors de votre r\u00E8glement.', margin + 4, y + 6.5);
   y += 14;
 
-  // ---- BANK DETAILS ----
+  // ---- BANK DETAILS (no vertical accent bar) ----
   if (biz.iban && biz.iban.trim()) {
     const hasRIB = biz.rib && biz.rib.trim();
     const bankH = (biz.bank_name ? 5 : 0) + (hasRIB ? 5 : 0) + 16;
@@ -1594,11 +1584,9 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
     pdf.setDrawColor(...lightLine);
     pdf.setLineWidth(0.3);
     pdf.roundedRect(margin, y - 2, contentWidth, bankH, 2, 2, 'FD');
-    pdf.setFillColor(...navy);
-    pdf.rect(margin, y, 2.5, bankH - 4, 'F');
     
-    let bkX = margin + 8;
-    let bkVX = margin + 42;
+    let bkX = margin + 5;
+    let bkVX = margin + 38;
     let bkY = y + 3;
     
     pdf.setFontSize(8.5);
@@ -1641,15 +1629,22 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
     y += bankH + 4;
   }
 
-  // ---- LEGAL TEXT ----
+  // ---- CONDITIONS DE PAIEMENT (now after bank details) ----
+  pdf.setFontSize(8.5);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...darkGray);
+  pdf.text('Conditions de paiement : ' + (paymentTermsDays || 30) + ' jours date de facture, soit le ' + formatDateFull(dueDate), margin, y);
+  y += 5;
+
+  // ---- LEGAL TEXT (same size as conditions, readable) ----
   const legalText = biz.invoice_legal_text ||
     "En application des articles L441-6 et L441-3 du Code de commerce, en cas de retard de r\u00E8glement : Indemnit\u00E9 forfaitaire pour frais de recouvrement de 40\u20AC \u2022 P\u00E9nalit\u00E9 de retard \u00E0 compter du 31\u00E8me jour au taux de 12% l'an. Aucun escompte ne sera accord\u00E9 en cas de paiement anticip\u00E9. Tous nos prix sont exprim\u00E9s en euro.";
-  pdf.setFontSize(7);
+  pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...medGray);
   pdf.text(pdf.splitTextToSize(legalText, contentWidth), margin, y);
 
-  // ---- FOOTER (large, readable) ----
+  // ---- FOOTER ----
   const footerTopY = pageHeight - 36;
   
   // CAPCERT logo
@@ -1661,7 +1656,6 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
     pdf.addImage(capcertImg, 'PNG', margin, footerTopY - 5, 30, 28);
   } catch(e) {}
   
-  // Navy separator
   pdf.setDrawColor(...navy);
   pdf.setLineWidth(0.6);
   pdf.line(margin + 34, footerTopY, pageWidth - margin, footerTopY);
