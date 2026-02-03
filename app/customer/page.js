@@ -7980,7 +7980,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
     return events;
   };
 
-  const displayHistory = history.length > 0 ? history : getStatusHistory();
+  const displayHistory = getStatusHistory();
 
   return (
     <div>
