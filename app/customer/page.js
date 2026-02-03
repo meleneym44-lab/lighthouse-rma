@@ -37,7 +37,7 @@ const isFranceMetropolitan = (postalCode) => {
 // Returns true if address is OUTSIDE France Metropolitan (needs warning)
 const isOutsideFranceMetropolitan = (postalCode) => {
   return !isFranceMetropolitan(postalCode);
-}; 
+};
 
 // ============================================
 // SERIAL NUMBER DECODER - LIGHTHOUSE PRODUCTS
