@@ -10604,6 +10604,7 @@ const LIGHTHOUSE_OFFICES = {
     city: 'Bowen Leeuwen',
     postal_code: '6657 KD',
     country: 'Nederland',
+    country_code: 'NL',
     phone: '+31 79 362 9060'
   },
   usa: {
@@ -10612,29 +10613,36 @@ const LIGHTHOUSE_OFFICES = {
     attention: '',
     address_line1: '3 Terri Lane, Suite 10',
     city: 'White City',
-    postal_code: 'OR 97503',
+    state: 'OR',
+    postal_code: '97503',
     country: 'United States',
+    country_code: 'US',
     phone: '+1 (541) 770-5020'
   }
 };
 
 function InternalShippingModal({ rma, devices, onClose, notify, reload, profile, businessSettings }) {
+  // Steps: 1=Config, 2=UPS Label Created + BL Preview, 3=Saved
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [selectedDeviceIds, setSelectedDeviceIds] = useState(new Set());
   const [destination, setDestination] = useState('hollande');
-  const [deviceServices, setDeviceServices] = useState({}); // { deviceId: 'calibration' | 'repair' }
+  const [deviceServices, setDeviceServices] = useState({});
   const [notes, setNotes] = useState('');
-  const [trackingNumber, setTrackingNumber] = useState('');
-  const [parcels, setParcels] = useState('1');
+  const [parcels, setParcels] = useState(1);
   const [weight, setWeight] = useState('5');
   const [generatedBL, setGeneratedBL] = useState(null);
+  
+  // UPS API state
+  const [upsLoading, setUpsLoading] = useState(false);
+  const [upsLabel, setUpsLabel] = useState(null); // base64 PDF label data
+  const [trackingNumber, setTrackingNumber] = useState('');
 
   const biz = businessSettings || {};
   const destOffice = LIGHTHOUSE_OFFICES[destination];
   const employeeName = profile?.full_name || 'Lighthouse France';
 
-  // Initialize all devices with calibration as default
+  // Initialize all devices with calibration default
   useEffect(() => {
     const defaults = {};
     devices.forEach(d => { defaults[d.id] = 'calibration'; });
@@ -10663,7 +10671,88 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
 
   const selectedDevices = devices.filter(d => selectedDeviceIds.has(d.id));
 
-  // Save internal shipment
+  // ===== Step 1 → 2: Create UPS Label via API =====
+  const createUPSLabel = async () => {
+    if (selectedDeviceIds.size === 0) {
+      notify('Please select at least one device', 'error');
+      return;
+    }
+    
+    setUpsLoading(true);
+    try {
+      const addr = destOffice;
+      
+      // Build packages
+      const packagesList = [];
+      for (let p = 0; p < (parcels || 1); p++) {
+        packagesList.push({
+          weight: parseFloat(weight) || 5,
+          length: 40,
+          width: 30,
+          height: 30,
+          description: `RMA ${rma.request_number} - Internal Transfer - Colis ${p + 1}/${parcels || 1}`
+        });
+      }
+      
+      // Call UPS Edge Function
+      const { data, error } = await supabase.functions.invoke('ups-shipping', {
+        body: {
+          action: 'create_shipment',
+          shipTo: {
+            name: addr.attention || addr.company_name,
+            company: addr.company_name,
+            attentionName: addr.attention || addr.company_name,
+            phone: addr.phone || '0000000000',
+            addressLine1: addr.address_line1 || '',
+            city: addr.city || '',
+            stateProvinceCode: addr.state || '',
+            postalCode: addr.postal_code || '',
+            countryCode: addr.country_code || 'FR'
+          },
+          packages: packagesList,
+          serviceCode: '11', // UPS Standard
+          description: `RMA ${rma.request_number} - Internal Transfer to ${destination === 'hollande' ? 'NL' : 'US'}`,
+          isReturn: false
+        }
+      });
+      
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error || 'UPS API error');
+      
+      // Store label data
+      const labelData = data.packages?.[0]?.labelData || null;
+      setUpsLabel(labelData);
+      setTrackingNumber(data.trackingNumber || '');
+      
+      notify(`✅ UPS label created: ${data.trackingNumber}`);
+      setStep(2);
+    } catch (err) {
+      console.error('UPS Label creation error:', err);
+      notify('❌ UPS Error: ' + (err.message || 'Unknown error'), 'error');
+    }
+    setUpsLoading(false);
+  };
+
+  // Print/view real UPS label
+  const printUPSLabel = () => {
+    if (upsLabel) {
+      try {
+        const byteCharacters = atob(upsLabel);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+      } catch (e) {
+        console.error('Error opening label:', e);
+      }
+    }
+  };
+
+  // ===== Step 2 → 3: Save BL + UPS label as internal docs =====
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -10713,22 +10802,22 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
         console.error('Internal BL PDF error:', e);
       }
 
-      // Generate UPS label PDF (same as regular shipping)
+      // Save real UPS label PDF
       let upsLabelUrl = null;
-      if (trackingNumber) {
+      if (upsLabel && trackingNumber) {
         try {
-          const shipment = {
-            trackingNumber,
-            parcels: parseInt(parcels) || 1,
-            weight: weight || '5',
-            address: destOffice
-          };
-          const upsPdfBlob = await generateUPSLabelPDF(rma, shipment);
+          const byteCharacters = atob(upsLabel);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let j = 0; j < byteCharacters.length; j++) {
+            byteNumbers[j] = byteCharacters.charCodeAt(j);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const upsPdfBlob = new Blob([byteArray], { type: 'application/pdf' });
           const safeTracking = trackingNumber.replace(/[^a-zA-Z0-9-_]/g, '');
           const upsFileName = `${destLabel}_UPS_${safeTracking}_${Date.now()}.pdf`;
           upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
         } catch (e) {
-          console.error('Internal UPS label error:', e);
+          console.error('Internal UPS label save error:', e);
         }
       }
 
@@ -10756,17 +10845,12 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
 
       setGeneratedBL({ blNumber, blUrl, upsLabelUrl, destLabel, trackingNumber });
       setStep(3);
-      notify(`Expédition inter-site vers ${destLabel} enregistrée!`);
+      notify(`Internal shipment to ${destLabel} saved!`);
     } catch (err) {
-      console.error('Internal shipping error:', err);
-      notify('Erreur lors de l\'enregistrement');
+      console.error('Internal shipping save error:', err);
+      notify('Error saving shipment');
     }
     setSaving(false);
-  };
-
-  const getEnglishDate = () => {
-    const d = new Date();
-    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   };
 
   const getFrenchDateShort = () => {
@@ -10784,14 +10868,14 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
                 🌍 Internal Shipment — Inter-Site Transfer
               </h2>
-              <p className="text-indigo-200 text-sm">RMA: {rma.request_number} • Documents saved internally only</p>
+              <p className="text-indigo-200 text-sm">RMA: {rma.request_number} • Internal documents only</p>
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1">
                 {[1, 2, 3].map(s => (
                   <div key={s} className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
                     s < step ? 'bg-white text-indigo-600' : s === step ? 'bg-white/30 text-white ring-2 ring-white' : 'bg-white/10 text-white/50'
-                  }`}>{s}</div>
+                  }`}>{s < step ? '✓' : s}</div>
                 ))}
               </div>
               <button onClick={onClose} className="text-white/70 hover:text-white text-2xl leading-none">×</button>
@@ -10801,10 +10885,10 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* Step 1: Select devices, destination, per-device service, shipping info */}
+          {/* ===== STEP 1: Configuration ===== */}
           {step === 1 && (
             <div className="space-y-6">
-              {/* Destination selection */}
+              {/* Destination */}
               <div>
                 <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">📍 Destination</h3>
                 <div className="grid grid-cols-2 gap-3">
@@ -10859,9 +10943,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                                 ? 'bg-blue-500 text-white shadow-sm' 
                                 : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                             }`}
-                          >
-                            🔬 Calibration
-                          </button>
+                          >🔬 Calibration</button>
                           <button
                             onClick={() => setDeviceService(d.id, 'repair')}
                             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -10869,9 +10951,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                                 ? 'bg-orange-500 text-white shadow-sm' 
                                 : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                             }`}
-                          >
-                            🔧 Repair
-                          </button>
+                          >🔧 Repair</button>
                         </div>
                       )}
                     </div>
@@ -10879,38 +10959,17 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                 </div>
               </div>
 
-              {/* Shipping info */}
+              {/* Shipping details */}
               <div>
-                <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">🚚 Shipping Details</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-600 mb-1">UPS Tracking Number</label>
-                    <input
-                      type="text"
-                      value={trackingNumber}
-                      onChange={(e) => setTrackingNumber(e.target.value)}
-                      placeholder="1Z..."
-                      className="w-full px-3 py-2 border rounded-lg text-sm"
-                    />
-                  </div>
+                <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">🚚 Shipping</h3>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Parcels</label>
-                    <input
-                      type="number"
-                      value={parcels}
-                      onChange={(e) => setParcels(e.target.value)}
-                      min="1"
-                      className="w-full px-3 py-2 border rounded-lg text-sm"
-                    />
+                    <input type="number" value={parcels} onChange={(e) => setParcels(parseInt(e.target.value) || 1)} min="1" className="w-full px-3 py-2 border rounded-lg text-sm" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-600 mb-1">Weight (kg)</label>
-                    <input
-                      type="text"
-                      value={weight}
-                      onChange={(e) => setWeight(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-lg text-sm"
-                    />
+                    <label className="block text-sm font-medium text-gray-600 mb-1">Weight per parcel (kg)</label>
+                    <input type="text" value={weight} onChange={(e) => setWeight(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
                   </div>
                 </div>
               </div>
@@ -10921,7 +10980,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="e.g. Please calibrate per ISO 21501-4. Return to Lighthouse France when complete. Customer deadline: March 15..."
+                  placeholder="e.g. Please calibrate per ISO 21501-4. Return to Lighthouse France when complete..."
                   rows={4}
                   className="w-full px-3 py-2 border rounded-lg text-sm"
                 />
@@ -10929,10 +10988,31 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
             </div>
           )}
 
-          {/* Step 2: BL Preview (English) + UPS Label Preview */}
+          {/* ===== STEP 2: UPS Label Created + BL Preview ===== */}
           {step === 2 && (
             <div className="space-y-6">
-              <h3 className="font-bold text-gray-800 mb-1">📄 Delivery Note Preview</h3>
+              {/* UPS Label section */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-gray-800">🏷️ UPS Label — {trackingNumber}</h3>
+                  {upsLabel && (
+                    <button onClick={printUPSLabel} className="px-4 py-2 bg-[#351C15] text-white rounded-lg text-sm font-medium hover:bg-[#4a2a20] flex items-center gap-2">
+                      🖨️ Print / View Label
+                    </button>
+                  )}
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-4">
+                  <div className="text-3xl">📦</div>
+                  <div>
+                    <p className="font-bold text-amber-900">UPS Shipping Label Created</p>
+                    <p className="text-amber-700 font-mono text-sm">{trackingNumber}</p>
+                    <p className="text-amber-600 text-xs mt-1">{parcels} parcel(s) • {weight} kg each • To: {destOffice.company_name}, {destOffice.city}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* BL Preview */}
+              <h3 className="font-bold text-gray-800">📄 Delivery Note Preview</h3>
               <div className="border rounded-xl overflow-hidden bg-white shadow-sm">
                 <div id="internal-bl-preview" style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', height: '297mm', position: 'relative', overflow: 'hidden' }}>
                   {/* Watermark */}
@@ -10950,7 +11030,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                       </div>
                     </div>
 
-                    {/* To address block (matching the BL image layout) */}
+                    {/* To address block (right aligned like the original BL) */}
                     <div style={{ margin: '20px 0 15px', display: 'flex', justifyContent: 'flex-end' }}>
                       <div style={{ textAlign: 'left', minWidth: '250px' }}>
                         <div style={{ fontSize: '11pt', fontWeight: 'bold' }}>{destOffice.company_name}</div>
@@ -10961,8 +11041,8 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                       </div>
                     </div>
 
-                    {/* Date + BL Number row */}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', margin: '10px 0' }}>
+                    {/* Date + BLN° */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '10px 0' }}>
                       <div style={{ fontSize: '10pt', color: '#666' }}>{biz.city || 'Créteil'}, le <strong>{getFrenchDateShort()}</strong></div>
                     </div>
 
@@ -10971,7 +11051,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                       <span data-bl-number="true" style={{ fontSize: '14pt', fontWeight: 'bold', border: '1px solid #333', padding: '4px 12px', fontFamily: 'monospace' }}>{destination === 'hollande' ? 'Hollande' : 'USA'} BL-XXXX-XXX</span>
                     </div>
 
-                    {/* Vos ref / Date de cde / N°cpte client */}
+                    {/* Ref row */}
                     <div style={{ margin: '10px 0', borderTop: '1px solid #999', borderBottom: '1px solid #999', padding: '6px 0' }}>
                       <div style={{ display: 'flex', gap: '20px', fontSize: '10pt' }}>
                         <div><span style={{ color: '#666' }}>Vos ref :</span> <strong>{destOffice.attention || '—'}</strong></div>
@@ -10980,13 +11060,13 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                       </div>
                     </div>
 
-                    {/* Devices table with per-device service */}
+                    {/* Devices table */}
                     <table style={{ width: '100%', borderCollapse: 'collapse', margin: '15px 0' }}>
                       <thead>
                         <tr style={{ background: 'rgba(51,51,51,0.35)' }}>
                           <th style={{ color: '#333', padding: '8px 10px', textAlign: 'left', fontSize: '9pt', width: '40px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>Qty</th>
                           <th style={{ color: '#333', padding: '8px 10px', textAlign: 'left', fontSize: '9pt', fontWeight: 'bold', borderBottom: '2px solid #333' }}>Description</th>
-                          <th style={{ color: '#333', padding: '8px 10px', textAlign: 'left', fontSize: '9pt', width: '120px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>Serial Number</th>
+                          <th style={{ color: '#333', padding: '8px 10px', textAlign: 'left', fontSize: '9pt', width: '120px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>SN</th>
                           <th style={{ color: '#333', padding: '8px 10px', textAlign: 'center', fontSize: '9pt', width: '90px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>Calibration</th>
                           <th style={{ color: '#333', padding: '8px 10px', textAlign: 'center', fontSize: '9pt', width: '80px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>Repair</th>
                         </tr>
@@ -11048,45 +11128,10 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                   </div>
                 </div>
               </div>
-
-              {/* UPS Label Preview */}
-              {trackingNumber && (
-                <div>
-                  <h3 className="font-bold text-gray-800 mb-3">🏷️ UPS Label Preview</h3>
-                  <div className="border rounded-xl overflow-hidden bg-white shadow-sm max-w-md mx-auto">
-                    <div style={{ fontFamily: 'Arial, sans-serif', padding: '20px' }}>
-                      <div style={{ border: '3px solid #351C15', padding: '20px' }}>
-                        <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#351C15', textAlign: 'center' }}>UPS</div>
-                        <div style={{ fontSize: '18px', fontFamily: 'monospace', textAlign: 'center', margin: '15px 0', padding: '10px', background: '#f5f5f5' }}>{trackingNumber}</div>
-                        <div style={{ margin: '15px 0', padding: '15px', border: '1px solid #ddd' }}>
-                          <div style={{ fontSize: '11px', color: '#666', textTransform: 'uppercase' }}>TO / DESTINATAIRE:</div>
-                          <div style={{ fontWeight: 'bold', fontSize: '14px', marginTop: '4px' }}>{destOffice.company_name}</div>
-                          {destOffice.attention && <div>Attn: {destOffice.attention}</div>}
-                          <div>{destOffice.address_line1}</div>
-                          <div>{destOffice.postal_code} {destOffice.city}</div>
-                          <div>{destOffice.country}</div>
-                        </div>
-                        <div style={{ margin: '15px 0', padding: '15px', border: '1px solid #ddd' }}>
-                          <div style={{ fontSize: '11px', color: '#666', textTransform: 'uppercase' }}>FROM / EXPÉDITEUR:</div>
-                          <div style={{ fontWeight: 'bold', fontSize: '14px', marginTop: '4px' }}>LIGHTHOUSE FRANCE</div>
-                          <div>{biz.address || '16 rue Paul Séjourné'}</div>
-                          <div>{biz.postal_code || '94000'} {biz.city || 'Créteil'}, France</div>
-                        </div>
-                        <div style={{ textAlign: 'center', fontSize: '20px', fontWeight: 'bold', marginTop: '15px' }}>
-                          {parcels} COLIS — {weight} KG
-                        </div>
-                        <div style={{ textAlign: 'center', color: '#666', marginTop: '5px' }}>
-                          {rma.request_number} • Internal Transfer
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
-          {/* Step 3: Complete */}
+          {/* ===== STEP 3: Saved ===== */}
           {step === 3 && generatedBL && (
             <div className="text-center py-8">
               <div className="text-6xl mb-4">✅</div>
@@ -11103,11 +11148,12 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                 {generatedBL.trackingNumber && (
                   <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
                     <span className="font-mono font-medium text-sm">🏷️ UPS {generatedBL.destLabel} {generatedBL.trackingNumber}</span>
-                    {generatedBL.upsLabelUrl ? (
-                      <a href={generatedBL.upsLabelUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm">View Label</a>
-                    ) : (
-                      <a href={`https://www.ups.com/track?tracknum=${generatedBL.trackingNumber}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm">Track</a>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {generatedBL.upsLabelUrl && (
+                        <a href={generatedBL.upsLabelUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm">View Label</a>
+                      )}
+                      <a href={`https://www.ups.com/track?tracknum=${generatedBL.trackingNumber}`} target="_blank" rel="noopener noreferrer" className="text-amber-600 hover:underline text-sm">Track</a>
+                    </div>
                   </div>
                 )}
               </div>
@@ -11115,17 +11161,21 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer buttons */}
         <div className="px-6 py-4 border-t bg-gray-50 flex justify-between rounded-b-2xl">
           {step === 1 && (
             <>
               <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Cancel</button>
               <button 
-                onClick={() => setStep(2)} 
-                disabled={selectedDeviceIds.size === 0}
-                className="px-6 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium disabled:opacity-50"
+                onClick={createUPSLabel} 
+                disabled={selectedDeviceIds.size === 0 || upsLoading}
+                className="px-6 py-2 bg-[#351C15] hover:bg-[#4a2a20] text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
               >
-                Preview Documents →
+                {upsLoading ? (
+                  <><span className="animate-spin">⏳</span> Creating UPS Label...</>
+                ) : (
+                  <>🏷️ Create UPS Label & Continue →</>
+                )}
               </button>
             </>
           )}
@@ -11137,7 +11187,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                 disabled={saving}
                 className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50"
               >
-                {saving ? '⏳ Saving...' : '💾 Save & Generate Documents'}
+                {saving ? '⏳ Saving...' : '💾 Save Internal Shipment'}
               </button>
             </>
           )}
