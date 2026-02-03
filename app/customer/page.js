@@ -1,4 +1,5 @@
 'use client';
+// CUSTOMER PORTAL v56 - 2026-02-03 16:30
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { supabase } from '@/lib/supabase';
 
