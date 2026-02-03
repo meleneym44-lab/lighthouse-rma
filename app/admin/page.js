@@ -6503,7 +6503,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Avenant_${rma.request_number}_${Date.now()}.pdf`;
+      a.download = `Supplement_${rma.supplement_number || rma.request_number}_${Date.now()}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
       notify('📥 PDF téléchargé!');
@@ -6571,7 +6571,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
       // 4. Save as attachment for the RMA
       await supabase.from('request_attachments').insert({
         request_id: rma.id,
-        file_name: `Avenant_${rma.request_number}.pdf`,
+        file_name: `Supplément_${supNumber || rma.request_number}.pdf`,
         file_url: avenantQuoteUrl,
         file_type: 'application/pdf',
         category: 'avenant_quote',
