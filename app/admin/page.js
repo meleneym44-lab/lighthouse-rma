@@ -9827,26 +9827,37 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
         }
       }
       
-      // Generate BL PDF using programmatic jsPDF generator (not html2canvas)
+      // Generate BL PDF by capturing the visible preview element
       try {
-        const shipmentForPdf = {
-          address: shippingAddress,
-          carrier: 'UPS',
-          trackingNumber: trackingNumber,
-          parcels: parcels,
-          weight: weight
-        };
-        const partsForPdf = selectedParts.filter(p => p.selected).map(p => ({
-          part_number: p.part_number,
-          description: p.description || p.part_number,
-          quantity: p.quantity || 1
-        }));
+        // Load html2canvas if not already loaded
+        if (!window.html2canvas) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+        }
         
-        const blPdfBlob = await generatePartsBLPDF(order, partsForPdf, shipmentForPdf, blNumber, businessSettings);
-        const safeBLNumber = blNumber.replace(/[^a-zA-Z0-9-_]/g, '');
-        const blFileName = `${order.request_number}_BL_${safeBLNumber}_${Date.now()}.pdf`;
-        blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${order.request_number}`, blFileName);
-        console.log('BL uploaded:', blUrl);
+        // Capture the visible BL preview element
+        const element = document.getElementById('bl-preview-parts');
+        if (element) {
+          const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+          const jsPDF = await loadJsPDF();
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          const imgData = canvas.toDataURL('image/jpeg', 0.95);
+          // Always stretch to full A4
+          pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+          
+          const blPdfBlob = pdf.output('blob');
+          const safeBLNumber = blNumber.replace(/[^a-zA-Z0-9-_]/g, '');
+          const blFileName = `${order.request_number}_BL_${safeBLNumber}_${Date.now()}.pdf`;
+          blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${order.request_number}`, blFileName);
+          console.log('BL uploaded:', blUrl);
+        } else {
+          console.error('BL preview element not found');
+        }
       } catch (err) {
         console.error('Error saving BL:', err);
       }
@@ -10804,28 +10815,35 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
         
         blData.push(bl);
         
-        // Generate BL PDF using programmatic jsPDF generator (not html2canvas)
+        // Generate BL PDF by capturing the visible preview element
         let blUrl = null;
         try {
-          // Build shipment object matching generateBLPDF expectations
-          const shipmentForPdf = {
-            address: s.address,
-            carrier: 'UPS',
-            trackingNumber: s.trackingNumber,
-            parcels: s.parcels,
-            weight: s.weight
-          };
-          // Build devices array matching generateBLPDF expectations
-          const devicesForPdf = s.devices.map(d => ({
-            model_name: d.model_name,
-            serial_number: d.serial_number,
-            calibration_type: d.calibration_type || d.device_type || 'Étalonnage'
-          }));
+          // Load html2canvas if needed
+          if (!window.html2canvas) {
+            await new Promise((resolve, reject) => {
+              const script = document.createElement('script');
+              script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+              script.onload = resolve;
+              script.onerror = reject;
+              document.head.appendChild(script);
+            });
+          }
           
-          const blPdfBlob = await generateBLPDF(rma, devicesForPdf, shipmentForPdf, blNumber, businessSettings, bcList);
-          const safeBLNumber = (bl.blNumber || 'BL').replace(/[^a-zA-Z0-9-_]/g, '');
-          const blFileName = `${rma.request_number}_BL_${safeBLNumber}_${Date.now()}.pdf`;
-          blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${rma.request_number}`, blFileName);
+          // Capture the visible BL preview element
+          const element = document.getElementById(`bl-preview-${i}`);
+          if (element) {
+            const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+            const jsPDF = await loadJsPDF();
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const imgData = canvas.toDataURL('image/jpeg', 0.95);
+            // Always stretch to full A4
+            pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+            
+            const blPdfBlob = pdf.output('blob');
+            const safeBLNumber = (bl.blNumber || 'BL').replace(/[^a-zA-Z0-9-_]/g, '');
+            const blFileName = `${rma.request_number}_BL_${safeBLNumber}_${Date.now()}.pdf`;
+            blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${rma.request_number}`, blFileName);
+          }
         } catch (pdfErr) {
           console.error('BL PDF generation error:', pdfErr);
         }
