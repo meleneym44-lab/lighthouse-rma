@@ -1635,21 +1635,6 @@ const generatePartsBLPDF = async (order, parts, shipment, blNumber, businessSett
     pdf.text(`SIRET ${biz.siret || '50178134800013'} | TVA FR ${biz.tva || '86501781348'}`, infoX, infoStartY + 10, { align: 'center' });
     pdf.text(`${biz.email || 'France@golighthouse.com'} | ${biz.website || 'www.golighthouse.fr'}`, infoX, infoStartY + 15, { align: 'center' });
   };
-    const infoX = pageWidth / 2;
-    const infoStartY = footerTopY + 8;
-    
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...darkBlue);
-    pdf.text(`${biz.company_name || 'Lighthouse France SAS'} au capital de ${biz.capital || '10 000'} €`, infoX, infoStartY, { align: 'center' });
-    
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...gray);
-    pdf.text(`${biz.address || '16 rue Paul Séjourné'}, ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} | Tél. ${biz.phone || '01 43 77 28 07'}`, infoX, infoStartY + 5, { align: 'center' });
-    pdf.text(`SIRET ${biz.siret || '50178134800013'} | TVA FR ${biz.tva || '86501781348'}`, infoX, infoStartY + 10, { align: 'center' });
-    pdf.text(`${biz.email || 'France@golighthouse.com'} | ${biz.website || 'www.golighthouse.fr'}`, infoX, infoStartY + 15, { align: 'center' });
-  };
 
   // ===== HEADER =====
   if (lighthouseLogo) {
