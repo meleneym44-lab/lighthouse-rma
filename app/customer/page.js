@@ -7915,29 +7915,69 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
     setSending(false);
   };
 
-  // Generate history from status if no history in DB
+  // Generate history from timestamps on request and devices
   const getStatusHistory = () => {
-    const statusHistory = [];
+    const events = [];
+    const devices = request.request_devices || [];
     
-    // Always add submission
-    statusHistory.push({
-      id: 'submitted',
-      event_type: 'submitted',
-      event_description: 'Demande soumise',
-      event_date: request.submitted_at || request.created_at
-    });
+    // RMA-level events
+    events.push({ id: 'submitted', event_type: 'submitted', event_description: '📝 Demande soumise', event_date: request.submitted_at || request.created_at, color: 'gray' });
     
-    // Add current status if different from submitted
-    if (request.status !== 'submitted') {
-      statusHistory.push({
-        id: 'current',
-        event_type: request.status,
-        event_description: style.label,
-        event_date: request.updated_at || request.created_at
-      });
+    if (request.request_number) {
+      events.push({ id: 'rma', event_type: 'rma_created', event_description: '📋 RMA créé', event_date: request.created_at, color: 'blue' });
+    }
+    if (request.quote_sent_at) {
+      events.push({ id: 'quote', event_type: 'quote_sent', event_description: '💰 Devis envoyé', event_date: request.quote_sent_at, color: 'amber' });
+    }
+    if (request.quote_approved_at) {
+      events.push({ id: 'approved', event_type: 'approved', event_description: '✅ Devis approuvé', event_date: request.quote_approved_at, color: 'green' });
+    }
+    if (request.bc_submitted_at) {
+      events.push({ id: 'bc', event_type: 'bc_submitted', event_description: '📄 Bon de commande soumis', event_date: request.bc_submitted_at, color: 'purple' });
+    }
+    if (request.bc_approved_at) {
+      events.push({ id: 'bc_ok', event_type: 'bc_approved', event_description: '✅ BC approuvé — En attente appareil', event_date: request.bc_approved_at, color: 'green' });
+    }
+    if (request.received_at) {
+      events.push({ id: 'received', event_type: 'received', event_description: '📦 Appareil reçu', event_date: request.received_at, color: 'cyan' });
     }
     
-    return statusHistory;
+    // Per-device events
+    devices.forEach((device, idx) => {
+      const sn = device.serial_number || `Appareil ${idx + 1}`;
+      const prefix = devices.length > 1 ? `[${sn}] ` : '';
+      
+      if (device.service_started_at) {
+        const svcLabel = device.service_type === 'repair' ? 'Réparation démarrée' : 'Étalonnage démarré';
+        events.push({ id: `svc-${idx}`, event_type: 'service_started', event_description: `🔧 ${prefix}${svcLabel}`, event_date: device.service_started_at, color: 'indigo' });
+      }
+      if (device.report_completed_at) {
+        events.push({ id: `rpt-${idx}`, event_type: 'report_done', event_description: `📋 ${prefix}Rapport complété`, event_date: device.report_completed_at, color: 'blue' });
+      }
+      if (device.qc_completed_at) {
+        events.push({ id: `qc-${idx}`, event_type: 'qc_passed', event_description: `✅ ${prefix}Contrôle qualité validé`, event_date: device.qc_completed_at, color: 'purple' });
+      }
+      if (device.shipped_at) {
+        events.push({ id: `ship-${idx}`, event_type: 'shipped', event_description: `🚚 ${prefix}Expédié`, event_date: device.shipped_at, color: 'green' });
+      }
+    });
+    
+    // Supplement events
+    if (request.avenant_sent_at) {
+      events.push({ id: 'sup', event_type: 'supplement_sent', event_description: '📄 Supplément envoyé', event_date: request.avenant_sent_at, color: 'amber' });
+    }
+    if (request.avenant_approved_at) {
+      events.push({ id: 'sup_ok', event_type: 'supplement_approved', event_description: '✅ Supplément approuvé', event_date: request.avenant_approved_at, color: 'green' });
+    }
+    
+    // If no specific events beyond submission, add current status
+    if (events.length <= 1 && request.status !== 'submitted') {
+      events.push({ id: 'current', event_type: request.status, event_description: `◆ ${style.label}`, event_date: request.updated_at || request.created_at, color: 'blue' });
+    }
+    
+    // Sort by date
+    events.sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
+    return events;
   };
 
   const displayHistory = history.length > 0 ? history : getStatusHistory();
@@ -9740,22 +9780,27 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               ) : (
                 <div className="relative">
                   <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
-                  <div className="space-y-6">
+                  <div className="space-y-4">
                     {displayHistory.map((event, i) => {
-                      const eventStyle = STATUS_STYLES[event.event_type] || {};
+                      const dotColor = {
+                        green: 'bg-green-500',
+                        blue: 'bg-blue-500',
+                        indigo: 'bg-indigo-500',
+                        purple: 'bg-purple-500',
+                        cyan: 'bg-cyan-500',
+                        amber: 'bg-amber-500',
+                        red: 'bg-red-500',
+                        gray: 'bg-gray-400'
+                      }[event.color] || 'bg-gray-400';
                       return (
-                        <div key={event.id || i} className="flex gap-4 ml-4">
-                          <div className={`w-3 h-3 rounded-full border-2 border-white shadow -ml-[7px] mt-1.5 z-10 ${
-                            i === 0 ? 'bg-[#3B7AB4]' : 'bg-gray-400'
-                          }`}></div>
-                          <div className="flex-1 pb-4">
-                            <div className="flex items-center gap-2">
-                              {eventStyle.icon && <span>{eventStyle.icon}</span>}
-                              <p className="font-medium text-[#1E3A5F]">{event.event_description}</p>
-                            </div>
+                        <div key={event.id || i} className="relative pl-10">
+                          <div className={`absolute left-2 w-5 h-5 rounded-full border-2 border-white shadow z-10 ${dotColor}`}></div>
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <p className="font-medium text-gray-800">{event.event_description}</p>
                             <p className="text-sm text-gray-500">
-                              {new Date(event.event_date).toLocaleString('fr-FR', {
-                                day: '2-digit',
+                              {new Date(event.event_date).toLocaleDateString('fr-FR', {
+                                weekday: 'long',
+                                day: 'numeric',
                                 month: 'long',
                                 year: 'numeric',
                                 hour: '2-digit',
