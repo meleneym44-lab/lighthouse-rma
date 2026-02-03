@@ -10847,16 +10847,19 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
       setGeneratedBL({ blNumber, blUrl, upsLabelUrl, destLabel, trackingNumber });
       setStep(3);
       notify(`Internal shipment to ${destLabel} saved!`);
+      // Refresh parent so docs appear in Documents tab
+      if (reload) reload();
     } catch (err) {
       console.error('Internal shipping save error:', err);
-      notify('Error saving shipment');
+      notify('Error saving shipment: ' + (err.message || 'Unknown error'));
     }
     setSaving(false);
   };
 
   const getFrenchDateShort = () => {
     const d = new Date();
-    return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
+    const months = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
   };
 
   return (
