@@ -1328,7 +1328,7 @@ const generateServiceReportPDF = async (device, rma, technicianName, calType, re
 };
 
 // ============================================
-// INVOICE / FACTURE PDF GENERATION - v3
+// INVOICE / FACTURE PDF GENERATION - v4
 // ============================================
 const generateInvoicePDF = async (invoiceData, businessSettings) => {
   const jsPDF = await loadJsPDF();
@@ -1336,15 +1336,13 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   const biz = businessSettings || {};
   const pageWidth = 210;
   const pageHeight = 297;
-  const margin = 18;
+  const margin = 15;
   const contentWidth = pageWidth - margin * 2;
   
-  // Design palette — no green, clean navy + grays
   const navy = [30, 58, 95];
   const darkGray = [51, 51, 51];
   const medGray = [130, 130, 130];
   const lightLine = [210, 215, 220];
-  const tableBg = [247, 249, 252];
   
   const {
     invoiceNumber, invoiceDate, dueDate,
@@ -1354,83 +1352,35 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
     isExonerated, paymentTermsDays, notes
   } = invoiceData;
 
-  const frenchMonths = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  const frenchMonths = ['janvier', 'f\u00E9vrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'ao\u00FBt', 'septembre', 'octobre', 'novembre', 'd\u00E9cembre'];
   const formatDateFull = (dateStr) => {
     if (!dateStr) return '\u2014';
     const d = new Date(dateStr);
     return d.getDate() + ' ' + frenchMonths[d.getMonth()] + ' ' + d.getFullYear();
   };
 
-  // ---- WATERMARK (draw very light square logo in center) ----
-  const addWatermark = () => {
-    try {
-      const gs = new pdf.GState({ opacity: 0.07 });
-      pdf.saveGraphicsState();
-      pdf.setGState(gs);
-      // Draw a light square/circle as fallback watermark
-      pdf.setFillColor(30, 58, 95);
-      // Large L shape as brand mark
-      const cx = pageWidth / 2;
-      const cy = pageHeight / 2 - 15;
-      const sz = 50;
-      pdf.setFontSize(120);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(30, 58, 95);
-      pdf.text('L', cx - 18, cy + 20);
-      pdf.restoreGraphicsState();
-    } catch(e) {
-      // GState not supported, skip
-    }
-  };
-  
-  // Try image-based watermark first
-  let watermarkImg = null;
-  try {
-    watermarkImg = new Image();
-    watermarkImg.crossOrigin = 'anonymous';
-    watermarkImg.src = '/images/logos/lighthouse-square.png';
-    await new Promise((res, rej) => { watermarkImg.onload = res; watermarkImg.onerror = rej; setTimeout(rej, 2000); });
-  } catch(e) {
-    watermarkImg = null;
-  }
-  
-  if (watermarkImg) {
-    try {
-      const gs = new pdf.GState({ opacity: 0.07 });
-      pdf.saveGraphicsState();
-      pdf.setGState(gs);
-      const wmSize = 130;
-      pdf.addImage(watermarkImg, 'PNG', (pageWidth - wmSize) / 2, (pageHeight - wmSize) / 2 - 15, wmSize, wmSize);
-      pdf.restoreGraphicsState();
-    } catch(e) {
-      addWatermark();
-    }
-  } else {
-    addWatermark();
-  }
+  // No watermark
 
-  let y = margin;
-
-  // ---- LOGO (top left — wide but not too tall) ----
+  // ---- LOGO (top left, tight to corner) ----
+  let y = 10;
   try {
     const logoImg = new Image();
     logoImg.crossOrigin = 'anonymous';
     logoImg.src = '/images/logos/lighthouse-logo.png';
     await new Promise((res, rej) => { logoImg.onload = res; logoImg.onerror = rej; setTimeout(rej, 2000); });
-    // Wide but flatter: 68mm wide, 15mm tall
-    pdf.addImage(logoImg, 'PNG', margin, y, 68, 15);
+    pdf.addImage(logoImg, 'PNG', 10, 8, 68, 15);
   } catch(e) {
     pdf.setFontSize(18);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...navy);
-    pdf.text('LIGHTHOUSE', margin, y + 10);
+    pdf.text('LIGHTHOUSE', 10, 18);
     pdf.setFontSize(8);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...medGray);
-    pdf.text('WORLDWIDE SOLUTIONS \u2014 FRANCE', margin, y + 16);
+    pdf.text('WORLDWIDE SOLUTIONS \u2014 FRANCE', 10, 23);
   }
 
-  y += 22;
+  y = 30;
 
   // ---- FACTURE TITLE BAR ----
   pdf.setFillColor(...navy);
@@ -1446,9 +1396,8 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   
   y += 20;
 
-  // ---- DATE + REFERENCES (left) | CLIENT BOX (right) ----
+  // ---- REFERENCES (left) | CLIENT BOX (right) ----
   const blockY = y;
-  
   const labelX = margin;
   const valueX = margin + 36;
   let refY = blockY;
@@ -1475,7 +1424,7 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   if (supplementBCNumber && supplementBCNumber !== bcNumber) addRefLine('BC Suppl. :', supplementBCNumber, false);
   if (clientRef) addRefLine('Vos r\u00E9f. :', clientRef, false);
   
-  // Right: Client address box — clean, no green accent
+  // Client box
   const clientBoxX = pageWidth / 2 + 8;
   const clientBoxW = pageWidth / 2 - margin - 8;
   const clientBoxH = 36;
@@ -1484,8 +1433,6 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   pdf.setDrawColor(...lightLine);
   pdf.setLineWidth(0.4);
   pdf.roundedRect(clientBoxX, blockY - 3, clientBoxW, clientBoxH, 2, 2, 'FD');
-  
-  // Navy left accent line (not green)
   pdf.setFillColor(...navy);
   pdf.rect(clientBoxX, blockY - 1, 2.5, clientBoxH - 4, 'F');
   
@@ -1522,10 +1469,8 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   const colPU = pageWidth - margin - 48;
   const colTotal = pageWidth - margin - 2;
 
-  // Table header
   pdf.setFillColor(...navy);
   pdf.roundedRect(margin, y, contentWidth, 9, 1.5, 1.5, 'F');
-  
   pdf.setFontSize(8.5);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(255, 255, 255);
@@ -1533,37 +1478,21 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   pdf.text('D\u00E9signation', colDesc, y + 6.5);
   pdf.text('P.U. HT', colPU, y + 6.5, { align: 'right' });
   pdf.text('TOTAL HT', colTotal, y + 6.5, { align: 'right' });
-  
   y += 12;
 
-  // Rows
-  const footerReserved = 80;
+  const footerReserved = 82;
   let rowAlt = false;
 
   (lines || []).forEach((line) => {
     if (y > pageHeight - footerReserved - 10) {
       pdf.addPage();
       y = margin + 10;
-      // Re-add watermark on new page
-      if (watermarkImg) {
-        try {
-          const gs2 = new pdf.GState({ opacity: 0.07 });
-          pdf.saveGraphicsState();
-          pdf.setGState(gs2);
-          pdf.addImage(watermarkImg, 'PNG', (pageWidth - 130) / 2, (pageHeight - 130) / 2 - 15, 130, 130);
-          pdf.restoreGraphicsState();
-        } catch(e) {}
-      }
     }
-
     if (line.isDevice) {
-      // Device sub-header — navy tinted, no green
       pdf.setFillColor(235, 240, 250);
       pdf.rect(margin, y - 4, contentWidth, 7.5, 'F');
-      // Navy left accent
       pdf.setFillColor(...navy);
       pdf.rect(margin, y - 4, 2, 7.5, 'F');
-      
       pdf.setFontSize(9);
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(...navy);
@@ -1576,24 +1505,16 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
         pdf.rect(margin, y - 4, contentWidth, 7, 'F');
       }
       rowAlt = !rowAlt;
-      
       pdf.setFontSize(9);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(...darkGray);
-      
-      if (line.quantity != null) {
-        pdf.text(String(line.quantity), colQty + 5, y, { align: 'center' });
-      }
+      if (line.quantity != null) pdf.text(String(line.quantity), colQty + 5, y, { align: 'center' });
       pdf.text(line.description || '', colDesc, y);
-      
-      if (line.unitPrice != null) {
-        pdf.text(parseFloat(line.unitPrice).toFixed(2) + ' \u20AC', colPU, y, { align: 'right' });
-      }
+      if (line.unitPrice != null) pdf.text(parseFloat(line.unitPrice).toFixed(2) + ' \u20AC', colPU, y, { align: 'right' });
       if (line.total != null) {
         pdf.setFont('helvetica', 'bold');
         pdf.text(parseFloat(line.total).toFixed(2) + ' \u20AC', colTotal, y, { align: 'right' });
       }
-      
       pdf.setDrawColor(235, 238, 242);
       pdf.setLineWidth(0.15);
       pdf.line(colDesc, y + 2.5, pageWidth - margin, y + 2.5);
@@ -1603,7 +1524,7 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
 
   y += 6;
 
-  // ---- TOTALS BLOCK ----
+  // ---- TOTALS ----
   const totalsW = 72;
   const totalsX = pageWidth - margin - totalsW;
   const totalsValX = pageWidth - margin - 4;
@@ -1621,8 +1542,8 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   pdf.text((subtotalHT || 0).toFixed(2) + ' \u20AC', totalsValX, y, { align: 'right' });
   y += 7;
 
-  pdf.setFont('helvetica', 'normal');
   if (isExonerated) {
+    pdf.setFont('helvetica', 'normal');
     pdf.text('TVA 20%', totalsX + 3, y);
     pdf.setFontSize(8);
     pdf.setFont('helvetica', 'bold');
@@ -1635,13 +1556,13 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
     y += 7;
   } else {
     pdf.setFontSize(9.5);
+    pdf.setFont('helvetica', 'normal');
     pdf.text('TVA ' + (tvaRate || 20) + '%', totalsX + 3, y);
     pdf.setFont('helvetica', 'bold');
     pdf.text((tvaAmount || 0).toFixed(2) + ' \u20AC', totalsValX, y, { align: 'right' });
     y += 7;
   }
 
-  // TOTAL TTC bar
   pdf.setFillColor(...navy);
   pdf.roundedRect(totalsX, y - 1.5, totalsW, 11, 2, 2, 'F');
   pdf.setFontSize(11);
@@ -1656,70 +1577,73 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...darkGray);
   pdf.text('Conditions de paiement : ' + (paymentTermsDays || 30) + ' jours date de facture, soit le ' + formatDateFull(dueDate), margin, y);
-  y += 8;
+  y += 6;
 
-  // ---- BANK DETAILS (only if IBAN configured) ----
+  // ---- PAYMENT REFERENCE DISCLAIMER ----
+  pdf.setFillColor(245, 247, 252);
+  pdf.setDrawColor(...navy);
+  pdf.setLineWidth(0.4);
+  pdf.roundedRect(margin, y, contentWidth, 10, 2, 2, 'FD');
+  pdf.setFontSize(8.5);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...navy);
+  pdf.text('Merci de mentionner la r\u00E9f\u00E9rence ' + (invoiceNumber || 'FACTURE') + ' lors de votre r\u00E8glement.', margin + 4, y + 6.5);
+  y += 14;
+
+  // ---- BANK DETAILS ----
   if (biz.iban && biz.iban.trim()) {
     pdf.setFillColor(248, 250, 252);
     pdf.setDrawColor(...lightLine);
     pdf.setLineWidth(0.3);
     const bankH = biz.bank_name ? 20 : 16;
     pdf.roundedRect(margin, y - 2, contentWidth, bankH, 2, 2, 'FD');
-    
-    // Navy left accent
     pdf.setFillColor(...navy);
     pdf.rect(margin, y, 2.5, bankH - 4, 'F');
     
-    let bankLabelX = margin + 8;
-    let bankValX = margin + 42;
-    let bankY = y + 3;
+    let bkX = margin + 8;
+    let bkVX = margin + 42;
+    let bkY = y + 3;
     
     pdf.setFontSize(8);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...navy);
-    pdf.text('COORDONN\u00C9ES BANCAIRES', bankLabelX, bankY);
-    bankY += 5;
+    pdf.text('COORDONN\u00C9ES BANCAIRES', bkX, bkY);
+    bkY += 5;
     
     pdf.setFontSize(8.5);
     pdf.setTextColor(...darkGray);
-    
     if (biz.bank_name) {
       pdf.setFont('helvetica', 'normal');
-      pdf.text('Banque :', bankLabelX, bankY);
+      pdf.text('Banque :', bkX, bkY);
       pdf.setFont('helvetica', 'bold');
-      pdf.text(biz.bank_name + (biz.bank_branch ? ' \u2014 ' + biz.bank_branch : ''), bankValX, bankY);
-      bankY += 5;
+      pdf.text(biz.bank_name + (biz.bank_branch ? ' \u2014 ' + biz.bank_branch : ''), bkVX, bkY);
+      bkY += 5;
     }
-    
     pdf.setFont('helvetica', 'normal');
-    pdf.text('IBAN :', bankLabelX, bankY);
+    pdf.text('IBAN :', bkX, bkY);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(biz.iban, bankValX, bankY);
-    
+    pdf.text(biz.iban, bkVX, bkY);
     if (biz.bic) {
       pdf.setFont('helvetica', 'normal');
-      pdf.text('BIC :', bankLabelX + 100, bankY);
+      pdf.text('BIC :', bkX + 100, bkY);
       pdf.setFont('helvetica', 'bold');
-      pdf.text(biz.bic, bankLabelX + 112, bankY);
+      pdf.text(biz.bic, bkX + 112, bkY);
     }
-    
     y += bankH + 4;
   }
 
   // ---- LEGAL TEXT ----
   const legalText = biz.invoice_legal_text ||
     "En application des articles L441-6 et L441-3 du Code de commerce, en cas de retard de r\u00E8glement : Indemnit\u00E9 forfaitaire pour frais de recouvrement de 40\u20AC \u2022 P\u00E9nalit\u00E9 de retard \u00E0 compter du 31\u00E8me jour au taux de 12% l'an. Aucun escompte ne sera accord\u00E9 en cas de paiement anticip\u00E9. Tous nos prix sont exprim\u00E9s en euro.";
-  
   pdf.setFontSize(6.5);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...medGray);
-  const legalSplit = pdf.splitTextToSize(legalText, contentWidth);
-  pdf.text(legalSplit, margin, y);
+  pdf.text(pdf.splitTextToSize(legalText, contentWidth), margin, y);
 
-  // ---- FOOTER (larger, prominent) ----
-  const footerTopY = pageHeight - 32;
+  // ---- FOOTER (large, prominent) ----
+  const footerTopY = pageHeight - 34;
   
-  // CAPCERT logo — much bigger
+  // CAPCERT logo — large
   try {
     const capcertImg = new Image();
     capcertImg.crossOrigin = 'anonymous';
@@ -1728,14 +1652,12 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
     pdf.addImage(capcertImg, 'PNG', margin, footerTopY - 4, 28, 26);
   } catch(e) {}
   
-  // Separator line
+  // Navy separator
   pdf.setDrawColor(...navy);
   pdf.setLineWidth(0.5);
   pdf.line(margin + 32, footerTopY, pageWidth - margin, footerTopY);
   
-  // Footer text — bigger and bolder
   const fcx = (margin + 32 + pageWidth - margin) / 2;
-  
   pdf.setFontSize(8.5);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...navy);
