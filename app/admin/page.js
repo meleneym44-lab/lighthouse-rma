@@ -4642,6 +4642,15 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   const [showShippingModal, setShowShippingModal] = useState(false);
   const [showServiceModal, setShowServiceModal] = useState(null); // Device to show service modal for
   
+  // Document management state
+  const [showDocUploadModal, setShowDocUploadModal] = useState(false);
+  const [docUploadFile, setDocUploadFile] = useState(null);
+  const [docUploadName, setDocUploadName] = useState('');
+  const [docUploadCategory, setDocUploadCategory] = useState('general');
+  const [docUploadShared, setDocUploadShared] = useState(true);
+  const [docUploading, setDocUploading] = useState(false);
+  const [docToDelete, setDocToDelete] = useState(null);
+  
   // Fetch attachments for this RMA
   useEffect(() => {
     const fetchAttachments = async () => {
@@ -4655,6 +4664,89 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     };
     fetchAttachments();
   }, [rma?.id]);
+  
+  // Refresh attachments helper
+  const refreshAttachments = async () => {
+    if (!rma?.id) return;
+    const { data } = await supabase
+      .from('request_attachments')
+      .select('*')
+      .eq('request_id', rma.id)
+      .order('created_at', { ascending: false });
+    if (data) setAttachments(data);
+  };
+  
+  // Upload document
+  const handleDocUpload = async () => {
+    if (!docUploadFile || !rma?.id) return;
+    setDocUploading(true);
+    try {
+      const ext = docUploadFile.name.split('.').pop();
+      const fileName = `doc_${rma.request_number}_${Date.now()}.${ext}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('documents')
+        .upload(`attachments/${fileName}`, docUploadFile, { contentType: docUploadFile.type });
+      if (uploadError) throw uploadError;
+      
+      const { data: urlData } = supabase.storage.from('documents').getPublicUrl(`attachments/${fileName}`);
+      const fileUrl = urlData?.publicUrl;
+      
+      const displayName = docUploadName.trim() || docUploadFile.name;
+      const { error: insertError } = await supabase.from('request_attachments').insert({
+        request_id: rma.id,
+        file_name: displayName,
+        file_url: fileUrl,
+        file_type: docUploadFile.type,
+        file_size: docUploadFile.size,
+        uploaded_by: profile?.id,
+        category: docUploadShared ? docUploadCategory : `internal_${docUploadCategory}`,
+        device_serial: selectedDevice?.serial_number || null
+      });
+      if (insertError) throw insertError;
+      
+      notify('📄 Document ajouté!');
+      setShowDocUploadModal(false);
+      setDocUploadFile(null);
+      setDocUploadName('');
+      setDocUploadCategory('general');
+      setDocUploadShared(true);
+      await refreshAttachments();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setDocUploading(false);
+  };
+  
+  // Delete document
+  const handleDocDelete = async (docId) => {
+    try {
+      const { error } = await supabase.from('request_attachments').delete().eq('id', docId);
+      if (error) throw error;
+      notify('🗑️ Document supprimé');
+      setDocToDelete(null);
+      await refreshAttachments();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+  };
+  
+  // Toggle document visibility
+  const handleToggleDocVisibility = async (doc) => {
+    try {
+      const isInternal = doc.category?.startsWith('internal_');
+      const newCategory = isInternal 
+        ? doc.category.replace('internal_', '') 
+        : `internal_${doc.category || 'general'}`;
+      const { error } = await supabase.from('request_attachments')
+        .update({ category: newCategory })
+        .eq('id', doc.id);
+      if (error) throw error;
+      notify(isInternal ? '👁️ Document visible au client' : '🔒 Document masqué au client');
+      await refreshAttachments();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+  };
   
   // Effect to handle initialDevice changes (when coming from dashboard)
   useEffect(() => {
@@ -5314,6 +5406,187 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     </a>
                   ))}
                 </div>
+                
+                {/* === ADDITIONAL ATTACHMENTS (uploaded manually by admin) === */}
+                {attachments.filter(a => 
+                  !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category) &&
+                  !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category?.replace('internal_', '')) &&
+                  a.file_url && !a.file_type?.startsWith('image/')
+                ).length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Documents supplémentaires</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {attachments.filter(a => 
+                        !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category) &&
+                        !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category?.replace('internal_', '')) &&
+                        a.file_url && !a.file_type?.startsWith('image/')
+                      ).map(doc => {
+                        const isInternal = doc.category?.startsWith('internal_');
+                        return (
+                          <div key={doc.id} className={`flex items-center gap-3 p-3 border rounded-lg ${isInternal ? 'bg-gray-50 border-gray-300 border-dashed' : 'bg-white'}`}>
+                            <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80">
+                              <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg ${isInternal ? 'bg-gray-200' : 'bg-blue-100'}`}>
+                                {isInternal ? '🔒' : '📄'}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-gray-800 truncate text-sm">{(doc.file_name || 'Document').replace(/Avenant/gi, 'Supplément')}</p>
+                                <p className="text-xs text-gray-400">
+                                  {isInternal ? '🔒 Interne' : '👁️ Visible client'} • {new Date(doc.created_at).toLocaleDateString('fr-FR')}
+                                </p>
+                              </div>
+                            </a>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button 
+                                onClick={() => handleToggleDocVisibility(doc)} 
+                                className={`p-1.5 rounded-lg transition-colors ${isInternal ? 'text-gray-400 hover:bg-blue-50 hover:text-blue-600' : 'text-blue-500 hover:bg-gray-100 hover:text-gray-600'}`}
+                                title={isInternal ? 'Rendre visible au client' : 'Masquer au client'}
+                              >
+                                {isInternal ? (
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" /></svg>
+                                ) : (
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                )}
+                              </button>
+                              <button 
+                                onClick={() => setDocToDelete(doc)} 
+                                className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                title="Supprimer"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Add Document Button */}
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <button 
+                    onClick={() => setShowDocUploadModal(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-[#1E3A5F] text-white rounded-lg hover:bg-[#2a4f7f] transition-colors font-medium text-sm"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Ajouter un document
+                  </button>
+                </div>
+                
+                {/* Delete Confirmation Modal */}
+                {docToDelete && (
+                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl max-w-sm w-full p-6">
+                      <h3 className="text-lg font-bold text-gray-800 mb-2">Supprimer le document?</h3>
+                      <p className="text-gray-600 text-sm mb-1">{docToDelete.file_name}</p>
+                      <p className="text-red-500 text-xs mb-4">Cette action est irréversible.</p>
+                      <div className="flex gap-3">
+                        <button onClick={() => setDocToDelete(null)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                          Annuler
+                        </button>
+                        <button onClick={() => handleDocDelete(docToDelete.id)} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                          🗑️ Supprimer
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Upload Document Modal */}
+                {showDocUploadModal && (
+                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl max-w-md w-full">
+                      <div className="p-6 border-b border-gray-200">
+                        <div className="flex justify-between items-center">
+                          <h2 className="text-lg font-bold text-[#1E3A5F]">📄 Ajouter un document</h2>
+                          <button onClick={() => { setShowDocUploadModal(false); setDocUploadFile(null); setDocUploadName(''); }} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+                        </div>
+                      </div>
+                      <div className="p-6 space-y-4">
+                        {/* File selector */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Fichier</label>
+                          <input 
+                            type="file" 
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) {
+                                setDocUploadFile(f);
+                                if (!docUploadName) setDocUploadName(f.name);
+                              }
+                            }}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                          />
+                        </div>
+                        
+                        {/* Display name */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Nom affiché</label>
+                          <input 
+                            type="text"
+                            value={docUploadName}
+                            onChange={(e) => setDocUploadName(e.target.value)}
+                            placeholder="Nom du document..."
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                        
+                        {/* Category */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                          <select 
+                            value={docUploadCategory}
+                            onChange={(e) => setDocUploadCategory(e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          >
+                            <option value="general">📄 Document général</option>
+                            <option value="rapport">📋 Rapport</option>
+                            <option value="certificat">🏆 Certificat</option>
+                            <option value="bon_livraison">📦 Bon de livraison</option>
+                            <option value="facture">💶 Facture</option>
+                            <option value="note_technique">🔧 Note technique</option>
+                            <option value="correspondance">✉️ Correspondance</option>
+                          </select>
+                        </div>
+                        
+                        {/* Visibility toggle */}
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                          <div>
+                            <p className="font-medium text-sm text-gray-800">
+                              {docUploadShared ? '👁️ Visible au client' : '🔒 Document interne'}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {docUploadShared ? 'Le client pourra voir ce document' : 'Seuls les admins verront ce document'}
+                            </p>
+                          </div>
+                          <button 
+                            onClick={() => setDocUploadShared(!docUploadShared)}
+                            className={`relative w-12 h-6 rounded-full transition-colors ${docUploadShared ? 'bg-blue-500' : 'bg-gray-300'}`}
+                          >
+                            <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${docUploadShared ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="p-6 border-t border-gray-200 flex gap-3">
+                        <button 
+                          onClick={() => { setShowDocUploadModal(false); setDocUploadFile(null); setDocUploadName(''); }}
+                          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
+                        >
+                          Annuler
+                        </button>
+                        <button 
+                          onClick={handleDocUpload}
+                          disabled={!docUploadFile || docUploading}
+                          className="flex-1 px-4 py-2 bg-[#1E3A5F] text-white rounded-lg hover:bg-[#2a4f7f] font-medium disabled:opacity-50"
+                        >
+                          {docUploading ? '⏳ Envoi...' : '📤 Ajouter'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
                 {/* No documents message */}
                 {!device.calibration_certificate_url && !device.report_url && !rma.quote_url && !rma.bc_file_url && !rma.signed_quote_url && !device.bl_url && !device.ups_label_url && attachments.filter(a => a.file_url).length === 0 && (
