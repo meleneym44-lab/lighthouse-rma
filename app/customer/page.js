@@ -7721,7 +7721,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
               signatureImage: signatureData
             });
-            pdfFileName = `avenant_signe_${request.request_number}_${Date.now()}.pdf`;
+            pdfFileName = `supplement_signe_${request.supplement_number || request.request_number}_${Date.now()}.pdf`;
           } else if (isPartsRequest) {
             pdfBlob = await generatePartsQuotePDF({
               request,
@@ -7824,7 +7824,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         const { error: pdfAttachError } = await supabase.from('request_attachments').insert({
           request_id: request.id,
           file_name: isSubmittingAvenantBC 
-            ? `Avenant_Signé_${request.request_number}.pdf`
+            ? `Supplément_Signé_${request.supplement_number || request.request_number}.pdf`
             : `Devis_Signé_${request.request_number}.pdf`,
           file_url: signedQuotePdfUrl,
           file_type: 'application/pdf',
@@ -9777,7 +9777,16 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     Documents
                   </h3>
                   <div className="space-y-2">
-                    {attachments.filter(a => !a.file_type?.startsWith('image/')).map((doc) => (
+                    {attachments.filter(a => !a.file_type?.startsWith('image/')).map((doc) => {
+                      // Format display name: replace Avenant with Supplément
+                      const displayName = (doc.file_name || 'Document')
+                        .replace(/Avenant_Signé/gi, 'Supplément Signé')
+                        .replace(/Avenant_FR/gi, 'Supplément_FR')
+                        .replace(/Avenant/gi, 'Supplément');
+                      // Extract doc number if present (e.g. SUP-0226-010, FR-00101)
+                      const docNumber = doc.file_name?.match(/(SUP-\d{4}-\d{3}|FR-\d{5})/)?.[1] || null;
+                      
+                      return (
                       <a 
                         key={doc.id}
                         href={doc.file_url}
@@ -9789,8 +9798,9 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                           {doc.file_name?.split('.').pop()?.toUpperCase() || 'DOC'}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-[#1E3A5F] truncate">{doc.file_name}</p>
-                          <p className="text-xs text-gray-500">
+                          <p className="font-medium text-[#1E3A5F] truncate">{displayName}</p>
+                          {docNumber && <p className="text-xs text-gray-500 font-mono">N° {docNumber}</p>}
+                          <p className="text-xs text-gray-400">
                             Ajouté le {new Date(doc.created_at).toLocaleDateString('fr-FR')}
                           </p>
                         </div>
@@ -9798,7 +9808,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                         </svg>
                       </a>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
