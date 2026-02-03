@@ -9680,13 +9680,14 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
     .footer-section { 
       flex-shrink: 0;
       margin-top: auto;
-      padding-top: 15px; 
-      border-top: 2px solid #333;
+      padding-top: 12px; 
+      border-top: 1px solid #ccc;
     }
-    .footer-content { display: flex; align-items: center; justify-content: center; gap: 30px; }
-    .footer-logo img { height: 100px; }
+    .footer-content { position: relative; }
+    .footer-logo { position: absolute; left: 0; top: 0; }
+    .footer-logo img { height: 65px; }
     .footer-info { font-size: 8pt; color: #555; text-align: center; line-height: 1.8; }
-    .footer-info strong { color: #333; font-size: 9pt; }
+    .footer-info strong { color: #333; font-size: 8pt; }
     
     @media print { 
       @page { margin: 15mm; }
@@ -10231,10 +10232,10 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                     </div>
 
                     {/* Footer - ABSOLUTE positioned at bottom */}
-                    <div style={{ position: 'absolute', bottom: '5px', left: '30px', right: '30px', paddingTop: '15px', borderTop: '2px solid #333' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '30px' }}>
-                        <div>
-                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '70px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
+                    <div style={{ position: 'absolute', bottom: '15px', left: '30px', right: '30px', paddingTop: '12px', borderTop: '1px solid #ccc' }}>
+                      <div style={{ position: 'relative' }}>
+                        <div style={{ position: 'absolute', left: '0', top: '0' }}>
+                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '65px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:14px;color:#333;border:2px solid #333;padding:12px 16px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
                         </div>
                         <div style={{ fontSize: '8pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
                           <strong style={{ color: '#333', fontSize: '8pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
@@ -10654,13 +10655,14 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     .footer-section { 
       flex-shrink: 0;
       margin-top: auto;
-      padding-top: 15px; 
-      border-top: 2px solid #333;
+      padding-top: 12px; 
+      border-top: 1px solid #ccc;
     }
-    .footer-content { display: flex; align-items: center; justify-content: center; gap: 30px; }
-    .footer-logo img { height: 100px; }
+    .footer-content { position: relative; }
+    .footer-logo { position: absolute; left: 0; top: 0; }
+    .footer-logo img { height: 65px; }
     .footer-info { font-size: 8pt; color: #555; text-align: center; line-height: 1.8; }
-    .footer-info strong { color: #333; font-size: 9pt; }
+    .footer-info strong { color: #333; font-size: 8pt; }
     
     @media print { 
       @page { margin: 15mm; }
@@ -11368,10 +11370,10 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                     </div>
 
                     {/* Footer - ABSOLUTE positioned at bottom */}
-                    <div style={{ position: 'absolute', bottom: '5px', left: '30px', right: '30px', paddingTop: '15px', borderTop: '2px solid #333' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '30px' }}>
-                        <div>
-                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '70px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
+                    <div style={{ position: 'absolute', bottom: '15px', left: '30px', right: '30px', paddingTop: '12px', borderTop: '1px solid #ccc' }}>
+                      <div style={{ position: 'relative' }}>
+                        <div style={{ position: 'absolute', left: '0', top: '0' }}>
+                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '65px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:14px;color:#333;border:2px solid #333;padding:12px 16px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
                         </div>
                         <div style={{ fontSize: '8pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
                           <strong style={{ color: '#333', fontSize: '8pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
