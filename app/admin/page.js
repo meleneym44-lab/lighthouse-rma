@@ -4640,6 +4640,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   const [showAvenantPreview, setShowAvenantPreview] = useState(false);
   const [showQCReview, setShowQCReview] = useState(null);
   const [showShippingModal, setShowShippingModal] = useState(false);
+  const [showInternalShipping, setShowInternalShipping] = useState(false);
   const [showServiceModal, setShowServiceModal] = useState(null); // Device to show service modal for
   
   // Document management state
@@ -5639,12 +5640,18 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </button>
-            <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+            <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg shadow-lg border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
               <button
                 onClick={() => setShowShippingModal(true)}
-                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-lg flex items-center gap-2"
+                className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-t-lg flex items-center gap-2"
               >
                 📦 Expédition partielle
+              </button>
+              <button
+                onClick={() => setShowInternalShipping(true)}
+                className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg flex items-center gap-2 border-t"
+              >
+                🌍 Expédition inter-site
               </button>
             </div>
           </div>
@@ -5772,6 +5779,18 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           rma={rma}
           devices={devices}
           onClose={() => setShowShippingModal(false)}
+          notify={notify}
+          reload={reload}
+          profile={profile}
+          businessSettings={businessSettings}
+        />
+      )}
+
+      {showInternalShipping && (
+        <InternalShippingModal
+          rma={rma}
+          devices={devices}
+          onClose={() => setShowInternalShipping(false)}
           notify={notify}
           reload={reload}
           profile={profile}
@@ -10565,6 +10584,511 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
               <button onClick={() => setStep(2)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">← Retour</button>
               <button onClick={markAsShipped} disabled={saving} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">{saving ? '⏳ Traitement...' : '🚚 Marquer Expédié'}</button>
             </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================
+// INTERNAL SHIPPING MODAL - Ship to other Lighthouse offices
+// ============================================
+const LIGHTHOUSE_OFFICES = {
+  hollande: {
+    label: 'Hollande (Netherlands)',
+    company_name: 'Lighthouse Worldwide Solutions BV',
+    attention: '',
+    address_line1: 'Platinastraat 28',
+    city: 'Zoetermeer',
+    postal_code: '2718 SZ',
+    country: 'Netherlands',
+    phone: '+31 79 362 9060'
+  },
+  usa: {
+    label: 'USA (Fremont)',
+    company_name: 'Lighthouse Worldwide Solutions Inc.',
+    attention: '',
+    address_line1: '3 Terri Lane, Suite 10',
+    city: 'Burlington',
+    postal_code: 'NJ 08016',
+    country: 'United States',
+    phone: '+1 (510) 438-0500'
+  }
+};
+
+function InternalShippingModal({ rma, devices, onClose, notify, reload, profile, businessSettings }) {
+  const [step, setStep] = useState(1);
+  const [saving, setSaving] = useState(false);
+  const [selectedDeviceIds, setSelectedDeviceIds] = useState(new Set());
+  const [destination, setDestination] = useState('hollande');
+  const [serviceRequest, setServiceRequest] = useState('calibration'); // calibration or repair
+  const [notes, setNotes] = useState('');
+  const [trackingNumber, setTrackingNumber] = useState('');
+  const [parcels, setParcels] = useState('1');
+  const [weight, setWeight] = useState('5');
+  const [generatedBL, setGeneratedBL] = useState(null);
+
+  const biz = businessSettings || {};
+  const destOffice = LIGHTHOUSE_OFFICES[destination];
+  const employeeName = profile?.full_name || 'Lighthouse France';
+
+  const toggleDevice = (id) => {
+    setSelectedDeviceIds(prev => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selectedDeviceIds.size === devices.length) {
+      setSelectedDeviceIds(new Set());
+    } else {
+      setSelectedDeviceIds(new Set(devices.map(d => d.id)));
+    }
+  };
+
+  const selectedDevices = devices.filter(d => selectedDeviceIds.has(d.id));
+
+  // Save internal shipment
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const destLabel = destination === 'hollande' ? 'Hollande' : 'USA';
+      
+      // Get BL number from database
+      let blNumber = null;
+      try {
+        const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'BL' });
+        if (!docNumError && docNumData) blNumber = docNumData;
+      } catch (e) {
+        const now = new Date();
+        const mmyy = String(now.getMonth() + 1).padStart(2, '0') + String(now.getFullYear()).slice(-2);
+        blNumber = `BL-${mmyy}-INT`;
+      }
+
+      // Capture BL preview as PDF
+      let blUrl = null;
+      try {
+        if (!window.html2canvas) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+        }
+        
+        const element = document.getElementById('internal-bl-preview');
+        if (element) {
+          const numberEl = element.querySelector('[data-bl-number]');
+          if (numberEl) numberEl.textContent = 'N° ' + blNumber;
+          
+          const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+          const jsPDF = await loadJsPDF();
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          const imgData = canvas.toDataURL('image/jpeg', 0.95);
+          pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+          
+          const blPdfBlob = pdf.output('blob');
+          const safeNum = (blNumber || 'BL').replace(/[^a-zA-Z0-9-_]/g, '');
+          const blFileName = `${destLabel}_BL_${safeNum}_${Date.now()}.pdf`;
+          blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${rma.request_number}`, blFileName);
+        }
+      } catch (e) {
+        console.error('Internal BL PDF error:', e);
+      }
+
+      // Generate UPS label PDF
+      let upsLabelUrl = null;
+      if (trackingNumber) {
+        try {
+          const shipment = {
+            trackingNumber,
+            parcels: parseInt(parcels) || 1,
+            weight: weight || '5',
+            address: destOffice
+          };
+          const upsPdfBlob = await generateUPSLabelPDF(rma, shipment);
+          const safeTracking = trackingNumber.replace(/[^a-zA-Z0-9-_]/g, '');
+          const upsFileName = `${destLabel}_UPS_${safeTracking}_${Date.now()}.pdf`;
+          upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
+        } catch (e) {
+          console.error('Internal UPS label error:', e);
+        }
+      }
+
+      // Save as INTERNAL attachments (not visible to customer)
+      if (blUrl) {
+        await supabase.from('request_attachments').insert({
+          request_id: rma.id,
+          file_name: `${destLabel}-${blNumber}.pdf`,
+          file_url: blUrl,
+          file_type: 'bl',
+          category: 'internal_bl_intersite',
+          device_serial: selectedDevices.map(d => d.serial_number).join(', ')
+        });
+      }
+      if (upsLabelUrl) {
+        await supabase.from('request_attachments').insert({
+          request_id: rma.id,
+          file_name: `UPS-${destLabel}-${trackingNumber}.pdf`,
+          file_url: upsLabelUrl,
+          file_type: 'ups_label',
+          category: 'internal_ups_intersite',
+          device_serial: selectedDevices.map(d => d.serial_number).join(', ')
+        });
+      }
+
+      setGeneratedBL({ blNumber, blUrl, upsLabelUrl, destLabel, trackingNumber });
+      setStep(3);
+      notify(`Expédition inter-site vers ${destLabel} enregistrée!`);
+    } catch (err) {
+      console.error('Internal shipping error:', err);
+      notify('Erreur lors de l\'enregistrement');
+    }
+    setSaving(false);
+  };
+
+  const getEnglishDate = () => {
+    const d = new Date();
+    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b bg-gradient-to-r from-indigo-600 to-purple-600 rounded-t-2xl">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                🌍 Expédition Inter-Site
+              </h2>
+              <p className="text-indigo-200 text-sm">RMA: {rma.request_number}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1">
+                {[1, 2, 3].map(s => (
+                  <div key={s} className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                    s < step ? 'bg-white text-indigo-600' : s === step ? 'bg-white/30 text-white ring-2 ring-white' : 'bg-white/10 text-white/50'
+                  }`}>{s}</div>
+                ))}
+              </div>
+              <button onClick={onClose} className="text-white/70 hover:text-white text-2xl">×</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {/* Step 1: Select devices & destination */}
+          {step === 1 && (
+            <div className="space-y-6">
+              {/* Destination selection */}
+              <div>
+                <h3 className="font-bold text-gray-800 mb-3">📍 Destination</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {Object.entries(LIGHTHOUSE_OFFICES).map(([key, office]) => (
+                    <button
+                      key={key}
+                      onClick={() => setDestination(key)}
+                      className={`p-4 rounded-xl border-2 text-left transition-all ${
+                        destination === key 
+                          ? 'border-indigo-500 bg-indigo-50 shadow-md' 
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <p className="font-bold text-lg">{key === 'hollande' ? '🇳🇱' : '🇺🇸'} {office.label}</p>
+                      <p className="text-sm text-gray-500 mt-1">{office.company_name}</p>
+                      <p className="text-xs text-gray-400">{office.address_line1}, {office.postal_code} {office.city}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Service requested */}
+              <div>
+                <h3 className="font-bold text-gray-800 mb-3">🔧 Service Requested</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setServiceRequest('calibration')}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${
+                      serviceRequest === 'calibration' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <p className="font-bold">🔬 Calibration</p>
+                  </button>
+                  <button
+                    onClick={() => setServiceRequest('repair')}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${
+                      serviceRequest === 'repair' ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <p className="font-bold">🔧 Repair</p>
+                  </button>
+                </div>
+              </div>
+
+              {/* Device selection */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-gray-800">📦 Select Devices</h3>
+                  <button onClick={toggleAll} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">
+                    {selectedDeviceIds.size === devices.length ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {devices.map(d => (
+                    <label key={d.id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                      selectedDeviceIds.has(d.id) ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 hover:bg-gray-50'
+                    }`}>
+                      <input 
+                        type="checkbox" 
+                        checked={selectedDeviceIds.has(d.id)}
+                        onChange={() => toggleDevice(d.id)}
+                        className="w-5 h-5 text-indigo-600 rounded"
+                      />
+                      <div>
+                        <p className="font-medium">{d.model_name || d.model || 'Device'}</p>
+                        <p className="text-sm text-gray-500 font-mono">SN: {d.serial_number}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Shipping info */}
+              <div>
+                <h3 className="font-bold text-gray-800 mb-3">🚚 Shipping Details</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">UPS Tracking Number</label>
+                    <input
+                      type="text"
+                      value={trackingNumber}
+                      onChange={(e) => setTrackingNumber(e.target.value)}
+                      placeholder="1Z..."
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">Parcels</label>
+                    <input
+                      type="number"
+                      value={parcels}
+                      onChange={(e) => setParcels(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">Weight (kg)</label>
+                    <input
+                      type="text"
+                      value={weight}
+                      onChange={(e) => setWeight(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <h3 className="font-bold text-gray-800 mb-3">📝 Notes / Instructions</h3>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="e.g. Please calibrate per ISO 21501-4. Return to Lighthouse France when complete..."
+                  rows={4}
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: BL Preview (English) */}
+          {step === 2 && (
+            <div>
+              <h3 className="font-bold text-gray-800 mb-3">📄 Delivery Note Preview</h3>
+              <div className="border rounded-xl overflow-hidden bg-white shadow-sm">
+                <div id="internal-bl-preview" style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', height: '297mm', position: 'relative', overflow: 'hidden' }}>
+                  {/* Watermark */}
+                  <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.12, pointerEvents: 'none', zIndex: 999 }}>
+                    <img src="/images/logos/Lighthouse-Square-logo.png" alt="" style={{ width: '500px', height: 'auto' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:150px;font-weight:bold;color:#000">LWS</div>'; }} />
+                  </div>
+                  
+                  <div>
+                    {/* Header */}
+                    <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#1E3A5F' }}>DELIVERY NOTE</div>
+                        <div style={{ fontSize: '10pt', color: '#666', fontStyle: 'italic' }}>Internal Transfer</div>
+                        <div data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#1E3A5F', marginTop: '4px' }}>N° {destination === 'hollande' ? 'Hollande' : 'USA'} BL-XXXX-XXX</div>
+                        <div style={{ fontSize: '9pt', color: '#666', marginTop: '2px' }}>RMA: {rma.request_number}</div>
+                      </div>
+                    </div>
+
+                    {/* Date */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', margin: '12px 0' }}>
+                      <div><span style={{ color: '#666' }}>Date:</span> <strong>{getEnglishDate()}</strong></div>
+                    </div>
+
+                    {/* Two column: FROM + TO */}
+                    <div style={{ display: 'flex', gap: '15px', margin: '12px 0' }}>
+                      {/* FROM */}
+                      <div style={{ flex: '1', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
+                        <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>From / Sender</div>
+                        <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>Lighthouse France SAS</div>
+                        <div>{biz.address || '16 rue Paul Séjourné'}</div>
+                        <div>{biz.postal_code || '94000'} {biz.city || 'Créteil'}</div>
+                        <div>France</div>
+                        <div style={{ marginTop: '4px', fontSize: '9pt', color: '#666' }}>Tel: {biz.phone || '01 43 77 28 07'}</div>
+                      </div>
+                      {/* TO */}
+                      <div style={{ flex: '1', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
+                        <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>To / Recipient</div>
+                        <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{destOffice.company_name}</div>
+                        {destOffice.attention && <div>Attn: <strong>{destOffice.attention}</strong></div>}
+                        <div>{destOffice.address_line1}</div>
+                        <div>{destOffice.postal_code} {destOffice.city}</div>
+                        <div>{destOffice.country}</div>
+                        <div style={{ marginTop: '4px', fontSize: '9pt', color: '#666' }}>Tel: {destOffice.phone}</div>
+                      </div>
+                    </div>
+
+                    {/* Service requested badge */}
+                    <div style={{ margin: '12px 0', padding: '8px 15px', background: serviceRequest === 'calibration' ? '#EFF6FF' : '#FFF7ED', border: `1px solid ${serviceRequest === 'calibration' ? '#93C5FD' : '#FDBA74'}`, borderRadius: '8px' }}>
+                      <strong>Service Requested:</strong> {serviceRequest === 'calibration' ? '🔬 Calibration' : '🔧 Repair'}
+                      {rma.request_number && <span style={{ marginLeft: '15px', color: '#666' }}>Customer RMA: {rma.request_number}</span>}
+                    </div>
+
+                    {/* Devices table */}
+                    <table style={{ width: '100%', borderCollapse: 'collapse', margin: '12px 0' }}>
+                      <thead>
+                        <tr style={{ background: 'rgba(51,51,51,0.35)' }}>
+                          <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '50px', fontWeight: 'bold' }}>Qty</th>
+                          <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', fontWeight: 'bold' }}>Description</th>
+                          <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '140px', fontWeight: 'bold' }}>Serial Number</th>
+                          <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '100px', fontWeight: 'bold' }}>Service</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedDevices.map((d, i) => (
+                          <tr key={i}>
+                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', textAlign: 'center', fontWeight: '600', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>1</td>
+                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>Lighthouse Particle Counter {d.model_name || d.model}</td>
+                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', fontFamily: 'monospace', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>{d.serial_number}</td>
+                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>{serviceRequest === 'calibration' ? 'Calibration' : 'Repair'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    {/* Shipping info */}
+                    <div style={{ margin: '15px 0' }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '11pt', marginBottom: '10px', borderBottom: '1px solid #333', paddingBottom: '5px' }}>Shipping Information</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Carrier:</span><span style={{ fontWeight: '600' }}>UPS</span></div>
+                        <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Tracking #:</span><span style={{ fontWeight: '600', fontFamily: 'monospace' }}>{trackingNumber || '—'}</span></div>
+                        <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Parcels:</span><span style={{ fontWeight: '600' }}>{parcels}</span></div>
+                        <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Weight:</span><span style={{ fontWeight: '600' }}>{weight} kg</span></div>
+                      </div>
+                    </div>
+
+                    {/* Notes */}
+                    {notes && (
+                      <div style={{ margin: '15px 0', padding: '12px 15px', background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: '8px' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '10pt', marginBottom: '5px', color: '#374151' }}>Notes / Instructions:</div>
+                        <div style={{ fontSize: '10pt', color: '#4B5563', whiteSpace: 'pre-wrap' }}>{notes}</div>
+                      </div>
+                    )}
+
+                    {/* Prepared by */}
+                    <div style={{ fontSize: '10pt', marginTop: '12px', color: '#666' }}>
+                      Prepared by: <strong style={{ color: '#333' }}>{employeeName}</strong>
+                    </div>
+                  </div>
+
+                  {/* Footer */}
+                  <div style={{ position: 'absolute', bottom: '15px', left: '30px', right: '30px', paddingTop: '12px', borderTop: '1px solid #ccc' }}>
+                    <div style={{ position: 'relative' }}>
+                      <div style={{ position: 'absolute', left: '10px', top: '0' }}>
+                        <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '75px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:14px;color:#333;border:2px solid #333;padding:12px 16px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
+                      </div>
+                      <div style={{ fontSize: '8pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
+                        <strong style={{ color: '#333', fontSize: '8pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
+                        {biz.address || '16 rue Paul Séjourné'}, {biz.postal_code || '94000'} {biz.city || 'CRÉTEIL'} | Tél. {biz.phone || '01 43 77 28 07'}<br/>
+                        SIRET {biz.siret || '50178134800013'} | TVA {biz.tva || 'FR 86501781348'}<br/>
+                        {biz.email || 'France@golighthouse.com'} | {biz.website || 'www.golighthouse.fr'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Complete */}
+          {step === 3 && generatedBL && (
+            <div className="text-center py-8">
+              <div className="text-6xl mb-4">✅</div>
+              <h3 className="text-2xl font-bold text-green-700 mb-2">Internal Shipment Saved!</h3>
+              <p className="text-gray-600 mb-6">Documents saved as internal (not visible to customer).</p>
+              <div className="bg-gray-50 rounded-xl p-6 max-w-md mx-auto space-y-3">
+                <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                  <span className="font-mono font-medium">📄 {generatedBL.destLabel} {generatedBL.blNumber}</span>
+                  {generatedBL.blUrl && (
+                    <a href={generatedBL.blUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm">View BL</a>
+                  )}
+                </div>
+                {generatedBL.trackingNumber && (
+                  <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                    <span className="font-mono font-medium">🏷️ UPS {generatedBL.destLabel} {generatedBL.trackingNumber}</span>
+                    {generatedBL.upsLabelUrl && (
+                      <a href={generatedBL.upsLabelUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm">View Label</a>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between rounded-b-2xl">
+          {step === 1 && (
+            <>
+              <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Annuler</button>
+              <button 
+                onClick={() => setStep(2)} 
+                disabled={selectedDeviceIds.size === 0}
+                className="px-6 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                Preview BL →
+              </button>
+            </>
+          )}
+          {step === 2 && (
+            <>
+              <button onClick={() => setStep(1)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">← Back</button>
+              <button 
+                onClick={handleSave} 
+                disabled={saving}
+                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                {saving ? '⏳ Saving...' : '💾 Save Internal Shipment'}
+              </button>
+            </>
+          )}
+          {step === 3 && (
+            <div className="ml-auto">
+              <button onClick={onClose} className="px-6 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium">Close</button>
+            </div>
           )}
         </div>
       </div>
