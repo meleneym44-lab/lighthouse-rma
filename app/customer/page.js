@@ -9766,12 +9766,12 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             const structuredCategories = ['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'];
             
             // Remaining attachments = not images, not known URLs, not structured categories, not BL/UPS dupes
-            const blUpsPattern = /^(BL-|UPS-Label)/i;
             const otherAttachments = attachments.filter(a => 
               !a.file_type?.startsWith('image/') && 
               !knownUrls.has(a.file_url) &&
               !structuredCategories.includes(a.category) &&
-              !blUpsPattern.test(a.file_name)
+              !['bl', 'ups_label'].includes(a.file_type) &&
+              !/^(BL-|UPS-Label)/i.test(a.file_name)
             );
             
             const devices = request.request_devices || [];
