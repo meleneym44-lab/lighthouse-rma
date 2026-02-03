@@ -9844,13 +9844,9 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
         // Capture the visible BL preview element
         const element = document.getElementById('bl-preview-parts');
         if (element) {
-          // Inject real BL number into preview before capture (replaces XXX placeholder)
-          const blNumberElements = element.querySelectorAll('div');
-          blNumberElements.forEach(el => {
-            if (el.textContent && el.textContent.includes('BL-') && el.textContent.includes('-XXX')) {
-              el.textContent = el.textContent.replace(/BL-\d{4}-XXX/, blNumber);
-            }
-          });
+          // Update the BL number display element
+          const numberEl = element.querySelector('[data-bl-number]');
+          if (numberEl) numberEl.textContent = 'N° ' + blNumber;
           
           const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
           const jsPDF = await loadJsPDF();
@@ -10174,7 +10170,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#1E3A5F' }}>BON DE LIVRAISON</div>
-                          <div style={{ fontSize: '12pt', fontWeight: 'bold', color: '#1E3A5F', marginTop: '4px' }}>N° {bl.blNumber}</div>
+                          <div data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#1E3A5F', marginTop: '4px' }}>N° {bl.blNumber}</div>
                           <div style={{ fontSize: '9pt', color: '#666', marginTop: '4px' }}>Réf: {bl.orderNumber}</div>
                         </div>
                       </div>
@@ -10842,13 +10838,9 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           // Capture the visible BL preview element
           const element = document.getElementById(`bl-preview-${i}`);
           if (element) {
-            // Inject real BL number into preview before capture (replaces XXX placeholder)
-            const blNumberElements = element.querySelectorAll('div');
-            blNumberElements.forEach(el => {
-              if (el.textContent && el.textContent.includes('BL-') && el.textContent.includes('-XXX')) {
-                el.textContent = el.textContent.replace(/BL-\d{4}-XXX/, blNumber);
-              }
-            });
+            // Update the BL number display element (find the specific N° element)
+            const numberEl = element.querySelector('[data-bl-number]');
+            if (numberEl) numberEl.textContent = 'N° ' + blNumber;
             
             const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
             const jsPDF = await loadJsPDF();
@@ -11312,7 +11304,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#1E3A5F' }}>BON DE LIVRAISON</div>
-                          <div style={{ fontSize: '12pt', fontWeight: 'bold', color: '#1E3A5F', marginTop: '4px' }}>N° {bl.blNumber}</div>
+                          <div data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#1E3A5F', marginTop: '4px' }}>N° {bl.blNumber}</div>
                           <div style={{ fontSize: '9pt', color: '#666', marginTop: '2px' }}>RMA: {bl.rmaNumber}</div>
                         </div>
                       </div>
