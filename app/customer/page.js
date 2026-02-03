@@ -3107,16 +3107,16 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                   <div 
                     key={`sup-${req.id}`}
                     onClick={() => viewRequest(req)}
-                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-orange-100 border border-orange-200"
+                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-50 border border-red-300"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="text-orange-500">📄</span>
-                      <span className="font-mono font-bold text-orange-700">{req.request_number}</span>
-                      <span className="text-sm text-orange-600">
-                        Supplément à approuver ({req.avenant_total?.toFixed(2)} €)
+                      <span className="text-red-500">⚠️</span>
+                      <span className="font-mono font-bold text-red-700">{req.request_number}</span>
+                      <span className="text-sm text-red-600">
+                        Travaux supplémentaires - Action requise ({req.avenant_total?.toFixed(2)} €)
                       </span>
                     </div>
-                    <span className="px-3 py-1 bg-orange-500 text-white text-xs font-bold rounded-full">
+                    <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
                       Agir →
                     </span>
                   </div>
@@ -3220,8 +3220,8 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                             </span>
                           )}
                           {hasSupplementPending && !needsAction && (
-                            <span className="px-2 py-1 rounded-full text-xs font-bold bg-orange-500 text-white animate-pulse">
-                              📄 Supplément à approuver
+                            <span className="px-2 py-1 rounded-full text-xs font-bold bg-red-500 text-white animate-pulse">
+                              ⚠️ Travaux supplémentaires - Action requise
                             </span>
                           )}
                         </div>
@@ -9052,61 +9052,183 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           );
         })()}
 
-        {/* Supplement Modal */}
+        {/* Supplement Modal - HTML Preview */}
         {showSupplementModal && (() => {
           const supplementDoc = attachments.find(a => a.category === 'avenant_quote');
           const supplementUrl = supplementDoc?.file_url;
+          const company = request.companies || {};
+          const devices = (request.request_devices || []).filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
+          const total = request.avenant_total || devices.reduce((sum, d) => sum + (d.additional_work_items || []).reduce((s, item) => s + (parseFloat(item.price) || 0), 0), 0);
+          const supDate = request.avenant_sent_at ? new Date(request.avenant_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
+          
+          // Download PDF function
+          const handleDownloadSupplement = async () => {
+            if (supplementUrl) {
+              window.open(supplementUrl, '_blank');
+            } else {
+              try {
+                const pdfBlob = await generateSupplementPDF({ request, isSigned: false });
+                const url = URL.createObjectURL(pdfBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `supplement_${request.supplement_number || request.request_number}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              } catch (e) {
+                console.error('PDF generation error:', e);
+              }
+            }
+          };
           
           return (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowSupplementModal(false)}>
-            <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[95vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-              {/* Header */}
-              <div className="bg-gradient-to-r from-[#00A651] to-[#008f45] p-6 text-white">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h2 className="text-2xl font-bold">Supplément au Devis</h2>
-                    <p className="text-white/80 mt-1">
-                      {request.supplement_number || request.request_number} • {request.avenant_total?.toFixed(2)} € HT
-                    </p>
-                  </div>
-                  <button onClick={() => setShowSupplementModal(false)} className="text-white/80 hover:text-white text-3xl">×</button>
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              {/* Modal Header - Green supplement theme */}
+              <div className="sticky top-0 bg-gradient-to-r from-[#00A651] to-[#008f45] text-white px-6 py-4 flex justify-between items-center z-10">
+                <div>
+                  <h2 className="text-xl font-bold">Supplément au Devis</h2>
+                  <p className="text-white/80">{request.supplement_number || request.request_number} • {total.toFixed(2)} € HT</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleDownloadSupplement}
+                    className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded text-sm flex items-center gap-1"
+                  >
+                    📥 Télécharger PDF
+                  </button>
+                  <button onClick={() => setShowSupplementModal(false)} className="text-white/80 hover:text-white text-2xl ml-2">&times;</button>
                 </div>
               </div>
-              
-              {/* Content */}
-              <div className="flex-1 overflow-y-auto p-6">
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
-                  <div className="flex items-start gap-3">
-                    <span className="text-2xl">⚠️</span>
+
+              {/* Supplement Document */}
+              <div>
+                {/* Header with logo and title */}
+                <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
+                  <div className="flex justify-between items-start">
                     <div>
-                      <p className="font-bold text-red-800">Travaux supplémentaires identifiés</p>
-                      <p className="text-red-600 text-sm mt-1">
-                        Suite à l'inspection de vos appareils, notre équipe technique a identifié des travaux supplémentaires nécessaires. 
-                        Veuillez examiner le supplément ci-dessous et soumettre votre bon de commande pour approuver.
-                      </p>
+                      <img 
+                        src="/images/logos/lighthouse-logo.png" 
+                        alt="Lighthouse France" 
+                        className="h-14 w-auto mb-1"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'block';
+                        }}
+                      />
+                      <div className="hidden">
+                        <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
+                        <p className="text-gray-500">Worldwide Solutions</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-[#00A651]">SUPPLÉMENT AU DEVIS</p>
+                      <p className="text-sm font-bold text-[#1E3A5F]">N° {request.supplement_number || '—'}</p>
+                      <p className="text-xs text-gray-500">Devis: {request.quote_number || '—'}</p>
+                      <p className="text-xs text-gray-500">RMA: {request.request_number}</p>
                     </div>
                   </div>
                 </div>
-                
-                {supplementUrl ? (
-                  <div className="border rounded-xl overflow-hidden">
-                    <iframe 
-                      src={supplementUrl}
-                      className="w-full h-[500px]"
-                      title="Supplément au Devis"
-                    />
+
+                {/* Info Bar */}
+                <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Date</p>
+                    <p className="font-medium">{supDate}</p>
                   </div>
-                ) : (
-                  <div className="text-center py-12 text-gray-500">
-                    <p className="text-4xl mb-4">📄</p>
-                    <p>Document de supplément non disponible</p>
-                    <p className="text-sm mt-2">Montant: {request.avenant_total?.toFixed(2)} € HT</p>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Validité</p>
+                    <p className="font-medium">30 jours</p>
                   </div>
-                )}
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Conditions</p>
+                    <p className="font-medium">À réception de facture</p>
+                  </div>
+                </div>
+
+                {/* Client Info */}
+                <div className="px-8 py-4 border-b">
+                  <p className="text-xs text-gray-500 uppercase">Client</p>
+                  <p className="font-bold text-xl text-[#1a1a2e]">{company.name}</p>
+                  {company.billing_address && <p className="text-gray-600">{company.billing_address}</p>}
+                  <p className="text-gray-600">{company.billing_postal_code} {company.billing_city}</p>
+                  <p className="text-xs text-gray-400 mt-1">Devis initial: {request.request_number}</p>
+                </div>
+
+                {/* Explanation Banner */}
+                <div className="mx-8 mt-6 bg-[#00A651]/10 border border-[#00A651]/30 rounded-lg p-4">
+                  <p className="text-[#00A651] font-medium text-sm">
+                    Suite à l'inspection de vos appareils, nous avons constaté des travaux supplémentaires nécessaires.
+                  </p>
+                  <p className="text-[#00A651] text-sm">
+                    Veuillez trouver ci-dessous le détail des interventions recommandées.
+                  </p>
+                </div>
+
+                {/* Travaux Supplémentaires Table */}
+                <div className="px-8 py-6">
+                  <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Travaux Supplémentaires</h3>
+                  
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-[#00A651] text-white">
+                        <th className="px-3 py-3 text-center w-12">Qté</th>
+                        <th className="px-3 py-3 text-left">Désignation</th>
+                        <th className="px-3 py-3 text-right w-28">Prix Unit.</th>
+                        <th className="px-3 py-3 text-right w-28">Total HT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {devices.map((device, i) => (
+                        <React.Fragment key={i}>
+                          {/* Device header row */}
+                          <tr className="bg-gray-100 border-t">
+                            <td colSpan={4} className="px-3 py-2 font-bold text-[#1a1a2e]">
+                              {device.model_name} (SN: {device.serial_number})
+                            </td>
+                          </tr>
+                          {/* Constat row if exists */}
+                          {device.service_findings && (
+                            <tr>
+                              <td colSpan={4} className="px-3 py-1 text-xs text-gray-500 italic">
+                                Constat: {device.service_findings}
+                              </td>
+                            </tr>
+                          )}
+                          {/* Work items */}
+                          {(device.additional_work_items || []).map((item, j) => (
+                            <tr key={j} className={j % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-3 py-2 text-center">1</td>
+                              <td className="px-3 py-2">{item.description || item.name}</td>
+                              <td className="px-3 py-2 text-right">{parseFloat(item.price || 0).toFixed(2)} EUR</td>
+                              <td className="px-3 py-2 text-right font-medium">{parseFloat(item.price || 0).toFixed(2)} EUR</td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {/* Total */}
+                  <div className="mt-4 bg-[#00A651] text-white px-6 py-3 rounded-lg flex justify-between items-center">
+                    <span className="font-bold text-lg">TOTAL SUPPLÉMENT HT</span>
+                    <span className="font-bold text-xl">{total.toFixed(2)} EUR</span>
+                  </div>
+                </div>
+
+                {/* Conditions */}
+                <div className="px-8 pb-6">
+                  <p className="text-xs text-gray-500 uppercase mb-2">Conditions</p>
+                  <ul className="text-xs text-gray-600 space-y-1">
+                    <li>• Ce devis complémentaire est valable 30 jours à compter de sa date d'émission.</li>
+                    <li>• Les travaux seront effectués après réception de votre accord écrit (signature ou bon de commande).</li>
+                  </ul>
+                </div>
               </div>
-              
-              {/* Footer */}
-              <div className="border-t p-6 flex justify-between items-center bg-gray-50">
+
+              {/* Modal Footer */}
+              <div className="sticky bottom-0 border-t p-6 flex justify-between items-center bg-gray-50">
                 <button 
                   onClick={() => setShowSupplementModal(false)}
                   className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
@@ -9114,16 +9236,6 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   Fermer
                 </button>
                 <div className="flex gap-3">
-                  {supplementUrl && (
-                    <a 
-                      href={supplementUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                    >
-                      📥 Télécharger PDF
-                    </a>
-                  )}
                   <button 
                     onClick={() => { setShowSupplementModal(false); setShowBCModal(true); }}
                     className="px-6 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold"
