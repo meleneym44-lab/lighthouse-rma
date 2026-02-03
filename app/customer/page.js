@@ -7510,6 +7510,27 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       if (d.bl_url) c++;
       if (d.ups_label_url) c++;
     });
+    // Count other shared attachments (admin-shared docs that aren't already counted above)
+    const knownUrls = new Set();
+    if (request.quote_url) knownUrls.add(request.quote_url);
+    if (request.signed_quote_url) knownUrls.add(request.signed_quote_url);
+    if (request.bc_file_url) knownUrls.add(request.bc_file_url);
+    (request.request_devices || []).forEach(d => {
+      if (d.report_url) knownUrls.add(d.report_url);
+      if (d.calibration_certificate_url) knownUrls.add(d.calibration_certificate_url);
+      if (d.bl_url) knownUrls.add(d.bl_url);
+      if (d.ups_label_url) knownUrls.add(d.ups_label_url);
+    });
+    const structuredCats = ['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'];
+    c += attachments.filter(a => {
+      if (a.file_type?.startsWith('image/')) return false;
+      if (knownUrls.has(a.file_url)) return false;
+      if (structuredCats.includes(a.category)) return false;
+      if (['bl', 'ups_label', 'report', 'certificate'].includes(a.file_type)) return false;
+      const fn = (a.file_name || '').toLowerCase();
+      if (fn.includes('bl-') || fn.includes('ups-label') || fn.includes('ups_label')) return false;
+      return true;
+    }).length;
     return c;
   })();
   
