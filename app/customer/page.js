@@ -1,5 +1,5 @@
 'use client';
-// CUSTOMER PORTAL v56 - 2026-02-03 16:30
+// CUSTOMER PORTAL v56b - 2026-02-03 16:45 - docCount fix
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { supabase } from '@/lib/supabase';
 
@@ -7494,6 +7494,25 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   
   const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
   
+  // Compute total document count for badge
+  const docCount = (() => {
+    let c = 0;
+    if (request.quote_url) c++;
+    if (request.signed_quote_url) c++;
+    if (request.bc_file_url && request.bc_file_url !== request.signed_quote_url) c++;
+    if (!request.bc_file_url) {
+      c += attachments.filter(a => a.category === 'bon_commande' && a.file_url).length;
+    }
+    c += attachments.filter(a => ['avenant_quote', 'avenant_signe', 'avenant_bc'].includes(a.category) && a.file_url).length;
+    (request.request_devices || []).forEach(d => {
+      if (d.report_url) c++;
+      if (d.calibration_certificate_url) c++;
+      if (d.bl_url) c++;
+      if (d.ups_label_url) c++;
+    });
+    return c;
+  })();
+  
   // Check if submission is valid - need EITHER file OR signature (not both required)
   const hasFile = bcFile !== null;
   const hasSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
@@ -9308,20 +9327,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             { id: 'details', label: 'Détails', icon: '📋' },
             { id: 'messages', label: 'Messages', icon: '💬', count: messages.filter(m => !m.is_read && m.sender_id !== profile?.id).length, isNotification: true },
             { id: 'history', label: 'Historique', icon: '📜' },
-            { id: 'documents', label: 'Documents', icon: '📄', count: (() => {
-              let c = 0;
-              if (request.quote_url) c++;
-              if (request.signed_quote_url) c++;
-              if (request.bc_file_url && request.bc_file_url !== request.signed_quote_url) c++;
-              c += attachments.filter(a => ['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande'].includes(a.category) && a.file_url).length;
-              (request.request_devices || []).forEach(d => {
-                if (d.report_url) c++;
-                if (d.calibration_certificate_url) c++;
-                if (d.bl_url) c++;
-                if (d.ups_label_url) c++;
-              });
-              return c;
-            })() }
+            { id: 'documents', label: 'Documents', icon: '📄', count: docCount }
           ].map(tab => (
             <button
               key={tab.id}
