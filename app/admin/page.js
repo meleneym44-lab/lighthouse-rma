@@ -1518,7 +1518,7 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings,
     pdf.setFont('courier', 'normal');
     pdf.text(d.serial_number || d.serial || '', margin + 115, y + 7);
     pdf.setFont('helvetica', 'normal');
-    const svc = d.service_type === 'calibration' ? 'Étalonnage' : d.service_type === 'repair' ? 'Réparation' : 'Service';
+    const svc = d.calibration_type || (d.service_type === 'calibration' ? 'Étalonnage' : d.service_type === 'repair' ? 'Réparation' : d.service_type || 'Étalonnage');
     pdf.text(svc, margin + 155, y + 7);
     y += rowH;
   });
@@ -1601,11 +1601,13 @@ const generatePartsBLPDF = async (order, parts, shipment, blNumber, businessSett
   let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
   
   const addFooter = () => {
-    // Footer section at the absolute bottom of the page
-    const footerTopY = pageHeight - 35;
+    // Footer section at the ABSOLUTE bottom of A4 page (297mm)
+    const footerBottomMargin = 8;
+    const footerHeight = 30;
+    const footerTopY = pageHeight - footerBottomMargin - footerHeight; // ~259mm
     
     // Separator line
-    pdf.setDrawColor(200, 200, 200);
+    pdf.setDrawColor(51, 51, 51);
     pdf.setLineWidth(0.5);
     pdf.line(margin, footerTopY, pageWidth - margin, footerTopY);
     
@@ -1613,11 +1615,26 @@ const generatePartsBLPDF = async (order, parts, shipment, blNumber, businessSett
     if (capcertLogo) {
       try {
         const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-        pdf.addImage(capcertLogo, format, margin, footerTopY + 3, 28, 28);
+        pdf.addImage(capcertLogo, format, margin + 5, footerTopY + 2, 25, 25);
       } catch (e) {}
     }
     
     // Company info centered
+    const infoX = pageWidth / 2 + 10;
+    const infoStartY = footerTopY + 6;
+    
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(`${biz.company_name || 'Lighthouse France SAS'} au capital de ${biz.capital || '10 000'} €`, infoX, infoStartY, { align: 'center' });
+    
+    pdf.setFontSize(7);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text(`${biz.address || '16 rue Paul Séjourné'}, ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} | Tél. ${biz.phone || '01 43 77 28 07'}`, infoX, infoStartY + 5, { align: 'center' });
+    pdf.text(`SIRET ${biz.siret || '50178134800013'} | TVA FR ${biz.tva || '86501781348'}`, infoX, infoStartY + 10, { align: 'center' });
+    pdf.text(`${biz.email || 'France@golighthouse.com'} | ${biz.website || 'www.golighthouse.fr'}`, infoX, infoStartY + 15, { align: 'center' });
+  };
     const infoX = pageWidth / 2;
     const infoStartY = footerTopY + 8;
     
@@ -9825,39 +9842,26 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
         }
       }
       
-      // Generate BL PDF by capturing the visible preview element (like RMA does)
+      // Generate BL PDF using programmatic jsPDF generator (not html2canvas)
       try {
-        // Load html2canvas if not already loaded
-        if (!window.html2canvas) {
-          await new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-            script.onload = resolve;
-            script.onerror = reject;
-            document.head.appendChild(script);
-          });
-        }
+        const shipmentForPdf = {
+          address: shippingAddress,
+          carrier: 'UPS',
+          trackingNumber: trackingNumber,
+          parcels: parcels,
+          weight: weight
+        };
+        const partsForPdf = selectedParts.filter(p => p.selected).map(p => ({
+          part_number: p.part_number,
+          description: p.description || p.part_number,
+          quantity: p.quantity || 1
+        }));
         
-        // Capture the visible BL preview element
-        const element = document.getElementById('bl-preview-parts');
-        if (element) {
-          const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-          const jsPDF = await loadJsPDF();
-          const pdf = new jsPDF('p', 'mm', 'a4');
-          const imgData = canvas.toDataURL('image/jpeg', 0.9);
-          const pdfWidth = 210;
-          const imgRatio = canvas.height / canvas.width;
-          const imgHeight = pdfWidth * imgRatio;
-          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
-          
-          const blPdfBlob = pdf.output('blob');
-          const safeBLNumber = blNumber.replace(/[^a-zA-Z0-9-_]/g, '');
-          const blFileName = `${order.request_number}_BL_${safeBLNumber}_${Date.now()}.pdf`;
-          blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${order.request_number}`, blFileName);
-          console.log('BL uploaded:', blUrl);
-        } else {
-          console.error('BL preview element not found');
-        }
+        const blPdfBlob = await generatePartsBLPDF(order, partsForPdf, shipmentForPdf, blNumber, businessSettings);
+        const safeBLNumber = blNumber.replace(/[^a-zA-Z0-9-_]/g, '');
+        const blFileName = `${order.request_number}_BL_${safeBLNumber}_${Date.now()}.pdf`;
+        blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${order.request_number}`, blFileName);
+        console.log('BL uploaded:', blUrl);
       } catch (err) {
         console.error('Error saving BL:', err);
       }
@@ -10152,7 +10156,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                 
                 {/* Clean PDF Preview with Watermark */}
                 <div className="bg-white border-2 border-t-0 rounded-b-xl overflow-hidden shadow-lg">
-                  <div id="bl-preview-parts" style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', height: '270mm', position: 'relative', overflow: 'hidden' }}>
+                  <div id="bl-preview-parts" style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', height: '297mm', position: 'relative', overflow: 'hidden' }}>
                     {/* Watermark - on top of everything */}
                     <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.12, pointerEvents: 'none', zIndex: 999 }}>
                       <img src="/images/logos/Lighthouse-Square-logo.png" alt="" style={{ width: '500px', height: 'auto' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:150px;font-weight:bold;color:#000">LWS</div>'; }} />
@@ -10234,9 +10238,9 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                     <div style={{ position: 'absolute', bottom: '5px', left: '30px', right: '30px', paddingTop: '15px', borderTop: '2px solid #333' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '30px' }}>
                         <div>
-                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '60px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
+                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '70px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
                         </div>
-                        <div style={{ fontSize: '7pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
+                        <div style={{ fontSize: '8pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
                           <strong style={{ color: '#333', fontSize: '8pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
                           {biz.address || '16 rue Paul Séjourné'}, {biz.postal_code || '94000'} {biz.city || 'CRÉTEIL'} | Tél. {biz.phone || '01 43 77 28 07'}<br/>
                           SIRET {biz.siret || '50178134800013'} | TVA {biz.tva || 'FR 86501781348'}<br/>
@@ -10815,37 +10819,28 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
         
         blData.push(bl);
         
-        // Generate BL PDF by capturing the visible preview element
+        // Generate BL PDF using programmatic jsPDF generator (not html2canvas)
         let blUrl = null;
         try {
-          // Load html2canvas if needed
-          if (!window.html2canvas) {
-            await new Promise((resolve, reject) => {
-              const script = document.createElement('script');
-              script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-              script.onload = resolve;
-              script.onerror = reject;
-              document.head.appendChild(script);
-            });
-          }
+          // Build shipment object matching generateBLPDF expectations
+          const shipmentForPdf = {
+            address: s.address,
+            carrier: 'UPS',
+            trackingNumber: s.trackingNumber,
+            parcels: s.parcels,
+            weight: s.weight
+          };
+          // Build devices array matching generateBLPDF expectations
+          const devicesForPdf = s.devices.map(d => ({
+            model_name: d.model_name,
+            serial_number: d.serial_number,
+            calibration_type: d.calibration_type || d.device_type || 'Étalonnage'
+          }));
           
-          // Capture the visible BL preview element
-          const element = document.getElementById(`bl-preview-${i}`);
-          if (element) {
-            const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-            const jsPDF = await loadJsPDF();
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const imgData = canvas.toDataURL('image/jpeg', 0.8);
-            const pdfWidth = 210;
-            const imgRatio = canvas.height / canvas.width;
-            const imgHeight = pdfWidth * imgRatio;
-            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
-            
-            const blPdfBlob = pdf.output('blob');
-            const safeBLNumber = (bl.blNumber || 'BL').replace(/[^a-zA-Z0-9-_]/g, '');
-            const blFileName = `${rma.request_number}_BL_${safeBLNumber}_${Date.now()}.pdf`;
-            blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${rma.request_number}`, blFileName);
-          }
+          const blPdfBlob = await generateBLPDF(rma, devicesForPdf, shipmentForPdf, blNumber, businessSettings, bcList);
+          const safeBLNumber = (bl.blNumber || 'BL').replace(/[^a-zA-Z0-9-_]/g, '');
+          const blFileName = `${rma.request_number}_BL_${safeBLNumber}_${Date.now()}.pdf`;
+          blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${rma.request_number}`, blFileName);
         } catch (pdfErr) {
           console.error('BL PDF generation error:', pdfErr);
         }
@@ -11283,7 +11278,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                 
                 {/* Clean PDF Preview with Watermark */}
                 <div className="bg-white border-2 border-t-0 rounded-b-xl overflow-hidden shadow-lg">
-                  <div id={`bl-preview-${idx}`} style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', height: '270mm', position: 'relative', overflow: 'hidden' }}>
+                  <div id={`bl-preview-${idx}`} style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', height: '297mm', position: 'relative', overflow: 'hidden' }}>
                     {/* Watermark - on top of everything */}
                     <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.12, pointerEvents: 'none', zIndex: 999 }}>
                       <img src="/images/logos/Lighthouse-Square-logo.png" alt="" style={{ width: '500px', height: 'auto' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:150px;font-weight:bold;color:#000">LWS</div>'; }} />
@@ -11373,9 +11368,9 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                     <div style={{ position: 'absolute', bottom: '5px', left: '30px', right: '30px', paddingTop: '15px', borderTop: '2px solid #333' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '30px' }}>
                         <div>
-                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '60px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
+                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '70px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:18px;color:#333;border:2px solid #333;padding:18px 24px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
                         </div>
-                        <div style={{ fontSize: '7pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
+                        <div style={{ fontSize: '8pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
                           <strong style={{ color: '#333', fontSize: '8pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
                           {biz.address || '16 rue Paul Séjourné'}, {biz.postal_code || '94000'} {biz.city || 'CRÉTEIL'} | Tél. {biz.phone || '01 43 77 28 07'}<br/>
                           SIRET {biz.siret || '50178134800013'} | TVA {biz.tva || 'FR 86501781348'}<br/>
