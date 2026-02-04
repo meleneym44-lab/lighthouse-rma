@@ -1691,10 +1691,8 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   return pdf.output('blob');
 };
 
-// ============================================
-// AVOIR (CREDIT NOTE) PDF GENERATOR
-// ============================================
-const generateAvoirPDF = async (avoirData, businessSettings) => {
+
+// Generate Bon de Livraison PDF - PROFESSIONAL FORMAT
   const jsPDF = await loadJsPDF();
   const pdf = new jsPDF('p', 'mm', 'a4');
   const biz = businessSettings || {};
@@ -16968,7 +16966,6 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
   const [creatingFor, setCreatingFor] = useState(null); // RMA to create invoice for
   const [viewingInvoice, setViewingInvoice] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [dateFilter, setDateFilter] = useState('all'); // all, month, quarter, year
 
   const biz = businessSettings || {};
 
@@ -17080,81 +17077,341 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
   const tabs = [
     { id: 'to_create', label: 'À Facturer', icon: '🔔', count: rmasToInvoice.length, color: 'amber' },
     { id: 'open', label: 'En Cours', icon: '📤', count: openInvoices.length, color: 'blue' },
-    { id: 'closed', label: 'Archivées', icon: '✅', count: closedInvoices.length, color: 'green' },
-    { id: 'stats', label: 'Tableau de bord', icon: '📊', count: 0, color: 'gray' }
+    { id: 'reconciliation', label: 'Rapprochement', icon: '🏦', count: 0, color: 'purple' },
+    { id: 'closed', label: 'Archivées', icon: '✅', count: closedInvoices.length, color: 'green' }
   ];
 
-  // Stats computation
-  const now = new Date();
-  const thisMonth = invoices.filter(i => {
-    const d = new Date(i.invoice_date);
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && i.status !== 'cancelled';
-  });
-  const lastMonth = (() => {
-    const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    return invoices.filter(i => {
-      const d = new Date(i.invoice_date);
-      return d.getMonth() === lm.getMonth() && d.getFullYear() === lm.getFullYear() && i.status !== 'cancelled';
-    });
-  })();
+  // ========== BANK RECONCILIATION STATE ==========
+  const [bankImports, setBankImports] = useState([]);
+  const [bankTransactions, setBankTransactions] = useState([]);
+  const [selectedImport, setSelectedImport] = useState(null);
+  const [reconFilter, setReconFilter] = useState('all'); // all, unmatched, matched, ignored
+  const [matchingTxn, setMatchingTxn] = useState(null); // transaction being manually matched
+  const [uploading, setUploading] = useState(false);
+  const [autoMatching, setAutoMatching] = useState(false);
+  const [parsedPreview, setParsedPreview] = useState(null); // preview before import
 
-  const thisMonthCA = thisMonth.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
-  const lastMonthCA = lastMonth.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
-  const thisMonthPaid = thisMonth.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
-  const totalOpen = openInvoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0) - (parseFloat(i.paid_amount) || 0), 0);
-  const totalOverdue = openInvoices.filter(i => isOverdue(i)).reduce((s, i) => s + (parseFloat(i.total_ttc) || 0) - (parseFloat(i.paid_amount) || 0), 0);
+  // Load bank data
+  const loadBankData = async () => {
+    const { data: imports } = await supabase
+      .from('bank_imports')
+      .select('*')
+      .order('imported_at', { ascending: false });
+    if (imports) setBankImports(imports);
 
-  // Monthly revenue for chart (last 6 months)
-  const monthlyData = (() => {
-    const months = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthInvs = invoices.filter(inv => {
-        const invDate = new Date(inv.invoice_date);
-        return invDate.getMonth() === d.getMonth() && invDate.getFullYear() === d.getFullYear() && inv.status !== 'cancelled';
-      });
-      const frMonths = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
-      months.push({
-        label: frMonths[d.getMonth()] + ' ' + d.getFullYear(),
-        total: monthInvs.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0),
-        paid: monthInvs.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0),
-        count: monthInvs.length
+    const { data: txns } = await supabase
+      .from('bank_transactions')
+      .select('*, invoices(invoice_number, companies(name), total_ttc, status)')
+      .order('transaction_date', { ascending: false });
+    if (txns) setBankTransactions(txns);
+  };
+
+  useEffect(() => { if (activeTab === 'reconciliation') loadBankData(); }, [activeTab]);
+
+  // Parse CSV file (French bank format: semicolons, DD/MM/YYYY)
+  const parseCSV = (text) => {
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) return null;
+
+    // Detect delimiter
+    const delimiter = lines[0].includes(';') ? ';' : ',';
+    
+    // Parse header
+    const headers = lines[0].split(delimiter).map(h => h.replace(/^["']|["']$/g, '').trim().toLowerCase());
+    
+    // Find column indices by common French bank header names
+    const findCol = (...names) => headers.findIndex(h => names.some(n => h.includes(n)));
+    const dateCol = findCol('date', 'date op', 'date opération', 'date valeur');
+    const descCol = findCol('libellé', 'libelle', 'description', 'label', 'intitulé', 'intitule');
+    const amountCol = findCol('montant', 'amount', 'crédit', 'credit');
+    const debitCol = findCol('débit', 'debit');
+    const creditCol = findCol('crédit', 'credit');
+    const refCol = findCol('référence', 'reference', 'réf', 'ref', 'numéro');
+
+    if (dateCol === -1 || (amountCol === -1 && creditCol === -1)) {
+      return { error: `Colonnes introuvables. En-têtes détectés: ${headers.join(', ')}. Attendu: date, libellé, montant (ou crédit/débit)` };
+    }
+
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cells = [];
+      let current = '';
+      let inQuotes = false;
+      for (const ch of lines[i]) {
+        if (ch === '"') { inQuotes = !inQuotes; continue; }
+        if (ch === delimiter && !inQuotes) { cells.push(current.trim()); current = ''; continue; }
+        current += ch;
+      }
+      cells.push(current.trim());
+      
+      if (cells.length < Math.max(dateCol, descCol, amountCol) + 1) continue;
+
+      // Parse date (DD/MM/YYYY or YYYY-MM-DD)
+      let dateStr = cells[dateCol] || '';
+      let parsedDate = null;
+      if (dateStr.includes('/')) {
+        const parts = dateStr.split('/');
+        if (parts.length === 3) parsedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      } else if (dateStr.match(/^\d{4}-/)) {
+        parsedDate = dateStr;
+      }
+      if (!parsedDate) continue;
+
+      // Parse amount
+      let amount = 0;
+      if (amountCol !== -1 && debitCol === -1) {
+        // Single amount column (negative = debit, positive = credit)
+        amount = parseFloat((cells[amountCol] || '0').replace(/\s/g, '').replace(',', '.'));
+      } else if (creditCol !== -1 && debitCol !== -1) {
+        // Separate credit/debit columns
+        const credit = parseFloat((cells[creditCol] || '0').replace(/\s/g, '').replace(',', '.')) || 0;
+        const debit = parseFloat((cells[debitCol] || '0').replace(/\s/g, '').replace(',', '.')) || 0;
+        amount = credit - debit;
+      } else if (amountCol !== -1) {
+        amount = parseFloat((cells[amountCol] || '0').replace(/\s/g, '').replace(',', '.'));
+      }
+
+      if (amount === 0 || isNaN(amount)) continue;
+
+      rows.push({
+        transaction_date: parsedDate,
+        description: cells[descCol] || '',
+        amount: amount,
+        reference: refCol !== -1 ? (cells[refCol] || '') : ''
       });
     }
-    return months;
-  })();
+    
+    return { rows, headers, totalRows: lines.length - 1 };
+  };
 
-  // Aging buckets
-  const aging = (() => {
-    const buckets = { current: 0, '1_30': 0, '31_60': 0, '61_90': 0, '90_plus': 0 };
-    openInvoices.forEach(inv => {
-      const rem = (parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0);
-      if (!isOverdue(inv)) { buckets.current += rem; return; }
-      const days = daysPastDue(inv);
-      if (days <= 30) buckets['1_30'] += rem;
-      else if (days <= 60) buckets['31_60'] += rem;
-      else if (days <= 90) buckets['61_90'] += rem;
-      else buckets['90_plus'] += rem;
-    });
-    return buckets;
-  })();
+  // Handle file upload
+  const handleBankFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  // CSV export
-  const exportCSV = () => {
-    const filtered = dateFilter === 'all' ? invoices : invoices.filter(inv => {
-      const d = new Date(inv.invoice_date);
-      if (dateFilter === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-      if (dateFilter === 'quarter') {
-        const q = Math.floor(now.getMonth() / 3);
-        const invQ = Math.floor(d.getMonth() / 3);
-        return invQ === q && d.getFullYear() === now.getFullYear();
+    const text = await file.text();
+    const result = parseCSV(text);
+    
+    if (!result || result.error) {
+      notify(result?.error || 'Erreur de lecture du fichier', 'error');
+      return;
+    }
+
+    if (result.rows.length === 0) {
+      notify('Aucune transaction trouvée dans le fichier', 'error');
+      return;
+    }
+
+    // Show preview
+    setParsedPreview({ fileName: file.name, ...result });
+  };
+
+  // Confirm import after preview
+  const confirmImport = async () => {
+    if (!parsedPreview) return;
+    setUploading(true);
+    try {
+      // Create bank_import record
+      const { data: importRecord, error: importErr } = await supabase
+        .from('bank_imports')
+        .insert({
+          file_name: parsedPreview.fileName,
+          imported_by: profile?.id,
+          transaction_count: parsedPreview.rows.length,
+          status: 'completed'
+        })
+        .select()
+        .single();
+
+      if (importErr) throw importErr;
+
+      // Insert transactions — only credits (incoming payments)
+      const credits = parsedPreview.rows.filter(r => r.amount > 0);
+      if (credits.length > 0) {
+        const { error: txnErr } = await supabase
+          .from('bank_transactions')
+          .insert(credits.map(r => ({
+            bank_import_id: importRecord.id,
+            transaction_date: r.transaction_date,
+            amount: r.amount,
+            description: r.description,
+            reference: r.reference,
+            status: 'unmatched',
+            match_confidence: 'unmatched'
+          })));
+        if (txnErr) throw txnErr;
       }
-      if (dateFilter === 'year') return d.getFullYear() === now.getFullYear();
-      return true;
-    });
 
+      notify(`✅ ${credits.length} paiement${credits.length > 1 ? 's' : ''} importé${credits.length > 1 ? 's' : ''} (${parsedPreview.rows.length - credits.length} débits ignorés)`);
+      setParsedPreview(null);
+      loadBankData();
+    } catch (err) {
+      console.error('Import error:', err);
+      notify('Erreur import: ' + (err.message || 'Erreur'), 'error');
+    }
+    setUploading(false);
+  };
+
+  // Auto-match algorithm
+  const runAutoMatch = async () => {
+    setAutoMatching(true);
+    try {
+      const unmatched = bankTransactions.filter(t => t.status === 'unmatched');
+      const openInvs = openInvoices.filter(i => i.status !== 'draft');
+      let matchCount = 0;
+
+      for (const txn of unmatched) {
+        const txnText = ((txn.description || '') + ' ' + (txn.reference || '')).toUpperCase();
+        const txnAmount = parseFloat(txn.amount);
+
+        // Strategy 1: Invoice number in text (FAC-XXXX-XXX)
+        const facMatch = txnText.match(/FAC[- ]?\d{2,4}[- ]?\d{2,4}[- ]?\d{1,4}/i);
+        if (facMatch) {
+          const normalizedNum = facMatch[0].replace(/\s+/g, '-').toUpperCase();
+          const matchedInv = openInvs.find(i => 
+            i.invoice_number && i.invoice_number.replace(/\s+/g, '-').toUpperCase().includes(normalizedNum.replace(/FAC-?/, 'FAC-'))
+          );
+          if (matchedInv) {
+            await supabase.from('bank_transactions').update({
+              matched_invoice_id: matchedInv.id,
+              match_confidence: 'auto',
+              status: 'matched',
+              matched_at: new Date().toISOString()
+            }).eq('id', txn.id);
+            matchCount++;
+            continue;
+          }
+        }
+
+        // Strategy 2: Company name in bank text + amount match
+        // Amount alone is NOT enough — same prices across many clients
+        const amountMatches = openInvs.filter(i => {
+          const remaining = (parseFloat(i.total_ttc) || 0) - (parseFloat(i.paid_amount) || 0);
+          return Math.abs(remaining - txnAmount) < 0.02; // within 2 cents
+        });
+        
+        // Always require company name match — check all amount matches for name in text
+        if (amountMatches.length > 0) {
+          const nameMatch = amountMatches.find(i => {
+            const companyName = (i.companies?.name || '').toUpperCase().trim();
+            if (!companyName || companyName.length < 3) return false;
+            // Try full name, then first word (often enough for company matching)
+            if (txnText.includes(companyName)) return true;
+            // Try first significant word of company name (min 4 chars)
+            const words = companyName.split(/\s+/).filter(w => w.length >= 4);
+            return words.some(w => txnText.includes(w));
+          });
+          if (nameMatch) {
+            await supabase.from('bank_transactions').update({
+              matched_invoice_id: nameMatch.id,
+              match_confidence: 'auto',
+              status: 'matched',
+              matched_at: new Date().toISOString()
+            }).eq('id', txn.id);
+            matchCount++;
+            continue;
+          }
+          // Amount matches exist but no name confirmation — flag for manual review
+          await supabase.from('bank_transactions').update({
+            match_confidence: 'unmatched',
+            status: 'review'
+          }).eq('id', txn.id);
+        }
+      }
+
+      notify(`✅ ${matchCount} paiement${matchCount > 1 ? 's' : ''} rapproché${matchCount > 1 ? 's' : ''} automatiquement`);
+      loadBankData();
+      loadInvoices();
+    } catch (err) {
+      console.error('Auto-match error:', err);
+      notify('Erreur rapprochement: ' + (err.message || 'Erreur'), 'error');
+    }
+    setAutoMatching(false);
+  };
+
+  // Manual match
+  const manualMatch = async (txnId, invoiceId) => {
+    await supabase.from('bank_transactions').update({
+      matched_invoice_id: invoiceId,
+      match_confidence: 'manual',
+      status: 'matched',
+      matched_by: profile?.id,
+      matched_at: new Date().toISOString()
+    }).eq('id', txnId);
+    setMatchingTxn(null);
+    notify('✅ Paiement rapproché manuellement');
+    loadBankData();
+  };
+
+  // Ignore transaction (not an invoice payment)
+  const ignoreTxn = async (txnId) => {
+    await supabase.from('bank_transactions').update({ status: 'ignored' }).eq('id', txnId);
+    notify('Transaction ignorée');
+    loadBankData();
+  };
+
+  // Unmatch transaction
+  const unmatchTxn = async (txnId) => {
+    await supabase.from('bank_transactions').update({
+      matched_invoice_id: null,
+      match_confidence: 'unmatched',
+      status: 'unmatched',
+      matched_by: null,
+      matched_at: null
+    }).eq('id', txnId);
+    notify('Rapprochement annulé');
+    loadBankData();
+  };
+
+  // Confirm all auto-matches and apply payments to invoices
+  const confirmAllMatches = async () => {
+    const matched = bankTransactions.filter(t => t.status === 'matched' && t.matched_invoice_id);
+    if (matched.length === 0) { notify('Aucun rapprochement à confirmer', 'error'); return; }
+    if (!confirm(`Confirmer ${matched.length} paiement${matched.length > 1 ? 's' : ''} et mettre à jour les factures ?`)) return;
+    
+    let applied = 0;
+    for (const txn of matched) {
+      const inv = invoices.find(i => i.id === txn.matched_invoice_id);
+      if (!inv || inv.status === 'paid') continue;
+      
+      const prevPaid = parseFloat(inv.paid_amount) || 0;
+      const newPaid = prevPaid + parseFloat(txn.amount);
+      const totalDue = parseFloat(inv.total_ttc) || 0;
+      const isFullyPaid = newPaid >= totalDue - 0.02;
+
+      await supabase.from('invoices').update({
+        paid_amount: Math.min(newPaid, totalDue),
+        paid_at: txn.transaction_date || new Date().toISOString().split('T')[0],
+        payment_reference: [inv.payment_reference, txn.reference || txn.description?.substring(0, 50)].filter(Boolean).join(', '),
+        status: isFullyPaid ? 'paid' : 'partially_paid'
+      }).eq('id', inv.id);
+      
+      // Mark transaction as confirmed
+      await supabase.from('bank_transactions').update({ status: 'confirmed' }).eq('id', txn.id);
+      applied++;
+    }
+
+    notify(`✅ ${applied} paiement${applied > 1 ? 's' : ''} appliqué${applied > 1 ? 's' : ''} aux factures`);
+    loadBankData();
+    loadInvoices();
+  };
+
+  // Reconciliation stats
+  const reconStats = {
+    total: bankTransactions.length,
+    unmatched: bankTransactions.filter(t => t.status === 'unmatched').length,
+    matched: bankTransactions.filter(t => t.status === 'matched').length,
+    confirmed: bankTransactions.filter(t => t.status === 'confirmed').length,
+    review: bankTransactions.filter(t => t.status === 'review').length,
+    ignored: bankTransactions.filter(t => t.status === 'ignored').length,
+    unmatchedAmount: bankTransactions.filter(t => t.status === 'unmatched').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0),
+    matchedAmount: bankTransactions.filter(t => ['matched', 'confirmed'].includes(t.status)).reduce((s, t) => s + (parseFloat(t.amount) || 0), 0)
+  };
+
+  // CSV export for accounting
+  const exportCSV = () => {
     const headers = ['N° Facture', 'Date', 'Échéance', 'Client', 'RMA', 'Total HT', 'TVA', 'Total TTC', 'Payé', 'Reste dû', 'Statut', 'Réf. paiement', 'Date paiement'];
-    const rows = filtered.map(inv => [
+    const rows = invoices.filter(i => i.status !== 'cancelled').map(inv => [
       inv.invoice_number,
       inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString('fr-FR') : '',
       inv.due_date ? new Date(inv.due_date).toLocaleDateString('fr-FR') : '',
@@ -17165,22 +17422,22 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
       (parseFloat(inv.total_ttc) || 0).toFixed(2),
       (parseFloat(inv.paid_amount) || 0).toFixed(2),
       ((parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0)).toFixed(2),
-      inv.status === 'paid' ? 'Payée' : inv.status === 'sent' ? 'Envoyée' : inv.status === 'draft' ? 'Brouillon' : inv.status === 'cancelled' ? 'Annulée' : inv.status === 'partially_paid' ? 'Partiel' : 'En retard',
+      inv.status === 'paid' ? 'Payée' : inv.status === 'sent' ? 'Envoyée' : inv.status === 'draft' ? 'Brouillon' : inv.status === 'partially_paid' ? 'Partiel' : 'En retard',
       inv.payment_reference || '',
       inv.paid_at ? new Date(inv.paid_at).toLocaleDateString('fr-FR') : ''
     ]);
-    
     const BOM = '\uFEFF';
     const csv = BOM + [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(';')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `factures_export_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `factures_export_${new Date().toISOString().split('T')[0]}.csv`; a.click();
     URL.revokeObjectURL(url);
     notify('✅ Export CSV téléchargé');
   };
+
+  // Summary stats
+  const totalOpen = openInvoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0) - (parseFloat(i.paid_amount) || 0), 0);
+  const totalOverdue = openInvoices.filter(i => isOverdue(i)).reduce((s, i) => s + (parseFloat(i.total_ttc) || 0) - (parseFloat(i.paid_amount) || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -17223,13 +17480,8 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
           <p className="text-2xl font-bold text-[#1E3A5F]">{totalOpen.toFixed(0)} €</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-green-400">
-          <p className="text-xs text-gray-500 uppercase">CA ce mois</p>
-          <p className="text-2xl font-bold text-green-600">{thisMonthCA.toFixed(0)} €</p>
-          {lastMonthCA > 0 && (
-            <p className={`text-xs mt-1 ${thisMonthCA >= lastMonthCA ? 'text-green-500' : 'text-red-500'}`}>
-              {thisMonthCA >= lastMonthCA ? '↑' : '↓'} {lastMonthCA > 0 ? Math.round((thisMonthCA - lastMonthCA) / lastMonthCA * 100) : 0}% vs mois préc.
-            </p>
-          )}
+          <p className="text-xs text-gray-500 uppercase">Payées</p>
+          <p className="text-2xl font-bold text-green-600">{closedInvoices.filter(i => i.status === 'paid').length}</p>
         </div>
       </div>
 
@@ -17412,155 +17664,282 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                 </div>
               )}
 
-              {/* === TAB: Tableau de bord === */}
-              {activeTab === 'stats' && (
-                <div className="space-y-6">
-                  {/* Date filter */}
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-gray-800">📊 Tableau de Bord Facturation</h3>
-                    <div className="flex items-center gap-2">
-                      {[
-                        { id: 'month', label: 'Ce mois' },
-                        { id: 'quarter', label: 'Ce trimestre' },
-                        { id: 'year', label: 'Cette année' },
-                        { id: 'all', label: 'Tout' }
-                      ].map(f => (
-                        <button
-                          key={f.id}
-                          onClick={() => setDateFilter(f.id)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium ${dateFilter === f.id ? 'bg-[#1E3A5F] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                      <button onClick={exportCSV} className="px-3 py-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg text-xs font-medium ml-2">
-                        📥 Export CSV
-                      </button>
+              {/* === TAB: Rapprochement Bancaire === */}
+              {activeTab === 'reconciliation' && (
+                <div className="space-y-5">
+                  {/* Stats bar */}
+                  <div className="grid grid-cols-5 gap-3">
+                    <div className="bg-gray-50 rounded-lg p-3 border text-center">
+                      <p className="text-xs text-gray-500">Total importé</p>
+                      <p className="text-xl font-bold text-gray-700">{reconStats.total}</p>
+                    </div>
+                    <div className={`rounded-lg p-3 border text-center cursor-pointer ${reconFilter === 'unmatched' ? 'bg-red-100 border-red-300' : 'bg-red-50 border-red-200'}`} onClick={() => setReconFilter(reconFilter === 'unmatched' ? 'all' : 'unmatched')}>
+                      <p className="text-xs text-red-600">Non rapproché</p>
+                      <p className="text-xl font-bold text-red-700">{reconStats.unmatched}</p>
+                      {reconStats.unmatchedAmount > 0 && <p className="text-xs text-red-500">{reconStats.unmatchedAmount.toFixed(0)} €</p>}
+                    </div>
+                    <div className={`rounded-lg p-3 border text-center cursor-pointer ${reconFilter === 'matched' ? 'bg-amber-100 border-amber-300' : 'bg-amber-50 border-amber-200'}`} onClick={() => setReconFilter(reconFilter === 'matched' ? 'all' : 'matched')}>
+                      <p className="text-xs text-amber-600">Rapproché</p>
+                      <p className="text-xl font-bold text-amber-700">{reconStats.matched + reconStats.review}</p>
+                    </div>
+                    <div className={`rounded-lg p-3 border text-center cursor-pointer ${reconFilter === 'confirmed' ? 'bg-green-100 border-green-300' : 'bg-green-50 border-green-200'}`} onClick={() => setReconFilter(reconFilter === 'confirmed' ? 'all' : 'confirmed')}>
+                      <p className="text-xs text-green-600">Confirmé</p>
+                      <p className="text-xl font-bold text-green-700">{reconStats.confirmed}</p>
+                      {reconStats.matchedAmount > 0 && <p className="text-xs text-green-500">{reconStats.matchedAmount.toFixed(0)} €</p>}
+                    </div>
+                    <div className={`rounded-lg p-3 border text-center cursor-pointer ${reconFilter === 'ignored' ? 'bg-gray-200 border-gray-400' : 'bg-gray-50 border-gray-200'}`} onClick={() => setReconFilter(reconFilter === 'ignored' ? 'all' : 'ignored')}>
+                      <p className="text-xs text-gray-500">Ignoré</p>
+                      <p className="text-xl font-bold text-gray-500">{reconStats.ignored}</p>
                     </div>
                   </div>
 
-                  {/* Revenue Overview */}
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="bg-gradient-to-br from-[#1E3A5F] to-[#2a5490] text-white rounded-xl p-5">
-                      <p className="text-sm text-white/70">CA ce mois</p>
-                      <p className="text-3xl font-bold mt-1">{thisMonthCA.toFixed(0)} €</p>
-                      <p className="text-xs text-white/60 mt-1">{thisMonth.length} facture{thisMonth.length > 1 ? 's' : ''}</p>
-                    </div>
-                    <div className="bg-gradient-to-br from-green-600 to-green-700 text-white rounded-xl p-5">
-                      <p className="text-sm text-white/70">Encaissé ce mois</p>
-                      <p className="text-3xl font-bold mt-1">{thisMonthPaid.toFixed(0)} €</p>
-                      <p className="text-xs text-white/60 mt-1">
-                        {thisMonthCA > 0 ? Math.round(thisMonthPaid / thisMonthCA * 100) : 0}% du CA
-                      </p>
-                    </div>
-                    <div className="bg-gradient-to-br from-amber-500 to-amber-600 text-white rounded-xl p-5">
-                      <p className="text-sm text-white/70">Encours total</p>
-                      <p className="text-3xl font-bold mt-1">{totalOpen.toFixed(0)} €</p>
-                      <p className="text-xs text-white/60 mt-1">{openInvoices.length} facture{openInvoices.length > 1 ? 's' : ''} en cours</p>
-                    </div>
-                  </div>
-
-                  {/* Revenue Bar Chart (CSS-based) */}
-                  <div className="bg-white rounded-xl border p-5">
-                    <h4 className="font-medium text-gray-700 mb-4">Chiffre d'affaires — 6 derniers mois</h4>
-                    <div className="flex items-end gap-3 h-40">
-                      {monthlyData.map((m, idx) => {
-                        const maxVal = Math.max(...monthlyData.map(d => d.total), 1);
-                        const heightPct = (m.total / maxVal) * 100;
-                        const paidPct = m.total > 0 ? (m.paid / m.total) * heightPct : 0;
-                        return (
-                          <div key={idx} className="flex-1 flex flex-col items-center gap-1">
-                            <span className="text-xs font-bold text-gray-700">{m.total > 0 ? Math.round(m.total) + '€' : ''}</span>
-                            <div className="w-full relative" style={{ height: `${Math.max(heightPct, 4)}%` }}>
-                              <div className="absolute bottom-0 w-full bg-blue-200 rounded-t-lg" style={{ height: '100%' }} />
-                              <div className="absolute bottom-0 w-full bg-green-500 rounded-t-lg" style={{ height: `${paidPct}%` }} />
-                            </div>
-                            <span className="text-xs text-gray-500">{m.label}</span>
-                            <span className="text-xs text-gray-400">{m.count} fac.</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
-                      <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-200 rounded" /> Facturé</span>
-                      <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500 rounded" /> Encaissé</span>
-                    </div>
-                  </div>
-
-                  {/* Aging Analysis */}
-                  <div className="bg-white rounded-xl border p-5">
-                    <h4 className="font-medium text-gray-700 mb-4">Balance âgée — Analyse des retards</h4>
-                    <div className="grid grid-cols-5 gap-3">
-                      {[
-                        { label: 'Non échu', value: aging.current, color: 'green', bg: 'bg-green-50 border-green-200' },
-                        { label: '1-30 jours', value: aging['1_30'], color: 'yellow', bg: 'bg-yellow-50 border-yellow-200' },
-                        { label: '31-60 jours', value: aging['31_60'], color: 'orange', bg: 'bg-orange-50 border-orange-200' },
-                        { label: '61-90 jours', value: aging['61_90'], color: 'red', bg: 'bg-red-50 border-red-200' },
-                        { label: '90+ jours', value: aging['90_plus'], color: 'red', bg: 'bg-red-100 border-red-300' }
-                      ].map(bucket => (
-                        <div key={bucket.label} className={`rounded-lg border p-3 ${bucket.bg}`}>
-                          <p className="text-xs text-gray-500 font-medium">{bucket.label}</p>
-                          <p className={`text-xl font-bold mt-1 ${
-                            bucket.value === 0 ? 'text-gray-300' :
-                            bucket.color === 'green' ? 'text-green-700' :
-                            bucket.color === 'yellow' ? 'text-yellow-700' :
-                            bucket.color === 'orange' ? 'text-orange-700' :
-                            'text-red-700'
-                          }`}>{bucket.value > 0 ? bucket.value.toFixed(0) + ' €' : '—'}</p>
-                        </div>
-                      ))}
-                    </div>
-                    {totalOpen > 0 && (
-                      <div className="mt-3 h-3 rounded-full overflow-hidden flex bg-gray-100">
-                        {[
-                          { value: aging.current, color: 'bg-green-400' },
-                          { value: aging['1_30'], color: 'bg-yellow-400' },
-                          { value: aging['31_60'], color: 'bg-orange-400' },
-                          { value: aging['61_90'], color: 'bg-red-400' },
-                          { value: aging['90_plus'], color: 'bg-red-600' }
-                        ].filter(b => b.value > 0).map((b, i) => (
-                          <div key={i} className={`${b.color} h-full`} style={{ width: `${(b.value / totalOpen) * 100}%` }} />
-                        ))}
+                  {/* Upload + Actions */}
+                  <div className="flex items-center gap-3">
+                    <label className="flex-1 relative cursor-pointer">
+                      <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                        <p className="text-sm text-gray-600">📁 <strong>Importer relevé bancaire</strong> — Glisser ou cliquer (CSV)</p>
                       </div>
+                      <input type="file" accept=".csv,.txt" onChange={handleBankFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
+                    </label>
+                    {reconStats.unmatched > 0 && (
+                      <button onClick={runAutoMatch} disabled={autoMatching} className="px-5 py-4 bg-[#1E3A5F] hover:bg-[#2a5490] text-white rounded-xl font-medium disabled:opacity-50 whitespace-nowrap">
+                        {autoMatching ? '⏳ Analyse...' : '🔄 Auto-rapprochement'}
+                      </button>
+                    )}
+                    {reconStats.matched > 0 && (
+                      <button onClick={confirmAllMatches} className="px-5 py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium whitespace-nowrap">
+                        ✅ Confirmer tout ({reconStats.matched})
+                      </button>
                     )}
                   </div>
 
-                  {/* Top clients */}
-                  <div className="bg-white rounded-xl border p-5">
-                    <h4 className="font-medium text-gray-700 mb-3">Top clients — Encours ouvert</h4>
-                    <div className="space-y-2">
-                      {(() => {
-                        const clientTotals = {};
-                        openInvoices.forEach(inv => {
-                          const name = inv.companies?.name || 'Inconnu';
-                          if (!clientTotals[name]) clientTotals[name] = { total: 0, count: 0, overdue: 0 };
-                          const rem = (parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0);
-                          clientTotals[name].total += rem;
-                          clientTotals[name].count++;
-                          if (isOverdue(inv)) clientTotals[name].overdue += rem;
-                        });
-                        return Object.entries(clientTotals)
-                          .sort((a, b) => b[1].total - a[1].total)
-                          .slice(0, 8)
-                          .map(([name, data]) => (
-                            <div key={name} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50">
-                              <div className="w-8 h-8 rounded-full bg-[#1E3A5F] text-white flex items-center justify-center text-xs font-bold shrink-0">
-                                {name.charAt(0)}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm text-gray-800 truncate">{name}</p>
-                                <p className="text-xs text-gray-400">{data.count} facture{data.count > 1 ? 's' : ''}</p>
-                              </div>
-                              <div className="text-right shrink-0">
-                                <p className="font-bold text-sm">{data.total.toFixed(0)} €</p>
-                                {data.overdue > 0 && <p className="text-xs text-red-500">{data.overdue.toFixed(0)} € en retard</p>}
-                              </div>
-                            </div>
-                          ));
-                      })()}
-                      {openInvoices.length === 0 && <p className="text-gray-400 text-sm text-center py-4">Aucun encours ouvert</p>}
+                  {/* CSV Preview Modal */}
+                  {parsedPreview && (
+                    <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-5">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h4 className="font-bold text-blue-800">📄 Aperçu — {parsedPreview.fileName}</h4>
+                          <p className="text-sm text-blue-600">{parsedPreview.rows.length} transactions trouvées • {parsedPreview.rows.filter(r => r.amount > 0).length} crédits (paiements entrants)</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={confirmImport} disabled={uploading} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50">
+                            {uploading ? '⏳...' : '✅ Importer'}
+                          </button>
+                          <button onClick={() => setParsedPreview(null)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Annuler</button>
+                        </div>
+                      </div>
+                      <div className="max-h-60 overflow-y-auto bg-white rounded-lg border">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50 sticky top-0">
+                            <tr>
+                              <th className="text-left p-2 font-medium text-gray-500">Date</th>
+                              <th className="text-left p-2 font-medium text-gray-500">Description</th>
+                              <th className="text-right p-2 font-medium text-gray-500">Montant</th>
+                              <th className="text-left p-2 font-medium text-gray-500">Réf.</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {parsedPreview.rows.slice(0, 50).map((row, idx) => (
+                              <tr key={idx} className={`border-t ${row.amount > 0 ? 'bg-green-50' : 'bg-red-50 opacity-50'}`}>
+                                <td className="p-2 font-mono text-xs">{row.transaction_date}</td>
+                                <td className="p-2 text-xs truncate max-w-xs">{row.description}</td>
+                                <td className={`p-2 text-right font-bold ${row.amount > 0 ? 'text-green-700' : 'text-red-500'}`}>
+                                  {row.amount > 0 ? '+' : ''}{row.amount.toFixed(2)} €
+                                </td>
+                                <td className="p-2 text-xs text-gray-400 truncate max-w-32">{row.reference}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {parsedPreview.rows.length > 50 && <p className="text-center text-xs text-gray-400 py-2">... et {parsedPreview.rows.length - 50} de plus</p>}
+                      </div>
                     </div>
-                  </div>
+                  )}
+
+                  {/* Import History */}
+                  {bankImports.length > 0 && (
+                    <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-4 text-sm overflow-x-auto">
+                      <span className="text-gray-500 font-medium shrink-0">Imports:</span>
+                      {bankImports.slice(0, 5).map(imp => (
+                        <div key={imp.id} className="bg-white rounded-lg px-3 py-1.5 border text-xs shrink-0">
+                          <span className="font-medium">{imp.file_name}</span>
+                          <span className="text-gray-400 ml-2">{imp.transaction_count} txn</span>
+                          <span className="text-gray-400 ml-2">{frenchDate(imp.imported_at)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Transactions List */}
+                  {bankTransactions.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-medium text-gray-700">
+                          {reconFilter === 'all' ? 'Toutes les transactions' :
+                           reconFilter === 'unmatched' ? 'Transactions non rapprochées' :
+                           reconFilter === 'matched' ? 'Transactions rapprochées (à confirmer)' :
+                           reconFilter === 'confirmed' ? 'Paiements confirmés' :
+                           'Transactions ignorées'}
+                        </h4>
+                        <button onClick={() => setReconFilter('all')} className={`text-xs ${reconFilter !== 'all' ? 'text-blue-500 hover:underline' : 'text-gray-400'}`}>
+                          Voir tout
+                        </button>
+                      </div>
+                      <div className="space-y-1.5">
+                        {bankTransactions
+                          .filter(t => reconFilter === 'all' ? true : reconFilter === 'matched' ? ['matched', 'review'].includes(t.status) : t.status === reconFilter)
+                          .map(txn => {
+                            const matchedInv = txn.invoices;
+                            return (
+                              <div key={txn.id} className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
+                                txn.status === 'confirmed' ? 'bg-green-50 border-green-200' :
+                                txn.status === 'matched' ? 'bg-amber-50 border-amber-200' :
+                                txn.status === 'review' ? 'bg-yellow-50 border-yellow-200' :
+                                txn.status === 'ignored' ? 'bg-gray-50 border-gray-200 opacity-60' :
+                                'bg-white border-gray-200 hover:border-red-200'
+                              }`}>
+                                {/* Status icon */}
+                                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm shrink-0 ${
+                                  txn.status === 'confirmed' ? 'bg-green-200 text-green-700' :
+                                  txn.status === 'matched' ? 'bg-amber-200 text-amber-700' :
+                                  txn.status === 'review' ? 'bg-yellow-200 text-yellow-700' :
+                                  txn.status === 'ignored' ? 'bg-gray-200 text-gray-500' :
+                                  'bg-red-100 text-red-600'
+                                }`}>
+                                  {txn.status === 'confirmed' ? '✅' : txn.status === 'matched' ? '🔗' : txn.status === 'review' ? '❓' : txn.status === 'ignored' ? '⏭️' : '❌'}
+                                </div>
+
+                                {/* Date */}
+                                <div className="w-24 shrink-0">
+                                  <p className="text-sm font-mono">{txn.transaction_date ? new Date(txn.transaction_date + 'T00:00:00').toLocaleDateString('fr-FR') : '—'}</p>
+                                </div>
+
+                                {/* Description */}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-gray-800 truncate">{txn.description || '—'}</p>
+                                  {txn.reference && <p className="text-xs text-gray-400 truncate">Réf: {txn.reference}</p>}
+                                  {matchedInv && (
+                                    <p className="text-xs text-blue-600 font-medium mt-0.5">
+                                      → {matchedInv.invoice_number} — {matchedInv.companies?.name || 'Client'}
+                                      <span className="text-gray-400 ml-1">({parseFloat(matchedInv.total_ttc || 0).toFixed(2)} €)</span>
+                                      <span className={`ml-2 px-1.5 py-0.5 rounded text-xs ${txn.match_confidence === 'auto' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}>
+                                        {txn.match_confidence === 'auto' ? 'Auto' : 'Manuel'}
+                                      </span>
+                                    </p>
+                                  )}
+                                </div>
+
+                                {/* Amount */}
+                                <div className="text-right shrink-0 w-28">
+                                  <p className="text-lg font-bold text-green-700">+{parseFloat(txn.amount || 0).toFixed(2)} €</p>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {txn.status === 'unmatched' && (
+                                    <>
+                                      <button onClick={() => setMatchingTxn(txn)} className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-medium">
+                                        🔗 Rapprocher
+                                      </button>
+                                      <button onClick={() => ignoreTxn(txn.id)} className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-xs" title="Ignorer">
+                                        ⏭️
+                                      </button>
+                                    </>
+                                  )}
+                                  {txn.status === 'review' && (
+                                    <button onClick={() => setMatchingTxn(txn)} className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-xs font-medium">
+                                      ❓ Vérifier
+                                    </button>
+                                  )}
+                                  {txn.status === 'matched' && (
+                                    <button onClick={() => unmatchTxn(txn.id)} className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-xs" title="Annuler rapprochement">
+                                      ↩️
+                                    </button>
+                                  )}
+                                  {txn.status === 'ignored' && (
+                                    <button onClick={() => unmatchTxn(txn.id)} className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-xs" title="Remettre en attente">
+                                      ↩️
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-gray-400">
+                      <div className="text-5xl mb-3">🏦</div>
+                      <p className="font-medium text-gray-500">Aucune transaction bancaire</p>
+                      <p className="text-sm mt-1">Importez un relevé CSV pour commencer le rapprochement</p>
+                    </div>
+                  )}
+
+                  {/* Manual Match Modal */}
+                  {matchingTxn && (
+                    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setMatchingTxn(null)}>
+                      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="px-6 py-4 bg-gradient-to-r from-[#1E3A5F] to-[#2a5490] text-white">
+                          <h3 className="text-lg font-bold">🔗 Rapprocher manuellement</h3>
+                          <div className="flex items-center gap-4 mt-2 text-sm text-white/80">
+                            <span>{matchingTxn.transaction_date ? new Date(matchingTxn.transaction_date + 'T00:00:00').toLocaleDateString('fr-FR') : ''}</span>
+                            <span className="font-bold text-white">+{parseFloat(matchingTxn.amount || 0).toFixed(2)} €</span>
+                            <span className="truncate flex-1">{matchingTxn.description}</span>
+                          </div>
+                        </div>
+                        <div className="p-4 max-h-[60vh] overflow-y-auto">
+                          <p className="text-sm text-gray-500 mb-3">Sélectionnez la facture correspondante :</p>
+                          <div className="space-y-2">
+                            {openInvoices
+                              .filter(inv => inv.status !== 'draft')
+                              .sort((a, b) => {
+                                const remA = Math.abs((parseFloat(a.total_ttc) || 0) - (parseFloat(a.paid_amount) || 0) - parseFloat(matchingTxn.amount));
+                                const remB = Math.abs((parseFloat(b.total_ttc) || 0) - (parseFloat(b.paid_amount) || 0) - parseFloat(matchingTxn.amount));
+                                return remA - remB;
+                              })
+                              .map(inv => {
+                                const remaining = (parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0);
+                                const diff = Math.abs(remaining - parseFloat(matchingTxn.amount));
+                                const isExactMatch = diff < 0.02;
+                                return (
+                                  <div key={inv.id} 
+                                    onClick={() => manualMatch(matchingTxn.id, inv.id)}
+                                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all hover:shadow-md ${
+                                      isExactMatch ? 'border-green-400 bg-green-50 hover:bg-green-100' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                                    }`}
+                                  >
+                                    {isExactMatch && <span className="text-green-600 text-lg">✅</span>}
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-bold text-sm">{inv.invoice_number}</span>
+                                        <span className="text-xs text-gray-500">{inv.companies?.name}</span>
+                                        {isExactMatch && <span className="text-xs bg-green-200 text-green-800 px-2 py-0.5 rounded-full font-medium">Montant exact</span>}
+                                      </div>
+                                      <p className="text-xs text-gray-400 mt-0.5">
+                                        RMA: {inv.service_requests?.request_number || '—'} • Émise: {frenchDate(inv.invoice_date)} • Échéance: {frenchDate(inv.due_date)}
+                                      </p>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      <p className="font-bold text-sm">{remaining.toFixed(2)} € dû</p>
+                                      {!isExactMatch && <p className="text-xs text-gray-400">Δ {diff.toFixed(2)} €</p>}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            {openInvoices.filter(inv => inv.status !== 'draft').length === 0 && (
+                              <p className="text-gray-400 text-center py-6">Aucune facture ouverte</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="px-6 py-3 border-t bg-gray-50 flex justify-between">
+                          <button onClick={() => ignoreTxn(matchingTxn.id).then(() => setMatchingTxn(null))} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">
+                            ⏭️ Ignorer cette transaction
+                          </button>
+                          <button onClick={() => setMatchingTxn(null)} className="px-4 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg text-sm font-medium">Fermer</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -17600,19 +17979,235 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
 function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings }) {
   const [inv, setInv] = useState(invoice);
   const [showPayment, setShowPayment] = useState(false);
-  const [showAvoir, setShowAvoir] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentRef, setPaymentRef] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
-  const [sendingEmail, setSendingEmail] = useState(false);
-  const [generatingRelance, setGeneratingRelance] = useState(false);
-  const [generatingAvoir, setGeneratingAvoir] = useState(false);
-  const [avoirReason, setAvoirReason] = useState('');
-  const [avoirLines, setAvoirLines] = useState([]);
-  const [showActions, setShowActions] = useState(false);
-  const [editingNotes, setEditingNotes] = useState(false);
-  const [notesDraft, setNotesDraft] = useState(inv.notes || '');
-  const [relanceCount, setRelanceCount] = useState(inv.relance_count || 0);
+
+  const invoiceLines = inv.invoice_lines || [];
+  const company = inv.companies || {};
+  const rma = inv.service_requests || {};
+  
+  const isOverdue = inv.due_date && !['paid', 'cancelled'].includes(inv.status) && new Date(inv.due_date) < new Date();
+  const daysPastDue = inv.due_date ? Math.max(0, Math.floor((new Date() - new Date(inv.due_date)) / (1000 * 60 * 60 * 24))) : 0;
+  const remaining = (parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0);
+
+  const frenchDate = (dateStr) => {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    const months = ['jan.', 'fév.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  };
+
+  const getStatusBadge = () => {
+    if (inv.status === 'paid') return <span className="px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-sm font-bold">✅ Payée</span>;
+    if (inv.status === 'cancelled') return <span className="px-3 py-1.5 bg-gray-100 text-gray-500 rounded-full text-sm font-bold">Annulée</span>;
+    if (inv.status === 'partially_paid') return <span className="px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-full text-sm font-bold">⚠️ Paiement partiel</span>;
+    if (isOverdue) return <span className="px-3 py-1.5 bg-red-100 text-red-700 rounded-full text-sm font-bold animate-pulse">🔴 En retard ({daysPastDue}j)</span>;
+    if (inv.status === 'sent') return <span className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-full text-sm font-bold">📤 Envoyée</span>;
+    return <span className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-sm font-bold">📝 Brouillon</span>;
+  };
+
+  const markAsSent = async () => {
+    const { error } = await supabase.from('invoices').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', inv.id);
+    if (!error) { setInv({ ...inv, status: 'sent', sent_at: new Date().toISOString() }); notify('✅ Facture marquée comme envoyée'); if (reload) reload(); }
+  };
+
+  const recordPayment = async () => {
+    const amount = parseFloat(paymentAmount);
+    if (!amount || amount <= 0) { notify('Montant invalide', 'error'); return; }
+    const prevPaid = parseFloat(inv.paid_amount) || 0;
+    const newPaid = prevPaid + amount;
+    const totalDue = parseFloat(inv.total_ttc) || 0;
+    const isFullyPaid = newPaid >= totalDue - 0.02;
+    const updates = {
+      paid_amount: Math.min(newPaid, totalDue),
+      payment_reference: [inv.payment_reference, paymentRef].filter(Boolean).join(', '),
+      paid_at: paymentDate || new Date().toISOString().split('T')[0],
+      status: isFullyPaid ? 'paid' : 'partially_paid'
+    };
+    const { error } = await supabase.from('invoices').update(updates).eq('id', inv.id);
+    if (!error) {
+      setInv({ ...inv, ...updates });
+      setShowPayment(false); setPaymentAmount(''); setPaymentRef('');
+      notify(isFullyPaid ? '✅ Facture payée en totalité!' : `✅ Paiement de ${amount.toFixed(2)} € enregistré`);
+      if (reload) reload();
+    }
+  };
+
+  const cancelInvoice = async () => {
+    if (!confirm(`Annuler la facture ${inv.invoice_number} ? Cette action est irréversible.`)) return;
+    const { error } = await supabase.from('invoices').update({ status: 'cancelled' }).eq('id', inv.id);
+    if (!error) { notify('Facture annulée'); if (reload) reload(); onClose(); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 bg-gradient-to-r from-[#1E3A5F] to-[#2a5490] text-white flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold">{inv.invoice_number}</h2>
+            <p className="text-sm text-white/70">{company.name || 'Client'} {rma.request_number ? `• RMA ${rma.request_number}` : ''}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {getStatusBadge()}
+            <button onClick={onClose} className="text-white/80 hover:text-white text-2xl">×</button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* Overdue Alert */}
+          {isOverdue && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-3">
+              <span className="text-red-500 text-xl animate-pulse">🔴</span>
+              <div>
+                <p className="text-red-800 font-bold">Facture en retard — {daysPastDue} jour{daysPastDue > 1 ? 's' : ''}</p>
+                <p className="text-red-600 text-sm">Échéance: {frenchDate(inv.due_date)} • Reste dû: {remaining.toFixed(2)} €</p>
+              </div>
+            </div>
+          )}
+
+          {/* Info Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-xs text-gray-500">Date émission</p>
+              <p className="font-medium">{frenchDate(inv.invoice_date)}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-xs text-gray-500">Échéance</p>
+              <p className={`font-medium ${isOverdue ? 'text-red-600' : ''}`}>{frenchDate(inv.due_date)}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-xs text-gray-500">Total TTC</p>
+              <p className="font-bold text-lg">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
+            </div>
+            <div className={`rounded-lg p-3 ${remaining <= 0.01 ? 'bg-green-50' : 'bg-amber-50'}`}>
+              <p className="text-xs text-gray-500">Reste dû</p>
+              <p className={`font-bold text-lg ${remaining <= 0.01 ? 'text-green-700' : 'text-amber-700'}`}>
+                {remaining > 0.01 ? remaining.toFixed(2) + ' €' : '0.00 € ✅'}
+              </p>
+            </div>
+          </div>
+
+          {/* References */}
+          <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+            {inv.client_ref && <div><span className="text-gray-500">Vos réf:</span> <span className="font-medium">{inv.client_ref}</span></div>}
+            {rma.request_number && <div><span className="text-gray-500">RMA:</span> <span className="font-medium">{rma.request_number}</span></div>}
+            {rma.quote_number && <div><span className="text-gray-500">Devis:</span> <span className="font-medium">{rma.quote_number}</span></div>}
+            {rma.bc_number && <div><span className="text-gray-500">BC:</span> <span className="font-medium">{rma.bc_number}</span></div>}
+            {inv.sent_at && <div><span className="text-gray-500">Envoyée:</span> <span className="font-medium">{frenchDate(inv.sent_at)}</span></div>}
+            {inv.paid_at && <div><span className="text-gray-500">Payée le:</span> <span className="font-medium text-green-700">{frenchDate(inv.paid_at)}</span></div>}
+            {inv.payment_reference && <div className="col-span-2"><span className="text-gray-500">Réf. paiement:</span> <span className="font-medium">{inv.payment_reference}</span></div>}
+          </div>
+
+          {/* Line Items */}
+          <div>
+            <h4 className="font-medium text-gray-700 mb-2 text-sm">Lignes de facturation</h4>
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-[#1E3A5F] text-white">
+                  <tr>
+                    <th className="text-left p-2 text-xs">Qté</th>
+                    <th className="text-left p-2 text-xs">Désignation</th>
+                    <th className="text-right p-2 text-xs">P.U. HT</th>
+                    <th className="text-right p-2 text-xs">Total HT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoiceLines.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((line, idx) => (
+                    <tr key={idx} className={line.line_type === 'device_header' ? 'bg-blue-50 font-bold' : idx % 2 === 0 ? 'bg-gray-50' : ''}>
+                      <td className="p-2 text-xs">{line.line_type === 'device_header' ? '' : (line.quantity || 1)}</td>
+                      <td className="p-2 text-xs">{line.description}</td>
+                      <td className="p-2 text-xs text-right">{line.line_type === 'device_header' ? '' : (parseFloat(line.unit_price_ht || 0).toFixed(2) + ' €')}</td>
+                      <td className="p-2 text-xs text-right font-medium">{line.line_type === 'device_header' ? '' : (parseFloat(line.total_ht || 0).toFixed(2) + ' €')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="border-t bg-gray-50 p-3 space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Total HT</span>
+                  <span className="font-medium">{parseFloat(inv.subtotal_ht || 0).toFixed(2)} €</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">{inv.is_tva_exonerated ? 'TVA (exonérée)' : `TVA ${inv.tva_rate || 20}%`}</span>
+                  <span className="font-medium">{inv.is_tva_exonerated ? 'EXONÉRÉ' : (parseFloat(inv.tva_amount || 0).toFixed(2) + ' €')}</span>
+                </div>
+                <div className="flex justify-between pt-1 border-t">
+                  <span className="font-bold text-[#1E3A5F]">Total TTC</span>
+                  <span className="font-bold text-lg text-[#1E3A5F]">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</span>
+                </div>
+                {parseFloat(inv.paid_amount) > 0 && (
+                  <div className="flex justify-between text-green-700"><span>Payé</span><span className="font-bold">-{parseFloat(inv.paid_amount).toFixed(2)} €</span></div>
+                )}
+                {remaining > 0.01 && inv.status !== 'cancelled' && (
+                  <div className="flex justify-between text-amber-700 font-bold"><span>Reste dû</span><span>{remaining.toFixed(2)} €</span></div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Payment Recording */}
+          {showPayment && (
+            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+              <h4 className="font-bold text-green-800 mb-3">💰 Enregistrer un paiement</h4>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Montant (€)</label>
+                  <input type="number" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)}
+                    placeholder={remaining.toFixed(2)} className="w-full px-3 py-2 border rounded-lg text-lg font-bold" autoFocus />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Date du paiement</label>
+                  <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Réf. paiement</label>
+                  <input type="text" value={paymentRef} onChange={e => setPaymentRef(e.target.value)} placeholder="Virement, chèque n°..." className="w-full px-3 py-2 border rounded-lg" />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-3">
+                <button onClick={recordPayment} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium">✅ Enregistrer</button>
+                <button onClick={() => setPaymentAmount(remaining.toFixed(2))} className="px-4 py-2 bg-green-100 hover:bg-green-200 text-green-800 rounded-lg text-sm font-medium">Solder ({remaining.toFixed(2)} €)</button>
+                <button onClick={() => setShowPayment(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Annuler</button>
+              </div>
+            </div>
+          )}
+
+          {inv.notes && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <p className="text-sm text-yellow-800"><strong>Notes:</strong> {inv.notes}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer Actions */}
+        <div className="px-6 py-4 border-t bg-gray-50 flex items-center justify-between rounded-b-2xl">
+          <div className="flex items-center gap-2">
+            {inv.pdf_url && (
+              <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-[#1E3A5F] hover:bg-[#2a5490] text-white rounded-lg font-medium text-sm flex items-center gap-1">📄 PDF</a>
+            )}
+            {inv.status !== 'paid' && inv.status !== 'cancelled' && (
+              <button onClick={cancelInvoice} className="px-4 py-2 bg-gray-200 hover:bg-red-100 text-gray-600 hover:text-red-600 rounded-lg text-sm font-medium">🗑️ Annuler</button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {inv.status === 'draft' && (
+              <button onClick={markAsSent} className="px-5 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium text-sm">📤 Marquer envoyée</button>
+            )}
+            {inv.status !== 'paid' && inv.status !== 'cancelled' && (
+              <button onClick={() => { setShowPayment(true); setPaymentAmount(remaining.toFixed(2)); }} className="px-5 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium text-sm">💰 Enregistrer paiement</button>
+            )}
+            <button onClick={onClose} className="px-5 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium text-sm">Fermer</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// INVOICE CREATION MODAL
 
   const invoiceLines = inv.invoice_lines || [];
   const company = inv.companies || {};
