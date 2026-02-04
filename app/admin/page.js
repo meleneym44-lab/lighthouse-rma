@@ -2799,7 +2799,7 @@ export default function AdminPortal() {
     { id: 'parts', label: 'Pièces Détachées', icon: '🔩', badge: partsOrdersActionCount > 0 ? partsOrdersActionCount : null },
     { id: 'rentals', label: 'Locations', icon: '📅', badge: rentalActionCount > 0 ? rentalActionCount : null },
     { id: 'contracts', label: 'Contrats', icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
-    { id: 'invoices', label: 'Factures', icon: '💶' },
+    { id: 'invoices', label: 'Factures', icon: '📋' },
     { id: 'clients', label: 'Clients', icon: '👥' },
     { id: 'pricing', label: 'Tarifs & Pièces', icon: '💰' },
     { id: 'kpi', label: 'KPIs', icon: '📈' },
@@ -5925,7 +5925,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                             <option value="rapport">📋 Rapport</option>
                             <option value="certificat">🏆 Certificat</option>
                             <option value="bon_livraison">📦 Bon de livraison</option>
-                            <option value="facture">💶 Facture</option>
+                            <option value="facture">📋 Facture</option>
                             <option value="note_technique">🔧 Note technique</option>
                             <option value="correspondance">✉️ Correspondance</option>
                           </select>
@@ -8151,7 +8151,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
                             new Date(inv.due_date) < new Date() ? 'hover:border-red-300 hover:bg-red-50 border-red-200' :
                             'hover:border-amber-300 hover:bg-amber-50'
                           }`}>
-                          <span className="text-3xl">💶</span>
+                          <span className="text-3xl">📋</span>
                           <div className="flex-1">
                             <p className="font-medium text-gray-800">Facture {inv.invoice_number}</p>
                             <p className="text-xs text-gray-500">
@@ -16776,7 +16776,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
   const tabs = [
     { id: 'to_create', label: 'À Facturer', icon: '🔔', count: rmasToInvoice.length + createdInvoices.length, color: 'amber' },
     { id: 'open', label: 'Factures Ouvertes', icon: '📋', count: openInvoices.length, color: 'blue' },
-    { id: 'closed', label: 'Archivées', icon: '✅', count: closedInvoices.length, color: 'green' },
+    { id: 'closed', label: 'Payées', icon: '✅', count: closedInvoices.length, color: 'green' },
     { id: 'kpi', label: 'Tableau de Bord', icon: '📊', count: 0, color: 'gray' }
   ];
 
@@ -17363,7 +17363,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">💶 Facturation</h1>
+        <h1 className="text-2xl font-bold text-gray-800">Facturation</h1>
         <div className="flex items-center gap-3">
           <button onClick={exportCSV} className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg text-sm font-medium flex items-center gap-1.5">
             📥 Export CSV
@@ -17498,7 +17498,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                           }, 0);
                           return (
                             <div key={rma.id} className="flex items-center gap-4 p-4 border rounded-xl hover:bg-amber-50 hover:border-amber-200 transition-all group">
-                              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 font-bold text-lg shrink-0">💶</div>
+                              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-bold text-sm shrink-0">€</div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
                                   <span className="font-bold text-gray-800">{rma.request_number}</span>
@@ -17752,7 +17752,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                 </div>
               )}
 
-              {/* ========== TAB 3: Archivées (Paid + Cancelled) ========== */}
+              {/* ========== TAB 3: Payées (Paid + Cancelled) ========== */}
               {activeTab === 'closed' && (() => {
                 const paidInvoices = filterItems(closedInvoices.filter(i => i.status === 'paid'));
                 const cancelledInvoices = filterItems(closedInvoices.filter(i => i.status === 'cancelled'));
@@ -17772,7 +17772,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                     {paidInvoices.length === 0 && cancelledInvoices.length === 0 ? (
                       <div className="text-center py-12 text-gray-400">
                         <div className="text-4xl mb-2">📂</div>
-                        <p>Aucune facture archivée</p>
+                        <p>Aucune facture payée</p>
                       </div>
                     ) : (
                       <div className="space-y-2">
@@ -18561,7 +18561,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
         <div className="px-6 py-4 border-b bg-gradient-to-r from-amber-500 to-orange-500 rounded-t-2xl">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-bold text-white">💶 Créer Facture</h2>
+              <h2 className="text-xl font-bold text-white">Créer Facture</h2>
               <p className="text-amber-100 text-sm">{rma.request_number} — {company.name}</p>
             </div>
             <div className="flex items-center gap-3">
@@ -18728,7 +18728,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
                 disabled={saving || serviceLines.length === 0}
                 className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
               >
-                {saving ? '⏳ Génération...' : '💶 Générer Facture PDF & Enregistrer'}
+                {saving ? '⏳ Génération...' : 'Générer Facture PDF & Enregistrer'}
               </button>
             </>
           )}
