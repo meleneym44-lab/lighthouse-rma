@@ -16975,7 +16975,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
       textLines = text.split(/\r?\n/);
     }
 
-    const result = parseBankFile(textLines);
+    const result = parseCSV(textLines.join('\n'));
     
     if (!result || result.error) {
       notify(result?.error || 'Erreur de lecture du fichier', 'error');
@@ -17482,9 +17482,9 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                   <div className="flex items-center gap-3">
                     <label className="flex-1 relative cursor-pointer">
                       <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-blue-400 hover:bg-blue-50 transition-colors">
-                        <p className="text-sm text-gray-600">📁 <strong>Importer relevé bancaire</strong> — Glisser ou cliquer (CSV)</p>
+                        <p className="text-sm text-gray-600">📁 <strong>Importer relevé bancaire</strong> — Glisser ou cliquer (CSV, Excel)</p>
                       </div>
-                      <input type="file" accept=".csv,.txt" onChange={handleBankFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
+                      <input type="file" accept=".csv,.txt,.xls,.xlsx" onChange={handleBankFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
                     </label>
                     {reconStats.unmatched > 0 && (
                       <button onClick={runAutoMatch} disabled={autoMatching} className="px-5 py-4 bg-[#1E3A5F] hover:bg-[#2a5490] text-white rounded-xl font-medium disabled:opacity-50 whitespace-nowrap">
