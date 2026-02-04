@@ -13819,18 +13819,56 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
         </div>
       )}
       
-      {selectedClient && <ClientDetailModal client={selectedClient} requests={requests.filter(r => r.company_id === selectedClient.id)} equipment={equipment.filter(e => e.company_id === selectedClient.id)} onClose={() => setSelectedClient(null)} notify={notify} reload={reload} isAdmin={isAdmin} onSelectRMA={onSelectRMA} onSelectDevice={onSelectDevice} />}
+      {selectedClient && <ClientDetailModal client={selectedClient} requests={requests.filter(r => r.company_id === selectedClient.id && r.request_type !== 'parts')} partsOrders={requests.filter(r => r.company_id === selectedClient.id && r.request_type === 'parts')} equipment={equipment.filter(e => e.company_id === selectedClient.id)} onClose={() => setSelectedClient(null)} notify={notify} reload={reload} isAdmin={isAdmin} onSelectRMA={onSelectRMA} onSelectDevice={onSelectDevice} />}
     </div>
   );
 }
 
-function ClientDetailModal({ client, requests, equipment, onClose, notify, reload, isAdmin, onSelectRMA, onSelectDevice }) {
+function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, notify, reload, isAdmin, onSelectRMA, onSelectDevice }) {
   const [activeTab, setActiveTab] = useState('rmas');
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState({ name: client.name || '', billing_address: client.billing_address || '', billing_city: client.billing_city || '', billing_postal_code: client.billing_postal_code || '', siret: client.siret || '', vat_number: client.vat_number || '' });
   const [saving, setSaving] = useState(false);
-  const [selectedEquipment, setSelectedEquipment] = useState(null); // For showing device RMA history
-  const tabs = [{ id: 'rmas', label: 'RMAs', icon: '📋', count: requests.length }, { id: 'devices', label: 'Appareils', icon: '🔧', count: equipment.length }, { id: 'info', label: 'Informations', icon: 'ℹ️' }, { id: 'contacts', label: 'Contacts', icon: '👤', count: client.profiles?.length || 0 }];
+  const [selectedEquipment, setSelectedEquipment] = useState(null);
+  const [clientContracts, setClientContracts] = useState([]);
+  const [loadingContracts, setLoadingContracts] = useState(true);
+  const [clientLocations, setClientLocations] = useState([]);
+  
+  const partsOrdersList = partsOrders || [];
+  
+  // Fetch contracts and locations for this client
+  useEffect(() => {
+    const fetchClientData = async () => {
+      setLoadingContracts(true);
+      const { data: contracts } = await supabase
+        .from('contracts')
+        .select('*')
+        .eq('company_id', client.id)
+        .order('created_at', { ascending: false });
+      if (contracts) setClientContracts(contracts);
+      
+      // Fetch locations (shipping_addresses)
+      const { data: locations } = await supabase
+        .from('shipping_addresses')
+        .select('*')
+        .eq('company_id', client.id)
+        .order('label');
+      if (locations) setClientLocations(locations);
+      
+      setLoadingContracts(false);
+    };
+    fetchClientData();
+  }, [client.id]);
+  
+  const tabs = [
+    { id: 'rmas', label: 'RMAs', icon: '📋', count: requests.length }, 
+    { id: 'parts', label: 'Pièces', icon: '🔩', count: partsOrdersList.length },
+    { id: 'contracts', label: 'Contrats', icon: '📑', count: clientContracts.length },
+    { id: 'locations', label: 'Sites', icon: '📍', count: clientLocations.length },
+    { id: 'devices', label: 'Appareils', icon: '🔧', count: equipment.length }, 
+    { id: 'info', label: 'Info', icon: 'ℹ️' }, 
+    { id: 'contacts', label: 'Contacts', icon: '👤', count: client.profiles?.length || 0 }
+  ];
   const saveClient = async () => { setSaving(true); const { error } = await supabase.from('companies').update(editData).eq('id', client.id); if (error) notify('Erreur: ' + error.message, 'error'); else { notify('Client mis à jour!'); setEditing(false); reload(); } setSaving(false); };
   
   const handleSelectRMA = (rma) => {
@@ -13854,7 +13892,7 @@ function ClientDetailModal({ client, requests, equipment, onClose, notify, reloa
           </div>
           <button onClick={onClose} className="text-white/70 hover:text-white text-2xl">&times;</button>
         </div>
-        <div className="border-b bg-gray-50 flex">{tabs.map(tab => <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSelectedEquipment(null); }} className={`px-6 py-3 font-medium flex items-center gap-2 border-b-2 ${activeTab === tab.id ? 'border-[#00A651] text-[#00A651] bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><span>{tab.icon}</span>{tab.label}{tab.count !== undefined && <span className="px-2 py-0.5 bg-gray-200 rounded-full text-xs">{tab.count}</span>}</button>)}</div>
+        <div className="border-b bg-gray-50 flex overflow-x-auto">{tabs.map(tab => <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSelectedEquipment(null); }} className={`px-4 py-3 font-medium flex items-center gap-1.5 border-b-2 whitespace-nowrap text-sm ${activeTab === tab.id ? 'border-[#00A651] text-[#00A651] bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><span>{tab.icon}</span>{tab.label}{tab.count !== undefined && tab.count > 0 && <span className="px-1.5 py-0.5 bg-gray-200 rounded-full text-xs">{tab.count}</span>}</button>)}</div>
         <div className="flex-1 overflow-y-auto p-6">
           {activeTab === 'rmas' && (
             <div className="space-y-3">
@@ -13876,6 +13914,131 @@ function ClientDetailModal({ client, requests, equipment, onClose, notify, reloa
                   </div>
                 ); 
               })}
+            </div>
+          )}
+          
+          {/* Parts Orders Tab */}
+          {activeTab === 'parts' && (
+            <div className="space-y-3">
+              {partsOrdersList.length === 0 ? <p className="text-center text-gray-400 py-8">Aucune commande de pièces</p> : partsOrdersList.map(po => {
+                const poStatusStyles = {
+                  submitted: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Soumise' },
+                  quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
+                  quote_revision_requested: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Révision demandée' },
+                  bc_review: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'BC à vérifier' },
+                  in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'En cours' },
+                  ready_to_ship: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Prêt à expédier' },
+                  shipped: { bg: 'bg-green-100', text: 'text-green-700', label: '🚚 Expédié' },
+                  delivered: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: '✅ Livré' },
+                  completed: { bg: 'bg-gray-100', text: 'text-gray-700', label: '✅ Terminé' },
+                  cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulée' }
+                };
+                const style = poStatusStyles[po.status] || { bg: 'bg-gray-100', text: 'text-gray-700', label: po.status };
+                const parts = po.quote_data?.parts || [];
+                const total = po.quote_data?.grandTotal || 0;
+                const shippingData = po.quote_data?.shipping || {};
+                
+                return (
+                  <div key={po.id} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors">
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-center gap-4">
+                        <span className="font-mono font-bold text-amber-600">{po.request_number || 'En attente'}</span>
+                        <div>
+                          <p className="font-medium">{parts.length} pièce(s)</p>
+                          {po.bc_number && <p className="text-xs text-green-600 font-mono">BC: {po.bc_number}</p>}
+                          {po.quote_number && <p className="text-xs text-blue-600 font-mono">Devis: {po.quote_number}</p>}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+                        <p className="text-xs text-gray-400 mt-1">{new Date(po.created_at).toLocaleDateString('fr-FR')}</p>
+                        {total > 0 && <p className="text-sm font-bold text-gray-700 mt-1">{total.toFixed(2)} €</p>}
+                      </div>
+                    </div>
+                    {/* Show tracking for shipped orders */}
+                    {shippingData.trackingNumber && (
+                      <div className="mt-2 pt-2 border-t border-gray-200 flex items-center gap-2 text-sm">
+                        <span className="text-gray-500">🚚 UPS:</span>
+                        <a href={`https://www.ups.com/track?tracknum=${shippingData.trackingNumber}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-mono text-xs">{shippingData.trackingNumber}</a>
+                        {shippingData.blNumber && <span className="text-gray-400 ml-2">BL: {shippingData.blNumber}</span>}
+                      </div>
+                    )}
+                    {/* Show parts summary */}
+                    {parts.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <div className="flex flex-wrap gap-1">
+                          {parts.slice(0, 3).map((p, i) => (
+                            <span key={i} className="px-2 py-0.5 bg-white rounded text-xs text-gray-600 border">{p.partNumber || p.description?.substring(0, 20)}</span>
+                          ))}
+                          {parts.length > 3 && <span className="px-2 py-0.5 text-xs text-gray-400">+{parts.length - 3} autres</span>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          
+          {/* Contracts Tab */}
+          {activeTab === 'contracts' && (
+            <div className="space-y-3">
+              {loadingContracts ? <p className="text-center text-gray-400 py-8">Chargement...</p> :
+               clientContracts.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun contrat</p> : clientContracts.map(contract => {
+                const contractStatusStyles = {
+                  requested: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Demande' },
+                  draft: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Brouillon' },
+                  quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
+                  bc_pending: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'BC en attente' },
+                  active: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Actif' },
+                  expired: { bg: 'bg-red-100', text: 'text-red-700', label: 'Expiré' },
+                  cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
+                };
+                const style = contractStatusStyles[contract.status] || { bg: 'bg-gray-100', text: 'text-gray-700', label: contract.status };
+                
+                return (
+                  <div key={contract.id} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="font-mono font-bold text-purple-600">{contract.contract_number || 'En attente'}</span>
+                        <p className="text-sm text-gray-600 mt-1">{contract.contract_type === 'tokens' ? '🎟️ Tokens' : contract.contract_type === 'unlimited' ? '♾️ Illimité' : contract.contract_type || 'Standard'}</p>
+                        {contract.token_balance !== undefined && contract.token_balance !== null && (
+                          <p className="text-xs text-amber-600 mt-0.5">Tokens restants: {contract.token_balance}/{contract.token_total || '—'}</p>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+                        {contract.start_date && <p className="text-xs text-gray-400 mt-1">{new Date(contract.start_date).toLocaleDateString('fr-FR')} → {contract.end_date ? new Date(contract.end_date).toLocaleDateString('fr-FR') : '—'}</p>}
+                        {contract.annual_value && <p className="text-sm font-bold text-gray-700 mt-1">{parseFloat(contract.annual_value).toFixed(2)} €/an</p>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          
+          {/* Locations Tab */}
+          {activeTab === 'locations' && (
+            <div className="space-y-3">
+              {loadingContracts ? <p className="text-center text-gray-400 py-8">Chargement...</p> :
+               clientLocations.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun site enregistré</p> : clientLocations.map(loc => (
+                <div key={loc.id} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium">{loc.label || loc.company_name || 'Site sans nom'}</p>
+                      {loc.attention && <p className="text-sm text-gray-600">Att: {loc.attention}</p>}
+                      <p className="text-sm text-gray-500">{loc.address_line1}</p>
+                      <p className="text-sm text-gray-500">{loc.postal_code} {loc.city}</p>
+                      <p className="text-xs text-gray-400">{loc.country || 'France'}</p>
+                    </div>
+                    <div className="text-right">
+                      {loc.phone && <p className="text-xs text-gray-500">📞 {loc.phone}</p>}
+                      {loc.is_default && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs">Par défaut</span>}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
           
