@@ -8190,77 +8190,88 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
                     </div>
                     
                     {/* System Documents */}
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      {/* Devis */}
                       {order.quote_url && (
                         <a href={order.quote_url} target="_blank" rel="noopener noreferrer" 
-                          className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-blue-300 hover:bg-blue-50 transition-colors">
-                          <span className="text-3xl">📄</span>
+                          className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
+                          <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl shrink-0">💰</div>
                           <div>
                             <p className="font-medium text-gray-800">Devis</p>
-                            <p className="text-xs text-gray-500">Original</p>
+                            <p className="text-sm text-blue-600">{order.quote_number ? `N° ${order.quote_number}` : order.request_number}</p>
                           </div>
                         </a>
                       )}
                       
+                      {/* Devis Signé / BC */}
                       {order.signed_quote_url && order.signed_quote_url !== order.quote_url && (
                         <a href={order.signed_quote_url} target="_blank" rel="noopener noreferrer" 
-                          className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-green-300 hover:bg-green-50 transition-colors">
-                          <span className="text-3xl">✅</span>
+                          className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
+                          <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl shrink-0">✅</div>
                           <div>
-                            <p className="font-medium text-gray-800">Devis Signé</p>
-                            <p className="text-xs text-gray-500">Approuvé</p>
+                            <p className="font-medium text-gray-800">Devis Signé / BC</p>
+                            <p className="text-sm text-green-600">{order.bc_number ? `N° ${order.bc_number}` : 'Signé'}</p>
                           </div>
                         </a>
                       )}
                       
+                      {/* BC Uploadé (separate file from client) */}
                       {order.bc_file_url && order.bc_file_url !== order.signed_quote_url && (
                         <a href={order.bc_file_url} target="_blank" rel="noopener noreferrer" 
-                          className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-purple-300 hover:bg-purple-50 transition-colors">
-                          <span className="text-3xl">📎</span>
+                          className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                          <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📝</div>
                           <div>
-                            <p className="font-medium text-gray-800">BC Uploadé</p>
-                            <p className="text-xs text-gray-500">Fichier client</p>
+                            <p className="font-medium text-gray-800">Bon de Commande Client</p>
+                            <p className="text-sm text-purple-600">{order.bc_number ? `N° ${order.bc_number}` : 'BC client'}</p>
                           </div>
                         </a>
                       )}
                       
+                      {/* UPS Label */}
                       {shippingData.upsLabelUrl && (
                         <a href={shippingData.upsLabelUrl} target="_blank" rel="noopener noreferrer" 
-                          className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-amber-300 hover:bg-amber-50 transition-colors">
-                          <span className="text-3xl">🏷️</span>
+                          className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors border-amber-200">
+                          <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🏷️</div>
                           <div>
                             <p className="font-medium text-gray-800">Étiquette UPS</p>
-                            <p className="text-xs text-gray-500">{shippingData.trackingNumber}</p>
+                            <p className="text-sm text-amber-600">{shippingData.trackingNumber}</p>
                           </div>
                         </a>
                       )}
                       
+                      {/* Bon de Livraison */}
                       {shippingData.blUrl && (
                         <a href={shippingData.blUrl} target="_blank" rel="noopener noreferrer" 
-                          className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-indigo-300 hover:bg-indigo-50 transition-colors">
-                          <span className="text-3xl">📋</span>
+                          className="flex items-center gap-4 p-4 border rounded-lg hover:bg-indigo-50 transition-colors border-indigo-200">
+                          <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📋</div>
                           <div>
                             <p className="font-medium text-gray-800">Bon de Livraison</p>
-                            <p className="text-xs text-gray-500">{shippingData.blNumber}</p>
+                            <p className="text-sm text-indigo-600">{shippingData.blNumber ? `N° ${shippingData.blNumber}` : 'BL'}</p>
                           </div>
                         </a>
                       )}
 
+                      {/* Invoices */}
                       {orderInvoices.map(inv => (
                         <a key={inv.id} href={inv.pdf_url} target="_blank" rel="noopener noreferrer"
-                          className={`flex items-center gap-3 p-4 bg-white rounded-lg border-2 transition-colors ${
-                            inv.status === 'paid' ? 'hover:border-green-300 hover:bg-green-50 border-green-200' :
-                            new Date(inv.due_date) < new Date() ? 'hover:border-red-300 hover:bg-red-50 border-red-200' :
-                            'hover:border-amber-300 hover:bg-amber-50'
+                          className={`flex items-center gap-4 p-4 border rounded-lg transition-colors ${
+                            inv.status === 'paid' ? 'hover:bg-green-50 border-green-200' :
+                            new Date(inv.due_date) < new Date() ? 'hover:bg-red-50 border-red-200' :
+                            'hover:bg-amber-50 border-amber-200'
                           }`}>
-                          <span className="text-3xl">📋</span>
+                          <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-2xl shrink-0 ${
+                            inv.status === 'paid' ? 'bg-green-100' :
+                            new Date(inv.due_date) < new Date() ? 'bg-red-100' : 'bg-amber-100'
+                          }`}>📋</div>
                           <div className="flex-1">
-                            <p className="font-medium text-gray-800">Facture {inv.invoice_number}</p>
-                            <p className="text-xs text-gray-500">
-                              {parseFloat(inv.total_ttc || 0).toFixed(2)} € TTC
-                              {inv.status === 'paid' ? ' — Payée ✅' : 
-                               new Date(inv.due_date) < new Date() ? ' — En retard ⚠️' : 
-                               ` — Échéance: ${new Date(inv.due_date).toLocaleDateString('fr-FR')}`}
+                            <p className="font-medium text-gray-800">Facture</p>
+                            <p className={`text-sm ${
+                              inv.status === 'paid' ? 'text-green-600' :
+                              new Date(inv.due_date) < new Date() ? 'text-red-600' : 'text-amber-600'
+                            }`}>
+                              N° {inv.invoice_number} — {parseFloat(inv.total_ttc || 0).toFixed(2)} € TTC
+                              {inv.status === 'paid' ? ' ✅' : 
+                               new Date(inv.due_date) < new Date() ? ' ⚠️ En retard' : ''}
                             </p>
                           </div>
                         </a>
