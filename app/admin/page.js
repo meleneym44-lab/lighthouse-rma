@@ -16773,9 +16773,9 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
 
   const tabs = [
     { id: 'to_create', label: 'À Facturer', icon: '🔔', count: rmasToInvoice.length, color: 'amber' },
-    { id: 'open', label: 'En Cours', icon: '📤', count: openInvoices.length, color: 'blue' },
-    { id: 'reconciliation', label: 'Rapprochement', icon: '🏦', count: 0, color: 'purple' },
-    { id: 'closed', label: 'Archivées', icon: '✅', count: closedInvoices.length, color: 'green' }
+    { id: 'open', label: 'Factures Ouvertes', icon: '📋', count: openInvoices.length, color: 'blue' },
+    { id: 'closed', label: 'Archivées', icon: '✅', count: closedInvoices.length, color: 'green' },
+    { id: 'kpi', label: 'Tableau de Bord', icon: '📊', count: 0, color: 'gray' }
   ];
 
   // ========== BANK RECONCILIATION STATE ==========
@@ -16803,7 +16803,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
     if (txns) setBankTransactions(txns);
   };
 
-  useEffect(() => { if (activeTab === 'reconciliation') loadBankData(); }, [activeTab]);
+  useEffect(() => { if (activeTab === 'open') loadBankData(); }, [activeTab]);
 
   // Parse CSV file (French bank format: semicolons, DD/MM/YYYY)
   // Parse bank amount: handles "3,200.00" (comma=thousands, dot=decimal) 
@@ -17224,45 +17224,117 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
   const totalOpen = openInvoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0) - (parseFloat(i.paid_amount) || 0), 0);
   const totalOverdue = openInvoices.filter(i => isOverdue(i)).reduce((s, i) => s + (parseFloat(i.total_ttc) || 0) - (parseFloat(i.paid_amount) || 0), 0);
 
+  // Due date color coding
+  const dueStatus = (inv) => {
+    if (inv.status === 'paid' || inv.status === 'cancelled') return 'paid';
+    if (!inv.due_date) return 'ok';
+    const now = new Date();
+    const due = new Date(inv.due_date);
+    const daysLeft = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
+    if (daysLeft < 0) return 'overdue';      // red - past due
+    if (daysLeft <= 7) return 'warning';      // orange - due within 7 days
+    return 'ok';                               // green - plenty of time
+  };
+
+  const dueColor = (inv) => {
+    const s = dueStatus(inv);
+    if (s === 'overdue') return { bg: 'bg-red-50 border-red-200 hover:bg-red-100', badge: 'bg-red-100 text-red-700', dot: 'bg-red-500' };
+    if (s === 'warning') return { bg: 'bg-orange-50 border-orange-200 hover:bg-orange-100', badge: 'bg-orange-100 text-orange-700', dot: 'bg-orange-400' };
+    return { bg: 'bg-green-50 border-green-200 hover:bg-green-100', badge: 'bg-green-100 text-green-700', dot: 'bg-green-500' };
+  };
+
+  // Excess payments (unmatched bank transactions that couldn't tie to any invoice)
+  const excessPayments = bankTransactions.filter(t => t.status === 'unmatched' || t.status === 'review');
+
+  // KPI state
+  const [kpiPeriod, setKpiPeriod] = useState('year');
+
+  const kpiInvoices = invoices.filter(inv => {
+    if (inv.status === 'cancelled') return false;
+    if (kpiPeriod === 'all') return true;
+    const d = new Date(inv.invoice_date);
+    const now = new Date();
+    if (kpiPeriod === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    if (kpiPeriod === 'quarter') {
+      const q = Math.floor(now.getMonth() / 3);
+      return Math.floor(d.getMonth() / 3) === q && d.getFullYear() === now.getFullYear();
+    }
+    if (kpiPeriod === 'year') return d.getFullYear() === now.getFullYear();
+    return true;
+  });
+
+  const kpiRevenue = kpiInvoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
+  const kpiPaid = kpiInvoices.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
+  const kpiCount = kpiInvoices.length;
+
+  // Monthly revenue for chart (last 12 months)
+  const monthlyRevenue = (() => {
+    const months = [];
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthInvs = invoices.filter(inv => {
+        const invDate = new Date(inv.invoice_date);
+        return invDate.getMonth() === d.getMonth() && invDate.getFullYear() === d.getFullYear() && inv.status !== 'cancelled';
+      });
+      const frMonths = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
+      months.push({
+        label: frMonths[d.getMonth()],
+        year: d.getFullYear(),
+        total: monthInvs.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0),
+        paid: monthInvs.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0),
+        count: monthInvs.length
+      });
+    }
+    return months;
+  })();
+
+  // Top clients by revenue
+  const topClients = (() => {
+    const clientMap = {};
+    kpiInvoices.forEach(inv => {
+      const name = inv.companies?.name || 'Inconnu';
+      if (!clientMap[name]) clientMap[name] = { total: 0, paid: 0, count: 0, open: 0 };
+      clientMap[name].total += parseFloat(inv.total_ttc) || 0;
+      clientMap[name].count++;
+      if (inv.status === 'paid') clientMap[name].paid += parseFloat(inv.total_ttc) || 0;
+      else clientMap[name].open += (parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0);
+    });
+    return Object.entries(clientMap).sort((a, b) => b[1].total - a[1].total).slice(0, 10);
+  })();
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">💶 Facturation</h1>
         <div className="flex items-center gap-3">
-          <button onClick={exportCSV} className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg text-sm font-medium flex items-center gap-1.5" title="Exporter en CSV">
+          <button onClick={exportCSV} className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg text-sm font-medium flex items-center gap-1.5">
             📥 Export CSV
           </button>
           <div className="relative">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+            <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Rechercher facture, client, RMA..."
-              className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm w-72 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
+              className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm w-72 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
           </div>
         </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-amber-400">
           <p className="text-xs text-gray-500 uppercase">À facturer</p>
           <p className="text-2xl font-bold text-amber-600">{rmasToInvoice.length}</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-blue-400">
-          <p className="text-xs text-gray-500 uppercase">En attente</p>
-          <p className="text-2xl font-bold text-blue-600">{openInvoices.filter(i => i.status === 'sent').length}</p>
+          <p className="text-xs text-gray-500 uppercase">Factures ouvertes</p>
+          <p className="text-2xl font-bold text-blue-600">{openInvoices.length}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{totalOpen.toFixed(0)} € dû</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-red-400">
           <p className="text-xs text-gray-500 uppercase">En retard</p>
           <p className="text-2xl font-bold text-red-600">{openInvoices.filter(i => isOverdue(i)).length}</p>
-          {totalOverdue > 0 && <p className="text-xs text-red-500 mt-1">{totalOverdue.toFixed(0)} € dû</p>}
-        </div>
-        <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-[#1E3A5F]">
-          <p className="text-xs text-gray-500 uppercase">Encours total</p>
-          <p className="text-2xl font-bold text-[#1E3A5F]">{totalOpen.toFixed(0)} €</p>
+          {totalOverdue > 0 && <p className="text-xs text-red-500 mt-0.5">{totalOverdue.toFixed(0)} € dû</p>}
         </div>
         <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-green-400">
           <p className="text-xs text-gray-500 uppercase">Payées</p>
@@ -17274,21 +17346,17 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="border-b flex">
           {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               className={`px-6 py-3 font-medium flex items-center gap-2 border-b-2 -mb-px transition-colors ${
-                activeTab === tab.id 
-                  ? 'border-[#00A651] text-[#00A651]' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
+                activeTab === tab.id ? 'border-[#00A651] text-[#00A651]' : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}>
               <span>{tab.icon}</span> {tab.label}
               {tab.count > 0 && (
                 <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
                   tab.color === 'amber' ? 'bg-amber-100 text-amber-700' :
                   tab.color === 'blue' ? 'bg-blue-100 text-blue-700' :
-                  'bg-green-100 text-green-700'
+                  tab.color === 'green' ? 'bg-green-100 text-green-700' :
+                  'bg-gray-100 text-gray-600'
                 }`}>{tab.count}</span>
               )}
             </button>
@@ -17298,12 +17366,11 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
         <div className="p-4">
           {loading ? (
             <div className="text-center py-12 text-gray-400">
-              <div className="animate-spin text-3xl mb-2">⏳</div>
-              Chargement...
+              <div className="animate-spin text-3xl mb-2">⏳</div>Chargement...
             </div>
           ) : (
             <>
-              {/* === TAB: À Facturer === */}
+              {/* ========== TAB 1: À Facturer ========== */}
               {activeTab === 'to_create' && (
                 <div>
                   {filterRMAs(rmasToInvoice).length === 0 ? (
@@ -17320,7 +17387,6 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                           if (!d.additional_work_needed || !d.additional_work_items) return s;
                           return s + d.additional_work_items.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
                         }, 0);
-                        
                         return (
                           <div key={rma.id} className="flex items-center gap-4 p-4 border rounded-xl hover:bg-amber-50 hover:border-amber-200 transition-all group">
                             <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 font-bold text-lg shrink-0">💶</div>
@@ -17338,13 +17404,11 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                             </div>
                             <div className="text-right shrink-0">
                               <p className="font-bold text-gray-800">{total.toFixed(2)} € HT</p>
-                              {supplementTotal > 0 && <p className="text-xs text-orange-500">+ {supplementTotal.toFixed(2)} € supplément</p>}
+                              {supplementTotal > 0 && <p className="text-xs text-blue-600">+ {supplementTotal.toFixed(2)} € suppl.</p>}
                             </div>
-                            <button
-                              onClick={() => setCreatingFor(rma)}
-                              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium text-sm opacity-80 group-hover:opacity-100 transition-opacity shrink-0"
-                            >
-                              Créer Facture →
+                            <button onClick={() => setCreatingFor(rma)}
+                              className="px-5 py-2.5 bg-[#00A651] hover:bg-[#008a43] text-white rounded-lg font-medium text-sm opacity-80 group-hover:opacity-100 transition-opacity">
+                              Créer Facture
                             </button>
                           </div>
                         );
@@ -17354,157 +17418,38 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                 </div>
               )}
 
-              {/* === TAB: En Cours === */}
+              {/* ========== TAB 2: Factures Ouvertes + Bank Reconciliation ========== */}
               {activeTab === 'open' && (
-                <div>
-                  {filterItems(openInvoices).length === 0 ? (
-                    <div className="text-center py-12 text-gray-400">
-                      <div className="text-4xl mb-2">📭</div>
-                      <p>Aucune facture en cours</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {filterItems(openInvoices).map(inv => (
-                        <div key={inv.id} onClick={() => setViewingInvoice(inv)} className={`flex items-center gap-4 p-4 border rounded-xl transition-all cursor-pointer ${
-                          isOverdue(inv) ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'hover:bg-gray-50'
-                        }`}>
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shrink-0 ${
-                            isOverdue(inv) ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
-                          }`}>
-                            {isOverdue(inv) ? '🔴' : '📄'}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-gray-800">{inv.invoice_number}</span>
-                              {getStatusBadge(inv)}
-                            </div>
-                            <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
-                              <span>{inv.companies?.name || 'Client'}</span>
-                              {inv.service_requests?.request_number && <span>RMA: {inv.service_requests.request_number}</span>}
-                              <span>Émise: {frenchDate(inv.invoice_date)}</span>
-                              <span>Échéance: {frenchDate(inv.due_date)}</span>
-                            </div>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="font-bold text-lg text-gray-800">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
-                            {inv.paid_amount > 0 && inv.paid_amount < inv.total_ttc && (
-                              <p className="text-xs text-yellow-600">Reçu: {parseFloat(inv.paid_amount).toFixed(2)} €</p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-                            {inv.pdf_url && (
-                              <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="p-2 text-gray-400 hover:text-blue-500 rounded-lg hover:bg-blue-50" title="Voir PDF">📄</a>
-                            )}
-                            {inv.status === 'draft' && (
-                              <button onClick={() => markAsSent(inv)} className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-medium">📤 Envoyer</button>
-                            )}
-                            {(inv.status === 'sent' || isOverdue(inv)) && (
-                              <button onClick={() => setViewingInvoice(inv)} className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-xs font-medium">💰 Paiement</button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* === TAB: Archivées === */}
-              {activeTab === 'closed' && (
-                <div>
-                  {filterItems(closedInvoices).length === 0 ? (
-                    <div className="text-center py-12 text-gray-400">
-                      <div className="text-4xl mb-2">📦</div>
-                      <p>Aucune facture archivée</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {filterItems(closedInvoices).map(inv => (
-                        <div key={inv.id} onClick={() => setViewingInvoice(inv)} className="flex items-center gap-4 p-3 border rounded-lg hover:bg-gray-50 transition-all cursor-pointer">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${
-                            inv.status === 'paid' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
-                          }`}>
-                            {inv.status === 'paid' ? '✅' : '⊘'}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-gray-700">{inv.invoice_number}</span>
-                              {getStatusBadge(inv)}
-                              <span className="text-sm text-gray-400">{inv.companies?.name}</span>
-                            </div>
-                            {inv.service_requests?.request_number && <p className="text-xs text-gray-400 mt-0.5">RMA: {inv.service_requests.request_number}</p>}
-                          </div>
-                          <div className="text-right text-sm text-gray-500 shrink-0">
-                            <p className="font-medium">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
-                            {inv.paid_at && <p className="text-xs">Payée le {frenchDate(inv.paid_at)}</p>}
-                            {inv.payment_reference && <p className="text-xs text-gray-400">{inv.payment_reference}</p>}
-                          </div>
-                          {inv.pdf_url && (
-                            <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="p-2 text-gray-400 hover:text-blue-500 rounded-lg hover:bg-blue-50">📄</a>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* === TAB: Rapprochement Bancaire === */}
-              {activeTab === 'reconciliation' && (
                 <div className="space-y-5">
-                  {/* Stats bar */}
-                  <div className="grid grid-cols-5 gap-3">
-                    <div className="bg-gray-50 rounded-lg p-3 border text-center">
-                      <p className="text-xs text-gray-500">Total importé</p>
-                      <p className="text-xl font-bold text-gray-700">{reconStats.total}</p>
-                    </div>
-                    <div className={`rounded-lg p-3 border text-center cursor-pointer ${reconFilter === 'unmatched' ? 'bg-red-100 border-red-300' : 'bg-red-50 border-red-200'}`} onClick={() => setReconFilter(reconFilter === 'unmatched' ? 'all' : 'unmatched')}>
-                      <p className="text-xs text-red-600">Non rapproché</p>
-                      <p className="text-xl font-bold text-red-700">{reconStats.unmatched}</p>
-                      {reconStats.unmatchedAmount > 0 && <p className="text-xs text-red-500">{reconStats.unmatchedAmount.toFixed(0)} €</p>}
-                    </div>
-                    <div className={`rounded-lg p-3 border text-center cursor-pointer ${reconFilter === 'matched' ? 'bg-amber-100 border-amber-300' : 'bg-amber-50 border-amber-200'}`} onClick={() => setReconFilter(reconFilter === 'matched' ? 'all' : 'matched')}>
-                      <p className="text-xs text-amber-600">Rapproché</p>
-                      <p className="text-xl font-bold text-amber-700">{reconStats.matched + reconStats.review}</p>
-                    </div>
-                    <div className={`rounded-lg p-3 border text-center cursor-pointer ${reconFilter === 'confirmed' ? 'bg-green-100 border-green-300' : 'bg-green-50 border-green-200'}`} onClick={() => setReconFilter(reconFilter === 'confirmed' ? 'all' : 'confirmed')}>
-                      <p className="text-xs text-green-600">Confirmé</p>
-                      <p className="text-xl font-bold text-green-700">{reconStats.confirmed}</p>
-                      {reconStats.matchedAmount > 0 && <p className="text-xs text-green-500">{reconStats.matchedAmount.toFixed(0)} €</p>}
-                    </div>
-                    <div className={`rounded-lg p-3 border text-center cursor-pointer ${reconFilter === 'ignored' ? 'bg-gray-200 border-gray-400' : 'bg-gray-50 border-gray-200'}`} onClick={() => setReconFilter(reconFilter === 'ignored' ? 'all' : 'ignored')}>
-                      <p className="text-xs text-gray-500">Ignoré</p>
-                      <p className="text-xl font-bold text-gray-500">{reconStats.ignored}</p>
-                    </div>
-                  </div>
-
-                  {/* Upload + Actions */}
+                  {/* Bank CSV Upload Bar */}
                   <div className="flex items-center gap-3">
                     <label className="flex-1 relative cursor-pointer">
-                      <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-blue-400 hover:bg-blue-50 transition-colors">
-                        <p className="text-sm text-gray-600">📁 <strong>Importer relevé bancaire</strong> — Glisser ou cliquer (CSV, Excel)</p>
+                      <div className="border-2 border-dashed border-gray-300 rounded-xl p-3 text-center hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                        <p className="text-sm text-gray-600">🏦 <strong>Importer relevé bancaire</strong> — CSV ou Excel</p>
                       </div>
                       <input type="file" accept=".csv,.txt,.xls,.xlsx" onChange={handleBankFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
                     </label>
                     {reconStats.unmatched > 0 && (
-                      <button onClick={runAutoMatch} disabled={autoMatching} className="px-5 py-4 bg-[#1E3A5F] hover:bg-[#2a5490] text-white rounded-xl font-medium disabled:opacity-50 whitespace-nowrap">
-                        {autoMatching ? '⏳ Analyse...' : '🔄 Auto-rapprochement'}
+                      <button onClick={runAutoMatch} disabled={autoMatching}
+                        className="px-5 py-3 bg-[#1E3A5F] hover:bg-[#2a5490] text-white rounded-xl font-medium text-sm disabled:opacity-50 whitespace-nowrap">
+                        {autoMatching ? '⏳ Analyse...' : `🔄 Auto-rapprochement (${reconStats.unmatched})`}
                       </button>
                     )}
                     {reconStats.matched > 0 && (
-                      <button onClick={confirmAllMatches} className="px-5 py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium whitespace-nowrap">
-                        ✅ Confirmer tout ({reconStats.matched})
+                      <button onClick={confirmAllMatches}
+                        className="px-5 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium text-sm whitespace-nowrap">
+                        ✅ Confirmer ({reconStats.matched})
                       </button>
                     )}
                   </div>
 
-                  {/* CSV Preview Modal */}
+                  {/* CSV Preview */}
                   {parsedPreview && (
                     <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-5">
                       <div className="flex items-center justify-between mb-3">
                         <div>
                           <h4 className="font-bold text-blue-800">📄 Aperçu — {parsedPreview.fileName}</h4>
-                          <p className="text-sm text-blue-600">{parsedPreview.rows.length} transactions trouvées • {parsedPreview.rows.filter(r => r.amount > 0).length} crédits (paiements entrants)</p>
+                          <p className="text-sm text-blue-600">{parsedPreview.rows.length} transactions • {parsedPreview.rows.filter(r => r.amount > 0).length} crédits entrants</p>
                         </div>
                         <div className="flex gap-2">
                           <button onClick={confirmImport} disabled={uploading} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50">
@@ -17513,218 +17458,256 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                           <button onClick={() => setParsedPreview(null)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Annuler</button>
                         </div>
                       </div>
-                      <div className="max-h-60 overflow-y-auto bg-white rounded-lg border">
+                      <div className="max-h-48 overflow-y-auto bg-white rounded-lg border">
                         <table className="w-full text-sm">
                           <thead className="bg-gray-50 sticky top-0">
                             <tr>
                               <th className="text-left p-2 font-medium text-gray-500">Date</th>
                               <th className="text-left p-2 font-medium text-gray-500">Description</th>
                               <th className="text-right p-2 font-medium text-gray-500">Montant</th>
-                              <th className="text-left p-2 font-medium text-gray-500">Réf.</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {parsedPreview.rows.slice(0, 50).map((row, idx) => (
-                              <tr key={idx} className={`border-t ${row.amount > 0 ? 'bg-green-50' : 'bg-red-50 opacity-50'}`}>
+                            {parsedPreview.rows.filter(r => r.amount > 0).slice(0, 30).map((row, idx) => (
+                              <tr key={idx} className="border-t bg-green-50">
                                 <td className="p-2 font-mono text-xs">{row.transaction_date}</td>
                                 <td className="p-2 text-xs truncate max-w-xs">{row.description}</td>
-                                <td className={`p-2 text-right font-bold ${row.amount > 0 ? 'text-green-700' : 'text-red-500'}`}>
-                                  {row.amount > 0 ? '+' : ''}{row.amount.toFixed(2)} €
-                                </td>
-                                <td className="p-2 text-xs text-gray-400 truncate max-w-32">{row.reference}</td>
+                                <td className="p-2 text-right font-bold text-green-700">+{row.amount.toFixed(2)} €</td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
-                        {parsedPreview.rows.length > 50 && <p className="text-center text-xs text-gray-400 py-2">... et {parsedPreview.rows.length - 50} de plus</p>}
                       </div>
                     </div>
                   )}
 
-                  {/* Import History */}
-                  {bankImports.length > 0 && (
-                    <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-4 text-sm overflow-x-auto">
-                      <span className="text-gray-500 font-medium shrink-0">Imports:</span>
-                      {bankImports.slice(0, 5).map(imp => (
-                        <div key={imp.id} className="bg-white rounded-lg px-3 py-1.5 border text-xs shrink-0">
-                          <span className="font-medium">{imp.file_name}</span>
-                          <span className="text-gray-400 ml-2">{imp.transaction_count} txn</span>
-                          <span className="text-gray-400 ml-2">{frenchDate(imp.imported_at)}</span>
+                  {/* Open Invoices List — color coded by due date */}
+                  <div className="space-y-2">
+                    {filterItems(openInvoices).length === 0 ? (
+                      <div className="text-center py-12 text-gray-400">
+                        <div className="text-4xl mb-2">📋</div>
+                        <p>Aucune facture ouverte</p>
+                      </div>
+                    ) : filterItems(openInvoices).map(inv => {
+                      const dc = dueColor(inv);
+                      const rem = (parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0);
+                      const matchedTxn = bankTransactions.find(t => t.matched_invoice_id === inv.id && ['matched', 'confirmed'].includes(t.status));
+                      const daysLeft = inv.due_date ? Math.ceil((new Date(inv.due_date) - new Date()) / (1000 * 60 * 60 * 24)) : null;
+
+                      return (
+                        <div key={inv.id} onClick={() => setViewingInvoice(inv)}
+                          className={`flex items-center gap-3 p-4 border rounded-xl cursor-pointer transition-all ${dc.bg}`}>
+                          <div className={`w-3 h-3 rounded-full shrink-0 ${dc.dot} ${dueStatus(inv) === 'overdue' ? 'animate-pulse' : ''}`} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-gray-800 text-sm">{inv.invoice_number}</span>
+                              <span className="text-gray-400 text-xs">—</span>
+                              <span className="font-medium text-gray-700 text-sm">{inv.companies?.name || 'Client'}</span>
+                              {inv.service_requests?.request_number && (
+                                <span className="text-xs text-gray-400">RMA {inv.service_requests.request_number}</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
+                              <span>Émise: {frenchDate(inv.invoice_date)}</span>
+                              <span>Échéance: {frenchDate(inv.due_date)}</span>
+                              {daysLeft !== null && (
+                                <span className={`font-medium ${daysLeft < 0 ? 'text-red-600' : daysLeft <= 7 ? 'text-orange-600' : 'text-green-600'}`}>
+                                  {daysLeft < 0 ? `${Math.abs(daysLeft)}j de retard` : daysLeft === 0 ? "Échéance aujourd'hui" : `${daysLeft}j restants`}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {matchedTxn && (
+                            <div className={`px-3 py-1.5 rounded-lg text-xs font-medium shrink-0 ${
+                              matchedTxn.status === 'confirmed' ? 'bg-green-200 text-green-800' : 'bg-amber-200 text-amber-800'
+                            }`}>
+                              {matchedTxn.status === 'confirmed' ? '✅ Confirmé' : '🔗 Rapproché'}
+                              <span className="ml-1 font-bold">+{parseFloat(matchedTxn.amount).toFixed(2)} €</span>
+                            </div>
+                          )}
+                          <div className="text-right shrink-0 w-28">
+                            <p className="font-bold text-gray-800">{rem.toFixed(2)} €</p>
+                            <p className="text-xs text-gray-400">sur {parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
+                          </div>
+                          <div className="shrink-0">{getStatusBadge(inv)}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Excess Payments — money we can't tie to any invoice */}
+                  {excessPayments.length > 0 && (
+                    <div className="mt-6">
+                      <h4 className="font-bold text-gray-700 flex items-center gap-2 mb-3">
+                        💰 Paiements non attribués
+                        <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">{excessPayments.length}</span>
+                      </h4>
+                      <div className="space-y-2">
+                        {excessPayments.map(txn => (
+                          <div key={txn.id} className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                            <div className="w-8 h-8 rounded-full bg-amber-200 flex items-center justify-center text-amber-700 text-sm shrink-0">💰</div>
+                            <div className="w-24 shrink-0">
+                              <p className="text-sm font-mono">{txn.transaction_date ? new Date(txn.transaction_date + 'T00:00:00').toLocaleDateString('fr-FR') : '—'}</p>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-gray-700 truncate">{txn.description || '—'}</p>
+                              {txn.reference && <p className="text-xs text-gray-400">Réf: {txn.reference}</p>}
+                            </div>
+                            <p className="font-bold text-green-700 shrink-0">+{parseFloat(txn.amount || 0).toFixed(2)} €</p>
+                            <div className="flex gap-1.5 shrink-0">
+                              <button onClick={(e) => { e.stopPropagation(); setMatchingTxn(txn); }}
+                                className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-medium">🔗 Attribuer</button>
+                              <button onClick={(e) => { e.stopPropagation(); ignoreTxn(txn.id); }}
+                                className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-xs" title="Archiver">📦</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ========== TAB 3: Archivées ========== */}
+              {activeTab === 'closed' && (
+                <div>
+                  {filterItems(closedInvoices).length === 0 ? (
+                    <div className="text-center py-12 text-gray-400">
+                      <div className="text-4xl mb-2">📂</div>
+                      <p>Aucune facture archivée</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {filterItems(closedInvoices).map(inv => (
+                        <div key={inv.id} onClick={() => setViewingInvoice(inv)}
+                          className={`flex items-center gap-3 p-4 border rounded-xl cursor-pointer transition-all ${
+                            inv.status === 'paid' ? 'bg-green-50 border-green-200 hover:bg-green-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                          }`}>
+                          <div className={`w-3 h-3 rounded-full shrink-0 ${inv.status === 'paid' ? 'bg-green-500' : 'bg-gray-400'}`} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-gray-800 text-sm">{inv.invoice_number}</span>
+                              <span className="text-gray-400 text-xs">—</span>
+                              <span className="font-medium text-gray-700 text-sm">{inv.companies?.name || 'Client'}</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
+                              {inv.service_requests?.request_number && <span>RMA {inv.service_requests.request_number}</span>}
+                              <span>Émise: {frenchDate(inv.invoice_date)}</span>
+                              {inv.paid_at && <span className="text-green-600">Payée: {frenchDate(inv.paid_at)}</span>}
+                              {inv.payment_reference && <span>Réf: {inv.payment_reference}</span>}
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0 w-28">
+                            <p className="font-bold text-gray-800">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
+                          </div>
+                          {getStatusBadge(inv)}
                         </div>
                       ))}
                     </div>
                   )}
+                </div>
+              )}
 
-                  {/* Transactions List */}
-                  {bankTransactions.length > 0 ? (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-medium text-gray-700">
-                          {reconFilter === 'all' ? 'Toutes les transactions' :
-                           reconFilter === 'unmatched' ? 'Transactions non rapprochées' :
-                           reconFilter === 'matched' ? 'Transactions rapprochées (à confirmer)' :
-                           reconFilter === 'confirmed' ? 'Paiements confirmés' :
-                           'Transactions ignorées'}
-                        </h4>
-                        <button onClick={() => setReconFilter('all')} className={`text-xs ${reconFilter !== 'all' ? 'text-blue-500 hover:underline' : 'text-gray-400'}`}>
-                          Voir tout
-                        </button>
-                      </div>
-                      <div className="space-y-1.5">
-                        {bankTransactions
-                          .filter(t => reconFilter === 'all' ? true : reconFilter === 'matched' ? ['matched', 'review'].includes(t.status) : t.status === reconFilter)
-                          .map(txn => {
-                            const matchedInv = txn.invoices;
-                            return (
-                              <div key={txn.id} className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
-                                txn.status === 'confirmed' ? 'bg-green-50 border-green-200' :
-                                txn.status === 'matched' ? 'bg-amber-50 border-amber-200' :
-                                txn.status === 'review' ? 'bg-yellow-50 border-yellow-200' :
-                                txn.status === 'ignored' ? 'bg-gray-50 border-gray-200 opacity-60' :
-                                'bg-white border-gray-200 hover:border-red-200'
-                              }`}>
-                                {/* Status icon */}
-                                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm shrink-0 ${
-                                  txn.status === 'confirmed' ? 'bg-green-200 text-green-700' :
-                                  txn.status === 'matched' ? 'bg-amber-200 text-amber-700' :
-                                  txn.status === 'review' ? 'bg-yellow-200 text-yellow-700' :
-                                  txn.status === 'ignored' ? 'bg-gray-200 text-gray-500' :
-                                  'bg-red-100 text-red-600'
-                                }`}>
-                                  {txn.status === 'confirmed' ? '✅' : txn.status === 'matched' ? '🔗' : txn.status === 'review' ? '❓' : txn.status === 'ignored' ? '⏭️' : '❌'}
+              {/* ========== TAB 4: Tableau de Bord / KPI ========== */}
+              {activeTab === 'kpi' && (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-gray-800 text-lg">📊 Tableau de Bord</h3>
+                    <div className="flex items-center gap-2">
+                      {[
+                        { id: 'month', label: 'Ce mois' },
+                        { id: 'quarter', label: 'Ce trimestre' },
+                        { id: 'year', label: 'Cette année' },
+                        { id: 'all', label: 'Tout' }
+                      ].map(p => (
+                        <button key={p.id} onClick={() => setKpiPeriod(p.id)}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                            kpiPeriod === p.id ? 'bg-[#1E3A5F] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                          }`}>{p.label}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="bg-gradient-to-br from-[#1E3A5F] to-[#2a5490] text-white rounded-xl p-5">
+                      <p className="text-sm text-white/70">CA Total</p>
+                      <p className="text-3xl font-bold mt-1">{kpiRevenue.toFixed(0)} €</p>
+                      <p className="text-xs text-white/50 mt-1">{kpiCount} facture{kpiCount > 1 ? 's' : ''}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-green-600 to-green-700 text-white rounded-xl p-5">
+                      <p className="text-sm text-white/70">Encaissé</p>
+                      <p className="text-3xl font-bold mt-1">{kpiPaid.toFixed(0)} €</p>
+                      <p className="text-xs text-white/50 mt-1">{kpiRevenue > 0 ? Math.round(kpiPaid / kpiRevenue * 100) : 0}% du CA</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-amber-500 to-amber-600 text-white rounded-xl p-5">
+                      <p className="text-sm text-white/70">Encours</p>
+                      <p className="text-3xl font-bold mt-1">{totalOpen.toFixed(0)} €</p>
+                      <p className="text-xs text-white/50 mt-1">{openInvoices.length} facture{openInvoices.length > 1 ? 's' : ''}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-red-500 to-red-600 text-white rounded-xl p-5">
+                      <p className="text-sm text-white/70">En retard</p>
+                      <p className="text-3xl font-bold mt-1">{totalOverdue.toFixed(0)} €</p>
+                      <p className="text-xs text-white/50 mt-1">{openInvoices.filter(i => isOverdue(i)).length} facture{openInvoices.filter(i => isOverdue(i)).length > 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-xl border p-5">
+                    <h4 className="font-medium text-gray-700 mb-4">Chiffre d'affaires — 12 derniers mois</h4>
+                    <div className="flex items-end gap-2 h-44">
+                      {monthlyRevenue.map((m, idx) => {
+                        const maxVal = Math.max(...monthlyRevenue.map(d => d.total), 1);
+                        const heightPct = (m.total / maxVal) * 100;
+                        const paidPct = m.total > 0 ? (m.paid / m.total) * 100 : 0;
+                        return (
+                          <div key={idx} className="flex-1 flex flex-col items-center gap-1" title={`${m.label} ${m.year}: ${m.total.toFixed(0)}€`}>
+                            {m.total > 0 && <span className="text-xs font-bold text-gray-600">{m.total >= 10000 ? (m.total/1000).toFixed(0) + 'k' : m.total.toFixed(0)}</span>}
+                            <div className="w-full relative rounded-t-md overflow-hidden" style={{ height: `${Math.max(heightPct, 3)}%` }}>
+                              <div className="absolute bottom-0 w-full bg-blue-200 h-full" />
+                              <div className="absolute bottom-0 w-full bg-green-500" style={{ height: `${paidPct}%` }} />
+                            </div>
+                            <span className="text-xs text-gray-500">{m.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-200 rounded" /> Facturé</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500 rounded" /> Encaissé</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-xl border p-5">
+                    <h4 className="font-medium text-gray-700 mb-3">🏆 Top Clients</h4>
+                    {topClients.length === 0 ? (
+                      <p className="text-gray-400 text-sm text-center py-4">Aucune donnée</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {topClients.map(([name, data], idx) => {
+                          const maxTotal = topClients[0]?.[1]?.total || 1;
+                          return (
+                            <div key={name} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                idx === 0 ? 'bg-yellow-400 text-yellow-900' : idx === 1 ? 'bg-gray-300 text-gray-700' : idx === 2 ? 'bg-amber-600 text-white' : 'bg-[#1E3A5F] text-white'
+                              }`}>{idx < 3 ? ['🥇','🥈','🥉'][idx] : name.charAt(0)}</div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between">
+                                  <p className="font-medium text-sm text-gray-800 truncate">{name}</p>
+                                  <p className="font-bold text-sm text-gray-800 shrink-0 ml-2">{data.total.toFixed(0)} €</p>
                                 </div>
-
-                                {/* Date */}
-                                <div className="w-24 shrink-0">
-                                  <p className="text-sm font-mono">{txn.transaction_date ? new Date(txn.transaction_date + 'T00:00:00').toLocaleDateString('fr-FR') : '—'}</p>
-                                </div>
-
-                                {/* Description */}
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-gray-800 truncate">{txn.description || '—'}</p>
-                                  {txn.reference && <p className="text-xs text-gray-400 truncate">Réf: {txn.reference}</p>}
-                                  {matchedInv && (
-                                    <p className="text-xs text-blue-600 font-medium mt-0.5">
-                                      → {matchedInv.invoice_number} — {matchedInv.companies?.name || 'Client'}
-                                      <span className="text-gray-400 ml-1">({parseFloat(matchedInv.total_ttc || 0).toFixed(2)} €)</span>
-                                      <span className={`ml-2 px-1.5 py-0.5 rounded text-xs ${txn.match_confidence === 'auto' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}>
-                                        {txn.match_confidence === 'auto' ? 'Auto' : 'Manuel'}
-                                      </span>
-                                    </p>
-                                  )}
-                                </div>
-
-                                {/* Amount */}
-                                <div className="text-right shrink-0 w-28">
-                                  <p className="text-lg font-bold text-green-700">+{parseFloat(txn.amount || 0).toFixed(2)} €</p>
-                                </div>
-
-                                {/* Actions */}
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  {txn.status === 'unmatched' && (
-                                    <>
-                                      <button onClick={() => setMatchingTxn(txn)} className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-medium">
-                                        🔗 Rapprocher
-                                      </button>
-                                      <button onClick={() => ignoreTxn(txn.id)} className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-xs" title="Ignorer">
-                                        ⏭️
-                                      </button>
-                                    </>
-                                  )}
-                                  {txn.status === 'review' && (
-                                    <button onClick={() => setMatchingTxn(txn)} className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-xs font-medium">
-                                      ❓ Vérifier
-                                    </button>
-                                  )}
-                                  {txn.status === 'matched' && (
-                                    <button onClick={() => unmatchTxn(txn.id)} className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-xs" title="Annuler rapprochement">
-                                      ↩️
-                                    </button>
-                                  )}
-                                  {txn.status === 'ignored' && (
-                                    <button onClick={() => unmatchTxn(txn.id)} className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-xs" title="Remettre en attente">
-                                      ↩️
-                                    </button>
-                                  )}
+                                <div className="flex items-center gap-2 mt-1">
+                                  <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                                    <div className="h-full bg-green-500 rounded-full" style={{ width: `${(data.paid / maxTotal) * 100}%` }} />
+                                  </div>
+                                  <span className="text-xs text-gray-400 shrink-0">{data.count} fac.</span>
+                                  {data.open > 0 && <span className="text-xs text-amber-600 shrink-0">{data.open.toFixed(0)}€ dû</span>}
                                 </div>
                               </div>
-                            );
-                          })}
+                            </div>
+                          );
+                        })}
                       </div>
-                    </div>
-                  ) : (
-                    <div className="text-center py-12 text-gray-400">
-                      <div className="text-5xl mb-3">🏦</div>
-                      <p className="font-medium text-gray-500">Aucune transaction bancaire</p>
-                      <p className="text-sm mt-1">Importez un relevé CSV pour commencer le rapprochement</p>
-                    </div>
-                  )}
-
-                  {/* Manual Match Modal */}
-                  {matchingTxn && (
-                    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setMatchingTxn(null)}>
-                      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
-                        <div className="px-6 py-4 bg-gradient-to-r from-[#1E3A5F] to-[#2a5490] text-white">
-                          <h3 className="text-lg font-bold">🔗 Rapprocher manuellement</h3>
-                          <div className="flex items-center gap-4 mt-2 text-sm text-white/80">
-                            <span>{matchingTxn.transaction_date ? new Date(matchingTxn.transaction_date + 'T00:00:00').toLocaleDateString('fr-FR') : ''}</span>
-                            <span className="font-bold text-white">+{parseFloat(matchingTxn.amount || 0).toFixed(2)} €</span>
-                            <span className="truncate flex-1">{matchingTxn.description}</span>
-                          </div>
-                        </div>
-                        <div className="p-4 max-h-[60vh] overflow-y-auto">
-                          <p className="text-sm text-gray-500 mb-3">Sélectionnez la facture correspondante :</p>
-                          <div className="space-y-2">
-                            {openInvoices
-                              .filter(inv => inv.status !== 'draft')
-                              .sort((a, b) => {
-                                const remA = Math.abs((parseFloat(a.total_ttc) || 0) - (parseFloat(a.paid_amount) || 0) - parseFloat(matchingTxn.amount));
-                                const remB = Math.abs((parseFloat(b.total_ttc) || 0) - (parseFloat(b.paid_amount) || 0) - parseFloat(matchingTxn.amount));
-                                return remA - remB;
-                              })
-                              .map(inv => {
-                                const remaining = (parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0);
-                                const diff = Math.abs(remaining - parseFloat(matchingTxn.amount));
-                                const isExactMatch = diff < 0.02;
-                                return (
-                                  <div key={inv.id} 
-                                    onClick={() => manualMatch(matchingTxn.id, inv.id)}
-                                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all hover:shadow-md ${
-                                      isExactMatch ? 'border-green-400 bg-green-50 hover:bg-green-100' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'
-                                    }`}
-                                  >
-                                    {isExactMatch && <span className="text-green-600 text-lg">✅</span>}
-                                    <div className="flex-1">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-bold text-sm">{inv.invoice_number}</span>
-                                        <span className="text-xs text-gray-500">{inv.companies?.name}</span>
-                                        {isExactMatch && <span className="text-xs bg-green-200 text-green-800 px-2 py-0.5 rounded-full font-medium">Montant exact</span>}
-                                      </div>
-                                      <p className="text-xs text-gray-400 mt-0.5">
-                                        RMA: {inv.service_requests?.request_number || '—'} • Émise: {frenchDate(inv.invoice_date)} • Échéance: {frenchDate(inv.due_date)}
-                                      </p>
-                                    </div>
-                                    <div className="text-right shrink-0">
-                                      <p className="font-bold text-sm">{remaining.toFixed(2)} € dû</p>
-                                      {!isExactMatch && <p className="text-xs text-gray-400">Δ {diff.toFixed(2)} €</p>}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            {openInvoices.filter(inv => inv.status !== 'draft').length === 0 && (
-                              <p className="text-gray-400 text-center py-6">Aucune facture ouverte</p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="px-6 py-3 border-t bg-gray-50 flex justify-between">
-                          <button onClick={() => ignoreTxn(matchingTxn.id).then(() => setMatchingTxn(null))} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">
-                            ⏭️ Ignorer cette transaction
-                          </button>
-                          <button onClick={() => setMatchingTxn(null)} className="px-4 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg text-sm font-medium">Fermer</button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
             </>
@@ -17732,27 +17715,71 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
         </div>
       </div>
 
+      {/* Manual Match Modal */}
+      {matchingTxn && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setMatchingTxn(null)}>
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 bg-gradient-to-r from-[#1E3A5F] to-[#2a5490] text-white">
+              <h3 className="text-lg font-bold">🔗 Attribuer le paiement</h3>
+              <div className="flex items-center gap-4 mt-2 text-sm text-white/80">
+                <span>{matchingTxn.transaction_date ? new Date(matchingTxn.transaction_date + 'T00:00:00').toLocaleDateString('fr-FR') : ''}</span>
+                <span className="font-bold text-white">+{parseFloat(matchingTxn.amount || 0).toFixed(2)} €</span>
+                <span className="truncate flex-1">{matchingTxn.description}</span>
+              </div>
+            </div>
+            <div className="p-4 max-h-[60vh] overflow-y-auto">
+              <p className="text-sm text-gray-500 mb-3">Sélectionnez la facture correspondante :</p>
+              <div className="space-y-2">
+                {openInvoices.filter(i => i.status !== 'draft')
+                  .sort((a, b) => {
+                    const remA = Math.abs((parseFloat(a.total_ttc) || 0) - (parseFloat(a.paid_amount) || 0) - parseFloat(matchingTxn.amount));
+                    const remB = Math.abs((parseFloat(b.total_ttc) || 0) - (parseFloat(b.paid_amount) || 0) - parseFloat(matchingTxn.amount));
+                    return remA - remB;
+                  }).map(inv => {
+                    const rem = (parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0);
+                    const diff = Math.abs(rem - parseFloat(matchingTxn.amount));
+                    const isExact = diff < 0.02;
+                    return (
+                      <div key={inv.id} onClick={() => manualMatch(matchingTxn.id, inv.id)}
+                        className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all hover:shadow-md ${
+                          isExact ? 'border-green-400 bg-green-50 hover:bg-green-100' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                        }`}>
+                        {isExact && <span className="text-green-600 text-lg">✅</span>}
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm">{inv.invoice_number}</span>
+                            <span className="text-xs text-gray-500">{inv.companies?.name}</span>
+                            {isExact && <span className="text-xs bg-green-200 text-green-800 px-2 py-0.5 rounded-full font-medium">Montant exact</span>}
+                          </div>
+                          <p className="text-xs text-gray-400 mt-0.5">Échéance: {frenchDate(inv.due_date)}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="font-bold text-sm">{rem.toFixed(2)} € dû</p>
+                          {!isExact && <p className="text-xs text-gray-400">Δ {diff.toFixed(2)} €</p>}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+            <div className="px-6 py-3 border-t bg-gray-50 flex justify-between">
+              <button onClick={() => { ignoreTxn(matchingTxn.id); setMatchingTxn(null); }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">📦 Archiver</button>
+              <button onClick={() => setMatchingTxn(null)} className="px-4 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg text-sm font-medium">Fermer</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Invoice Creation Modal */}
       {creatingFor && (
-        <InvoiceCreationModal
-          rma={creatingFor}
-          onClose={() => setCreatingFor(null)}
-          notify={notify}
-          reload={() => { loadInvoices(); if (reload) reload(); }}
-          profile={profile}
-          businessSettings={businessSettings}
-        />
+        <InvoiceCreationModal rma={creatingFor} onClose={() => setCreatingFor(null)} notify={notify}
+          reload={() => { loadInvoices(); if (reload) reload(); }} profile={profile} businessSettings={businessSettings} />
       )}
 
       {/* Invoice Detail Modal */}
       {viewingInvoice && (
-        <InvoiceDetailModal
-          invoice={viewingInvoice}
-          onClose={() => { setViewingInvoice(null); loadInvoices(); }}
-          notify={notify}
-          reload={() => { loadInvoices(); if (reload) reload(); }}
-          businessSettings={businessSettings}
-        />
+        <InvoiceDetailModal invoice={viewingInvoice} onClose={() => { setViewingInvoice(null); loadInvoices(); }}
+          notify={notify} reload={() => { loadInvoices(); if (reload) reload(); }} businessSettings={businessSettings} />
       )}
     </div>
   );
