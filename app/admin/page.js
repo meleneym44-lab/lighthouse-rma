@@ -16939,9 +16939,18 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
     const isExcel = file.name.match(/\.xlsx?$/i);
 
     if (isExcel) {
-      // Read XLSX using SheetJS
+      // Read XLSX using SheetJS (loaded via CDN script tag)
       try {
-        const XLSX = await import('https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs');
+        if (!window.XLSX) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js';
+            script.onload = resolve;
+            script.onerror = () => reject(new Error('Impossible de charger SheetJS'));
+            document.head.appendChild(script);
+          });
+        }
+        const XLSX = window.XLSX;
         const buffer = await file.arrayBuffer();
         const wb = XLSX.read(buffer, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
