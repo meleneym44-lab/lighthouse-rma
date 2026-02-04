@@ -13903,12 +13903,13 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [clientContracts, setClientContracts] = useState([]);
   const [clientLocations, setClientLocations] = useState([]);
+  const [selectedContract, setSelectedContract] = useState(null);
   
   const partsOrdersList = partsOrders || [];
 
   const loadContracts = async () => {
     try {
-      const { data } = await supabase.from('contracts').select('*').eq('company_id', client.id).order('created_at', { ascending: false });
+      const { data } = await supabase.from('contracts').select('*, contract_devices(*)').eq('company_id', client.id).order('created_at', { ascending: false });
       if (data) setClientContracts(data);
     } catch (e) {}
   };
@@ -14027,19 +14028,34 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           )}
           
           {/* === Contracts === */}
-          {activeTab === 'contracts' && (
+          {activeTab === 'contracts' && !selectedContract && (
             <div className="space-y-3">
-              {clientContracts.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun contrat (cliquez pour charger)</p> : clientContracts.map(c => (
-                <div key={c.id} className="bg-gray-50 rounded-lg p-4">
+              {clientContracts.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun contrat</p> : clientContracts.map(c => (
+                <div key={c.id} onClick={() => setSelectedContract(c)} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 cursor-pointer transition-colors">
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="font-mono font-bold text-purple-600">{c.contract_number || '—'}</span>
                       <p className="text-sm text-gray-600 mt-1">{c.contract_type || '—'}</p>
                     </div>
-                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">{c.status}</span>
+                    <div className="text-right">
+                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">{c.status}</span>
+                      <p className="text-xs text-blue-500 mt-1">Voir détails →</p>
+                    </div>
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+          {activeTab === 'contracts' && selectedContract && (
+            <div>
+              <button onClick={() => setSelectedContract(null)} className="text-sm text-blue-600 hover:underline mb-4">← Retour aux contrats</button>
+              <ContractDetailView 
+                contract={selectedContract}
+                clients={[client]}
+                notify={notify}
+                onClose={() => setSelectedContract(null)}
+                onUpdate={() => { loadContracts(); setSelectedContract(null); }}
+              />
             </div>
           )}
           
