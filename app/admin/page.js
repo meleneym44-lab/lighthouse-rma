@@ -16694,6 +16694,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
   });
 
   // Split invoices by status
+  const createdInvoices = invoices.filter(i => ['created', 'draft'].includes(i.status)); // created but not yet sent
   const openInvoices = invoices.filter(i => ['sent', 'overdue', 'partially_paid'].includes(i.status));
   const closedInvoices = invoices.filter(i => ['paid', 'cancelled'].includes(i.status));
 
@@ -16742,6 +16743,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
     if (inv.status === 'partially_paid') return <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold">⚠️ Partiel</span>;
     if (isOverdue(inv)) return <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-bold animate-pulse">🔴 En retard ({daysPastDue(inv)}j)</span>;
     if (inv.status === 'sent') return <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">📤 Envoyée</span>;
+    if (inv.status === 'created' || inv.status === 'draft') return <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-bold">📄 Créée</span>;
     return <span className="px-2 py-1 bg-blue-100 text-blue-600 rounded-full text-xs font-bold">📋 En cours</span>;
   };
 
@@ -16772,7 +16774,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
   };
 
   const tabs = [
-    { id: 'to_create', label: 'À Facturer', icon: '🔔', count: rmasToInvoice.length, color: 'amber' },
+    { id: 'to_create', label: 'À Facturer', icon: '🔔', count: rmasToInvoice.length + createdInvoices.length, color: 'amber' },
     { id: 'open', label: 'Factures Ouvertes', icon: '📋', count: openInvoices.length, color: 'blue' },
     { id: 'closed', label: 'Archivées', icon: '✅', count: closedInvoices.length, color: 'green' },
     { id: 'kpi', label: 'Tableau de Bord', icon: '📊', count: 0, color: 'gray' }
@@ -17207,7 +17209,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
       (parseFloat(inv.total_ttc) || 0).toFixed(2),
       (parseFloat(inv.paid_amount) || 0).toFixed(2),
       ((parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0)).toFixed(2),
-      inv.status === 'paid' ? 'Payée' : inv.status === 'sent' ? 'Envoyée' : inv.status === 'partially_paid' ? 'Partiel' : 'En retard',
+      inv.status === 'paid' ? 'Payée' : inv.status === 'sent' ? 'Envoyée' : inv.status === 'created' || inv.status === 'draft' ? 'Créée' : inv.status === 'partially_paid' ? 'Partiel' : 'En retard',
       inv.payment_reference || '',
       inv.paid_at ? new Date(inv.paid_at).toLocaleDateString('fr-FR') : ''
     ]);
@@ -17324,7 +17326,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
       <div className="grid grid-cols-4 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-amber-400">
           <p className="text-xs text-gray-500 uppercase">À facturer</p>
-          <p className="text-2xl font-bold text-amber-600">{rmasToInvoice.length}</p>
+          <p className="text-2xl font-bold text-amber-600">{rmasToInvoice.length + createdInvoices.length}</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-blue-400">
           <p className="text-xs text-gray-500 uppercase">Factures ouvertes</p>
@@ -17372,49 +17374,102 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
             <>
               {/* ========== TAB 1: À Facturer ========== */}
               {activeTab === 'to_create' && (
-                <div>
-                  {filterRMAs(rmasToInvoice).length === 0 ? (
-                    <div className="text-center py-12 text-gray-400">
-                      <div className="text-4xl mb-2">✅</div>
-                      <p>Aucune RMA en attente de facturation</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {filterRMAs(rmasToInvoice).map(rma => {
-                        const devices = rma.request_devices || [];
-                        const total = rma.quote_total || devices.reduce((s, d) => s + (parseFloat(d.quoted_price) || parseFloat(d.unit_price) || 0), 0);
-                        const supplementTotal = devices.reduce((s, d) => {
-                          if (!d.additional_work_needed || !d.additional_work_items) return s;
-                          return s + d.additional_work_items.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
-                        }, 0);
-                        return (
-                          <div key={rma.id} className="flex items-center gap-4 p-4 border rounded-xl hover:bg-amber-50 hover:border-amber-200 transition-all group">
-                            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 font-bold text-lg shrink-0">💶</div>
-                            <div className="flex-1 min-w-0">
+                <div className="space-y-6">
+                  {/* Section 1: Created invoices not yet sent */}
+                  {createdInvoices.length > 0 && (
+                    <div>
+                      <h4 className="font-medium text-gray-700 text-sm mb-2 flex items-center gap-2">
+                        📄 Factures créées — en attente d'envoi
+                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{createdInvoices.length}</span>
+                      </h4>
+                      <div className="space-y-2">
+                        {createdInvoices.map(inv => (
+                          <div key={inv.id} className="flex items-center gap-3 p-4 border border-blue-200 bg-blue-50 rounded-xl hover:bg-blue-100 transition-all">
+                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-lg shrink-0">📄</div>
+                            <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setViewingInvoice(inv)}>
                               <div className="flex items-center gap-2">
-                                <span className="font-bold text-gray-800">{rma.request_number}</span>
+                                <span className="font-bold text-gray-800">{inv.invoice_number}</span>
                                 <span className="text-gray-400">—</span>
-                                <span className="font-medium text-gray-600">{rma.companies?.name || 'Client'}</span>
+                                <span className="font-medium text-gray-600">{inv.companies?.name || 'Client'}</span>
+                                {inv.service_requests?.request_number && (
+                                  <span className="text-xs text-gray-400">RMA {inv.service_requests.request_number}</span>
+                                )}
                               </div>
                               <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
-                                <span>{devices.length} appareil{devices.length > 1 ? 's' : ''}</span>
-                                {rma.quote_number && <span>Devis: {rma.quote_number}</span>}
-                                {rma.bc_number && <span>BC: {rma.bc_number}</span>}
+                                <span>Créée: {frenchDate(inv.invoice_date)}</span>
+                                <span>Échéance: {frenchDate(inv.due_date)}</span>
                               </div>
                             </div>
                             <div className="text-right shrink-0">
-                              <p className="font-bold text-gray-800">{total.toFixed(2)} € HT</p>
-                              {supplementTotal > 0 && <p className="text-xs text-blue-600">+ {supplementTotal.toFixed(2)} € suppl.</p>}
+                              <p className="font-bold text-gray-800">{parseFloat(inv.total_ttc || 0).toFixed(2)} € TTC</p>
                             </div>
-                            <button onClick={() => setCreatingFor(rma)}
-                              className="px-5 py-2.5 bg-[#00A651] hover:bg-[#008a43] text-white rounded-lg font-medium text-sm opacity-80 group-hover:opacity-100 transition-opacity">
-                              Créer Facture
-                            </button>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button onClick={() => setViewingInvoice(inv)}
+                                className="px-3 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-600 rounded-lg font-medium text-sm">
+                                👁️ Voir
+                              </button>
+                              <button onClick={() => markAsSent(inv)}
+                                className="px-4 py-2 bg-[#00A651] hover:bg-[#008a43] text-white rounded-lg font-medium text-sm">
+                                📤 Envoyer au client
+                              </button>
+                            </div>
                           </div>
-                        );
-                      })}
+                        ))}
+                      </div>
                     </div>
                   )}
+
+                  {/* Section 2: RMAs needing invoice creation */}
+                  <div>
+                    {createdInvoices.length > 0 && rmasToInvoice.length > 0 && (
+                      <h4 className="font-medium text-gray-700 text-sm mb-2 flex items-center gap-2">
+                        🔔 RMAs en attente de facturation
+                        <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">{rmasToInvoice.length}</span>
+                      </h4>
+                    )}
+                    {filterRMAs(rmasToInvoice).length === 0 && createdInvoices.length === 0 ? (
+                      <div className="text-center py-12 text-gray-400">
+                        <div className="text-4xl mb-2">✅</div>
+                        <p>Aucune RMA en attente de facturation</p>
+                      </div>
+                    ) : filterRMAs(rmasToInvoice).length === 0 && createdInvoices.length > 0 ? null : (
+                      <div className="space-y-3">
+                        {filterRMAs(rmasToInvoice).map(rma => {
+                          const devices = rma.request_devices || [];
+                          const total = rma.quote_total || devices.reduce((s, d) => s + (parseFloat(d.quoted_price) || parseFloat(d.unit_price) || 0), 0);
+                          const supplementTotal = devices.reduce((s, d) => {
+                            if (!d.additional_work_needed || !d.additional_work_items) return s;
+                            return s + d.additional_work_items.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
+                          }, 0);
+                          return (
+                            <div key={rma.id} className="flex items-center gap-4 p-4 border rounded-xl hover:bg-amber-50 hover:border-amber-200 transition-all group">
+                              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 font-bold text-lg shrink-0">💶</div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-gray-800">{rma.request_number}</span>
+                                  <span className="text-gray-400">—</span>
+                                  <span className="font-medium text-gray-600">{rma.companies?.name || 'Client'}</span>
+                                </div>
+                                <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
+                                  <span>{devices.length} appareil{devices.length > 1 ? 's' : ''}</span>
+                                  {rma.quote_number && <span>Devis: {rma.quote_number}</span>}
+                                  {rma.bc_number && <span>BC: {rma.bc_number}</span>}
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="font-bold text-gray-800">{total.toFixed(2)} € HT</p>
+                                {supplementTotal > 0 && <p className="text-xs text-blue-600">+ {supplementTotal.toFixed(2)} € suppl.</p>}
+                              </div>
+                              <button onClick={() => setCreatingFor(rma)}
+                                className="px-5 py-2.5 bg-[#00A651] hover:bg-[#008a43] text-white rounded-lg font-medium text-sm opacity-80 group-hover:opacity-100 transition-opacity">
+                                Créer Facture
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -17885,6 +17940,7 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
     if (inv.status === 'partially_paid') return <span className="px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-full text-sm font-bold">⚠️ Paiement partiel</span>;
     if (isOverdue) return <span className="px-3 py-1.5 bg-red-100 text-red-700 rounded-full text-sm font-bold animate-pulse">🔴 En retard ({daysPastDue}j)</span>;
     if (inv.status === 'sent') return <span className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-full text-sm font-bold">📤 Envoyée</span>;
+    if (inv.status === 'created' || inv.status === 'draft') return <span className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-sm font-bold">📄 Créée</span>;
     return <span className="px-3 py-1.5 bg-blue-100 text-blue-600 rounded-full text-sm font-bold">📋 En cours</span>;
   };
 
@@ -18073,6 +18129,9 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
             )}
           </div>
           <div className="flex items-center gap-2">
+            {(inv.status === 'created' || inv.status === 'draft') && (
+              <button onClick={markAsSent} className="px-5 py-2 bg-[#00A651] hover:bg-[#008a43] text-white rounded-lg font-medium text-sm">📤 Envoyer au client</button>
+            )}
             {inv.status !== 'paid' && inv.status !== 'cancelled' && (
               <button onClick={() => { setShowPayment(true); setPaymentAmount(remaining.toFixed(2)); }} className="px-5 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium text-sm">💰 Enregistrer paiement</button>
             )}
@@ -18341,7 +18400,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
           invoice_number: invoiceNumber,
           request_id: rma.id,
           company_id: company.id,
-          status: 'sent',
+          status: 'created',
           invoice_date: invoiceDate,
           due_date: dueDate,
           payment_terms_days: paymentTermsDays,
