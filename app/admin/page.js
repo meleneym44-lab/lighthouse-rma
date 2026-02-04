@@ -2079,7 +2079,7 @@ const generatePartsBLPDF = async (order, parts, shipment, blNumber, businessSett
   pdf.setFont('helvetica', 'bold');
   pdf.text('RÉFÉRENCES COMMANDE', rightBoxX + 5, y + 6);
   pdf.setFontSize(10);
-  pdf.text(order.request_number || order.bc_number || '—', rightBoxX + 5, y + 14);
+  pdf.text(order.bc_number || order.request_number || '—', rightBoxX + 5, y + 14);
   
   y += boxHeight + 10;
 
@@ -7655,6 +7655,12 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
   const [orderInvoices, setOrderInvoices] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [showDocUploadModal, setShowDocUploadModal] = useState(false);
+  const [docUploadFile, setDocUploadFile] = useState(null);
+  const [docUploadName, setDocUploadName] = useState('');
+  const [docUploadCategory, setDocUploadCategory] = useState('general');
+  const [docUploadShared, setDocUploadShared] = useState(true);
+  const [docUploading, setDocUploading] = useState(false);
   
   // Safety check
   if (!order) {
@@ -7701,6 +7707,86 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
     };
     fetchData();
   }, [order.id]);
+  
+  // Refresh attachments
+  const refreshAttachments = async () => {
+    const { data } = await supabase
+      .from('request_attachments')
+      .select('*')
+      .eq('request_id', order.id)
+      .order('created_at', { ascending: false });
+    if (data) setAttachments(data);
+  };
+  
+  // Upload document
+  const handleDocUpload = async () => {
+    if (!docUploadFile || !order?.id) return;
+    setDocUploading(true);
+    try {
+      const ext = docUploadFile.name.split('.').pop();
+      const fileName = `doc_${order.request_number}_${Date.now()}.${ext}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('documents')
+        .upload(`attachments/${fileName}`, docUploadFile, { contentType: docUploadFile.type });
+      if (uploadError) throw uploadError;
+      
+      const { data: urlData } = supabase.storage.from('documents').getPublicUrl(`attachments/${fileName}`);
+      const fileUrl = urlData?.publicUrl;
+      
+      const displayName = docUploadName.trim() || docUploadFile.name;
+      const { error: insertError } = await supabase.from('request_attachments').insert({
+        request_id: order.id,
+        file_name: displayName,
+        file_url: fileUrl,
+        file_type: docUploadFile.type,
+        file_size: docUploadFile.size,
+        uploaded_by: profile?.id,
+        category: docUploadShared ? docUploadCategory : `internal_${docUploadCategory}`
+      });
+      if (insertError) throw insertError;
+      
+      notify('📄 Document ajouté!');
+      setShowDocUploadModal(false);
+      setDocUploadFile(null);
+      setDocUploadName('');
+      setDocUploadCategory('general');
+      setDocUploadShared(true);
+      await refreshAttachments();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setDocUploading(false);
+  };
+  
+  // Delete document
+  const handleDocDelete = async (docId) => {
+    try {
+      const { error } = await supabase.from('request_attachments').delete().eq('id', docId);
+      if (error) throw error;
+      notify('🗑️ Document supprimé');
+      await refreshAttachments();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+  };
+  
+  // Toggle document visibility
+  const handleToggleDocVisibility = async (doc) => {
+    try {
+      const isInternal = doc.category?.startsWith('internal_');
+      const newCategory = isInternal 
+        ? doc.category.replace('internal_', '') 
+        : `internal_${doc.category || 'general'}`;
+      const { error } = await supabase.from('request_attachments')
+        .update({ category: newCategory })
+        .eq('id', doc.id);
+      if (error) throw error;
+      notify(isInternal ? '👁️ Document visible au client' : '🔒 Document masqué au client');
+      await refreshAttachments();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+  };
   
   // Parts order progress steps
   const progressSteps = [
@@ -8025,6 +8111,18 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
                         <p className="text-xs text-gray-500 uppercase">Urgence</p>
                         <p className="font-medium">{order.urgency || 'Normal'}</p>
                       </div>
+                      {order.quote_number && (
+                        <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                          <p className="text-xs text-blue-500 uppercase">N° Devis</p>
+                          <p className="font-mono font-bold text-blue-700">{order.quote_number}</p>
+                        </div>
+                      )}
+                      {order.bc_number && (
+                        <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                          <p className="text-xs text-green-500 uppercase">N° Bon de Commande</p>
+                          <p className="font-mono font-bold text-green-700">{order.bc_number}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -8081,10 +8179,18 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
                 {/* Documents Tab */}
                 {activeTab === 'documents' && (
                   <div className="space-y-4">
-                    <h3 className="font-bold text-gray-800">📄 Documents</h3>
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-bold text-gray-800">📄 Documents</h3>
+                      <button
+                        onClick={() => setShowDocUploadModal(true)}
+                        className="px-4 py-2 bg-[#1E3A5F] hover:bg-[#2a5490] text-white rounded-lg text-sm font-medium flex items-center gap-2"
+                      >
+                        ➕ Ajouter
+                      </button>
+                    </div>
                     
+                    {/* System Documents */}
                     <div className="grid grid-cols-2 gap-3">
-                      {/* Quote */}
                       {order.quote_url && (
                         <a href={order.quote_url} target="_blank" rel="noopener noreferrer" 
                           className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-blue-300 hover:bg-blue-50 transition-colors">
@@ -8096,7 +8202,6 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
                         </a>
                       )}
                       
-                      {/* Signed Quote - only show if different from original quote */}
                       {order.signed_quote_url && order.signed_quote_url !== order.quote_url && (
                         <a href={order.signed_quote_url} target="_blank" rel="noopener noreferrer" 
                           className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-green-300 hover:bg-green-50 transition-colors">
@@ -8108,7 +8213,6 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
                         </a>
                       )}
                       
-                      {/* BC File */}
                       {order.bc_file_url && order.bc_file_url !== order.signed_quote_url && (
                         <a href={order.bc_file_url} target="_blank" rel="noopener noreferrer" 
                           className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-purple-300 hover:bg-purple-50 transition-colors">
@@ -8120,7 +8224,6 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
                         </a>
                       )}
                       
-                      {/* Shipping Documents from quote_data */}
                       {shippingData.upsLabelUrl && (
                         <a href={shippingData.upsLabelUrl} target="_blank" rel="noopener noreferrer" 
                           className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-amber-300 hover:bg-amber-50 transition-colors">
@@ -8143,7 +8246,6 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
                         </a>
                       )}
 
-                      {/* Invoices */}
                       {orderInvoices.map(inv => (
                         <a key={inv.id} href={inv.pdf_url} target="_blank" rel="noopener noreferrer"
                           className={`flex items-center gap-3 p-4 bg-white rounded-lg border-2 transition-colors ${
@@ -8161,39 +8263,146 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
                                ` — Échéance: ${new Date(inv.due_date).toLocaleDateString('fr-FR')}`}
                             </p>
                           </div>
-                          {inv.status !== 'paid' && (
-                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                              new Date(inv.due_date) < new Date() ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-amber-100 text-amber-700'
-                            }`}>
-                              {new Date(inv.due_date) < new Date() ? 'EN RETARD' : 'À PAYER'}
-                            </span>
-                          )}
-                        </a>
-                      ))}
-                      
-                      {/* Attachments from database - filter out duplicates */}
-                      {attachments
-                        .filter(att => {
-                          // Don't show if URL matches any already-displayed document
-                          const shownUrls = [order.quote_url, order.signed_quote_url, order.bc_file_url, shippingData.upsLabelUrl, shippingData.blUrl].filter(Boolean);
-                          return !shownUrls.includes(att.file_url);
-                        })
-                        .map(att => (
-                        <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer" 
-                          className="flex items-center gap-3 p-4 bg-white rounded-lg border-2 hover:border-gray-300 hover:bg-gray-50 transition-colors">
-                          <span className="text-3xl">
-                            {att.file_type === 'ups_label' ? '🏷️' : att.file_type === 'bl' ? '📋' : '📎'}
-                          </span>
-                          <div>
-                            <p className="font-medium text-gray-800">{att.file_name}</p>
-                            <p className="text-xs text-gray-500">{new Date(att.created_at).toLocaleDateString('fr-FR')}</p>
-                          </div>
                         </a>
                       ))}
                     </div>
                     
+                    {/* Uploaded Documents with manage controls */}
+                    {(() => {
+                      const shownUrls = [order.quote_url, order.signed_quote_url, order.bc_file_url, shippingData.upsLabelUrl, shippingData.blUrl].filter(Boolean);
+                      const customDocs = attachments.filter(att => !shownUrls.includes(att.file_url));
+                      if (customDocs.length === 0) return null;
+                      
+                      return (
+                        <div className="mt-4">
+                          <h4 className="text-sm font-medium text-gray-600 mb-2">Fichiers ajoutés</h4>
+                          <div className="space-y-2">
+                            {customDocs.map(doc => {
+                              const isInternal = doc.category?.startsWith('internal_');
+                              return (
+                                <div key={doc.id} className={`flex items-center gap-3 p-3 rounded-lg border ${isInternal ? 'bg-amber-50 border-amber-200' : 'bg-white'}`}>
+                                  <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0 hover:text-blue-600">
+                                    <span className="text-xl shrink-0">
+                                      {doc.file_type?.includes('pdf') ? '📄' : doc.file_type?.includes('image') ? '🖼️' : '📎'}
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="font-medium text-sm truncate">{doc.file_name}</p>
+                                      <p className="text-xs text-gray-500">
+                                        {new Date(doc.created_at).toLocaleDateString('fr-FR')}
+                                        {isInternal && <span className="ml-2 text-amber-600 font-medium">🔒 Interne</span>}
+                                        {!isInternal && <span className="ml-2 text-green-600">👁️ Visible client</span>}
+                                      </p>
+                                    </div>
+                                  </a>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      onClick={() => handleToggleDocVisibility(doc)}
+                                      className={`p-1.5 rounded-lg text-xs ${isInternal ? 'bg-green-100 hover:bg-green-200 text-green-700' : 'bg-amber-100 hover:bg-amber-200 text-amber-700'}`}
+                                      title={isInternal ? 'Rendre visible' : 'Masquer'}
+                                    >
+                                      {isInternal ? '👁️' : '🔒'}
+                                    </button>
+                                    <button
+                                      onClick={() => handleDocDelete(doc.id)}
+                                      className="p-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 text-xs"
+                                      title="Supprimer"
+                                    >
+                                      🗑️
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    
                     {!order.quote_url && !order.signed_quote_url && !order.bc_file_url && attachments.length === 0 && (
                       <p className="text-gray-500 text-center py-8">Aucun document disponible</p>
+                    )}
+                    
+                    {/* Document Upload Modal */}
+                    {showDocUploadModal && (
+                      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-xl max-w-md w-full">
+                          <div className="p-6 border-b border-gray-200">
+                            <div className="flex justify-between items-center">
+                              <h2 className="text-lg font-bold text-[#1E3A5F]">📄 Ajouter un document</h2>
+                              <button onClick={() => { setShowDocUploadModal(false); setDocUploadFile(null); setDocUploadName(''); }} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+                            </div>
+                          </div>
+                          <div className="p-6 space-y-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Fichier</label>
+                              <input 
+                                type="file" 
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) { setDocUploadFile(f); if (!docUploadName) setDocUploadName(f.name); }
+                                }}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Nom affiché</label>
+                              <input 
+                                type="text"
+                                value={docUploadName}
+                                onChange={(e) => setDocUploadName(e.target.value)}
+                                placeholder="Nom du document..."
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                              <select 
+                                value={docUploadCategory}
+                                onChange={(e) => setDocUploadCategory(e.target.value)}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                              >
+                                <option value="general">📄 Document général</option>
+                                <option value="rapport">📋 Rapport</option>
+                                <option value="bon_livraison">📦 Bon de livraison</option>
+                                <option value="facture">📋 Facture</option>
+                                <option value="note_technique">🔧 Note technique</option>
+                                <option value="correspondance">✉️ Correspondance</option>
+                              </select>
+                            </div>
+                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                              <div>
+                                <p className="font-medium text-sm text-gray-800">
+                                  {docUploadShared ? '👁️ Visible au client' : '🔒 Document interne'}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {docUploadShared ? 'Le client pourra voir ce document' : 'Seuls les admins verront ce document'}
+                                </p>
+                              </div>
+                              <button 
+                                onClick={() => setDocUploadShared(!docUploadShared)}
+                                className={`relative w-12 h-6 rounded-full transition-colors ${docUploadShared ? 'bg-blue-500' : 'bg-gray-300'}`}
+                              >
+                                <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${docUploadShared ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="p-6 border-t border-gray-200 flex gap-3">
+                            <button 
+                              onClick={() => { setShowDocUploadModal(false); setDocUploadFile(null); setDocUploadName(''); }}
+                              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
+                            >
+                              Annuler
+                            </button>
+                            <button 
+                              onClick={handleDocUpload}
+                              disabled={!docUploadFile || docUploading}
+                              className="flex-1 px-4 py-2 bg-[#1E3A5F] hover:bg-[#2a5490] text-white rounded-lg font-medium disabled:opacity-50"
+                            >
+                              {docUploading ? '⏳ Envoi...' : '📤 Envoyer'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
@@ -8699,21 +8908,67 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [bcNumber, setBcNumber] = useState('');
+  const [useAutoNumber, setUseAutoNumber] = useState(false);
+  const [generatingNumber, setGeneratingNumber] = useState(false);
+  const [attachments, setAttachments] = useState([]);
+  
+  // Fetch attachments
+  useEffect(() => {
+    const fetchAttachments = async () => {
+      const { data } = await supabase
+        .from('request_attachments')
+        .select('*')
+        .eq('request_id', order.id)
+        .order('created_at', { ascending: false });
+      if (data) {
+        setAttachments(data);
+        const hasRegularBc = !!order.bc_file_url && order.bc_file_url !== order.signed_quote_url;
+        setUseAutoNumber(!hasRegularBc && !order.bc_file_url);
+      }
+    };
+    fetchAttachments();
+  }, [order.id]);
+  
+  // Auto-generate BC number
+  useEffect(() => {
+    if (useAutoNumber && !bcNumber) {
+      generateBCNumber();
+    }
+  }, [useAutoNumber]);
+  
+  const generateBCNumber = async () => {
+    setGeneratingNumber(true);
+    try {
+      const { data, error } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'BC' });
+      if (!error && data) {
+        setBcNumber(data);
+      }
+    } catch (e) {
+      console.error('Could not generate BC number:', e);
+    }
+    setGeneratingNumber(false);
+  };
   
   const approveBC = async () => {
+    if (!bcNumber.trim()) {
+      notify('Veuillez entrer un numéro de BC', 'error');
+      return;
+    }
     setApproving(true);
     const { error } = await supabase
       .from('service_requests')
       .update({ 
         status: 'in_progress',
-        bc_approved_at: new Date().toISOString()
+        bc_approved_at: new Date().toISOString(),
+        bc_number: bcNumber
       })
       .eq('id', order.id);
     
     if (error) {
       notify('Erreur: ' + error.message, 'error');
     } else {
-      notify('✅ BC approuvé! Commande de pièces lancée.');
+      notify(`✅ BC N° ${bcNumber} approuvé! Commande de pièces lancée.`);
       reload();
       onClose();
     }
@@ -8896,6 +9151,44 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
                 <a href={order.quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
                   Voir le devis ↗
                 </a>
+              )}
+            </div>
+            
+            {/* BC Number */}
+            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+              <h4 className="font-medium text-green-800 mb-2">📋 N° Bon de Commande</h4>
+              {useAutoNumber ? (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Auto-généré</span>
+                    <span className="text-xs text-gray-500">Client a signé le devis</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={generatingNumber ? 'Génération...' : bcNumber}
+                    onChange={e => setBcNumber(e.target.value)}
+                    className="w-full px-3 py-2 border border-green-300 rounded-lg text-center font-mono font-bold bg-white"
+                    placeholder="BC-MMYY-NNN"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <p className="text-xs text-gray-500 mb-2">Entrez le N° BC du client</p>
+                  <input
+                    type="text"
+                    value={bcNumber}
+                    onChange={e => setBcNumber(e.target.value)}
+                    className="w-full px-3 py-2 border border-green-300 rounded-lg text-center font-mono font-bold bg-white"
+                    placeholder="N° BC du client..."
+                  />
+                  <button
+                    onClick={generateBCNumber}
+                    disabled={generatingNumber}
+                    className="mt-2 w-full text-xs text-green-600 hover:text-green-800 underline"
+                  >
+                    {generatingNumber ? 'Génération...' : 'Ou générer un numéro automatique'}
+                  </button>
+                </div>
               )}
             </div>
             
