@@ -13902,78 +13902,86 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
   const [saving, setSaving] = useState(false);
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [clientContracts, setClientContracts] = useState([]);
-  const [loadingContracts, setLoadingContracts] = useState(true);
   const [clientLocations, setClientLocations] = useState([]);
   
   const partsOrdersList = partsOrders || [];
-  
-  // Fetch contracts and locations for this client
-  useEffect(() => {
-    const fetchClientData = async () => {
-      setLoadingContracts(true);
-      try {
-        const { data: contracts } = await supabase
-          .from('contracts')
-          .select('*')
-          .eq('company_id', client.id)
-          .order('created_at', { ascending: false });
-        if (contracts) setClientContracts(contracts);
-      } catch (e) { console.error('Contracts fetch error:', e); }
-      
-      try {
-        const { data: locations } = await supabase
-          .from('shipping_addresses')
-          .select('*')
-          .eq('company_id', client.id)
-          .order('label');
-        if (locations) setClientLocations(locations);
-      } catch (e) { console.error('Locations fetch error:', e); }
-      
-      setLoadingContracts(false);
-    };
-    fetchClientData();
-  }, [client.id]);
-  
-  const tabs = [
-    { id: 'rmas', label: 'RMAs', icon: '📋', count: requests.length }, 
-    { id: 'parts', label: 'Pièces', icon: '🔩', count: partsOrdersList.length },
-    { id: 'contracts', label: 'Contrats', icon: '📑', count: clientContracts.length },
-    { id: 'locations', label: 'Sites', icon: '📍', count: clientLocations.length },
-    { id: 'devices', label: 'Appareils', icon: '🔧', count: equipment.length }, 
-    { id: 'info', label: 'Info', icon: 'ℹ️' }, 
-    { id: 'contacts', label: 'Contacts', icon: '👤', count: client.profiles?.length || 0 }
-  ];
-  const saveClient = async () => { setSaving(true); const { error } = await supabase.from('companies').update(editData).eq('id', client.id); if (error) notify('Erreur: ' + error.message, 'error'); else { notify('Client mis à jour!'); setEditing(false); reload(); } setSaving(false); };
-  
-  const handleSelectRMA = (rma) => {
-    onClose();
-    if (onSelectRMA) onSelectRMA(rma);
+
+  const loadContracts = async () => {
+    try {
+      const { data } = await supabase.from('contracts').select('*').eq('company_id', client.id).order('created_at', { ascending: false });
+      if (data) setClientContracts(data);
+    } catch (e) {}
+  };
+  const loadLocations = async () => {
+    try {
+      const { data } = await supabase.from('shipping_addresses').select('*').eq('company_id', client.id).order('label');
+      if (data) setClientLocations(data);
+    } catch (e) {}
   };
   
-  // Get all RMAs that contain this serial number
+  const switchTab = (tabId) => {
+    setActiveTab(tabId);
+    setSelectedEquipment(null);
+    if (tabId === 'contracts' && clientContracts.length === 0) loadContracts();
+    if (tabId === 'locations' && clientLocations.length === 0) loadLocations();
+  };
+
+  const saveClient = async () => { setSaving(true); const { error } = await supabase.from('companies').update(editData).eq('id', client.id); if (error) notify('Erreur: ' + error.message, 'error'); else { notify('Client mis à jour!'); setEditing(false); reload(); } setSaving(false); };
+  
+  const handleSelectItem = (item) => { onClose(); if (onSelectRMA) onSelectRMA(item); };
+  
   const getDeviceRMAHistory = (serialNumber) => {
     return requests.filter(r => r.request_devices?.some(d => d.serial_number === serialNumber))
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   };
+
+  const tabDefs = [
+    { id: 'rmas', label: 'RMAs', icon: '📋', count: requests.length },
+    { id: 'parts', label: 'Pièces', icon: '🔩', count: partsOrdersList.length },
+    { id: 'contracts', label: 'Contrats', icon: '📑' },
+    { id: 'locations', label: 'Sites', icon: '📍' },
+    { id: 'devices', label: 'Appareils', icon: '🔧', count: equipment.length },
+    { id: 'info', label: 'Info', icon: 'ℹ️' },
+    { id: 'contacts', label: 'Contacts', icon: '👤', count: client.profiles?.length || 0 }
+  ];
   
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
       <div className="bg-white rounded-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b bg-gradient-to-r from-[#1a1a2e] to-[#2d2d44] text-white flex justify-between items-center">
+        {/* HEADER */}
+        <div className="px-6 py-4 border-b bg-gradient-to-r from-[#1a1a2e] to-[#2d2d44] text-white flex justify-between items-center shrink-0">
           <div>
             <h2 className="text-xl font-bold">{client.name}</h2>
             <p className="text-sm text-gray-300">{client.billing_city}</p>
           </div>
           <button onClick={onClose} className="text-white/70 hover:text-white text-2xl">&times;</button>
         </div>
-        <div className="border-b bg-gray-50 flex overflow-x-auto">{tabs.map(tab => <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSelectedEquipment(null); }} className={`px-4 py-3 font-medium flex items-center gap-1.5 border-b-2 whitespace-nowrap text-sm ${activeTab === tab.id ? 'border-[#00A651] text-[#00A651] bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><span>{tab.icon}</span>{tab.label}{tab.count !== undefined && tab.count > 0 && <span className="px-1.5 py-0.5 bg-gray-200 rounded-full text-xs">{tab.count}</span>}</button>)}</div>
+        
+        {/* TAB BAR - always visible */}
+        <div className="border-b bg-gray-50 px-2 flex overflow-x-auto shrink-0" style={{minHeight: '48px'}}>
+          {tabDefs.map(tab => (
+            <button 
+              key={tab.id} 
+              onClick={() => switchTab(tab.id)} 
+              className={'px-4 py-3 font-medium flex items-center gap-1.5 border-b-2 whitespace-nowrap text-sm ' + (activeTab === tab.id ? 'border-[#00A651] text-[#00A651] bg-white' : 'border-transparent text-gray-500 hover:text-gray-700')}
+            >
+              <span>{tab.icon}</span>
+              {tab.label}
+              {tab.count > 0 ? <span className="px-1.5 py-0.5 bg-gray-200 rounded-full text-xs">{tab.count}</span> : null}
+            </button>
+          ))}
+        </div>
+        
+        {/* TAB CONTENT */}
         <div className="flex-1 overflow-y-auto p-6">
+        
+          {/* === RMAs === */}
           {activeTab === 'rmas' && (
             <div className="space-y-3">
               {requests.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun RMA</p> : requests.map(req => { 
                 const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted; 
                 return (
-                  <div key={req.id} onClick={() => handleSelectRMA(req)} className="bg-gray-50 rounded-lg p-4 flex justify-between items-center hover:bg-gray-100 cursor-pointer transition-colors">
+                  <div key={req.id} onClick={() => handleSelectItem(req)} className="bg-gray-50 rounded-lg p-4 flex justify-between items-center hover:bg-gray-100 cursor-pointer transition-colors">
                     <div className="flex items-center gap-4">
                       <span className="font-mono font-bold text-[#00A651]">{req.request_number || 'En attente'}</span>
                       <div>
@@ -13982,7 +13990,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                       </div>
                     </div>
                     <div className="text-right">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+                      <span className={'px-2 py-1 rounded-full text-xs font-medium ' + style.bg + ' ' + style.text}>{style.label}</span>
                       <p className="text-xs text-gray-400 mt-1">{new Date(req.created_at).toLocaleDateString('fr-FR')}</p>
                     </div>
                   </div>
@@ -13991,99 +13999,25 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
             </div>
           )}
           
-          {/* Parts Orders Tab */}
+          {/* === Parts Orders === */}
           {activeTab === 'parts' && (
             <div className="space-y-3">
               {partsOrdersList.length === 0 ? <p className="text-center text-gray-400 py-8">Aucune commande de pièces</p> : partsOrdersList.map(po => {
-                const poStatusStyles = {
-                  submitted: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Soumise' },
-                  quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
-                  quote_revision_requested: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Révision demandée' },
-                  bc_review: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'BC à vérifier' },
-                  in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'En cours' },
-                  ready_to_ship: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Prêt à expédier' },
-                  shipped: { bg: 'bg-green-100', text: 'text-green-700', label: '🚚 Expédié' },
-                  delivered: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: '✅ Livré' },
-                  completed: { bg: 'bg-gray-100', text: 'text-gray-700', label: '✅ Terminé' },
-                  cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulée' }
-                };
-                const style = poStatusStyles[po.status] || { bg: 'bg-gray-100', text: 'text-gray-700', label: po.status };
+                const poS = { submitted:'Nouvelle', quote_sent:'Devis envoyé', bc_review:'BC à vérifier', in_progress:'En cours', ready_to_ship:'Prêt', shipped:'Expédié', delivered:'Livré', completed:'Terminé', cancelled:'Annulée' };
                 const parts = po.quote_data?.parts || [];
                 const total = po.quote_data?.grandTotal || 0;
-                const shippingData = po.quote_data?.shipping || {};
-                
                 return (
-                  <div key={po.id} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors">
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-4">
-                        <span className="font-mono font-bold text-amber-600">{po.request_number || 'En attente'}</span>
-                        <div>
-                          <p className="font-medium">{parts.length} pièce(s)</p>
-                          {po.bc_number && <p className="text-xs text-green-600 font-mono">BC: {po.bc_number}</p>}
-                          {po.quote_number && <p className="text-xs text-blue-600 font-mono">Devis: {po.quote_number}</p>}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
-                        <p className="text-xs text-gray-400 mt-1">{new Date(po.created_at).toLocaleDateString('fr-FR')}</p>
-                        {total > 0 && <p className="text-sm font-bold text-gray-700 mt-1">{total.toFixed(2)} €</p>}
-                      </div>
-                    </div>
-                    {/* Show tracking for shipped orders */}
-                    {shippingData.trackingNumber && (
-                      <div className="mt-2 pt-2 border-t border-gray-200 flex items-center gap-2 text-sm">
-                        <span className="text-gray-500">🚚 UPS:</span>
-                        <a href={`https://www.ups.com/track?tracknum=${shippingData.trackingNumber}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-mono text-xs">{shippingData.trackingNumber}</a>
-                        {shippingData.blNumber && <span className="text-gray-400 ml-2">BL: {shippingData.blNumber}</span>}
-                      </div>
-                    )}
-                    {/* Show parts summary */}
-                    {parts.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-gray-200">
-                        <div className="flex flex-wrap gap-1">
-                          {parts.slice(0, 3).map((p, i) => (
-                            <span key={i} className="px-2 py-0.5 bg-white rounded text-xs text-gray-600 border">{p.partNumber || p.description?.substring(0, 20)}</span>
-                          ))}
-                          {parts.length > 3 && <span className="px-2 py-0.5 text-xs text-gray-400">+{parts.length - 3} autres</span>}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          
-          {/* Contracts Tab */}
-          {activeTab === 'contracts' && (
-            <div className="space-y-3">
-              {loadingContracts ? <p className="text-center text-gray-400 py-8">Chargement...</p> :
-               clientContracts.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun contrat</p> : clientContracts.map(contract => {
-                const contractStatusStyles = {
-                  requested: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Demande' },
-                  draft: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Brouillon' },
-                  quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
-                  bc_pending: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'BC en attente' },
-                  active: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Actif' },
-                  expired: { bg: 'bg-red-100', text: 'text-red-700', label: 'Expiré' },
-                  cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
-                };
-                const style = contractStatusStyles[contract.status] || { bg: 'bg-gray-100', text: 'text-gray-700', label: contract.status };
-                
-                return (
-                  <div key={contract.id} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors">
+                  <div key={po.id} onClick={() => handleSelectItem(po)} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 cursor-pointer transition-colors">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="font-mono font-bold text-purple-600">{contract.contract_number || 'En attente'}</span>
-                        <p className="text-sm text-gray-600 mt-1">{contract.contract_type === 'tokens' ? '🎟️ Tokens' : contract.contract_type === 'unlimited' ? '♾️ Illimité' : contract.contract_type || 'Standard'}</p>
-                        {contract.token_balance !== undefined && contract.token_balance !== null && (
-                          <p className="text-xs text-amber-600 mt-0.5">Tokens restants: {contract.token_balance}/{contract.token_total || '—'}</p>
-                        )}
+                        <span className="font-mono font-bold text-amber-600">{po.request_number || '—'}</span>
+                        <p className="text-sm text-gray-600 mt-1">{parts.length} pièce(s)</p>
+                        {po.bc_number && <p className="text-xs text-green-600 font-mono">BC: {po.bc_number}</p>}
                       </div>
                       <div className="text-right">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
-                        {contract.start_date && <p className="text-xs text-gray-400 mt-1">{new Date(contract.start_date).toLocaleDateString('fr-FR')} → {contract.end_date ? new Date(contract.end_date).toLocaleDateString('fr-FR') : '—'}</p>}
-                        {contract.annual_value && <p className="text-sm font-bold text-gray-700 mt-1">{parseFloat(contract.annual_value).toFixed(2)} €/an</p>}
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">{poS[po.status] || po.status}</span>
+                        <p className="text-xs text-gray-400 mt-1">{new Date(po.created_at).toLocaleDateString('fr-FR')}</p>
+                        {total > 0 && <p className="text-sm font-bold text-gray-700">{total.toFixed(2)} €</p>}
                       </div>
                     </div>
                   </div>
@@ -14092,30 +14026,36 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
             </div>
           )}
           
-          {/* Locations Tab */}
-          {activeTab === 'locations' && (
+          {/* === Contracts === */}
+          {activeTab === 'contracts' && (
             <div className="space-y-3">
-              {loadingContracts ? <p className="text-center text-gray-400 py-8">Chargement...</p> :
-               clientLocations.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun site enregistré</p> : clientLocations.map(loc => (
-                <div key={loc.id} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors">
+              {clientContracts.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun contrat (cliquez pour charger)</p> : clientContracts.map(c => (
+                <div key={c.id} className="bg-gray-50 rounded-lg p-4">
                   <div className="flex justify-between items-start">
                     <div>
-                      <p className="font-medium">{loc.label || loc.company_name || 'Site sans nom'}</p>
-                      {loc.attention && <p className="text-sm text-gray-600">Att: {loc.attention}</p>}
-                      <p className="text-sm text-gray-500">{loc.address_line1}</p>
-                      <p className="text-sm text-gray-500">{loc.postal_code} {loc.city}</p>
-                      <p className="text-xs text-gray-400">{loc.country || 'France'}</p>
+                      <span className="font-mono font-bold text-purple-600">{c.contract_number || '—'}</span>
+                      <p className="text-sm text-gray-600 mt-1">{c.contract_type || '—'}</p>
                     </div>
-                    <div className="text-right">
-                      {loc.phone && <p className="text-xs text-gray-500">📞 {loc.phone}</p>}
-                      {loc.is_default && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs">Par défaut</span>}
-                    </div>
+                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">{c.status}</span>
                   </div>
                 </div>
               ))}
             </div>
           )}
           
+          {/* === Locations === */}
+          {activeTab === 'locations' && (
+            <div className="space-y-3">
+              {clientLocations.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun site</p> : clientLocations.map(loc => (
+                <div key={loc.id} className="bg-gray-50 rounded-lg p-4">
+                  <p className="font-medium">{loc.label || loc.company_name || 'Site'}</p>
+                  <p className="text-sm text-gray-500">{loc.address_line1}, {loc.postal_code} {loc.city}</p>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* === Devices === */}
           {activeTab === 'devices' && !selectedEquipment && (
             <div className="space-y-3">
               {equipment.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun appareil</p> : equipment.map(eq => { 
@@ -14125,7 +14065,6 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                     <div>
                       <p className="font-medium">{eq.model_name}</p>
                       <p className="text-sm text-gray-500">SN: {eq.serial_number}</p>
-                      {eq.nickname && <p className="text-xs text-gray-400">"{eq.nickname}"</p>}
                     </div>
                     <div className="text-right">
                       <span className="text-sm text-gray-400">{eq.brand}</span>
@@ -14139,48 +14078,80 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           
           {activeTab === 'devices' && selectedEquipment && (
             <div className="space-y-4">
-              <button onClick={() => setSelectedEquipment(null)} className="text-sm text-blue-600 hover:underline flex items-center gap-1">
-                ← Retour aux appareils
-              </button>
-              
+              <button onClick={() => setSelectedEquipment(null)} className="text-sm text-blue-600 hover:underline">← Retour</button>
               <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
                 <h3 className="font-bold text-blue-800">{selectedEquipment.model_name}</h3>
                 <p className="text-sm text-blue-600">SN: {selectedEquipment.serial_number}</p>
-                {selectedEquipment.nickname && <p className="text-xs text-blue-500">"{selectedEquipment.nickname}"</p>}
               </div>
-              
-              <h4 className="font-medium text-gray-700">Historique des RMAs pour cet appareil:</h4>
-              
+              <h4 className="font-medium text-gray-700">Historique RMAs:</h4>
               <div className="space-y-3">
-                {getDeviceRMAHistory(selectedEquipment.serial_number).length === 0 ? (
-                  <p className="text-center text-gray-400 py-4">Aucun RMA pour cet appareil</p>
-                ) : (
-                  getDeviceRMAHistory(selectedEquipment.serial_number).map(rma => {
-                    const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
-                    const deviceInRMA = rma.request_devices?.find(d => d.serial_number === selectedEquipment.serial_number);
-                    return (
-                      <div key={rma.id} onClick={() => handleSelectRMA(rma)} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 cursor-pointer transition-colors">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span>
-                            <p className="text-sm text-gray-600 mt-1">{rma.requested_service}</p>
-                            {deviceInRMA?.service_type && <p className="text-xs text-gray-500">Service: {deviceInRMA.service_type}</p>}
-                          </div>
-                          <div className="text-right">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
-                            <p className="text-xs text-gray-400 mt-1">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
-                          </div>
-                        </div>
+                {getDeviceRMAHistory(selectedEquipment.serial_number).map(rma => {
+                  const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
+                  return (
+                    <div key={rma.id} onClick={() => handleSelectItem(rma)} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 cursor-pointer transition-colors">
+                      <div className="flex justify-between items-start">
+                        <span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span>
+                        <span className={'px-2 py-1 rounded-full text-xs font-medium ' + style.bg + ' ' + style.text}>{style.label}</span>
                       </div>
-                    );
-                  })
-                )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
           
-          {activeTab === 'info' && <div className="space-y-4">{editing ? <div className="space-y-4 max-w-lg"><div><label className="block text-sm font-medium text-gray-700 mb-1">Nom</label><input type="text" value={editData.name} onChange={e => setEditData({ ...editData, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Adresse</label><input type="text" value={editData.billing_address} onChange={e => setEditData({ ...editData, billing_address: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">Code postal</label><input type="text" value={editData.billing_postal_code} onChange={e => setEditData({ ...editData, billing_postal_code: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Ville</label><input type="text" value={editData.billing_city} onChange={e => setEditData({ ...editData, billing_city: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label><input type="text" value={editData.siret} onChange={e => setEditData({ ...editData, siret: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">N° TVA</label><input type="text" value={editData.vat_number} onChange={e => setEditData({ ...editData, vat_number: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div></div><div className="flex gap-2 pt-2"><button onClick={() => setEditing(false)} className="px-4 py-2 bg-gray-200 rounded-lg">Annuler</button><button onClick={saveClient} disabled={saving} className="px-4 py-2 bg-[#00A651] text-white rounded-lg disabled:opacity-50">{saving ? 'Enregistrement...' : 'Enregistrer'}</button></div></div> : <div className="space-y-4">{isAdmin && <button onClick={() => setEditing(true)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">✏️ Modifier</button>}<div className="grid md:grid-cols-2 gap-4"><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">Nom</p><p className="font-medium">{client.name}</p></div><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">Adresse</p><p className="font-medium">{client.billing_address || '—'}</p><p className="text-sm text-gray-600">{client.billing_postal_code} {client.billing_city}</p></div><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">SIRET</p><p className="font-medium">{client.siret || '—'}</p></div><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">N° TVA</p><p className="font-medium">{client.vat_number || '—'}</p></div></div></div>}</div>}
-          {activeTab === 'contacts' && <div className="space-y-3">{client.profiles?.map(contact => <div key={contact.id} className="bg-gray-50 rounded-lg p-4 flex justify-between items-center"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-[#1a1a2e] text-white flex items-center justify-center font-bold">{contact.full_name?.charAt(0)?.toUpperCase()}</div><div><p className="font-medium">{contact.full_name}</p><p className="text-sm text-gray-500">{contact.email}</p>{contact.phone && <p className="text-sm text-gray-400">{contact.phone}</p>}</div></div><span className={`px-2 py-1 rounded-full text-xs ${contact.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-200 text-gray-600'}`}>{contact.role === 'admin' ? '👑 Admin' : '👤 Utilisateur'}</span></div>)}</div>}
+          {/* === Info === */}
+          {activeTab === 'info' && (
+            <div className="space-y-4">
+              {editing ? (
+                <div className="space-y-4 max-w-lg">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Nom</label><input type="text" value={editData.name} onChange={e => setEditData({...editData, name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Adresse</label><input type="text" value={editData.billing_address} onChange={e => setEditData({...editData, billing_address: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Code postal</label><input type="text" value={editData.billing_postal_code} onChange={e => setEditData({...editData, billing_postal_code: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Ville</label><input type="text" value={editData.billing_city} onChange={e => setEditData({...editData, billing_city: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label><input type="text" value={editData.siret} onChange={e => setEditData({...editData, siret: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">N° TVA</label><input type="text" value={editData.vat_number} onChange={e => setEditData({...editData, vat_number: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button onClick={() => setEditing(false)} className="px-4 py-2 bg-gray-200 rounded-lg">Annuler</button>
+                    <button onClick={saveClient} disabled={saving} className="px-4 py-2 bg-[#00A651] text-white rounded-lg disabled:opacity-50">{saving ? '...' : 'Enregistrer'}</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {isAdmin && <button onClick={() => setEditing(true)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">Modifier</button>}
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">Nom</p><p className="font-medium">{client.name}</p></div>
+                    <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">Adresse</p><p className="font-medium">{client.billing_address || '—'}</p><p className="text-sm text-gray-600">{client.billing_postal_code} {client.billing_city}</p></div>
+                    <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">SIRET</p><p className="font-medium">{client.siret || '—'}</p></div>
+                    <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">N° TVA</p><p className="font-medium">{client.vat_number || '—'}</p></div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* === Contacts === */}
+          {activeTab === 'contacts' && (
+            <div className="space-y-3">
+              {(client.profiles || []).map(contact => (
+                <div key={contact.id} className="bg-gray-50 rounded-lg p-4 flex justify-between items-center">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-[#1a1a2e] text-white flex items-center justify-center font-bold">{contact.full_name?.charAt(0)?.toUpperCase()}</div>
+                    <div>
+                      <p className="font-medium">{contact.full_name}</p>
+                      <p className="text-sm text-gray-500">{contact.email}</p>
+                      {contact.phone && <p className="text-sm text-gray-400">{contact.phone}</p>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
         </div>
       </div>
     </div>
