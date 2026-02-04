@@ -16989,8 +16989,24 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
       return;
     }
 
+    // Check for duplicates against existing data
+    let dupeCount = 0;
+    try {
+      const { data: existingTxns } = await supabase
+        .from('bank_transactions')
+        .select('transaction_date, amount, description')
+        .order('transaction_date', { ascending: false })
+        .limit(2000);
+      const fps = new Set();
+      (existingTxns || []).forEach(t => {
+        fps.add(`${t.transaction_date}|${parseFloat(t.amount).toFixed(2)}|${(t.description || '').trim().substring(0, 80).toLowerCase()}`);
+      });
+      const credits = result.rows.filter(r => r.amount > 0);
+      dupeCount = credits.filter(r => fps.has(`${r.transaction_date}|${parseFloat(r.amount).toFixed(2)}|${(r.description || '').trim().substring(0, 80).toLowerCase()}`)).length;
+    } catch (e) { /* proceed without dupe count */ }
+
     // Show preview
-    setParsedPreview({ fileName: file.name, ...result });
+    setParsedPreview({ fileName: file.name, dupeCount, ...result });
   };
 
   // Confirm import after preview
@@ -16998,13 +17014,51 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
     if (!parsedPreview) return;
     setUploading(true);
     try {
+      // Only credits (incoming payments)
+      const credits = parsedPreview.rows.filter(r => r.amount > 0);
+      
+      // === DUPLICATE DETECTION ===
+      // Fetch existing transactions to check for duplicates
+      const { data: existingTxns } = await supabase
+        .from('bank_transactions')
+        .select('transaction_date, amount, description')
+        .order('transaction_date', { ascending: false })
+        .limit(2000);
+
+      // Build a fingerprint set for fast lookup
+      const existingFingerprints = new Set();
+      (existingTxns || []).forEach(t => {
+        const fp = `${t.transaction_date}|${parseFloat(t.amount).toFixed(2)}|${(t.description || '').trim().substring(0, 80).toLowerCase()}`;
+        existingFingerprints.add(fp);
+      });
+
+      // Filter out duplicates
+      const newCredits = [];
+      const duplicates = [];
+      for (const r of credits) {
+        const fp = `${r.transaction_date}|${parseFloat(r.amount).toFixed(2)}|${(r.description || '').trim().substring(0, 80).toLowerCase()}`;
+        if (existingFingerprints.has(fp)) {
+          duplicates.push(r);
+        } else {
+          newCredits.push(r);
+          existingFingerprints.add(fp); // Prevent dupes within the same file too
+        }
+      }
+
+      if (newCredits.length === 0) {
+        notify(`⚠️ Toutes les ${duplicates.length} transactions existent déjà — rien à importer`, 'error');
+        setParsedPreview(null);
+        setUploading(false);
+        return;
+      }
+
       // Create bank_import record
       const { data: importRecord, error: importErr } = await supabase
         .from('bank_imports')
         .insert({
           file_name: parsedPreview.fileName,
           imported_by: profile?.id,
-          transaction_count: parsedPreview.rows.length,
+          transaction_count: newCredits.length,
           status: 'completed'
         })
         .select()
@@ -17012,24 +17066,24 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
 
       if (importErr) throw importErr;
 
-      // Insert transactions — only credits (incoming payments)
-      const credits = parsedPreview.rows.filter(r => r.amount > 0);
-      if (credits.length > 0) {
-        const { error: txnErr } = await supabase
-          .from('bank_transactions')
-          .insert(credits.map(r => ({
-            bank_import_id: importRecord.id,
-            transaction_date: r.transaction_date,
-            amount: r.amount,
-            description: r.description,
-            reference: r.reference,
-            status: 'unmatched',
-            match_confidence: 'unmatched'
-          })));
-        if (txnErr) throw txnErr;
-      }
+      // Insert only new transactions
+      const { error: txnErr } = await supabase
+        .from('bank_transactions')
+        .insert(newCredits.map(r => ({
+          bank_import_id: importRecord.id,
+          transaction_date: r.transaction_date,
+          amount: r.amount,
+          description: r.description,
+          reference: r.reference,
+          status: 'unmatched',
+          match_confidence: 'unmatched'
+        })));
+      if (txnErr) throw txnErr;
 
-      notify(`✅ ${credits.length} paiement${credits.length > 1 ? 's' : ''} importé${credits.length > 1 ? 's' : ''} (${parsedPreview.rows.length - credits.length} débits ignorés)`);
+      const msg = duplicates.length > 0 
+        ? `✅ ${newCredits.length} nouveau${newCredits.length > 1 ? 'x' : ''} paiement${newCredits.length > 1 ? 's' : ''} importé${newCredits.length > 1 ? 's' : ''} — ${duplicates.length} doublon${duplicates.length > 1 ? 's' : ''} ignoré${duplicates.length > 1 ? 's' : ''}`
+        : `✅ ${newCredits.length} paiement${newCredits.length > 1 ? 's' : ''} importé${newCredits.length > 1 ? 's' : ''}`;
+      notify(msg);
       setParsedPreview(null);
       loadBankData();
     } catch (err) {
@@ -17250,6 +17304,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
 
   // KPI state
   const [kpiPeriod, setKpiPeriod] = useState('year');
+  const [showCancelled, setShowCancelled] = useState(false);
 
   const kpiInvoices = invoices.filter(inv => {
     if (inv.status === 'cancelled') return false;
@@ -17504,7 +17559,12 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                       <div className="flex items-center justify-between mb-2">
                         <div>
                           <h4 className="font-bold text-blue-800 text-sm">📄 {parsedPreview.fileName}</h4>
-                          <p className="text-xs text-blue-600">{parsedPreview.rows.length} transactions • {parsedPreview.rows.filter(r => r.amount > 0).length} crédits</p>
+                          <p className="text-xs text-blue-600">
+                            {parsedPreview.rows.length} transactions • {parsedPreview.rows.filter(r => r.amount > 0).length} crédits
+                            {parsedPreview.dupeCount > 0 && (
+                              <span className="text-amber-600 ml-1">• ⚠️ {parsedPreview.dupeCount} doublon{parsedPreview.dupeCount > 1 ? 's' : ''} détecté{parsedPreview.dupeCount > 1 ? 's' : ''} (seront ignorés)</span>
+                            )}
+                          </p>
                         </div>
                         <div className="flex gap-2">
                           <button onClick={confirmImport} disabled={uploading} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium disabled:opacity-50">
@@ -17692,45 +17752,93 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                 </div>
               )}
 
-              {/* ========== TAB 3: Archivées ========== */}
-              {activeTab === 'closed' && (
-                <div>
-                  {filterItems(closedInvoices).length === 0 ? (
-                    <div className="text-center py-12 text-gray-400">
-                      <div className="text-4xl mb-2">📂</div>
-                      <p>Aucune facture archivée</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {filterItems(closedInvoices).map(inv => (
-                        <div key={inv.id} onClick={() => setViewingInvoice(inv)}
-                          className={`flex items-center gap-3 p-4 border rounded-xl cursor-pointer transition-all ${
-                            inv.status === 'paid' ? 'bg-green-50 border-green-200 hover:bg-green-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
-                          }`}>
-                          <div className={`w-3 h-3 rounded-full shrink-0 ${inv.status === 'paid' ? 'bg-green-500' : 'bg-gray-400'}`} />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-gray-800 text-sm">{inv.invoice_number}</span>
-                              <span className="text-gray-400 text-xs">—</span>
-                              <span className="font-medium text-gray-700 text-sm">{inv.companies?.name || 'Client'}</span>
+              {/* ========== TAB 3: Archivées (Paid + Cancelled) ========== */}
+              {activeTab === 'closed' && (() => {
+                const paidInvoices = filterItems(closedInvoices.filter(i => i.status === 'paid'));
+                const cancelledInvoices = filterItems(closedInvoices.filter(i => i.status === 'cancelled'));
+                const totalPaidRevenue = paidInvoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
+
+                return (
+                  <div className="space-y-5">
+                    {/* Paid summary bar */}
+                    {paidInvoices.length > 0 && (
+                      <div className="flex items-center gap-4 p-3 bg-green-50 border border-green-200 rounded-xl">
+                        <span className="text-green-700 font-bold text-sm">✅ {paidInvoices.length} facture{paidInvoices.length > 1 ? 's' : ''} payée{paidInvoices.length > 1 ? 's' : ''}</span>
+                        <span className="text-green-600 text-sm">Total: {totalPaidRevenue.toFixed(2)} €</span>
+                      </div>
+                    )}
+
+                    {/* Paid invoices */}
+                    {paidInvoices.length === 0 && cancelledInvoices.length === 0 ? (
+                      <div className="text-center py-12 text-gray-400">
+                        <div className="text-4xl mb-2">📂</div>
+                        <p>Aucune facture archivée</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {paidInvoices.map(inv => (
+                          <div key={inv.id} onClick={() => setViewingInvoice(inv)}
+                            className="flex items-center gap-3 p-4 border border-green-200 bg-green-50 rounded-xl cursor-pointer hover:bg-green-100 transition-all">
+                            <div className="w-3 h-3 rounded-full shrink-0 bg-green-500" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-gray-800 text-sm">{inv.invoice_number}</span>
+                                <span className="text-gray-400 text-xs">—</span>
+                                <span className="font-medium text-gray-700 text-sm">{inv.companies?.name || 'Client'}</span>
+                              </div>
+                              <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
+                                {inv.service_requests?.request_number && <span>RMA {inv.service_requests.request_number}</span>}
+                                <span>Émise: {frenchDate(inv.invoice_date)}</span>
+                                {inv.paid_at && <span className="text-green-600 font-medium">Payée: {frenchDate(inv.paid_at)}</span>}
+                                {inv.payment_reference && <span>Réf: {inv.payment_reference}</span>}
+                              </div>
                             </div>
-                            <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                              {inv.service_requests?.request_number && <span>RMA {inv.service_requests.request_number}</span>}
-                              <span>Émise: {frenchDate(inv.invoice_date)}</span>
-                              {inv.paid_at && <span className="text-green-600">Payée: {frenchDate(inv.paid_at)}</span>}
-                              {inv.payment_reference && <span>Réf: {inv.payment_reference}</span>}
+                            <div className="text-right shrink-0 w-28">
+                              <p className="font-bold text-gray-800">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
                             </div>
+                            <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">✅ Payée</span>
                           </div>
-                          <div className="text-right shrink-0 w-28">
-                            <p className="font-bold text-gray-800">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Cancelled / Deleted — collapsible */}
+                    {cancelledInvoices.length > 0 && (
+                      <div className="border-t pt-4">
+                        <button onClick={() => setShowCancelled(!showCancelled)}
+                          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors mb-2">
+                          <span className="transform transition-transform" style={{ transform: showCancelled ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+                          🗑️ Annulées / Supprimées
+                          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{cancelledInvoices.length}</span>
+                        </button>
+                        {showCancelled && (
+                          <div className="space-y-1.5 pl-4">
+                            {cancelledInvoices.map(inv => (
+                              <div key={inv.id} onClick={() => setViewingInvoice(inv)}
+                                className="flex items-center gap-3 p-3 border border-gray-200 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-all opacity-60">
+                                <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-gray-400" />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-gray-600 text-xs">{inv.invoice_number}</span>
+                                    <span className="text-gray-400 text-xs">·</span>
+                                    <span className="text-gray-500 text-xs">{inv.companies?.name || 'Client'}</span>
+                                  </div>
+                                  <div className="text-xs text-gray-400 mt-0.5">
+                                    {inv.service_requests?.request_number && <span>RMA {inv.service_requests.request_number} • </span>}
+                                    Émise: {frenchDate(inv.invoice_date)}
+                                  </div>
+                                </div>
+                                <p className="text-xs text-gray-400 line-through shrink-0">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
+                                <span className="px-2 py-0.5 bg-gray-200 text-gray-500 rounded-full text-xs">Annulée</span>
+                              </div>
+                            ))}
                           </div>
-                          {getStatusBadge(inv)}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* ========== TAB 4: Tableau de Bord / KPI ========== */}
               {activeTab === 'kpi' && (
