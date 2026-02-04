@@ -17420,24 +17420,24 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
 
               {/* ========== TAB 2: Factures Ouvertes + Bank Reconciliation ========== */}
               {activeTab === 'open' && (
-                <div className="space-y-5">
-                  {/* Bank CSV Upload Bar */}
+                <div className="space-y-4">
+                  {/* Top action bar: CSV upload + buttons */}
                   <div className="flex items-center gap-3">
                     <label className="flex-1 relative cursor-pointer">
-                      <div className="border-2 border-dashed border-gray-300 rounded-xl p-3 text-center hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                      <div className="border-2 border-dashed border-gray-300 rounded-xl p-2.5 text-center hover:border-blue-400 hover:bg-blue-50 transition-colors">
                         <p className="text-sm text-gray-600">🏦 <strong>Importer relevé bancaire</strong> — CSV ou Excel</p>
                       </div>
                       <input type="file" accept=".csv,.txt,.xls,.xlsx" onChange={handleBankFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
                     </label>
                     {reconStats.unmatched > 0 && (
                       <button onClick={runAutoMatch} disabled={autoMatching}
-                        className="px-5 py-3 bg-[#1E3A5F] hover:bg-[#2a5490] text-white rounded-xl font-medium text-sm disabled:opacity-50 whitespace-nowrap">
-                        {autoMatching ? '⏳ Analyse...' : `🔄 Auto-rapprochement (${reconStats.unmatched})`}
+                        className="px-4 py-2.5 bg-[#1E3A5F] hover:bg-[#2a5490] text-white rounded-xl font-medium text-sm disabled:opacity-50 whitespace-nowrap">
+                        {autoMatching ? '⏳...' : `🔄 Auto (${reconStats.unmatched})`}
                       </button>
                     )}
                     {reconStats.matched > 0 && (
                       <button onClick={confirmAllMatches}
-                        className="px-5 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium text-sm whitespace-nowrap">
+                        className="px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium text-sm whitespace-nowrap">
                         ✅ Confirmer ({reconStats.matched})
                       </button>
                     )}
@@ -17445,34 +17445,30 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
 
                   {/* CSV Preview */}
                   {parsedPreview && (
-                    <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-5">
-                      <div className="flex items-center justify-between mb-3">
+                    <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
                         <div>
-                          <h4 className="font-bold text-blue-800">📄 Aperçu — {parsedPreview.fileName}</h4>
-                          <p className="text-sm text-blue-600">{parsedPreview.rows.length} transactions • {parsedPreview.rows.filter(r => r.amount > 0).length} crédits entrants</p>
+                          <h4 className="font-bold text-blue-800 text-sm">📄 {parsedPreview.fileName}</h4>
+                          <p className="text-xs text-blue-600">{parsedPreview.rows.length} transactions • {parsedPreview.rows.filter(r => r.amount > 0).length} crédits</p>
                         </div>
                         <div className="flex gap-2">
-                          <button onClick={confirmImport} disabled={uploading} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50">
+                          <button onClick={confirmImport} disabled={uploading} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium disabled:opacity-50">
                             {uploading ? '⏳...' : '✅ Importer'}
                           </button>
-                          <button onClick={() => setParsedPreview(null)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Annuler</button>
+                          <button onClick={() => setParsedPreview(null)} className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">Annuler</button>
                         </div>
                       </div>
-                      <div className="max-h-48 overflow-y-auto bg-white rounded-lg border">
-                        <table className="w-full text-sm">
+                      <div className="max-h-36 overflow-y-auto bg-white rounded-lg border">
+                        <table className="w-full text-xs">
                           <thead className="bg-gray-50 sticky top-0">
-                            <tr>
-                              <th className="text-left p-2 font-medium text-gray-500">Date</th>
-                              <th className="text-left p-2 font-medium text-gray-500">Description</th>
-                              <th className="text-right p-2 font-medium text-gray-500">Montant</th>
-                            </tr>
+                            <tr><th className="text-left p-1.5">Date</th><th className="text-left p-1.5">Description</th><th className="text-right p-1.5">Montant</th></tr>
                           </thead>
                           <tbody>
-                            {parsedPreview.rows.filter(r => r.amount > 0).slice(0, 30).map((row, idx) => (
+                            {parsedPreview.rows.filter(r => r.amount > 0).slice(0, 20).map((row, idx) => (
                               <tr key={idx} className="border-t bg-green-50">
-                                <td className="p-2 font-mono text-xs">{row.transaction_date}</td>
-                                <td className="p-2 text-xs truncate max-w-xs">{row.description}</td>
-                                <td className="p-2 text-right font-bold text-green-700">+{row.amount.toFixed(2)} €</td>
+                                <td className="p-1.5 font-mono">{row.transaction_date}</td>
+                                <td className="p-1.5 truncate max-w-[200px]">{row.description}</td>
+                                <td className="p-1.5 text-right font-bold text-green-700">+{row.amount.toFixed(2)} €</td>
                               </tr>
                             ))}
                           </tbody>
@@ -17481,90 +17477,149 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                     </div>
                   )}
 
-                  {/* Open Invoices List — color coded by due date */}
-                  <div className="space-y-2">
-                    {filterItems(openInvoices).length === 0 ? (
-                      <div className="text-center py-12 text-gray-400">
-                        <div className="text-4xl mb-2">📋</div>
-                        <p>Aucune facture ouverte</p>
-                      </div>
-                    ) : filterItems(openInvoices).map(inv => {
-                      const dc = dueColor(inv);
-                      const rem = (parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0);
-                      const matchedTxn = bankTransactions.find(t => t.matched_invoice_id === inv.id && ['matched', 'confirmed'].includes(t.status));
-                      const daysLeft = inv.due_date ? Math.ceil((new Date(inv.due_date) - new Date()) / (1000 * 60 * 60 * 24)) : null;
+                  {/* ===== SPLIT SCREEN: Invoices Left | Bank Payments Right ===== */}
+                  <div className="flex gap-4" style={{ minHeight: '500px' }}>
 
-                      return (
-                        <div key={inv.id} onClick={() => setViewingInvoice(inv)}
-                          className={`flex items-center gap-3 p-4 border rounded-xl cursor-pointer transition-all ${dc.bg}`}>
-                          <div className={`w-3 h-3 rounded-full shrink-0 ${dc.dot} ${dueStatus(inv) === 'overdue' ? 'animate-pulse' : ''}`} />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-gray-800 text-sm">{inv.invoice_number}</span>
-                              <span className="text-gray-400 text-xs">—</span>
-                              <span className="font-medium text-gray-700 text-sm">{inv.companies?.name || 'Client'}</span>
-                              {inv.service_requests?.request_number && (
-                                <span className="text-xs text-gray-400">RMA {inv.service_requests.request_number}</span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                              <span>Émise: {frenchDate(inv.invoice_date)}</span>
-                              <span>Échéance: {frenchDate(inv.due_date)}</span>
-                              {daysLeft !== null && (
-                                <span className={`font-medium ${daysLeft < 0 ? 'text-red-600' : daysLeft <= 7 ? 'text-orange-600' : 'text-green-600'}`}>
-                                  {daysLeft < 0 ? `${Math.abs(daysLeft)}j de retard` : daysLeft === 0 ? "Échéance aujourd'hui" : `${daysLeft}j restants`}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          {matchedTxn && (
-                            <div className={`px-3 py-1.5 rounded-lg text-xs font-medium shrink-0 ${
-                              matchedTxn.status === 'confirmed' ? 'bg-green-200 text-green-800' : 'bg-amber-200 text-amber-800'
-                            }`}>
-                              {matchedTxn.status === 'confirmed' ? '✅ Confirmé' : '🔗 Rapproché'}
-                              <span className="ml-1 font-bold">+{parseFloat(matchedTxn.amount).toFixed(2)} €</span>
-                            </div>
-                          )}
-                          <div className="text-right shrink-0 w-28">
-                            <p className="font-bold text-gray-800">{rem.toFixed(2)} €</p>
-                            <p className="text-xs text-gray-400">sur {parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
-                          </div>
-                          <div className="shrink-0">{getStatusBadge(inv)}</div>
+                    {/* LEFT: Open Invoices */}
+                    <div className="flex-1 min-w-0 flex flex-col">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-bold text-gray-700 text-sm flex items-center gap-2">
+                          📋 Factures ouvertes
+                          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{openInvoices.length}</span>
+                        </h4>
+                        <div className="flex items-center gap-1 text-xs text-gray-400">
+                          <span className="w-2 h-2 bg-green-500 rounded-full" /> OK
+                          <span className="w-2 h-2 bg-orange-400 rounded-full ml-2" /> Bientôt
+                          <span className="w-2 h-2 bg-red-500 rounded-full ml-2" /> Retard
                         </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Excess Payments — money we can't tie to any invoice */}
-                  {excessPayments.length > 0 && (
-                    <div className="mt-6">
-                      <h4 className="font-bold text-gray-700 flex items-center gap-2 mb-3">
-                        💰 Paiements non attribués
-                        <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">{excessPayments.length}</span>
-                      </h4>
-                      <div className="space-y-2">
-                        {excessPayments.map(txn => (
-                          <div key={txn.id} className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                            <div className="w-8 h-8 rounded-full bg-amber-200 flex items-center justify-center text-amber-700 text-sm shrink-0">💰</div>
-                            <div className="w-24 shrink-0">
-                              <p className="text-sm font-mono">{txn.transaction_date ? new Date(txn.transaction_date + 'T00:00:00').toLocaleDateString('fr-FR') : '—'}</p>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm text-gray-700 truncate">{txn.description || '—'}</p>
-                              {txn.reference && <p className="text-xs text-gray-400">Réf: {txn.reference}</p>}
-                            </div>
-                            <p className="font-bold text-green-700 shrink-0">+{parseFloat(txn.amount || 0).toFixed(2)} €</p>
-                            <div className="flex gap-1.5 shrink-0">
-                              <button onClick={(e) => { e.stopPropagation(); setMatchingTxn(txn); }}
-                                className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-medium">🔗 Attribuer</button>
-                              <button onClick={(e) => { e.stopPropagation(); ignoreTxn(txn.id); }}
-                                className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-xs" title="Archiver">📦</button>
-                            </div>
+                      </div>
+                      <div className="flex-1 overflow-y-auto border rounded-xl bg-gray-50/50 p-2 space-y-1.5">
+                        {filterItems(openInvoices).length === 0 ? (
+                          <div className="text-center py-12 text-gray-400">
+                            <div className="text-3xl mb-2">📋</div>
+                            <p className="text-sm">Aucune facture ouverte</p>
                           </div>
-                        ))}
+                        ) : filterItems(openInvoices).map(inv => {
+                          const dc = dueColor(inv);
+                          const rem = (parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0);
+                          const matchedTxn = bankTransactions.find(t => t.matched_invoice_id === inv.id && ['matched', 'confirmed'].includes(t.status));
+                          const daysLeft = inv.due_date ? Math.ceil((new Date(inv.due_date) - new Date()) / (1000 * 60 * 60 * 24)) : null;
+
+                          return (
+                            <div key={inv.id} onClick={() => setViewingInvoice(inv)}
+                              className={`flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-all ${dc.bg}`}>
+                              <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${dc.dot} ${dueStatus(inv) === 'overdue' ? 'animate-pulse' : ''}`} />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-gray-800 text-xs">{inv.invoice_number}</span>
+                                  <span className="text-gray-400 text-xs">·</span>
+                                  <span className="font-medium text-gray-700 text-xs truncate">{inv.companies?.name || 'Client'}</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
+                                  <span>Éch. {frenchDate(inv.due_date)}</span>
+                                  {daysLeft !== null && (
+                                    <span className={`font-semibold ${daysLeft < 0 ? 'text-red-600' : daysLeft <= 7 ? 'text-orange-600' : 'text-green-600'}`}>
+                                      {daysLeft < 0 ? `${Math.abs(daysLeft)}j retard` : daysLeft === 0 ? "Auj." : `${daysLeft}j`}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {matchedTxn && (
+                                <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${
+                                  matchedTxn.status === 'confirmed' ? 'bg-green-200 text-green-800' : 'bg-amber-200 text-amber-800'
+                                }`}>{matchedTxn.status === 'confirmed' ? '✅' : '🔗'}</span>
+                              )}
+                              <div className="text-right shrink-0">
+                                <p className="font-bold text-xs text-gray-800">{rem.toFixed(2)} €</p>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                  )}
+
+                    {/* RIGHT: Bank Payments */}
+                    <div className="flex-1 min-w-0 flex flex-col">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-bold text-gray-700 text-sm flex items-center gap-2">
+                          🏦 Paiements reçus
+                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{bankTransactions.length}</span>
+                        </h4>
+                        <div className="flex items-center gap-1 text-xs text-gray-400">
+                          <span className="w-2 h-2 bg-green-500 rounded-full" /> Confirmé
+                          <span className="w-2 h-2 bg-amber-400 rounded-full ml-2" /> Rapproché
+                          <span className="w-2 h-2 bg-red-400 rounded-full ml-2" /> Non lié
+                        </div>
+                      </div>
+                      <div className="flex-1 overflow-y-auto border rounded-xl bg-gray-50/50 p-2 space-y-1.5">
+                        {bankTransactions.length === 0 ? (
+                          <div className="text-center py-12 text-gray-400">
+                            <div className="text-3xl mb-2">🏦</div>
+                            <p className="text-sm">Aucune transaction</p>
+                            <p className="text-xs mt-1">Importez un relevé pour commencer</p>
+                          </div>
+                        ) : bankTransactions.map(txn => {
+                          const matchedInv = txn.invoices;
+                          const isConfirmed = txn.status === 'confirmed';
+                          const isMatched = txn.status === 'matched';
+                          const isReview = txn.status === 'review';
+                          const isIgnored = txn.status === 'ignored';
+
+                          return (
+                            <div key={txn.id} className={`p-3 border rounded-lg transition-all ${
+                              isConfirmed ? 'bg-green-50 border-green-200' :
+                              isMatched ? 'bg-amber-50 border-amber-200' :
+                              isReview ? 'bg-yellow-50 border-yellow-200' :
+                              isIgnored ? 'bg-gray-50 border-gray-200 opacity-50' :
+                              'bg-white border-gray-200 hover:border-red-200'
+                            }`}>
+                              <div className="flex items-center gap-2">
+                                <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                                  isConfirmed ? 'bg-green-500' : isMatched ? 'bg-amber-400' : isReview ? 'bg-yellow-400' : isIgnored ? 'bg-gray-300' : 'bg-red-400'
+                                }`} />
+                                <span className="text-xs font-mono text-gray-500 shrink-0">
+                                  {txn.transaction_date ? new Date(txn.transaction_date + 'T00:00:00').toLocaleDateString('fr-FR') : '—'}
+                                </span>
+                                <span className="font-bold text-green-700 text-sm shrink-0 ml-auto">+{parseFloat(txn.amount || 0).toFixed(2)} €</span>
+                              </div>
+                              <p className="text-xs text-gray-600 truncate mt-1">{txn.description || '—'}</p>
+                              {txn.reference && <p className="text-xs text-gray-400 truncate">Réf: {txn.reference}</p>}
+
+                              {/* Matched invoice info */}
+                              {matchedInv && (
+                                <div className={`mt-1.5 px-2 py-1 rounded text-xs ${
+                                  isConfirmed ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  → {matchedInv.invoice_number} · {matchedInv.companies?.name || 'Client'}
+                                  <span className="ml-1 opacity-70">({parseFloat(matchedInv.total_ttc || 0).toFixed(2)} €)</span>
+                                </div>
+                              )}
+
+                              {/* Action buttons */}
+                              {!isConfirmed && (
+                                <div className="flex items-center gap-1.5 mt-2">
+                                  {(txn.status === 'unmatched' || isReview) && (
+                                    <button onClick={() => setMatchingTxn(txn)}
+                                      className={`px-2.5 py-1 rounded text-xs font-medium text-white ${isReview ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-blue-500 hover:bg-blue-600'}`}>
+                                      {isReview ? '❓ Vérifier' : '🔗 Attribuer'}
+                                    </button>
+                                  )}
+                                  {txn.status === 'unmatched' && (
+                                    <button onClick={() => ignoreTxn(txn.id)}
+                                      className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded text-xs" title="Archiver">📦</button>
+                                  )}
+                                  {(isMatched || isIgnored) && (
+                                    <button onClick={() => unmatchTxn(txn.id)}
+                                      className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded text-xs" title="Annuler">↩️</button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
