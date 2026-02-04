@@ -2859,8 +2859,20 @@ export default function AdminPortal() {
         </div>
       </nav>
       <main className="max-w-full mx-auto p-6">
-        {/* Full-page RMA View */}
+        {/* Full-page RMA/PO View */}
         {selectedRMA ? (
+          selectedRMA.request_type === 'parts' ? (
+            <PartsOrderFullPage
+              key={`po-${selectedRMA.id}`}
+              order={selectedRMA}
+              onBack={() => { setSelectedRMA(null); setSelectedDeviceFromDashboard(null); }}
+              notify={notify}
+              reload={() => loadData(selectedRMA?.id)}
+              profile={profile}
+              businessSettings={businessSettings}
+              onOpenQuoteEditor={(o) => { setSelectedRMA(null); }}
+            />
+          ) : (
           <RMAFullPage 
             key={`rma-${selectedRMA.id}-${selectedDeviceFromDashboard?.device?.id || 'none'}`}
             rma={selectedRMA} 
@@ -2871,6 +2883,7 @@ export default function AdminPortal() {
             initialDevice={selectedDeviceFromDashboard?.device}
             businessSettings={businessSettings}
           />
+          )
         ) : (
           <>
             {activeSheet === 'dashboard' && <DashboardSheet 
@@ -13578,8 +13591,12 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
   
   const getClientStats = (clientId) => { 
     const clientRequests = requests.filter(r => r.company_id === clientId); 
+    const rmas = clientRequests.filter(r => r.request_type !== 'parts');
+    const pos = clientRequests.filter(r => r.request_type === 'parts');
     return { 
       total: clientRequests.length, 
+      rmas: rmas.length,
+      pos: pos.length,
       active: clientRequests.filter(r => !['completed', 'cancelled', 'shipped'].includes(r.status) && r.request_number).length 
     }; 
   };
@@ -13623,14 +13640,14 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
       {/* Search Results */}
       {searchResults && search.trim().length >= 2 ? (
         <div className="space-y-6">
-          {/* RMA Results */}
-          {searchResults.rmas.length > 0 && (
+          {/* RMA Results (non-parts) */}
+          {searchResults.rmas.filter(r => r.request_type !== 'parts').length > 0 && (
             <div className="bg-white rounded-xl shadow-sm">
               <div className="px-6 py-4 border-b border-gray-100 bg-blue-50">
-                <h2 className="font-bold text-blue-800">📋 RMAs trouvés ({searchResults.rmas.length})</h2>
+                <h2 className="font-bold text-blue-800">📋 RMAs trouvés ({searchResults.rmas.filter(r => r.request_type !== 'parts').length})</h2>
               </div>
               <div className="divide-y divide-gray-100">
-                {searchResults.rmas.map(rma => {
+                {searchResults.rmas.filter(r => r.request_type !== 'parts').map(rma => {
                   const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
                   const devices = rma.request_devices || [];
                   return (
@@ -13655,6 +13672,60 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
                             <p key={i} className="text-xs text-gray-400">{d.model_name} - {d.serial_number}</p>
                           ))}
                           {devices.length > 3 && <p className="text-xs text-gray-400">+{devices.length - 3} autres</p>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          
+          {/* Parts Order Results */}
+          {searchResults.rmas.filter(r => r.request_type === 'parts').length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm">
+              <div className="px-6 py-4 border-b border-gray-100 bg-amber-50">
+                <h2 className="font-bold text-amber-800">🔩 Commandes Pièces ({searchResults.rmas.filter(r => r.request_type === 'parts').length})</h2>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {searchResults.rmas.filter(r => r.request_type === 'parts').map(po => {
+                  const poStyles = {
+                    submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Nouvelle' },
+                    quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
+                    quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: 'Révision' },
+                    bc_review: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'BC à vérifier' },
+                    in_progress: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En cours' },
+                    ready_to_ship: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Prêt' },
+                    shipped: { bg: 'bg-green-100', text: 'text-green-700', label: 'Expédié' },
+                    delivered: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Livré' },
+                    completed: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Terminé' }
+                  };
+                  const style = poStyles[po.status] || { bg: 'bg-gray-100', text: 'text-gray-700', label: po.status };
+                  const parts = po.quote_data?.parts || [];
+                  const total = po.quote_data?.grandTotal || 0;
+                  const shipping = po.quote_data?.shipping || {};
+                  
+                  return (
+                    <div 
+                      key={po.id} 
+                      className="p-4 hover:bg-amber-50 cursor-pointer transition-colors"
+                      onClick={() => onSelectRMA(po)}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono font-bold text-amber-600 text-lg">{po.request_number}</span>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+                            {po.bc_number && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-mono">{po.bc_number}</span>}
+                            <span className="text-xs text-amber-500">Cliquez pour ouvrir →</span>
+                          </div>
+                          <p className="text-gray-600 mt-1">{po.companies?.name}</p>
+                          <p className="text-sm text-gray-400">{new Date(po.created_at).toLocaleDateString('fr-FR')}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm text-gray-500">{parts.length} pièce(s)</p>
+                          {total > 0 && <p className="text-sm font-bold text-gray-700">{total.toFixed(2)} €</p>}
+                          {shipping.trackingNumber && <p className="text-xs text-blue-500 font-mono mt-1">🚚 {shipping.trackingNumber}</p>}
                         </div>
                       </div>
                     </div>
@@ -13768,7 +13839,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
                         <td className="px-4 py-3"><p className="font-medium text-gray-800">{client.name}</p></td>
                         <td className="px-4 py-3">{mainContact ? <div><p className="text-sm">{mainContact.full_name}</p><p className="text-xs text-gray-400">{mainContact.email}</p></div> : <span className="text-gray-400">—</span>}</td>
                         <td className="px-4 py-3 text-sm text-gray-600">{client.billing_city || '—'}</td>
-                        <td className="px-4 py-3"><span className="text-sm">{stats.total} total{stats.active > 0 && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">{stats.active} actif(s)</span>}</span></td>
+                        <td className="px-4 py-3"><span className="text-sm">{stats.rmas} RMA{stats.pos > 0 && <span className="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs">{stats.pos} PO</span>}{stats.active > 0 && <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">{stats.active} actif</span>}</span></td>
                         <td className="px-4 py-3"><button onClick={e => { e.stopPropagation(); setSelectedClient(client); }} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button></td>
                       </tr>
                     ); 
@@ -13809,7 +13880,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
                     <td className="px-4 py-3"><p className="font-medium text-gray-800">{client.name}</p></td>
                     <td className="px-4 py-3">{mainContact ? <div><p className="text-sm">{mainContact.full_name}</p><p className="text-xs text-gray-400">{mainContact.email}</p></div> : <span className="text-gray-400">—</span>}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{client.billing_city || '—'}</td>
-                    <td className="px-4 py-3"><span className="text-sm">{stats.total} total{stats.active > 0 && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">{stats.active} actif(s)</span>}</span></td>
+                    <td className="px-4 py-3"><span className="text-sm">{stats.rmas} RMA{stats.pos > 0 && <span className="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs">{stats.pos} PO</span>}{stats.active > 0 && <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">{stats.active} actif</span>}</span></td>
                     <td className="px-4 py-3"><button onClick={e => { e.stopPropagation(); setSelectedClient(client); }} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Voir →</button></td>
                   </tr>
                 ); 
