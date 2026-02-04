@@ -1935,7 +1935,7 @@ const generateRelancePDF = async (relanceData, businessSettings) => {
     pdf.text(label + ' :', margin + 8, y);
     pdf.setFont('helvetica', 'bold');
     const isRemaining = label.startsWith('Reste');
-    pdf.setTextColor(isRemaining ? ...red : ...darkGray);
+    pdf.setTextColor(...(isRemaining ? red : darkGray));
     pdf.text(value, margin + 65, y);
     y += 5;
   });
