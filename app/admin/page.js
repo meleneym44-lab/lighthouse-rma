@@ -16810,27 +16810,105 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
     const lines = text.split(/\r?\n/).filter(l => l.trim());
     if (lines.length < 2) return null;
 
-    // Detect delimiter
+    // Detect delimiter from first non-empty line
     const delimiter = lines[0].includes(';') ? ';' : ',';
     
-    // Parse header
-    const headers = lines[0].split(delimiter).map(h => h.replace(/^["']|["']$/g, '').trim().toLowerCase());
+    // French bank CSVs (Société Générale, BNP, Crédit Agricole, etc.) often have
+    // metadata rows at the top before the actual column headers.
+    // Scan lines to find the real header row containing date/amount keywords.
+    const headerKeywords = ['date', 'montant', 'amount', 'crédit', 'credit', 'débit', 'debit', 'libellé', 'libelle', 'description'];
+    
+    let headerLineIdx = -1;
+    for (let i = 0; i < Math.min(lines.length, 15); i++) {
+      const cells = lines[i].split(delimiter).map(c => c.replace(/^["']|["']$/g, '').trim().toLowerCase());
+      const matchCount = cells.filter(c => headerKeywords.some(kw => c.includes(kw))).length;
+      if (matchCount >= 2) { headerLineIdx = i; break; }
+    }
+
+    // If no header row found, try to detect data rows directly (headerless format)
+    // Some bank exports are just: date;description;amount with no headers
+    if (headerLineIdx === -1) {
+      // Check if rows look like date;text;number pattern
+      const testRows = [];
+      for (let i = 0; i < Math.min(lines.length, 10); i++) {
+        const cells = lines[i].split(delimiter).map(c => c.replace(/^["']|["']$/g, '').trim());
+        const hasDate = cells.some(c => /^\d{2}\/\d{2}\/\d{2,4}$/.test(c) || /^\d{4}-\d{2}-\d{2}$/.test(c));
+        const hasNumber = cells.some(c => /^-?\d[\d\s]*[,.]?\d*$/.test(c.replace(/\s/g, '')));
+        if (hasDate && hasNumber) testRows.push(i);
+      }
+      
+      if (testRows.length >= 2) {
+        // Headerless format — auto-detect columns from first data row
+        const firstDataIdx = testRows[0];
+        const cells = lines[firstDataIdx].split(delimiter).map(c => c.replace(/^["']|["']$/g, '').trim());
+        
+        let dateCol = -1, descCol = -1, amountCol = -1;
+        cells.forEach((c, idx) => {
+          if (dateCol === -1 && (/^\d{2}\/\d{2}\/\d{2,4}$/.test(c) || /^\d{4}-\d{2}-\d{2}$/.test(c))) dateCol = idx;
+          else if (amountCol === -1 && /^-?\d[\d\s]*[,.]?\d*$/.test(c.replace(/\s/g, ''))) amountCol = idx;
+          else if (descCol === -1 && c.length > 3 && !/^\d/.test(c)) descCol = idx;
+        });
+
+        if (dateCol === -1 || amountCol === -1) {
+          return { error: `Format non reconnu. Aucun en-tête détecté et données non identifiables. Lignes testées: ${lines.slice(0, 3).join(' | ')}` };
+        }
+
+        const rows = [];
+        for (let i = firstDataIdx; i < lines.length; i++) {
+          const rowCells = [];
+          let current = '', inQuotes = false;
+          for (const ch of lines[i]) {
+            if (ch === '"') { inQuotes = !inQuotes; continue; }
+            if (ch === delimiter && !inQuotes) { rowCells.push(current.trim()); current = ''; continue; }
+            current += ch;
+          }
+          rowCells.push(current.trim());
+          
+          let dateStr = rowCells[dateCol] || '';
+          let parsedDate = null;
+          if (dateStr.includes('/')) {
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+              const year = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+              parsedDate = `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+            }
+          } else if (dateStr.match(/^\d{4}-/)) parsedDate = dateStr;
+          if (!parsedDate) continue;
+
+          const amount = parseFloat((rowCells[amountCol] || '0').replace(/\s/g, '').replace(',', '.'));
+          if (amount === 0 || isNaN(amount)) continue;
+
+          rows.push({
+            transaction_date: parsedDate,
+            description: descCol !== -1 ? (rowCells[descCol] || '') : '',
+            amount,
+            reference: ''
+          });
+        }
+        return { rows, headers: ['(auto-détecté)'], totalRows: rows.length };
+      }
+
+      return { error: `En-têtes non trouvés dans les ${Math.min(lines.length, 15)} premières lignes. Contenu détecté: ${lines.slice(0, 3).map(l => l.substring(0, 60)).join(' | ')}. Attendu: colonnes date, libellé, montant (ou crédit/débit)` };
+    }
+
+    // Parse the identified header row
+    const headers = lines[headerLineIdx].split(delimiter).map(h => h.replace(/^["']|["']$/g, '').trim().toLowerCase());
     
     // Find column indices by common French bank header names
     const findCol = (...names) => headers.findIndex(h => names.some(n => h.includes(n)));
     const dateCol = findCol('date', 'date op', 'date opération', 'date valeur');
-    const descCol = findCol('libellé', 'libelle', 'description', 'label', 'intitulé', 'intitule');
-    const amountCol = findCol('montant', 'amount', 'crédit', 'credit');
+    const descCol = findCol('libellé', 'libelle', 'description', 'label', 'intitulé', 'intitule', 'détail', 'detail');
+    const amountCol = findCol('montant', 'amount');
     const debitCol = findCol('débit', 'debit');
     const creditCol = findCol('crédit', 'credit');
     const refCol = findCol('référence', 'reference', 'réf', 'ref', 'numéro');
 
     if (dateCol === -1 || (amountCol === -1 && creditCol === -1)) {
-      return { error: `Colonnes introuvables. En-têtes détectés: ${headers.join(', ')}. Attendu: date, libellé, montant (ou crédit/débit)` };
+      return { error: `Colonnes introuvables dans l'en-tête (ligne ${headerLineIdx + 1}). Détectés: ${headers.join(', ')}. Attendu: date + montant (ou crédit/débit)` };
     }
 
     const rows = [];
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = headerLineIdx + 1; i < lines.length; i++) {
       const cells = [];
       let current = '';
       let inQuotes = false;
@@ -16841,14 +16919,17 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
       }
       cells.push(current.trim());
       
-      if (cells.length < Math.max(dateCol, descCol, amountCol) + 1) continue;
+      if (cells.length < Math.max(dateCol, amountCol !== -1 ? amountCol : creditCol) + 1) continue;
 
-      // Parse date (DD/MM/YYYY or YYYY-MM-DD)
+      // Parse date (DD/MM/YYYY, DD/MM/YY, or YYYY-MM-DD)
       let dateStr = cells[dateCol] || '';
       let parsedDate = null;
       if (dateStr.includes('/')) {
         const parts = dateStr.split('/');
-        if (parts.length === 3) parsedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        if (parts.length === 3) {
+          const year = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+          parsedDate = `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
       } else if (dateStr.match(/^\d{4}-/)) {
         parsedDate = dateStr;
       }
@@ -16856,29 +16937,31 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
 
       // Parse amount
       let amount = 0;
-      if (amountCol !== -1 && debitCol === -1) {
+      if (amountCol !== -1 && debitCol === -1 && creditCol === -1) {
         // Single amount column (negative = debit, positive = credit)
         amount = parseFloat((cells[amountCol] || '0').replace(/\s/g, '').replace(',', '.'));
       } else if (creditCol !== -1 && debitCol !== -1) {
         // Separate credit/debit columns
         const credit = parseFloat((cells[creditCol] || '0').replace(/\s/g, '').replace(',', '.')) || 0;
         const debit = parseFloat((cells[debitCol] || '0').replace(/\s/g, '').replace(',', '.')) || 0;
-        amount = credit - debit;
+        amount = credit > 0 ? credit : (debit > 0 ? -debit : credit - debit);
       } else if (amountCol !== -1) {
         amount = parseFloat((cells[amountCol] || '0').replace(/\s/g, '').replace(',', '.'));
+      } else if (creditCol !== -1) {
+        amount = parseFloat((cells[creditCol] || '0').replace(/\s/g, '').replace(',', '.')) || 0;
       }
 
       if (amount === 0 || isNaN(amount)) continue;
 
       rows.push({
         transaction_date: parsedDate,
-        description: cells[descCol] || '',
+        description: descCol !== -1 ? (cells[descCol] || '') : '',
         amount: amount,
         reference: refCol !== -1 ? (cells[refCol] || '') : ''
       });
     }
     
-    return { rows, headers, totalRows: lines.length - 1 };
+    return { rows, headers, totalRows: lines.length - headerLineIdx - 1 };
   };
 
   // Handle file upload
