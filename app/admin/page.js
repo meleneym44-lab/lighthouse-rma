@@ -16694,7 +16694,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
   });
 
   // Split invoices by status
-  const openInvoices = invoices.filter(i => ['draft', 'sent', 'overdue', 'partially_paid'].includes(i.status));
+  const openInvoices = invoices.filter(i => ['sent', 'overdue', 'partially_paid'].includes(i.status));
   const closedInvoices = invoices.filter(i => ['paid', 'cancelled'].includes(i.status));
 
   // Filter by search
@@ -16742,7 +16742,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
     if (inv.status === 'partially_paid') return <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold">⚠️ Partiel</span>;
     if (isOverdue(inv)) return <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-bold animate-pulse">🔴 En retard ({daysPastDue(inv)}j)</span>;
     if (inv.status === 'sent') return <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">📤 Envoyée</span>;
-    return <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-bold">📝 Brouillon</span>;
+    return <span className="px-2 py-1 bg-blue-100 text-blue-600 rounded-full text-xs font-bold">📋 En cours</span>;
   };
 
   // Mark invoice as sent
@@ -17042,7 +17042,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
     setAutoMatching(true);
     try {
       const unmatched = bankTransactions.filter(t => t.status === 'unmatched');
-      const openInvs = openInvoices.filter(i => i.status !== 'draft');
+      const openInvs = openInvoices;
       let matchCount = 0;
 
       for (const txn of unmatched) {
@@ -17207,7 +17207,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
       (parseFloat(inv.total_ttc) || 0).toFixed(2),
       (parseFloat(inv.paid_amount) || 0).toFixed(2),
       ((parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0)).toFixed(2),
-      inv.status === 'paid' ? 'Payée' : inv.status === 'sent' ? 'Envoyée' : inv.status === 'draft' ? 'Brouillon' : inv.status === 'partially_paid' ? 'Partiel' : 'En retard',
+      inv.status === 'paid' ? 'Payée' : inv.status === 'sent' ? 'Envoyée' : inv.status === 'partially_paid' ? 'Partiel' : 'En retard',
       inv.payment_reference || '',
       inv.paid_at ? new Date(inv.paid_at).toLocaleDateString('fr-FR') : ''
     ]);
@@ -17543,11 +17543,16 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                       <div className="flex items-center justify-between mb-2">
                         <h4 className="font-bold text-gray-700 text-sm flex items-center gap-2">
                           🏦 Paiements reçus
-                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{bankTransactions.length}</span>
+                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{bankTransactions.filter(t => t.status !== 'confirmed' && t.status !== 'ignored').length}</span>
+                          {bankTransactions.filter(t => t.status === 'confirmed').length > 0 && (
+                            <button onClick={() => setReconFilter(reconFilter === 'show_confirmed' ? 'all' : 'show_confirmed')}
+                              className={`text-xs px-2 py-0.5 rounded-full transition-colors ${reconFilter === 'show_confirmed' ? 'bg-green-200 text-green-800' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                              ✅ {bankTransactions.filter(t => t.status === 'confirmed').length} confirmé{bankTransactions.filter(t => t.status === 'confirmed').length > 1 ? 's' : ''}
+                            </button>
+                          )}
                         </h4>
                         <div className="flex items-center gap-1 text-xs text-gray-400">
-                          <span className="w-2 h-2 bg-green-500 rounded-full" /> Confirmé
-                          <span className="w-2 h-2 bg-amber-400 rounded-full ml-2" /> Rapproché
+                          <span className="w-2 h-2 bg-amber-400 rounded-full" /> Rapproché
                           <span className="w-2 h-2 bg-red-400 rounded-full ml-2" /> Non lié
                         </div>
                       </div>
@@ -17558,7 +17563,16 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                             <p className="text-sm">Aucune transaction</p>
                             <p className="text-xs mt-1">Importez un relevé pour commencer</p>
                           </div>
-                        ) : bankTransactions.map(txn => {
+                        ) : bankTransactions
+                          .filter(t => reconFilter === 'show_confirmed' ? true : (t.status !== 'confirmed' && t.status !== 'ignored'))
+                          .length === 0 ? (
+                          <div className="text-center py-8 text-gray-400">
+                            <div className="text-3xl mb-2">✅</div>
+                            <p className="text-sm">Tous les paiements sont traités</p>
+                          </div>
+                        ) : bankTransactions
+                          .filter(t => reconFilter === 'show_confirmed' ? true : (t.status !== 'confirmed' && t.status !== 'ignored'))
+                          .map(txn => {
                           const matchedInv = txn.invoices;
                           const isConfirmed = txn.status === 'confirmed';
                           const isMatched = txn.status === 'matched';
@@ -17785,7 +17799,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
             <div className="p-4 max-h-[60vh] overflow-y-auto">
               <p className="text-sm text-gray-500 mb-3">Sélectionnez la facture correspondante :</p>
               <div className="space-y-2">
-                {openInvoices.filter(i => i.status !== 'draft')
+                {openInvoices
                   .sort((a, b) => {
                     const remA = Math.abs((parseFloat(a.total_ttc) || 0) - (parseFloat(a.paid_amount) || 0) - parseFloat(matchingTxn.amount));
                     const remB = Math.abs((parseFloat(b.total_ttc) || 0) - (parseFloat(b.paid_amount) || 0) - parseFloat(matchingTxn.amount));
@@ -17871,7 +17885,7 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
     if (inv.status === 'partially_paid') return <span className="px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-full text-sm font-bold">⚠️ Paiement partiel</span>;
     if (isOverdue) return <span className="px-3 py-1.5 bg-red-100 text-red-700 rounded-full text-sm font-bold animate-pulse">🔴 En retard ({daysPastDue}j)</span>;
     if (inv.status === 'sent') return <span className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-full text-sm font-bold">📤 Envoyée</span>;
-    return <span className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-sm font-bold">📝 Brouillon</span>;
+    return <span className="px-3 py-1.5 bg-blue-100 text-blue-600 rounded-full text-sm font-bold">📋 En cours</span>;
   };
 
   const markAsSent = async () => {
@@ -18059,9 +18073,6 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
             )}
           </div>
           <div className="flex items-center gap-2">
-            {inv.status === 'draft' && (
-              <button onClick={markAsSent} className="px-5 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium text-sm">📤 Marquer envoyée</button>
-            )}
             {inv.status !== 'paid' && inv.status !== 'cancelled' && (
               <button onClick={() => { setShowPayment(true); setPaymentAmount(remaining.toFixed(2)); }} className="px-5 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium text-sm">💰 Enregistrer paiement</button>
             )}
@@ -18330,7 +18341,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
           invoice_number: invoiceNumber,
           request_id: rma.id,
           company_id: company.id,
-          status: 'draft',
+          status: 'sent',
           invoice_date: invoiceDate,
           due_date: dueDate,
           payment_terms_days: paymentTermsDays,
