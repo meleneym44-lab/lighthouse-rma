@@ -7830,7 +7830,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
             <div 
               className={`
                 relative flex items-center justify-center flex-1 py-2 px-1 text-xs font-medium
-                ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-amber-500 text-white' : 'bg-gray-200 text-gray-500'}
+                ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#007A3D] text-white' : 'bg-gray-200 text-gray-500'}
                 ${index === 0 ? 'rounded-l-md' : ''}
                 ${isLast ? 'rounded-r-md' : ''}
               `}
@@ -10568,7 +10568,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
   const generateBLContent = () => ({
     blNumber: generateBLNumber(),
     date: getFrenchDate(),
-    orderNumber: order.request_number,
+    orderNumber: order.bc_number || order.request_number,
     client: { 
       name: shipment.address.company_name, 
       attention: shipment.address.attention, 
