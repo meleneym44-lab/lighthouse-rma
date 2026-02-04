@@ -13911,20 +13911,23 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
   useEffect(() => {
     const fetchClientData = async () => {
       setLoadingContracts(true);
-      const { data: contracts } = await supabase
-        .from('contracts')
-        .select('*')
-        .eq('company_id', client.id)
-        .order('created_at', { ascending: false });
-      if (contracts) setClientContracts(contracts);
+      try {
+        const { data: contracts } = await supabase
+          .from('contracts')
+          .select('*')
+          .eq('company_id', client.id)
+          .order('created_at', { ascending: false });
+        if (contracts) setClientContracts(contracts);
+      } catch (e) { console.error('Contracts fetch error:', e); }
       
-      // Fetch locations (shipping_addresses)
-      const { data: locations } = await supabase
-        .from('shipping_addresses')
-        .select('*')
-        .eq('company_id', client.id)
-        .order('label');
-      if (locations) setClientLocations(locations);
+      try {
+        const { data: locations } = await supabase
+          .from('shipping_addresses')
+          .select('*')
+          .eq('company_id', client.id)
+          .order('label');
+        if (locations) setClientLocations(locations);
+      } catch (e) { console.error('Locations fetch error:', e); }
       
       setLoadingContracts(false);
     };
