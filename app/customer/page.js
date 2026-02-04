@@ -9461,7 +9461,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               {isPartsOrder && (
                 <div className="bg-white border border-gray-200 rounded-xl p-6">
                   <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-full bg-[#E8F2F8] flex items-center justify-center">
                       <span className="text-lg">📦</span>
                     </div>
                     <div>
@@ -9470,60 +9470,81 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     </div>
                   </div>
                   
-                  {/* Progress Steps */}
-                  <div className="relative">
-                    {(() => {
-                      const partsSteps = [
-                        { id: 'submitted', label: 'Demande soumise', icon: '📝' },
-                        { id: 'quote_sent', label: 'Devis envoyé', icon: '💰' },
-                        { id: 'bc_review', label: 'BC en vérification', icon: '📋' },
-                        { id: 'in_progress', label: 'En cours', icon: '📦' },
-                        { id: 'ready_to_ship', label: 'Prêt à expédier', icon: '🚚' },
-                        { id: 'shipped', label: 'Expédié', icon: '✅' },
-                        { id: 'delivered', label: 'Livré', icon: '🏠' }
-                      ];
-                      
-                      const statusOrder = ['submitted', 'quote_sent', 'bc_review', 'in_progress', 'ready_to_ship', 'shipped', 'delivered', 'completed'];
-                      const currentIdx = statusOrder.indexOf(request.status);
-                      
-                      return (
-                        <div className="flex items-center justify-between">
-                          {partsSteps.map((step, idx) => {
+                  {/* Chevron Arrow Progress Bar */}
+                  {(() => {
+                    const partsSteps = [
+                      { id: 'submitted', label: 'Demande soumise' },
+                      { id: 'quote_sent', label: 'Devis envoyé' },
+                      { id: 'bc_review', label: 'BC en vérification' },
+                      { id: 'in_progress', label: 'En cours' },
+                      { id: 'ready_to_ship', label: 'Prêt à expédier' },
+                      { id: 'shipped', label: 'Expédié' },
+                      { id: 'delivered', label: 'Livré' }
+                    ];
+                    
+                    const statusOrder = ['submitted', 'quote_sent', 'bc_review', 'in_progress', 'ready_to_ship', 'shipped', 'delivered', 'completed'];
+                    const currentIdx = statusOrder.indexOf(request.status);
+                    
+                    return (
+                      <div className="w-full">
+                        {/* Desktop - chevron arrows */}
+                        <div className="hidden md:flex items-center">
+                          {partsSteps.map((step, index) => {
                             const stepIdx = statusOrder.indexOf(step.id);
-                            const isComplete = currentIdx >= stepIdx && currentIdx !== -1;
-                            const isCurrent = request.status === step.id;
+                            const isCompleted = currentIdx > stepIdx && currentIdx !== -1;
+                            const isCurrent = currentIdx === stepIdx;
+                            const isLast = index === partsSteps.length - 1;
                             
                             return (
-                              <div key={step.id} className="flex flex-col items-center flex-1 relative">
-                                {/* Connector line */}
-                                {idx > 0 && (
-                                  <div className={`absolute top-5 right-1/2 w-full h-1 -z-10 ${
-                                    isComplete ? 'bg-green-500' : 'bg-gray-200'
-                                  }`} />
-                                )}
-                                
-                                {/* Circle */}
-                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg z-10 ${
-                                  isCurrent ? 'bg-amber-500 text-white ring-4 ring-amber-200' :
-                                  isComplete ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'
-                                }`}>
-                                  {isComplete && !isCurrent ? '✓' : step.icon}
+                              <div key={step.id} className="flex items-center flex-1">
+                                <div 
+                                  className={`
+                                    relative flex items-center justify-center flex-1 py-2.5 px-1 text-xs font-medium
+                                    ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#1E3A5F] text-white' : 'bg-gray-200 text-gray-500'}
+                                    ${index === 0 ? 'rounded-l-md' : ''}
+                                    ${isLast ? 'rounded-r-md' : ''}
+                                  `}
+                                  style={{
+                                    clipPath: isLast 
+                                      ? 'polygon(0 0, 100% 0, 100% 100%, 0 100%, 8px 50%)' 
+                                      : index === 0 
+                                        ? 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)'
+                                        : 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)'
+                                  }}
+                                >
+                                  <span className="truncate px-1">{step.label}</span>
                                 </div>
-                                
-                                {/* Label */}
-                                <p className={`text-xs mt-2 text-center ${
-                                  isCurrent ? 'font-bold text-amber-700' :
-                                  isComplete ? 'text-green-700' : 'text-gray-400'
-                                }`}>
-                                  {step.label}
-                                </p>
                               </div>
                             );
                           })}
                         </div>
-                      );
-                    })()}
-                  </div>
+                        
+                        {/* Mobile - simplified bars */}
+                        <div className="md:hidden">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-[#1E3A5F]">
+                              Étape {Math.max(currentIdx, 0) + 1} sur {partsSteps.length}
+                            </span>
+                            <span className="text-sm text-gray-500">{partsSteps[Math.max(currentIdx, 0)]?.label}</span>
+                          </div>
+                          <div className="flex gap-1">
+                            {partsSteps.map((step, index) => {
+                              const stepIdx = statusOrder.indexOf(step.id);
+                              return (
+                                <div 
+                                  key={step.id}
+                                  className={`h-2 flex-1 rounded-full ${
+                                    currentIdx > stepIdx ? 'bg-[#3B7AB4]' : 
+                                    currentIdx === stepIdx ? 'bg-[#1E3A5F]' : 'bg-gray-200'
+                                  }`}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   
                   {/* Tracking Info */}
                   {request.ups_tracking_number && (
