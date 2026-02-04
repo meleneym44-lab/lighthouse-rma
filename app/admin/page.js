@@ -13904,6 +13904,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
   const [clientContracts, setClientContracts] = useState([]);
   const [clientLocations, setClientLocations] = useState([]);
   const [selectedContract, setSelectedContract] = useState(null);
+  const [clientRentals, setClientRentals] = useState([]);
   
   const partsOrdersList = partsOrders || [];
 
@@ -13919,12 +13920,22 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
       if (data) setClientLocations(data);
     } catch (e) {}
   };
+  const loadRentals = async () => {
+    try {
+      const { data } = await supabase.from('rental_requests')
+        .select('*, rental_request_items(*)')
+        .eq('company_id', client.id)
+        .order('created_at', { ascending: false });
+      if (data) setClientRentals(data);
+    } catch (e) {}
+  };
   
   const switchTab = (tabId) => {
     setActiveTab(tabId);
     setSelectedEquipment(null);
     if (tabId === 'contracts' && clientContracts.length === 0) loadContracts();
-    if (tabId === 'locations' && clientLocations.length === 0) loadLocations();
+    if (tabId === 'sites' && clientLocations.length === 0) loadLocations();
+    if (tabId === 'rentals' && clientRentals.length === 0) loadRentals();
   };
 
   const saveClient = async () => { setSaving(true); const { error } = await supabase.from('companies').update(editData).eq('id', client.id); if (error) notify('Erreur: ' + error.message, 'error'); else { notify('Client mis à jour!'); setEditing(false); reload(); } setSaving(false); };
@@ -13939,9 +13950,10 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
   const tabDefs = [
     { id: 'rmas', label: 'RMAs', icon: '📋', count: requests.length },
     { id: 'parts', label: 'Pièces', icon: '🔩', count: partsOrdersList.length },
+    { id: 'rentals', label: 'Locations', icon: '📅' },
     { id: 'contracts', label: 'Contrats', icon: '📑' },
-    { id: 'locations', label: 'Sites', icon: '📍' },
     { id: 'devices', label: 'Appareils', icon: '🔧', count: equipment.length },
+    { id: 'sites', label: 'Sites', icon: '📍' },
     { id: 'info', label: 'Info', icon: 'ℹ️' },
     { id: 'contacts', label: 'Contacts', icon: '👤', count: client.profiles?.length || 0 }
   ];
@@ -14059,8 +14071,46 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
             </div>
           )}
           
-          {/* === Locations === */}
-          {activeTab === 'locations' && (
+          {/* === Locations (Rentals) === */}
+          {activeTab === 'rentals' && (
+            <div className="space-y-3">
+              {clientRentals.length === 0 ? <p className="text-center text-gray-400 py-8">Aucune location</p> : clientRentals.map(rental => {
+                const rStyles = { requested:'Nouvelle', quote_sent:'Devis envoyé', waiting_bc:'Attente BC', bc_review:'BC à vérifier', bc_approved:'BC approuvé', shipped:'Expédié', in_rental:'En location', return_pending:'Retour attendu', returned:'Retourné', completed:'Terminé', cancelled:'Annulé' };
+                const rColors = { requested:'bg-amber-100 text-amber-700', quote_sent:'bg-blue-100 text-blue-700', bc_review:'bg-orange-100 text-orange-700', bc_approved:'bg-green-100 text-green-700', shipped:'bg-cyan-100 text-cyan-700', in_rental:'bg-purple-100 text-purple-700', return_pending:'bg-orange-100 text-orange-700', returned:'bg-teal-100 text-teal-700', completed:'bg-green-100 text-green-700', cancelled:'bg-red-100 text-red-700' };
+                const items = rental.rental_request_items || [];
+                return (
+                  <div key={rental.id} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="font-mono font-bold text-purple-600">{rental.rental_number || '—'}</span>
+                        <p className="text-sm text-gray-600 mt-1">{items.length} appareil(s)</p>
+                        {rental.start_date && (
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {new Date(rental.start_date).toLocaleDateString('fr-FR')} → {rental.end_date ? new Date(rental.end_date).toLocaleDateString('fr-FR') : '—'}
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <span className={'px-2 py-1 rounded-full text-xs font-medium ' + (rColors[rental.status] || 'bg-gray-100 text-gray-700')}>{rStyles[rental.status] || rental.status}</span>
+                        <p className="text-xs text-gray-400 mt-1">{new Date(rental.created_at).toLocaleDateString('fr-FR')}</p>
+                        {rental.quote_total > 0 && <p className="text-sm font-bold text-gray-700 mt-1">{parseFloat(rental.quote_total).toFixed(2)} €</p>}
+                      </div>
+                    </div>
+                    {items.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-gray-200 flex flex-wrap gap-1">
+                        {items.map((item, i) => (
+                          <span key={i} className="px-2 py-0.5 bg-white rounded text-xs text-gray-600 border">{item.model_name || item.device_type || '—'} x{item.quantity || 1}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          
+          {/* === Sites (Shipping Addresses) === */}
+          {activeTab === 'sites' && (
             <div className="space-y-3">
               {clientLocations.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun site</p> : clientLocations.map(loc => (
                 <div key={loc.id} className="bg-gray-50 rounded-lg p-4">
