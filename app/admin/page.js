@@ -9404,9 +9404,11 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
   
   // Generate quote reference
   useEffect(() => {
-    const year = new Date().getFullYear();
-    const random = Math.floor(Math.random() * 9000) + 1000;
-    setQuoteRef(`PO-${year}-${random}`);
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yy = String(now.getFullYear()).slice(-2);
+    const random = Math.floor(Math.random() * 900) + 100;
+    setQuoteRef(`DEV-${mm}${yy}-${random}`);
   }, []);
   
   // Load parts pricing from database
@@ -9540,23 +9542,24 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
     
     setSaving(true);
     try {
-      // Generate Parts Order number if not exists (PO-XXXXX format, separate from FR-XXXXX RMAs)
+      // Generate Parts Order number if not exists (PO-MMYY-NNN format)
       let poNumber = order.request_number;
       if (!poNumber) {
-        const { data: lastReq } = await supabase
-          .from('service_requests')
-          .select('request_number')
-          .like('request_number', 'PO-%')
-          .order('request_number', { ascending: false })
-          .limit(1);
-        
-        const lastNum = lastReq?.[0]?.request_number;
-        let nextNum = 1;
-        if (lastNum) {
-          const match = lastNum.match(/PO-(\d+)/);
-          if (match) nextNum = parseInt(match[1]) + 1;
+        try {
+          const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'PO' });
+          if (!docNumError && docNumData) {
+            poNumber = docNumData;
+          }
+        } catch (e) {
+          console.error('Could not generate PO number:', e);
         }
-        poNumber = `PO-${String(nextNum).padStart(5, '0')}`;
+        // Fallback if RPC fails
+        if (!poNumber) {
+          const now = new Date();
+          const mm = String(now.getMonth() + 1).padStart(2, '0');
+          const yy = String(now.getFullYear()).slice(-2);
+          poNumber = `PO-${mm}${yy}-001`;
+        }
       }
       
       // Get next document number for quote (DEV-MMYY-NNN)
