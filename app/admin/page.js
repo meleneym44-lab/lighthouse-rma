@@ -13905,6 +13905,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
   const [clientLocations, setClientLocations] = useState([]);
   const [selectedContract, setSelectedContract] = useState(null);
   const [clientRentals, setClientRentals] = useState([]);
+  const [selectedRental, setSelectedRental] = useState(null);
   
   const partsOrdersList = partsOrders || [];
 
@@ -13923,7 +13924,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
   const loadRentals = async () => {
     try {
       const { data } = await supabase.from('rental_requests')
-        .select('*, rental_request_items(*)')
+        .select('*, companies(*), rental_request_items(*), shipping_address:shipping_addresses!shipping_address_id(*)')
         .eq('company_id', client.id)
         .order('created_at', { ascending: false });
       if (data) setClientRentals(data);
@@ -14072,14 +14073,14 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           )}
           
           {/* === Locations (Rentals) === */}
-          {activeTab === 'rentals' && (
+          {activeTab === 'rentals' && !selectedRental && (
             <div className="space-y-3">
               {clientRentals.length === 0 ? <p className="text-center text-gray-400 py-8">Aucune location</p> : clientRentals.map(rental => {
                 const rStyles = { requested:'Nouvelle', quote_sent:'Devis envoyé', waiting_bc:'Attente BC', bc_review:'BC à vérifier', bc_approved:'BC approuvé', shipped:'Expédié', in_rental:'En location', return_pending:'Retour attendu', returned:'Retourné', completed:'Terminé', cancelled:'Annulé' };
                 const rColors = { requested:'bg-amber-100 text-amber-700', quote_sent:'bg-blue-100 text-blue-700', bc_review:'bg-orange-100 text-orange-700', bc_approved:'bg-green-100 text-green-700', shipped:'bg-cyan-100 text-cyan-700', in_rental:'bg-purple-100 text-purple-700', return_pending:'bg-orange-100 text-orange-700', returned:'bg-teal-100 text-teal-700', completed:'bg-green-100 text-green-700', cancelled:'bg-red-100 text-red-700' };
                 const items = rental.rental_request_items || [];
                 return (
-                  <div key={rental.id} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors">
+                  <div key={rental.id} onClick={() => setSelectedRental(rental)} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 cursor-pointer transition-colors">
                     <div className="flex justify-between items-start">
                       <div>
                         <span className="font-mono font-bold text-purple-600">{rental.rental_number || '—'}</span>
@@ -14094,12 +14095,13 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                         <span className={'px-2 py-1 rounded-full text-xs font-medium ' + (rColors[rental.status] || 'bg-gray-100 text-gray-700')}>{rStyles[rental.status] || rental.status}</span>
                         <p className="text-xs text-gray-400 mt-1">{new Date(rental.created_at).toLocaleDateString('fr-FR')}</p>
                         {rental.quote_total > 0 && <p className="text-sm font-bold text-gray-700 mt-1">{parseFloat(rental.quote_total).toFixed(2)} €</p>}
+                        <p className="text-xs text-blue-500 mt-1">Voir détails →</p>
                       </div>
                     </div>
                     {items.length > 0 && (
                       <div className="mt-2 pt-2 border-t border-gray-200 flex flex-wrap gap-1">
                         {items.map((item, i) => (
-                          <span key={i} className="px-2 py-0.5 bg-white rounded text-xs text-gray-600 border">{item.model_name || item.device_type || '—'} x{item.quantity || 1}</span>
+                          <span key={i} className="px-2 py-0.5 bg-white rounded text-xs text-gray-600 border">{item.model_name || item.device_type || item.item_name || '—'} x{item.quantity || 1}</span>
                         ))}
                       </div>
                     )}
@@ -14108,6 +14110,132 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
               })}
             </div>
           )}
+          {activeTab === 'rentals' && selectedRental && (() => {
+            const rental = selectedRental;
+            const rStatusStyles = { requested:'Nouvelle demande', quote_sent:'Devis envoyé', waiting_bc:'Attente BC', bc_review:'BC à vérifier', bc_approved:'BC approuvé', shipped:'Expédié', in_rental:'En location', return_pending:'Retour attendu', returned:'Retourné', completed:'Terminé', cancelled:'Annulé' };
+            const rStatusColors = { requested:'bg-amber-100 text-amber-700', quote_sent:'bg-blue-100 text-blue-700', bc_review:'bg-orange-100 text-orange-700', bc_approved:'bg-green-100 text-green-700', shipped:'bg-cyan-100 text-cyan-700', in_rental:'bg-purple-100 text-purple-700', return_pending:'bg-orange-100 text-orange-700', returned:'bg-teal-100 text-teal-700', completed:'bg-green-100 text-green-700', cancelled:'bg-red-100 text-red-700' };
+            const items = rental.rental_request_items || [];
+            const days = rental.start_date && rental.end_date ? Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1 : 0;
+            const subtotal = rental.quote_subtotal || items.reduce((s, i) => s + (i.line_total || 0), 0) || 0;
+            const shipping = parseFloat(rental.quote_shipping || 0);
+            const totalHT = subtotal + shipping;
+            const taxRate = rental.quote_tax_rate || 20;
+            const tax = totalHT * (taxRate / 100);
+            const totalTTC = rental.quote_total_ttc || (totalHT + tax);
+            
+            return (
+              <div className="space-y-4">
+                <button onClick={() => setSelectedRental(null)} className="text-sm text-blue-600 hover:underline">← Retour aux locations</button>
+                
+                {/* Header */}
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="text-lg font-bold text-purple-800">{rental.rental_number || '—'}</h3>
+                      <p className="text-sm text-purple-600">{rental.companies?.name || client.name}</p>
+                    </div>
+                    <span className={'px-3 py-1.5 rounded-full font-medium text-sm ' + (rStatusColors[rental.status] || 'bg-gray-100 text-gray-700')}>{rStatusStyles[rental.status] || rental.status}</span>
+                  </div>
+                  {rental.start_date && (
+                    <div className="mt-3 pt-3 border-t border-purple-200">
+                      <p className="font-medium text-purple-700">{new Date(rental.start_date).toLocaleDateString('fr-FR')} → {rental.end_date ? new Date(rental.end_date).toLocaleDateString('fr-FR') : '—'}</p>
+                      {days > 0 && <p className="text-sm text-purple-500">{days} jours de location</p>}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Equipment */}
+                {items.length > 0 && (
+                  <div>
+                    <h4 className="font-bold text-gray-700 mb-2">Équipement</h4>
+                    <div className="bg-gray-50 rounded-lg divide-y">
+                      {items.map((item, idx) => (
+                        <div key={idx} className="p-3 flex justify-between items-center">
+                          <div>
+                            <p className="font-medium">{item.item_name || item.model_name || item.device_type || '—'}</p>
+                            {item.rental_days && <p className="text-sm text-gray-500">{item.rental_days} jours × {parseFloat(item.applied_rate || 0).toFixed(2)} € ({item.rate_type || '—'})</p>}
+                            {item.quantity > 1 && <p className="text-sm text-gray-500">Qté: {item.quantity}</p>}
+                          </div>
+                          {item.line_total != null && <p className="font-bold">{parseFloat(item.line_total).toFixed(2)} €</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Financials */}
+                {subtotal > 0 && (
+                  <div>
+                    <h4 className="font-bold text-gray-700 mb-2">Montants</h4>
+                    <div className="bg-gray-50 rounded-lg p-4 space-y-1">
+                      <div className="flex justify-between text-sm"><span>Sous-total</span><span>{subtotal.toFixed(2)} €</span></div>
+                      {shipping > 0 && <div className="flex justify-between text-sm"><span>Frais de port</span><span>{shipping.toFixed(2)} €</span></div>}
+                      <div className="flex justify-between font-bold border-t pt-1 mt-1"><span>Total HT</span><span>{totalHT.toFixed(2)} €</span></div>
+                      <div className="flex justify-between text-sm text-gray-500"><span>TVA ({taxRate}%)</span><span>{tax.toFixed(2)} €</span></div>
+                      <div className="flex justify-between font-bold text-lg border-t pt-2"><span>Total TTC</span><span className="text-purple-600">{totalTTC.toFixed(2)} €</span></div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Tracking */}
+                {rental.outbound_tracking && (
+                  <div>
+                    <h4 className="font-bold text-gray-700 mb-2">Suivi expédition</h4>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <a href={'https://www.ups.com/track?tracknum=' + rental.outbound_tracking} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-mono">{rental.outbound_tracking}</a>
+                    </div>
+                  </div>
+                )}
+                
+                {/* BC Info */}
+                {rental.bc_file_url && (
+                  <div>
+                    <h4 className="font-bold text-gray-700 mb-2">Bon de commande</h4>
+                    <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100">
+                      <span className="text-2xl">📄</span>
+                      <div>
+                        <p className="font-medium">BC</p>
+                        {rental.bc_signed_by && <p className="text-sm text-gray-500">Signé par {rental.bc_signed_by}</p>}
+                        {rental.bc_submitted_at && <p className="text-sm text-gray-400">Le {new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR')}</p>}
+                      </div>
+                    </a>
+                  </div>
+                )}
+                
+                {/* Shipping Address */}
+                {rental.shipping_address && (
+                  <div>
+                    <h4 className="font-bold text-gray-700 mb-2">Adresse de livraison</h4>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="font-medium">{rental.shipping_address.company_name || rental.shipping_address.label}</p>
+                      {rental.shipping_address.attention && <p className="text-sm text-gray-600">À l'att. {rental.shipping_address.attention}</p>}
+                      <p className="text-sm text-gray-500">{rental.shipping_address.address_line1}</p>
+                      <p className="text-sm text-gray-500">{rental.shipping_address.postal_code} {rental.shipping_address.city}</p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Return Info */}
+                {rental.return_condition && (
+                  <div>
+                    <h4 className="font-bold text-gray-700 mb-2">Retour</h4>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-sm">État: <span className="font-medium">{rental.return_condition === 'good' ? 'Bon état' : rental.return_condition === 'damaged' ? 'Endommagé' : 'Éléments manquants'}</span></p>
+                      {rental.return_notes && <p className="text-sm text-gray-500 mt-1">Notes: {rental.return_notes}</p>}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Internal Notes */}
+                {rental.quote_notes && (
+                  <div>
+                    <h4 className="font-bold text-gray-700 mb-2">Notes</h4>
+                    <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-4">{rental.quote_notes}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           
           {/* === Sites (Shipping Addresses) === */}
           {activeTab === 'sites' && (
@@ -14220,6 +14348,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           
         </div>
       </div>
+      {selectedRental && null}
     </div>
   );
 }
