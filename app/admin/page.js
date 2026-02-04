@@ -1691,6 +1691,311 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   return pdf.output('blob');
 };
 
+// ============================================
+// AVOIR (CREDIT NOTE) PDF GENERATOR
+// ============================================
+const generateAvoirPDF = async (avoirData, businessSettings) => {
+  const jsPDF = await loadJsPDF();
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const biz = businessSettings || {};
+  const pageWidth = 210;
+  const margin = 15;
+  const contentWidth = pageWidth - margin * 2;
+  
+  const navy = [30, 58, 95];
+  const darkGray = [51, 51, 51];
+  const medGray = [130, 130, 130];
+  const lightLine = [210, 215, 220];
+  const redAccent = [180, 40, 40];
+  
+  const {
+    avoirNumber, avoirDate, originalInvoiceNumber,
+    company, reason,
+    lines, subtotalHT, tvaRate, tvaAmount, totalTTC,
+    isExonerated
+  } = avoirData;
+
+  const frenchMonths = ['janvier', 'f\u00E9vrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'ao\u00FBt', 'septembre', 'octobre', 'novembre', 'd\u00E9cembre'];
+  const formatDateFull = (dateStr) => {
+    if (!dateStr) return '\u2014';
+    const d = new Date(dateStr);
+    return d.getDate() + ' ' + frenchMonths[d.getMonth()] + ' ' + d.getFullYear();
+  };
+
+  // Logo
+  let y = 10;
+  try {
+    const logoImg = new Image();
+    logoImg.crossOrigin = 'anonymous';
+    logoImg.src = '/images/logos/lighthouse-logo.png';
+    await new Promise((res, rej) => { logoImg.onload = res; logoImg.onerror = rej; setTimeout(rej, 2000); });
+    pdf.addImage(logoImg, 'PNG', 10, 8, 68, 15);
+  } catch(e) {
+    pdf.setFontSize(18); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+    pdf.text('LIGHTHOUSE', 10, 18);
+  }
+
+  y = 30;
+
+  // AVOIR TITLE BAR (dark red)
+  pdf.setFillColor(...redAccent);
+  pdf.roundedRect(margin, y, contentWidth, 14, 2, 2, 'F');
+  pdf.setFontSize(18); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(255, 255, 255);
+  pdf.text('AVOIR', margin + 8, y + 10);
+  pdf.setFontSize(14);
+  pdf.text('N\u00B0 ' + (avoirNumber || ''), pageWidth - margin - 8, y + 10, { align: 'right' });
+  y += 20;
+
+  // Reference info
+  const refLabels = [
+    ['Date', formatDateFull(avoirDate)],
+    ['Facture r\u00E9f.', originalInvoiceNumber],
+    ['Motif', reason || 'Correction']
+  ];
+  pdf.setFontSize(9);
+  refLabels.forEach(([label, value]) => {
+    if (!value) return;
+    pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
+    pdf.text(label + ' :', margin, y);
+    pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkGray);
+    pdf.text(value, margin + 36, y);
+    y += 5;
+  });
+
+  // Client box
+  const clientBoxX = pageWidth / 2 + 10;
+  const clientBoxW = pageWidth / 2 - margin - 10;
+  pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.5);
+  pdf.roundedRect(clientBoxX, 50, clientBoxW, 28, 2, 2, 'S');
+  pdf.setFontSize(7); pdf.setTextColor(...medGray); pdf.text('AVOIR \u00C0', clientBoxX + 4, 55);
+  pdf.setFontSize(11); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkGray);
+  pdf.text(company?.name || '', clientBoxX + 4, 61);
+  const addrParts = [company?.billing_address || company?.address, [company?.billing_postal_code || company?.postal_code, company?.billing_city || company?.city].filter(Boolean).join(' '), company?.billing_country || company?.country].filter(Boolean);
+  pdf.setFontSize(8.5); pdf.setFont('helvetica', 'normal');
+  addrParts.forEach((line, i) => { pdf.text(line, clientBoxX + 4, 67 + i * 4.5); });
+
+  y = Math.max(y, 86) + 4;
+
+  // Lines table
+  const colX = { qty: margin, desc: margin + 15, pu: 145, total: 175 };
+  pdf.setFillColor(...navy);
+  pdf.roundedRect(margin, y, contentWidth, 8, 1.5, 1.5, 'F');
+  pdf.setFontSize(8); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(255, 255, 255);
+  pdf.text('Qté', colX.qty + 3, y + 5.5);
+  pdf.text('Désignation', colX.desc, y + 5.5);
+  pdf.text('P.U. HT', colX.pu, y + 5.5, { align: 'right' });
+  pdf.text('TOTAL HT', colX.total + contentWidth + margin - 175, y + 5.5, { align: 'right' });
+  y += 10;
+
+  (lines || []).forEach((line, idx) => {
+    if (y > 240) { pdf.addPage(); y = 20; }
+    if (idx % 2 === 0) { pdf.setFillColor(248, 248, 250); pdf.rect(margin, y - 3, contentWidth, 8, 'F'); }
+    pdf.setFontSize(8.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
+    pdf.text(String(line.quantity || 1), colX.qty + 3, y + 2);
+    pdf.text(line.description || '', colX.desc, y + 2);
+    pdf.setTextColor(...redAccent);
+    pdf.text('-' + parseFloat(line.unit_price_ht || 0).toFixed(2) + ' \u20AC', colX.pu, y + 2, { align: 'right' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('-' + parseFloat(line.total_ht || 0).toFixed(2) + ' \u20AC', pageWidth - margin, y + 2, { align: 'right' });
+    y += 8;
+  });
+
+  // Totals
+  y += 4;
+  const totX = pageWidth - margin - 60;
+  pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
+  pdf.text('Total HT', totX, y); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...redAccent);
+  pdf.text('-' + Math.abs(subtotalHT).toFixed(2) + ' \u20AC', pageWidth - margin, y, { align: 'right' }); y += 6;
+  
+  pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
+  pdf.text(isExonerated ? 'TVA (exon\u00E9r\u00E9e)' : 'TVA ' + (tvaRate || 20) + '%', totX, y);
+  pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...redAccent);
+  pdf.text(isExonerated ? 'EXON\u00C9R\u00C9' : '-' + Math.abs(tvaAmount).toFixed(2) + ' \u20AC', pageWidth - margin, y, { align: 'right' }); y += 8;
+  
+  pdf.setFillColor(...redAccent);
+  pdf.roundedRect(totX - 5, y - 5, pageWidth - margin - totX + 5, 12, 2, 2, 'F');
+  pdf.setFontSize(11); pdf.setTextColor(255, 255, 255);
+  pdf.text('TOTAL TTC', totX, y + 3);
+  pdf.text('-' + Math.abs(totalTTC).toFixed(2) + ' \u20AC', pageWidth - margin - 3, y + 3, { align: 'right' });
+
+  // Footer
+  y = 265;
+  pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
+  pdf.line(margin + 35, y, pageWidth - margin - 35, y);
+  y += 4;
+  const bizName = biz.company_name || 'Lighthouse Worldwide Solutions France';
+  const bizAddr = [biz.address, [biz.postal_code, biz.city].filter(Boolean).join(' ')].filter(Boolean).join(' \u2014 ');
+  const bizIds = ['SIRET: ' + (biz.siret || ''), 'TVA: ' + (biz.tva_number || '')].filter(s => s.length > 8).join(' \u2014 ');
+  pdf.setFontSize(8); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+  pdf.text(bizName, pageWidth / 2 - 2, y, { align: 'center' }); y += 3.5;
+  pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(...medGray);
+  pdf.text(bizAddr, pageWidth / 2 - 2, y, { align: 'center' }); y += 3;
+  pdf.text(bizIds, pageWidth / 2 - 2, y, { align: 'center' });
+
+  return pdf.output('blob');
+};
+
+// ============================================
+// RELANCE (PAYMENT REMINDER) PDF GENERATOR
+// ============================================
+const generateRelancePDF = async (relanceData, businessSettings) => {
+  const jsPDF = await loadJsPDF();
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const biz = businessSettings || {};
+  const pageWidth = 210;
+  const margin = 20;
+  const contentWidth = pageWidth - margin * 2;
+  
+  const navy = [30, 58, 95];
+  const darkGray = [51, 51, 51];
+  const medGray = [130, 130, 130];
+  const red = [180, 40, 40];
+  
+  const {
+    company, invoiceNumber, invoiceDate, dueDate,
+    totalTTC, paidAmount, remaining, daysPastDue, relanceNumber
+  } = relanceData;
+
+  const frenchMonths = ['janvier', 'f\u00E9vrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'ao\u00FBt', 'septembre', 'octobre', 'novembre', 'd\u00E9cembre'];
+  const formatDateFull = (dateStr) => {
+    if (!dateStr) return '\u2014';
+    const d = new Date(dateStr);
+    return d.getDate() + ' ' + frenchMonths[d.getMonth()] + ' ' + d.getFullYear();
+  };
+  const today = new Date();
+  const todayStr = today.getDate() + ' ' + frenchMonths[today.getMonth()] + ' ' + today.getFullYear();
+
+  // Logo
+  try {
+    const logoImg = new Image();
+    logoImg.crossOrigin = 'anonymous';
+    logoImg.src = '/images/logos/lighthouse-logo.png';
+    await new Promise((res, rej) => { logoImg.onload = res; logoImg.onerror = rej; setTimeout(rej, 2000); });
+    pdf.addImage(logoImg, 'PNG', margin, 15, 60, 13);
+  } catch(e) {
+    pdf.setFontSize(16); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+    pdf.text('LIGHTHOUSE', margin, 22);
+  }
+
+  // Sender address (small, right)
+  let y = 16;
+  pdf.setFontSize(7.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
+  const senderLines = [biz.company_name || 'Lighthouse Worldwide Solutions France', biz.address, [biz.postal_code, biz.city].filter(Boolean).join(' ')].filter(Boolean);
+  senderLines.forEach(l => { pdf.text(l, pageWidth - margin, y, { align: 'right' }); y += 3.5; });
+
+  // Recipient
+  y = 50;
+  pdf.setFontSize(10); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkGray);
+  pdf.text(company?.name || '', margin, y); y += 5;
+  pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9);
+  const addrParts = [company?.billing_address || company?.address, [company?.billing_postal_code || company?.postal_code, company?.billing_city || company?.city].filter(Boolean).join(' '), company?.billing_country || company?.country].filter(Boolean);
+  addrParts.forEach(l => { pdf.text(l, margin, y); y += 4.5; });
+
+  // Date + location
+  y = 80;
+  pdf.setFontSize(9); pdf.setTextColor(...darkGray);
+  pdf.text((biz.city || 'Paris') + ', le ' + todayStr, pageWidth - margin, y, { align: 'right' });
+
+  // Title
+  y = 95;
+  pdf.setFontSize(14); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...red);
+  const relanceTitle = relanceNumber > 1 ? 'RELANCE N\u00B0' + relanceNumber + ' \u2014 FACTURE IMPAY\u00C9E' : 'RELANCE \u2014 FACTURE IMPAY\u00C9E';
+  pdf.text(relanceTitle, margin, y);
+  y += 3;
+  pdf.setDrawColor(...red); pdf.setLineWidth(0.8);
+  pdf.line(margin, y, margin + pdf.getTextWidth(relanceTitle), y);
+
+  // Body text
+  y += 12;
+  pdf.setFontSize(10); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
+  pdf.text('Madame, Monsieur,', margin, y); y += 8;
+
+  const bodyLines = [
+    `Sauf erreur de notre part, nous constatons que la facture ci-dessous reste impay\u00E9e`,
+    `\u00E0 ce jour :`
+  ];
+  bodyLines.forEach(l => { pdf.text(l, margin, y); y += 5; });
+
+  // Invoice summary box
+  y += 5;
+  pdf.setFillColor(250, 245, 245); pdf.setDrawColor(...red); pdf.setLineWidth(0.5);
+  pdf.roundedRect(margin, y, contentWidth, 36, 2, 2, 'FD');
+  y += 7;
+  const rows = [
+    ['Facture N\u00B0', invoiceNumber],
+    ['Date de facture', formatDateFull(invoiceDate)],
+    ['\u00C9ch\u00E9ance', formatDateFull(dueDate)],
+    ['Montant TTC', totalTTC.toFixed(2) + ' \u20AC'],
+  ];
+  if (paidAmount > 0) rows.push(['D\u00E9j\u00E0 r\u00E9gl\u00E9', paidAmount.toFixed(2) + ' \u20AC']);
+  rows.push(['Reste d\u00FB', remaining.toFixed(2) + ' \u20AC']);
+
+  rows.forEach(([label, value], idx) => {
+    pdf.setFontSize(9.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
+    pdf.text(label + ' :', margin + 8, y);
+    pdf.setFont('helvetica', 'bold');
+    const isRemaining = label.startsWith('Reste');
+    pdf.setTextColor(isRemaining ? ...red : ...darkGray);
+    pdf.text(value, margin + 65, y);
+    y += 5;
+  });
+
+  y += 10;
+  if (daysPastDue > 0) {
+    pdf.setFontSize(10); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...red);
+    pdf.text('Retard de paiement : ' + daysPastDue + ' jour' + (daysPastDue > 1 ? 's' : ''), margin, y);
+    y += 8;
+  }
+
+  pdf.setFontSize(10); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
+  const closingLines = [
+    'Nous vous prions de bien vouloir proc\u00E9der au r\u00E8glement de cette facture dans',
+    'les meilleurs d\u00E9lais.',
+    '',
+    'Si le r\u00E8glement a d\u00E9j\u00E0 \u00E9t\u00E9 effectu\u00E9, nous vous prions de ne pas tenir compte de',
+    'ce courrier et vous remercions de nous communiquer la r\u00E9f\u00E9rence de paiement.',
+  ];
+  closingLines.forEach(l => { pdf.text(l, margin, y); y += 5; });
+
+  // Bank details
+  if (biz.iban) {
+    y += 5;
+    pdf.setFillColor(245, 248, 252);
+    pdf.roundedRect(margin, y, contentWidth, 22, 2, 2, 'F');
+    y += 6;
+    pdf.setFontSize(8.5); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+    pdf.text('Coordonn\u00E9es bancaires pour le r\u00E8glement :', margin + 5, y); y += 5;
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor(...darkGray);
+    if (biz.bank_name) { pdf.text('Banque : ' + biz.bank_name, margin + 5, y); y += 4; }
+    if (biz.rib) { pdf.text('RIB : ' + biz.rib, margin + 5, y); y += 4; }
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('IBAN : ' + biz.iban, margin + 5, y);
+    if (biz.bic) { pdf.text('BIC : ' + biz.bic, margin + 90, y); }
+  }
+
+  // Closing
+  y += 14;
+  pdf.setFontSize(10); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
+  pdf.text('Veuillez agr\u00E9er, Madame, Monsieur, nos salutations distingu\u00E9es.', margin, y);
+  y += 12;
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(biz.company_name || 'Lighthouse Worldwide Solutions France', margin, y);
+  y += 5;
+  pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); pdf.setTextColor(...medGray);
+  pdf.text('Service Comptabilit\u00E9', margin, y);
+
+  // Footer
+  const footY = 278;
+  pdf.setDrawColor(210, 215, 220); pdf.setLineWidth(0.3);
+  pdf.line(margin + 20, footY, pageWidth - margin - 20, footY);
+  pdf.setFontSize(7); pdf.setTextColor(...medGray);
+  const bizName = biz.company_name || 'Lighthouse Worldwide Solutions France';
+  const bizIds = ['SIRET: ' + (biz.siret || ''), 'TVA: ' + (biz.tva_number || '')].filter(s => s.length > 8).join(' \u2014 ');
+  pdf.text(bizName + ' \u2014 ' + bizIds, pageWidth / 2, footY + 4, { align: 'center' });
+
+  return pdf.output('blob');
+};
+
 
 // Generate Bon de Livraison PDF - PROFESSIONAL FORMAT
 const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings, bcNumbers) => {
@@ -7652,6 +7957,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
   const [showShipping, setShowShipping] = useState(false);
   const [messages, setMessages] = useState([]);
   const [attachments, setAttachments] = useState([]);
+  const [orderInvoices, setOrderInvoices] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   
@@ -7670,7 +7976,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
   const parts = quoteData.parts || [];
   const shippingData = quoteData.shipping || {};
   
-  // Fetch messages and attachments
+  // Fetch messages, attachments, and invoices
   useEffect(() => {
     const fetchData = async () => {
       // Fetch messages
@@ -7688,6 +7994,15 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
         .eq('request_id', order.id)
         .order('created_at', { ascending: false });
       setAttachments(atts || []);
+
+      // Fetch invoices (only sent/paid visible to customer)
+      const { data: invs } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('request_id', order.id)
+        .in('status', ['sent', 'paid', 'overdue', 'partially_paid'])
+        .order('created_at', { ascending: false });
+      setOrderInvoices(invs || []);
     };
     fetchData();
   }, [order.id]);
@@ -8132,6 +8447,34 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
                           </div>
                         </a>
                       )}
+
+                      {/* Invoices */}
+                      {orderInvoices.map(inv => (
+                        <a key={inv.id} href={inv.pdf_url} target="_blank" rel="noopener noreferrer"
+                          className={`flex items-center gap-3 p-4 bg-white rounded-lg border-2 transition-colors ${
+                            inv.status === 'paid' ? 'hover:border-green-300 hover:bg-green-50 border-green-200' :
+                            new Date(inv.due_date) < new Date() ? 'hover:border-red-300 hover:bg-red-50 border-red-200' :
+                            'hover:border-amber-300 hover:bg-amber-50'
+                          }`}>
+                          <span className="text-3xl">💶</span>
+                          <div className="flex-1">
+                            <p className="font-medium text-gray-800">Facture {inv.invoice_number}</p>
+                            <p className="text-xs text-gray-500">
+                              {parseFloat(inv.total_ttc || 0).toFixed(2)} € TTC
+                              {inv.status === 'paid' ? ' — Payée ✅' : 
+                               new Date(inv.due_date) < new Date() ? ' — En retard ⚠️' : 
+                               ` — Échéance: ${new Date(inv.due_date).toLocaleDateString('fr-FR')}`}
+                            </p>
+                          </div>
+                          {inv.status !== 'paid' && (
+                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                              new Date(inv.due_date) < new Date() ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {new Date(inv.due_date) < new Date() ? 'EN RETARD' : 'À PAYER'}
+                            </span>
+                          )}
+                        </a>
+                      ))}
                       
                       {/* Attachments from database - filter out duplicates */}
                       {attachments
@@ -16625,6 +16968,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
   const [creatingFor, setCreatingFor] = useState(null); // RMA to create invoice for
   const [viewingInvoice, setViewingInvoice] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [dateFilter, setDateFilter] = useState('all'); // all, month, quarter, year
 
   const biz = businessSettings || {};
 
@@ -16633,7 +16977,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
     setLoading(true);
     const { data } = await supabase
       .from('invoices')
-      .select('*, companies(name), service_requests(request_number, status, quote_data, quote_total, quote_number, bc_number, request_devices(*)), invoice_lines(*)')
+      .select('*, companies(name, email), service_requests(request_number, status, quote_data, quote_total, quote_number, bc_number, request_devices(*)), invoice_lines(*)')
       .order('created_at', { ascending: false });
     if (data) setInvoices(data);
     setLoading(false);
@@ -16736,14 +17080,116 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
   const tabs = [
     { id: 'to_create', label: 'À Facturer', icon: '🔔', count: rmasToInvoice.length, color: 'amber' },
     { id: 'open', label: 'En Cours', icon: '📤', count: openInvoices.length, color: 'blue' },
-    { id: 'closed', label: 'Archivées', icon: '✅', count: closedInvoices.length, color: 'green' }
+    { id: 'closed', label: 'Archivées', icon: '✅', count: closedInvoices.length, color: 'green' },
+    { id: 'stats', label: 'Tableau de bord', icon: '📊', count: 0, color: 'gray' }
   ];
+
+  // Stats computation
+  const now = new Date();
+  const thisMonth = invoices.filter(i => {
+    const d = new Date(i.invoice_date);
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && i.status !== 'cancelled';
+  });
+  const lastMonth = (() => {
+    const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return invoices.filter(i => {
+      const d = new Date(i.invoice_date);
+      return d.getMonth() === lm.getMonth() && d.getFullYear() === lm.getFullYear() && i.status !== 'cancelled';
+    });
+  })();
+
+  const thisMonthCA = thisMonth.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
+  const lastMonthCA = lastMonth.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
+  const thisMonthPaid = thisMonth.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
+  const totalOpen = openInvoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0) - (parseFloat(i.paid_amount) || 0), 0);
+  const totalOverdue = openInvoices.filter(i => isOverdue(i)).reduce((s, i) => s + (parseFloat(i.total_ttc) || 0) - (parseFloat(i.paid_amount) || 0), 0);
+
+  // Monthly revenue for chart (last 6 months)
+  const monthlyData = (() => {
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthInvs = invoices.filter(inv => {
+        const invDate = new Date(inv.invoice_date);
+        return invDate.getMonth() === d.getMonth() && invDate.getFullYear() === d.getFullYear() && inv.status !== 'cancelled';
+      });
+      const frMonths = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
+      months.push({
+        label: frMonths[d.getMonth()] + ' ' + d.getFullYear(),
+        total: monthInvs.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0),
+        paid: monthInvs.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0),
+        count: monthInvs.length
+      });
+    }
+    return months;
+  })();
+
+  // Aging buckets
+  const aging = (() => {
+    const buckets = { current: 0, '1_30': 0, '31_60': 0, '61_90': 0, '90_plus': 0 };
+    openInvoices.forEach(inv => {
+      const rem = (parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0);
+      if (!isOverdue(inv)) { buckets.current += rem; return; }
+      const days = daysPastDue(inv);
+      if (days <= 30) buckets['1_30'] += rem;
+      else if (days <= 60) buckets['31_60'] += rem;
+      else if (days <= 90) buckets['61_90'] += rem;
+      else buckets['90_plus'] += rem;
+    });
+    return buckets;
+  })();
+
+  // CSV export
+  const exportCSV = () => {
+    const filtered = dateFilter === 'all' ? invoices : invoices.filter(inv => {
+      const d = new Date(inv.invoice_date);
+      if (dateFilter === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      if (dateFilter === 'quarter') {
+        const q = Math.floor(now.getMonth() / 3);
+        const invQ = Math.floor(d.getMonth() / 3);
+        return invQ === q && d.getFullYear() === now.getFullYear();
+      }
+      if (dateFilter === 'year') return d.getFullYear() === now.getFullYear();
+      return true;
+    });
+
+    const headers = ['N° Facture', 'Date', 'Échéance', 'Client', 'RMA', 'Total HT', 'TVA', 'Total TTC', 'Payé', 'Reste dû', 'Statut', 'Réf. paiement', 'Date paiement'];
+    const rows = filtered.map(inv => [
+      inv.invoice_number,
+      inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString('fr-FR') : '',
+      inv.due_date ? new Date(inv.due_date).toLocaleDateString('fr-FR') : '',
+      inv.companies?.name || '',
+      inv.service_requests?.request_number || '',
+      (parseFloat(inv.subtotal_ht) || 0).toFixed(2),
+      (parseFloat(inv.tva_amount) || 0).toFixed(2),
+      (parseFloat(inv.total_ttc) || 0).toFixed(2),
+      (parseFloat(inv.paid_amount) || 0).toFixed(2),
+      ((parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0)).toFixed(2),
+      inv.status === 'paid' ? 'Payée' : inv.status === 'sent' ? 'Envoyée' : inv.status === 'draft' ? 'Brouillon' : inv.status === 'cancelled' ? 'Annulée' : inv.status === 'partially_paid' ? 'Partiel' : 'En retard',
+      inv.payment_reference || '',
+      inv.paid_at ? new Date(inv.paid_at).toLocaleDateString('fr-FR') : ''
+    ]);
+    
+    const BOM = '\uFEFF';
+    const csv = BOM + [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(';')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `factures_export_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    notify('✅ Export CSV téléchargé');
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">💶 Facturation</h1>
         <div className="flex items-center gap-3">
+          <button onClick={exportCSV} className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg text-sm font-medium flex items-center gap-1.5" title="Exporter en CSV">
+            📥 Export CSV
+          </button>
           <div className="relative">
             <input
               type="text"
@@ -16758,22 +17204,32 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-amber-400">
-          <p className="text-sm text-gray-500">À facturer</p>
+          <p className="text-xs text-gray-500 uppercase">À facturer</p>
           <p className="text-2xl font-bold text-amber-600">{rmasToInvoice.length}</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-blue-400">
-          <p className="text-sm text-gray-500">En attente paiement</p>
+          <p className="text-xs text-gray-500 uppercase">En attente</p>
           <p className="text-2xl font-bold text-blue-600">{openInvoices.filter(i => i.status === 'sent').length}</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-red-400">
-          <p className="text-sm text-gray-500">En retard</p>
+          <p className="text-xs text-gray-500 uppercase">En retard</p>
           <p className="text-2xl font-bold text-red-600">{openInvoices.filter(i => isOverdue(i)).length}</p>
+          {totalOverdue > 0 && <p className="text-xs text-red-500 mt-1">{totalOverdue.toFixed(0)} € dû</p>}
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-[#1E3A5F]">
+          <p className="text-xs text-gray-500 uppercase">Encours total</p>
+          <p className="text-2xl font-bold text-[#1E3A5F]">{totalOpen.toFixed(0)} €</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-green-400">
-          <p className="text-sm text-gray-500">Total ouvert</p>
-          <p className="text-2xl font-bold text-green-600">{openInvoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0).toFixed(2)} €</p>
+          <p className="text-xs text-gray-500 uppercase">CA ce mois</p>
+          <p className="text-2xl font-bold text-green-600">{thisMonthCA.toFixed(0)} €</p>
+          {lastMonthCA > 0 && (
+            <p className={`text-xs mt-1 ${thisMonthCA >= lastMonthCA ? 'text-green-500' : 'text-red-500'}`}>
+              {thisMonthCA >= lastMonthCA ? '↑' : '↓'} {lastMonthCA > 0 ? Math.round((thisMonthCA - lastMonthCA) / lastMonthCA * 100) : 0}% vs mois préc.
+            </p>
+          )}
         </div>
       </div>
 
@@ -16872,8 +17328,8 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                   ) : (
                     <div className="space-y-3">
                       {filterItems(openInvoices).map(inv => (
-                        <div key={inv.id} className={`flex items-center gap-4 p-4 border rounded-xl transition-all ${
-                          isOverdue(inv) ? 'bg-red-50 border-red-200' : 'hover:bg-gray-50'
+                        <div key={inv.id} onClick={() => setViewingInvoice(inv)} className={`flex items-center gap-4 p-4 border rounded-xl transition-all cursor-pointer ${
+                          isOverdue(inv) ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'hover:bg-gray-50'
                         }`}>
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shrink-0 ${
                             isOverdue(inv) ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
@@ -16898,7 +17354,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                               <p className="text-xs text-yellow-600">Reçu: {parseFloat(inv.paid_amount).toFixed(2)} €</p>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
                             {inv.pdf_url && (
                               <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="p-2 text-gray-400 hover:text-blue-500 rounded-lg hover:bg-blue-50" title="Voir PDF">📄</a>
                             )}
@@ -16906,9 +17362,8 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                               <button onClick={() => markAsSent(inv)} className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-medium">📤 Envoyer</button>
                             )}
                             {(inv.status === 'sent' || isOverdue(inv)) && (
-                              <button onClick={() => markAsPaid(inv)} className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-xs font-medium">✅ Payée</button>
+                              <button onClick={() => setViewingInvoice(inv)} className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-xs font-medium">💰 Paiement</button>
                             )}
-                            <button onClick={() => cancelInvoice(inv)} className="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50" title="Annuler">🗑️</button>
                           </div>
                         </div>
                       ))}
@@ -16928,7 +17383,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                   ) : (
                     <div className="space-y-2">
                       {filterItems(closedInvoices).map(inv => (
-                        <div key={inv.id} className="flex items-center gap-4 p-3 border rounded-lg hover:bg-gray-50 transition-all">
+                        <div key={inv.id} onClick={() => setViewingInvoice(inv)} className="flex items-center gap-4 p-3 border rounded-lg hover:bg-gray-50 transition-all cursor-pointer">
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${
                             inv.status === 'paid' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
                           }`}>
@@ -16940,18 +17395,172 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                               {getStatusBadge(inv)}
                               <span className="text-sm text-gray-400">{inv.companies?.name}</span>
                             </div>
+                            {inv.service_requests?.request_number && <p className="text-xs text-gray-400 mt-0.5">RMA: {inv.service_requests.request_number}</p>}
                           </div>
                           <div className="text-right text-sm text-gray-500 shrink-0">
                             <p className="font-medium">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
                             {inv.paid_at && <p className="text-xs">Payée le {frenchDate(inv.paid_at)}</p>}
+                            {inv.payment_reference && <p className="text-xs text-gray-400">{inv.payment_reference}</p>}
                           </div>
                           {inv.pdf_url && (
-                            <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="p-2 text-gray-400 hover:text-blue-500 rounded-lg hover:bg-blue-50">📄</a>
+                            <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="p-2 text-gray-400 hover:text-blue-500 rounded-lg hover:bg-blue-50">📄</a>
                           )}
                         </div>
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* === TAB: Tableau de bord === */}
+              {activeTab === 'stats' && (
+                <div className="space-y-6">
+                  {/* Date filter */}
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-gray-800">📊 Tableau de Bord Facturation</h3>
+                    <div className="flex items-center gap-2">
+                      {[
+                        { id: 'month', label: 'Ce mois' },
+                        { id: 'quarter', label: 'Ce trimestre' },
+                        { id: 'year', label: 'Cette année' },
+                        { id: 'all', label: 'Tout' }
+                      ].map(f => (
+                        <button
+                          key={f.id}
+                          onClick={() => setDateFilter(f.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium ${dateFilter === f.id ? 'bg-[#1E3A5F] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                      <button onClick={exportCSV} className="px-3 py-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg text-xs font-medium ml-2">
+                        📥 Export CSV
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Revenue Overview */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-gradient-to-br from-[#1E3A5F] to-[#2a5490] text-white rounded-xl p-5">
+                      <p className="text-sm text-white/70">CA ce mois</p>
+                      <p className="text-3xl font-bold mt-1">{thisMonthCA.toFixed(0)} €</p>
+                      <p className="text-xs text-white/60 mt-1">{thisMonth.length} facture{thisMonth.length > 1 ? 's' : ''}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-green-600 to-green-700 text-white rounded-xl p-5">
+                      <p className="text-sm text-white/70">Encaissé ce mois</p>
+                      <p className="text-3xl font-bold mt-1">{thisMonthPaid.toFixed(0)} €</p>
+                      <p className="text-xs text-white/60 mt-1">
+                        {thisMonthCA > 0 ? Math.round(thisMonthPaid / thisMonthCA * 100) : 0}% du CA
+                      </p>
+                    </div>
+                    <div className="bg-gradient-to-br from-amber-500 to-amber-600 text-white rounded-xl p-5">
+                      <p className="text-sm text-white/70">Encours total</p>
+                      <p className="text-3xl font-bold mt-1">{totalOpen.toFixed(0)} €</p>
+                      <p className="text-xs text-white/60 mt-1">{openInvoices.length} facture{openInvoices.length > 1 ? 's' : ''} en cours</p>
+                    </div>
+                  </div>
+
+                  {/* Revenue Bar Chart (CSS-based) */}
+                  <div className="bg-white rounded-xl border p-5">
+                    <h4 className="font-medium text-gray-700 mb-4">Chiffre d'affaires — 6 derniers mois</h4>
+                    <div className="flex items-end gap-3 h-40">
+                      {monthlyData.map((m, idx) => {
+                        const maxVal = Math.max(...monthlyData.map(d => d.total), 1);
+                        const heightPct = (m.total / maxVal) * 100;
+                        const paidPct = m.total > 0 ? (m.paid / m.total) * heightPct : 0;
+                        return (
+                          <div key={idx} className="flex-1 flex flex-col items-center gap-1">
+                            <span className="text-xs font-bold text-gray-700">{m.total > 0 ? Math.round(m.total) + '€' : ''}</span>
+                            <div className="w-full relative" style={{ height: `${Math.max(heightPct, 4)}%` }}>
+                              <div className="absolute bottom-0 w-full bg-blue-200 rounded-t-lg" style={{ height: '100%' }} />
+                              <div className="absolute bottom-0 w-full bg-green-500 rounded-t-lg" style={{ height: `${paidPct}%` }} />
+                            </div>
+                            <span className="text-xs text-gray-500">{m.label}</span>
+                            <span className="text-xs text-gray-400">{m.count} fac.</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-200 rounded" /> Facturé</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500 rounded" /> Encaissé</span>
+                    </div>
+                  </div>
+
+                  {/* Aging Analysis */}
+                  <div className="bg-white rounded-xl border p-5">
+                    <h4 className="font-medium text-gray-700 mb-4">Balance âgée — Analyse des retards</h4>
+                    <div className="grid grid-cols-5 gap-3">
+                      {[
+                        { label: 'Non échu', value: aging.current, color: 'green', bg: 'bg-green-50 border-green-200' },
+                        { label: '1-30 jours', value: aging['1_30'], color: 'yellow', bg: 'bg-yellow-50 border-yellow-200' },
+                        { label: '31-60 jours', value: aging['31_60'], color: 'orange', bg: 'bg-orange-50 border-orange-200' },
+                        { label: '61-90 jours', value: aging['61_90'], color: 'red', bg: 'bg-red-50 border-red-200' },
+                        { label: '90+ jours', value: aging['90_plus'], color: 'red', bg: 'bg-red-100 border-red-300' }
+                      ].map(bucket => (
+                        <div key={bucket.label} className={`rounded-lg border p-3 ${bucket.bg}`}>
+                          <p className="text-xs text-gray-500 font-medium">{bucket.label}</p>
+                          <p className={`text-xl font-bold mt-1 ${
+                            bucket.value === 0 ? 'text-gray-300' :
+                            bucket.color === 'green' ? 'text-green-700' :
+                            bucket.color === 'yellow' ? 'text-yellow-700' :
+                            bucket.color === 'orange' ? 'text-orange-700' :
+                            'text-red-700'
+                          }`}>{bucket.value > 0 ? bucket.value.toFixed(0) + ' €' : '—'}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {totalOpen > 0 && (
+                      <div className="mt-3 h-3 rounded-full overflow-hidden flex bg-gray-100">
+                        {[
+                          { value: aging.current, color: 'bg-green-400' },
+                          { value: aging['1_30'], color: 'bg-yellow-400' },
+                          { value: aging['31_60'], color: 'bg-orange-400' },
+                          { value: aging['61_90'], color: 'bg-red-400' },
+                          { value: aging['90_plus'], color: 'bg-red-600' }
+                        ].filter(b => b.value > 0).map((b, i) => (
+                          <div key={i} className={`${b.color} h-full`} style={{ width: `${(b.value / totalOpen) * 100}%` }} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Top clients */}
+                  <div className="bg-white rounded-xl border p-5">
+                    <h4 className="font-medium text-gray-700 mb-3">Top clients — Encours ouvert</h4>
+                    <div className="space-y-2">
+                      {(() => {
+                        const clientTotals = {};
+                        openInvoices.forEach(inv => {
+                          const name = inv.companies?.name || 'Inconnu';
+                          if (!clientTotals[name]) clientTotals[name] = { total: 0, count: 0, overdue: 0 };
+                          const rem = (parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0);
+                          clientTotals[name].total += rem;
+                          clientTotals[name].count++;
+                          if (isOverdue(inv)) clientTotals[name].overdue += rem;
+                        });
+                        return Object.entries(clientTotals)
+                          .sort((a, b) => b[1].total - a[1].total)
+                          .slice(0, 8)
+                          .map(([name, data]) => (
+                            <div key={name} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50">
+                              <div className="w-8 h-8 rounded-full bg-[#1E3A5F] text-white flex items-center justify-center text-xs font-bold shrink-0">
+                                {name.charAt(0)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm text-gray-800 truncate">{name}</p>
+                                <p className="text-xs text-gray-400">{data.count} facture{data.count > 1 ? 's' : ''}</p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="font-bold text-sm">{data.total.toFixed(0)} €</p>
+                                {data.overdue > 0 && <p className="text-xs text-red-500">{data.overdue.toFixed(0)} € en retard</p>}
+                              </div>
+                            </div>
+                          ));
+                      })()}
+                      {openInvoices.length === 0 && <p className="text-gray-400 text-sm text-center py-4">Aucun encours ouvert</p>}
+                    </div>
+                  </div>
                 </div>
               )}
             </>
@@ -16970,6 +17579,592 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
           businessSettings={businessSettings}
         />
       )}
+
+      {/* Invoice Detail Modal */}
+      {viewingInvoice && (
+        <InvoiceDetailModal
+          invoice={viewingInvoice}
+          onClose={() => { setViewingInvoice(null); loadInvoices(); }}
+          notify={notify}
+          reload={() => { loadInvoices(); if (reload) reload(); }}
+          businessSettings={businessSettings}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// INVOICE DETAIL MODAL - View/manage invoice
+// ============================================
+function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings }) {
+  const [inv, setInv] = useState(invoice);
+  const [showPayment, setShowPayment] = useState(false);
+  const [showAvoir, setShowAvoir] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentRef, setPaymentRef] = useState('');
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [generatingRelance, setGeneratingRelance] = useState(false);
+  const [generatingAvoir, setGeneratingAvoir] = useState(false);
+  const [avoirReason, setAvoirReason] = useState('');
+  const [avoirLines, setAvoirLines] = useState([]);
+  const [showActions, setShowActions] = useState(false);
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState(inv.notes || '');
+  const [relanceCount, setRelanceCount] = useState(inv.relance_count || 0);
+
+  const invoiceLines = inv.invoice_lines || [];
+  const company = inv.companies || {};
+  const rma = inv.service_requests || {};
+  
+  const isOverdue = inv.due_date && !['paid', 'cancelled'].includes(inv.status) && new Date(inv.due_date) < new Date();
+  const daysPastDue = inv.due_date ? Math.max(0, Math.floor((new Date() - new Date(inv.due_date)) / (1000 * 60 * 60 * 24))) : 0;
+
+  const frenchDate = (dateStr) => {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    const months = ['jan.', 'fév.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  };
+
+  const getStatusBadge = () => {
+    if (inv.status === 'paid') return <span className="px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-sm font-bold">✅ Payée</span>;
+    if (inv.status === 'cancelled') return <span className="px-3 py-1.5 bg-gray-100 text-gray-500 rounded-full text-sm font-bold">Annulée</span>;
+    if (inv.status === 'partially_paid') return <span className="px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-full text-sm font-bold">⚠️ Paiement partiel</span>;
+    if (isOverdue) return <span className="px-3 py-1.5 bg-red-100 text-red-700 rounded-full text-sm font-bold animate-pulse">🔴 En retard ({daysPastDue}j)</span>;
+    if (inv.status === 'sent') return <span className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-full text-sm font-bold">📤 Envoyée</span>;
+    return <span className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-sm font-bold">📝 Brouillon</span>;
+  };
+
+  const markAsSent = async () => {
+    const { error } = await supabase.from('invoices').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', inv.id);
+    if (!error) {
+      setInv({ ...inv, status: 'sent', sent_at: new Date().toISOString() });
+      notify('✅ Facture marquée comme envoyée');
+      if (reload) reload();
+    }
+  };
+
+  const recordPayment = async () => {
+    const amount = parseFloat(paymentAmount);
+    if (!amount || amount <= 0) { notify('Montant invalide', 'error'); return; }
+    
+    const prevPaid = parseFloat(inv.paid_amount) || 0;
+    const newPaid = prevPaid + amount;
+    const totalDue = parseFloat(inv.total_ttc) || 0;
+    const isFullyPaid = newPaid >= totalDue;
+    
+    const updates = {
+      paid_amount: newPaid,
+      payment_reference: [inv.payment_reference, paymentRef].filter(Boolean).join(', '),
+      paid_at: paymentDate || new Date().toISOString().split('T')[0],
+      status: isFullyPaid ? 'paid' : 'partially_paid'
+    };
+    
+    const { error } = await supabase.from('invoices').update(updates).eq('id', inv.id);
+    if (!error) {
+      setInv({ ...inv, ...updates });
+      setShowPayment(false);
+      setPaymentAmount('');
+      setPaymentRef('');
+      notify(isFullyPaid ? '✅ Facture payée en totalité!' : `✅ Paiement de ${amount.toFixed(2)} € enregistré`);
+      if (reload) reload();
+    }
+  };
+
+  const cancelInvoice = async () => {
+    if (!confirm(`Annuler la facture ${inv.invoice_number} ? Cette action est irréversible.`)) return;
+    const { error } = await supabase.from('invoices').update({ status: 'cancelled' }).eq('id', inv.id);
+    if (!error) {
+      notify('Facture annulée');
+      if (reload) reload();
+      onClose();
+    }
+  };
+
+  // Generate & download relance PDF
+  const handleRelance = async () => {
+    setGeneratingRelance(true);
+    try {
+      const newCount = relanceCount + 1;
+      // Fetch full company data
+      let companyData = company;
+      if (inv.company_id) {
+        const { data: fullCompany } = await supabase.from('companies').select('*').eq('id', inv.company_id).single();
+        if (fullCompany) companyData = fullCompany;
+      }
+      
+      const blob = await generateRelancePDF({
+        company: companyData,
+        invoiceNumber: inv.invoice_number,
+        invoiceDate: inv.invoice_date,
+        dueDate: inv.due_date,
+        totalTTC: parseFloat(inv.total_ttc) || 0,
+        paidAmount: parseFloat(inv.paid_amount) || 0,
+        remaining,
+        daysPastDue,
+        relanceNumber: newCount
+      }, businessSettings);
+      
+      // Upload PDF
+      const fileName = `Relance_${newCount}_${inv.invoice_number.replace(/[^a-zA-Z0-9-]/g, '_')}_${Date.now()}.pdf`;
+      const pdfUrl = await uploadPDFToStorage(blob, `relances/${inv.invoice_number}`, fileName);
+      
+      // Update invoice with relance info
+      await supabase.from('invoices').update({ 
+        relance_count: newCount,
+        last_relance_at: new Date().toISOString(),
+        last_relance_url: pdfUrl
+      }).eq('id', inv.id);
+      
+      setRelanceCount(newCount);
+      setInv({ ...inv, relance_count: newCount, last_relance_at: new Date().toISOString(), last_relance_url: pdfUrl });
+      
+      // Open PDF
+      if (pdfUrl) window.open(pdfUrl, '_blank');
+      notify(`✅ Relance n°${newCount} générée`);
+      if (reload) reload();
+    } catch (err) {
+      console.error('Relance error:', err);
+      notify('Erreur génération relance', 'error');
+    }
+    setGeneratingRelance(false);
+  };
+
+  // Generate avoir (credit note)
+  const handleAvoir = async () => {
+    if (!avoirReason.trim()) { notify('Veuillez indiquer un motif', 'error'); return; }
+    const selectedLines = avoirLines.filter(l => l.selected);
+    if (selectedLines.length === 0) { notify('Sélectionnez au moins une ligne', 'error'); return; }
+    
+    setGeneratingAvoir(true);
+    try {
+      // Get next avoir number
+      const { data: avoirNum } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'AVO' });
+      const avoirNumber = avoirNum || `AVO-${new Date().toISOString().slice(2, 4)}${String(new Date().getMonth() + 1).padStart(2, '0')}-001`;
+      
+      // Calculate totals
+      const avoirSubtotalHT = selectedLines.reduce((s, l) => s + (parseFloat(l.total_ht) || 0), 0);
+      const avoirTvaRate = inv.is_tva_exonerated ? 0 : (parseFloat(inv.tva_rate) || 20);
+      const avoirTvaAmount = inv.is_tva_exonerated ? 0 : avoirSubtotalHT * avoirTvaRate / 100;
+      const avoirTotalTTC = avoirSubtotalHT + avoirTvaAmount;
+      
+      // Fetch full company
+      let companyData = company;
+      if (inv.company_id) {
+        const { data: fullCompany } = await supabase.from('companies').select('*').eq('id', inv.company_id).single();
+        if (fullCompany) companyData = fullCompany;
+      }
+      
+      // Generate avoir PDF
+      const blob = await generateAvoirPDF({
+        avoirNumber,
+        avoirDate: new Date().toISOString(),
+        originalInvoiceNumber: inv.invoice_number,
+        company: companyData,
+        reason: avoirReason,
+        lines: selectedLines,
+        subtotalHT: avoirSubtotalHT,
+        tvaRate: avoirTvaRate,
+        tvaAmount: avoirTvaAmount,
+        totalTTC: avoirTotalTTC,
+        isExonerated: inv.is_tva_exonerated
+      }, businessSettings);
+      
+      // Upload PDF
+      const fileName = `Avoir_${avoirNumber.replace(/[^a-zA-Z0-9-]/g, '_')}_${Date.now()}.pdf`;
+      const pdfUrl = await uploadPDFToStorage(blob, `avoirs/${inv.invoice_number}`, fileName);
+      
+      // Save avoir as invoice with negative amounts + type=avoir
+      const { data: newAvoir } = await supabase.from('invoices').insert({
+        invoice_number: avoirNumber,
+        request_id: inv.request_id,
+        company_id: inv.company_id,
+        status: 'paid', // Avoirs are immediately applied
+        invoice_date: new Date().toISOString(),
+        due_date: new Date().toISOString(),
+        subtotal_ht: -avoirSubtotalHT,
+        tva_rate: avoirTvaRate,
+        tva_amount: -avoirTvaAmount,
+        total_ttc: -avoirTotalTTC,
+        is_tva_exonerated: inv.is_tva_exonerated,
+        pdf_url: pdfUrl,
+        notes: `Avoir sur ${inv.invoice_number} — Motif: ${avoirReason}`,
+        paid_amount: -avoirTotalTTC,
+        paid_at: new Date().toISOString()
+      }).select().single();
+      
+      // Save avoir lines
+      if (newAvoir) {
+        const lineInserts = selectedLines.map((l, idx) => ({
+          invoice_id: newAvoir.id,
+          line_type: l.line_type || 'other',
+          description: l.description,
+          quantity: l.quantity || 1,
+          unit_price_ht: -(parseFloat(l.unit_price_ht) || 0),
+          total_ht: -(parseFloat(l.total_ht) || 0),
+          sort_order: idx
+        }));
+        await supabase.from('invoice_lines').insert(lineInserts);
+      }
+      
+      // Open PDF
+      if (pdfUrl) window.open(pdfUrl, '_blank');
+      setShowAvoir(false);
+      notify(`✅ Avoir ${avoirNumber} créé (${avoirTotalTTC.toFixed(2)} € TTC)`);
+      if (reload) reload();
+    } catch (err) {
+      console.error('Avoir error:', err);
+      notify('Erreur: ' + (err.message || 'Erreur avoir'), 'error');
+    }
+    setGeneratingAvoir(false);
+  };
+
+  // Save notes
+  const saveNotes = async () => {
+    const { error } = await supabase.from('invoices').update({ notes: notesDraft }).eq('id', inv.id);
+    if (!error) {
+      setInv({ ...inv, notes: notesDraft });
+      setEditingNotes(false);
+      notify('Notes enregistrées');
+    }
+  };
+
+  const remaining = (parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 bg-gradient-to-r from-[#1E3A5F] to-[#2a5490] text-white flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold">{inv.invoice_number}</h2>
+            <p className="text-sm text-white/70">{company.name || 'Client'} {rma.request_number ? `• RMA ${rma.request_number}` : ''}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {getStatusBadge()}
+            <button onClick={onClose} className="text-white/80 hover:text-white text-2xl">×</button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* Overdue Alert */}
+          {isOverdue && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg">
+              <div className="flex items-center gap-2">
+                <span className="text-red-600 font-bold">⚠️ En retard de {daysPastDue} jour{daysPastDue > 1 ? 's' : ''}</span>
+                <span className="text-red-500 text-sm">— Échéance: {frenchDate(inv.due_date)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Key Info Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-xs text-gray-500 uppercase">Date émission</p>
+              <p className="font-medium text-gray-800">{frenchDate(inv.invoice_date)}</p>
+            </div>
+            <div className={`rounded-lg p-3 ${isOverdue ? 'bg-red-50' : 'bg-gray-50'}`}>
+              <p className="text-xs text-gray-500 uppercase">Échéance</p>
+              <p className={`font-medium ${isOverdue ? 'text-red-700 font-bold' : 'text-gray-800'}`}>{frenchDate(inv.due_date)}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-xs text-gray-500 uppercase">Total TTC</p>
+              <p className="font-bold text-lg text-gray-800">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
+            </div>
+            <div className={`rounded-lg p-3 ${inv.status === 'paid' ? 'bg-green-50' : remaining > 0 ? 'bg-amber-50' : 'bg-gray-50'}`}>
+              <p className="text-xs text-gray-500 uppercase">Reste à payer</p>
+              <p className={`font-bold text-lg ${inv.status === 'paid' ? 'text-green-700' : remaining > 0 ? 'text-amber-700' : 'text-gray-800'}`}>
+                {remaining > 0 ? remaining.toFixed(2) + ' €' : '0.00 €'}
+              </p>
+            </div>
+          </div>
+
+          {/* Reference info */}
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h4 className="font-medium text-gray-700 mb-2">Références</h4>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              {inv.client_ref && <div><span className="text-gray-500">Réf. client:</span> <span className="font-medium">{inv.client_ref}</span></div>}
+              {rma.request_number && <div><span className="text-gray-500">RMA:</span> <span className="font-medium">{rma.request_number}</span></div>}
+              {rma.quote_number && <div><span className="text-gray-500">Devis:</span> <span className="font-medium">{rma.quote_number}</span></div>}
+              {rma.bc_number && <div><span className="text-gray-500">BC:</span> <span className="font-medium">{rma.bc_number}</span></div>}
+              {inv.sent_at && <div><span className="text-gray-500">Envoyée:</span> <span className="font-medium">{frenchDate(inv.sent_at)}</span></div>}
+              {inv.paid_at && <div><span className="text-gray-500">Payée:</span> <span className="font-medium">{frenchDate(inv.paid_at)}</span></div>}
+              {inv.payment_reference && <div><span className="text-gray-500">Réf. paiement:</span> <span className="font-medium">{inv.payment_reference}</span></div>}
+            </div>
+          </div>
+
+          {/* Line Items */}
+          <div>
+            <h4 className="font-medium text-gray-700 mb-3">Lignes de facture</h4>
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-[#1E3A5F] text-white">
+                  <tr>
+                    <th className="text-left px-3 py-2">Qté</th>
+                    <th className="text-left px-3 py-2">Désignation</th>
+                    <th className="text-right px-3 py-2">P.U. HT</th>
+                    <th className="text-right px-3 py-2">Total HT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoiceLines.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((line, idx) => (
+                    <tr key={line.id || idx} className={`border-t ${line.line_type === 'device_header' ? 'bg-blue-50 font-bold text-[#1E3A5F]' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                      <td className="px-3 py-2">{line.line_type === 'device_header' ? '' : line.quantity || 1}</td>
+                      <td className="px-3 py-2">{line.description}</td>
+                      <td className="px-3 py-2 text-right">{line.line_type === 'device_header' ? '' : `${parseFloat(line.unit_price_ht || 0).toFixed(2)} €`}</td>
+                      <td className="px-3 py-2 text-right font-medium">{line.line_type === 'device_header' ? '' : `${parseFloat(line.total_ht || 0).toFixed(2)} €`}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            
+            {/* Totals */}
+            <div className="mt-3 flex justify-end">
+              <div className="w-64 space-y-1 text-sm">
+                <div className="flex justify-between py-1">
+                  <span className="text-gray-600">Total HT</span>
+                  <span className="font-bold">{parseFloat(inv.subtotal_ht || 0).toFixed(2)} €</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-gray-600">TVA {inv.is_tva_exonerated ? '(exonérée)' : `${inv.tva_rate || 20}%`}</span>
+                  <span className="font-bold">{inv.is_tva_exonerated ? 'EXONÉRÉ' : `${parseFloat(inv.tva_amount || 0).toFixed(2)} €`}</span>
+                </div>
+                <div className="flex justify-between py-2 border-t-2 border-[#1E3A5F]">
+                  <span className="font-bold text-[#1E3A5F]">Total TTC</span>
+                  <span className="font-bold text-lg text-[#1E3A5F]">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</span>
+                </div>
+                {parseFloat(inv.paid_amount) > 0 && (
+                  <div className="flex justify-between py-1 text-green-700">
+                    <span>Payé</span>
+                    <span className="font-bold">-{parseFloat(inv.paid_amount).toFixed(2)} €</span>
+                  </div>
+                )}
+                {remaining > 0 && inv.status !== 'cancelled' && (
+                  <div className="flex justify-between py-1 text-amber-700 font-bold">
+                    <span>Reste dû</span>
+                    <span>{remaining.toFixed(2)} €</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Payment Recording */}
+          {showPayment && (
+            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+              <h4 className="font-bold text-green-800 mb-3">💰 Enregistrer un paiement</h4>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Montant (€)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={paymentAmount}
+                    onChange={e => setPaymentAmount(e.target.value)}
+                    placeholder={remaining.toFixed(2)}
+                    className="w-full px-3 py-2 border rounded-lg text-lg font-bold"
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Date du paiement</label>
+                  <input
+                    type="date"
+                    value={paymentDate}
+                    onChange={e => setPaymentDate(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Réf. paiement</label>
+                  <input
+                    type="text"
+                    value={paymentRef}
+                    onChange={e => setPaymentRef(e.target.value)}
+                    placeholder="Virement, chèque n°..."
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-3">
+                <button onClick={recordPayment} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium">
+                  ✅ Enregistrer
+                </button>
+                <button onClick={() => setPaymentAmount(remaining.toFixed(2))} className="px-4 py-2 bg-green-100 hover:bg-green-200 text-green-800 rounded-lg text-sm font-medium">
+                  Solder ({remaining.toFixed(2)} €)
+                </button>
+                <button onClick={() => setShowPayment(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
+                  Annuler
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Avoir Creation Form */}
+          {showAvoir && (
+            <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+              <h4 className="font-bold text-red-800 mb-3">📝 Créer un Avoir (note de crédit)</h4>
+              <div className="mb-3">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Motif de l'avoir</label>
+                <input
+                  type="text"
+                  value={avoirReason}
+                  onChange={e => setAvoirReason(e.target.value)}
+                  placeholder="Ex: Erreur de facturation, remise commerciale, retour matériel..."
+                  className="w-full px-3 py-2 border rounded-lg"
+                  autoFocus
+                />
+              </div>
+              <div className="mb-3">
+                <p className="text-xs font-medium text-gray-600 mb-2">Sélectionnez les lignes à créditer :</p>
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {(avoirLines.length === 0 ? invoiceLines.filter(l => l.line_type !== 'device_header').map(l => ({ ...l, selected: true })) : avoirLines).map((line, idx) => {
+                    // Initialize avoirLines on first render
+                    if (avoirLines.length === 0) {
+                      setTimeout(() => setAvoirLines(invoiceLines.filter(l => l.line_type !== 'device_header').map(l => ({ ...l, selected: true }))), 0);
+                    }
+                    return (
+                      <label key={idx} className="flex items-center gap-2 p-2 rounded-lg hover:bg-red-100 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={line.selected}
+                          onChange={() => {
+                            const updated = [...avoirLines];
+                            updated[idx] = { ...updated[idx], selected: !updated[idx].selected };
+                            setAvoirLines(updated);
+                          }}
+                          className="rounded"
+                        />
+                        <span className="flex-1 text-sm">{line.description}</span>
+                        <span className="text-sm font-bold text-red-700">{parseFloat(line.total_ht || 0).toFixed(2)} €</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {avoirLines.length > 0 && (
+                  <div className="mt-2 text-right">
+                    <span className="text-sm text-gray-500">Total avoir HT: </span>
+                    <span className="font-bold text-red-700">
+                      {avoirLines.filter(l => l.selected).reduce((s, l) => s + (parseFloat(l.total_ht) || 0), 0).toFixed(2)} €
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={handleAvoir} disabled={generatingAvoir} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium disabled:opacity-50">
+                  {generatingAvoir ? '⏳ Génération...' : '📝 Générer l\'Avoir'}
+                </button>
+                <button onClick={() => { setShowAvoir(false); setAvoirLines([]); }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
+                  Annuler
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Relance History */}
+          {(inv.relance_count > 0 || inv.last_relance_at) && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-orange-800 font-medium">
+                  📨 {inv.relance_count || relanceCount} relance{(inv.relance_count || relanceCount) > 1 ? 's' : ''} envoyée{(inv.relance_count || relanceCount) > 1 ? 's' : ''}
+                </p>
+                <div className="flex items-center gap-2">
+                  {inv.last_relance_at && <span className="text-xs text-orange-600">Dernière: {frenchDate(inv.last_relance_at)}</span>}
+                  {inv.last_relance_url && (
+                    <a href={inv.last_relance_url} target="_blank" rel="noopener noreferrer" className="text-xs text-orange-700 underline hover:text-orange-900">Voir PDF</a>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          {editingNotes ? (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Notes internes</label>
+              <textarea
+                value={notesDraft}
+                onChange={e => setNotesDraft(e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 border rounded-lg text-sm"
+                placeholder="Notes internes (non visibles par le client)..."
+              />
+              <div className="flex gap-2 mt-2">
+                <button onClick={saveNotes} className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm font-medium">Enregistrer</button>
+                <button onClick={() => { setEditingNotes(false); setNotesDraft(inv.notes || ''); }} className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">Annuler</button>
+              </div>
+            </div>
+          ) : inv.notes ? (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 cursor-pointer hover:bg-yellow-100" onClick={() => setEditingNotes(true)}>
+              <p className="text-sm text-yellow-800"><strong>Notes:</strong> {inv.notes} <span className="text-yellow-500 text-xs ml-1">✏️</span></p>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Footer Actions */}
+        <div className="px-6 py-4 border-t bg-gray-50 flex items-center justify-between rounded-b-2xl">
+          <div className="flex items-center gap-2">
+            {inv.pdf_url && (
+              <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-[#1E3A5F] hover:bg-[#2a5490] text-white rounded-lg font-medium text-sm flex items-center gap-1">
+                📄 PDF
+              </a>
+            )}
+            
+            {/* More actions dropdown */}
+            <div className="relative">
+              <button onClick={() => setShowActions(!showActions)} className="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium">
+                ⋯ Plus
+              </button>
+              {showActions && (
+                <div className="absolute bottom-full left-0 mb-1 bg-white border rounded-lg shadow-xl z-10 py-1 w-56" onMouseLeave={() => setShowActions(false)}>
+                  <button onClick={() => { setEditingNotes(true); setShowActions(false); }} className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-sm flex items-center gap-2">
+                    📝 {inv.notes ? 'Modifier notes' : 'Ajouter notes'}
+                  </button>
+                  {inv.status !== 'cancelled' && (
+                    <button onClick={() => { setShowAvoir(true); setShowActions(false); }} className="w-full text-left px-4 py-2.5 hover:bg-red-50 text-sm text-red-700 flex items-center gap-2">
+                      📝 Créer un Avoir
+                    </button>
+                  )}
+                  {isOverdue && (
+                    <button onClick={() => { handleRelance(); setShowActions(false); }} disabled={generatingRelance} className="w-full text-left px-4 py-2.5 hover:bg-orange-50 text-sm text-orange-700 flex items-center gap-2">
+                      {generatingRelance ? '⏳ Génération...' : `📨 Relance (n°${relanceCount + 1})`}
+                    </button>
+                  )}
+                  {inv.status !== 'paid' && inv.status !== 'cancelled' && (
+                    <>
+                      <div className="border-t my-1" />
+                      <button onClick={() => { cancelInvoice(); setShowActions(false); }} className="w-full text-left px-4 py-2.5 hover:bg-red-50 text-sm text-red-600 flex items-center gap-2">
+                        🗑️ Annuler la facture
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {inv.status === 'draft' && (
+              <button onClick={markAsSent} className="px-5 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium text-sm">
+                📤 Marquer envoyée
+              </button>
+            )}
+            {isOverdue && !showPayment && (
+              <button onClick={() => { handleRelance(); }} disabled={generatingRelance} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium text-sm">
+                {generatingRelance ? '⏳...' : '📨 Relance'}
+              </button>
+            )}
+            {inv.status !== 'paid' && inv.status !== 'cancelled' && (
+              <button onClick={() => { setShowPayment(true); setPaymentAmount(remaining.toFixed(2)); }} className="px-5 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium text-sm">
+                💰 Enregistrer paiement
+              </button>
+            )}
+            <button onClick={onClose} className="px-5 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium text-sm">Fermer</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
