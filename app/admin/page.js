@@ -5023,6 +5023,10 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   const [saving, setSaving] = useState(false);
   const [attachments, setAttachments] = useState([]);
   
+  // Shipping address state - resolved per device
+  const [deviceAddresses, setDeviceAddresses] = useState({}); // { deviceId: addressObj }
+  const [rmaAddress, setRmaAddress] = useState(null); // RMA-level fallback address
+  
   // Modal state
   const [showAvenantPreview, setShowAvenantPreview] = useState(false);
   const [showQCReview, setShowQCReview] = useState(null);
@@ -5052,6 +5056,61 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     };
     fetchAttachments();
   }, [rma?.id]);
+  
+  // Fetch shipping addresses for devices and RMA
+  useEffect(() => {
+    const fetchAddresses = async () => {
+      if (!rma?.id) return;
+      const devices = rma.request_devices || [];
+      const addressMap = {};
+      
+      // 1. Fetch RMA-level address (fallback for all devices)
+      let rmaAddr = null;
+      if (rma.shipping_address_id) {
+        try {
+          const { data } = await supabase.from('shipping_addresses').select('*').eq('id', rma.shipping_address_id).single();
+          if (data) rmaAddr = data;
+        } catch (e) {}
+      }
+      setRmaAddress(rmaAddr);
+      
+      // 2. Collect unique device-level shipping_address_ids
+      const deviceAddrIds = [...new Set(devices.filter(d => d.shipping_address_id).map(d => d.shipping_address_id))];
+      
+      // 3. Batch fetch all device-specific addresses
+      let deviceAddrMap = {};
+      if (deviceAddrIds.length > 0) {
+        try {
+          const { data } = await supabase.from('shipping_addresses').select('*').in('id', deviceAddrIds);
+          if (data) data.forEach(a => { deviceAddrMap[a.id] = a; });
+        } catch (e) {}
+      }
+      
+      // 4. Build resolved address per device: device-level > RMA-level > company billing
+      const company = rma.companies || {};
+      devices.forEach(d => {
+        if (d.shipping_address_id && deviceAddrMap[d.shipping_address_id]) {
+          addressMap[d.id] = deviceAddrMap[d.shipping_address_id];
+        } else if (rmaAddr) {
+          addressMap[d.id] = rmaAddr;
+        } else {
+          // Fallback to company billing
+          addressMap[d.id] = {
+            company_name: company.name || '—',
+            address_line1: company.billing_address || '',
+            city: company.billing_city || '',
+            postal_code: company.billing_postal_code || '',
+            country: company.country || 'France',
+            attention: '',
+            phone: company.phone || '',
+            _isBillingFallback: true
+          };
+        }
+      });
+      setDeviceAddresses(addressMap);
+    };
+    fetchAddresses();
+  }, [rma?.id, rma?.shipping_address_id, rma?.request_devices]);
   
   // Refresh attachments helper
   const refreshAttachments = async () => {
@@ -5388,11 +5447,51 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           
           {/* Return Shipping Address */}
           <div className="mt-4 pt-4 border-t">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Adresse de retour</p>
-            <p className="text-sm text-gray-700">
-              {/* TODO: Load device-specific shipping address if available */}
-              {company.address || '—'}, {company.postal_code} {company.city}, {company.country || 'France'}
-            </p>
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Adresse de retour</p>
+              {!isDeviceShipped && (
+                <button 
+                  onClick={async () => {
+                    // Fetch client's saved addresses for override
+                    const { data: addrs } = await supabase.from('shipping_addresses').select('*').eq('company_id', rma.company_id).order('label');
+                    if (!addrs || addrs.length === 0) { notify('Aucune adresse enregistrée pour ce client', 'error'); return; }
+                    const labels = addrs.map((a, i) => `${i + 1}. ${a.label || a.company_name || '—'} — ${a.address_line1}, ${a.postal_code} ${a.city}`).join('\n');
+                    const choice = prompt(`Choisir une adresse de retour (numéro):\n\n${labels}\n\n0 = Utiliser l'adresse RMA par défaut`);
+                    if (choice === null) return;
+                    const idx = parseInt(choice);
+                    if (idx === 0) {
+                      // Reset to RMA default
+                      await supabase.from('request_devices').update({ shipping_address_id: null }).eq('id', device.id);
+                      notify('Adresse réinitialisée (défaut RMA)');
+                      reload();
+                    } else if (idx >= 1 && idx <= addrs.length) {
+                      await supabase.from('request_devices').update({ shipping_address_id: addrs[idx - 1].id }).eq('id', device.id);
+                      notify('Adresse de retour mise à jour!');
+                      reload();
+                    }
+                  }}
+                  className="text-xs text-blue-500 hover:text-blue-700 hover:underline"
+                >✏️ Modifier</button>
+              )}
+            </div>
+            {(() => {
+              const addr = deviceAddresses[device.id];
+              if (!addr) return <p className="text-sm text-gray-400 italic">Chargement...</p>;
+              const isDifferent = device.shipping_address_id && device.shipping_address_id !== rma.shipping_address_id;
+              return (
+                <div className="flex items-start gap-2">
+                  <div className="text-sm text-gray-700">
+                    <p className="font-medium">{addr.company_name || addr.label || '—'}</p>
+                    {addr.attention && <p className="text-gray-500">Att: {addr.attention}</p>}
+                    <p>{addr.address_line1 || '—'}</p>
+                    <p>{addr.postal_code} {addr.city}{addr.country && addr.country !== 'France' ? ', ' + addr.country : ''}</p>
+                  </div>
+                  {isDifferent && (
+                    <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-medium whitespace-nowrap">Adresse spécifique</span>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
         
@@ -6154,6 +6253,19 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 
                 {/* Progress Bar */}
                 <DeviceProgressBar device={device} />
+                
+                {/* Return address line */}
+                {deviceAddresses[device.id] && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs text-gray-400">📍 Retour:</span>
+                    <span className="text-xs text-gray-500">
+                      {deviceAddresses[device.id].company_name || deviceAddresses[device.id].label || '—'}, {deviceAddresses[device.id].postal_code} {deviceAddresses[device.id].city}
+                    </span>
+                    {device.shipping_address_id && device.shipping_address_id !== rma.shipping_address_id && (
+                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium">Adresse spécifique</span>
+                    )}
+                  </div>
+                )}
               </div>
             ))
           )}
@@ -11982,6 +12094,9 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
   // Device selection for partial shipments
   const [selectedDeviceIds, setSelectedDeviceIds] = useState(new Set());
   
+  // Resolved address per device for display
+  const [deviceAddressMap, setDeviceAddressMap] = useState({}); // { deviceId: { address, isDifferent } }
+  
   // Categorize devices by status
   const readyDevices = devices.filter(d => 
     ['ready_to_ship', 'ready', 'prêt', 'calibrated', 'repaired', 'qc_passed'].includes(d.status?.toLowerCase()) || d.qc_complete
@@ -12013,48 +12128,140 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     }
   };
   
-  // Fetch shipping address on mount and initialize shipments
+  // Fetch shipping address on mount and initialize shipments - AUTO-GROUP by address
   useEffect(() => {
     const initShipments = async () => {
-      let address = {
-        company_name: rma.companies?.name || 'Client',
+      const company = rma.companies || {};
+      
+      // 1. Build default RMA-level address
+      let rmaAddress = {
+        company_name: company.name || 'Client',
         attention: '',
-        address_line1: rma.companies?.billing_address || '',
-        city: rma.companies?.billing_city || '',
-        postal_code: rma.companies?.billing_postal_code || '',
+        address_line1: company.billing_address || '',
+        city: company.billing_city || '',
+        postal_code: company.billing_postal_code || '',
         country: 'France',
         phone: ''
       };
       
-      // If RMA has a shipping_address_id, fetch it
       if (rma.shipping_address_id) {
-        const { data: shippingAddr } = await supabase
-          .from('shipping_addresses')
-          .select('*')
-          .eq('id', rma.shipping_address_id)
-          .single();
-        
-        if (shippingAddr) {
-          address = {
-            company_name: shippingAddr.company_name || shippingAddr.label || rma.companies?.name,
-            attention: shippingAddr.attention || '',
-            address_line1: shippingAddr.address_line1 || '',
-            city: shippingAddr.city || '',
-            postal_code: shippingAddr.postal_code || '',
-            country: shippingAddr.country || 'France',
-            phone: shippingAddr.phone || ''
-          };
-        }
+        try {
+          const { data: shippingAddr } = await supabase
+            .from('shipping_addresses')
+            .select('*')
+            .eq('id', rma.shipping_address_id)
+            .single();
+          if (shippingAddr) {
+            rmaAddress = {
+              company_name: shippingAddr.company_name || shippingAddr.label || company.name,
+              attention: shippingAddr.attention || '',
+              address_line1: shippingAddr.address_line1 || '',
+              city: shippingAddr.city || '',
+              postal_code: shippingAddr.postal_code || '',
+              country: shippingAddr.country || 'France',
+              phone: shippingAddr.phone || '',
+              _addressId: rma.shipping_address_id
+            };
+          }
+        } catch (e) {}
       }
       
-      setShipments([{
-        address,
-        devices: devices,
-        parcels: rma.parcels_count || 1,
-        weight: '2.0',
-        trackingNumber: '',
-        notes: ''
-      }]);
+      // 2. Collect unique device-level shipping_address_ids
+      const deviceAddrIds = [...new Set(
+        devices.filter(d => d.shipping_address_id && d.shipping_address_id !== rma.shipping_address_id)
+          .map(d => d.shipping_address_id)
+      )];
+      
+      // 3. Batch fetch device-specific addresses
+      let deviceAddrMap = {};
+      if (deviceAddrIds.length > 0) {
+        try {
+          const { data } = await supabase.from('shipping_addresses').select('*').in('id', deviceAddrIds);
+          if (data) data.forEach(a => { deviceAddrMap[a.id] = a; });
+        } catch (e) {}
+      }
+      
+      // 4. Group devices by their resolved address key
+      // Key = shipping_address_id or 'rma_default'
+      const groups = {};
+      devices.forEach(d => {
+        const addrKey = (d.shipping_address_id && d.shipping_address_id !== rma.shipping_address_id && deviceAddrMap[d.shipping_address_id]) 
+          ? d.shipping_address_id 
+          : 'rma_default';
+        if (!groups[addrKey]) groups[addrKey] = [];
+        groups[addrKey].push(d);
+      });
+      
+      // 5. Build shipments array - one per unique address
+      const shipmentsArr = [];
+      
+      // RMA default group first (if any)
+      if (groups['rma_default']) {
+        shipmentsArr.push({
+          address: { ...rmaAddress },
+          addressId: rma.shipping_address_id || null,
+          devices: groups['rma_default'],
+          parcels: 1,
+          weight: '2.0',
+          trackingNumber: '',
+          notes: ''
+        });
+      }
+      
+      // Then device-specific address groups
+      Object.keys(groups).filter(k => k !== 'rma_default').forEach(addrId => {
+        const addr = deviceAddrMap[addrId];
+        if (addr) {
+          shipmentsArr.push({
+            address: {
+              company_name: addr.company_name || addr.label || company.name,
+              attention: addr.attention || '',
+              address_line1: addr.address_line1 || '',
+              city: addr.city || '',
+              postal_code: addr.postal_code || '',
+              country: addr.country || 'France',
+              phone: addr.phone || '',
+              _addressId: addrId
+            },
+            addressId: addrId,
+            devices: groups[addrId],
+            parcels: 1,
+            weight: '2.0',
+            trackingNumber: '',
+            notes: ''
+          });
+        }
+      });
+      
+      // If no devices at all (shouldn't happen), create one empty shipment
+      if (shipmentsArr.length === 0) {
+        shipmentsArr.push({
+          address: { ...rmaAddress },
+          addressId: rma.shipping_address_id || null,
+          devices: devices,
+          parcels: 1,
+          weight: '2.0',
+          trackingNumber: '',
+          notes: ''
+        });
+      }
+      
+      setShipments(shipmentsArr);
+      
+      // Build device address map for display in selection UI
+      const addrMap = {};
+      devices.forEach(d => {
+        const hasDifferent = d.shipping_address_id && d.shipping_address_id !== rma.shipping_address_id && deviceAddrMap[d.shipping_address_id];
+        const resolved = hasDifferent ? deviceAddrMap[d.shipping_address_id] : (rmaAddr || {
+          company_name: company.name || '—',
+          address_line1: company.billing_address || '',
+          city: company.billing_city || '',
+          postal_code: company.billing_postal_code || '',
+          country: company.country || 'France'
+        });
+        addrMap[d.id] = { address: resolved, isDifferent: !!hasDifferent };
+      });
+      setDeviceAddressMap(addrMap);
       
       // Auto-select all ready devices (or all if none have specific ready status)
       const ready = devices.filter(d => 
@@ -12063,7 +12270,6 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       if (ready.length > 0) {
         setSelectedDeviceIds(new Set(ready.map(d => d.id)));
       } else {
-        // If no devices have ready status, select all non-shipped devices
         setSelectedDeviceIds(new Set(devices.filter(d => d.status !== 'shipped').map(d => d.id)));
       }
       
@@ -12111,12 +12317,17 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       return;
     }
     
-    // Update shipment with only selected devices
-    const selectedDevicesList = devices.filter(d => selectedDeviceIds.has(d.id));
-    const updatedShipmentsWithDevices = shipments.map((s, idx) => ({
+    // Filter each shipment to only include selected devices from that group
+    const updatedShipmentsWithDevices = shipments.map(s => ({
       ...s,
-      devices: selectedDevicesList
-    }));
+      devices: s.devices.filter(d => selectedDeviceIds.has(d.id))
+    })).filter(s => s.devices.length > 0); // Remove empty shipments
+    
+    if (updatedShipmentsWithDevices.length === 0) {
+      notify('Aucun appareil sélectionné dans les groupes d\'expédition', 'error');
+      return;
+    }
+    
     setShipments(updatedShipmentsWithDevices);
     
     setUpsLoading(true);
@@ -12156,7 +12367,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
             },
             packages: packagesList,
             serviceCode: '11', // UPS Standard
-            description: `RMA ${rma.request_number} - ${selectedDevicesList.length} appareil(s)`,
+            description: `RMA ${rma.request_number} - ${s.devices.length} appareil(s)`,
             isReturn: false
           }
         });
@@ -12678,46 +12889,128 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           )}
           
           {/* Step 1: Review */}
-          {!loading && step === 1 && shipments.map((shipment, idx) => (
-            <div key={idx} className="space-y-6">
-              {/* Address Section */}
-              <div className="bg-white border-2 border-gray-200 rounded-xl">
-                <div className="bg-amber-50 px-4 py-3 border-b">
-                  <h3 className="font-bold text-amber-800">📍 Adresse de livraison</h3>
-                </div>
-                <div className="p-4 grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Société *</label>
-                    <input type="text" value={shipment.address.company_name} onChange={e => updateAddress(idx, 'company_name', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">À l'attention de</label>
-                    <input type="text" value={shipment.address.attention} onChange={e => updateAddress(idx, 'attention', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Nom du contact" />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Adresse *</label>
-                    <input type="text" value={shipment.address.address_line1} onChange={e => updateAddress(idx, 'address_line1', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Code postal *</label>
-                    <input type="text" value={shipment.address.postal_code} onChange={e => updateAddress(idx, 'postal_code', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Ville *</label>
-                    <input type="text" value={shipment.address.city} onChange={e => updateAddress(idx, 'city', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Pays</label>
-                    <input type="text" value={shipment.address.country} onChange={e => updateAddress(idx, 'country', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
-                    <input type="text" value={shipment.address.phone || ''} onChange={e => updateAddress(idx, 'phone', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="+33..." />
+          {!loading && step === 1 && (
+            <div className="space-y-6">
+              {/* Multi-address banner */}
+              {shipments.length > 1 && (
+                <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl">📦</span>
+                    <div>
+                      <h4 className="font-bold text-amber-800">Expédition multi-adresses</h4>
+                      <p className="text-sm text-amber-700">Les appareils ont des adresses de retour différentes. {shipments.length} envois séparés seront créés, chacun avec son propre BL et étiquette UPS.</p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
               
-              {/* Already Shipped Info */}
+              {shipments.map((shipment, idx) => (
+                <div key={idx} className="space-y-4">
+                  {/* Shipment group header */}
+                  {shipments.length > 1 && (
+                    <div className="bg-gradient-to-r from-[#1a1a2e] to-[#2d2d44] text-white rounded-t-xl px-4 py-3 flex justify-between items-center">
+                      <h3 className="font-bold">Envoi {idx + 1} / {shipments.length}</h3>
+                      <span className="text-sm text-gray-300">{shipment.devices.length} appareil(s) → {shipment.address.city || '?'}</span>
+                    </div>
+                  )}
+                  
+                  {/* Devices in this shipment group */}
+                  {shipments.length > 1 && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <p className="text-xs text-blue-600 font-medium uppercase mb-2">Appareils dans cet envoi:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {shipment.devices.map(d => (
+                          <span key={d.id} className="px-2 py-1 bg-white border rounded text-xs font-mono">{d.model_name} - {d.serial_number}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Address Section */}
+                  <div className="bg-white border-2 border-gray-200 rounded-xl">
+                    <div className="bg-amber-50 px-4 py-3 border-b">
+                      <h3 className="font-bold text-amber-800">📍 Adresse de livraison{shipments.length > 1 ? ` (Envoi ${idx + 1})` : ''}</h3>
+                    </div>
+                    <div className="p-4 grid md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Société *</label>
+                        <input type="text" value={shipment.address.company_name} onChange={e => updateAddress(idx, 'company_name', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">À l'attention de</label>
+                        <input type="text" value={shipment.address.attention} onChange={e => updateAddress(idx, 'attention', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Nom du contact" />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Adresse *</label>
+                        <input type="text" value={shipment.address.address_line1} onChange={e => updateAddress(idx, 'address_line1', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Code postal *</label>
+                        <input type="text" value={shipment.address.postal_code} onChange={e => updateAddress(idx, 'postal_code', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Ville *</label>
+                        <input type="text" value={shipment.address.city} onChange={e => updateAddress(idx, 'city', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Pays</label>
+                        <input type="text" value={shipment.address.country} onChange={e => updateAddress(idx, 'country', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
+                        <input type="text" value={shipment.address.phone || ''} onChange={e => updateAddress(idx, 'phone', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="+33..." />
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Shipping Details per shipment */}
+                  <div className="bg-white border-2 border-gray-200 rounded-xl">
+                    <div className="bg-green-50 px-4 py-3 border-b flex justify-between items-center">
+                      <h3 className="font-bold text-green-800">🚚 Détails d'expédition{shipments.length > 1 ? ` (Envoi ${idx + 1})` : ''}</h3>
+                      <span className="text-xs text-green-600">💡 UPS crée 1 étiquette par colis</span>
+                    </div>
+                    <div className="p-4 grid md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de colis</label>
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => updateShipment(idx, 'parcels', Math.max(1, (shipment.parcels || 1) - 1))}
+                            className="w-10 h-10 bg-gray-200 hover:bg-gray-300 rounded-lg font-bold text-lg"
+                          >-</button>
+                          <input 
+                            type="number" 
+                            min="1" 
+                            value={shipment.parcels} 
+                            onChange={e => updateShipment(idx, 'parcels', parseInt(e.target.value) || 1)} 
+                            className="w-20 px-3 py-2 border border-gray-300 rounded-lg text-center font-bold text-lg" 
+                          />
+                          <button 
+                            onClick={() => updateShipment(idx, 'parcels', (shipment.parcels || 1) + 1)}
+                            className="w-10 h-10 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold text-lg"
+                          >+</button>
+                        </div>
+                        {shipment.parcels > 1 && (
+                          <p className="text-xs text-green-600 mt-1">📦 {shipment.parcels} étiquettes seront créées</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Poids total (kg)</label>
+                        <input type="text" value={shipment.weight} onChange={e => updateShipment(idx, 'weight', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">BL #</label>
+                        <input type="text" value={generateBLNumber(idx)} disabled className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 font-mono" />
+                      </div>
+                      <div className="md:col-span-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Notes internes</label>
+                        <textarea value={shipment.notes || ''} onChange={e => updateShipment(idx, 'notes', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={2} placeholder="Notes pour l'expédition..." />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              
+              {/* Already Shipped Info - shown once */}
               {alreadyShippedDevices.length > 0 && (
                 <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
                   <div className="flex items-start gap-3">
@@ -12737,7 +13030,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                 </div>
               )}
               
-              {/* Not Ready Warning */}
+              {/* Not Ready Warning - shown once */}
               {notReadyDevices.length > 0 && (
                 <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
                   <div className="flex items-start gap-3">
@@ -12758,7 +13051,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                 </div>
               )}
               
-              {/* Devices Selection Section */}
+              {/* Devices Selection Section - shown once, global */}
               <div className="bg-white border-2 border-gray-200 rounded-xl">
                 <div className="bg-blue-50 px-4 py-3 border-b flex justify-between items-center">
                   <h3 className="font-bold text-blue-800">📦 Sélectionner les appareils à expédier</h3>
@@ -12781,84 +13074,53 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                     <div className="space-y-2">
                       {devices.filter(d => d.status !== 'shipped').map(device => {
                         const isReady = ['ready_to_ship', 'ready', 'prêt', 'calibrated', 'repaired', 'qc_passed'].includes(device.status?.toLowerCase()) || device.qc_complete;
+                        const addrInfo = deviceAddressMap[device.id];
+                        const addr = addrInfo?.address;
                         return (
                           <label 
                             key={device.id} 
-                            className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                            className={`block p-3 rounded-lg border-2 cursor-pointer transition-all ${
                               selectedDeviceIds.has(device.id) 
                                 ? 'border-green-500 bg-green-50' 
                                 : 'border-gray-200 hover:border-gray-300'
                             }`}
                           >
-                            <input
-                              type="checkbox"
-                              checked={selectedDeviceIds.has(device.id)}
-                              onChange={() => toggleDevice(device.id)}
-                              className="w-5 h-5 text-green-600 rounded"
-                            />
-                            <div className="flex-1">
-                              <div className="font-medium">{device.model_name}</div>
-                              <div className="text-sm text-gray-500 font-mono">{device.serial_number}</div>
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="checkbox"
+                                checked={selectedDeviceIds.has(device.id)}
+                                onChange={() => toggleDevice(device.id)}
+                                className="w-5 h-5 text-green-600 rounded"
+                              />
+                              <div className="flex-1">
+                                <div className="font-medium">{device.model_name}</div>
+                                <div className="text-sm text-gray-500 font-mono">{device.serial_number}</div>
+                              </div>
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                                {device.service_type === 'repair' ? '🔧 Réparation' : '🔬 Étalonnage'}
+                              </span>
+                              {device.calibration_certificate_url && (
+                                <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm" onClick={e => e.stopPropagation()}>📄</a>
+                              )}
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${isReady ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                {isReady ? '✓ Prêt' : device.status || 'En cours'}
+                              </span>
                             </div>
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {device.service_type === 'repair' ? '🔧 Réparation' : '🔬 Étalonnage'}
-                            </span>
-                            {device.calibration_certificate_url && (
-                              <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm" onClick={e => e.stopPropagation()}>📄</a>
+                            {/* Return address for this device */}
+                            {addr && (
+                              <div className="mt-2 ml-8 flex items-center gap-2">
+                                <span className="text-xs text-gray-400">📍 Retour:</span>
+                                <span className="text-xs text-gray-600">{addr.company_name || addr.label || '—'}, {addr.address_line1 || ''}, {addr.postal_code || ''} {addr.city || ''}</span>
+                                {addrInfo.isDifferent && (
+                                  <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium">Adresse spécifique</span>
+                                )}
+                              </div>
                             )}
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${isReady ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                              {isReady ? '✓ Prêt' : device.status || 'En cours'}
-                            </span>
                           </label>
                         );
                       })}
                     </div>
                   )}
-                </div>
-              </div>
-              
-              {/* Shipping Details */}
-              <div className="bg-white border-2 border-gray-200 rounded-xl">
-                <div className="bg-green-50 px-4 py-3 border-b flex justify-between items-center">
-                  <h3 className="font-bold text-green-800">🚚 Détails d'expédition</h3>
-                  <span className="text-xs text-green-600">💡 UPS crée 1 étiquette par colis</span>
-                </div>
-                <div className="p-4 grid md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de colis</label>
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={() => updateShipment(idx, 'parcels', Math.max(1, (shipment.parcels || 1) - 1))}
-                        className="w-10 h-10 bg-gray-200 hover:bg-gray-300 rounded-lg font-bold text-lg"
-                      >-</button>
-                      <input 
-                        type="number" 
-                        min="1" 
-                        value={shipment.parcels} 
-                        onChange={e => updateShipment(idx, 'parcels', parseInt(e.target.value) || 1)} 
-                        className="w-20 px-3 py-2 border border-gray-300 rounded-lg text-center font-bold text-lg" 
-                      />
-                      <button 
-                        onClick={() => updateShipment(idx, 'parcels', (shipment.parcels || 1) + 1)}
-                        className="w-10 h-10 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold text-lg"
-                      >+</button>
-                    </div>
-                    {shipment.parcels > 1 && (
-                      <p className="text-xs text-green-600 mt-1">📦 {shipment.parcels} étiquettes seront créées</p>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Poids total (kg)</label>
-                    <input type="text" value={shipment.weight} onChange={e => updateShipment(idx, 'weight', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">BL #</label>
-                    <input type="text" value={generateBLNumber(idx)} disabled className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 font-mono" />
-                  </div>
-                  <div className="md:col-span-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Notes internes</label>
-                    <textarea value={shipment.notes || ''} onChange={e => updateShipment(idx, 'notes', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={2} placeholder="Notes pour l'expédition..." />
-                  </div>
                 </div>
               </div>
               
