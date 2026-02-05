@@ -12131,6 +12131,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
   // Fetch shipping address on mount and initialize shipments - AUTO-GROUP by address
   useEffect(() => {
     const initShipments = async () => {
+      try {
       const company = rma.companies || {};
       
       // 1. Build default RMA-level address
@@ -12252,7 +12253,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       const addrMap = {};
       devices.forEach(d => {
         const hasDifferent = d.shipping_address_id && d.shipping_address_id !== rma.shipping_address_id && deviceAddrMap[d.shipping_address_id];
-        const resolved = hasDifferent ? deviceAddrMap[d.shipping_address_id] : (rmaAddr || {
+        const resolved = hasDifferent ? deviceAddrMap[d.shipping_address_id] : (rmaAddress || {
           company_name: company.name || '—',
           address_line1: company.billing_address || '',
           city: company.billing_city || '',
@@ -12274,6 +12275,30 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       }
       
       setLoading(false);
+      } catch (err) {
+        console.error('initShipments error:', err);
+        // Fallback: create single shipment with company billing address
+        const co = rma.companies || {};
+        setShipments([{
+          address: {
+            company_name: co.name || 'Client',
+            attention: '',
+            address_line1: co.billing_address || '',
+            city: co.billing_city || '',
+            postal_code: co.billing_postal_code || '',
+            country: 'France',
+            phone: ''
+          },
+          addressId: null,
+          devices: devices,
+          parcels: 1,
+          weight: '2.0',
+          trackingNumber: '',
+          notes: ''
+        }]);
+        setSelectedDeviceIds(new Set(devices.filter(d => d.status !== 'shipped').map(d => d.id)));
+        setLoading(false);
+      }
     };
     
     if (devices.length > 0) {
