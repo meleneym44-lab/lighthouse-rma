@@ -13135,7 +13135,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                 </div>
               </div>
             </div>
-          ))}
+          )}
           
           {/* Step 2: UPS Labels */}
           {step === 2 && shipments.map((shipment, idx) => (
