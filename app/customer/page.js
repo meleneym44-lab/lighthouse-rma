@@ -8019,8 +8019,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                               <td className="px-2 py-2 border-b border-gray-200 text-center">{part.quantity}</td>
                               <td className="px-2 py-2 border-b border-gray-200 font-mono text-xs">{part.partNumber || '—'}</td>
                               <td className="px-2 py-2 border-b border-gray-200">{part.description}</td>
-                              <td className="px-2 py-2 border-b border-gray-200 text-right">{(part.unitPrice || 0).toFixed(2)}€</td>
-                              <td className="px-2 py-2 border-b border-gray-200 text-right font-medium">{(part.lineTotal || 0).toFixed(2)}€</td>
+                              <td className="px-2 py-2 border-b border-gray-200 text-right whitespace-nowrap">{(part.unitPrice || 0).toFixed(2)} €</td>
+                              <td className="px-2 py-2 border-b border-gray-200 text-right font-medium whitespace-nowrap">{(part.lineTotal || 0).toFixed(2)} €</td>
                             </tr>
                           ))}
                           {shipping.total > 0 && (
@@ -8028,15 +8028,15 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                               <td className="px-2 py-2 border-b border-blue-200 text-center">{shipping.parcels}</td>
                               <td className="px-2 py-2 border-b border-blue-200 font-mono text-xs">PORT</td>
                               <td className="px-2 py-2 border-b border-blue-200 text-blue-800">Frais de port ({shipping.parcels} colis)</td>
-                              <td className="px-2 py-2 border-b border-blue-200 text-right">{(shipping.unitPrice || 0).toFixed(2)}€</td>
-                              <td className="px-2 py-2 border-b border-blue-200 text-right font-medium">{(shipping.total || 0).toFixed(2)}€</td>
+                              <td className="px-2 py-2 border-b border-blue-200 text-right whitespace-nowrap">{(shipping.unitPrice || 0).toFixed(2)} €</td>
+                              <td className="px-2 py-2 border-b border-blue-200 text-right font-medium whitespace-nowrap">{(shipping.total || 0).toFixed(2)} €</td>
                             </tr>
                           )}
                         </tbody>
                         <tfoot>
                           <tr className="bg-[#2D5A7B] text-white">
                             <td colSpan={4} className="px-2 py-2 text-right font-bold whitespace-nowrap">TOTAL HT</td>
-                            <td className="px-2 py-2 text-right font-bold whitespace-nowrap">{grandTotal.toFixed(2)}€</td>
+                            <td className="px-2 py-2 text-right font-bold whitespace-nowrap">{grandTotal.toFixed(2)} €</td>
                           </tr>
                         </tfoot>
                       </table>
@@ -8256,8 +8256,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                                 Étalonnage {device.model || device.model_name || ''} (SN: {device.serial || device.serial_number || ''})
                                 {isContract && <span className="ml-2 px-2 py-0.5 bg-emerald-500 text-white text-xs rounded">CONTRAT</span>}
                               </td>
-                              <td className="px-3 py-2 text-right">{isContract ? <span className="text-emerald-600">Contrat</span> : `${unitPrice.toFixed(2)} €`}</td>
-                              <td className="px-3 py-2 text-right font-medium">{isContract ? <span className="text-emerald-600">Contrat</span> : `${lineTotal.toFixed(2)} €`}</td>
+                              <td className="px-3 py-2 text-right whitespace-nowrap">{isContract ? <span className="text-emerald-600">Contrat</span> : `${unitPrice.toFixed(2)} €`}</td>
+                              <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{isContract ? <span className="text-emerald-600">Contrat</span> : `${lineTotal.toFixed(2)} €`}</td>
                             </tr>
                           );
                         }
@@ -8271,8 +8271,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                             <tr key={`${i}-nettoyage`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                               <td className="px-3 py-2 text-center">{qty}</td>
                               <td className="px-3 py-2">Nettoyage cellule - si requis selon l'état du capteur</td>
-                              <td className="px-3 py-2 text-right">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-3 py-2 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                              <td className="px-3 py-2 text-right whitespace-nowrap">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
                             </tr>
                           );
                         }
@@ -8286,8 +8286,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                             <tr key={`${i}-repair`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                               <td className="px-3 py-2 text-center">{qty}</td>
                               <td className="px-3 py-2">Réparation {device.model || device.model_name || ''} (SN: {device.serial || device.serial_number || ''})</td>
-                              <td className="px-3 py-2 text-right">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-3 py-2 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                              <td className="px-3 py-2 text-right whitespace-nowrap">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
                             </tr>
                           );
                         }
@@ -8304,8 +8304,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                                 {part.partNumber && <span className="text-gray-500 mr-1">[{part.partNumber}]</span>}
                                 {part.description || 'Pièce/Service'}
                               </td>
-                              <td className="px-3 py-2 text-right">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-3 py-2 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                              <td className="px-3 py-2 text-right whitespace-nowrap">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
                             </tr>
                           );
                         });
@@ -8317,10 +8317,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                       <tr className={isFullyContractCovered ? "bg-emerald-50" : "bg-gray-100"}>
                         <td className="px-3 py-2 text-center">{quoteData.shipping?.parcels || request.parcels_count || 1}</td>
                         <td className="px-3 py-2">Frais de port ({quoteData.shipping?.parcels || request.parcels_count || 1} colis)</td>
-                        <td className="px-3 py-2 text-right">
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
                           {isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${(quoteData.shipping?.unitPrice || 45).toFixed(2)} €`}
                         </td>
-                        <td className="px-3 py-2 text-right font-medium">
+                        <td className="px-3 py-2 text-right font-medium whitespace-nowrap">
                           {isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${shippingTotal.toFixed(2)} €`}
                         </td>
                       </tr>
@@ -8328,8 +8328,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     <tfoot>
                       <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#2D5A7B] text-white"}>
                         <td colSpan={2} className="px-3 py-4"></td>
-                        <td className="px-3 py-4 text-right font-bold text-lg">TOTAL HT</td>
-                        <td className="px-3 py-4 text-right font-bold text-xl">
+                        <td className="px-3 py-4 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
+                        <td className="px-3 py-4 text-right font-bold text-xl whitespace-nowrap">
                           {isFullyContractCovered ? 'Contrat' : `${grandTotal.toFixed(2)} €`}
                         </td>
                       </tr>
