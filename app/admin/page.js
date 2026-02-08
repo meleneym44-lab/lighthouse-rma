@@ -101,7 +101,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 75, 19);
     } catch (e) {
       pdf.setFontSize(26);
       pdf.setFont('helvetica', 'bold');
@@ -591,7 +591,7 @@ const generatePartsQuotePDF = async (order, quoteData) => {
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y, 50, 10);
+      pdf.addImage(lighthouseLogo, format, margin, y, 70, 18);
     } catch (e) {
       pdf.setFontSize(16);
       pdf.setFont('helvetica', 'bold');
@@ -1143,7 +1143,7 @@ const generateServiceReportPDF = async (device, rma, technicianName, calType, re
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 75, 19);
     } catch (e) {
       pdf.setFontSize(26);
       pdf.setFont('helvetica', 'bold');
@@ -1366,7 +1366,7 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
     logoImg.crossOrigin = 'anonymous';
     logoImg.src = '/images/logos/Lighthouse-color-logo.jpg';
     await new Promise((res, rej) => { logoImg.onload = res; logoImg.onerror = rej; setTimeout(rej, 2000); });
-    pdf.addImage(logoImg, 'JPEG', 10, 8, 68, 15);
+    pdf.addImage(logoImg, 'JPEG', 10, 8, 85, 19);
   } catch(e) {
     pdf.setFontSize(18);
     pdf.setFont('helvetica', 'bold');
@@ -1754,7 +1754,7 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings,
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 75, 19);
     } catch (e) {
       pdf.setFontSize(26);
       pdf.setFont('helvetica', 'bold');
@@ -2005,7 +2005,7 @@ const generatePartsBLPDF = async (order, parts, shipment, blNumber, businessSett
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 75, 19);
     } catch (e) {
       pdf.setFontSize(26);
       pdf.setFont('helvetica', 'bold');
@@ -7030,7 +7030,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 75, 19);
     } catch (e) {
       pdf.setFontSize(26);
       pdf.setFont('helvetica', 'bold');
@@ -7412,7 +7412,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                 <img 
                   src="/images/logos/Lighthouse-color-logo.jpg" 
                   alt="Lighthouse France" 
-                  className="h-14 w-auto mb-1"
+                  className="h-20 w-auto mb-1"
                   onError={(e) => {
                     e.target.style.display = 'none';
                     e.target.nextSibling.style.display = 'block';
@@ -10344,7 +10344,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                   <span>Frais de port:</span>
                   <span className="font-medium">{shippingData.total.toFixed(2)} €</span>
                 </div>
-                <div className="flex justify-between text-xl font-bold text-[#00A651] mt-2 pt-2 border-t border-gray-300">
+                <div className="flex justify-between text-xl font-bold text-[#1E3A5F] mt-2 pt-2 border-t border-gray-300">
                   <span>TOTAL HT:</span>
                   <span>{grandTotal.toFixed(2)} €</span>
                 </div>
@@ -10363,7 +10363,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                       <img 
                         src="/images/logos/Lighthouse-color-logo.jpg" 
                         alt="Lighthouse France" 
-                        className="h-12 w-auto"
+                        className="h-20 w-auto"
                         onError={(e) => {
                           e.target.style.display = 'none';
                           e.target.nextSibling.style.display = 'block';
@@ -10434,7 +10434,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                           <td className="px-3 py-2 text-right font-medium">{shippingData.total.toFixed(2)} €</td>
                         </tr>
                       )}
-                      <tr className="bg-[#00A651] text-white">
+                      <tr className="bg-[#1E3A5F] text-white">
                         <td colSpan={4} className="px-3 py-2 text-right font-bold">TOTAL HT</td>
                         <td className="px-3 py-2 text-right font-bold">{grandTotal.toFixed(2)} €</td>
                       </tr>
@@ -10475,7 +10475,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
               <p className="text-gray-600 mb-6">
                 Le devis sera envoyé au client {order.companies?.name}.
                 <br />
-                Montant total: <strong className="text-[#00A651]">{grandTotal.toFixed(2)} € HT</strong>
+                Montant total: <strong className="text-[#1E3A5F]">{grandTotal.toFixed(2)} € HT</strong>
               </p>
               <div className="bg-gray-50 rounded-lg p-4 max-w-md mx-auto text-left">
                 <p className="text-sm text-gray-600"><strong>Référence:</strong> {quoteRef}</p>
@@ -16227,13 +16227,13 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
 
           // Page Header Component - with more spacing after
           const PageHeader = ({ pageNum }) => (
-            <div className="border-b-4 border-[#1E3A5F] mb-4">
+            <div className="border-b-4 border-[#00A651] mb-4">
               <div className="px-6 py-4 flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <img 
                     src="/images/logos/Lighthouse-color-logo.jpg" 
                     alt="Lighthouse" 
-                    className="h-12 w-auto"
+                    className="h-20 w-auto"
                     onError={(e) => {
                       e.target.style.display = 'none';
                       e.target.nextSibling.style.display = 'block';
@@ -16244,7 +16244,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-bold text-[#1E3A5F]">DEVIS CONTRAT</p>
+                  <p className="text-lg font-bold text-[#00A651]">DEVIS CONTRAT</p>
                   <p className="text-sm font-bold text-[#1E3A5F]">N° {contract.contract_number || '(Généré à l\'envoi)'}</p>
                 </div>
               </div>
@@ -21224,7 +21224,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                       <img 
                         src="/images/logos/Lighthouse-color-logo.jpg" 
                         alt="Lighthouse France" 
-                        className="h-14 w-auto mb-1"
+                        className="h-20 w-auto mb-1"
                         onError={(e) => {
                           e.target.style.display = 'none';
                           e.target.nextSibling.style.display = 'block';
@@ -21411,7 +21411,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                       </tr>
                     </tbody>
                     <tfoot>
-                      <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#00A651] text-white"}>
+                      <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#1E3A5F] text-white"}>
                         <td colSpan={2} className="px-4 py-4"></td>
                         <td className="px-4 py-4 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
                         <td className="px-4 py-4 text-right font-bold text-xl whitespace-nowrap">
