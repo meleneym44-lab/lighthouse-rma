@@ -14717,14 +14717,14 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
       if (!element) { notify('Element not found!', 'error'); return null; }
       
       notify('Génération du PDF...');
-      const canvas = await window.html2canvas(element, { scale: 3, useCORS: true, backgroundColor: '#ffffff' });
+      const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
       const jsPDF = await loadJsPDF();
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgData = canvas.toDataURL('image/png');
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
       const pdfWidth = 210;
       const imgRatio = canvas.height / canvas.width;
       const imgHeight = pdfWidth * imgRatio;
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(imgHeight, 297));
       
       const pdfBlob = pdf.output('blob');
       const safeSerial = (device.serial_number || 'unknown').replace(/[^a-zA-Z0-9-_]/g, '');
