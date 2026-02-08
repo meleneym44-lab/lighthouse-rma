@@ -46,6 +46,7 @@ const loadImageAsBase64 = async (url) => {
 const PDF_COLORS = {
   green: [0, 166, 81],
   darkBlue: [26, 26, 46],
+  navy: [30, 58, 95],
   gray: [80, 80, 80],
   lightGray: [130, 130, 130],
   white: [255, 255, 255]
@@ -63,12 +64,12 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
   const footerHeight = 16;
-  const { green, darkBlue, gray, lightGray, white } = PDF_COLORS;
+  const { navy, darkBlue, gray, lightGray, white } = PDF_COLORS;
   
   let y = margin;
   
-  // Load logos
-  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  // Load logos - use color logo for quotes
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
   let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
   
   const addFooter = () => {
@@ -116,7 +117,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...green);
+  pdf.setTextColor(...navy);
   pdf.text('OFFRE DE PRIX', pageWidth - margin, y + 5, { align: 'right' });
   
   // Document number (DEV-0226-001) - primary identifier
@@ -134,7 +135,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   }
   
   y += 20;
-  pdf.setDrawColor(...green);
+  pdf.setDrawColor(...navy);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
   y += 7;
@@ -471,7 +472,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
 
   // Total row
   const grandTotal = isFullyContractCovered ? 0 : (options.grandTotal || (servicesSubtotal + shippingTotal));
-  pdf.setFillColor(...green);
+  pdf.setFillColor(...navy);
   pdf.rect(margin, y, contentWidth, 11, 'F');
   pdf.setTextColor(...white);
   pdf.setFontSize(11);
@@ -567,12 +568,11 @@ const generatePartsQuotePDF = async (order, quoteData) => {
   const contentWidth = pageWidth - (margin * 2);
   const footerHeight = 16;
   
-  const amber = [245, 158, 11];
-  const { darkBlue, gray, lightGray, white } = PDF_COLORS;
+  const { navy, darkBlue, gray, lightGray, white } = PDF_COLORS;
   
   let y = margin;
   
-  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
   
   const addFooter = () => {
     pdf.setFillColor(...darkBlue);
@@ -608,7 +608,7 @@ const generatePartsQuotePDF = async (order, quoteData) => {
   // Title
   pdf.setFontSize(14);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...amber);
+  pdf.setTextColor(...navy);
   pdf.text('DEVIS PIECES', pageWidth - margin, y + 3, { align: 'right' });
   
   // Document number (DEV-0226-001)
@@ -628,7 +628,7 @@ const generatePartsQuotePDF = async (order, quoteData) => {
   y += 18;
   
   // Amber line
-  pdf.setFillColor(...amber);
+  pdf.setFillColor(...navy);
   pdf.rect(0, y, pageWidth, 1.5, 'F');
   y += 6;
   
@@ -739,7 +739,7 @@ const generatePartsQuotePDF = async (order, quoteData) => {
   }
   
   // Total row
-  pdf.setFillColor(...amber);
+  pdf.setFillColor(...navy);
   pdf.rect(margin, y, contentWidth, 8, 'F');
   pdf.setTextColor(...white);
   pdf.setFont('helvetica', 'bold');
@@ -1119,11 +1119,11 @@ const generateServiceReportPDF = async (device, rma, technicianName, calType, re
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
   const footerHeight = 16;
-  const { green, darkBlue, gray, lightGray, white } = PDF_COLORS;
+  const { navy, darkBlue, gray, lightGray, white } = PDF_COLORS;
   
   let y = margin;
   
-  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
   let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
   
   const addFooter = () => {
@@ -1159,7 +1159,7 @@ const generateServiceReportPDF = async (device, rma, technicianName, calType, re
   
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...green);
+  pdf.setTextColor(...navy);
   pdf.text('RAPPORT DE SERVICE', pageWidth - margin, y + 8, { align: 'right' });
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'normal');
@@ -1167,7 +1167,7 @@ const generateServiceReportPDF = async (device, rma, technicianName, calType, re
   pdf.text('RMA ' + (rma.request_number || 'FR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
   
   y += 18;
-  pdf.setDrawColor(...green);
+  pdf.setDrawColor(...navy);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
   y += 10;
@@ -1258,7 +1258,7 @@ const generateServiceReportPDF = async (device, rma, technicianName, calType, re
   y += 8;
 
   // ===== WORK COMPLETED =====
-  pdf.setDrawColor(...green);
+  pdf.setDrawColor(...navy);
   pdf.setLineWidth(1);
   pdf.line(margin, y, margin, y + 30);
   pdf.setFontSize(11);
@@ -1364,9 +1364,9 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   try {
     const logoImg = new Image();
     logoImg.crossOrigin = 'anonymous';
-    logoImg.src = '/images/logos/lighthouse-logo.png';
+    logoImg.src = '/images/logos/Lighthouse-color-logo.jpg';
     await new Promise((res, rej) => { logoImg.onload = res; logoImg.onerror = rej; setTimeout(rej, 2000); });
-    pdf.addImage(logoImg, 'PNG', 10, 8, 68, 15);
+    pdf.addImage(logoImg, 'JPEG', 10, 8, 68, 15);
   } catch(e) {
     pdf.setFontSize(18);
     pdf.setFont('helvetica', 'bold');
@@ -6992,13 +6992,13 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   const contentWidth = pageWidth - (margin * 2);
   const footerHeight = 16;
   
-  // Colors - using green theme to match main quote
-  const { green, darkBlue, gray, lightGray, white } = PDF_COLORS;
+  // Colors - using navy blue theme to match quotes and invoices
+  const { navy, darkBlue, gray, lightGray, white } = PDF_COLORS;
   
   let y = margin;
   
-  // Load logos
-  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  // Load logos - use color logo for supplements
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
   let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
   
   const addFooter = () => {
@@ -7047,7 +7047,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   // Title - SUPPLÉMENT in green
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...green);
+  pdf.setTextColor(...navy);
   pdf.text('SUPPLÉMENT AU DEVIS', pageWidth - margin, y + 5, { align: 'right' });
   
   // Document number (SUP-0226-001) - primary
@@ -7065,7 +7065,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   }
   
   y += 20;
-  pdf.setDrawColor(...green);
+  pdf.setDrawColor(...navy);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
   y += 7;
@@ -7114,7 +7114,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
 
   // ===== INTRODUCTION =====
   pdf.setFillColor(240, 253, 244); // Light green background
-  pdf.setDrawColor(...green);
+  pdf.setDrawColor(...navy);
   pdf.setLineWidth(0.5);
   pdf.rect(margin, y, contentWidth, 14, 'FD');
   pdf.setFontSize(9);
@@ -7209,7 +7209,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
 
   // Total row - taller box with better spacing
   checkPageBreak(20);
-  pdf.setFillColor(...green);
+  pdf.setFillColor(...navy);
   pdf.rect(margin, y, contentWidth, 14, 'F');
   pdf.setTextColor(...white);
   pdf.setFontSize(12);
@@ -7406,11 +7406,11 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
         {/* Quote Document - Like RMA Quote PDF */}
         <div id="avenant-preview-content">
           {/* Quote Header */}
-          <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
+          <div className="px-8 pt-8 pb-4 border-b-4 border-[#1E3A5F]">
             <div className="flex justify-between items-start">
               <div>
                 <img 
-                  src="/images/logos/lighthouse-logo.png" 
+                  src="/images/logos/Lighthouse-color-logo.jpg" 
                   alt="Lighthouse France" 
                   className="h-14 w-auto mb-1"
                   onError={(e) => {
@@ -7424,7 +7424,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-2xl font-bold text-[#00A651]">SUPPLÉMENT AU DEVIS</p>
+                <p className="text-2xl font-bold text-[#1E3A5F]">SUPPLÉMENT AU DEVIS</p>
                 <p className="text-sm font-bold text-[#1E3A5F]">N° {rma.supplement_number || '(Généré à l\'envoi)'}</p>
                 <p className="text-xs text-gray-500">RMA: {rma.request_number}</p>
               </div>
@@ -7477,7 +7477,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                       <h3 className="font-bold text-lg text-[#1a1a2e]">{device.model_name}</h3>
                       <p className="text-gray-500 text-sm">N° de série: {device.serial_number}</p>
                     </div>
-                    <span className="text-xl font-bold text-[#00A651]">€{deviceTotal.toFixed(2)}</span>
+                    <span className="text-xl font-bold text-[#1E3A5F]">€{deviceTotal.toFixed(2)}</span>
                   </div>
                   
                   {device.service_findings && (
@@ -7529,7 +7529,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           )}
 
           {/* Total Section */}
-          <div className="px-8 py-4 bg-[#00A651]">
+          <div className="px-8 py-4 bg-[#1E3A5F]">
             <div className="flex justify-between items-center text-white">
               <span className="text-lg font-bold">TOTAL SUPPLÉMENT HT</span>
               <span className="text-3xl font-bold">€{totalAvenant.toFixed(2)}</span>
@@ -10357,11 +10357,11 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
             <div className="bg-gray-200 p-6 rounded-lg">
               <div className="bg-white shadow-lg mx-auto flex flex-col" style={{ width: '210mm', minHeight: '297mm' }}>
                 {/* PDF Preview Header */}
-                <div className="border-b-4 border-[#00A651] p-6">
+                <div className="border-b-4 border-[#1E3A5F] p-6">
                   <div className="flex justify-between items-start">
                     <div>
                       <img 
-                        src="/images/logos/lighthouse-logo.png" 
+                        src="/images/logos/Lighthouse-color-logo.jpg" 
                         alt="Lighthouse France" 
                         className="h-12 w-auto"
                         onError={(e) => {
@@ -10375,7 +10375,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-bold text-[#00A651]">DEVIS PIÈCES</p>
+                      <p className="text-xl font-bold text-[#1E3A5F]">DEVIS PIÈCES</p>
                       <p className="text-sm font-bold text-[#1E3A5F]">N° {order.quote_number || quoteRef}</p>
                       <p className="text-xs text-gray-500">Réf: {order.request_number}</p>
                     </div>
@@ -16227,11 +16227,11 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
 
           // Page Header Component - with more spacing after
           const PageHeader = ({ pageNum }) => (
-            <div className="border-b-4 border-[#00A651] mb-4">
+            <div className="border-b-4 border-[#1E3A5F] mb-4">
               <div className="px-6 py-4 flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <img 
-                    src="/images/logos/lighthouse-logo.png" 
+                    src="/images/logos/Lighthouse-color-logo.jpg" 
                     alt="Lighthouse" 
                     className="h-12 w-auto"
                     onError={(e) => {
@@ -16244,7 +16244,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-bold text-[#00A651]">DEVIS CONTRAT</p>
+                  <p className="text-lg font-bold text-[#1E3A5F]">DEVIS CONTRAT</p>
                   <p className="text-sm font-bold text-[#1E3A5F]">N° {contract.contract_number || '(Généré à l\'envoi)'}</p>
                 </div>
               </div>
@@ -21218,11 +21218,11 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
               <div className="max-w-4xl mx-auto bg-white shadow-xl" style={{ fontFamily: 'Arial, sans-serif' }}>
                 
                 {/* Quote Header */}
-                <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
+                <div className="px-8 pt-8 pb-4 border-b-4 border-[#1E3A5F]">
                   <div className="flex justify-between items-start">
                     <div>
                       <img 
-                        src="/images/logos/lighthouse-logo.png" 
+                        src="/images/logos/Lighthouse-color-logo.jpg" 
                         alt="Lighthouse France" 
                         className="h-14 w-auto mb-1"
                         onError={(e) => {
@@ -21236,7 +21236,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
+                      <p className="text-2xl font-bold text-[#1E3A5F]">OFFRE DE PRIX</p>
                       <p className="text-sm font-bold text-[#1E3A5F]">N° {request.quote_number || '(Généré à l\'envoi)'}</p>
                       <p className="text-xs text-gray-500">RMA: {request.request_number}</p>
                     </div>
