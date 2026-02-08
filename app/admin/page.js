@@ -198,8 +198,10 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   });
   if (calibrationTypes.size === 0) calibrationTypes.add('particle_counter');
 
-  // Service descriptions data
-  const CAL_DATA = {
+  // Service descriptions - use settings if available, else defaults
+  const qs = options.quoteSettings || biz.quote_settings || {};
+
+  const DEFAULT_CAL_DATA = {
     particle_counter: {
       title: "Etalonnage Compteur de Particules Aeroportees",
       prestations: [
@@ -232,6 +234,16 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
         "Fourniture d'un rapport de test et de calibration"
       ]
     },
+    temp_humidity: {
+      title: "Etalonnage Capteur Temperature/Humidite",
+      prestations: [
+        "Verification des fonctionnalites du capteur",
+        "Etalonnage temperature sur points de reference certifies",
+        "Etalonnage humidite relative",
+        "Verification de la stabilite des mesures",
+        "Fourniture d'un certificat d'etalonnage"
+      ]
+    },
     other: {
       title: "Etalonnage Equipement",
       prestations: [
@@ -243,7 +255,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     }
   };
 
-  const REPAIR_DATA = {
+  const DEFAULT_REPAIR_DATA = {
     title: "Reparation",
     prestations: [
       "Diagnostic complet de l'appareil",
@@ -254,49 +266,88 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     ]
   };
 
-  const DISCLAIMERS = [
+  const DEFAULT_DISCLAIMERS = [
     "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables.",
     "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses et necessitent un remplacement.",
     "Les mesures stockees dans les appareils seront eventuellement perdues lors des operations de maintenance.",
     "Les equipements envoyes devront etre decontamines de toutes substances chimiques, bacteriennes ou radioactives."
   ];
 
-  // Draw service blocks
+  // Merge settings with defaults - settings override defaults when present
+  const CAL_DATA = {};
+  for (const key of Object.keys(DEFAULT_CAL_DATA)) {
+    const settingsBlock = qs.calibration?.[key];
+    if (settingsBlock && settingsBlock.title && settingsBlock.prestations?.length) {
+      CAL_DATA[key] = settingsBlock;
+    } else {
+      CAL_DATA[key] = DEFAULT_CAL_DATA[key];
+    }
+  }
+
+  const REPAIR_DATA = (qs.repair?.title && qs.repair?.prestations?.length)
+    ? qs.repair
+    : DEFAULT_REPAIR_DATA;
+
+  const DISCLAIMERS = (qs.disclaimers?.length)
+    ? qs.disclaimers
+    : DEFAULT_DISCLAIMERS;
+
+  // Draw service blocks - PAGE-BREAK AWARE (line by line)
   const drawServiceBlock = (data, color) => {
     const lineH = 5;
-    let lines = [];
+    const titleH = 10;
+
+    // Pre-calculate all wrapped lines to know which belong to which prestation
+    const allLines = [];
     data.prestations.forEach(p => {
       const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
-      wrapped.forEach(l => lines.push(l));
+      wrapped.forEach((l, i) => allLines.push({ text: l, isFirst: i === 0 }));
     });
-    const titleH = 10; // Title height
-    const textH = lines.length * lineH; // All text lines
-    const blockH = titleH + textH;
-    checkPageBreak(blockH + 5);
+
+    // Check if we need at least title + first 2 lines of space, else new page
+    checkPageBreak(titleH + lineH * 2);
+
+    // Track the vertical line start on the current page
+    let vLineStartY = y;
     
-    // Draw vertical line - stops at last text line (subtract more to end earlier)
+    // Draw title
     pdf.setDrawColor(...color);
     pdf.setLineWidth(1);
-    const lineEndY = y + blockH - 7; // End 7mm before block ends
-    pdf.line(margin, y, margin, lineEndY);
-    
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
     pdf.text(data.title, margin + 5, y + 6);
     y += titleH;
-    
+
+    // Draw lines one by one with page break checks
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...gray);
-    data.prestations.forEach(p => {
-      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
-      wrapped.forEach((line, i) => {
-        if (i === 0) pdf.text('-', margin + 5, y);
-        pdf.text(line, margin + 9, y);
-        y += lineH;
-      });
+    allLines.forEach((lineObj) => {
+      if (y + lineH > getUsableHeight()) {
+        // Draw vertical line segment for this page before breaking
+        pdf.setDrawColor(...color);
+        pdf.setLineWidth(1);
+        pdf.line(margin, vLineStartY, margin, y - 2);
+        addFooter();
+        pdf.addPage();
+        y = margin;
+        vLineStartY = y;
+        // Reset font after page break
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(...gray);
+      }
+      if (lineObj.isFirst) pdf.text('-', margin + 5, y);
+      pdf.text(lineObj.text, margin + 9, y);
+      y += lineH;
     });
+
+    // Draw final vertical line segment
+    pdf.setDrawColor(...color);
+    pdf.setLineWidth(1);
+    const lineEndY = Math.max(vLineStartY + 5, y - 7);
+    pdf.line(margin, vLineStartY, margin, lineEndY);
     y += 5; // Space after block
   };
 
@@ -333,6 +384,49 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     isContractCovered: false
   }));
   
+  // Helper: draw table header row
+  const drawTableHeader = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(margin, y, contentWidth, 9, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...white);
+    pdf.text('Qte', colQty + 3, y + 6);
+    pdf.text('Designation', colDesc, y + 6);
+    pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
+    pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
+    y += 9;
+  };
+  
+  // Helper: check page break for table rows and redraw header if needed
+  const checkTablePageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) {
+      addFooter();
+      pdf.addPage();
+      y = margin;
+      drawTableHeader();
+      return true;
+    }
+    return false;
+  };
+  
+  // Helper: draw a single table row with page break awareness
+  const drawTableRow = (qty, desc, unitDisplay, totalDisplay, bgIndex) => {
+    checkTablePageBreak(rowH);
+    pdf.setFillColor(bgIndex % 2 === 0 ? 255 : 250, bgIndex % 2 === 0 ? 255 : 250, bgIndex % 2 === 0 ? 255 : 250);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(String(qty), colQty + 3, y + 5);
+    pdf.text(desc.substring(0, 60), colDesc, y + 5);
+    pdf.text(unitDisplay, colUnit, y + 5, { align: 'right' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(totalDisplay, colTotal, y + 5, { align: 'right' });
+    y += rowH;
+  };
+  
+  checkPageBreak(20); // Ensure space for title + header
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
@@ -340,16 +434,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   y += 7;
 
   // Header row
-  pdf.setFillColor(...darkBlue);
-  pdf.rect(margin, y, contentWidth, 9, 'F');
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...white);
-  pdf.text('Qte', colQty + 3, y + 6);
-  pdf.text('Designation', colDesc, y + 6);
-  pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
-  pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
-  y += 9;
+  drawTableHeader();
 
   let rowIndex = 0;
   let hasNettoyage = false;
@@ -363,19 +448,8 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
       const unitPrice = parseFloat(device.calibrationPrice) || 0;
       const lineTotal = qty * unitPrice;
       const isContract = device.isContractCovered;
-      
-      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
-      pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkBlue);
-      pdf.text(String(qty), colQty + 3, y + 5);
       const calDesc = `Etalonnage ${device.model || ''} (SN: ${device.serial || ''})${isContract ? ' [CONTRAT]' : ''}`;
-      pdf.text(calDesc.substring(0, 60), colDesc, y + 5);
-      pdf.text(isContract ? 'Contrat' : unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(isContract ? 'Contrat' : lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
-      y += rowH;
+      drawTableRow(qty, calDesc, isContract ? 'Contrat' : unitPrice.toFixed(2) + ' EUR', isContract ? 'Contrat' : lineTotal.toFixed(2) + ' EUR', rowIndex);
       rowIndex++;
     }
     
@@ -385,18 +459,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
       const qty = device.nettoyageQty || 1;
       const unitPrice = parseFloat(device.nettoyagePrice) || 0;
       const lineTotal = qty * unitPrice;
-      
-      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
-      pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkBlue);
-      pdf.text(String(qty), colQty + 3, y + 5);
-      pdf.text('Nettoyage cellule - si requis selon etat du capteur', colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
-      y += rowH;
+      drawTableRow(qty, 'Nettoyage cellule - si requis selon etat du capteur', unitPrice.toFixed(2) + ' EUR', lineTotal.toFixed(2) + ' EUR', rowIndex);
       rowIndex++;
     }
     
@@ -405,19 +468,8 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
       const qty = device.repairQty || 1;
       const unitPrice = parseFloat(device.repairPrice) || 0;
       const lineTotal = qty * unitPrice;
-      
-      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
-      pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkBlue);
-      pdf.text(String(qty), colQty + 3, y + 5);
       const repDesc = `Reparation ${device.model || ''} (SN: ${device.serial || ''})`;
-      pdf.text(repDesc.substring(0, 60), colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
-      y += rowH;
+      drawTableRow(qty, repDesc, unitPrice.toFixed(2) + ' EUR', lineTotal.toFixed(2) + ' EUR', rowIndex);
       rowIndex++;
     }
     
@@ -426,32 +478,21 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
       const qty = parseInt(part.quantity) || 1;
       const unitPrice = parseFloat(part.price) || 0;
       const lineTotal = qty * unitPrice;
-      
-      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
-      pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkBlue);
-      pdf.text(String(qty), colQty + 3, y + 5);
       const partDesc = part.partNumber ? `[${part.partNumber}] ${part.description || 'Piece'}` : (part.description || 'Piece/Service');
-      pdf.text(partDesc.substring(0, 55), colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
-      y += rowH;
+      drawTableRow(qty, partDesc, unitPrice.toFixed(2) + ' EUR', lineTotal.toFixed(2) + ' EUR', rowIndex);
       rowIndex++;
     });
   });
   
   // Check if fully contract covered (passed from options)
-  // Either explicitly passed as isFullyContractCovered, OR calculated from isContractRMA + all devices covered
   const isFullyContractCovered = options.isFullyContractCovered || 
     (options.isContractRMA && devicePricing.length > 0 && devicePricing.every(d => d.isContractCovered));
   
   console.log('PDF Gen - isContractRMA:', options.isContractRMA, 'isFullyContractCovered:', isFullyContractCovered);
   console.log('PDF Gen - devicePricing coverage:', devicePricing.map(d => ({ model: d.model, isContractCovered: d.isContractCovered })));
   
-  // Shipping row
+  // Shipping row - keep with total (check for both shipping + total row together)
+  checkTablePageBreak(rowH + 11 + 4); // shipping row + total row + padding
   pdf.setFillColor(245, 245, 245);
   pdf.rect(margin, y, contentWidth, rowH, 'F');
   pdf.setFontSize(9);
@@ -461,7 +502,6 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   const shipDesc = shippingInfo.parcels > 1 ? `Frais de port (${shippingInfo.parcels} colis)` : 'Frais de port';
   pdf.text(shipDesc, colDesc, y + 5);
   
-  // Show "Contrat" for both unit price and total when fully contract covered
   const shippingUnitDisplay = isFullyContractCovered ? 'Contrat' : (shippingInfo.unitPrice || 45).toFixed(2) + ' EUR';
   pdf.text(shippingUnitDisplay, colUnit, y + 5, { align: 'right' });
   pdf.setFont('helvetica', 'bold');
@@ -485,6 +525,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   
   // Nettoyage disclaimer
   if (hasNettoyage) {
+    checkPageBreak(8);
     pdf.setFontSize(7);
     pdf.setFont('helvetica', 'italic');
     pdf.setTextColor(...lightGray);
@@ -493,8 +534,9 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   }
 
   // ===== CONDITIONS/DISCLAIMERS (after pricing) =====
+  const disclaimerBlockH = 8 + DISCLAIMERS.length * 4;
   y += 3;
-  checkPageBreak(25);
+  checkPageBreak(disclaimerBlockH);
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...lightGray);
@@ -504,13 +546,32 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
   DISCLAIMERS.forEach(d => {
-    pdf.text('- ' + d, margin, y);
-    y += 4;
+    checkPageBreak(5);
+    const wrapped = pdf.splitTextToSize('- ' + d, contentWidth);
+    wrapped.forEach(line => {
+      checkPageBreak(4);
+      pdf.text(line, margin, y);
+      y += 4;
+    });
   });
   y += 3;
 
-  // ===== SIGNATURE SECTION =====
-  const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
+  // ===== SIGNATURE SECTION - ALWAYS ON LAST PAGE =====
+  // Signature block needs ~45mm of vertical space
+  const signatureHeight = 45;
+  const signatoryName = qs.signatory_name || biz.quote_signatory || 'M. Meleney';
+  const signatoryCompany = qs.signatory_company || biz.company_name || 'Lighthouse France';
+
+  // Check if there's enough room on this page for the signature block
+  // If not, add a new page so signature is cleanly at the bottom of the last page
+  if (y + signatureHeight > getUsableHeight()) {
+    addFooter();
+    pdf.addPage();
+    y = margin;
+  }
+
+  // Position signature at the bottom of the current (last) page
+  const sigY = Math.max(y + 5, getUsableHeight() - signatureHeight);
   
   pdf.setDrawColor(200, 200, 200);
   pdf.setLineWidth(0.3);
@@ -522,11 +583,11 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text('M. Meleney', margin, sigY + 14);
+  pdf.text(signatoryName, margin, sigY + 14);
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text('Lighthouse France', margin, sigY + 20);
+  pdf.text(signatoryCompany, margin, sigY + 20);
 
   // Capcert logo
   if (capcertLogo) {
@@ -549,6 +610,18 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.text('Lu et approuve', sigBoxX + 18, sigY + 37);
 
   addFooter();
+  
+  // Add page numbers to all pages (Page X / Y) for multi-page quotes
+  const totalPages = pdf.internal.getNumberOfPages();
+  if (totalPages > 1) {
+    for (let i = 1; i <= totalPages; i++) {
+      pdf.setPage(i);
+      pdf.setFontSize(7);
+      pdf.setTextColor(180, 180, 180);
+      pdf.text(`Page ${i} / ${totalPages}`, pageWidth - margin, pageHeight - 2, { align: 'right' });
+    }
+  }
+  
   return pdf.output('blob');
 };
 
@@ -2687,7 +2760,9 @@ export default function AdminPortal() {
     bic: '',
     rib: '',
     payment_terms_days: 30,
-    invoice_legal_text: ''
+    invoice_legal_text: '',
+    quote_signatory: 'M. Meleney',
+    quote_settings: null
   });
 
   const notify = useCallback((msg, type = 'success') => {
@@ -19275,6 +19350,17 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
               
               {/* Bank / Invoice Info Section */}
               <div className="pt-4 mt-4 border-t border-dashed border-gray-300">
+                <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">✍️ Signataire des devis</h4>
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nom du signataire</label>
+                    <input type="text" value={tempSettings.quote_signatory || ''} onChange={e => setTempSettings({...tempSettings, quote_signatory: e.target.value})} placeholder="M. Meleney" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Bank / Invoice Info Section */}
+              <div className="pt-4 mt-4 border-t border-dashed border-gray-300">
                 <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">🏦 Coordonnées bancaires (factures)</h4>
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
@@ -19402,6 +19488,10 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
       </div>
       
       {/* Other admin cards */}
+      
+      {/* ===== QUOTE CONTENT SETTINGS ===== */}
+      <QuoteContentSettings businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} notify={notify} />
+
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer">
           <div className="text-3xl mb-3">💰</div>
@@ -19418,6 +19508,407 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
           <h3 className="font-bold text-gray-800">Système</h3>
           <p className="text-sm text-gray-500">Configuration avancée</p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// QUOTE CONTENT SETTINGS COMPONENT
+// Edit service descriptions, repair text, disclaimers, and signatory for PDF quotes
+// ============================================
+
+const QUOTE_DEFAULTS = {
+  calibration: {
+    particle_counter: {
+      title: "Etalonnage Compteur de Particules Aeroportees",
+      prestations: [
+        "Verification des fonctionnalites du compteur",
+        "Verification et reglage du debit",
+        "Verification de la cellule de mesure",
+        "Controle et reglage des seuils de mesures granulometrique a l'aide de spheres de latex calibrees et certifiees",
+        "Verification en nombre par comparaison a un etalon etalonne selon la norme ISO 17025, conformement a la norme ISO 21501-4",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    bio_collector: {
+      title: "Etalonnage Bio Collecteur",
+      prestations: [
+        "Verification des fonctionnalites de l'appareil",
+        "Verification et reglage du debit",
+        "Verification de la cellule d'impaction",
+        "Controle des parametres de collecte",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    liquid_counter: {
+      title: "Etalonnage Compteur de Particules en Milieu Liquide",
+      prestations: [
+        "Verification des fonctionnalites du compteur",
+        "Verification et reglage du debit",
+        "Verification de la cellule de mesure optique",
+        "Controle et reglage des seuils de mesures granulometrique",
+        "Verification en nombre par comparaison a un etalon",
+        "Fourniture d'un rapport de test et de calibration"
+      ]
+    },
+    temp_humidity: {
+      title: "Etalonnage Capteur Temperature/Humidite",
+      prestations: [
+        "Verification des fonctionnalites du capteur",
+        "Etalonnage temperature sur points de reference certifies",
+        "Etalonnage humidite relative",
+        "Verification de la stabilite des mesures",
+        "Fourniture d'un certificat d'etalonnage"
+      ]
+    },
+    other: {
+      title: "Etalonnage Equipement",
+      prestations: [
+        "Verification des fonctionnalites de l'appareil",
+        "Etalonnage selon les specifications du fabricant",
+        "Tests de fonctionnement",
+        "Fourniture d'un rapport de test"
+      ]
+    }
+  },
+  repair: {
+    title: "Reparation",
+    prestations: [
+      "Diagnostic complet de l'appareil",
+      "Identification des composants defectueux",
+      "Remplacement des pieces defectueuses (pieces facturees en sus)",
+      "Tests de fonctionnement complets",
+      "Verification d'etalonnage post-reparation si applicable"
+    ]
+  },
+  disclaimers: [
+    "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables.",
+    "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses et necessitent un remplacement.",
+    "Les mesures stockees dans les appareils seront eventuellement perdues lors des operations de maintenance.",
+    "Les equipements envoyes devront etre decontamines de toutes substances chimiques, bacteriennes ou radioactives."
+  ],
+  signatory_name: "M. Meleney",
+  signatory_company: "Lighthouse France"
+};
+
+const CAL_TYPE_LABELS = {
+  particle_counter: { icon: '🔬', label: 'Compteur de Particules Aéroportées' },
+  bio_collector: { icon: '🧫', label: 'Bio Collecteur' },
+  liquid_counter: { icon: '💧', label: 'Compteur Particules Liquide' },
+  temp_humidity: { icon: '🌡️', label: 'Capteur Temp/Humidité' },
+  other: { icon: '⚙️', label: 'Autre Équipement' }
+};
+
+function QuoteContentSettings({ businessSettings, setBusinessSettings, notify }) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [expandedSection, setExpandedSection] = useState(null);
+  
+  // Initialize working copy from saved settings or defaults
+  const getWorkingCopy = () => {
+    const saved = businessSettings.quote_settings;
+    if (saved && typeof saved === 'object') {
+      // Deep merge with defaults to ensure no missing keys
+      return {
+        calibration: { ...QUOTE_DEFAULTS.calibration, ...(saved.calibration || {}) },
+        repair: saved.repair || QUOTE_DEFAULTS.repair,
+        disclaimers: saved.disclaimers || QUOTE_DEFAULTS.disclaimers,
+        signatory_name: saved.signatory_name || QUOTE_DEFAULTS.signatory_name,
+        signatory_company: saved.signatory_company || QUOTE_DEFAULTS.signatory_company
+      };
+    }
+    return JSON.parse(JSON.stringify(QUOTE_DEFAULTS));
+  };
+  
+  const [draft, setDraft] = useState(getWorkingCopy);
+
+  const toggleSection = (key) => {
+    setExpandedSection(expandedSection === key ? null : key);
+  };
+
+  // Update a prestation line for a calibration type
+  const updateCalPrestation = (calType, idx, value) => {
+    const updated = { ...draft };
+    const prestations = [...(updated.calibration[calType]?.prestations || [])];
+    prestations[idx] = value;
+    updated.calibration = { ...updated.calibration, [calType]: { ...updated.calibration[calType], prestations } };
+    setDraft(updated);
+  };
+
+  const addCalPrestation = (calType) => {
+    const updated = { ...draft };
+    const prestations = [...(updated.calibration[calType]?.prestations || []), ''];
+    updated.calibration = { ...updated.calibration, [calType]: { ...updated.calibration[calType], prestations } };
+    setDraft(updated);
+  };
+
+  const removeCalPrestation = (calType, idx) => {
+    const updated = { ...draft };
+    const prestations = (updated.calibration[calType]?.prestations || []).filter((_, i) => i !== idx);
+    updated.calibration = { ...updated.calibration, [calType]: { ...updated.calibration[calType], prestations } };
+    setDraft(updated);
+  };
+
+  const updateCalTitle = (calType, value) => {
+    const updated = { ...draft };
+    updated.calibration = { ...updated.calibration, [calType]: { ...updated.calibration[calType], title: value } };
+    setDraft(updated);
+  };
+
+  // Repair prestations
+  const updateRepairPrestation = (idx, value) => {
+    const updated = { ...draft };
+    const prestations = [...updated.repair.prestations];
+    prestations[idx] = value;
+    updated.repair = { ...updated.repair, prestations };
+    setDraft(updated);
+  };
+
+  const addRepairPrestation = () => {
+    const updated = { ...draft };
+    updated.repair = { ...updated.repair, prestations: [...updated.repair.prestations, ''] };
+    setDraft(updated);
+  };
+
+  const removeRepairPrestation = (idx) => {
+    const updated = { ...draft };
+    updated.repair = { ...updated.repair, prestations: updated.repair.prestations.filter((_, i) => i !== idx) };
+    setDraft(updated);
+  };
+
+  // Disclaimers
+  const updateDisclaimer = (idx, value) => {
+    const updated = { ...draft };
+    const disclaimers = [...updated.disclaimers];
+    disclaimers[idx] = value;
+    updated.disclaimers = disclaimers;
+    setDraft(updated);
+  };
+
+  const addDisclaimer = () => {
+    setDraft({ ...draft, disclaimers: [...draft.disclaimers, ''] });
+  };
+
+  const removeDisclaimer = (idx) => {
+    setDraft({ ...draft, disclaimers: draft.disclaimers.filter((_, i) => i !== idx) });
+  };
+
+  const resetToDefaults = () => {
+    if (window.confirm('Remettre tous les textes par défaut ? Les modifications non sauvegardées seront perdues.')) {
+      setDraft(JSON.parse(JSON.stringify(QUOTE_DEFAULTS)));
+    }
+  };
+
+  const saveQuoteSettings = async () => {
+    setSaving(true);
+    try {
+      // Filter out empty prestations
+      const cleaned = JSON.parse(JSON.stringify(draft));
+      for (const key of Object.keys(cleaned.calibration)) {
+        cleaned.calibration[key].prestations = cleaned.calibration[key].prestations.filter(p => p.trim());
+      }
+      cleaned.repair.prestations = cleaned.repair.prestations.filter(p => p.trim());
+      cleaned.disclaimers = cleaned.disclaimers.filter(d => d.trim());
+
+      const updatedSettings = { ...businessSettings, quote_settings: cleaned, quote_signatory: cleaned.signatory_name };
+      
+      const { error } = await supabase
+        .from('business_settings')
+        .upsert({ id: 1, ...updatedSettings, updated_at: new Date().toISOString() });
+      
+      if (error) throw error;
+      
+      setBusinessSettings(updatedSettings);
+      setEditing(false);
+      notify('✅ Contenu des devis enregistré!');
+    } catch (err) {
+      console.error('Quote settings save error:', err);
+      notify('Erreur: ' + (err.message || 'Erreur'), 'error');
+    }
+    setSaving(false);
+  };
+
+  // Render a prestations editor for a section
+  const renderPrestationsEditor = (prestations, onUpdate, onAdd, onRemove) => (
+    <div className="space-y-2">
+      {prestations.map((p, idx) => (
+        <div key={idx} className="flex gap-2 items-start">
+          <span className="text-gray-400 text-xs mt-2.5 w-4 shrink-0">{idx + 1}.</span>
+          <input
+            type="text"
+            value={p}
+            onChange={(e) => onUpdate(idx, e.target.value)}
+            className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            placeholder="Texte de la prestation..."
+          />
+          <button onClick={() => onRemove(idx)} className="text-red-400 hover:text-red-600 text-lg shrink-0 mt-0.5" title="Supprimer">×</button>
+        </div>
+      ))}
+      <button onClick={onAdd} className="text-sm text-green-600 hover:text-green-700 font-medium flex items-center gap-1">
+        <span>+</span> Ajouter une ligne
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div className="px-6 py-4 border-b bg-gradient-to-r from-green-600 to-emerald-600 flex justify-between items-center">
+        <div>
+          <h2 className="text-lg font-bold text-white">📝 Contenu des devis</h2>
+          <p className="text-green-100 text-sm">Textes des prestations, conditions et signataire sur les PDF de devis</p>
+        </div>
+        {!editing && (
+          <button onClick={() => { setDraft(getWorkingCopy()); setEditing(true); }} className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg font-medium">
+            ✏️ Modifier
+          </button>
+        )}
+      </div>
+
+      <div className="p-6">
+        {editing ? (
+          <div className="space-y-4">
+            {/* Signatory */}
+            <div className="grid md:grid-cols-2 gap-4 pb-4 border-b border-gray-200">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nom du signataire (sur le devis PDF)</label>
+                <input type="text" value={draft.signatory_name} onChange={e => setDraft({ ...draft, signatory_name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="M. Meleney" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Entreprise du signataire</label>
+                <input type="text" value={draft.signatory_company} onChange={e => setDraft({ ...draft, signatory_company: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Lighthouse France" />
+              </div>
+            </div>
+
+            {/* Calibration Sections */}
+            <div>
+              <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">🔬 Prestations d'étalonnage (par type d'appareil)</h3>
+              <div className="space-y-2">
+                {Object.entries(CAL_TYPE_LABELS).map(([key, { icon, label }]) => (
+                  <div key={key} className="border border-gray-200 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => toggleSection('cal_' + key)}
+                      className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 text-left"
+                    >
+                      <span className="font-medium text-sm">{icon} {label}</span>
+                      <span className="text-gray-400 text-lg">{expandedSection === 'cal_' + key ? '▾' : '▸'}</span>
+                    </button>
+                    {expandedSection === 'cal_' + key && (
+                      <div className="p-4 space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Titre de la section</label>
+                          <input
+                            type="text"
+                            value={draft.calibration[key]?.title || ''}
+                            onChange={(e) => updateCalTitle(key, e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Lignes de prestation</label>
+                          {renderPrestationsEditor(
+                            draft.calibration[key]?.prestations || [],
+                            (idx, val) => updateCalPrestation(key, idx, val),
+                            () => addCalPrestation(key),
+                            (idx) => removeCalPrestation(key, idx)
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Repair Section */}
+            <div className="border border-orange-200 rounded-lg overflow-hidden">
+              <button
+                onClick={() => toggleSection('repair')}
+                className="w-full flex items-center justify-between px-4 py-3 bg-orange-50 hover:bg-orange-100 text-left"
+              >
+                <span className="font-medium text-sm">🔧 Prestations de réparation</span>
+                <span className="text-gray-400 text-lg">{expandedSection === 'repair' ? '▾' : '▸'}</span>
+              </button>
+              {expandedSection === 'repair' && (
+                <div className="p-4 space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Titre de la section</label>
+                    <input
+                      type="text"
+                      value={draft.repair.title}
+                      onChange={(e) => setDraft({ ...draft, repair: { ...draft.repair, title: e.target.value } })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Lignes de prestation</label>
+                    {renderPrestationsEditor(draft.repair.prestations, updateRepairPrestation, addRepairPrestation, removeRepairPrestation)}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Disclaimers */}
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <button
+                onClick={() => toggleSection('disclaimers')}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 text-left"
+              >
+                <span className="font-medium text-sm">⚠️ Conditions / Disclaimers</span>
+                <span className="text-gray-400 text-lg">{expandedSection === 'disclaimers' ? '▾' : '▸'}</span>
+              </button>
+              {expandedSection === 'disclaimers' && (
+                <div className="p-4">
+                  <label className="block text-xs font-medium text-gray-500 mb-2">Lignes de conditions (affichées en bas du devis)</label>
+                  {renderPrestationsEditor(draft.disclaimers, updateDisclaimer, addDisclaimer, removeDisclaimer)}
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-between items-center pt-4 border-t">
+              <button onClick={resetToDefaults} className="text-sm text-gray-500 hover:text-red-500 flex items-center gap-1">
+                🔄 Remettre par défaut
+              </button>
+              <div className="flex gap-3">
+                <button onClick={() => setEditing(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Annuler</button>
+                <button onClick={saveQuoteSettings} disabled={saving} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">
+                  {saving ? '⏳ Enregistrement...' : '✅ Enregistrer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Read-only summary */}
+            <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-2 text-gray-600">
+                <span className="font-medium">Signataire:</span>
+                <span>{businessSettings.quote_settings?.signatory_name || businessSettings.quote_signatory || 'M. Meleney'}</span>
+              </div>
+            </div>
+            
+            <div className="grid md:grid-cols-2 gap-3">
+              {Object.entries(CAL_TYPE_LABELS).map(([key, { icon, label }]) => {
+                const data = businessSettings.quote_settings?.calibration?.[key] || QUOTE_DEFAULTS.calibration[key];
+                return (
+                  <div key={key} className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-xs font-medium text-gray-500 mb-1">{icon} {label}</p>
+                    <p className="text-xs text-gray-600">{data?.prestations?.length || 0} lignes de prestation</p>
+                  </div>
+                );
+              })}
+              <div className="bg-orange-50 rounded-lg p-3">
+                <p className="text-xs font-medium text-orange-600 mb-1">🔧 Réparation</p>
+                <p className="text-xs text-gray-600">{(businessSettings.quote_settings?.repair?.prestations || QUOTE_DEFAULTS.repair.prestations).length} lignes</p>
+              </div>
+              <div className="bg-yellow-50 rounded-lg p-3">
+                <p className="text-xs font-medium text-yellow-700 mb-1">⚠️ Conditions</p>
+                <p className="text-xs text-gray-600">{(businessSettings.quote_settings?.disclaimers || QUOTE_DEFAULTS.disclaimers).length} lignes</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -20434,7 +20925,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           grandTotal: grandTotal,
           isContractRMA: hasContractCoveredDevices,
           isFullyContractCovered: isFullyContractCovered,
-          quoteNumber: quoteNumber
+          quoteNumber: quoteNumber,
+          businessSettings: businessSettings,
+          quoteSettings: businessSettings.quote_settings
         });
         const fileName = `${rmaNumber}_devis_${Date.now()}.pdf`;
         quoteUrl = await uploadPDFToStorage(pdfBlob, `quotes/${rmaNumber}`, fileName);
