@@ -6823,11 +6823,11 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
         <div className="bg-white shadow-2xl w-full max-w-3xl relative" style={{ fontFamily: 'Arial, sans-serif', padding: '40px 50px', minHeight: '297mm', display: 'flex', flexDirection: 'column' }}>
           
           {/* Logo Header - Using actual logo image */}
-          <div className="mb-10">
+          <div className="mb-6">
             <img 
               src="/images/logos/Lighthouse-color-logo.jpg" 
               alt="Lighthouse Worldwide Solutions" 
-              className="h-24 w-auto"
+              className="h-20 w-auto"
               onError={(e) => {
                 e.target.style.display = 'none';
                 e.target.nextSibling.style.display = 'flex';
@@ -14846,8 +14846,8 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
             <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', flex: 1 }}>
             
             {/* Logo */}
-            <div className="mb-8">
-              <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-24 w-auto" onError={(e) => { e.target.style.display = 'none'; }} />
+            <div className="mb-4">
+              <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-20 w-auto" onError={(e) => { e.target.style.display = 'none'; }} />
               </div>
 
               {/* Info Table */}
