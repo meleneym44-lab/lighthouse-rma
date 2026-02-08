@@ -2975,7 +2975,7 @@ export default function AdminPortal() {
               setFilter={setDashboardFilter} 
             />}
             {activeSheet === 'kpi' && <KPISheet requests={requests} clients={clients} />}
-            {activeSheet === 'requests' && <RequestsSheet requests={requests.filter(r => r.request_type !== 'parts')} notify={notify} reload={loadData} profile={profile} />}
+            {activeSheet === 'requests' && <RequestsSheet requests={requests.filter(r => r.request_type !== 'parts')} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} />}
             {activeSheet === 'parts' && <PartsOrdersSheet requests={partsOrders} notify={notify} reload={loadData} profile={profile} />}
             {activeSheet === 'clients' && <ClientsSheet 
               clients={clients} 
@@ -7678,7 +7678,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
   );
 }
 
-function RequestsSheet({ requests, notify, reload, profile }) {
+function RequestsSheet({ requests, notify, reload, profile, businessSettings }) {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [quoteRequest, setQuoteRequest] = useState(null);
   const [filter, setFilter] = useState('pending');
@@ -7781,7 +7781,7 @@ function RequestsSheet({ requests, notify, reload, profile }) {
         </table>
       </div>
       {selectedRequest && <RequestDetailModal request={selectedRequest} onClose={() => setSelectedRequest(null)} onCreateQuote={() => { setSelectedRequest(null); setQuoteRequest(selectedRequest); }} />}
-      {quoteRequest && <QuoteEditorModal request={quoteRequest} onClose={() => setQuoteRequest(null)} notify={notify} reload={reload} profile={profile} />}
+      {quoteRequest && <QuoteEditorModal request={quoteRequest} onClose={() => setQuoteRequest(null)} notify={notify} reload={reload} profile={profile} businessSettings={businessSettings} />}
     </div>
   );
 }
@@ -20329,7 +20329,7 @@ const isFranceMetropolitan = (postalCode) => {
 // ============================================
 // QUOTE EDITOR MODAL
 // ============================================
-function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
+function QuoteEditorModal({ request, onClose, notify, reload, profile, businessSettings }) {
   const [step, setStep] = useState(1); // 1=Edit Pricing, 2=Preview, 3=Confirm
   const [devicePricing, setDevicePricing] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -20926,8 +20926,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
           isContractRMA: hasContractCoveredDevices,
           isFullyContractCovered: isFullyContractCovered,
           quoteNumber: quoteNumber,
-          businessSettings: businessSettings,
-          quoteSettings: businessSettings.quote_settings
+          businessSettings: businessSettings || {},
+          quoteSettings: businessSettings?.quote_settings || null
         });
         const fileName = `${rmaNumber}_devis_${Date.now()}.pdf`;
         quoteUrl = await uploadPDFToStorage(pdfBlob, `quotes/${rmaNumber}`, fileName);
