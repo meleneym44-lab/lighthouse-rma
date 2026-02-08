@@ -46,7 +46,7 @@ const loadImageAsBase64 = async (url) => {
 const PDF_COLORS = {
   green: [0, 166, 81],
   darkBlue: [26, 26, 46],
-  navy: [30, 58, 95],
+  navy: [45, 90, 123],
   gray: [80, 80, 80],
   lightGray: [130, 130, 130],
   white: [255, 255, 255]
@@ -101,7 +101,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 75, 19);
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 85, 22);
     } catch (e) {
       pdf.setFontSize(26);
       pdf.setFont('helvetica', 'bold');
@@ -591,7 +591,7 @@ const generatePartsQuotePDF = async (order, quoteData) => {
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y, 70, 18);
+      pdf.addImage(lighthouseLogo, format, margin, y, 80, 20);
     } catch (e) {
       pdf.setFontSize(16);
       pdf.setFont('helvetica', 'bold');
@@ -1143,7 +1143,7 @@ const generateServiceReportPDF = async (device, rma, technicianName, calType, re
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 75, 19);
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 85, 22);
     } catch (e) {
       pdf.setFontSize(26);
       pdf.setFont('helvetica', 'bold');
@@ -1366,7 +1366,7 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
     logoImg.crossOrigin = 'anonymous';
     logoImg.src = '/images/logos/Lighthouse-color-logo.jpg';
     await new Promise((res, rej) => { logoImg.onload = res; logoImg.onerror = rej; setTimeout(rej, 2000); });
-    pdf.addImage(logoImg, 'JPEG', 10, 8, 85, 19);
+    pdf.addImage(logoImg, 'JPEG', 10, 8, 95, 21);
   } catch(e) {
     pdf.setFontSize(18);
     pdf.setFont('helvetica', 'bold');
@@ -1754,7 +1754,7 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings,
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 75, 19);
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 85, 22);
     } catch (e) {
       pdf.setFontSize(26);
       pdf.setFont('helvetica', 'bold');
@@ -2005,7 +2005,7 @@ const generatePartsBLPDF = async (order, parts, shipment, blNumber, businessSett
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 75, 19);
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 85, 22);
     } catch (e) {
       pdf.setFontSize(26);
       pdf.setFont('helvetica', 'bold');
@@ -5313,7 +5313,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
               <div 
                 className={`
                   relative flex items-center justify-center flex-1 py-1.5 px-1 text-xs font-medium
-                  ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#1E3A5F] text-white' : 'bg-gray-200 text-gray-500'}
+                  ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
                   ${index === 0 ? 'rounded-l-md' : ''}
                   ${isLast ? 'rounded-r-md' : ''}
                 `}
@@ -5958,7 +5958,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 <div className="mt-4 pt-4 border-t border-gray-200">
                   <button 
                     onClick={() => setShowDocUploadModal(true)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-[#1E3A5F] text-white rounded-lg hover:bg-[#2a4f7f] transition-colors font-medium text-sm"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-[#2D5A7B] text-white rounded-lg hover:bg-[#2a4f7f] transition-colors font-medium text-sm"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -5992,7 +5992,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     <div className="bg-white rounded-xl max-w-md w-full">
                       <div className="p-6 border-b border-gray-200">
                         <div className="flex justify-between items-center">
-                          <h2 className="text-lg font-bold text-[#1E3A5F]">📄 Ajouter un document</h2>
+                          <h2 className="text-lg font-bold text-[#2D5A7B]">📄 Ajouter un document</h2>
                           <button onClick={() => { setShowDocUploadModal(false); setDocUploadFile(null); setDocUploadName(''); }} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
                         </div>
                       </div>
@@ -6071,7 +6071,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                         <button 
                           onClick={handleDocUpload}
                           disabled={!docUploadFile || docUploading}
-                          className="flex-1 px-4 py-2 bg-[#1E3A5F] text-white rounded-lg hover:bg-[#2a4f7f] font-medium disabled:opacity-50"
+                          className="flex-1 px-4 py-2 bg-[#2D5A7B] text-white rounded-lg hover:bg-[#2a4f7f] font-medium disabled:opacity-50"
                         >
                           {docUploading ? '⏳ Envoi...' : '📤 Ajouter'}
                         </button>
@@ -6827,7 +6827,7 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
             <img 
               src="/images/logos/Lighthouse-color-logo.jpg" 
               alt="Lighthouse Worldwide Solutions" 
-              className="h-20 w-auto"
+              className="h-24 w-auto"
               onError={(e) => {
                 e.target.style.display = 'none';
                 e.target.nextSibling.style.display = 'flex';
@@ -7030,7 +7030,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 75, 19);
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 85, 22);
     } catch (e) {
       pdf.setFontSize(26);
       pdf.setFont('helvetica', 'bold');
@@ -7406,13 +7406,13 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
         {/* Quote Document - Like RMA Quote PDF */}
         <div id="avenant-preview-content">
           {/* Quote Header */}
-          <div className="px-8 pt-8 pb-4 border-b-4 border-[#1E3A5F]">
+          <div className="px-8 pt-8 pb-4 border-b-4 border-[#2D5A7B]">
             <div className="flex justify-between items-start">
               <div>
                 <img 
                   src="/images/logos/Lighthouse-color-logo.jpg" 
                   alt="Lighthouse France" 
-                  className="h-20 w-auto mb-1"
+                  className="h-24 w-auto mb-1"
                   onError={(e) => {
                     e.target.style.display = 'none';
                     e.target.nextSibling.style.display = 'block';
@@ -7424,8 +7424,8 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-2xl font-bold text-[#1E3A5F]">SUPPLÉMENT AU DEVIS</p>
-                <p className="text-sm font-bold text-[#1E3A5F]">N° {rma.supplement_number || '(Généré à l\'envoi)'}</p>
+                <p className="text-2xl font-bold text-[#2D5A7B]">SUPPLÉMENT AU DEVIS</p>
+                <p className="text-sm font-bold text-[#2D5A7B]">N° {rma.supplement_number || '(Généré à l\'envoi)'}</p>
                 <p className="text-xs text-gray-500">RMA: {rma.request_number}</p>
               </div>
             </div>
@@ -7477,7 +7477,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                       <h3 className="font-bold text-lg text-[#1a1a2e]">{device.model_name}</h3>
                       <p className="text-gray-500 text-sm">N° de série: {device.serial_number}</p>
                     </div>
-                    <span className="text-xl font-bold text-[#1E3A5F]">€{deviceTotal.toFixed(2)}</span>
+                    <span className="text-xl font-bold text-[#2D5A7B]">€{deviceTotal.toFixed(2)}</span>
                   </div>
                   
                   {device.service_findings && (
@@ -7529,7 +7529,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           )}
 
           {/* Total Section */}
-          <div className="px-8 py-4 bg-[#1E3A5F]">
+          <div className="px-8 py-4 bg-[#2D5A7B]">
             <div className="flex justify-between items-center text-white">
               <span className="text-lg font-bold">TOTAL SUPPLÉMENT HT</span>
               <span className="text-3xl font-bold">€{totalAvenant.toFixed(2)}</span>
@@ -8308,7 +8308,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
                       <h3 className="font-bold text-gray-800">📄 Documents</h3>
                       <button
                         onClick={() => setShowDocUploadModal(true)}
-                        className="px-4 py-2 bg-[#1E3A5F] hover:bg-[#2a5490] text-white rounded-lg text-sm font-medium flex items-center gap-2"
+                        className="px-4 py-2 bg-[#2D5A7B] hover:bg-[#2a5490] text-white rounded-lg text-sm font-medium flex items-center gap-2"
                       >
                         ➕ Ajouter
                       </button>
@@ -8464,7 +8464,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
                         <div className="bg-white rounded-xl max-w-md w-full">
                           <div className="p-6 border-b border-gray-200">
                             <div className="flex justify-between items-center">
-                              <h2 className="text-lg font-bold text-[#1E3A5F]">📄 Ajouter un document</h2>
+                              <h2 className="text-lg font-bold text-[#2D5A7B]">📄 Ajouter un document</h2>
                               <button onClick={() => { setShowDocUploadModal(false); setDocUploadFile(null); setDocUploadName(''); }} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
                             </div>
                           </div>
@@ -8532,7 +8532,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
                             <button 
                               onClick={handleDocUpload}
                               disabled={!docUploadFile || docUploading}
-                              className="flex-1 px-4 py-2 bg-[#1E3A5F] hover:bg-[#2a5490] text-white rounded-lg font-medium disabled:opacity-50"
+                              className="flex-1 px-4 py-2 bg-[#2D5A7B] hover:bg-[#2a5490] text-white rounded-lg font-medium disabled:opacity-50"
                             >
                               {docUploading ? '⏳ Envoi...' : '📤 Envoyer'}
                             </button>
@@ -8578,7 +8578,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
           <div className="space-y-6">
             {/* Client Info Card */}
             <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-              <div className="bg-gradient-to-r from-[#1E3A5F] to-[#2d4a6f] px-4 py-3">
+              <div className="bg-gradient-to-r from-[#2D5A7B] to-[#2d4a6f] px-4 py-3">
                 <h3 className="font-bold text-white">🏢 Client</h3>
               </div>
               <div className="p-4 space-y-3">
@@ -10344,7 +10344,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                   <span>Frais de port:</span>
                   <span className="font-medium">{shippingData.total.toFixed(2)} €</span>
                 </div>
-                <div className="flex justify-between text-xl font-bold text-[#1E3A5F] mt-2 pt-2 border-t border-gray-300">
+                <div className="flex justify-between text-xl font-bold text-[#2D5A7B] mt-2 pt-2 border-t border-gray-300">
                   <span>TOTAL HT:</span>
                   <span>{grandTotal.toFixed(2)} €</span>
                 </div>
@@ -10357,13 +10357,13 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
             <div className="bg-gray-200 p-6 rounded-lg">
               <div className="bg-white shadow-lg mx-auto flex flex-col" style={{ width: '210mm', minHeight: '297mm' }}>
                 {/* PDF Preview Header */}
-                <div className="border-b-4 border-[#1E3A5F] p-6">
+                <div className="border-b-4 border-[#2D5A7B] p-6">
                   <div className="flex justify-between items-start">
                     <div>
                       <img 
                         src="/images/logos/Lighthouse-color-logo.jpg" 
                         alt="Lighthouse France" 
-                        className="h-20 w-auto"
+                        className="h-24 w-auto"
                         onError={(e) => {
                           e.target.style.display = 'none';
                           e.target.nextSibling.style.display = 'block';
@@ -10375,8 +10375,8 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-bold text-[#1E3A5F]">DEVIS PIÈCES</p>
-                      <p className="text-sm font-bold text-[#1E3A5F]">N° {order.quote_number || quoteRef}</p>
+                      <p className="text-xl font-bold text-[#2D5A7B]">DEVIS PIÈCES</p>
+                      <p className="text-sm font-bold text-[#2D5A7B]">N° {order.quote_number || quoteRef}</p>
                       <p className="text-xs text-gray-500">Réf: {order.request_number}</p>
                     </div>
                   </div>
@@ -10434,7 +10434,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                           <td className="px-3 py-2 text-right font-medium">{shippingData.total.toFixed(2)} €</td>
                         </tr>
                       )}
-                      <tr className="bg-[#1E3A5F] text-white">
+                      <tr className="bg-[#2D5A7B] text-white">
                         <td colSpan={4} className="px-3 py-2 text-right font-bold">TOTAL HT</td>
                         <td className="px-3 py-2 text-right font-bold">{grandTotal.toFixed(2)} €</td>
                       </tr>
@@ -10475,7 +10475,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
               <p className="text-gray-600 mb-6">
                 Le devis sera envoyé au client {order.companies?.name}.
                 <br />
-                Montant total: <strong className="text-[#1E3A5F]">{grandTotal.toFixed(2)} € HT</strong>
+                Montant total: <strong className="text-[#2D5A7B]">{grandTotal.toFixed(2)} € HT</strong>
               </p>
               <div className="bg-gray-50 rounded-lg p-4 max-w-md mx-auto text-left">
                 <p className="text-sm text-gray-600"><strong>Référence:</strong> {quoteRef}</p>
@@ -10798,8 +10798,8 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
     .header { margin-bottom: 15px; padding-bottom: 12px; border-bottom: 2px solid #333; display: flex; justify-content: space-between; align-items: flex-start; }
     .header img { height: 50px; }
     .header-right { text-align: right; }
-    .doc-title { font-size: 18pt; font-weight: bold; color: #1E3A5F; margin: 0; }
-    .doc-number { font-size: 12pt; font-weight: bold; color: #1E3A5F; margin-top: 4px; }
+    .doc-title { font-size: 18pt; font-weight: bold; color: #2D5A7B; margin: 0; }
+    .doc-number { font-size: 12pt; font-weight: bold; color: #2D5A7B; margin-top: 4px; }
     .doc-ref { font-size: 9pt; color: #666; margin-top: 2px; }
     .info-row { display: flex; justify-content: space-between; margin: 12px 0; }
     .client-box { background: rgba(248,249,250,0.85); border: 1px solid #ddd; padding: 15px; margin: 12px 0; }
@@ -11310,8 +11310,8 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                       <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#1E3A5F' }}>BON DE LIVRAISON</div>
-                          <div data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#1E3A5F', marginTop: '4px' }}>N° {bl.blNumber}</div>
+                          <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#2D5A7B' }}>BON DE LIVRAISON</div>
+                          <div data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#2D5A7B', marginTop: '4px' }}>N° {bl.blNumber}</div>
                           <div style={{ fontSize: '9pt', color: '#666', marginTop: '4px' }}>Réf: {bl.orderNumber}</div>
                         </div>
                       </div>
@@ -11335,7 +11335,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                         {/* Références box */}
                         <div style={{ flex: '1', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
                           <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Références Commande</div>
-                          <div style={{ fontSize: '11pt', fontWeight: 'bold', color: '#1E3A5F' }}>{bl.orderNumber}</div>
+                          <div style={{ fontSize: '11pt', fontWeight: 'bold', color: '#2D5A7B' }}>{bl.orderNumber}</div>
                         </div>
                       </div>
 
@@ -11886,9 +11886,9 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                     <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">WORLDWIDE SOLUTIONS</div></div>'; }} />
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#1E3A5F' }}>BON DE LIVRAISON</div>
+                        <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#2D5A7B' }}>BON DE LIVRAISON</div>
                         <div style={{ fontSize: '10pt', color: '#888', fontStyle: 'italic' }}>Internal Transfer — {destination === 'hollande' ? 'Hollande' : 'USA'}</div>
-                        <div data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#1E3A5F', marginTop: '4px' }}>N° {destination === 'hollande' ? 'Hollande' : 'USA'} BL-XXXX-XXX</div>
+                        <div data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#2D5A7B', marginTop: '4px' }}>N° {destination === 'hollande' ? 'Hollande' : 'USA'} BL-XXXX-XXX</div>
                         <div style={{ fontSize: '9pt', color: '#666', marginTop: '2px' }}>RMA: {rma.request_number}</div>
                       </div>
                     </div>
@@ -12544,8 +12544,8 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     .header { margin-bottom: 15px; padding-bottom: 12px; border-bottom: 2px solid #333; display: flex; justify-content: space-between; align-items: flex-start; }
     .header img { height: 50px; }
     .header-right { text-align: right; }
-    .doc-title { font-size: 18pt; font-weight: bold; color: #1E3A5F; margin: 0; }
-    .doc-number { font-size: 12pt; font-weight: bold; color: #1E3A5F; margin-top: 4px; }
+    .doc-title { font-size: 18pt; font-weight: bold; color: #2D5A7B; margin: 0; }
+    .doc-number { font-size: 12pt; font-weight: bold; color: #2D5A7B; margin-top: 4px; }
     .doc-ref { font-size: 9pt; color: #666; margin-top: 2px; }
     .info-row { display: flex; justify-content: space-between; margin: 12px 0; }
     .client-box { background: rgba(248,249,250,0.85); border: 1px solid #ddd; padding: 15px; margin: 12px 0; }
@@ -13262,8 +13262,8 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                       <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#1E3A5F' }}>BON DE LIVRAISON</div>
-                          <div data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#1E3A5F', marginTop: '4px' }}>N° {bl.blNumber}</div>
+                          <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#2D5A7B' }}>BON DE LIVRAISON</div>
+                          <div data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#2D5A7B', marginTop: '4px' }}>N° {bl.blNumber}</div>
                           <div style={{ fontSize: '9pt', color: '#666', marginTop: '2px' }}>RMA: {bl.rmaNumber}</div>
                         </div>
                       </div>
@@ -13289,7 +13289,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                           <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Références Commande</div>
                           {bl.bcNumbers && bl.bcNumbers.length > 0 ? (
                             bl.bcNumbers.map((bc, i) => (
-                              <div key={i} style={{ fontSize: '11pt', fontWeight: 'bold', color: '#1E3A5F' }}>{bc}</div>
+                              <div key={i} style={{ fontSize: '11pt', fontWeight: 'bold', color: '#2D5A7B' }}>{bc}</div>
                             ))
                           ) : (
                             <div style={{ fontSize: '11pt', color: '#999' }}>—</div>
@@ -14847,7 +14847,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
             
             {/* Logo */}
             <div className="mb-4">
-              <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-20 w-auto" onError={(e) => { e.target.style.display = 'none'; }} />
+              <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-24 w-auto" onError={(e) => { e.target.style.display = 'none'; }} />
               </div>
 
               {/* Info Table */}
@@ -15444,7 +15444,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain }) {
                 return (
                   <tr key={contract.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
-                      <span className="font-mono font-bold text-[#1E3A5F]">{contract.contract_number || '—'}</span>
+                      <span className="font-mono font-bold text-[#2D5A7B]">{contract.contract_number || '—'}</span>
                     </td>
                     <td className="px-6 py-4">
                       <div className="font-medium">{contract.companies?.name || contract.company_name_manual || 'N/A'}</div>
@@ -15464,7 +15464,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain }) {
                     <td className="px-6 py-4">
                       <button
                         onClick={() => setSelectedContract(contract)}
-                        className="px-3 py-1 bg-[#3B7AB4] text-white text-sm rounded hover:bg-[#1E3A5F]"
+                        className="px-3 py-1 bg-[#3B7AB4] text-white text-sm rounded hover:bg-[#2D5A7B]"
                       >
                         Voir
                       </button>
@@ -16233,7 +16233,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                   <img 
                     src="/images/logos/Lighthouse-color-logo.jpg" 
                     alt="Lighthouse" 
-                    className="h-20 w-auto"
+                    className="h-24 w-auto"
                     onError={(e) => {
                       e.target.style.display = 'none';
                       e.target.nextSibling.style.display = 'block';
@@ -16245,7 +16245,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 </div>
                 <div className="text-right">
                   <p className="text-lg font-bold text-[#00A651]">DEVIS CONTRAT</p>
-                  <p className="text-sm font-bold text-[#1E3A5F]">N° {contract.contract_number || '(Généré à l\'envoi)'}</p>
+                  <p className="text-sm font-bold text-[#2D5A7B]">N° {contract.contract_number || '(Généré à l\'envoi)'}</p>
                 </div>
               </div>
               {pageNum === 1 && (
@@ -16752,7 +16752,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
       <div className="bg-white rounded-xl shadow-sm p-6">
         <div className="flex justify-between items-start mb-4">
           <div>
-            <h1 className="text-2xl font-bold text-[#1E3A5F]">
+            <h1 className="text-2xl font-bold text-[#2D5A7B]">
               Contrat {contract.contract_number || '(En attente)'}
             </h1>
             <p className="text-gray-600">{contract.companies?.name}</p>
@@ -16823,7 +16823,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
         {/* Summary Stats */}
         <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
           <div className="text-center">
-            <div className="text-2xl font-bold text-[#1E3A5F]">{devices.length}</div>
+            <div className="text-2xl font-bold text-[#2D5A7B]">{devices.length}</div>
             <div className="text-sm text-gray-600">Appareils</div>
           </div>
           <div className="text-center">
@@ -16924,7 +16924,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
               <tr>
                 <td colSpan={5} className="px-4 py-3 text-right font-bold">Total:</td>
                 <td className="px-4 py-3 text-center font-bold text-green-600">{totalTokens}</td>
-                <td className="px-4 py-3 text-right font-bold text-[#1E3A5F]">{totalPrice.toFixed(2)} €</td>
+                <td className="px-4 py-3 text-right font-bold text-[#2D5A7B]">{totalPrice.toFixed(2)} €</td>
                 {contract.status === 'active' && <td></td>}
               </tr>
             </tfoot>
@@ -16963,7 +16963,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
               </button>
               <button
                 onClick={() => setShowQuoteModal(true)}
-                className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg hover:bg-[#1E3A5F]"
+                className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg hover:bg-[#2D5A7B]"
               >
                 📧 Créer le devis
               </button>
@@ -18157,7 +18157,7 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="px-6 py-4 bg-gradient-to-r from-[#1E3A5F] to-[#2a5490] text-white flex items-center justify-between">
+        <div className="px-6 py-4 bg-gradient-to-r from-[#2D5A7B] to-[#2a5490] text-white flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold">{inv.invoice_number}</h2>
             <p className="text-sm text-white/70">{company.name || 'Client'} {rma.request_number ? `• RMA ${rma.request_number}` : ''}</p>
@@ -18218,7 +18218,7 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
             <h4 className="font-medium text-gray-700 mb-2 text-sm">Lignes de facturation</h4>
             <div className="border rounded-lg overflow-hidden">
               <table className="w-full text-sm">
-                <thead className="bg-[#1E3A5F] text-white">
+                <thead className="bg-[#2D5A7B] text-white">
                   <tr>
                     <th className="text-left p-2 text-xs">Qté</th>
                     <th className="text-left p-2 text-xs">Désignation</th>
@@ -18247,8 +18247,8 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
                   <span className="font-medium">{inv.is_tva_exonerated ? 'EXONÉRÉ' : (parseFloat(inv.tva_amount || 0).toFixed(2) + ' €')}</span>
                 </div>
                 <div className="flex justify-between pt-1 border-t">
-                  <span className="font-bold text-[#1E3A5F]">Total TTC</span>
-                  <span className="font-bold text-lg text-[#1E3A5F]">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</span>
+                  <span className="font-bold text-[#2D5A7B]">Total TTC</span>
+                  <span className="font-bold text-lg text-[#2D5A7B]">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</span>
                 </div>
                 {parseFloat(inv.paid_amount) > 0 && (
                   <div className="flex justify-between text-green-700"><span>Payé</span><span className="font-bold">-{parseFloat(inv.paid_amount).toFixed(2)} €</span></div>
@@ -18298,7 +18298,7 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
         <div className="px-6 py-4 border-t bg-gray-50 flex items-center justify-between rounded-b-2xl">
           <div className="flex items-center gap-2">
             {inv.pdf_url && (
-              <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-[#1E3A5F] hover:bg-[#2a5490] text-white rounded-lg font-medium text-sm flex items-center gap-1">📄 PDF</a>
+              <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-[#2D5A7B] hover:bg-[#2a5490] text-white rounded-lg font-medium text-sm flex items-center gap-1">📄 PDF</a>
             )}
             {inv.status !== 'paid' && inv.status !== 'cancelled' && (
               <button onClick={cancelInvoice} className="px-4 py-2 bg-gray-200 hover:bg-red-100 text-gray-600 hover:text-red-600 rounded-lg text-sm font-medium">🗑️ Annuler</button>
@@ -18747,7 +18747,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
                   </div>
                   <div className="flex justify-between text-lg font-bold border-t pt-2">
                     <span>Total TTC</span>
-                    <span className="text-[#1E3A5F]">{totalTTC.toFixed(2)} €</span>
+                    <span className="text-[#2D5A7B]">{totalTTC.toFixed(2)} €</span>
                   </div>
                 </div>
               </div>
@@ -18769,7 +18769,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
               <p className="text-gray-500 mb-6">{company.name} — {totalTTC.toFixed(2)} € TTC</p>
               <div className="flex items-center justify-center gap-3">
                 {savedInvoice.pdf_url && (
-                  <a href={savedInvoice.pdf_url} target="_blank" rel="noopener noreferrer" className="px-5 py-2.5 bg-[#1E3A5F] hover:bg-[#2a4f7a] text-white rounded-lg font-medium flex items-center gap-2">
+                  <a href={savedInvoice.pdf_url} target="_blank" rel="noopener noreferrer" className="px-5 py-2.5 bg-[#2D5A7B] hover:bg-[#2a4f7a] text-white rounded-lg font-medium flex items-center gap-2">
                     📄 Voir Facture PDF
                   </a>
                 )}
@@ -19087,7 +19087,7 @@ function SettingsSheet({ profile, staffMembers, notify, reload }) {
                           ) : (
                             <>
                               <div className="text-center mb-2">
-                                <p className="text-2xl font-bold text-[#1E3A5F] font-mono">
+                                <p className="text-2xl font-bold text-[#2D5A7B] font-mono">
                                   {String(currentNum).padStart(3, '0')}
                                 </p>
                                 <p className="text-xs text-gray-400">dernier utilisé</p>
@@ -20630,7 +20630,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                 {/* Customer Info Card */}
                 <div className="bg-gray-50 rounded-xl p-4 mb-6">
                   <h3 className="font-bold text-gray-800 mb-3">Client</h3>
-                  <p className="text-lg font-bold text-[#1E3A5F]">{request.companies?.name}</p>
+                  <p className="text-lg font-bold text-[#2D5A7B]">{request.companies?.name}</p>
                   {request.companies?.billing_address && (
                     <p className="text-sm text-gray-600">{request.companies?.billing_address}</p>
                   )}
@@ -21218,13 +21218,13 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
               <div className="max-w-4xl mx-auto bg-white shadow-xl" style={{ fontFamily: 'Arial, sans-serif' }}>
                 
                 {/* Quote Header */}
-                <div className="px-8 pt-8 pb-4 border-b-4 border-[#1E3A5F]">
+                <div className="px-8 pt-8 pb-4 border-b-4 border-[#2D5A7B]">
                   <div className="flex justify-between items-start">
                     <div>
                       <img 
                         src="/images/logos/Lighthouse-color-logo.jpg" 
                         alt="Lighthouse France" 
-                        className="h-20 w-auto mb-1"
+                        className="h-24 w-auto mb-1"
                         onError={(e) => {
                           e.target.style.display = 'none';
                           e.target.nextSibling.style.display = 'block';
@@ -21236,8 +21236,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-[#1E3A5F]">OFFRE DE PRIX</p>
-                      <p className="text-sm font-bold text-[#1E3A5F]">N° {request.quote_number || '(Généré à l\'envoi)'}</p>
+                      <p className="text-2xl font-bold text-[#2D5A7B]">OFFRE DE PRIX</p>
+                      <p className="text-sm font-bold text-[#2D5A7B]">N° {request.quote_number || '(Généré à l\'envoi)'}</p>
                       <p className="text-xs text-gray-500">RMA: {request.request_number}</p>
                     </div>
                   </div>
@@ -21411,7 +21411,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                       </tr>
                     </tbody>
                     <tfoot>
-                      <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#1E3A5F] text-white"}>
+                      <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#2D5A7B] text-white"}>
                         <td colSpan={2} className="px-4 py-4"></td>
                         <td className="px-4 py-4 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
                         <td className="px-4 py-4 text-right font-bold text-xl whitespace-nowrap">
@@ -21451,7 +21451,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                     <img 
                       src="/images/logos/capcert-logo.png" 
                       alt="Capcert Certification" 
-                      className="h-20 w-auto"
+                      className="h-24 w-auto"
                       onError={(e) => { e.target.style.display = 'none'; }}
                     />
                   </div>
