@@ -3805,11 +3805,11 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               
               const calibrationSteps = [
                 { id: 'submitted', label: 'Soumis' },
-                { id: 'rma_created', label: 'RMA/Devis Créé' },
-                { id: 'bc_approved', label: 'Devis Approuvé' },
-                { id: 'waiting_device', label: 'En attente réception' },
+                { id: 'rma_created', label: 'Devis Créé' },
+                { id: 'bc_approved', label: 'Approuvé' },
+                { id: 'waiting_device', label: 'Attente' },
                 { id: 'received', label: 'Reçu' },
-                { id: 'queue', label: 'File d\'attente' },
+                { id: 'queue', label: 'File' },
                 { id: 'calibration', label: 'Étalonnage' },
                 { id: 'final_qc', label: 'Contrôle QC' },
                 { id: 'ready_to_ship', label: 'Prêt' },
@@ -3818,12 +3818,12 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               
               const repairSteps = [
                 { id: 'submitted', label: 'Soumis' },
-                { id: 'rma_created', label: 'RMA/Devis Créé' },
-                { id: 'bc_approved', label: 'Devis Approuvé' },
-                { id: 'waiting_device', label: 'En attente réception' },
+                { id: 'rma_created', label: 'Devis Créé' },
+                { id: 'bc_approved', label: 'Approuvé' },
+                { id: 'waiting_device', label: 'Attente' },
                 { id: 'received', label: 'Reçu' },
                 { id: 'inspection', label: 'Inspection' },
-                { id: 'customer_approval', label: 'Approbation' },
+                { id: 'customer_approval', label: 'Appr. Client' },
                 { id: 'repair', label: 'Réparation' },
                 { id: 'final_qc', label: 'Contrôle QC' },
                 { id: 'ready_to_ship', label: 'Prêt' },
@@ -3901,10 +3901,10 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                     const isLast = index === steps.length - 1;
                     
                     return (
-                      <div key={step.id} style={{ width: '75px', minWidth: '75px', maxWidth: '75px', flexShrink: 0 }}>
+                      <div key={step.id} style={{ width: '58px', minWidth: '58px', maxWidth: '58px', flexShrink: 0 }}>
                         <div 
                           className={`
-                            flex items-center justify-center h-7 text-[8px] font-medium text-center leading-tight
+                            flex items-center justify-center h-8 px-1 text-[7px] font-medium text-center leading-tight
                             ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
                             ${index === 0 ? 'rounded-l-sm' : ''}
                             ${isLast ? 'rounded-r-sm' : ''}
@@ -3917,7 +3917,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                                 : 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%)'
                           }}
                         >
-                          {step.label}
+                          <span className="break-words hyphens-auto">{step.label}</span>
                         </div>
                       </div>
                     );
@@ -3935,7 +3935,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Appareil</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">N° Série</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Service</th>
-                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600 min-w-[850px]">Progression</th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600 min-w-[640px]">Progression</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
                     </tr>
                   </thead>
@@ -5229,26 +5229,25 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   // Progress steps for devices
   const calibrationSteps = [
     { id: 'submitted', label: 'Soumis' },
-    { id: 'rma_created', label: 'RMA/Devis Créé' },
-    { id: 'bc_approved', label: 'Devis Approuvé' },
-    { id: 'waiting_device', label: 'En attente réception' },
+    { id: 'rma_created', label: 'Devis Créé' },
+    { id: 'bc_approved', label: 'Approuvé' },
+    { id: 'waiting_device', label: 'Attente' },
     { id: 'received', label: 'Reçu' },
-    { id: 'queue', label: 'File d\'attente' },
+    { id: 'queue', label: 'File' },
     { id: 'calibration', label: 'Étalonnage' },
     { id: 'final_qc', label: 'Contrôle QC' },
     { id: 'ready_to_ship', label: 'Prêt' },
-    { id: 'shipping', label: 'Expédition' },
     { id: 'shipped', label: 'Expédié' }
   ];
 
   const repairSteps = [
     { id: 'submitted', label: 'Soumis' },
-    { id: 'rma_created', label: 'RMA/Devis Créé' },
-    { id: 'bc_approved', label: 'Devis Approuvé' },
-    { id: 'waiting_device', label: 'En attente réception' },
+    { id: 'rma_created', label: 'Devis Créé' },
+    { id: 'bc_approved', label: 'Approuvé' },
+    { id: 'waiting_device', label: 'Attente' },
     { id: 'received', label: 'Reçu' },
     { id: 'inspection', label: 'Inspection' },
-    { id: 'customer_approval', label: 'Approbation' },
+    { id: 'customer_approval', label: 'Appr. Client' },
     { id: 'repair', label: 'Réparation' },
     { id: 'final_qc', label: 'Contrôle QC' },
     { id: 'ready_to_ship', label: 'Prêt' },
@@ -5311,10 +5310,10 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           const isLast = index === steps.length - 1;
           
           return (
-            <div key={step.id} style={{ width: '75px', minWidth: '75px', maxWidth: '75px', flexShrink: 0 }}>
+            <div key={step.id} style={{ width: '58px', minWidth: '58px', maxWidth: '58px', flexShrink: 0 }}>
               <div 
                 className={`
-                  flex items-center justify-center h-7 text-[8px] font-medium text-center leading-tight
+                  flex items-center justify-center h-8 px-1 text-[7px] font-medium text-center leading-tight
                   ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
                   ${index === 0 ? 'rounded-l-md' : ''}
                   ${isLast ? 'rounded-r-md' : ''}
@@ -5327,7 +5326,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       : 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%)'
                 }}
               >
-                {step.label}
+                <span className="break-words hyphens-auto">{step.label}</span>
               </div>
             </div>
           );
