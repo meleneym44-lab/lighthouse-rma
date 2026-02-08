@@ -3856,7 +3856,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                   };
                   return map[status] ?? 1;
                 } else {
-                  // Calibration: 10 steps (0-9)
+                  // Calibration: 11 steps (0-10)
                   const map = {
                     'submitted': 0, 'pending': 0, 'waiting_approval': 0,
                     'approved': 1, 'rma_created': 1, 'quote_sent': 1,
@@ -3867,7 +3867,8 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                     'calibration': 6, 'calibration_in_progress': 6, 'in_progress': 6,
                     'final_qc': 7, 'qc': 7, 'quality_check': 7,
                     'ready_to_ship': 8, 'ready': 8,
-                    'shipped': 9, 'delivered': 9, 'completed': 9
+                    'shipping': 9,
+                    'shipped': 10, 'delivered': 10, 'completed': 10
                   };
                   return map[status] ?? 1;
                 }
@@ -3893,17 +3894,17 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               const currentIndex = getStepIndex(effectiveStatus);
               
               return (
-                <div className="flex items-center" style={{ width: '600px' }}>
+                <div className="flex items-center">
                   {steps.map((step, index) => {
                     const isCompleted = index < currentIndex;
                     const isCurrent = index === currentIndex;
                     const isLast = index === steps.length - 1;
                     
                     return (
-                      <div key={step.id} className="flex items-center flex-1">
+                      <div key={step.id} style={{ width: '55px' }}>
                         <div 
                           className={`
-                            relative flex items-center justify-center w-full py-1.5 px-0.5 text-[9px] font-medium text-center leading-tight
+                            relative flex items-center justify-center w-full py-1.5 text-[9px] font-medium text-center leading-tight
                             ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
                             ${index === 0 ? 'rounded-l-sm' : ''}
                             ${isLast ? 'rounded-r-sm' : ''}
@@ -3916,7 +3917,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                                 : 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%)'
                           }}
                         >
-                          <span className="px-0.5">{step.label}</span>
+                          {step.label}
                         </div>
                       </div>
                     );
@@ -5236,6 +5237,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     { id: 'calibration', label: 'Étalonnage' },
     { id: 'final_qc', label: 'Contrôle QC' },
     { id: 'ready_to_ship', label: 'Prêt' },
+    { id: 'shipping', label: 'Expédition' },
     { id: 'shipped', label: 'Expédié' }
   ];
 
@@ -5302,17 +5304,17 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     const currentIndex = getStepIndex(effectiveStatus, isRepair);
     
     return (
-      <div className="flex items-center" style={{ width: '600px' }}>
+      <div className="flex items-center">
         {steps.map((step, index) => {
           const isCompleted = index < currentIndex;
           const isCurrent = index === currentIndex;
           const isLast = index === steps.length - 1;
           
           return (
-            <div key={step.id} className="flex items-center flex-1">
+            <div key={step.id} style={{ width: '55px' }}>
               <div 
                 className={`
-                  relative flex items-center justify-center w-full py-1.5 px-0.5 text-[9px] font-medium text-center leading-tight
+                  relative flex items-center justify-center w-full py-1.5 text-[9px] font-medium text-center leading-tight
                   ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
                   ${index === 0 ? 'rounded-l-md' : ''}
                   ${isLast ? 'rounded-r-md' : ''}
@@ -5325,7 +5327,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       : 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%)'
                 }}
               >
-                <span className="px-0.5">{step.label}</span>
+                {step.label}
               </div>
             </div>
           );
