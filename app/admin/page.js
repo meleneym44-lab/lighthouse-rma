@@ -3893,14 +3893,14 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               const currentIndex = getStepIndex(effectiveStatus);
               
               return (
-                <div className="flex items-center w-full min-w-[550px]">
+                <div className="flex items-center">
                   {steps.map((step, index) => {
                     const isCompleted = index < currentIndex;
                     const isCurrent = index === currentIndex;
                     const isLast = index === steps.length - 1;
                     
                     return (
-                      <div key={step.id} className="flex items-center" style={{ width: `${100 / steps.length}%` }}>
+                      <div key={step.id} className="flex items-center w-[55px]">
                         <div 
                           className={`
                             relative flex items-center justify-center w-full py-1.5 px-0.5 text-[9px] font-medium text-center leading-tight
@@ -3934,7 +3934,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Appareil</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">N° Série</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Service</th>
-                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600 min-w-[550px]">Progression</th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600 min-w-[610px]">Progression</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
                     </tr>
                   </thead>
@@ -5302,14 +5302,14 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     const currentIndex = getStepIndex(effectiveStatus, isRepair);
     
     return (
-      <div className="flex items-center w-full">
+      <div className="flex items-center">
         {steps.map((step, index) => {
           const isCompleted = index < currentIndex;
           const isCurrent = index === currentIndex;
           const isLast = index === steps.length - 1;
           
           return (
-            <div key={step.id} className="flex items-center" style={{ width: `${100 / steps.length}%` }}>
+            <div key={step.id} className="flex items-center w-[55px]">
               <div 
                 className={`
                   relative flex items-center justify-center w-full py-1.5 px-0.5 text-[9px] font-medium text-center leading-tight
