@@ -3805,27 +3805,27 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               
               const calibrationSteps = [
                 { id: 'submitted', label: 'Soumis' },
-                { id: 'rma_created', label: 'RMA' },
-                { id: 'bc_approved', label: 'BC' },
-                { id: 'waiting_device', label: 'Attente' },
+                { id: 'rma_created', label: 'RMA/Devis Créé' },
+                { id: 'bc_approved', label: 'Devis Approuvé' },
+                { id: 'waiting_device', label: 'En attente réception' },
                 { id: 'received', label: 'Reçu' },
-                { id: 'queue', label: 'File' },
-                { id: 'calibration', label: 'Étal.' },
-                { id: 'final_qc', label: 'QC' },
+                { id: 'queue', label: 'File d\'attente' },
+                { id: 'calibration', label: 'Étalonnage' },
+                { id: 'final_qc', label: 'Contrôle QC' },
                 { id: 'ready_to_ship', label: 'Prêt' },
                 { id: 'shipped', label: 'Expédié' }
               ];
               
               const repairSteps = [
                 { id: 'submitted', label: 'Soumis' },
-                { id: 'rma_created', label: 'RMA' },
-                { id: 'bc_approved', label: 'BC' },
-                { id: 'waiting_device', label: 'Attente' },
+                { id: 'rma_created', label: 'RMA/Devis Créé' },
+                { id: 'bc_approved', label: 'Devis Approuvé' },
+                { id: 'waiting_device', label: 'En attente réception' },
                 { id: 'received', label: 'Reçu' },
-                { id: 'inspection', label: 'Insp.' },
-                { id: 'customer_approval', label: 'Appr.' },
-                { id: 'repair', label: 'Rép.' },
-                { id: 'final_qc', label: 'QC' },
+                { id: 'inspection', label: 'Inspection' },
+                { id: 'customer_approval', label: 'Approbation' },
+                { id: 'repair', label: 'Réparation' },
+                { id: 'final_qc', label: 'Contrôle QC' },
                 { id: 'ready_to_ship', label: 'Prêt' },
                 { id: 'shipped', label: 'Expédié' }
               ];
@@ -5228,27 +5228,27 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   // Progress steps for devices
   const calibrationSteps = [
     { id: 'submitted', label: 'Soumis' },
-    { id: 'rma_created', label: 'RMA' },
-    { id: 'bc_approved', label: 'BC' },
-    { id: 'waiting_device', label: 'Attente' },
+    { id: 'rma_created', label: 'RMA/Devis Créé' },
+    { id: 'bc_approved', label: 'Devis Approuvé' },
+    { id: 'waiting_device', label: 'En attente réception' },
     { id: 'received', label: 'Reçu' },
-    { id: 'queue', label: 'File' },
-    { id: 'calibration', label: 'Étal.' },
-    { id: 'final_qc', label: 'QC' },
+    { id: 'queue', label: 'File d\'attente' },
+    { id: 'calibration', label: 'Étalonnage' },
+    { id: 'final_qc', label: 'Contrôle QC' },
     { id: 'ready_to_ship', label: 'Prêt' },
     { id: 'shipped', label: 'Expédié' }
   ];
 
   const repairSteps = [
     { id: 'submitted', label: 'Soumis' },
-    { id: 'rma_created', label: 'RMA' },
-    { id: 'bc_approved', label: 'BC' },
-    { id: 'waiting_device', label: 'Attente' },
+    { id: 'rma_created', label: 'RMA/Devis Créé' },
+    { id: 'bc_approved', label: 'Devis Approuvé' },
+    { id: 'waiting_device', label: 'En attente réception' },
     { id: 'received', label: 'Reçu' },
-    { id: 'inspection', label: 'Insp.' },
-    { id: 'customer_approval', label: 'Appr.' },
-    { id: 'repair', label: 'Rép.' },
-    { id: 'final_qc', label: 'QC' },
+    { id: 'inspection', label: 'Inspection' },
+    { id: 'customer_approval', label: 'Approbation' },
+    { id: 'repair', label: 'Réparation' },
+    { id: 'final_qc', label: 'Contrôle QC' },
     { id: 'ready_to_ship', label: 'Prêt' },
     { id: 'shipped', label: 'Expédié' }
   ];
