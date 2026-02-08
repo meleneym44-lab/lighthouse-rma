@@ -426,7 +426,28 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     y += rowH;
   };
   
-  checkPageBreak(20); // Ensure space for title + header
+  // Pre-calculate total row count to decide if we should keep the table together
+  let totalRowCount = 0;
+  devicePricing.forEach(device => {
+    if (device.needsCalibration) totalRowCount++;
+    if (device.needsNettoyage && !device.isContractCovered && device.nettoyagePrice > 0) totalRowCount++;
+    if (device.needsRepair) totalRowCount++;
+    totalRowCount += (device.additionalParts || []).length;
+  });
+  totalRowCount += 1; // shipping row
+  
+  // Total table height: title(7) + header(9) + data rows + shipping row + total bar(11) + padding(4)
+  const totalTableHeight = 7 + 9 + (totalRowCount * rowH) + 11 + 4;
+  const spaceRemaining = getUsableHeight() - y;
+  const freshPageSpace = getUsableHeight() - margin;
+  
+  // KEEP TOGETHER LOGIC: If table doesn't fit here but WOULD fit on a fresh page, push to next page
+  if (totalTableHeight > spaceRemaining && totalTableHeight <= freshPageSpace) {
+    addFooter();
+    pdf.addPage();
+    y = margin;
+  }
+  
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
