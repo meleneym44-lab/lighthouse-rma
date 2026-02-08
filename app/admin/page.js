@@ -6827,7 +6827,7 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
             <img 
               src="/images/logos/Lighthouse-color-logo.jpg" 
               alt="Lighthouse Worldwide Solutions" 
-              className="h-12 w-auto"
+              className="h-24 w-auto"
               onError={(e) => {
                 e.target.style.display = 'none';
                 e.target.nextSibling.style.display = 'flex';
@@ -14847,7 +14847,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
             
             {/* Logo */}
             <div className="mb-8">
-              <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-12 w-auto" onError={(e) => { e.target.style.display = 'none'; }} />
+              <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-24 w-auto" onError={(e) => { e.target.style.display = 'none'; }} />
               </div>
 
               {/* Info Table */}
