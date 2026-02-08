@@ -3893,7 +3893,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               const currentIndex = getStepIndex(effectiveStatus);
               
               return (
-                <div className="flex items-center w-full min-w-[300px]">
+                <div className="flex items-center w-full min-w-[550px]">
                   {steps.map((step, index) => {
                     const isCompleted = index < currentIndex;
                     const isCurrent = index === currentIndex;
@@ -3903,20 +3903,20 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                       <div key={step.id} className="flex items-center flex-1">
                         <div 
                           className={`
-                            relative flex items-center justify-center flex-1 py-1 px-0.5 text-[10px] font-medium
+                            relative flex items-center justify-center flex-1 py-1.5 px-0.5 text-[9px] font-medium text-center leading-tight
                             ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
                             ${index === 0 ? 'rounded-l-sm' : ''}
                             ${isLast ? 'rounded-r-sm' : ''}
                           `}
                           style={{
                             clipPath: isLast 
-                              ? 'polygon(0 0, 100% 0, 100% 100%, 0 100%, 4px 50%)' 
+                              ? 'polygon(0 0, 100% 0, 100% 100%, 0 100%, 6px 50%)' 
                               : index === 0 
-                                ? 'polygon(0 0, calc(100% - 4px) 0, 100% 50%, calc(100% - 4px) 100%, 0 100%)'
-                                : 'polygon(0 0, calc(100% - 4px) 0, 100% 50%, calc(100% - 4px) 100%, 0 100%, 4px 50%)'
+                                ? 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%)'
+                                : 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%)'
                           }}
                         >
-                          {step.label}
+                          <span className="px-0.5">{step.label}</span>
                         </div>
                       </div>
                     );
@@ -3934,7 +3934,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Appareil</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">N° Série</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Service</th>
-                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600 min-w-[300px]">Progression</th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600 min-w-[550px]">Progression</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
                     </tr>
                   </thead>
@@ -5312,7 +5312,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             <div key={step.id} className="flex items-center flex-1">
               <div 
                 className={`
-                  relative flex items-center justify-center flex-1 py-1.5 px-1 text-xs font-medium
+                  relative flex items-center justify-center flex-1 py-1.5 px-0.5 text-[9px] font-medium text-center leading-tight
                   ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
                   ${index === 0 ? 'rounded-l-md' : ''}
                   ${isLast ? 'rounded-r-md' : ''}
@@ -5325,7 +5325,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       : 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%)'
                 }}
               >
-                {step.label}
+                <span className="px-0.5">{step.label}</span>
               </div>
             </div>
           );
