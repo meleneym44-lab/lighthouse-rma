@@ -3900,10 +3900,10 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                     const isLast = index === steps.length - 1;
                     
                     return (
-                      <div key={step.id} className="flex items-center flex-1">
+                      <div key={step.id} className="flex items-center" style={{ width: `${100 / steps.length}%` }}>
                         <div 
                           className={`
-                            relative flex items-center justify-center flex-1 py-1.5 px-0.5 text-[9px] font-medium text-center leading-tight
+                            relative flex items-center justify-center w-full py-1.5 px-0.5 text-[9px] font-medium text-center leading-tight
                             ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
                             ${index === 0 ? 'rounded-l-sm' : ''}
                             ${isLast ? 'rounded-r-sm' : ''}
@@ -5309,10 +5309,10 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           const isLast = index === steps.length - 1;
           
           return (
-            <div key={step.id} className="flex items-center flex-1">
+            <div key={step.id} className="flex items-center" style={{ width: `${100 / steps.length}%` }}>
               <div 
                 className={`
-                  relative flex items-center justify-center flex-1 py-1.5 px-0.5 text-[9px] font-medium text-center leading-tight
+                  relative flex items-center justify-center w-full py-1.5 px-0.5 text-[9px] font-medium text-center leading-tight
                   ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
                   ${index === 0 ? 'rounded-l-md' : ''}
                   ${isLast ? 'rounded-r-md' : ''}
