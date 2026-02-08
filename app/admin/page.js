@@ -3894,17 +3894,17 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               const currentIndex = getStepIndex(effectiveStatus);
               
               return (
-                <div className="flex items-center">
+                <div className="flex">
                   {steps.map((step, index) => {
                     const isCompleted = index < currentIndex;
                     const isCurrent = index === currentIndex;
                     const isLast = index === steps.length - 1;
                     
                     return (
-                      <div key={step.id} style={{ width: '55px' }}>
+                      <div key={step.id} style={{ width: '55px', minWidth: '55px', maxWidth: '55px', flexShrink: 0 }}>
                         <div 
                           className={`
-                            relative flex items-center justify-center w-full py-1.5 text-[9px] font-medium text-center leading-tight
+                            flex items-center justify-center h-7 text-[9px] font-medium text-center leading-tight
                             ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
                             ${index === 0 ? 'rounded-l-sm' : ''}
                             ${isLast ? 'rounded-r-sm' : ''}
@@ -5304,17 +5304,17 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     const currentIndex = getStepIndex(effectiveStatus, isRepair);
     
     return (
-      <div className="flex items-center">
+      <div className="flex">
         {steps.map((step, index) => {
           const isCompleted = index < currentIndex;
           const isCurrent = index === currentIndex;
           const isLast = index === steps.length - 1;
           
           return (
-            <div key={step.id} style={{ width: '55px' }}>
+            <div key={step.id} style={{ width: '55px', minWidth: '55px', maxWidth: '55px', flexShrink: 0 }}>
               <div 
                 className={`
-                  relative flex items-center justify-center w-full py-1.5 text-[9px] font-medium text-center leading-tight
+                  flex items-center justify-center h-7 text-[9px] font-medium text-center leading-tight
                   ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
                   ${index === 0 ? 'rounded-l-md' : ''}
                   ${isLast ? 'rounded-r-md' : ''}
