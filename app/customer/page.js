@@ -1,6 +1,5 @@
 'use client';
-// CUSTOMER PORTAL v56b - 2026-02-03 16:45 - docCount fix
-import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
 // Expose supabase to window for debugging
@@ -493,7 +492,7 @@ async function generateQuotePDF(options) {
   const footerHeight = 16;
   
   // Colors
-  const green = [0, 166, 81];
+  const navy = [45, 90, 123];
   const darkBlue = [26, 26, 46];
   const gray = [80, 80, 80];
   const lightGray = [130, 130, 130];
@@ -518,7 +517,7 @@ async function generateQuotePDF(options) {
     }
   };
   
-  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
   let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
   
   const addFooter = () => {
@@ -550,7 +549,7 @@ async function generateQuotePDF(options) {
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 85, 22);
     } catch (e) {
       pdf.setFontSize(26);
       pdf.setFont('helvetica', 'bold');
@@ -566,23 +565,15 @@ async function generateQuotePDF(options) {
   
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...green);
-  pdf.text(isSigned ? 'DEVIS SIGNE' : 'OFFRE DE PRIX', pageWidth - margin, y + 5, { align: 'right' });
-  
-  // Document number (DEV-0226-001) - primary
+  pdf.setTextColor(...navy);
+  pdf.text(isSigned ? 'DEVIS SIGNE' : 'OFFRE DE PRIX', pageWidth - margin, y + 8, { align: 'right' });
   pdf.setFontSize(11);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  pdf.text('N° ' + (request.quote_number || '—'), pageWidth - margin, y + 11, { align: 'right' });
-  
-  // RMA reference
-  pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text('RMA: ' + (request.request_number || 'FR-XXXXX'), pageWidth - margin, y + 16, { align: 'right' });
+  pdf.text('N. ' + (request.request_number || 'FR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
   
-  y += 20;
-  pdf.setDrawColor(...green);
+  y += 18;
+  pdf.setDrawColor(...navy);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
   y += 7;
@@ -704,22 +695,18 @@ async function generateQuotePDF(options) {
       const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
       wrapped.forEach(l => lines.push(l));
     });
-    const titleH = 10; // Title height
-    const textH = lines.length * lineH; // All text lines
-    const blockH = titleH + textH;
-    checkPageBreak(blockH + 5);
+    const blockH = 12 + (lines.length * lineH);
+    checkPageBreak(blockH);
     
-    // Draw vertical line - stops at last text line (subtract more to end earlier)
     pdf.setDrawColor(...color);
     pdf.setLineWidth(1);
-    const lineEndY = y + blockH - 7; // End 7mm before block ends
-    pdf.line(margin, y, margin, lineEndY);
+    pdf.line(margin, y, margin, y + blockH - 3);
     
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
     pdf.text(data.title, margin + 5, y + 6);
-    y += titleH;
+    y += 10;
     
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
@@ -732,7 +719,7 @@ async function generateQuotePDF(options) {
         y += lineH;
       });
     });
-    y += 5; // Space after block
+    y += 3;
   };
 
   // Draw calibration blocks (blue)
@@ -746,9 +733,22 @@ async function generateQuotePDF(options) {
     drawServiceBlock(REPAIR_DATA, [249, 115, 22]);
   }
 
+  // ===== CONDITIONS/DISCLAIMERS =====
+  checkPageBreak(25);
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS', margin, y);
+  y += 4;
+  pdf.setFontSize(8);
+  pdf.setTextColor(...gray);
+  DISCLAIMERS.forEach(d => {
+    pdf.text('- ' + d, margin, y);
+    y += 4;
+  });
+  y += 5;
+
   // ===== DETAILED PRICING TABLE (Qté | Désignation | Prix Unit. | Total HT) =====
-  y += 5; // Extra space before pricing table
-  
   const rowH = 7;
   const colQty = margin;
   const colDesc = margin + 12;
@@ -881,7 +881,7 @@ async function generateQuotePDF(options) {
   y += rowH;
 
   // Total row
-  pdf.setFillColor(...green);
+  pdf.setFillColor(...navy);
   pdf.rect(margin, y, contentWidth, 11, 'F');
   pdf.setTextColor(...white);
   pdf.setFontSize(11);
@@ -899,23 +899,6 @@ async function generateQuotePDF(options) {
     pdf.text('* Le nettoyage cellule sera facture uniquement si necessaire selon l\'etat du capteur a reception.', margin, y);
     y += 5;
   }
-
-  // ===== CONDITIONS/DISCLAIMERS (after pricing) =====
-  y += 3;
-  checkPageBreak(25);
-  pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...lightGray);
-  pdf.text('CONDITIONS', margin, y);
-  y += 4;
-  pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  DISCLAIMERS.forEach(d => {
-    pdf.text('- ' + d, margin, y);
-    y += 4;
-  });
-  y += 3;
 
   // ===== SIGNATURE SECTION =====
   const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
@@ -950,12 +933,12 @@ async function generateQuotePDF(options) {
   if (isSigned && signatureName) {
     // Signed version - green box with signature
     pdf.setFillColor(245, 255, 250);
-    pdf.setDrawColor(...green);
+    pdf.setDrawColor(...navy);
     pdf.setLineWidth(0.5);
     pdf.roundedRect(sigBoxX, sigY + 3, 62, 36, 2, 2, 'FD');
     
     pdf.setFontSize(8);
-    pdf.setTextColor(...green);
+    pdf.setTextColor(...navy);
     pdf.text('APPROUVE PAR', sigBoxX + 4, sigY + 10);
     pdf.setFontSize(11);
     pdf.setFont('helvetica', 'bold');
@@ -967,362 +950,7 @@ async function generateQuotePDF(options) {
     pdf.text('Date: ' + signatureDate, sigBoxX + 4, sigY + 24);
     pdf.setFontSize(8);
     pdf.setFont('helvetica', 'italic');
-    pdf.setTextColor(...green);
-    pdf.text('Lu et approuve', sigBoxX + 4, sigY + 30);
-    
-    if (signatureImage) {
-      try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 40, sigY + 9, 18, 16); } catch(e) {}
-    }
-  } else {
-    // Unsigned version - dashed box
-    pdf.setFontSize(8);
-    pdf.setTextColor(...lightGray);
-    pdf.text('Signature client', sigBoxX + 16, sigY + 7);
-    pdf.setDrawColor(180, 180, 180);
-    pdf.setLineWidth(0.3);
-    pdf.setLineDashPattern([2, 2], 0);
-    pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 22, 2, 2, 'D');
-    pdf.setLineDashPattern([], 0);
-    pdf.text('Lu et approuve', sigBoxX + 18, sigY + 37);
-  }
-
-  addFooter();
-  return pdf.output('blob');
-}
-
-// ============================================
-// SIGNED AVENANT/SUPPLEMENT PDF GENERATOR
-// ============================================
-async function generateSignedAvenantPDF(options) {
-  const {
-    request, isSigned = false,
-    signatureName = '', signatureDate = '', signatureImage = null
-  } = options;
-
-  // Load jsPDF
-  await new Promise((resolve, reject) => {
-    if (window.jspdf) { resolve(); return; }
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-    script.onload = resolve;
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF('p', 'mm', 'a4');
-  
-  const company = request.companies || {};
-  const devices = (request.request_devices || []).filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
-  
-  const pageWidth = 210, pageHeight = 297, margin = 15;
-  const contentWidth = pageWidth - (margin * 2);
-  const footerHeight = 16;
-  
-  // Colors - green for supplement (matching main quote)
-  const green = [0, 166, 81];
-  const darkBlue = [26, 26, 46];
-  const gray = [80, 80, 80];
-  const lightGray = [130, 130, 130];
-  const white = [255, 255, 255];
-  
-  let y = margin;
-  
-  // Load logos
-  const loadImageAsBase64 = async (url) => {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) return null;
-      const blob = await response.blob();
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = () => resolve(null);
-        reader.readAsDataURL(blob);
-      });
-    } catch (e) {
-      return null;
-    }
-  };
-  
-  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
-  let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
-  
-  const addFooter = () => {
-    pdf.setFillColor(...darkBlue);
-    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
-    pdf.setTextColor(...white);
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(180, 180, 180);
-    pdf.setFontSize(8);
-    pdf.text('16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07', pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
-  };
-  
-  const getUsableHeight = () => pageHeight - footerHeight - margin;
-  
-  const checkPageBreak = (needed) => {
-    if (y + needed > getUsableHeight()) {
-      addFooter();
-      pdf.addPage();
-      y = margin;
-      return true;
-    }
-    return false;
-  };
-
-  // ===== HEADER =====
-  if (lighthouseLogo) {
-    try {
-      const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 55, 14);
-    } catch (e) {
-      pdf.setFontSize(26);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(...darkBlue);
-      pdf.text('LIGHTHOUSE', margin, y + 8);
-    }
-  } else {
-    pdf.setFontSize(26);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...darkBlue);
-    pdf.text('LIGHTHOUSE', margin, y + 8);
-  }
-  
-  // Title - SUPPLEMENT in green
-  pdf.setFontSize(18);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...green);
-  pdf.text(isSigned ? 'SUPPLEMENT SIGNE' : 'SUPPLEMENT AU DEVIS', pageWidth - margin, y + 8, { align: 'right' });
-  pdf.setFontSize(11);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  pdf.text('N° ' + (request.supplement_number || '—'), pageWidth - margin, y + 14, { align: 'right' });
-  
-  y += 18;
-  pdf.setDrawColor(...green);
-  pdf.setLineWidth(1);
-  pdf.line(margin, y, pageWidth - margin, y);
-  y += 7;
-
-  // ===== INFO BAR =====
-  pdf.setFillColor(240, 253, 244); // Light green background
-  pdf.rect(margin, y, contentWidth, 16, 'F');
-  pdf.setFontSize(8);
-  pdf.setTextColor(...lightGray);
-  pdf.text('DATE', margin + 5, y + 5);
-  pdf.text('VALIDITE', margin + 60, y + 5);
-  pdf.text('CONDITIONS', margin + 115, y + 5);
-  pdf.setFontSize(11);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  const qDate = request.avenant_sent_at ? new Date(request.avenant_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
-  pdf.text(qDate, margin + 5, y + 12);
-  pdf.text('30 jours', margin + 60, y + 12);
-  pdf.text('A reception de facture', margin + 115, y + 12);
-  y += 20;
-
-  // ===== CLIENT =====
-  pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...lightGray);
-  pdf.text('CLIENT', margin, y);
-  y += 5;
-  pdf.setFontSize(14);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  pdf.text(company.name || 'Client', margin, y);
-  y += 6;
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  if (company.billing_address || company.address) {
-    pdf.text(company.billing_address || company.address, margin, y);
-    y += 5;
-  }
-  const city = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
-  if (city) {
-    pdf.text(city, margin, y);
-    y += 5;
-  }
-  y += 3;
-  
-  // Original quote reference
-  pdf.setFontSize(9);
-  pdf.setTextColor(...lightGray);
-  pdf.text('Devis initial: ' + request.request_number, margin, y);
-  y += 8;
-
-  // ===== INTRODUCTION =====
-  pdf.setFillColor(240, 253, 244);
-  pdf.setDrawColor(...green);
-  pdf.setLineWidth(0.5);
-  pdf.rect(margin, y, contentWidth, 14, 'FD');
-  pdf.setFontSize(9);
-  pdf.setTextColor(22, 101, 52); // Dark green text
-  pdf.text("Suite a l'inspection de vos appareils, nous avons constate des travaux supplementaires necessaires.", margin + 5, y + 5);
-  pdf.text("Veuillez trouver ci-dessous le detail des interventions recommandees.", margin + 5, y + 10);
-  y += 18;
-
-  // ===== DETAILED PRICING TABLE =====
-  const rowH = 7;
-  const colQty = margin;
-  const colDesc = margin + 12;
-  const colUnit = pageWidth - margin - 45;
-  const colTotal = pageWidth - margin - 3;
-  
-  pdf.setFontSize(13);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  pdf.text('Travaux Supplementaires', margin, y);
-  y += 7;
-
-  // Header row
-  pdf.setFillColor(...darkBlue);
-  pdf.rect(margin, y, contentWidth, 9, 'F');
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...white);
-  pdf.text('Qte', colQty + 3, y + 6);
-  pdf.text('Designation', colDesc, y + 6);
-  pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
-  pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
-  y += 9;
-
-  let rowIndex = 0;
-  let grandTotal = 0;
-
-  // Build line items from devices with additional work
-  devices.forEach((device) => {
-    // Device header row
-    checkPageBreak(15);
-    pdf.setFillColor(245, 245, 245);
-    pdf.rect(margin, y, contentWidth, 8, 'F');
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...darkBlue);
-    const deviceHeader = (device.model_name || 'Appareil') + ' (SN: ' + (device.serial_number || 'N/A') + ')';
-    pdf.text(deviceHeader, colDesc, y + 5.5);
-    y += 8;
-    
-    // Findings (if any)
-    if (device.service_findings) {
-      checkPageBreak(10);
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'italic');
-      pdf.setTextColor(...lightGray);
-      const findingsText = ('Constat: ' + device.service_findings).substring(0, 90);
-      pdf.text(findingsText, colDesc, y + 4);
-      y += 6;
-    }
-    
-    // Additional work items
-    (device.additional_work_items || []).forEach((item) => {
-      checkPageBreak(rowH + 2);
-      const qty = parseInt(item.quantity) || 1;
-      const unitPrice = parseFloat(item.price) || 0;
-      const lineTotal = qty * unitPrice;
-      grandTotal += lineTotal;
-      
-      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
-      pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkBlue);
-      pdf.text(String(qty), colQty + 3, y + 5);
-      
-      // Description with part number if available
-      const desc = item.partNumber ? '[' + item.partNumber + '] ' + (item.description || 'Piece') : (item.description || 'Service');
-      pdf.text(desc.substring(0, 55), colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
-      y += rowH;
-      rowIndex++;
-    });
-    
-    y += 3; // Space between devices
-  });
-
-  // Total row
-  checkPageBreak(15);
-  pdf.setFillColor(...green);
-  pdf.rect(margin, y, contentWidth, 11, 'F');
-  pdf.setTextColor(...white);
-  pdf.setFontSize(11);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('TOTAL SUPPLEMENT HT', colUnit - 35, y + 7.5);
-  pdf.setFontSize(16);
-  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
-  y += 15;
-
-  // ===== CONDITIONS =====
-  checkPageBreak(25);
-  pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...lightGray);
-  pdf.text('CONDITIONS:', margin, y);
-  y += 4;
-  pdf.text("• Ce devis complementaire est valable 30 jours a compter de sa date d'emission.", margin + 3, y);
-  y += 4;
-  pdf.text('• Les travaux seront effectues apres reception de votre accord ecrit.', margin + 3, y);
-  y += 4;
-  pdf.text('• Conditions de reglement: 30 jours fin de mois.', margin + 3, y);
-  y += 8;
-
-  // ===== SIGNATURE SECTION =====
-  const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
-  
-  pdf.setDrawColor(200, 200, 200);
-  pdf.setLineWidth(0.3);
-  pdf.line(margin, sigY, pageWidth - margin, sigY);
-  
-  pdf.setFontSize(8);
-  pdf.setTextColor(...lightGray);
-  pdf.text('ETABLI PAR', margin, sigY + 7);
-  pdf.setFontSize(12);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  pdf.text('Service Technique', margin, sigY + 14);
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  pdf.text('Lighthouse France', margin, sigY + 20);
-
-  // Capcert logo
-  if (capcertLogo) {
-    try {
-      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
-    } catch (e) {}
-  }
-
-  // Signature box
-  const sigBoxX = pageWidth - margin - 62;
-  
-  if (isSigned && signatureName) {
-    // Signed version - green box with signature
-    pdf.setFillColor(240, 253, 244); // Light green background
-    pdf.setDrawColor(...green);
-    pdf.setLineWidth(0.5);
-    pdf.roundedRect(sigBoxX, sigY + 3, 62, 36, 2, 2, 'FD');
-    
-    pdf.setFontSize(8);
-    pdf.setTextColor(...green);
-    pdf.text('APPROUVE PAR', sigBoxX + 4, sigY + 10);
-    pdf.setFontSize(11);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...darkBlue);
-    pdf.text(signatureName, sigBoxX + 4, sigY + 17);
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...gray);
-    pdf.text('Date: ' + signatureDate, sigBoxX + 4, sigY + 24);
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'italic');
-    pdf.setTextColor(...green);
+    pdf.setTextColor(...navy);
     pdf.text('Lu et approuve', sigBoxX + 4, sigY + 30);
     
     if (signatureImage) {
@@ -1382,12 +1010,11 @@ async function generatePartsQuotePDF(options) {
   const footerHeight = 16;
   
   // Colors
-  const amber = [245, 158, 11];
+  const navy = [45, 90, 123];
   const darkBlue = [26, 26, 46];
   const gray = [80, 80, 80];
   const lightGray = [130, 130, 130];
   const white = [255, 255, 255];
-  const green = [0, 166, 81];
   
   let y = margin;
   
@@ -1408,7 +1035,7 @@ async function generatePartsQuotePDF(options) {
     }
   };
   
-  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
   
   const addFooter = () => {
     pdf.setFillColor(...darkBlue);
@@ -1427,7 +1054,7 @@ async function generatePartsQuotePDF(options) {
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y, 60, 12);
+      pdf.addImage(lighthouseLogo, format, margin, y, 85, 22);
     } catch (e) {
       pdf.setFontSize(18);
       pdf.setFont('helvetica', 'bold');
@@ -1444,7 +1071,7 @@ async function generatePartsQuotePDF(options) {
   // Title - Right side
   pdf.setFontSize(16);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...amber);
+  pdf.setTextColor(...navy);
   pdf.text('DEVIS PIECES', pageWidth - margin, y + 5, { align: 'right' });
   pdf.setFontSize(10);
   pdf.setTextColor(...gray);
@@ -1453,7 +1080,7 @@ async function generatePartsQuotePDF(options) {
   y += 20;
   
   // Amber accent line
-  pdf.setFillColor(...amber);
+  pdf.setFillColor(...navy);
   pdf.rect(0, y, pageWidth, 1.5, 'F');
   y += 8;
   
@@ -1563,7 +1190,7 @@ async function generatePartsQuotePDF(options) {
   }
   
   // Total row
-  pdf.setFillColor(...amber);
+  pdf.setFillColor(...navy);
   pdf.rect(margin, y, contentWidth, 10, 'F');
   pdf.setTextColor(...white);
   pdf.setFont('helvetica', 'bold');
@@ -1608,12 +1235,12 @@ async function generatePartsQuotePDF(options) {
   if (isSigned && signatureName) {
     // Signed version
     pdf.setFillColor(245, 255, 250);
-    pdf.setDrawColor(...green);
+    pdf.setDrawColor(...navy);
     pdf.setLineWidth(0.5);
     pdf.roundedRect(sigBoxX, sigY - 2, 62, 36, 2, 2, 'FD');
     
     pdf.setFontSize(8);
-    pdf.setTextColor(...green);
+    pdf.setTextColor(...navy);
     pdf.text('APPROUVE PAR', sigBoxX + 4, sigY + 5);
     pdf.setFontSize(11);
     pdf.setFont('helvetica', 'bold');
@@ -1625,7 +1252,7 @@ async function generatePartsQuotePDF(options) {
     pdf.text('Date: ' + signatureDate, sigBoxX + 4, sigY + 19);
     pdf.setFontSize(8);
     pdf.setFont('helvetica', 'italic');
-    pdf.setTextColor(...green);
+    pdf.setTextColor(...navy);
     pdf.text('Lu et approuve', sigBoxX + 4, sigY + 26);
     
     if (signatureImage) {
@@ -1723,7 +1350,7 @@ async function generateContractQuotePDF(options) {
   let capcertLogo = null;
   try {
     const results = await Promise.all([
-      loadImageAsBase64('/images/logos/lighthouse-logo.png'),
+      loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg'),
       loadImageAsBase64('/images/logos/capcert-logo.png')
     ]);
     lighthouseLogo = results[0];
@@ -1763,7 +1390,7 @@ async function generateContractQuotePDF(options) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
       // Bigger logo: 70mm wide x 14mm tall 
-      pdf.addImage(lighthouseLogo, format, margin, y, 70, 14);
+      pdf.addImage(lighthouseLogo, format, margin, y, 85, 22);
       logoAdded = true;
     } catch (e) {
       logoAdded = false;
@@ -3062,12 +2689,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
       {activeTab === 'overview' && (
         <div className="space-y-6">
           {/* ACTION REQUIRED - Combined RMA, Parts Orders, and Contracts */}
-          {(serviceRequests.filter(r => 
-            // Regular action needed
-            (['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at) ||
-            // Supplement pending - needs customer action
-            (r.avenant_sent_at && r.avenant_total > 0 && !r.avenant_approved_at)
-          ).length > 0 || 
+          {(serviceRequests.filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at).length > 0 || 
             partsNeedingAction.length > 0 ||
             (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0)) && (
             <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4">
@@ -3076,7 +2698,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
               </h3>
               <p className="text-sm text-red-600 mb-3">Les demandes suivantes nécessitent votre attention</p>
               <div className="space-y-2">
-                {/* RMA Requests - Regular Actions */}
+                {/* RMA Requests */}
                 {serviceRequests
                   .filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at)
                   .map(req => (
@@ -3093,28 +2715,6 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                           : req.status === 'inspection_complete' || req.status === 'quote_sent'
                           ? 'Approuver le devis'
                           : 'Action requise'}
-                      </span>
-                    </div>
-                    <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
-                      Agir →
-                    </span>
-                  </div>
-                ))}
-                {/* RMA Requests - Supplement Pending (only if BC not yet submitted) */}
-                {serviceRequests
-                  .filter(r => r.avenant_sent_at && r.avenant_total > 0 && !r.avenant_approved_at && !r.avenant_bc_submitted_at &&
-                    !(['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && !r.bc_submitted_at))
-                  .map(req => (
-                  <div 
-                    key={`sup-${req.id}`}
-                    onClick={() => viewRequest(req)}
-                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-50 border border-red-300"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-red-500">⚠️</span>
-                      <span className="font-mono font-bold text-red-700">{req.request_number}</span>
-                      <span className="text-sm text-red-600">
-                        Travaux supplémentaires - Action requise ({req.avenant_total?.toFixed(2)} €)
                       </span>
                     </div>
                     <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
@@ -3202,14 +2802,11 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                 {inProgressService.slice(0, 5).map(req => {
                   const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
                   const needsAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(req.status);
-                  const hasSupplementPending = req.avenant_sent_at && req.avenant_total > 0 && !req.avenant_approved_at;
-                  const supplementNeedsAction = hasSupplementPending && !req.avenant_bc_submitted_at;
-                  const supplementUnderReview = hasSupplementPending && req.avenant_bc_submitted_at;
                   return (
                     <div 
                       key={req.id}
                       onClick={() => viewRequest(req)}
-                      className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${(needsAction || supplementNeedsAction) ? 'bg-red-50/50' : ''}`}
+                      className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${needsAction ? 'bg-red-50/50' : ''}`}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
@@ -3220,16 +2817,6 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                           {needsAction && (
                             <span className="px-2 py-1 rounded-full text-xs font-bold bg-red-500 text-white animate-pulse">
                               ⚠ Action requise
-                            </span>
-                          )}
-                          {supplementNeedsAction && !needsAction && (
-                            <span className="px-2 py-1 rounded-full text-xs font-bold bg-red-500 text-white animate-pulse">
-                              ⚠️ Travaux supplémentaires - Action requise
-                            </span>
-                          )}
-                          {supplementUnderReview && !needsAction && (
-                            <span className="px-2 py-1 rounded-full text-xs font-bold bg-blue-500 text-white">
-                              📄 BC Supplément en vérification
                             </span>
                           )}
                         </div>
@@ -7480,59 +7067,12 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   const [showRevisionModal, setShowRevisionModal] = useState(false);
   const [revisionNotes, setRevisionNotes] = useState('');
   const [approvingQuote, setApprovingQuote] = useState(false);
-  const [showSupplementModal, setShowSupplementModal] = useState(false);
   
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
   const isPartsOrder = request.request_type === 'parts';
   const isQuoteSent = request.status === 'quote_sent';
   const needsQuoteAction = isQuoteSent && !request.bc_submitted_at;
-  
-  // Supplement requires action if sent but not yet approved AND customer hasn't submitted BC yet
-  const hasSupplementPending = request.avenant_sent_at && request.avenant_total > 0 && !request.avenant_approved_at;
-  const supplementBCSubmitted = hasSupplementPending && request.avenant_bc_submitted_at;
-  const needsSupplementAction = hasSupplementPending && !request.avenant_bc_submitted_at;
-  
   const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
-  
-  // Compute total document count for badge
-  const docCount = (() => {
-    let c = 0;
-    if (request.quote_url) c++;
-    if (request.signed_quote_url) c++;
-    if (request.bc_file_url && request.bc_file_url !== request.signed_quote_url) c++;
-    if (!request.bc_file_url) {
-      c += attachments.filter(a => a.category === 'bon_commande' && a.file_url).length;
-    }
-    c += attachments.filter(a => ['avenant_quote', 'avenant_signe', 'avenant_bc'].includes(a.category) && a.file_url).length;
-    (request.request_devices || []).forEach(d => {
-      if (d.report_url) c++;
-      if (d.calibration_certificate_url) c++;
-      if (d.bl_url) c++;
-      if (d.ups_label_url) c++;
-    });
-    // Count other shared attachments (admin-shared docs that aren't already counted above)
-    const knownUrls = new Set();
-    if (request.quote_url) knownUrls.add(request.quote_url);
-    if (request.signed_quote_url) knownUrls.add(request.signed_quote_url);
-    if (request.bc_file_url) knownUrls.add(request.bc_file_url);
-    (request.request_devices || []).forEach(d => {
-      if (d.report_url) knownUrls.add(d.report_url);
-      if (d.calibration_certificate_url) knownUrls.add(d.calibration_certificate_url);
-      if (d.bl_url) knownUrls.add(d.bl_url);
-      if (d.ups_label_url) knownUrls.add(d.ups_label_url);
-    });
-    const structuredCats = ['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'];
-    c += attachments.filter(a => {
-      if (a.file_type?.startsWith('image/')) return false;
-      if (knownUrls.has(a.file_url)) return false;
-      if (structuredCats.includes(a.category)) return false;
-      if (['bl', 'ups_label', 'report', 'certificate'].includes(a.file_type)) return false;
-      const fn = (a.file_name || '').toLowerCase();
-      if (fn.includes('bl-') || fn.includes('ups-label') || fn.includes('ups_label')) return false;
-      return true;
-    }).length;
-    return c;
-  })();
   
   // Check if submission is valid - need EITHER file OR signature (not both required)
   const hasFile = bcFile !== null;
@@ -7652,7 +7192,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         .from('request_attachments')
         .select('*')
         .eq('request_id', request.id);
-      if (files) setAttachments(files.filter(f => !f.category?.startsWith('internal_')));
+      if (files) setAttachments(files);
       
       // Load shipping address
       if (request.shipping_address_id) {
@@ -7739,52 +7279,34 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         console.log('🖊️ No signature data to upload');
       }
       
-      // Detect if this is a supplement (avenant) BC submission
-      const isSubmittingAvenantBC = !!request.avenant_sent_at && !request.avenant_approved_at;
-      
       // Generate signed quote PDF - use correct generator based on request type
       let signedQuotePdfUrl = null;
-      let pdfFileName = null;
       if (hasValidSignature) {
         try {
-          console.log('📄 Generating signed quote PDF... isAvenantBC:', isSubmittingAvenantBC);
+          console.log('📄 Generating signed quote PDF...');
           
           // Check if this is a parts order
           const isPartsRequest = request.request_type === 'parts';
           
-          let pdfBlob;
-          if (isSubmittingAvenantBC) {
-            // Generate signed supplement PDF
-            pdfBlob = await generateSignedAvenantPDF({
-              request,
-              isSigned: true,
-              signatureName: signatureName,
-              signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
-              signatureImage: signatureData
-            });
-            pdfFileName = `supplement_signe_${request.supplement_number || request.request_number}_${Date.now()}.pdf`;
-          } else if (isPartsRequest) {
-            pdfBlob = await generatePartsQuotePDF({
-              request,
-              isSigned: true,
-              signatureName: signatureName,
-              signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
-              signatureImage: signatureData
-            });
-            pdfFileName = `devis_pieces_signe_${request.request_number}_${Date.now()}.pdf`;
-          } else {
-            pdfBlob = await generateQuotePDF({
-              request,
-              isSigned: true,
-              signatureName: signatureName,
-              signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
-              signatureImage: signatureData
-            });
-            pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
-          }
+          const pdfBlob = isPartsRequest 
+            ? await generatePartsQuotePDF({
+                request,
+                isSigned: true,
+                signatureName: signatureName,
+                signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+                signatureImage: signatureData
+              })
+            : await generateQuotePDF({
+                request,
+                isSigned: true,
+                signatureName: signatureName,
+                signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+                signatureImage: signatureData
+              });
           
           console.log('📄 PDF blob generated, size:', pdfBlob?.size);
           
+          const pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
           const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
             .from('documents')
             .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
@@ -7808,31 +7330,19 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       }
       
       // Update request status - set to bc_review so admin can verify
-      // BUT for avenant, DON'T change status - the device is already in progress
-      const updatePayload = isSubmittingAvenantBC
-        ? {
-            // Avenant BC - DON'T change status, device continues its work
-            // DON'T overwrite bc_file_url or signed_quote_url - those are the ORIGINAL BC!
-            // Avenant BC file goes to attachments with category 'avenant_bc'
-            // We just record that avenant BC was submitted, awaiting admin approval
-            avenant_bc_submitted_at: new Date().toISOString(),
-            avenant_bc_signed_by: signatureName,
-            avenant_bc_signature_date: signatureDateISO
-            // Note: avenant_approved_at and supplement_bc_number will be set by admin when they approve
-          }
-        : {
-            // Regular BC - set to bc_review for admin verification
-            status: 'bc_review',
-            bc_submitted_at: new Date().toISOString(),
-            bc_signed_by: signatureName,
-            bc_signature_date: signatureDateISO,
-            bc_file_url: fileUrl,
-            bc_signature_url: signatureUrl,
-            signed_quote_url: signedQuotePdfUrl,
-            quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
-          };
+      // Also record quote approval if coming from quote_sent status
+      const updatePayload = { 
+        status: 'bc_review',
+        bc_submitted_at: new Date().toISOString(),
+        bc_signed_by: signatureName,
+        bc_signature_date: signatureDateISO,
+        bc_file_url: fileUrl,
+        bc_signature_url: signatureUrl,
+        signed_quote_url: signedQuotePdfUrl,
+        quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
+      };
       
-      console.log('📝 Updating service_request with:', updatePayload, 'isAvenantBC:', isSubmittingAvenantBC);
+      console.log('📝 Updating service_request with:', updatePayload);
       
       const { error: updateError } = await supabase
         .from('service_requests')
@@ -7847,24 +7357,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       console.log('✅ Service request updated successfully');
       
       // Save documents to request_attachments
-      // For regular BC: the file is already saved as bc_file_url on the request, 
-      // so only save as attachment if it's an avenant BC
-      if (fileUrl && isSubmittingAvenantBC) {
+      if (fileUrl) {
         const { error: bcAttachError } = await supabase.from('request_attachments').insert({
           request_id: request.id,
-          file_name: bcFile?.name || 'Bon de Commande Supplément.pdf',
-          file_url: fileUrl,
-          file_type: bcFile?.type || 'application/pdf',
-          file_size: bcFile?.size || 0,
-          uploaded_by: profile.id,
-          category: 'avenant_bc'
-        });
-        console.log('📎 Avenant BC attachment saved:', { fileUrl, error: bcAttachError });
-      } else if (fileUrl) {
-        // Regular BC - save with proper label (not client filename)
-        const { error: bcAttachError } = await supabase.from('request_attachments').insert({
-          request_id: request.id,
-          file_name: `Bon_de_Commande_${request.request_number}.pdf`,
+          file_name: bcFile?.name || 'Bon de Commande.pdf',
           file_url: fileUrl,
           file_type: bcFile?.type || 'application/pdf',
           file_size: bcFile?.size || 0,
@@ -7878,16 +7374,14 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       if (signedQuotePdfUrl) {
         const { error: pdfAttachError } = await supabase.from('request_attachments').insert({
           request_id: request.id,
-          file_name: isSubmittingAvenantBC 
-            ? `Supplément_Signé_${request.supplement_number || request.request_number}.pdf`
-            : `Devis_Signé_${request.request_number}.pdf`,
+          file_name: `Devis_Signé_${request.request_number}.pdf`,
           file_url: signedQuotePdfUrl,
           file_type: 'application/pdf',
           file_size: 0,
           uploaded_by: profile.id,
-          category: isSubmittingAvenantBC ? 'avenant_signe' : 'devis_signe'
+          category: 'devis_signe'
         });
-        console.log('📎 Signed PDF attachment saved:', { signedQuotePdfUrl, error: pdfAttachError, isAvenantBC: isSubmittingAvenantBC });
+        console.log('📎 Signed PDF attachment saved:', { signedQuotePdfUrl, error: pdfAttachError });
       } else {
         console.log('📎 No signed PDF URL to save as attachment');
       }
@@ -7936,73 +7430,32 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
     setSending(false);
   };
 
-  // Generate history from timestamps on request and devices
+  // Generate history from status if no history in DB
   const getStatusHistory = () => {
-    const events = [];
-    const devices = request.request_devices || [];
+    const statusHistory = [];
     
-    // RMA-level events
-    events.push({ id: 'submitted', event_type: 'submitted', event_description: '📝 Demande soumise', event_date: request.submitted_at || request.created_at, color: 'gray' });
-    
-    if (request.request_number) {
-      events.push({ id: 'rma', event_type: 'rma_created', event_description: '📋 RMA créé', event_date: request.created_at, color: 'blue' });
-    }
-    if (request.quote_sent_at) {
-      events.push({ id: 'quote', event_type: 'quote_sent', event_description: '💰 Devis envoyé', event_date: request.quote_sent_at, color: 'amber' });
-    }
-    if (request.quote_approved_at) {
-      events.push({ id: 'approved', event_type: 'approved', event_description: '✅ Devis approuvé', event_date: request.quote_approved_at, color: 'green' });
-    }
-    if (request.bc_submitted_at) {
-      events.push({ id: 'bc', event_type: 'bc_submitted', event_description: '📄 Bon de commande soumis', event_date: request.bc_submitted_at, color: 'purple' });
-    }
-    if (request.bc_approved_at) {
-      events.push({ id: 'bc_ok', event_type: 'bc_approved', event_description: '✅ BC approuvé — En attente appareil', event_date: request.bc_approved_at, color: 'green' });
-    }
-    if (request.received_at) {
-      events.push({ id: 'received', event_type: 'received', event_description: '📦 Appareil reçu', event_date: request.received_at, color: 'cyan' });
-    }
-    
-    // Per-device events
-    devices.forEach((device, idx) => {
-      const sn = device.serial_number || `Appareil ${idx + 1}`;
-      const prefix = devices.length > 1 ? `[${sn}] ` : '';
-      
-      if (device.service_started_at) {
-        const svcLabel = device.service_type === 'repair' ? 'Réparation démarrée' : 'Étalonnage démarré';
-        events.push({ id: `svc-${idx}`, event_type: 'service_started', event_description: `🔧 ${prefix}${svcLabel}`, event_date: device.service_started_at, color: 'indigo' });
-      }
-      if (device.report_completed_at) {
-        events.push({ id: `rpt-${idx}`, event_type: 'report_done', event_description: `📋 ${prefix}Rapport complété`, event_date: device.report_completed_at, color: 'blue' });
-      }
-      if (device.qc_completed_at) {
-        events.push({ id: `qc-${idx}`, event_type: 'qc_passed', event_description: `✅ ${prefix}Contrôle qualité validé`, event_date: device.qc_completed_at, color: 'purple' });
-      }
-      if (device.shipped_at) {
-        events.push({ id: `ship-${idx}`, event_type: 'shipped', event_description: `🚚 ${prefix}Expédié`, event_date: device.shipped_at, color: 'green' });
-      }
+    // Always add submission
+    statusHistory.push({
+      id: 'submitted',
+      event_type: 'submitted',
+      event_description: 'Demande soumise',
+      event_date: request.submitted_at || request.created_at
     });
     
-    // Supplement events
-    if (request.avenant_sent_at) {
-      events.push({ id: 'sup', event_type: 'supplement_sent', event_description: '📄 Supplément envoyé', event_date: request.avenant_sent_at, color: 'amber' });
-    }
-    if (request.avenant_approved_at) {
-      events.push({ id: 'sup_ok', event_type: 'supplement_approved', event_description: '✅ Supplément approuvé', event_date: request.avenant_approved_at, color: 'green' });
-    }
-    
-    // If no specific events beyond submission, add current status
-    if (events.length <= 1 && request.status !== 'submitted') {
-      events.push({ id: 'current', event_type: request.status, event_description: `◆ ${style.label}`, event_date: request.updated_at || request.created_at, color: 'blue' });
+    // Add current status if different from submitted
+    if (request.status !== 'submitted') {
+      statusHistory.push({
+        id: 'current',
+        event_type: request.status,
+        event_description: style.label,
+        event_date: request.updated_at || request.created_at
+      });
     }
     
-    // Sort by date
-    events.sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
-    return events;
+    return statusHistory;
   };
 
-  const displayHistory = getStatusHistory();
-  console.log('🔍 HISTORY v56b displayHistory:', displayHistory.length, 'items', displayHistory.map(e => e.event_description));
+  const displayHistory = history.length > 0 ? history : getStatusHistory();
 
   return (
     <div>
@@ -8115,69 +7568,6 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   ✅ Approuver et soumettre BC
                 </button>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* Supplement Pending - Customer Action Required */}
-        {needsSupplementAction && (
-          <div className="bg-red-50 border-b border-red-300 px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center">
-                  <span className="text-white text-2xl">⚠️</span>
-                </div>
-                <div>
-                  <p className="font-bold text-red-800 text-lg">Travaux supplémentaires - Action requise</p>
-                  <p className="text-sm text-red-600">
-                    Des travaux supplémentaires ont été identifiés ({request.avenant_total?.toFixed(2)} €). Veuillez approuver le supplément.
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowSupplementModal(true)}
-                  className="px-4 py-2 bg-white border border-red-300 text-red-700 rounded-lg font-medium hover:bg-red-50 transition-colors"
-                >
-                  👁️ Voir le Supplément
-                </button>
-                <button
-                  onClick={() => setShowBCModal(true)}
-                  className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors"
-                >
-                  ✅ Approuver et soumettre BC
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Supplement BC Submitted - Under Review */}
-        {supplementBCSubmitted && (
-          <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                  <span className="text-blue-600 text-lg">📄</span>
-                </div>
-                <div>
-                  <p className="font-semibold text-blue-800">BC Supplément soumis - En vérification</p>
-                  <p className="text-sm text-blue-600">
-                    Votre bon de commande pour les travaux supplémentaires ({request.avenant_total?.toFixed(2)} €) est en cours de vérification.
-                  </p>
-                  {request.avenant_bc_submitted_at && (
-                    <p className="text-xs text-blue-500 mt-1">
-                      Soumis le {new Date(request.avenant_bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(request.avenant_bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={() => setShowSupplementModal(true)}
-                className="px-4 py-2 bg-white border border-blue-300 text-blue-700 rounded-lg font-medium hover:bg-blue-50 transition-colors"
-              >
-                👁️ Voir le Supplément
-              </button>
             </div>
           </div>
         )}
@@ -8557,9 +7947,9 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                       <div className="flex justify-between items-start">
                         <div>
                           <img 
-                            src="/images/logos/lighthouse-logo.png" 
+                            src="/images/logos/Lighthouse-color-logo.jpg" 
                             alt="Lighthouse France" 
-                            className="h-14 w-auto mb-1"
+                            className="h-24 w-auto mb-1"
                             onError={(e) => {
                               e.target.style.display = 'none';
                               e.target.nextSibling.style.display = 'block';
@@ -8571,14 +7961,14 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="text-xl font-bold text-amber-600">DEVIS PIÈCES</p>
+                          <p className="text-xl font-bold text-[#2D5A7B]">DEVIS PIÈCES</p>
                           <p className="text-gray-500 font-mono">{quoteData.quoteRef || request.request_number}</p>
                         </div>
                       </div>
                     </div>
                     
-                    {/* Amber accent line */}
-                    <div className="h-1.5 bg-amber-500"></div>
+                    {/* Navy accent line */}
+                    <div className="h-1.5 bg-[#2D5A7B]"></div>
                     
                     {/* Date bar */}
                     <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm">
@@ -8644,7 +8034,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                           )}
                         </tbody>
                         <tfoot>
-                          <tr className="bg-amber-500 text-white">
+                          <tr className="bg-[#2D5A7B] text-white">
                             <td colSpan={4} className="px-2 py-2 text-right font-bold whitespace-nowrap">TOTAL HT</td>
                             <td className="px-2 py-2 text-right font-bold whitespace-nowrap">{grandTotal.toFixed(2)}€</td>
                           </tr>
@@ -8750,13 +8140,13 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               {/* Quote Document - This prints */}
               <div id="quote-print-content">
                 {/* Quote Header */}
-                <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
+                <div className="px-8 pt-8 pb-4 border-b-4 border-[#2D5A7B]">
                   <div className="flex justify-between items-start">
                     <div>
                       <img 
-                        src="/images/logos/lighthouse-logo.png" 
+                        src="/images/logos/Lighthouse-color-logo.jpg" 
                         alt="Lighthouse France" 
-                        className="h-14 w-auto mb-1"
+                        className="h-24 w-auto mb-1"
                         onError={(e) => {
                           e.target.style.display = 'none';
                           e.target.nextSibling.style.display = 'block';
@@ -8768,9 +8158,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-[#00A651]">OFFRE DE PRIX</p>
-                      <p className="text-sm font-bold text-[#1E3A5F]">N° {request.quote_number || '—'}</p>
-                      <p className="text-xs text-gray-500">RMA: {request.request_number}</p>
+                      <p className="text-2xl font-bold text-[#2D5A7B]">OFFRE DE PRIX</p>
+                      <p className="text-gray-500">N° {request.request_number}</p>
                     </div>
                   </div>
                 </div>
@@ -8811,7 +8200,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                         <ul className="space-y-1">
                           {template.prestations.map((p, i) => (
                             <li key={i} className="text-gray-700 flex items-start gap-2">
-                              <span className="text-[#00A651] mt-1">▸</span>
+                              <span className="text-[#2D5A7B] mt-1">▸</span>
                               <span>{p}</span>
                             </li>
                           ))}
@@ -8937,7 +8326,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                       </tr>
                     </tbody>
                     <tfoot>
-                      <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#00A651] text-white"}>
+                      <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#2D5A7B] text-white"}>
                         <td colSpan={2} className="px-3 py-4"></td>
                         <td className="px-3 py-4 text-right font-bold text-lg">TOTAL HT</td>
                         <td className="px-3 py-4 text-right font-bold text-xl">
@@ -9036,6 +8425,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                           .border-orange-500 { border-color: #f97316; }
                           .border-green-200 { border-color: #bbf7d0; }
                           .border-\\[\\#00A651\\] { border-color: #00A651; }
+                          .border-\\[\\#2D5A7B\\] { border-color: #2D5A7B; }
                           .bg-gray-50 { background: #f9fafb; }
                           .bg-gray-100 { background: #f3f4f6; }
                           .bg-gray-200 { background: #e5e7eb; }
@@ -9043,6 +8433,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                           .bg-green-50 { background: #f0fdf4; }
                           .bg-\\[\\#1a1a2e\\] { background: #1a1a2e; }
                           .bg-\\[\\#00A651\\] { background: #00A651; }
+                          .bg-\\[\\#2D5A7B\\] { background: #2D5A7B; }
                           .text-white { color: white; }
                           .text-gray-400 { color: #9ca3af; }
                           .text-gray-500 { color: #6b7280; }
@@ -9053,6 +8444,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                           .text-green-800 { color: #166534; }
                           .text-\\[\\#1a1a2e\\] { color: #1a1a2e; }
                           .text-\\[\\#00A651\\] { color: #00A651; }
+                          .text-\\[\\#2D5A7B\\] { color: #2D5A7B; }
                           .text-orange-500 { color: #f97316; }
                           .text-xs { font-size: 0.75rem; }
                           .text-sm { font-size: 0.875rem; }
@@ -9186,210 +8578,13 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           );
         })()}
 
-        {/* Supplement Modal - HTML Preview */}
-        {showSupplementModal && (() => {
-          const supplementDoc = attachments.find(a => a.category === 'avenant_quote');
-          const supplementUrl = supplementDoc?.file_url;
-          const company = request.companies || {};
-          const devices = (request.request_devices || []).filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
-          const total = request.avenant_total || devices.reduce((sum, d) => sum + (d.additional_work_items || []).reduce((s, item) => s + (parseFloat(item.price) || 0), 0), 0);
-          const supDate = request.avenant_sent_at ? new Date(request.avenant_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
-          
-          // Download PDF function
-          const handleDownloadSupplement = async () => {
-            if (supplementUrl) {
-              window.open(supplementUrl, '_blank');
-            } else {
-              try {
-                const pdfBlob = await generateSupplementPDF({ request, isSigned: false });
-                const url = URL.createObjectURL(pdfBlob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `supplement_${request.supplement_number || request.request_number}.pdf`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-              } catch (e) {
-                console.error('PDF generation error:', e);
-              }
-            }
-          };
-          
-          return (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-              {/* Modal Header - Green supplement theme */}
-              <div className="sticky top-0 bg-gradient-to-r from-[#00A651] to-[#008f45] text-white px-6 py-4 flex justify-between items-center z-10">
-                <div>
-                  <h2 className="text-xl font-bold">Supplément au Devis</h2>
-                  <p className="text-white/80">{request.supplement_number || request.request_number} • {total.toFixed(2)} € HT</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleDownloadSupplement}
-                    className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded text-sm flex items-center gap-1"
-                  >
-                    📥 Télécharger PDF
-                  </button>
-                  <button onClick={() => setShowSupplementModal(false)} className="text-white/80 hover:text-white text-2xl ml-2">&times;</button>
-                </div>
-              </div>
-
-              {/* Supplement Document */}
-              <div>
-                {/* Header with logo and title */}
-                <div className="px-8 pt-8 pb-4 border-b-4 border-[#00A651]">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <img 
-                        src="/images/logos/lighthouse-logo.png" 
-                        alt="Lighthouse France" 
-                        className="h-14 w-auto mb-1"
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                          e.target.nextSibling.style.display = 'block';
-                        }}
-                      />
-                      <div className="hidden">
-                        <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
-                        <p className="text-gray-500">Worldwide Solutions</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-bold text-[#00A651]">SUPPLÉMENT AU DEVIS</p>
-                      <p className="text-sm font-bold text-[#1E3A5F]">N° {request.supplement_number || '—'}</p>
-                      <p className="text-xs text-gray-500">Devis: {request.quote_number || '—'}</p>
-                      <p className="text-xs text-gray-500">RMA: {request.request_number}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Info Bar */}
-                <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase">Date</p>
-                    <p className="font-medium">{supDate}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase">Validité</p>
-                    <p className="font-medium">30 jours</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase">Conditions</p>
-                    <p className="font-medium">À réception de facture</p>
-                  </div>
-                </div>
-
-                {/* Client Info */}
-                <div className="px-8 py-4 border-b">
-                  <p className="text-xs text-gray-500 uppercase">Client</p>
-                  <p className="font-bold text-xl text-[#1a1a2e]">{company.name}</p>
-                  {company.billing_address && <p className="text-gray-600">{company.billing_address}</p>}
-                  <p className="text-gray-600">{company.billing_postal_code} {company.billing_city}</p>
-                  <p className="text-xs text-gray-400 mt-1">Devis initial: {request.request_number}</p>
-                </div>
-
-                {/* Explanation Banner */}
-                <div className="mx-8 mt-6 bg-[#00A651]/10 border border-[#00A651]/30 rounded-lg p-4">
-                  <p className="text-[#00A651] font-medium text-sm">
-                    Suite à l'inspection de vos appareils, nous avons constaté des travaux supplémentaires nécessaires.
-                  </p>
-                  <p className="text-[#00A651] text-sm">
-                    Veuillez trouver ci-dessous le détail des interventions recommandées.
-                  </p>
-                </div>
-
-                {/* Travaux Supplémentaires Table */}
-                <div className="px-8 py-6">
-                  <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Travaux Supplémentaires</h3>
-                  
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-[#00A651] text-white">
-                        <th className="px-3 py-3 text-center w-12">Qté</th>
-                        <th className="px-3 py-3 text-left">Désignation</th>
-                        <th className="px-3 py-3 text-right w-28">Prix Unit.</th>
-                        <th className="px-3 py-3 text-right w-28">Total HT</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {devices.map((device, i) => (
-                        <Fragment key={i}>
-                          {/* Device header row */}
-                          <tr className="bg-gray-100 border-t">
-                            <td colSpan={4} className="px-3 py-2 font-bold text-[#1a1a2e]">
-                              {device.model_name} (SN: {device.serial_number})
-                            </td>
-                          </tr>
-                          {/* Constat row if exists */}
-                          {device.service_findings && (
-                            <tr>
-                              <td colSpan={4} className="px-3 py-1 text-xs text-gray-500 italic">
-                                Constat: {device.service_findings}
-                              </td>
-                            </tr>
-                          )}
-                          {/* Work items */}
-                          {(device.additional_work_items || []).map((item, j) => (
-                            <tr key={j} className={j % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-3 py-2 text-center">1</td>
-                              <td className="px-3 py-2">{item.description || item.name}</td>
-                              <td className="px-3 py-2 text-right">{parseFloat(item.price || 0).toFixed(2)} EUR</td>
-                              <td className="px-3 py-2 text-right font-medium">{parseFloat(item.price || 0).toFixed(2)} EUR</td>
-                            </tr>
-                          ))}
-                        </Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-
-                  {/* Total */}
-                  <div className="mt-4 bg-[#00A651] text-white px-6 py-3 rounded-lg flex justify-between items-center">
-                    <span className="font-bold text-lg">TOTAL SUPPLÉMENT HT</span>
-                    <span className="font-bold text-xl">{total.toFixed(2)} EUR</span>
-                  </div>
-                </div>
-
-                {/* Conditions */}
-                <div className="px-8 pb-6">
-                  <p className="text-xs text-gray-500 uppercase mb-2">Conditions</p>
-                  <ul className="text-xs text-gray-600 space-y-1">
-                    <li>• Ce devis complémentaire est valable 30 jours à compter de sa date d'émission.</li>
-                    <li>• Les travaux seront effectués après réception de votre accord écrit (signature ou bon de commande).</li>
-                  </ul>
-                </div>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="sticky bottom-0 border-t p-6 flex justify-between items-center bg-gray-50">
-                <button 
-                  onClick={() => setShowSupplementModal(false)}
-                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
-                >
-                  Fermer
-                </button>
-                <div className="flex gap-3">
-                  <button 
-                    onClick={() => { setShowSupplementModal(false); setShowBCModal(true); }}
-                    className="px-6 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold"
-                  >
-                    ✅ Approuver et soumettre BC
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-          );
-        })()}
-
         {/* Tabs */}
         <div className="flex border-b border-gray-100 overflow-x-auto">
           {[
             { id: 'details', label: 'Détails', icon: '📋' },
-            { id: 'messages', label: 'Messages', icon: '💬', count: messages.filter(m => !m.is_read && m.sender_id !== profile?.id).length, isNotification: true },
+            { id: 'messages', label: 'Messages', icon: '💬', count: messages.filter(m => !m.is_read && m.sender_id !== profile?.id).length },
             { id: 'history', label: 'Historique', icon: '📜' },
-            { id: 'documents', label: 'Documents', icon: '📄', count: docCount }
+            { id: 'documents', label: 'Documents', icon: '📄', count: attachments.length }
           ].map(tab => (
             <button
               key={tab.id}
@@ -9402,11 +8597,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             >
               <span>{tab.icon}</span>
               {tab.label}
-              {tab.count > 0 && tab.isNotification && (
+              {tab.count > 0 && (
                 <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">{tab.count}</span>
-              )}
-              {tab.count > 0 && !tab.isNotification && (
-                <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded-full">{tab.count}</span>
               )}
             </button>
           ))}
@@ -9461,7 +8653,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               {isPartsOrder && (
                 <div className="bg-white border border-gray-200 rounded-xl p-6">
                   <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 rounded-full bg-[#E8F2F8] flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
                       <span className="text-lg">📦</span>
                     </div>
                     <div>
@@ -9470,81 +8662,60 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     </div>
                   </div>
                   
-                  {/* Chevron Arrow Progress Bar */}
-                  {(() => {
-                    const partsSteps = [
-                      { id: 'submitted', label: 'Demande soumise' },
-                      { id: 'quote_sent', label: 'Devis envoyé' },
-                      { id: 'bc_review', label: 'BC en vérification' },
-                      { id: 'in_progress', label: 'En cours' },
-                      { id: 'ready_to_ship', label: 'Prêt à expédier' },
-                      { id: 'shipped', label: 'Expédié' },
-                      { id: 'delivered', label: 'Livré' }
-                    ];
-                    
-                    const statusOrder = ['submitted', 'quote_sent', 'bc_review', 'in_progress', 'ready_to_ship', 'shipped', 'delivered', 'completed'];
-                    const currentIdx = statusOrder.indexOf(request.status);
-                    
-                    return (
-                      <div className="w-full">
-                        {/* Desktop - chevron arrows */}
-                        <div className="hidden md:flex items-center">
-                          {partsSteps.map((step, index) => {
+                  {/* Progress Steps */}
+                  <div className="relative">
+                    {(() => {
+                      const partsSteps = [
+                        { id: 'submitted', label: 'Demande soumise', icon: '📝' },
+                        { id: 'quote_sent', label: 'Devis envoyé', icon: '💰' },
+                        { id: 'bc_review', label: 'BC en vérification', icon: '📋' },
+                        { id: 'in_progress', label: 'En cours', icon: '📦' },
+                        { id: 'ready_to_ship', label: 'Prêt à expédier', icon: '🚚' },
+                        { id: 'shipped', label: 'Expédié', icon: '✅' },
+                        { id: 'delivered', label: 'Livré', icon: '🏠' }
+                      ];
+                      
+                      const statusOrder = ['submitted', 'quote_sent', 'bc_review', 'in_progress', 'ready_to_ship', 'shipped', 'delivered', 'completed'];
+                      const currentIdx = statusOrder.indexOf(request.status);
+                      
+                      return (
+                        <div className="flex items-center justify-between">
+                          {partsSteps.map((step, idx) => {
                             const stepIdx = statusOrder.indexOf(step.id);
-                            const isCompleted = currentIdx > stepIdx && currentIdx !== -1;
-                            const isCurrent = currentIdx === stepIdx;
-                            const isLast = index === partsSteps.length - 1;
+                            const isComplete = currentIdx >= stepIdx && currentIdx !== -1;
+                            const isCurrent = request.status === step.id;
                             
                             return (
-                              <div key={step.id} className="flex items-center flex-1">
-                                <div 
-                                  className={`
-                                    relative flex items-center justify-center flex-1 py-2.5 px-1 text-xs font-medium
-                                    ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#1E3A5F] text-white' : 'bg-gray-200 text-gray-500'}
-                                    ${index === 0 ? 'rounded-l-md' : ''}
-                                    ${isLast ? 'rounded-r-md' : ''}
-                                  `}
-                                  style={{
-                                    clipPath: isLast 
-                                      ? 'polygon(0 0, 100% 0, 100% 100%, 0 100%, 8px 50%)' 
-                                      : index === 0 
-                                        ? 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)'
-                                        : 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)'
-                                  }}
-                                >
-                                  <span className="truncate px-1">{step.label}</span>
+                              <div key={step.id} className="flex flex-col items-center flex-1 relative">
+                                {/* Connector line */}
+                                {idx > 0 && (
+                                  <div className={`absolute top-5 right-1/2 w-full h-1 -z-10 ${
+                                    isComplete ? 'bg-green-500' : 'bg-gray-200'
+                                  }`} />
+                                )}
+                                
+                                {/* Circle */}
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg z-10 ${
+                                  isCurrent ? 'bg-amber-500 text-white ring-4 ring-amber-200' :
+                                  isComplete ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'
+                                }`}>
+                                  {isComplete && !isCurrent ? '✓' : step.icon}
                                 </div>
+                                
+                                {/* Label */}
+                                <p className={`text-xs mt-2 text-center ${
+                                  isCurrent ? 'font-bold text-amber-700' :
+                                  isComplete ? 'text-green-700' : 'text-gray-400'
+                                }`}>
+                                  {step.label}
+                                </p>
                               </div>
                             );
                           })}
                         </div>
-                        
-                        {/* Mobile - simplified bars */}
-                        <div className="md:hidden">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium text-[#1E3A5F]">
-                              Étape {Math.max(currentIdx, 0) + 1} sur {partsSteps.length}
-                            </span>
-                            <span className="text-sm text-gray-500">{partsSteps[Math.max(currentIdx, 0)]?.label}</span>
-                          </div>
-                          <div className="flex gap-1">
-                            {partsSteps.map((step, index) => {
-                              const stepIdx = statusOrder.indexOf(step.id);
-                              return (
-                                <div 
-                                  key={step.id}
-                                  className={`h-2 flex-1 rounded-full ${
-                                    currentIdx > stepIdx ? 'bg-[#3B7AB4]' : 
-                                    currentIdx === stepIdx ? 'bg-[#1E3A5F]' : 'bg-gray-200'
-                                  }`}
-                                />
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
+                      );
+                    })()}
+                  </div>
                   
                   {/* Tracking Info */}
                   {request.ups_tracking_number && (
@@ -9823,27 +8994,22 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               ) : (
                 <div className="relative">
                   <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     {displayHistory.map((event, i) => {
-                      const dotColor = {
-                        green: 'bg-green-500',
-                        blue: 'bg-blue-500',
-                        indigo: 'bg-indigo-500',
-                        purple: 'bg-purple-500',
-                        cyan: 'bg-cyan-500',
-                        amber: 'bg-amber-500',
-                        red: 'bg-red-500',
-                        gray: 'bg-gray-400'
-                      }[event.color] || 'bg-gray-400';
+                      const eventStyle = STATUS_STYLES[event.event_type] || {};
                       return (
-                        <div key={event.id || i} className="relative pl-10">
-                          <div className={`absolute left-2 w-5 h-5 rounded-full border-2 border-white shadow z-10 ${dotColor}`}></div>
-                          <div className="bg-gray-50 rounded-lg p-3">
-                            <p className="font-medium text-gray-800">{event.event_description}</p>
+                        <div key={event.id || i} className="flex gap-4 ml-4">
+                          <div className={`w-3 h-3 rounded-full border-2 border-white shadow -ml-[7px] mt-1.5 z-10 ${
+                            i === 0 ? 'bg-[#3B7AB4]' : 'bg-gray-400'
+                          }`}></div>
+                          <div className="flex-1 pb-4">
+                            <div className="flex items-center gap-2">
+                              {eventStyle.icon && <span>{eventStyle.icon}</span>}
+                              <p className="font-medium text-[#1E3A5F]">{event.event_description}</p>
+                            </div>
                             <p className="text-sm text-gray-500">
-                              {new Date(event.event_date).toLocaleDateString('fr-FR', {
-                                weekday: 'long',
-                                day: 'numeric',
+                              {new Date(event.event_date).toLocaleString('fr-FR', {
+                                day: '2-digit',
                                 month: 'long',
                                 year: 'numeric',
                                 hour: '2-digit',
@@ -9861,229 +9027,171 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           )}
 
           {/* Documents Tab */}
-          {activeTab === 'documents' && (() => {
-            // Collect ALL known URLs to avoid duplicates from attachments
-            const knownUrls = new Set();
-            if (request.quote_url) knownUrls.add(request.quote_url);
-            if (request.signed_quote_url) knownUrls.add(request.signed_quote_url);
-            if (request.bc_file_url) knownUrls.add(request.bc_file_url);
-            (request.request_devices || []).forEach(d => {
-              if (d.report_url) knownUrls.add(d.report_url);
-              if (d.calibration_certificate_url) knownUrls.add(d.calibration_certificate_url);
-              if (d.bl_url) knownUrls.add(d.bl_url);
-              if (d.ups_label_url) knownUrls.add(d.ups_label_url);
-            });
-            // Also known attachment categories that map to structured cards
-            const structuredCategories = ['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'];
-            
-            // Remaining attachments = not images, not known URLs, not structured categories, not BL/UPS/report dupes
-            const otherAttachments = attachments.filter(a => {
-              if (a.file_type?.startsWith('image/')) return false;
-              if (knownUrls.has(a.file_url)) return false;
-              if (structuredCategories.includes(a.category)) return false;
-              // Exclude BL/UPS by file_type field
-              if (['bl', 'ups_label', 'report', 'certificate'].includes(a.file_type)) return false;
-              // Exclude by filename patterns (anywhere in name)
-              const fn = (a.file_name || '').toLowerCase();
-              if (fn.includes('bl-') || fn.includes('ups-label') || fn.includes('ups_label')) return false;
-              return true;
-            });
-            
-            const devices = request.request_devices || [];
-            const hasAnyDoc = request.quote_url || request.signed_quote_url || request.bc_file_url ||
-              attachments.some(a => structuredCategories.includes(a.category)) ||
-              devices.some(d => d.report_url || d.calibration_certificate_url || d.bl_url || d.ups_label_url) ||
-              otherAttachments.length > 0;
-            
-            return (
+          {activeTab === 'documents' && (
             <div className="space-y-6">
               {/* Photos from request */}
               {attachments.filter(a => a.file_type?.startsWith('image/')).length > 0 && (
                 <div>
-                  <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">📷 Photos soumises</h3>
+                  <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Photos soumises
+                  </h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {attachments.filter(a => a.file_type?.startsWith('image/')).map((img) => (
-                      <a key={img.id} href={img.file_url} target="_blank" rel="noopener noreferrer"
-                        className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition-opacity border border-gray-200">
-                        <img src={img.file_url} alt={img.file_name} className="w-full h-full object-cover" />
+                      <a 
+                        key={img.id}
+                        href={img.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition-opacity border border-gray-200"
+                      >
+                        <img 
+                          src={img.file_url} 
+                          alt={img.file_name}
+                          className="w-full h-full object-cover"
+                        />
                       </a>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* All Documents Grid */}
-              <div>
-                <h3 className="font-bold text-[#1E3A5F] mb-3 flex items-center gap-2">📁 Documents</h3>
-                {hasAnyDoc ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  
-                  {/* 1. DEVIS */}
-                  {request.quote_url && (
-                    <a href={request.quote_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors border-amber-200">
-                      <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Devis</p>
-                        <p className="text-sm text-amber-600">{request.quote_number ? `N° ${request.quote_number}` : 'Télécharger'}</p>
-                      </div>
-                    </a>
-                  )}
-                  
-                  {/* 2. DEVIS SIGNÉ / BC */}
-                  {request.signed_quote_url && (
-                    <a href={request.signed_quote_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
-                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Devis Signé / BC</p>
-                        <p className="text-sm text-green-600">{request.bc_number ? `N° ${request.bc_number}` : 'Signé'}</p>
-                      </div>
-                    </a>
-                  )}
-                  
-                  {/* 3. BON DE COMMANDE CLIENT (uploaded file, only if different from signed) */}
-                  {request.bc_file_url && request.bc_file_url !== request.signed_quote_url && (
-                    <a href={request.bc_file_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
-                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Bon de Commande Client</p>
-                        <p className="text-sm text-purple-600">{request.bc_number ? `N° ${request.bc_number}` : 'BC'}</p>
-                      </div>
-                    </a>
-                  )}
-                  {/* BC from attachments if no bc_file_url */}
-                  {!request.bc_file_url && attachments.filter(a => a.category === 'bon_commande' && a.file_url).map(att => (
-                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
-                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Bon de Commande Client</p>
-                        <p className="text-sm text-purple-600">{request.bc_number ? `N° ${request.bc_number}` : 'BC'}</p>
-                      </div>
-                    </a>
-                  ))}
-                  
-                  {/* 4. PER-DEVICE: RAPPORT DE SERVICE */}
-                  {devices.filter(d => d.report_url).map(device => (
-                    <a key={`report-${device.id}`} href={device.report_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
-                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Rapport de Service</p>
-                        <p className="text-sm text-blue-600">{device.serial_number}</p>
-                      </div>
-                    </a>
-                  ))}
-                  
-                  {/* 5. PER-DEVICE: BON DE LIVRAISON */}
-                  {devices.filter(d => d.bl_url).map(device => (
-                    <a key={`bl-${device.id}`} href={device.bl_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-cyan-50 transition-colors">
-                      <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center text-2xl">📦</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Bon de Livraison</p>
-                        <p className="text-sm text-cyan-600">{device.bl_number ? `N° ${device.bl_number}` : 'BL'}</p>
-                      </div>
-                    </a>
-                  ))}
-                  
-                  {/* 6. PER-DEVICE: ÉTIQUETTE UPS */}
-                  {devices.filter(d => d.ups_label_url).map(device => (
-                    <a key={`ups-${device.id}`} href={device.ups_label_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors">
-                      <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">🏷️</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Étiquette UPS</p>
-                        <p className="text-sm text-amber-600">{device.tracking_number || 'Label'}</p>
-                      </div>
-                    </a>
-                  ))}
-                  
-                  {/* 7. PER-DEVICE: CERTIFICAT D'ÉTALONNAGE */}
-                  {devices.filter(d => d.calibration_certificate_url).map(device => (
-                    <a key={`cert-${device.id}`} href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-teal-50 transition-colors border-teal-300">
-                      <div className="w-12 h-12 bg-teal-100 rounded-lg flex items-center justify-center text-2xl">🏆</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Certificat d'Étalonnage</p>
-                        <p className="text-sm text-teal-600">{device.certificate_number || device.serial_number}</p>
-                      </div>
-                    </a>
-                  ))}
-                  
-                  {/* 8. SUPPLÉMENT */}
-                  {attachments.filter(a => a.category === 'avenant_quote' && a.file_url).map(att => (
-                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-emerald-50 transition-colors border-emerald-200">
-                      <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Supplément</p>
-                        <p className="text-sm text-emerald-600">{request.supplement_number ? `N° ${request.supplement_number}` : `${(request.avenant_total || 0).toFixed(2)} €`}</p>
-                      </div>
-                    </a>
-                  ))}
-                  
-                  {/* 9. SUPPLÉMENT SIGNÉ */}
-                  {attachments.filter(a => a.category === 'avenant_signe' && a.file_url).map(att => (
-                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-emerald-50 transition-colors border-emerald-200">
-                      <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Supplément Signé</p>
-                        <p className="text-sm text-emerald-600">{request.supplement_number ? `N° ${request.supplement_number}` : 'Signé'}</p>
-                      </div>
-                    </a>
-                  ))}
-                  
-                  {/* 10. BC SUPPLÉMENT */}
-                  {attachments.filter(a => a.category === 'avenant_bc' && a.file_url).map(att => (
-                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
-                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
-                      <div>
-                        <p className="font-medium text-gray-800">BC Supplément (Client)</p>
-                        <p className="text-sm text-purple-600">{request.supplement_number ? `N° ${request.supplement_number}` : 'BC Supplément'}</p>
-                      </div>
-                    </a>
-                  ))}
-                  
-                  {/* 11. OTHER ATTACHMENTS (admin-shared docs, uncategorized) */}
-                  {otherAttachments.map((doc) => {
-                    const displayName = (doc.file_name || 'Document').replace(/Avenant/gi, 'Supplément');
-                    const cat = doc.category || 'general';
-                    const catStyle = {
-                      rapport: { icon: '📋', bg: 'bg-blue-100', border: 'border-blue-200', hover: 'hover:bg-blue-50', text: 'text-blue-600' },
-                      certificat: { icon: '🏆', bg: 'bg-teal-100', border: 'border-teal-200', hover: 'hover:bg-teal-50', text: 'text-teal-600' },
-                      bon_livraison: { icon: '📦', bg: 'bg-cyan-100', border: 'border-cyan-200', hover: 'hover:bg-cyan-50', text: 'text-cyan-600' },
-                      facture: { icon: '💶', bg: 'bg-yellow-100', border: 'border-yellow-200', hover: 'hover:bg-yellow-50', text: 'text-yellow-600' },
-                      note_technique: { icon: '🔧', bg: 'bg-indigo-100', border: 'border-indigo-200', hover: 'hover:bg-indigo-50', text: 'text-indigo-600' },
-                      correspondance: { icon: '✉️', bg: 'bg-pink-100', border: 'border-pink-200', hover: 'hover:bg-pink-50', text: 'text-pink-600' },
-                    }[cat] || { icon: '📄', bg: 'bg-gray-100', border: '', hover: 'hover:bg-gray-50', text: 'text-gray-500' };
-                    return (
-                      <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer"
-                         className={`flex items-center gap-4 p-4 border rounded-lg ${catStyle.hover} transition-colors ${catStyle.border}`}>
-                        <div className={`w-12 h-12 ${catStyle.bg} rounded-lg flex items-center justify-center text-2xl`}>{catStyle.icon}</div>
-                        <div>
-                          <p className="font-medium text-gray-800 truncate">{displayName}</p>
-                          <p className={`text-xs ${catStyle.text}`}>Ajouté le {new Date(doc.created_at).toLocaleDateString('fr-FR')}</p>
+              {/* Other documents */}
+              {attachments.filter(a => !a.file_type?.startsWith('image/')).length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Documents
+                  </h3>
+                  <div className="space-y-2">
+                    {attachments.filter(a => !a.file_type?.startsWith('image/')).map((doc) => (
+                      <a 
+                        key={doc.id}
+                        href={doc.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
+                      >
+                        <div className="w-10 h-10 bg-[#3B7AB4] rounded flex items-center justify-center text-white font-bold text-xs">
+                          {doc.file_name?.split('.').pop()?.toUpperCase() || 'DOC'}
                         </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-[#1E3A5F] truncate">{doc.file_name}</p>
+                          <p className="text-xs text-gray-500">
+                            Ajouté le {new Date(doc.created_at).toLocaleDateString('fr-FR')}
+                          </p>
+                        </div>
+                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
                       </a>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
+              )}
+
+              {/* Certificates and Quotes - from Lighthouse */}
+              <div>
+                <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                  </svg>
+                  {isPartsOrder ? 'Devis et Documents' : 'Certificats et Devis'}
+                </h3>
+                {request.quote_url || request.certificate_url || request.bc_file_url || request.signed_quote_url ? (
+                  <div className="space-y-2">
+                    {request.quote_url && (
+                      <a 
+                        href={request.quote_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200"
+                      >
+                        <div className="w-10 h-10 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                          PDF
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-blue-900">Devis</p>
+                          <p className="text-xs text-blue-600">Télécharger le devis</p>
+                        </div>
+                        <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </a>
+                    )}
+                    {request.bc_file_url && (
+                      <a 
+                        href={request.bc_file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors border border-purple-200"
+                      >
+                        <div className="w-10 h-10 bg-purple-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                          PDF
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-purple-900">
+                            {request.is_contract_rma ? 'Bon de Commande (Contrat)' : 'Bon de Commande'}
+                          </p>
+                          <p className="text-xs text-purple-600">
+                            {request.bc_signed_by ? `Signé par ${request.bc_signed_by}` : 'Télécharger le BC'}
+                          </p>
+                        </div>
+                        <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </a>
+                    )}
+                    {request.certificate_url && (
+                      <a 
+                        href={request.certificate_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-green-50 rounded-lg hover:bg-green-100 transition-colors border border-green-200"
+                      >
+                        <div className="w-10 h-10 bg-green-600 rounded flex items-center justify-center text-white font-bold text-xs">
+                          PDF
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-green-900">Certificat d'étalonnage</p>
+                          <p className="text-xs text-green-600">Télécharger le certificat</p>
+                        </div>
+                        <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </a>
+                    )}
+                  </div>
                 ) : (
                   <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-4xl mb-2">📄</p>
-                    <p className="text-gray-500">Aucun document disponible</p>
-                    <p className="text-sm text-gray-400">Les documents apparaîtront ici au fur et à mesure du traitement</p>
+                    <svg className="w-12 h-12 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p className="text-gray-500">
+                      {isPartsOrder ? 'Les devis apparaîtront ici une fois disponibles' : 'Les certificats et devis apparaîtront ici une fois disponibles'}
+                    </p>
                   </div>
                 )}
               </div>
+
+              {/* Empty state if no attachments at all */}
+              {attachments.length === 0 && !request.quote_url && !request.certificate_url && !request.bc_file_url && !request.signed_quote_url && (
+                <div className="text-center py-12">
+                  <svg className="w-16 h-16 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-gray-500">Aucun document disponible</p>
+                  <p className="text-sm text-gray-400">
+                    {isPartsOrder ? 'Les devis et bons de commande apparaîtront ici' : 'Les photos, devis et certificats apparaîtront ici'}
+                  </p>
+                </div>
+              )}
             </div>
-            );
-          })()}
+          )}
         </div>
         
         {/* Contact Support */}
@@ -11941,9 +11049,9 @@ function ContractsPage({ profile, t, notify, setPage }) {
               <div className="px-6 py-4 flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <img 
-                    src="/images/logos/lighthouse-logo.png" 
+                    src="/images/logos/Lighthouse-color-logo.jpg" 
                     alt="Lighthouse" 
-                    className="h-12 w-auto"
+                    className="h-24 w-auto"
                     onError={(e) => {
                       e.target.style.display = 'none';
                       if (e.target.nextSibling) e.target.nextSibling.style.display = 'block';
