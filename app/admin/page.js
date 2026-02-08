@@ -7477,7 +7477,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                       <h3 className="font-bold text-lg text-[#1a1a2e]">{device.model_name}</h3>
                       <p className="text-gray-500 text-sm">N° de série: {device.serial_number}</p>
                     </div>
-                    <span className="text-xl font-bold text-[#2D5A7B]">€{deviceTotal.toFixed(2)}</span>
+                    <span className="text-xl font-bold text-[#2D5A7B] whitespace-nowrap">{deviceTotal.toFixed(2)} €</span>
                   </div>
                   
                   {device.service_findings && (
@@ -7502,8 +7502,8 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                           <tr key={idx} className="border-b border-gray-100">
                             <td className="py-2">{item.description}</td>
                             <td className="py-2 text-center">{item.quantity}</td>
-                            <td className="py-2 text-right">€{(parseFloat(item.price) || 0).toFixed(2)}</td>
-                            <td className="py-2 text-right font-medium">€{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)}</td>
+                            <td className="py-2 text-right whitespace-nowrap">{(parseFloat(item.price) || 0).toFixed(2)} €</td>
+                            <td className="py-2 text-right font-medium whitespace-nowrap">{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)} €</td>
                           </tr>
                         ))}
                       </tbody>
@@ -7532,7 +7532,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           <div className="px-8 py-4 bg-[#2D5A7B]">
             <div className="flex justify-between items-center text-white">
               <span className="text-lg font-bold">TOTAL SUPPLÉMENT HT</span>
-              <span className="text-3xl font-bold">€{totalAvenant.toFixed(2)}</span>
+              <span className="text-3xl font-bold whitespace-nowrap">{totalAvenant.toFixed(2)} €</span>
             </div>
           </div>
 
@@ -10421,8 +10421,8 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                           <td className="px-3 py-2 text-center">{part.quantity}</td>
                           <td className="px-3 py-2 font-mono text-sm">{part.partNumber || '—'}</td>
                           <td className="px-3 py-2 text-sm">{part.description}</td>
-                          <td className="px-3 py-2 text-right">{part.unitPrice.toFixed(2)} €</td>
-                          <td className="px-3 py-2 text-right font-medium">{(part.quantity * part.unitPrice).toFixed(2)} €</td>
+                          <td className="px-3 py-2 text-right whitespace-nowrap">{part.unitPrice.toFixed(2)} €</td>
+                          <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{(part.quantity * part.unitPrice).toFixed(2)} €</td>
                         </tr>
                       ))}
                       {shippingData.total > 0 && (
@@ -10430,13 +10430,13 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                           <td className="px-3 py-2 text-center">{shippingData.parcels}</td>
                           <td className="px-3 py-2 font-mono text-sm">Shipping1</td>
                           <td className="px-3 py-2 text-sm text-blue-800">Frais de port ({shippingData.parcels} colis)</td>
-                          <td className="px-3 py-2 text-right">{shippingData.unitPrice.toFixed(2)} €</td>
-                          <td className="px-3 py-2 text-right font-medium">{shippingData.total.toFixed(2)} €</td>
+                          <td className="px-3 py-2 text-right whitespace-nowrap">{shippingData.unitPrice.toFixed(2)} €</td>
+                          <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingData.total.toFixed(2)} €</td>
                         </tr>
                       )}
                       <tr className="bg-[#2D5A7B] text-white">
-                        <td colSpan={4} className="px-3 py-2 text-right font-bold">TOTAL HT</td>
-                        <td className="px-3 py-2 text-right font-bold">{grandTotal.toFixed(2)} €</td>
+                        <td colSpan={4} className="px-3 py-2 text-right font-bold whitespace-nowrap">TOTAL HT</td>
+                        <td className="px-3 py-2 text-right font-bold whitespace-nowrap">{grandTotal.toFixed(2)} €</td>
                       </tr>
                     </tbody>
                   </table>
@@ -21337,10 +21337,10 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                                 Étalonnage {device.model} (SN: {device.serial})
                                 {device.isContractCovered && <span className="ml-2 px-2 py-0.5 bg-emerald-500 text-white text-xs rounded">CONTRAT</span>}
                               </td>
-                              <td className="px-4 py-3 text-right">
+                              <td className="px-4 py-3 text-right whitespace-nowrap">
                                 {device.isContractCovered ? <span className="text-emerald-600">Contrat</span> : `${unitPrice.toFixed(2)} €`}
                               </td>
-                              <td className="px-4 py-3 text-right font-medium">
+                              <td className="px-4 py-3 text-right font-medium whitespace-nowrap">
                                 {device.isContractCovered ? <span className="text-emerald-600">Contrat</span> : `${lineTotal.toFixed(2)} €`}
                               </td>
                             </tr>
@@ -21356,8 +21356,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                             <tr key={`${device.id}-nettoyage`} className="border-b">
                               <td className="px-4 py-3 text-center">{qty}</td>
                               <td className="px-4 py-3">Nettoyage cellule - si requis selon l'état du capteur</td>
-                              <td className="px-4 py-3 text-right">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-4 py-3 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                              <td className="px-4 py-3 text-right whitespace-nowrap">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-4 py-3 text-right font-medium whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
                             </tr>
                           );
                         }
@@ -21371,8 +21371,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                             <tr key={`${device.id}-repair`} className="border-b">
                               <td className="px-4 py-3 text-center">{qty}</td>
                               <td className="px-4 py-3">Réparation {device.model} (SN: {device.serial})</td>
-                              <td className="px-4 py-3 text-right">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-4 py-3 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                              <td className="px-4 py-3 text-right whitespace-nowrap">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-4 py-3 text-right font-medium whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
                             </tr>
                           );
                         }
@@ -21389,8 +21389,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                                 {part.partNumber && <span className="text-gray-500 mr-1">[{part.partNumber}]</span>}
                                 {part.description || 'Pièce/Service'}
                               </td>
-                              <td className="px-4 py-3 text-right">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-4 py-3 text-right font-medium">{lineTotal.toFixed(2)} €</td>
+                              <td className="px-4 py-3 text-right whitespace-nowrap">{unitPrice.toFixed(2)} €</td>
+                              <td className="px-4 py-3 text-right font-medium whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
                             </tr>
                           );
                         });
@@ -21402,10 +21402,10 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile }) {
                       <tr className={isFullyContractCovered ? "border-b bg-emerald-50" : "border-b bg-gray-50"}>
                         <td className="px-4 py-3 text-center">{shippingData.parcels}</td>
                         <td className="px-4 py-3">Frais de port ({shippingData.parcels} colis)</td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
                           {isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${shippingData.unitPrice.toFixed(2)} €`}
                         </td>
-                        <td className="px-4 py-3 text-right font-medium">
+                        <td className="px-4 py-3 text-right font-medium whitespace-nowrap">
                           {isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${shippingTotal.toFixed(2)} €`}
                         </td>
                       </tr>
