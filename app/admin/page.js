@@ -3901,10 +3901,10 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                     const isLast = index === steps.length - 1;
                     
                     return (
-                      <div key={step.id} style={{ width: '55px', minWidth: '55px', maxWidth: '55px', flexShrink: 0 }}>
+                      <div key={step.id} style={{ width: '75px', minWidth: '75px', maxWidth: '75px', flexShrink: 0 }}>
                         <div 
                           className={`
-                            flex items-center justify-center h-7 text-[9px] font-medium text-center leading-tight
+                            flex items-center justify-center h-7 text-[8px] font-medium text-center leading-tight
                             ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
                             ${index === 0 ? 'rounded-l-sm' : ''}
                             ${isLast ? 'rounded-r-sm' : ''}
@@ -3935,7 +3935,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Appareil</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">N° Série</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Service</th>
-                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600 min-w-[620px]">Progression</th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600 min-w-[850px]">Progression</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Actions</th>
                     </tr>
                   </thead>
@@ -5311,10 +5311,10 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           const isLast = index === steps.length - 1;
           
           return (
-            <div key={step.id} style={{ width: '55px', minWidth: '55px', maxWidth: '55px', flexShrink: 0 }}>
+            <div key={step.id} style={{ width: '75px', minWidth: '75px', maxWidth: '75px', flexShrink: 0 }}>
               <div 
                 className={`
-                  flex items-center justify-center h-7 text-[9px] font-medium text-center leading-tight
+                  flex items-center justify-center h-7 text-[8px] font-medium text-center leading-tight
                   ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
                   ${index === 0 ? 'rounded-l-md' : ''}
                   ${isLast ? 'rounded-r-md' : ''}
