@@ -5000,7 +5000,7 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
                 <div className="w-full h-full flex items-center justify-center text-gray-400">
                   <div className="text-center">
                     <p className="text-4xl mb-4">📄</p>
-                    <p>Aucun document disponible</p>
+                    <p>{lang === 'en' ? 'No documents available' : 'Aucun document disponible'}</p>
                     <p className="text-sm">{lang === 'en' ? '(Electronic signature only)' : '(Signature électronique uniquement)'}</p>
                   </div>
                 </div>
@@ -6522,7 +6522,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 
                 {/* No documents message */}
                 {!device.calibration_certificate_url && !device.report_url && !rma.quote_url && !rma.bc_file_url && !rma.signed_quote_url && !device.bl_url && !device.ups_label_url && attachments.filter(a => a.file_url).length === 0 && (
-                  <p className="text-gray-400 text-center py-8">Aucun document disponible</p>
+                  <p className="text-gray-400 text-center py-8">{lang === 'en' ? 'No documents available' : 'Aucun document disponible'}</p>
                 )}
               </div>
             )}
@@ -8896,7 +8896,7 @@ const STATUS_STYLES = {
                     })()}
                     
                     {!order.quote_url && !order.signed_quote_url && !order.bc_file_url && attachments.length === 0 && (
-                      <p className="text-gray-500 text-center py-8">Aucun document disponible</p>
+                      <p className="text-gray-500 text-center py-8">{lang === 'en' ? 'No documents available' : 'Aucun document disponible'}</p>
                     )}
                     
                     {/* Document Upload Modal */}
@@ -9643,8 +9643,8 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
             ) : (
               <div className="flex-1 border-2 border-dashed border-gray-600 rounded-lg flex flex-col items-center justify-center text-gray-400">
                 <div className="text-4xl mb-4">📄</div>
-                <p className="text-lg">Aucun document disponible</p>
-                <p className="text-sm mt-2">{"lang === 'en' ? 'Client has not yet submitted a signed PO' : "Le client n'a pas encore soumis de BC signé"}</p>
+                <p className="text-lg">{lang === 'en' ? 'No documents available' : 'Aucun document disponible'}</p>
+                <p className="text-sm mt-2">{lang === 'en' ? 'Client has not yet submitted a signed PO' : "Le client n'a pas encore soumis de BC signé"}</p>
               </div>
             )}
           </div>
@@ -10001,7 +10001,7 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
                 </a>
               )}
               {!order.quote_url && !order.signed_quote_url && !order.bc_file_url && !order.quote_data?.shipping?.upsLabelUrl && !order.quote_data?.shipping?.blUrl && (
-                <p className="col-span-2 text-gray-500 text-center py-4">Aucun document disponible</p>
+                <p className="col-span-2 text-gray-500 text-center py-4">{lang === 'en' ? 'No documents available' : 'Aucun document disponible'}</p>
               )}
             </div>
             
