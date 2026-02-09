@@ -9199,80 +9199,67 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               {/* Certificates and Quotes - from Lighthouse */}
               <div>
                 <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                  </svg>
-                  {isPartsOrder ? 'Devis et Documents' : 'Certificats et Devis'}
+                  📁 {isPartsOrder ? 'Devis et Documents' : 'Certificats et Devis'}
                 </h3>
                 {request.quote_url || request.certificate_url || request.bc_file_url || request.signed_quote_url ? (
-                  <div className="space-y-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* === DEVIS (QUOTE) === */}
                     {request.quote_url && (
-                      <a 
-                        href={request.quote_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200"
-                      >
-                        <div className="w-10 h-10 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">
-                          PDF
+                      <a href={request.quote_url} target="_blank" rel="noopener noreferrer"
+                         className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors border-blue-200">
+                        <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
+                        <div>
+                          <p className="font-medium text-gray-800">
+                            Devis{request.quote_revision_count > 0 ? ` Rev-${request.quote_revision_count}` : ''}
+                          </p>
+                          <p className="text-sm text-blue-600">{request.quote_number ? `N° ${request.quote_number}` : request.request_number}</p>
                         </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-blue-900">Devis</p>
-                          <p className="text-xs text-blue-600">Télécharger le devis</p>
-                        </div>
-                        <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
                       </a>
                     )}
-                    {request.bc_file_url && (
-                      <a 
-                        href={request.bc_file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors border border-purple-200"
-                      >
-                        <div className="w-10 h-10 bg-purple-600 rounded flex items-center justify-center text-white font-bold text-xs">
-                          PDF
+                    
+                    {/* === DEVIS SIGNÉ / BON DE COMMANDE === */}
+                    {request.signed_quote_url && (
+                      <a href={request.signed_quote_url} target="_blank" rel="noopener noreferrer"
+                         className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
+                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
+                        <div>
+                          <p className="font-medium text-gray-800">Devis Signé / BC</p>
+                          <p className="text-sm text-green-600">{request.bc_signed_by ? `Signé par ${request.bc_signed_by}` : 'Signé'}</p>
                         </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-purple-900">
+                      </a>
+                    )}
+                    
+                    {/* === BON DE COMMANDE (uploaded BC file) === */}
+                    {request.bc_file_url && request.bc_file_url !== request.signed_quote_url && (
+                      <a href={request.bc_file_url} target="_blank" rel="noopener noreferrer"
+                         className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                        <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
+                        <div>
+                          <p className="font-medium text-gray-800">
                             {request.is_contract_rma ? 'Bon de Commande (Contrat)' : 'Bon de Commande'}
                           </p>
-                          <p className="text-xs text-purple-600">
-                            {request.bc_signed_by ? `Signé par ${request.bc_signed_by}` : 'Télécharger le BC'}
+                          <p className="text-sm text-purple-600">
+                            {request.bc_number ? `N° ${request.bc_number}` : request.bc_signed_by ? `Signé par ${request.bc_signed_by}` : 'Télécharger le BC'}
                           </p>
                         </div>
-                        <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
                       </a>
                     )}
+                    
+                    {/* === CERTIFICAT === */}
                     {request.certificate_url && (
-                      <a 
-                        href={request.certificate_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 p-3 bg-green-50 rounded-lg hover:bg-green-100 transition-colors border border-green-200"
-                      >
-                        <div className="w-10 h-10 bg-green-600 rounded flex items-center justify-center text-white font-bold text-xs">
-                          PDF
+                      <a href={request.certificate_url} target="_blank" rel="noopener noreferrer"
+                         className="flex items-center gap-4 p-4 border rounded-lg hover:bg-emerald-50 transition-colors border-emerald-200">
+                        <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center text-2xl">🏅</div>
+                        <div>
+                          <p className="font-medium text-gray-800">Certificat d'étalonnage</p>
+                          <p className="text-sm text-emerald-600">Télécharger le certificat</p>
                         </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-green-900">Certificat d'étalonnage</p>
-                          <p className="text-xs text-green-600">Télécharger le certificat</p>
-                        </div>
-                        <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
                       </a>
                     )}
                   </div>
                 ) : (
                   <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
-                    <svg className="w-12 h-12 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                    <p className="text-2xl mb-2">📄</p>
                     <p className="text-gray-500">
                       {isPartsOrder ? 'Les devis apparaîtront ici une fois disponibles' : 'Les certificats et devis apparaîtront ici une fois disponibles'}
                     </p>
