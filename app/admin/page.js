@@ -18220,15 +18220,15 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
       for (const inv of toExport) {
         // Add to summary
         summaryData.push({
-          (lang === 'en' ? 'Invoice #' : 'N° Facture'): inv.invoice_number || '',
-          'Date Création': inv.created_at ? new Date(inv.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '',
-          'Date Facture': inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '',
-          'Client': inv.companies?.name || '',
-          'N° RMA': inv.service_requests?.request_number || '',
-          'Total HT': parseFloat(inv.total_ht || 0).toFixed(2),
-          'TVA': parseFloat(inv.total_tva || 0).toFixed(2),
-          'Total TTC': parseFloat(inv.total_ttc || 0).toFixed(2),
-          'Statut': inv.status || ''
+          [lang === 'en' ? 'Invoice #' : 'N° Facture']: inv.invoice_number || '',
+          [lang === 'en' ? 'Created Date' : 'Date Création']: inv.created_at ? new Date(inv.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '',
+          [lang === 'en' ? 'Invoice Date' : 'Date Facture']: inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '',
+          [lang === 'en' ? 'Client' : 'Client']: inv.companies?.name || '',
+          [lang === 'en' ? 'RMA #' : 'N° RMA']: inv.service_requests?.request_number || '',
+          [lang === 'en' ? 'Total excl. tax' : 'Total HT']: parseFloat(inv.total_ht || 0).toFixed(2),
+          [lang === 'en' ? 'VAT' : 'TVA']: parseFloat(inv.total_tva || 0).toFixed(2),
+          [lang === 'en' ? 'Total incl. tax' : 'Total TTC']: parseFloat(inv.total_ttc || 0).toFixed(2),
+          [lang === 'en' ? 'Status' : 'Statut']: inv.status || ''
         });
         
         // Try to fetch PDF
