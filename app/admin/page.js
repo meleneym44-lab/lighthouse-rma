@@ -1181,6 +1181,7 @@ function TechTranslateModal({ isOpen, onClose, onInsert }) {
 
 // Tech Translate Button - Opens the modal
 function TechTranslateButton({ onInsert, lang = 'fr' }) {
+  const t = k => k;
   const [isOpen, setIsOpen] = useState(false);
   
   return (
@@ -3365,6 +3366,7 @@ export default function AdminPortal() {
 }
 
 function LoginPage() {
+  const t = k => k;
   const lang = 'fr';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -4452,6 +4454,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
 
 // BC Review Modal - Full screen document review
 function BCReviewModal({ rma, onClose, notify, reload, lang = 'fr' }) {
+  const t = k => k;
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -4890,6 +4893,7 @@ function BCReviewModal({ rma, onClose, notify, reload, lang = 'fr' }) {
 // CONTRACT BC REVIEW MODAL - Copied from RMA BCReviewModal
 // ============================================
 function ContractBCReviewModal({ contract, onClose, notify, reload, lang = 'fr' }) {
+  const t = k => k;
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -6755,6 +6759,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
 
 // Device Service Modal - For filling inspection/findings
 function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   const [findings, setFindings] = useState(device.service_findings || '');
   const [additionalWorkNeeded, setAdditionalWorkNeeded] = useState(device.additional_work_needed || false);
   const [workItems, setWorkItems] = useState(device.additional_work_items || []);
@@ -7236,6 +7241,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
 
 // Report Preview Modal - Exact replica of official Lighthouse France Rapport PDF
 function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving, technicianName, calType, receptionResult, lang = 'fr' }) {
+  const t = k => k;
   const today = new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR');
   const serviceTypeText = device.service_type === 'calibration' ? (lang === 'en' ? 'Calibration' : 'Étalonnage') : device.service_type === 'repair' ? (lang === 'en' ? 'Repair' : 'Réparation') : (lang === 'en' ? 'Calibration and Repair' : 'Étalonnage et Réparation');
   const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
@@ -7720,6 +7726,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
 
 // Avenant Preview Modal - Shows additional work quote to send to client
 function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySent, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
@@ -8152,6 +8159,7 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
 }
 
 function RequestDetailModal({ request, onClose, onCreateQuote, lang = 'fr' }) {
+  const t = k => k;
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
   const devices = request.request_devices || [];
   const isPending = request.status === 'submitted' && !request.request_number;
@@ -9484,6 +9492,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
 // PARTS BC REVIEW MODAL (identical to RMA BCReviewModal)
 // ============================================
 function PartsBCReviewModal({ order, onClose, notify, reload, lang = 'fr' }) {
+  const t = k => k;
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -9813,6 +9822,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload, lang = 'fr' }) {
 // PARTS PROCESS MODAL (for approved orders)
 // ============================================
 function PartsProcessModal({ order, onClose, notify, reload, profile, lang = 'fr' }) {
+  const t = k => k;
   const [saving, setSaving] = useState(false);
   const [showShipping, setShowShipping] = useState(false);
   
@@ -10037,6 +10047,7 @@ function PartsProcessModal({ order, onClose, notify, reload, profile, lang = 'fr
 
 // Parts Order Detail Modal
 function PartsOrderDetailModal({ order, onClose, onCreateQuote, lang = 'fr' }) {
+  const t = k => k;
   const style = STATUS_STYLES[order.status] || STATUS_STYLES.submitted;
   const isPending = order.status === 'submitted' && !order.request_number;
   const needsRevision = order.status === 'quote_revision_requested';
@@ -10254,6 +10265,7 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote, lang = 'fr' }) {
 // PARTS QUOTE EDITOR - Build parts quote
 // ============================================
 function PartsQuoteEditor({ order, onClose, notify, reload, profile, lang = 'fr' }) {
+  const t = k => k;
   const [step, setStep] = useState(1); // 1=Edit Parts, 2=Preview, 3=Confirm
   const [quoteParts, setQuoteParts] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -10971,6 +10983,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile, lang = 'fr'
 // PARTS ORDER SHIPPING MODAL - 3 Steps like RMA
 // ============================================
 function PartsShippingModal({ order, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [shipment, setShipment] = useState(null);
@@ -11909,6 +11922,7 @@ const LIGHTHOUSE_OFFICES = {
 };
 
 function InternalShippingModal({ rma, devices, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   // Steps: 1=Config, 2=UPS Label Created + BL Preview, 3=Saved
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -12526,6 +12540,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
 // SHIPPING MODAL - Full shipping workflow v26
 // ============================================
 function ShippingModal({ rma, devices, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [shipments, setShipments] = useState([]);
@@ -14626,6 +14641,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
 }
 
 function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, notify, reload, isAdmin, onSelectRMA, onSelectDevice, lang = 'fr' }) {
+  const t = k => k;
   const [activeTab, setActiveTab] = useState('rmas');
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState({ name: client.name || '', billing_address: client.billing_address || '', billing_city: client.billing_city || '', billing_postal_code: client.billing_postal_code || '', siret: client.siret || '', vat_number: client.vat_number || '' });
@@ -15085,6 +15101,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
 
 // QC Review Modal - View report, certificate, then approve
 function QCReviewModal({ device, rma, onBack, notify, profile, lang = 'fr' }) {
+  const t = k => k;
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState(1); // 1: Report, 2: Certificate, 3: Approve
   const [qcNotes, setQcNotes] = useState(device.qc_notes || '');
@@ -15928,6 +15945,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
 // CONTRACT QUOTE EDITOR - Matches RMA Quote Style
 // ============================================
 function ContractQuoteEditor({ contract, profile, notify, onClose, onSent, lang = 'fr' }) {
+  const t = k => k;
   const [step, setStep] = useState(1); // 1=Edit, 2=Preview, 3=Confirm
   const [saving, setSaving] = useState(false);
   const [quoteRef, setQuoteRef] = useState('');
@@ -16934,6 +16952,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent, lang 
 // CONTRACT DETAIL VIEW
 // ============================================
 function ContractDetailView({ contract, clients, notify, onClose, onUpdate, lang = 'fr' }) {
+  const t = k => k;
   const [editMode, setEditMode] = useState(contract.status === 'requested');
   const [saving, setSaving] = useState(false);
   const [devices, setDevices] = useState(contract.contract_devices || []);
@@ -17604,6 +17623,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate, lang
 // BC FILE UPLOADER (Admin side)
 // ============================================
 function BCFileUploader({ onUploaded, currentUrl, lang = 'fr' }) {
+  const t = k => k;
   const [uploading, setUploading] = useState(false);
   const [urlMode, setUrlMode] = useState(false);
   const [urlInput, setUrlInput] = useState(currentUrl || '');
@@ -17722,6 +17742,7 @@ function BCFileUploader({ onUploaded, currentUrl, lang = 'fr' }) {
 }
 
 function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' }) {
+  const t = k => k;
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [contractData, setContractData] = useState({
@@ -18532,6 +18553,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
 // INVOICE DETAIL MODAL - View/manage invoice
 // ============================================
 function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   const [inv, setInv] = useState(invoice);
   const [showPayment, setShowPayment] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -18766,6 +18788,7 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
 // INVOICE CREATION MODAL
 // ============================================
 function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   const [step, setStep] = useState(1); // 1=Edit lines, 2=Preview, 3=Saved
   const [lines, setLines] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -20046,6 +20069,7 @@ const CAL_TYPE_LABELS = {
 };
 
 function QuoteContentSettings({ businessSettings, setBusinessSettings, notify, lang }) {
+  const t = k => k;
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedSection, setExpandedSection] = useState(null);
@@ -20775,6 +20799,7 @@ const isFranceMetropolitan = (postalCode) => {
 // QUOTE EDITOR MODAL
 // ============================================
 function QuoteEditorModal({ request, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   const [step, setStep] = useState(1); // 1=Edit Pricing, 2=Preview, 3=Confirm
   const [devicePricing, setDevicePricing] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -23656,6 +23681,7 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
 
 // Rental Device Modal
 function RentalDeviceModal({ device, onSave, onClose, lang = 'fr' }) {
+  const t = k => k;
   const [formData, setFormData] = useState({
     serial_number: device?.serial_number || '',
     model_name: device?.model_name || '',
@@ -23765,6 +23791,7 @@ function RentalDeviceModal({ device, onSave, onClose, lang = 'fr' }) {
 
 // Rental Bundle Modal
 function RentalBundleModal({ bundle, inventory, onSave, onClose, lang = 'fr' }) {
+  const t = k => k;
   const [formData, setFormData] = useState({
     bundle_name: bundle?.bundle_name || '',
     bundle_code: bundle?.bundle_code || '',
@@ -23891,6 +23918,7 @@ function RentalCalendarView({ bookings, inventory, lang = 'fr' }) {
 
 // Rental Admin Modal - Full management
 function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   const [status, setStatus] = useState(rental.status);
   const [saving, setSaving] = useState(false);
   const [quoteShipping, setQuoteShipping] = useState(rental.quote_shipping || 0);
