@@ -23639,22 +23639,22 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
       )}
 
       {/* Calendar Tab */}
-      {activeTab === 'calendar' && <RentalCalendarView bookings={bookings} inventory={inventory} />}
+      {activeTab === 'calendar' && <RentalCalendarView bookings={bookings} inventory={inventory} lang={lang} />}
 
       {/* Add/Edit Device Modal */}
-      {showAddDevice && <RentalDeviceModal device={editingDevice} onSave={saveDevice} onClose={() => { setShowAddDevice(false); setEditingDevice(null); }} />}
+      {showAddDevice && <RentalDeviceModal device={editingDevice} onSave={saveDevice} onClose={() => { setShowAddDevice(false); setEditingDevice(null); }} lang={lang} />}
 
       {/* Add/Edit Bundle Modal */}
-      {showAddBundle && <RentalBundleModal bundle={editingBundle} inventory={inventory} onSave={saveBundle} onClose={() => { setShowAddBundle(false); setEditingBundle(null); }} />}
+      {showAddBundle && <RentalBundleModal bundle={editingBundle} inventory={inventory} onSave={saveBundle} onClose={() => { setShowAddBundle(false); setEditingBundle(null); }} lang={lang} />}
 
       {/* Rental Detail Modal */}
-      {selectedRental && <RentalAdminModal rental={selectedRental} onClose={() => setSelectedRental(null)} notify={notify} reload={reload} businessSettings={businessSettings} />}
+      {selectedRental && <RentalAdminModal rental={selectedRental} onClose={() => setSelectedRental(null)} notify={notify} reload={reload} businessSettings={businessSettings} lang={lang} />}
     </div>
   );
 }
 
 // Rental Device Modal
-function RentalDeviceModal({ device, onSave, onClose }) {
+function RentalDeviceModal({ device, onSave, onClose, lang = 'fr' }) {
   const [formData, setFormData] = useState({
     serial_number: device?.serial_number || '',
     model_name: device?.model_name || '',
@@ -23763,7 +23763,7 @@ function RentalDeviceModal({ device, onSave, onClose }) {
 }
 
 // Rental Bundle Modal
-function RentalBundleModal({ bundle, inventory, onSave, onClose }) {
+function RentalBundleModal({ bundle, inventory, onSave, onClose, lang = 'fr' }) {
   const [formData, setFormData] = useState({
     bundle_name: bundle?.bundle_name || '',
     bundle_code: bundle?.bundle_code || '',
@@ -23842,7 +23842,7 @@ function RentalBundleModal({ bundle, inventory, onSave, onClose }) {
 }
 
 // Rental Calendar View
-function RentalCalendarView({ bookings, inventory }) {
+function RentalCalendarView({ bookings, inventory, lang = 'fr' }) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
@@ -23861,7 +23861,7 @@ function RentalCalendarView({ bookings, inventory }) {
         <button onClick={() => setCurrentMonth(new Date(year, month + 1, 1))} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">→</button>
       </div>
       <div className="grid grid-cols-7 gap-1 mb-2">
-        {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map(d => <div key={d} className="text-center text-sm font-medium text-gray-500 py-2">{d}</div>)}
+        {(lang === 'en' ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] : ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']).map(d => <div key={d} className="text-center text-sm font-medium text-gray-500 py-2">{d}</div>)}
       </div>
       <div className="grid grid-cols-7 gap-1">
         {Array.from({ length: (new Date(year, month, 1).getDay() + 6) % 7 }, (_, i) => <div key={`pad-${i}`} className="h-24" />)}
@@ -23889,7 +23889,7 @@ function RentalCalendarView({ bookings, inventory }) {
 }
 
 // Rental Admin Modal - Full management
-function RentalAdminModal({ rental, onClose, notify, reload, businessSettings }) {
+function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, lang = 'fr' }) {
   const [status, setStatus] = useState(rental.status);
   const [saving, setSaving] = useState(false);
   const [quoteShipping, setQuoteShipping] = useState(rental.quote_shipping || 0);
