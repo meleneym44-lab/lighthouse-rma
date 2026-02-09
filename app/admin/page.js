@@ -2724,13 +2724,13 @@ const AT = {
     employee: 'Employé', logout: 'Déconnexion',
     
     // Common actions
-    save: t('save'), cancel: t('cancel'), close: 'Fermer', delete: 'Supprimer',
+    save: 'Enregistrer', cancel: 'Annuler', close: 'Fermer', delete: 'Supprimer',
     edit: 'Modifier', add: 'Ajouter', create: 'Créer', search: 'Rechercher',
     filter: 'Filtrer', refresh: 'Actualiser', back: 'Retour', confirm: 'Confirmer',
     submit: 'Soumettre', send: 'Envoyer', download: 'Télécharger', upload: 'Importer',
     view: 'Voir', open: 'Ouvrir', reset: 'Réinitialiser', apply: 'Appliquer',
-    loading: t('loading'), saving: 'Enregistrement...', saved: 'Enregistré!',
-    noResults: t('noResults'), yes: 'Oui', no: 'Non', all: 'Tous', none: 'Aucun',
+    loading: 'Chargement...', saving: 'Enregistrement...', saved: 'Enregistré!',
+    noResults: 'Aucun résultat', yes: 'Oui', no: 'Non', all: 'Tous', none: 'Aucun',
     actions: 'Actions', status: 'Statut', date: 'Date', total: 'Total', notes: 'Notes',
     details: 'Détails', history: 'Historique', documents: 'Documents', type: 'Type',
     
@@ -2750,8 +2750,8 @@ const AT = {
     awaitingReception: 'En attente réception', readyToShip: 'Prêts à expédier',
     pendingActions: 'Actions en attente', recentRequests: 'Demandes récentes',
     quickFilters: 'Filtres rapides', allRequests: 'Toutes les demandes',
-    serviceRequests: t('serviceRequests'), partsOrders: t('partsOrders'),
-    viewRma: t('viewRma'), noRequestsFound: t('noRequestsFound'),
+    serviceRequests: 'Demandes de service', partsOrders: 'Commandes pièces',
+    viewRma: 'Voir RMA', noRequestsFound: 'Aucune demande trouvée',
     searchPlaceholder: 'Rechercher RMA, client, N° série...',
     deviceView: 'Vue Appareils', requestView: 'Vue Demandes',
     
@@ -2840,7 +2840,7 @@ const AT = {
     comment: 'Commentaire', comments: 'Commentaires',
     timeline: 'Chronologie', progress: 'Progression',
     customerNotes: 'Notes client', adminNotes: 'Notes admin',
-    noData: t('noData'), exportCsv: 'Exporter CSV',
+    noData: 'Aucune donnée', exportCsv: 'Exporter CSV',
     selectAll: 'Tout sélectionner', deselectAll: 'Tout désélectionner',
     perPage: 'par page', page: 'Page', of: 'sur',
     today: "Aujourd'hui", yesterday: 'Hier', thisWeek: 'Cette semaine',
@@ -3026,7 +3026,7 @@ const getStatusLabel = (status, lang = 'fr') => {
 
 const STATUS_STYLES = {
   // Admin steps (Soumis → Reçu)
-  submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: t('stSubmitted') },
+  submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Soumis' },
   rma_created: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'RMA/Devis Créé' },
   quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
   waiting_bc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Attente BC' },
@@ -3034,7 +3034,7 @@ const STATUS_STYLES = {
   bc_rejected: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ BC Rejeté' },
   quote_approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'Devis Approuvé' },
   waiting_reception: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En attente réception' },
-  received: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: t('stReceived') },
+  received: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Reçu' },
   
   // Service steps (File d'attente → Étalonnage/Réparation)
   in_queue: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'File d\'attente' },
@@ -3049,7 +3049,7 @@ const STATUS_STYLES = {
   
   // Final Admin steps (Prêt → Expédié)
   ready: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Prêt' },
-  shipped: { bg: 'bg-green-100', text: 'text-green-700', label: t('stShipped') },
+  shipped: { bg: 'bg-green-100', text: 'text-green-700', label: 'Expédié' },
   
   // Other
   completed: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Terminé' },
