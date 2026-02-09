@@ -2451,7 +2451,7 @@ const generateBLPDFFromHTML = async (bl, employeeName, businessSettings) => {
       <div style="background: #f8f9fa; border: 1px solid #ddd; padding: 15px; margin: 12px 0;">
         <div style="font-size: 9pt; color: #666; text-transform: uppercase; font-weight: 600; margin-bottom: 5px;">Destinataire</div>
         <div style="font-size: 12pt; font-weight: bold; margin-bottom: 5px;">${bl.client.name}</div>
-        ${bl.client.attention ? `<div>{lang === 'en' ? "Attention: " : "À l'attention de: "}<strong>${bl.client.attention}</strong></div>` : ''}
+        ${bl.client.attention ? `<div>À l'attention de: <strong>${bl.client.attention}</strong></div>` : ''}
         <div>${bl.client.street}</div>
         <div>${bl.client.city}</div>
         <div>${bl.client.country}</div>
@@ -2461,9 +2461,9 @@ const generateBLPDFFromHTML = async (bl, employeeName, businessSettings) => {
       <table style="width: 100%; border-collapse: collapse; margin: 12px 0;">
         <thead>
           <tr>
-            <th style="background: rgba(51,51,51,0.35); color: #333; padding: 10px 12px; text-align: left; font-size: 10pt; font-weight: bold; border-bottom: 2px solid #333; width: 50px;">{lang === 'en' ? 'Qty' : 'Qté'}</th>
-            <th style="background: rgba(51,51,51,0.35); color: #333; padding: 10px 12px; text-align: left; font-size: 10pt; font-weight: bold; border-bottom: 2px solid #333;">{lang === 'en' ? 'Description' : 'Désignation'}</th>
-            <th style="background: rgba(51,51,51,0.35); color: #333; padding: 10px 12px; text-align: left; font-size: 10pt; font-weight: bold; border-bottom: 2px solid #333; width: 120px;">{t('serialNumber')}</th>
+            <th style="background: rgba(51,51,51,0.35); color: #333; padding: 10px 12px; text-align: left; font-size: 10pt; font-weight: bold; border-bottom: 2px solid #333; width: 50px;">Qté</th>
+            <th style="background: rgba(51,51,51,0.35); color: #333; padding: 10px 12px; text-align: left; font-size: 10pt; font-weight: bold; border-bottom: 2px solid #333;">Désignation</th>
+            <th style="background: rgba(51,51,51,0.35); color: #333; padding: 10px 12px; text-align: left; font-size: 10pt; font-weight: bold; border-bottom: 2px solid #333; width: 120px;">N° Série</th>
             <th style="background: rgba(51,51,51,0.35); color: #333; padding: 10px 12px; text-align: left; font-size: 10pt; font-weight: bold; border-bottom: 2px solid #333; width: 100px;">Service</th>
           </tr>
         </thead>
@@ -2481,7 +2481,7 @@ const generateBLPDFFromHTML = async (bl, employeeName, businessSettings) => {
 
       <!-- Shipping Info -->
       <div style="margin: 15px 0;">
-        <div style="font-weight: bold; font-size: 11pt; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 5px;">{lang === 'en' ? 'Shipping Information' : "Informations d'expédition"}</div>
+        <div style="font-weight: bold; font-size: 11pt; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 5px;">Informations d'expédition</div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
           <div style="display: flex; padding: 6px 0;"><span style="color: #666; width: 130px;">Transporteur:</span><span style="font-weight: 600;">${bl.shipping.carrier}</span></div>
           <div style="display: flex; padding: 6px 0;"><span style="color: #666; width: 130px;">N° de suivi:</span><span style="font-weight: 600; font-family: monospace;">${bl.shipping.tracking}</span></div>
@@ -2593,7 +2593,7 @@ const generateReportPDFFromHTML = async (device, rma, technicianName, calType, r
     <!-- Info Table -->
     <table style="width: 100%; font-size: 12px; margin-bottom: 24px; border-collapse: collapse;">
       <tr>
-        <td style="padding: 4px 0; font-weight: bold; color: #003366; width: 150px;">{lang === 'en' ? "Completion date" : "Date d'achèvement"}</td>
+        <td style="padding: 4px 0; font-weight: bold; color: #003366; width: 150px;">Date d'achèvement</td>
         <td style="padding: 4px 0; color: #333; width: 200px;">${today}</td>
         <td style="padding: 4px 0;"><span style="font-weight: bold; color: #003366;">RMA # </span><span style="color: #333;">${rma.request_number}</span></td>
       </tr>
@@ -2616,12 +2616,12 @@ const generateReportPDFFromHTML = async (device, rma, technicianName, calType, r
         <td style="padding: 4px 0; font-weight: bold; color: #003366;">Technicien(ne) de service</td>
       </tr>
       <tr>
-        <td style="padding: 4px 0; font-weight: bold; color: #003366;">{lang === 'en' ? 'Model#' : 'Modèle#'}</td>
+        <td style="padding: 4px 0; font-weight: bold; color: #003366;">Modèle#</td>
         <td style="padding: 4px 0; color: #333;">${device.model_name}</td>
         <td style="padding: 4px 0; color: #333;">${technicianName || 'Lighthouse France'}</td>
       </tr>
       <tr>
-        <td style="padding: 4px 0; font-weight: bold; color: #003366;">{lang === 'en' ? 'Serial number' : 'Numéro de série'}</td>
+        <td style="padding: 4px 0; font-weight: bold; color: #003366;">Numéro de série</td>
         <td style="padding: 4px 0; color: #333;" colspan="2">${device.serial_number}</td>
       </tr>
     </table>
@@ -2635,13 +2635,13 @@ const generateReportPDFFromHTML = async (device, rma, technicianName, calType, r
         </tr>
         ${showCalType ? `
         <tr>
-          <td style="padding: 8px 0; font-weight: bold; color: #003366; vertical-align: top;">{lang === 'en' ? 'Calibration performed' : 'Étalonnage effectué'}</td>
+          <td style="padding: 8px 0; font-weight: bold; color: #003366; vertical-align: top;">Étalonnage effectué</td>
           <td style="padding: 8px 0; color: #333;">${calType}</td>
         </tr>
         ` : ''}
         ${showReceptionResult ? `
         <tr>
-          <td style="padding: 8px 0; font-weight: bold; color: #003366; vertical-align: top;">{lang === 'en' ? 'Reception results' : 'Résultats à la réception'}</td>
+          <td style="padding: 8px 0; font-weight: bold; color: #003366; vertical-align: top;">Résultats à la réception</td>
           <td style="padding: 8px 0; color: #333;">${receptionResult}</td>
         </tr>
         ` : ''}
@@ -2650,11 +2650,11 @@ const generateReportPDFFromHTML = async (device, rma, technicianName, calType, r
           <td style="padding: 20px 0 8px; color: #333; white-space: pre-wrap;">${findings || '—'}</td>
         </tr>
         <tr>
-          <td style="padding: 8px 0; font-weight: bold; color: #003366; vertical-align: top;">{lang === 'en' ? 'Actions completed' : 'Actions effectuées'}</td>
+          <td style="padding: 8px 0; font-weight: bold; color: #003366; vertical-align: top;">Actions effectuées</td>
           <td style="padding: 8px 0; color: #333; white-space: pre-wrap;">${workCompleted || '—'}</td>
         </tr>
         <tr>
-          <td style="padding: 30px 0 8px; font-weight: bold; color: #003366; vertical-align: top;">{lang === 'en' ? 'Work performed' : 'Travaux réalisés'}</td>
+          <td style="padding: 30px 0 8px; font-weight: bold; color: #003366; vertical-align: top;">Travaux réalisés</td>
           <td style="padding: 30px 0 8px;">
             ${checkedItems.map(item => `
               <div style="margin-bottom: 4px;">
@@ -2730,7 +2730,7 @@ const AT = {
     submit: 'Soumettre', send: 'Envoyer', download: 'Télécharger', upload: 'Importer',
     view: 'Voir', open: 'Ouvrir', reset: 'Réinitialiser', apply: 'Appliquer',
     loading: 'Chargement...', saving: 'Enregistrement...', saved: 'Enregistré!',
-    noResults: (lang === 'en' ? 'No results' : 'Aucun résultat'), yes: 'Oui', no: 'Non', all: 'Tous', none: 'Aucun',
+    noResults: 'Aucun résultat', yes: 'Oui', no: 'Non', all: 'Tous', none: 'Aucun',
     actions: 'Actions', status: 'Statut', date: 'Date', total: 'Total', notes: 'Notes',
     details: 'Détails', history: 'Historique', documents: 'Documents', type: 'Type',
     
