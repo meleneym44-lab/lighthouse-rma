@@ -7865,7 +7865,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
               </div>
               <div className="text-right">
                 <p className="text-2xl font-bold text-[#2D5A7B]">{lang === 'en' ? 'QUOTE SUPPLEMENT' : 'SUPPLÉMENT AU DEVIS'}</p>
-                <p className="text-sm font-bold text-[#2D5A7B]">N° {rma.supplement_number || (lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)")}}</p>
+                <p className="text-sm font-bold text-[#2D5A7B]">N° {rma.supplement_number || (lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)")}</p>
                 <p className="text-xs text-gray-500">RMA: {rma.request_number}</p>
               </div>
             </div>
@@ -9927,7 +9927,7 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
                   disabled={saving}
                   className="w-full px-4 py-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-bold disabled:opacity-50"
                 >
-                  {saving ? '...' : (lang === 'en' ? '🚚 Mark Ready to Ship' : '{lang === 'en' ? '🚚 Mark Ready to Ship' : '🚚 Marquer Prêt à Expédier'}')}
+                  {saving ? '...' : (lang === 'en' ? '🚚 Mark Ready to Ship' : '🚚 Marquer Prêt à Expédier')}
                 </button>
               </>
             )}
@@ -16687,7 +16687,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 </div>
                 <div className="text-right">
                   <p className="text-lg font-bold text-[#00A651]">{lang === 'en' ? 'CONTRACT QUOTE' : 'DEVIS CONTRAT'}</p>
-                  <p className="text-sm font-bold text-[#2D5A7B]">N° {contract.contract_number || (lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)")}}</p>
+                  <p className="text-sm font-bold text-[#2D5A7B]">N° {contract.contract_number || (lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)")}</p>
                 </div>
               </div>
               {pageNum === 1 && (
@@ -22336,7 +22336,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-bold text-[#2D5A7B]">{lang === 'en' ? 'PRICE QUOTE' : 'OFFRE DE PRIX'}</p>
-                      <p className="text-sm font-bold text-[#2D5A7B]">N° {request.quote_number || (lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)")}}</p>
+                      <p className="text-sm font-bold text-[#2D5A7B]">N° {request.quote_number || (lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)")}</p>
                       <p className="text-xs text-gray-500">RMA: {request.request_number}</p>
                     </div>
                   </div>
