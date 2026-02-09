@@ -7865,7 +7865,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
               </div>
               <div className="text-right">
                 <p className="text-2xl font-bold text-[#2D5A7B]">{lang === 'en' ? 'QUOTE SUPPLEMENT' : 'SUPPLÉMENT AU DEVIS'}</p>
-                <p className="text-sm font-bold text-[#2D5A7B]">N° {rma.supplement_number || '${lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)"}'}</p>
+                <p className="text-sm font-bold text-[#2D5A7B]">N° {rma.supplement_number || (lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)")}}</p>
                 <p className="text-xs text-gray-500">RMA: {rma.request_number}</p>
               </div>
             </div>
@@ -11090,7 +11090,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
           },
           packages: packagesList,
           serviceCode: '11', // UPS Standard
-          description: `${order.request_number} - ${parts.length} {lang === 'en' ? 'part(s)' : 'pièce(s)'}`,
+          description: `${order.request_number} - ${parts.length} ${lang === 'en' ? 'part(s)' : 'pièce(s)'}`,
           isReturn: false
         }
       });
@@ -11306,7 +11306,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       <div class="client-box">
         <div class="client-label">{lang === 'en' ? 'Recipient' : 'Destinataire'}</div>
         <div class="client-name">${bl.client.name}</div>
-        ${bl.client.attention ? `<div>{lang === 'en' ? "Attention: " : "À l'attention de: "}<strong>${bl.client.attention}</strong></div>` : ''}
+        ${bl.client.attention ? `<div>${lang === 'en' ? "Attention: " : "À l'attention de: "}<strong>${bl.client.attention}</strong></div>` : ''}
         <div>${bl.client.street}</div>
         <div>${bl.client.city}</div>
         <div>${bl.client.country}</div>
@@ -13053,7 +13053,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       <div class="client-box">
         <div class="client-label">{lang === 'en' ? 'Recipient' : 'Destinataire'}</div>
         <div class="client-name">${bl.client.name}</div>
-        ${bl.client.attention ? `<div>{lang === 'en' ? "Attention: " : "À l'attention de: "}<strong>${bl.client.attention}</strong></div>` : ''}
+        ${bl.client.attention ? `<div>${lang === 'en' ? "Attention: " : "À l'attention de: "}<strong>${bl.client.attention}</strong></div>` : ''}
         <div>${bl.client.street}</div>
         <div>${bl.client.city}</div>
         <div>${bl.client.country}</div>
@@ -16687,7 +16687,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 </div>
                 <div className="text-right">
                   <p className="text-lg font-bold text-[#00A651]">{lang === 'en' ? 'CONTRACT QUOTE' : 'DEVIS CONTRAT'}</p>
-                  <p className="text-sm font-bold text-[#2D5A7B]">N° {contract.contract_number || '${lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)"}'}</p>
+                  <p className="text-sm font-bold text-[#2D5A7B]">N° {contract.contract_number || (lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)")}}</p>
                 </div>
               </div>
               {pageNum === 1 && (
@@ -22336,7 +22336,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-bold text-[#2D5A7B]">{lang === 'en' ? 'PRICE QUOTE' : 'OFFRE DE PRIX'}</p>
-                      <p className="text-sm font-bold text-[#2D5A7B]">N° {request.quote_number || '${lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)"}'}</p>
+                      <p className="text-sm font-bold text-[#2D5A7B]">N° {request.quote_number || (lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)")}}</p>
                       <p className="text-xs text-gray-500">RMA: {request.request_number}</p>
                     </div>
                   </div>
