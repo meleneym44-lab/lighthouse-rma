@@ -19934,7 +19934,7 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
       {/* Other admin cards */}
       
       {/* ===== QUOTE CONTENT SETTINGS ===== */}
-      <QuoteContentSettings businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} notify={notify} />
+      <QuoteContentSettings businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} notify={notify} lang={lang} />
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer">
@@ -20037,14 +20037,14 @@ const QUOTE_DEFAULTS = {
 };
 
 const CAL_TYPE_LABELS = {
-  particle_counter: { icon: '🔬', label: lang === 'en' ? 'Airborne Particle Counter' : 'Compteur de Particules Aéroportées' },
-  bio_collector: { icon: '🧫', label: lang === 'en' ? 'Bio Collector' : 'Bio Collecteur' },
-  liquid_counter: { icon: '💧', label: lang === 'en' ? 'Liquid Particle Counter' : 'Compteur Particules Liquide' },
-  temp_humidity: { icon: '🌡️', label: lang === 'en' ? 'Temp/Humidity Sensor' : 'Capteur Temp/Humidité' },
-  other: { icon: '⚙️', label: lang === 'en' ? 'Other Equipment' : 'Autre Équipement' }
+  particle_counter: { icon: '🔬', label: { en: 'Airborne Particle Counter', fr: 'Compteur de Particules Aéroportées' } },
+  bio_collector: { icon: '🧫', label: { en: 'Bio Collector', fr: 'Bio Collecteur' } },
+  liquid_counter: { icon: '💧', label: { en: 'Liquid Particle Counter', fr: 'Compteur Particules Liquide' } },
+  temp_humidity: { icon: '🌡️', label: { en: 'Temp/Humidity Sensor', fr: 'Capteur Temp/Humidité' } },
+  other: { icon: '⚙️', label: { en: 'Other Equipment', fr: 'Autre Équipement' } }
 };
 
-function QuoteContentSettings({ businessSettings, setBusinessSettings, notify }) {
+function QuoteContentSettings({ businessSettings, setBusinessSettings, notify, lang }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedSection, setExpandedSection] = useState(null);
@@ -20234,7 +20234,7 @@ function QuoteContentSettings({ businessSettings, setBusinessSettings, notify })
                       onClick={() => toggleSection('cal_' + key)}
                       className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 text-left"
                     >
-                      <span className="font-medium text-sm">{icon} {label}</span>
+                      <span className="font-medium text-sm">{icon} {label[lang] || label.fr}</span>
                       <span className="text-gray-400 text-lg">{expandedSection === 'cal_' + key ? '▾' : '▸'}</span>
                     </button>
                     {expandedSection === 'cal_' + key && (
@@ -20337,7 +20337,7 @@ function QuoteContentSettings({ businessSettings, setBusinessSettings, notify })
                 const data = businessSettings.quote_settings?.calibration?.[key] || QUOTE_DEFAULTS.calibration[key];
                 return (
                   <div key={key} className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs font-medium text-gray-500 mb-1">{icon} {label}</p>
+                    <p className="text-xs font-medium text-gray-500 mb-1">{icon} {label[lang] || label.fr}</p>
                     <p className="text-xs text-gray-600">{data?.prestations?.length || 0} lignes de prestation</p>
                   </div>
                 );
