@@ -11054,7 +11054,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
   // Create REAL UPS Labels via Edge Function
   const createUPSLabels = async () => {
     if (!shipment.address.company_name || !shipment.address.address_line1) {
-      notify(lang === 'en' ? 'Please complete the shipping address' : 'Veuillez compléter l'adresse de livraison', 'error');
+      notify(lang === 'en' ? 'Please complete the shipping address' : "Veuillez compléter l'adresse de livraison", 'error');
       return;
     }
     
