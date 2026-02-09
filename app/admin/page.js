@@ -4542,7 +4542,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
         .eq('id', rma.id);
       
       if (error) {
-        notify(lang === 'en' ? 'Error:' + ' ' : ' + error.message, 'error');
+        notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
       } else {
         // Don't change device statuses - they stay where they were
         notify(`✅ Supplément approuvé! BC N° ${bcNumber}`);
@@ -4561,7 +4561,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
         .eq('id', rma.id);
       
       if (error) {
-        notify(lang === 'en' ? 'Error:' + ' ' : ' + error.message, 'error');
+        notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
       } else {
         notify(`✅ BC N° ${bcNumber} approuvé! En attente de l'appareil.`);
         reload();
@@ -4591,7 +4591,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
       .eq('id', rma.id);
     
     if (error) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + error.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
     } else {
       notify('BC refusé. Le client devra soumettre un nouveau BC.');
       reload();
@@ -4904,7 +4904,7 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
       .eq('id', contract.id);
     
     if (error) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + error.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
     } else {
       notify('✅ Contrat activé! Le client peut maintenant utiliser ses tokens.');
       reload();
@@ -4932,7 +4932,7 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
       .eq('id', contract.id);
     
     if (error) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + error.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
     } else {
       notify('BC refusé. Le client devra soumettre un nouveau BC.');
       reload();
@@ -5170,7 +5170,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
       setSelectedToReceive(new Set());
       reload();
     } catch (err) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
     setSaving(false);
   };
@@ -5193,7 +5193,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
         onStartService(firstReceived);
       }
     } catch (err) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
     setSaving(false);
   };
@@ -5306,7 +5306,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
                     reload();
                   } catch (err) {
                     console.error('Mark shipped error:', err);
-                    notify(lang === 'en' ? 'Error:' + ' ' : ' + (err.message || JSON.stringify(err)), 'error');
+                    notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + (err.message || JSON.stringify(err)), 'error');
                   }
                   setSaving(false);
                 }}
@@ -5583,7 +5583,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
       setDocUploadShared(true);
       await refreshAttachments();
     } catch (err) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
     setDocUploading(false);
   };
@@ -5597,7 +5597,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
       setDocToDelete(null);
       await refreshAttachments();
     } catch (err) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
   };
   
@@ -5615,7 +5615,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
       notify(isInternal ? '👁️ Document visible au client' : '🔒 Document masqué au client');
       await refreshAttachments();
     } catch (err) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
   };
   
@@ -6834,7 +6834,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
       notify('✓ Certificat téléchargé');
       reload();
     } catch (err) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
     setUploadingCert(false);
   };
@@ -6949,7 +6949,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
         setWorkItemsLocked(true);
       }
       reload();
-    } catch (err) { notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error'); }
+    } catch (err) { notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error'); }
     setSaving(false);
   };
   
@@ -6993,7 +6993,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
       notify('✓ Rapport terminé → QC!');
       reload();
       onBack();
-    } catch (err) { notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error'); }
+    } catch (err) { notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error'); }
     setSaving(false);
   };
 
@@ -7819,7 +7819,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
       onClose();
     } catch (err) {
       console.error('Avenant send error:', err);
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
     setSending(false);
   };
@@ -8318,7 +8318,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
       setDocUploadShared(true);
       await refreshAttachments();
     } catch (err) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
     setDocUploading(false);
   };
@@ -8331,7 +8331,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
       notify('🗑️ Document supprimé');
       await refreshAttachments();
     } catch (err) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
   };
   
@@ -8349,7 +8349,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
       notify(isInternal ? '👁️ Document visible au client' : '🔒 Document masqué au client');
       await refreshAttachments();
     } catch (err) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
   };
   
@@ -8425,7 +8425,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
       .eq('id', order.id);
     
     if (error) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + error.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
     } else {
       notify('Statut mis à jour!');
       reload();
@@ -9544,7 +9544,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
       .eq('id', order.id);
     
     if (error) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + error.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
     } else {
       notify(`✅ BC N° ${bcNumber} approuvé! Commande de pièces lancée.`);
       reload();
@@ -9572,7 +9572,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
       .eq('id', order.id);
     
     if (error) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + error.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
     } else {
       notify('BC refusé. Le client devra soumettre un nouveau BC.');
       reload();
@@ -13283,7 +13283,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       notify('✅ Documents d\'expédition enregistrés! Prêt pour scan UPS.');
       reload();
     } catch (err) { 
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + (err.message || 'Erreur'), 'error'); 
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + (err.message || 'Error'), 'error'); 
     }
     setSaving(false);
   };
@@ -13311,7 +13311,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       reload();
       onBack(); // Go back to dashboard since RMA is now closed
     } catch (err) { 
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + (err.message || 'Erreur'), 'error'); 
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + (err.message || 'Error'), 'error'); 
     }
     setSaving(false);
   };
@@ -14668,7 +14668,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
     if (tabId === 'rentals' && clientRentals.length === 0) loadRentals();
   };
 
-  const saveClient = async () => { setSaving(true); const { error } = await supabase.from('companies').update(editData).eq('id', client.id); if (error) notify(lang === 'en' ? 'Error:' + ' ' : ' + error.message, 'error'); else { notify('Client mis à jour!'); setEditing(false); reload(); } setSaving(false); };
+  const saveClient = async () => { setSaving(true); const { error } = await supabase.from('companies').update(editData).eq('id', client.id); if (error) notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error'); else { notify('Client mis à jour!'); setEditing(false); reload(); } setSaving(false); };
   
   const handleSelectItem = (item) => { onClose(); if (onSelectRMA) onSelectRMA(item); };
   
@@ -15137,7 +15137,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
       setShowRejectModal(false);
       onBack();
     } catch (err) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
     setSaving(false);
   };
@@ -15184,7 +15184,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
       }
     } catch (err) {
       console.error(err);
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
       return null;
     }
   };
@@ -15226,7 +15226,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
       onBack();
     } catch (err) {
       console.error('approveQC error:', err);
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
     setSaving(false);
   };
@@ -16095,7 +16095,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
       notify(`✅ Devis contrat envoyé! N° ${contractNumber}`);
       onSent();
     } catch (err) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
     setSaving(false);
   };
@@ -16810,7 +16810,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                         onClose();
                       } catch (err) {
                         console.error('Error updating contract:', err);
-                        notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+                        notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
                       }
                       setSaving(false);
                     }
@@ -16839,7 +16839,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                         onClose();
                       } catch (err) {
                         console.error('Error updating contract:', err);
-                        notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+                        notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
                       }
                       setSaving(false);
                     }
@@ -16886,7 +16886,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                         onClose();
                       } catch (err) {
                         console.error('Error deleting contract:', err);
-                        notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+                        notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
                       }
                       setSaving(false);
                     }
@@ -17423,7 +17423,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
                       notify('Demande de modification envoyée au client', 'success');
                       onUpdate();
                     } catch (err) {
-                      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+                      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
                     }
                     setSaving(false);
                   }
@@ -17447,7 +17447,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
                       notify('Demande de contrat refusée', 'success');
                       onUpdate();
                     } catch (err) {
-                      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+                      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
                     }
                     setSaving(false);
                   }
@@ -17580,7 +17580,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
                   onClose();
                   onUpdate();
                 } catch (err) {
-                  notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+                  notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
                 }
                 setSaving(false);
               }
@@ -17850,7 +17850,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
       onCreated();
     } catch (err) {
       console.error('Error creating contract:', err);
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     } finally {
       setSaving(false);
     }
@@ -19059,7 +19059,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
       if (reload) reload();
     } catch (err) {
       console.error('Invoice save error:', err);
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + (err.message || 'Erreur'), 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + (err.message || 'Error'), 'error');
     }
     setSaving(false);
   };
@@ -19319,7 +19319,7 @@ function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang
       setNewValue('');
     } catch (err) {
       console.error('Error saving counter:', err);
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
     setSaving(false);
   };
@@ -19709,7 +19709,7 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
       notify('✅ Paramètres enregistrés!');
     } catch (err) {
       console.error('Settings save error:', err);
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + (err.message || 'Erreur'), 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + (err.message || 'Error'), 'error');
     }
     setSaving(false);
   };
@@ -20168,7 +20168,7 @@ function QuoteContentSettings({ businessSettings, setBusinessSettings, notify })
       notify('✅ Contenu des devis enregistré!');
     } catch (err) {
       console.error('Quote settings save error:', err);
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + (err.message || 'Erreur'), 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + (err.message || 'Error'), 'error');
     }
     setSaving(false);
   };
@@ -21541,7 +21541,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       reload(); 
       onClose();
     } catch (err) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
     
     setSaving(false);
@@ -21566,7 +21566,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       reload();
       onClose();
     } catch (err) {
-      notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error');
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
     setSaving(false);
   };
@@ -23471,7 +23471,7 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
       if (data) setInventory(data);
       setShowAddDevice(false);
       setEditingDevice(null);
-    } catch (err) { notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error'); }
+    } catch (err) { notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error'); }
   };
 
   // Delete device
@@ -23481,7 +23481,7 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
       await supabase.from('rental_inventory').delete().eq('id', id);
       setInventory(inventory.filter(d => d.id !== id));
       notify('Appareil supprimé');
-    } catch (err) { notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error'); }
+    } catch (err) { notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error'); }
   };
 
   // Save bundle
@@ -23504,7 +23504,7 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
       if (bun) setBundles(bun);
       setShowAddBundle(false);
       setEditingBundle(null);
-    } catch (err) { notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error'); }
+    } catch (err) { notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error'); }
   };
 
   return (
@@ -23911,7 +23911,7 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings })
       notify('Statut mis à jour!');
       setStatus(newStatus);
       reload();
-    } catch (err) { notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error'); }
+    } catch (err) { notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error'); }
     setSaving(false);
   };
 
@@ -23935,7 +23935,7 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings })
       notify('Devis envoyé!');
       setStatus('quote_sent');
       reload();
-    } catch (err) { notify(lang === 'en' ? 'Error:' + ' ' : ' + err.message, 'error'); }
+    } catch (err) { notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error'); }
     setSaving(false);
   };
 
