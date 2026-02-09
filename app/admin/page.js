@@ -14373,7 +14373,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
           {searchResults.rmas.filter(r => r.request_type !== 'parts').length > 0 && (
             <div className="bg-white rounded-xl shadow-sm">
               <div className="px-6 py-4 border-b border-gray-100 bg-blue-50">
-                <h2 className="font-bold text-blue-800">{lang === 'en' ? `📋 RMAs found (${searchResults.rmas` : `📋 RMAs trouvés (${searchResults.rmas`.filter(r => r.request_type !== 'parts').length})</h2>
+                <h2 className="font-bold text-blue-800">{lang === 'en' ? '📋 RMAs found' : '📋 RMAs trouvés'} ({searchResults.rmas.filter(r => r.request_type !== 'parts').length})</h2>
               </div>
               <div className="divide-y divide-gray-100">
                 {searchResults.rmas.filter(r => r.request_type !== 'parts').map(rma => {
