@@ -14414,7 +14414,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
           {searchResults.rmas.filter(r => r.request_type === 'parts').length > 0 && (
             <div className="bg-white rounded-xl shadow-sm">
               <div className="px-6 py-4 border-b border-gray-100 bg-amber-50">
-                <h2 className="font-bold text-amber-800">{lang === 'en' ? `🔩 Parts Orders (${searchResults.rmas` : `🔩 Commandes Pièces (${searchResults.rmas`}.filter(r => r.request_type === 'parts').length})</h2>
+                <h2 className="font-bold text-amber-800">{lang === 'en' ? '🔩 Parts Orders' : '🔩 Commandes Pièces'} ({searchResults.rmas.filter(r => r.request_type === 'parts').length})</h2>
               </div>
               <div className="divide-y divide-gray-100">
                 {searchResults.rmas.filter(r => r.request_type === 'parts').map(po => {
