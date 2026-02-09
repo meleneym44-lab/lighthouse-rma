@@ -1947,6 +1947,7 @@ const STATUS_STYLES = {
   in_progress: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-300', label: 'En cours', icon: '◉', progress: 60 },
   quote_sent: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé - Action requise', icon: '💰', progress: 45 },
   quote_revision_requested: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-300', label: 'Modification demandée', icon: '✏️', progress: 40 },
+  quote_revision_declined: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300', label: 'Modification refusée - Action requise', icon: '❌', progress: 45 },
   quoted: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', label: 'Devis envoyé', icon: '◎', progress: 45 },
   
   // === BOTH FLOWS - FINAL STAGES ===
@@ -2007,7 +2008,7 @@ const StepProgress = ({ status, serviceType }) => {
       // Repair flow mapping (11 steps: 0-10)
       const repairMap = {
         'submitted': 0, 'pending': 0,
-        'quote_sent': 1, 'quote_revision_requested': 1,
+        'quote_sent': 1, 'quote_revision_requested': 1, 'quote_revision_declined': 1,
         'bc_pending': 2, 'bc_review': 2, 'waiting_bc': 2,
         'waiting_device': 3,
         'received': 4, 'received_repair': 4,
@@ -2025,7 +2026,7 @@ const StepProgress = ({ status, serviceType }) => {
       // Calibration flow mapping (10 steps: 0-9)
       const calibrationMap = {
         'submitted': 0, 'pending': 0,
-        'quote_sent': 1, 'quote_revision_requested': 1,
+        'quote_sent': 1, 'quote_revision_requested': 1, 'quote_revision_declined': 1,
         'bc_pending': 2, 'bc_review': 2, 'waiting_bc': 2,
         'waiting_device': 3,
         'received': 4, 'received_calibration': 4,
@@ -7070,7 +7071,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
   const isPartsOrder = request.request_type === 'parts';
-  const isQuoteSent = request.status === 'quote_sent';
+  const isQuoteSent = request.status === 'quote_sent' || request.status === 'quote_revision_declined';
   const needsQuoteAction = isQuoteSent && !request.bc_submitted_at;
   const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
   
@@ -7502,7 +7503,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 
                 // For early steps (before received), use RMA status
                 // For later steps (received onwards), use device status independently
-                const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 
+                const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 'quote_revision_declined',
                                        'bc_pending', 'bc_review', 'waiting_bc', 'waiting_device'];
                 const rmaIsEarly = earlyStatuses.includes(request.status);
                 
@@ -7588,6 +7589,30 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   <div className="mt-2 p-2 bg-white rounded border border-orange-200">
                     <p className="text-xs text-gray-500">Votre demande :</p>
                     <p className="text-sm text-gray-700">{request.quote_revision_notes}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Quote Revision Declined */}
+        {request.status === 'quote_revision_declined' && (
+          <div className="bg-red-50 border-b border-red-300 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                <span className="text-red-600 text-2xl">❌</span>
+              </div>
+              <div className="flex-1">
+                <p className="font-bold text-red-800">Demande de modification refusée</p>
+                <p className="text-sm text-red-600">
+                  Votre demande de modification n'a pas pu être acceptée. Le devis original reste en vigueur.
+                  Vous pouvez l'approuver ci-dessous ou demander une nouvelle modification.
+                </p>
+                {request.admin_decline_notes && (
+                  <div className="mt-2 p-2 bg-white rounded border border-red-200">
+                    <p className="text-xs text-gray-500">Motif du refus :</p>
+                    <p className="text-sm text-gray-700">{request.admin_decline_notes}</p>
                   </div>
                 )}
               </div>
