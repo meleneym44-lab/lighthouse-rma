@@ -3026,45 +3026,45 @@ const getStatusLabel = (status, lang = 'fr') => {
 
 const STATUS_STYLES = {
   // Admin steps (Soumis → Reçu)
-  submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Soumis' },
-  rma_created: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'RMA/Devis Créé' },
-  quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
-  waiting_bc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Attente BC' },
-  bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: '⚠️ BC à vérifier' },
-  bc_rejected: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ BC Rejeté' },
-  quote_approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'Devis Approuvé' },
-  waiting_reception: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En attente réception' },
-  received: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Reçu' },
+  submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Soumis', en: 'Submitted' },
+  rma_created: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'RMA/Devis Créé', en: 'RMA/Quote Created' },
+  quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé', en: 'Quote Sent' },
+  waiting_bc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Attente BC', en: 'Awaiting PO' },
+  bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: '⚠️ BC à vérifier', en: '⚠️ PO to Review' },
+  bc_rejected: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ BC Rejeté', en: '❌ PO Rejected' },
+  quote_approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'Devis Approuvé', en: 'Quote Approved' },
+  waiting_reception: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En attente réception', en: 'Awaiting Reception' },
+  received: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Reçu', en: 'Received' },
   
-  // Service steps (File d'attente → Étalonnage/Réparation)
-  in_queue: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'File d\'attente' },
-  inspection: { bg: 'bg-violet-100', text: 'text-violet-700', label: 'Inspection' },
-  approbation: { bg: 'bg-pink-100', text: 'text-pink-700', label: 'Approbation' },
-  calibration: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Étalonnage' },
-  repair: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Réparation' },
+  // Service steps
+  in_queue: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'File d\'attente', en: 'Queue' },
+  inspection: { bg: 'bg-violet-100', text: 'text-violet-700', label: 'Inspection', en: 'Inspection' },
+  approbation: { bg: 'bg-pink-100', text: 'text-pink-700', label: 'Approbation', en: 'Approval' },
+  calibration: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Étalonnage', en: 'Calibration' },
+  repair: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Réparation', en: 'Repair' },
   
   // QC step
-  qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Contrôle QC' },
-  qc_rejected: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ QC Rejeté' },
+  qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Contrôle QC', en: 'QC Check' },
+  qc_rejected: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ QC Rejeté', en: '❌ QC Rejected' },
   
-  // Final Admin steps (Prêt → Expédié)
-  ready: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Prêt' },
-  shipped: { bg: 'bg-green-100', text: 'text-green-700', label: 'Expédié' },
+  // Final Admin steps
+  ready: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Prêt', en: 'Ready' },
+  shipped: { bg: 'bg-green-100', text: 'text-green-700', label: 'Expédié', en: 'Shipped' },
   
   // Other
-  completed: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Terminé' },
-  cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' },
-  archived: { bg: 'bg-slate-100', text: 'text-slate-500', label: '📦 Archivé' },
+  completed: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Terminé', en: 'Completed' },
+  cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé', en: 'Cancelled' },
+  archived: { bg: 'bg-slate-100', text: 'text-slate-500', label: '📦 Archivé', en: '📦 Archived' },
   
-  // Legacy mappings (for backwards compatibility)
-  approved: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'RMA/Devis Créé' },
-  waiting_device: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En attente réception' },
-  calibration_in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Étalonnage' },
-  repair_in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Réparation' },
-  final_qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Contrôle QC' },
-  ready_to_ship: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Prêt' },
-  quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: '🔴 Modification demandée' },
-  quote_revision_declined: { bg: 'bg-orange-100', text: 'text-orange-700', label: '❌ Modification refusée' }
+  // Legacy mappings
+  approved: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'RMA/Devis Créé', en: 'RMA/Quote Created' },
+  waiting_device: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En attente réception', en: 'Awaiting Reception' },
+  calibration_in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Étalonnage', en: 'Calibration' },
+  repair_in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Réparation', en: 'Repair' },
+  final_qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Contrôle QC', en: 'QC Check' },
+  ready_to_ship: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Prêt', en: 'Ready' },
+  quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: '🔴 Modification demandée', en: '🔴 Revision Requested' },
+  quote_revision_declined: { bg: 'bg-orange-100', text: 'text-orange-700', label: '❌ Modification refusée', en: '❌ Revision Declined' }
 };
 
 export default function AdminPortal() {
@@ -3245,7 +3245,7 @@ export default function AdminPortal() {
             <div className="items-center gap-2 hidden">
               <span className="text-2xl font-bold text-[#00A651]">LIGHTHOUSE</span>
             </div>
-            <div className="text-sm text-gray-500">France • Admin Portal</div>
+            <div className="text-sm text-gray-500">{lang === 'en' ? 'France • Admin Portal' : 'France • Admin Portal'}</div>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
@@ -3400,7 +3400,7 @@ function LoginPage() {
             }}
           />
           <h1 className="text-3xl font-bold text-[#00A651] hidden">LIGHTHOUSE</h1>
-          <p className="text-gray-500 mt-2">France - Portail Administrateur</p>
+          <p className="text-gray-500 mt-2">{lang === 'en' ? 'France - Admin Portal' : 'France - Portail Administrateur'}</p>
         </div>
         {error && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
         <form onSubmit={handleLogin} className="space-y-4">
@@ -3409,7 +3409,7 @@ function LoginPage() {
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-lg" required />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Password' : 'Mot de passe'}</label>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-lg" required />
           </div>
           <button type="submit" disabled={loading} className="w-full py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] disabled:opacity-50">
@@ -3458,14 +3458,14 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
   
   // Stage options - full labels for dropdowns, short for display
   const stageOptions = [
-    { value: 'created', label: 'Créé (RMA soumis)', short: 'Créé' },
-    { value: 'received', label: 'Reçu', short: t('stReceived') },
-    { value: 'file_attente', label: 'File d\'attente (en attente BC)', short: 'File' },
-    { value: 'bc_approved', label: 'BC approuvé', short: 'BC' },
-    { value: 'calibration_start', label: 'Début étalonnage', short: 'Étal.' },
-    { value: 'report_complete', label: 'Rapport terminé', short: 'Rapport' },
-    { value: 'qc_complete', label: 'QC terminé', short: 'QC' },
-    { value: 'shipped', label: 'Expédié', short: t('stShipped') }
+    { value: 'created', label: lang === 'en' ? 'Created (RMA submitted)' : 'Créé (RMA soumis)', short: lang === 'en' ? 'Created' : 'Créé' },
+    { value: 'received', label: lang === 'en' ? 'Received' : 'Reçu', short: t('stReceived') },
+    { value: 'file_attente', label: lang === 'en' ? 'Queue (awaiting PO)' : 'File d\'attente (en attente BC)', short: 'File' },
+    { value: 'bc_approved', label: lang === 'en' ? 'PO approved' : 'BC approuvé', short: 'BC' },
+    { value: 'calibration_start', label: lang === 'en' ? 'Start calibration' : 'Début étalonnage', short: lang === 'en' ? 'Cal.' : 'Étal.' },
+    { value: 'report_complete', label: lang === 'en' ? 'Report completed' : 'Rapport terminé', short: lang === 'en' ? 'Report' : 'Rapport' },
+    { value: 'qc_complete', label: lang === 'en' ? 'QC completed' : 'QC terminé', short: 'QC' },
+    { value: 'shipped', label: lang === 'en' ? 'Shipped' : 'Expédié', short: t('stShipped') }
   ];
   
   // Helper to get short label
@@ -3580,7 +3580,7 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
   // Technician summary stats (for the sidebar)
   const techStats = {};
   filteredByDate.forEach(d => {
-    const tech = d.technician_name || 'Non assigné';
+    const tech = d.technician_name || (lang === 'en' ? 'Unassigned' : 'Non assigné');
     if (!techStats[tech]) {
       techStats[tech] = { count: 0, revenue: 0 };
     }
@@ -3613,20 +3613,20 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
                 className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
             </div>
             <div className="flex gap-1 mt-2">
-              <button onClick={() => setPreset(7)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">7j</button>
-              <button onClick={() => setPreset(30)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">30j</button>
-              <button onClick={() => setPreset(90)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">3m</button>
-              <button onClick={() => setPreset(365)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">1an</button>
+              <button onClick={() => setPreset(7)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">{lang === 'en' ? '7d' : '7j'}</button>
+              <button onClick={() => setPreset(30)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">{lang === 'en' ? '30d' : '30j'}</button>
+              <button onClick={() => setPreset(90)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">{lang === 'en' ? '3m' : '3m'}</button>
+              <button onClick={() => setPreset(365)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">{lang === 'en' ? '1yr' : '1an'}</button>
             </div>
           </div>
           
           {/* Service Type + Status (Combined - smaller) */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">Service</label>
+              <label className="block text-sm font-medium text-gray-600 mb-1">{lang === 'en' ? 'Service' : 'Service'}</label>
               <select value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value)}
                 className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm">
-                <option value="all">Tous</option>
+                <option value="all">{lang === 'en' ? 'All' : 'Tous'}</option>
                 <option value="calibration">{t('calibration')}</option>
                 <option value="repair">{t('repair')}</option>
               </select>
@@ -3636,7 +3636,7 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
               <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
                 className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm">
                 <option value="shipped">{lang === 'en' ? 'Closed' : 'Clôturés'}</option>
-                <option value="all">Tous</option>
+                <option value="all">{lang === 'en' ? 'All' : 'Tous'}</option>
               </select>
             </div>
           </div>
@@ -3673,7 +3673,7 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
                 selectedTech === null ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-50 hover:bg-gray-100'
               }`}
             >
-              <p className="font-medium text-gray-800">Tous les techniciens</p>
+              <p className="font-medium text-gray-800">{lang === 'en' ? 'All technicians' : 'Tous les techniciens'}</p>
               <p className="text-sm text-gray-500">{filteredByDate.length} appareils</p>
             </button>
             
@@ -3694,13 +3694,13 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-gray-800 truncate">{tech.name}</p>
-                      <p className="text-xs text-gray-500">{tech.count} appareils • {tech.revenue.toLocaleString('fr-FR')} €</p>
+                      <p className="text-xs text-gray-500">{tech.count} {lang === 'en' ? 'devices' : 'appareils'} • {tech.revenue.toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR')} €</p>
                     </div>
                   </div>
                 </button>
               ))}
               {techArray.length === 0 && (
-                <p className="text-gray-400 text-center py-4 text-sm">Aucun technicien</p>
+                <p className="text-gray-400 text-center py-4 text-sm">{lang === 'en' ? 'No technicians' : 'Aucun technicien'}</p>
               )}
             </div>
           </div>
@@ -3712,7 +3712,7 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-blue-500">
               <p className="text-2xl font-bold text-gray-800">{totalDevices}</p>
-              <p className="text-sm text-gray-500">Appareils total</p>
+              <p className="text-sm text-gray-500">{lang === 'en' ? 'Total devices' : 'Appareils total'}</p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-green-500">
               <p className="text-2xl font-bold text-gray-800">{devicesWithData}</p>
@@ -3723,8 +3723,8 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
               <p className="text-sm text-gray-500">Moyenne {getShortLabel(stageFrom)} → {getShortLabel(stageTo)}</p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-amber-500">
-              <p className="text-2xl font-bold text-gray-800">{totalRevenue.toLocaleString('fr-FR')} €</p>
-              <p className="text-sm text-gray-500">CA Total</p>
+              <p className="text-2xl font-bold text-gray-800">{totalRevenue.toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR')} €</p>
+              <p className="text-sm text-gray-500">{lang === 'en' ? 'Total Revenue' : 'CA Total'}</p>
             </div>
           </div>
           
@@ -3760,17 +3760,17 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
                     <th className="px-4 py-3 text-left font-medium text-gray-600">{t('client')}</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">{t('device')}</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">{t('serialNumber')}</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Technicien</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Service</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">{lang === 'en' ? 'Technician' : 'Technicien'}</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">{lang === 'en' ? 'Service' : 'Service'}</th>
                     <th className="px-4 py-3 text-right font-medium text-gray-600">{lang === 'en' ? 'Duration' : 'Durée'}</th>
-                    <th className="px-4 py-3 text-right font-medium text-gray-600">CA</th>
+                    <th className="px-4 py-3 text-right font-medium text-gray-600">{lang === 'en' ? 'Revenue' : 'CA'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {devicesWithDuration.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
-                        Aucun appareil trouvé pour ces critères
+                        {lang === 'en' ? 'No devices found for these criteria' : 'Aucun appareil trouvé pour ces critères'}
                       </td>
                     </tr>
                   ) : (
@@ -3788,7 +3788,7 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
                             'bg-gray-100 text-gray-700'
                           }`}>
                             {d.rma?.requested_service === 'calibration' ? 'Cal' : 
-                             d.rma?.requested_service === 'repair' ? 'Rép' : '—'}
+                             d.rma?.requested_service === 'repair' ? (lang === 'en' ? 'Rep' : 'Rép') : '—'}
                           </span>
                         </td>
                         <td className="px-4 py-2 text-right">
@@ -3805,7 +3805,7 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
                           )}
                         </td>
                         <td className="px-4 py-2 text-right font-medium">
-                          {(rmaRevenueMap[d.rma?.id] || 0).toLocaleString('fr-FR')} €
+                          {(rmaRevenueMap[d.rma?.id] || 0).toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR')} €
                         </td>
                       </tr>
                     ))
@@ -3815,7 +3815,7 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
                   <tfoot className="bg-gray-100 border-t-2 border-gray-300">
                     <tr className="font-bold">
                       <td colSpan={6} className="px-4 py-3 text-right text-gray-700">
-                        TOTAL ({totalDevices} appareils, {devicesWithData} avec timing)
+                        {lang === 'en' ? `TOTAL (${totalDevices} devices, ${devicesWithData} with timing)` : `TOTAL (${totalDevices} appareils, ${devicesWithData} avec timing)`}
                       </td>
                       <td className="px-4 py-3 text-right text-purple-700">
                         Moy: {avgDays.toFixed(1)}j
@@ -3823,7 +3823,7 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
                         <span className="font-normal text-xs text-gray-500">Total: {totalDays.toFixed(1)}j</span>
                       </td>
                       <td className="px-4 py-3 text-right text-green-700">
-                        {totalRevenue.toLocaleString('fr-FR')} €
+                        {totalRevenue.toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR')} €
                       </td>
                     </tr>
                   </tfoot>
@@ -3833,7 +3833,7 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
             
             {devicesWithDuration.length > 100 && (
               <div className="p-3 bg-amber-50 text-amber-700 text-sm text-center border-t">
-                Affichage limité aux 100 premiers résultats sur {devicesWithDuration.length}
+                {lang === 'en' ? `Display limited to first 100 results of ${devicesWithDuration.length}` : `Affichage limité aux 100 premiers résultats sur ${devicesWithDuration.length}`}
               </div>
             )}
           </div>
@@ -3909,18 +3909,18 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
   
   // Stats for the cards
   const stats = [
-    { id: 'all', label: 'RMAs Actifs', value: activeRMAs.length, color: 'bg-blue-500', icon: '📋' },
-    { id: 'bc', label: 'BC à vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
-    { id: 'avenant', label: 'Avenant en attente', value: avenantPending.length, color: 'bg-amber-500', icon: '📄' },
-    { id: 'waiting_bc', label: 'Attente BC', value: waitingBC.length, color: 'bg-orange-500', icon: '📝' },
-    { id: 'waiting_device', label: 'Attente Appareil', value: waitingDevice.length, color: 'bg-cyan-500', icon: '📦' },
+    { id: 'all', label: lang === 'en' ? 'Active RMAs' : 'RMAs Actifs', value: activeRMAs.length, color: 'bg-blue-500', icon: '📋' },
+    { id: 'bc', label: lang === 'en' ? 'PO to Review' : 'BC à vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
+    { id: 'avenant', label: lang === 'en' ? 'Supplement pending' : 'Avenant en attente', value: avenantPending.length, color: 'bg-amber-500', icon: '📄' },
+    { id: 'waiting_bc', label: lang === 'en' ? 'Awaiting PO' : 'Attente BC', value: waitingBC.length, color: 'bg-orange-500', icon: '📝' },
+    { id: 'waiting_device', label: lang === 'en' ? 'Awaiting Device' : 'Attente Appareil', value: waitingDevice.length, color: 'bg-cyan-500', icon: '📦' },
   ];
   
   // Job filter buttons
   const jobFilters = [
     { id: 'service', label: 'Service', value: byJob.service.length, color: 'bg-indigo-500', icon: '🔧' },
     { id: 'qc', label: 'QC', value: byJob.qc.length, color: 'bg-purple-500', icon: '✅' },
-    { id: 'ready', label: 'Prêt', value: byJob.ready.length, color: 'bg-green-500', icon: '📤' }
+    { id: 'ready', label: lang === 'en' ? 'Ready' : 'Prêt', value: byJob.ready.length, color: 'bg-green-500', icon: '📤' }
   ];
   
   // Filter RMAs based on selected filter
@@ -3970,7 +3970,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                   <span className="text-sm text-slate-600">{rma.companies?.name}</span>
                 </div>
                 <div className="text-right">
-                  <span className="text-xs text-slate-400">Archivé le {rma.archived_at ? new Date(rma.archived_at).toLocaleDateString('fr-FR') : '—'}</span>
+                  <span className="text-xs text-slate-400">{lang === 'en' ? 'Archived on' : 'Archivé le'} {rma.archived_at ? new Date(rma.archived_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '—'}</span>
                 </div>
               </div>
             ))}
@@ -4021,7 +4021,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
         <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
           <span className="text-blue-700 font-medium">Filtre: {filterLabel}</span>
           <span className="text-blue-600">({filteredRMAs.length} RMAs)</span>
-          <button onClick={() => setFilter(null)} className="ml-auto text-blue-600 hover:text-blue-800 font-medium">✕ Effacer</button>
+          <button onClick={() => setFilter(null)} className="ml-auto text-blue-600 hover:text-blue-800 font-medium">{lang === 'en' ? '✕ Clear' : '✕ Effacer'}</button>
         </div>
       )}
       
@@ -4041,8 +4041,8 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                     <span className="font-mono font-bold text-[#00A651] text-lg">{rma.request_number}</span>
                     <p className="font-medium text-gray-800">{rma.companies?.name}</p>
                     <p className="text-sm text-gray-500">
-                      BC soumis le {rma.bc_submitted_at ? new Date(rma.bc_submitted_at).toLocaleDateString('fr-FR') : new Date(rma.updated_at).toLocaleDateString('fr-FR')}
-                      {rma.bc_signed_by && <span className="ml-2">• Signé par: {rma.bc_signed_by}</span>}
+                      BC soumis le {rma.bc_submitted_at ? new Date(rma.bc_submitted_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : new Date(rma.updated_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
+                      {rma.bc_signed_by && <span className="ml-2">• {lang === 'en' ? 'Signed by' : 'Signé par'}: {rma.bc_signed_by}</span>}
                     </p>
                   </div>
                 </div>
@@ -4094,8 +4094,8 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                   <tr>
                     <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMA</th>
                     <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('client')}</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Appareil(s)</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Service</th>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Device(s)' : 'Appareil(s)'}</th>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Service' : 'Service'}</th>
                     <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Step' : 'Étape'}</th>
                     <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('date')}</th>
                     <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('actions')}</th>
@@ -4103,13 +4103,13 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {filteredRMAs.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Aucun RMA</td></tr>
+                    <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{lang === 'en' ? 'No RMAs' : 'Aucun RMA'}</td></tr>
                   ) : filteredRMAs.map(rma => {
                     const jobType = getJobType(rma);
                     const jobStyles = {
                       service: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Service' },
                       qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'QC' },
-                      ready: { bg: 'bg-green-100', text: 'text-green-700', label: 'Prêt' },
+                      ready: { bg: 'bg-green-100', text: 'text-green-700', label: lang === 'en' ? 'Ready' : 'Prêt' },
                       other: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Admin' }
                     };
                     const jobStyle = jobStyles[jobType] || jobStyles.other;
@@ -4135,13 +4135,13 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                         <td className="px-4 py-3"><span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span></td>
                         <td className="px-4 py-3"><p className="font-medium text-gray-800">{rma.companies?.name || '—'}</p></td>
                         <td className="px-4 py-3">
-                          {devices.length > 0 ? <div className="text-sm">{devices.slice(0, 2).map((d, i) => <p key={i}>{d.model_name} <span className="text-gray-400">({d.serial_number})</span></p>)}{devices.length > 2 && <p className="text-gray-400">+{devices.length - 2} autres</p>}</div> : <span className="text-gray-400">{rma.serial_number || '—'}</span>}
+                          {devices.length > 0 ? <div className="text-sm">{devices.slice(0, 2).map((d, i) => <p key={i}>{d.model_name} <span className="text-gray-400">({d.serial_number})</span></p>)}{devices.length > 2 && <p className="text-gray-400">+{devices.length - 2} {lang === 'en' ? 'more' : 'autres'}</p>}</div> : <span className="text-gray-400">{rma.serial_number || '—'}</span>}
                         </td>
                         <td className="px-4 py-3"><span className="text-sm">{rma.requested_service === 'calibration' ? '🔬 ' + t('calibration') : rma.requested_service === 'repair' ? '🔧 ' + t('repair') : rma.requested_service}</span></td>
                         <td className="px-4 py-3">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500">{new Date(rma.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</td>
                         <td className="px-4 py-3">
                           {hasBCToReview ? (
                             <button onClick={(e) => { e.stopPropagation(); setReviewingBC(rma); }} className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded">{lang === 'en' ? '🔍 Review PO' : '🔍 Examiner BC'}</button>
@@ -4228,28 +4228,28 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               
               const calibrationSteps = [
                 { id: 'submitted', label: t('stSubmitted') },
-                { id: 'rma_created', label: 'Devis Créé' },
+                { id: 'rma_created', label: lang === 'en' ? 'Quote Created' : 'Devis Créé' },
                 { id: 'bc_approved', label: t('stQuoteApproved') },
-                { id: 'waiting_device', label: 'Attente' },
+                { id: 'waiting_device', label: lang === 'en' ? 'Pending' : 'Attente' },
                 { id: 'received', label: t('stReceived') },
-                { id: 'queue', label: 'File' },
-                { id: 'calibration', label: 'Étalonnage' },
-                { id: 'final_qc', label: 'Contrôle QC' },
-                { id: 'ready_to_ship', label: 'Prêt' },
+                { id: 'queue', label: lang === 'en' ? 'Queue' : 'File' },
+                { id: 'calibration', label: lang === 'en' ? 'Calibration' : 'Étalonnage' },
+                { id: 'final_qc', label: lang === 'en' ? 'QC Check' : 'Contrôle QC' },
+                { id: 'ready_to_ship', label: lang === 'en' ? 'Ready' : 'Prêt' },
                 { id: 'shipped', label: t('stShipped') }
               ];
               
               const repairSteps = [
                 { id: 'submitted', label: t('stSubmitted') },
-                { id: 'rma_created', label: 'Devis Créé' },
+                { id: 'rma_created', label: lang === 'en' ? 'Quote Created' : 'Devis Créé' },
                 { id: 'bc_approved', label: t('stQuoteApproved') },
-                { id: 'waiting_device', label: 'Attente' },
+                { id: 'waiting_device', label: lang === 'en' ? 'Pending' : 'Attente' },
                 { id: 'received', label: t('stReceived') },
-                { id: 'inspection', label: 'Inspection' },
-                { id: 'customer_approval', label: 'Appr. Client' },
-                { id: 'repair', label: 'Réparation' },
-                { id: 'final_qc', label: 'Contrôle QC' },
-                { id: 'ready_to_ship', label: 'Prêt' },
+                { id: 'inspection', label: lang === 'en' ? 'Inspection' : 'Inspection' },
+                { id: 'customer_approval', label: lang === 'en' ? 'Client Appr.' : 'Appr. Client' },
+                { id: 'repair', label: lang === 'en' ? 'Repair' : 'Réparation' },
+                { id: 'final_qc', label: lang === 'en' ? 'QC Check' : 'Contrôle QC' },
+                { id: 'ready_to_ship', label: lang === 'en' ? 'Ready' : 'Prêt' },
                 { id: 'shipped', label: t('stShipped') }
               ];
               
@@ -4357,14 +4357,14 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMA</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('device')}</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('serialNumber')}</th>
-                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Service</th>
-                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600 min-w-[640px]">Progression</th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Service' : 'Service'}</th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-600 min-w-[640px]">{lang === 'en' ? 'Progress' : 'Progression'}</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('actions')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {allDevices.length === 0 ? (
-                      <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Aucun appareil</td></tr>
+                      <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">{lang === 'en' ? 'No devices' : 'Aucun appareil'}</td></tr>
                     ) : allDevices.map((device, idx) => {
                       // Get effective status using same logic as getDeviceStatus
                       const effectiveDeviceStatus = getDeviceStatus(device);
@@ -4389,7 +4389,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                           </td>
                           <td className="px-4 py-3">
                             <span className={`px-2 py-1 rounded text-xs font-medium ${serviceType === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {serviceType === 'repair' ? '🔧 Rép.' : '🔬 Étal.'}
+                              {serviceType === 'repair' ? (lang === 'en' ? '🔧 Rep.' : '🔧 Rép.') : (lang === 'en' ? '🔬 Cal.' : '🔬 Étal.')}
                             </span>
                           </td>
                           <td className="px-4 py-3">
@@ -4563,7 +4563,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
       if (error) {
         notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
       } else {
-        notify(`✅ BC N° ${bcNumber} approuvé! En attente de l'appareil.`);
+        notify(lang === 'en' ? `✅ PO # ${bcNumber} approved! Awaiting device.` : `✅ BC N° ${bcNumber} approuvé! En attente de l'appareil.`);
         reload();
         onClose();
       }
@@ -4573,7 +4573,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
   
   const rejectBC = async () => {
     if (!rejectReason.trim()) {
-      notify('Veuillez indiquer la raison du refus', 'error');
+      notify(lang === 'en' ? 'Please indicate the rejection reason' : 'Veuillez indiquer la raison du refus', 'error');
       return;
     }
     setRejecting(true);
@@ -4609,11 +4609,11 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
         <div className={`px-6 py-3 ${isAvenantBC ? 'bg-gradient-to-r from-amber-500 to-amber-600' : 'bg-gradient-to-r from-red-500 to-red-600'} text-white flex justify-between items-center flex-shrink-0`}>
           <div>
             <h2 className="text-xl font-bold">
-              {isAvenantBC ? '📄 Vérification BC Avenant' : 'Vérification du Bon de Commande'}
+              {isAvenantBC ? '📄 Vérification BC Avenant' : (lang === 'en' ? 'Purchase Order Verification' : 'Vérification du Bon de Commande')}
             </h2>
             <p className={isAvenantBC ? 'text-amber-100' : 'text-red-100'}>
               {rma.request_number} • {rma.companies?.name}
-              {isAvenantBC && ` • Avenant: €${rma.avenant_total?.toFixed(2) || '0.00'}`}
+              {isAvenantBC && ` • ${lang === 'en' ? 'Supplement' : 'Avenant'}: €${rma.avenant_total?.toFixed(2) || '0.00'}`}
             </p>
           </div>
           <button onClick={onClose} className="text-white/70 hover:text-white text-3xl">&times;</button>
@@ -4624,14 +4624,14 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
           {/* Left: Document Preview - Takes most of the space */}
           <div className="flex-1 flex flex-col bg-gray-800 p-4">
             <div className="flex justify-between items-center mb-3">
-              <h3 className="font-bold text-white text-lg">📄 Document BC {isAvenantBC && '(Avenant)'}</h3>
+              <h3 className="font-bold text-white text-lg">{lang === 'en' ? `📄 PO Document ${isAvenantBC ? '(Supplement)' : ''}` : `📄 Document BC ${isAvenantBC ? '(Avenant)' : ''}`}</h3>
               <div className="flex gap-2">
                 {isAvenantBC ? (
                   <>
                     {/* Avenant documents */}
                     {avenantSigneUrl && (
                       <a href={avenantSigneUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium">
-                        ✅ Avenant Signé ↗
+                        {lang === 'en' ? '✅ Signed Supplement ↗' : '✅ Avenant Signé ↗'}
                       </a>
                     )}
                     {avenantQuoteUrl && (
@@ -4705,7 +4705,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
               } else {
                 return (
                   <div className="flex-1 border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center text-gray-400 text-lg">
-                    {isAvenantBC ? 'Chargement des documents avenant...' : 'Aucun fichier BC uploadé'}
+                    {isAvenantBC ? (lang === 'en' ? 'Loading supplement documents...' : 'Chargement des documents avenant...') : (lang === 'en' ? 'No PO file uploaded' : 'Aucun fichier BC uploadé')}
                   </div>
                 );
               }
@@ -4724,12 +4724,12 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
                   <p className="font-mono font-bold text-[#00A651]">{rma.request_number}</p>
                 </div>
                 <div>
-                  <p className="text-gray-500">Service</p>
+                  <p className="text-gray-500">{lang === 'en' ? 'Service' : 'Service'}</p>
                   <p className="font-medium">{rma.requested_service}</p>
                 </div>
                 <div>
-                  <p className="text-gray-500">Soumission BC</p>
-                  <p className="font-medium">{rma.bc_submitted_at ? new Date(rma.bc_submitted_at).toLocaleString('fr-FR') : '—'}</p>
+                  <p className="text-gray-500">{lang === 'en' ? 'PO Submission' : 'Soumission BC'}</p>
+                  <p className="font-medium">{rma.bc_submitted_at ? new Date(rma.bc_submitted_at).toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR') : '—'}</p>
                 </div>
                 <div>
                   <p className="text-gray-500">{t('client')}</p>
@@ -4741,10 +4741,10 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
             {/* Signature */}
             {rma.bc_signature_url && (
               <div className="bg-white rounded-lg p-4 border">
-                <h4 className="font-medium text-gray-700 mb-2">✍️ Signature</h4>
+                <h4 className="font-medium text-gray-700 mb-2">{lang === 'en' ? '✍️ Signature' : '✍️ Signature'}</h4>
                 <img src={rma.bc_signature_url} alt="Signature" className="max-h-20 mx-auto bg-gray-50 rounded p-2" />
                 <p className="text-center text-xs text-gray-500 mt-1">
-                  {rma.bc_signed_by || '—'} {rma.bc_signature_date && `• ${new Date(rma.bc_signature_date).toLocaleDateString('fr-FR')}`}
+                  {rma.bc_signed_by || '—'} {rma.bc_signature_date && `• ${new Date(rma.bc_signature_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}`}
                 </p>
               </div>
             )}
@@ -4765,7 +4765,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
             {/* Quote/Avenant Info */}
             {isAvenantBC ? (
               <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
-                <h4 className="font-medium text-orange-800 mb-1">📄 Avenant</h4>
+                <h4 className="font-medium text-orange-800 mb-1">{lang === 'en' ? '📄 Supplement' : '📄 Avenant'}</h4>
                 {rma.avenant_total && <p className="text-xl font-bold text-orange-700">{rma.avenant_total.toFixed(2)} €</p>}
                 {avenantQuoteUrl && (
                   <a href={avenantQuoteUrl} target="_blank" rel="noopener noreferrer" className="text-orange-600 hover:underline text-sm">
@@ -4773,12 +4773,12 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
                   </a>
                 )}
                 <p className="text-xs text-orange-500 mt-1">
-                  Envoyé le {rma.avenant_sent_at ? new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR') : '—'}
+                  {lang === 'en' ? 'Sent on' : 'Envoyé le'} {rma.avenant_sent_at ? new Date(rma.avenant_sent_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '—'}
                 </p>
               </div>
             ) : (rma.quote_total || rma.quote_url) && (
               <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <h4 className="font-medium text-blue-800 mb-1">💰 Devis</h4>
+                <h4 className="font-medium text-blue-800 mb-1">{lang === 'en' ? '💰 Quote' : '💰 Devis'}</h4>
                 {rma.quote_number && <p className="text-sm font-mono text-blue-600">N° {rma.quote_number}</p>}
                 {rma.quote_total && <p className="text-xl font-bold text-blue-700">{rma.quote_total.toFixed(2)} €</p>}
                 {rma.quote_url && (
@@ -4794,8 +4794,8 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
               <h4 className="font-medium text-green-800 mb-2">{lang === 'en' ? "📋 Purchase Order Number" : "📋 Numéro de Bon de Commande"}</h4>
               <p className="text-xs text-green-600 mb-3">
                 {hasCustomerBCFile 
-                  ? 'Le client a fourni son propre BC. Entrez le numéro du client.'
-                  : 'Devis signé par le client. Auto-générer ou entrer un numéro.'}
+                  ? (lang === 'en' ? 'Client provided their own PO. Enter the client number.' : 'Le client a fourni son propre BC. Entrez le numéro du client.')
+                  : (lang === 'en' ? 'Quote signed by client. Auto-generate or enter a number.' : 'Devis signé par le client. Auto-générer ou entrer un numéro.')}
               </p>
               
               {/* Toggle for auto-generate vs manual */}
@@ -4849,11 +4849,11 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
             
             {/* Reject Reason */}
             <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-              <h4 className="font-medium text-red-800 mb-2">Refuser le BC?</h4>
+              <h4 className="font-medium text-red-800 mb-2">{lang === 'en' ? 'Reject the PO?' : 'Refuser le BC?'}</h4>
               <textarea
                 value={rejectReason}
                 onChange={e => setRejectReason(e.target.value)}
-                placeholder="Raison du refus..."
+                placeholder={lang === 'en' ? 'Rejection reason...' : 'Raison du refus...'}
                 className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm h-20 resize-none"
               />
             </div>
@@ -4865,7 +4865,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
                 disabled={approving}
                 className={`w-full px-6 py-3 ${isAvenantBC ? 'bg-amber-500 hover:bg-amber-600' : 'bg-green-500 hover:bg-green-600'} text-white rounded-lg font-bold disabled:opacity-50`}
               >
-                {approving ? 'Approbation...' : isAvenantBC ? '✅ Approuver Avenant' : '✅ Approuver BC'}
+                {approving ? (lang === 'en' ? 'Approving...' : 'Approbation...') : isAvenantBC ? (lang === 'en' ? '✅ Approve Supplement' : '✅ Approuver Avenant') : (lang === 'en' ? '✅ Approve PO' : '✅ Approuver BC')}
               </button>
               <button
                 onClick={rejectBC}
@@ -4915,7 +4915,7 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
   
   const rejectBC = async () => {
     if (!rejectReason.trim()) {
-      notify('Veuillez indiquer la raison du refus', 'error');
+      notify(lang === 'en' ? 'Please indicate the rejection reason' : 'Veuillez indiquer la raison du refus', 'error');
       return;
     }
     setRejecting(true);
@@ -4962,7 +4962,7 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
           {/* Left: Document Preview - Takes most of the space */}
           <div className="flex-1 flex flex-col bg-gray-800 p-4">
             <div className="flex justify-between items-center mb-3">
-              <h3 className="font-bold text-white text-lg">📄 Documents BC</h3>
+              <h3 className="font-bold text-white text-lg">{lang === 'en' ? '📄 PO Documents' : '📄 Documents BC'}</h3>
               <div className="flex gap-2">
                 {contract.signed_quote_url && (
                   <a href={contract.signed_quote_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium">
@@ -4982,7 +4982,7 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
                 <iframe 
                   src={contract.signed_quote_url} 
                   className="w-full h-full" 
-                  title="Devis Signé PDF"
+                  title={lang === 'en' ? 'Signed Quote PDF' : 'Devis Signé PDF'}
                 />
               ) : contract.bc_file_url ? (
                 contract.bc_file_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
@@ -5016,18 +5016,18 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
             <div className="bg-white rounded-lg p-4 border shadow-sm">
               <div className="space-y-3">
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">N° Contrat</span>
+                  <span className="text-sm text-gray-500">{lang === 'en' ? 'Contract #' : 'N° Contrat'}</span>
                   <span className="font-mono font-bold text-[#00A651]">{contract.contract_number}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-500">{lang === 'en' ? 'Period' : 'Période'}</span>
                   <span className="font-medium text-sm">
-                    {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
+                    {new Date(contract.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} - {new Date(contract.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Soumis le</span>
-                  <span className="font-medium text-sm">{contract.bc_submitted_at ? new Date(contract.bc_submitted_at).toLocaleString('fr-FR') : '—'}</span>
+                  <span className="text-sm text-gray-500">{lang === 'en' ? 'Submitted on' : 'Soumis le'}</span>
+                  <span className="font-medium text-sm">{contract.bc_submitted_at ? new Date(contract.bc_submitted_at).toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR') : '—'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-500">{lang === 'en' ? 'Signed by' : 'Signé par'}</span>
@@ -5041,8 +5041,8 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
               <h4 className="font-medium text-green-800 mb-2">{lang === 'en' ? '💰 Summary' : '💰 Récapitulatif'}</h4>
               <div className="space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-green-700">{devices.length} appareils</span>
-                  <span className="text-green-700">{totalTokens} étalonnages/an</span>
+                  <span className="text-green-700">{devices.length} {lang === 'en' ? 'devices' : 'appareils'}</span>
+                  <span className="text-green-700">{totalTokens} {lang === 'en' ? 'calibrations/yr' : 'étalonnages/an'}</span>
                 </div>
                 <div className="flex justify-between items-center pt-2 border-t border-green-200">
                   <span className="font-medium text-green-800">{t('totalHT')}</span>
@@ -5053,13 +5053,13 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
             
             {/* Devices */}
             <div className="bg-white rounded-lg p-4 border">
-              <h4 className="font-medium text-gray-700 mb-3">Appareils ({devices.length})</h4>
+              <h4 className="font-medium text-gray-700 mb-3">{lang === 'en' ? `Devices (${devices.length})` : `Appareils (${devices.length})`}</h4>
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {devices.map((d, i) => (
                   <div key={i} className="bg-gray-50 rounded p-3 border text-sm">
-                    <p className="font-medium">{d.model_name || 'Appareil'}</p>
+                    <p className="font-medium">{d.model_name || (lang === 'en' ? 'Device' : 'Appareil')}</p>
                     <p className="text-gray-500">SN: {d.serial_number}</p>
-                    <p className="text-gray-500">{d.tokens_total || 1} étal./an • {(d.unit_price || 0).toFixed(2)} €</p>
+                    <p className="text-gray-500">{d.tokens_total || 1} {lang === 'en' ? 'cal./yr' : 'étal./an'} • {(d.unit_price || 0).toFixed(2)} €</p>
                   </div>
                 ))}
               </div>
@@ -5067,11 +5067,11 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
             
             {/* Reject Reason Input */}
             <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-              <h4 className="font-medium text-red-800 mb-2">❌ Refuser le BC?</h4>
+              <h4 className="font-medium text-red-800 mb-2">{lang === 'en' ? '❌ Reject PO?' : '❌ Refuser le BC?'}</h4>
               <textarea
                 value={rejectReason}
                 onChange={e => setRejectReason(e.target.value)}
-                placeholder="Raison du refus (document illisible, montant incorrect, etc.)..."
+                placeholder={lang === 'en' ? 'Rejection reason (illegible document, incorrect amount, etc.)...' : 'Raison du refus (document illisible, montant incorrect, etc.)...'}
                 className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm h-20 resize-none"
               />
             </div>
@@ -5096,7 +5096,7 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
               disabled={approving}
               className="px-8 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50"
             >
-              {approving ? 'Activation...' : '✅ Approuver & Activer Contrat'}
+              {approving ? (lang === 'en' ? 'Activating...' : 'Activation...') : (lang === 'en' ? '✅ Approve & Activate Contract' : '✅ Approuver & Activer Contrat')}
             </button>
           </div>
         </div>
@@ -5165,7 +5165,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
         }).eq('id', rma.id);
       }
       
-      notify(`✅ ${selectedToReceive.size} appareil(s) marqué(s) comme reçu(s)!`);
+      notify(lang === 'en' ? `✅ ${selectedToReceive.size} device(s) marked as received!` : `✅ ${selectedToReceive.size} appareil(s) marqué(s) comme reçu(s)!`);
       setShowReceiveModal(false);
       setSelectedToReceive(new Set());
       reload();
@@ -5217,7 +5217,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
               disabled={saving}
               className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
             >
-              {saving ? '⏳' : '📦'} Réceptionner Appareils ({unreceiveDevices.length})
+              {saving ? '⏳' : '📦'} {lang === 'en' ? 'Receive Devices' : 'Réceptionner Appareils'} ({unreceiveDevices.length})
             </button>
           )}
           
@@ -5231,7 +5231,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
               disabled={saving}
               className="px-4 py-2 bg-cyan-400 hover:bg-cyan-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
             >
-              📦 + Réceptionner ({unreceiveDevices.length} restant)
+              {lang === 'en' ? `📦 + Receive (${unreceiveDevices.length} remaining)` : `📦 + Réceptionner (${unreceiveDevices.length} restant)`}
             </button>
           )}
           
@@ -5242,7 +5242,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
               disabled={saving}
               className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
             >
-              {saving ? '⏳' : '🔧'} Démarrer Service
+              {saving ? '⏳' : '🔧'} {lang === 'en' ? 'Start Service' : 'Démarrer Service'}
             </button>
           )}
           
@@ -5252,14 +5252,14 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
               onClick={onOpenAvenant}
               className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium flex items-center gap-2"
             >
-              📄 Créer Avenant (€{totalAdditionalWork.toFixed(2)})
+              {lang === 'en' ? `📄 Create Supplement (€${totalAdditionalWork.toFixed(2)})` : `📄 Créer Avenant (€${totalAdditionalWork.toFixed(2)})`}
             </button>
           )}
           
           {/* Avenant sent indicator */}
           {rma.avenant_sent_at && (
             <span className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium">
-              📄 Avenant envoyé {rma.avenant_approved_at ? '✓ Approuvé' : '⏳ En attente'}
+              {lang === 'en' ? `📄 Supplement sent ${rma.avenant_approved_at ? '✓ Approved' : '⏳ Pending'}` : `📄 Avenant envoyé ${rma.avenant_approved_at ? '✓ Approuvé' : '⏳ En attente'}`}
             </span>
           )}
           
@@ -5270,11 +5270,11 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
                 onClick={onOpenShipping}
                 className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium flex items-center gap-2"
               >
-                🚚 Préparer Expédition
+                {lang === 'en' ? '🚚 Prepare Shipment' : '🚚 Préparer Expédition'}
               </button>
               <button
                 onClick={async () => {
-                  if (!confirm('Marquer tous les appareils comme expédiés et fermer le RMA?')) return;
+                  if (!confirm(lang === 'en' ? 'Mark all devices as shipped and close the RMA?' : 'Marquer tous les appareils comme expédiés et fermer le RMA?')) return;
                   setSaving(true);
                   try {
                     console.log('Marking devices as shipped...');
@@ -5313,7 +5313,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
                 disabled={saving}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center gap-2 disabled:opacity-50"
               >
-                {saving ? '⏳...' : '📦 Marquer Expédié'}
+                {saving ? '⏳...' : lang === 'en' ? '📦 Mark Shipped' : '📦 Marquer Expédié'}
               </button>
             </div>
           )}
@@ -5321,14 +5321,14 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
           {/* Status indicator */}
           {receivedDevices.length > 0 && unreceiveDevices.length > 0 && (
             <span className="text-sm text-amber-600 bg-amber-50 px-3 py-1 rounded-lg">
-              ⚠️ {receivedDevices.length}/{devices.length} appareils reçus
+              ⚠️ {receivedDevices.length}/{devices.length} {lang === 'en' ? 'devices received' : 'appareils reçus'}
             </span>
           )}
           
           {/* Status indicator when no actions available */}
           {!isWaitingForDevice && !hasReceivedDevices && !isReadyToShip && !hasAdditionalWork && devices.length > 0 && (
             <span className="text-sm text-gray-500">
-              Service en cours... Cliquez sur un appareil pour voir/modifier les détails.
+              {lang === 'en' ? 'Service in progress... Click on a device to view/edit details.' : 'Service en cours... Cliquez sur un appareil pour voir/modifier les détails.'}
             </span>
           )}
         </div>
@@ -5359,7 +5359,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
                     }}
                     className="w-full px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg text-left font-medium"
                   >
-                    {selectedToReceive.size === unreceiveDevices.length ? '☑️ Tout désélectionner' : '☐ Tout sélectionner'}
+                    {selectedToReceive.size === unreceiveDevices.length ? (lang === 'en' ? '☑️ Deselect all' : '☑️ Tout désélectionner') : (lang === 'en' ? '☐ Select all' : '☐ Tout sélectionner')}
                   </button>
                   
                   {unreceiveDevices.map(device => (
@@ -5384,13 +5384,13 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
                         className="w-5 h-5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
                       />
                       <div className="flex-1">
-                        <p className="font-medium text-gray-800">{device.model_name || 'Appareil'}</p>
+                        <p className="font-medium text-gray-800">{device.model_name || (lang === 'en' ? 'Device' : 'Appareil')}</p>
                         <p className="text-sm text-gray-500 font-mono">SN: {device.serial_number || '—'}</p>
                       </div>
                       <span className={`px-2 py-1 rounded text-xs font-medium ${
                         device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
                       }`}>
-                        {device.service_type === 'repair' ? '🔧 Rép.' : '🔬 Étal.'}
+                        {device.service_type === 'repair' ? (lang === 'en' ? '🔧 Rep.' : '🔧 Rép.') : (lang === 'en' ? '🔬 Cal.' : '🔬 Étal.')}
                       </span>
                     </label>
                   ))}
@@ -5405,7 +5405,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
                     {receivedDevices.map(device => (
                       <div key={device.id} className="flex items-center gap-2 text-sm text-gray-400 bg-gray-50 p-2 rounded">
                         <span>✓</span>
-                        <span>{device.model_name || 'Appareil'}</span>
+                        <span>{device.model_name || (lang === 'en' ? 'Device' : 'Appareil')}</span>
                         <span className="font-mono text-xs">SN: {device.serial_number}</span>
                       </div>
                     ))}
@@ -5426,7 +5426,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
                 disabled={saving || selectedToReceive.size === 0}
                 className="px-6 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-bold disabled:opacity-50 flex items-center gap-2"
               >
-                {saving ? '⏳ Enregistrement...' : `📦 Réceptionner (${selectedToReceive.size})`}
+                {saving ? (lang === 'en' ? '⏳ Saving...' : '⏳ Enregistrement...') : (lang === 'en' ? `📦 Receive (${selectedToReceive.size})` : `📦 Réceptionner (${selectedToReceive.size})`)}
               </button>
             </div>
           </div>
@@ -5612,7 +5612,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         .update({ category: newCategory })
         .eq('id', doc.id);
       if (error) throw error;
-      notify(isInternal ? '👁️ Document visible au client' : '🔒 Document masqué au client');
+      notify(isInternal ? (lang === 'en' ? '👁️ Document visible to client' : '👁️ Document visible au client') : (lang === 'en' ? '🔒 Document hidden from client' : '🔒 Document masqué au client'));
       await refreshAttachments();
     } catch (err) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
@@ -5639,7 +5639,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     return (
       <div className="p-8 text-center">
         <p className="text-red-500">{lang === 'en' ? 'Error: RMA not found' : 'Erreur: RMA non trouvé'}</p>
-        <button onClick={onBack} className="mt-4 px-4 py-2 bg-gray-200 rounded-lg">← Retour</button>
+        <button onClick={onBack} className="mt-4 px-4 py-2 bg-gray-200 rounded-lg">{lang === 'en' ? '← Back' : '← Retour'}</button>
       </div>
     );
   }
@@ -5652,28 +5652,28 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   // Progress steps for devices
   const calibrationSteps = [
     { id: 'submitted', label: t('stSubmitted') },
-    { id: 'rma_created', label: 'Devis Créé' },
+    { id: 'rma_created', label: lang === 'en' ? 'Quote Created' : 'Devis Créé' },
     { id: 'bc_approved', label: t('stQuoteApproved') },
-    { id: 'waiting_device', label: 'Attente' },
+    { id: 'waiting_device', label: lang === 'en' ? 'Pending' : 'Attente' },
     { id: 'received', label: t('stReceived') },
-    { id: 'queue', label: 'File' },
-    { id: 'calibration', label: 'Étalonnage' },
-    { id: 'final_qc', label: 'Contrôle QC' },
-    { id: 'ready_to_ship', label: 'Prêt' },
+    { id: 'queue', label: lang === 'en' ? 'Queue' : 'File' },
+    { id: 'calibration', label: lang === 'en' ? 'Calibration' : 'Étalonnage' },
+    { id: 'final_qc', label: lang === 'en' ? 'QC Check' : 'Contrôle QC' },
+    { id: 'ready_to_ship', label: lang === 'en' ? 'Ready' : 'Prêt' },
     { id: 'shipped', label: t('stShipped') }
   ];
 
   const repairSteps = [
     { id: 'submitted', label: t('stSubmitted') },
-    { id: 'rma_created', label: 'Devis Créé' },
+    { id: 'rma_created', label: lang === 'en' ? 'Quote Created' : 'Devis Créé' },
     { id: 'bc_approved', label: t('stQuoteApproved') },
-    { id: 'waiting_device', label: 'Attente' },
+    { id: 'waiting_device', label: lang === 'en' ? 'Pending' : 'Attente' },
     { id: 'received', label: t('stReceived') },
-    { id: 'inspection', label: 'Inspection' },
-    { id: 'customer_approval', label: 'Appr. Client' },
-    { id: 'repair', label: 'Réparation' },
-    { id: 'final_qc', label: 'Contrôle QC' },
-    { id: 'ready_to_ship', label: 'Prêt' },
+    { id: 'inspection', label: lang === 'en' ? 'Inspection' : 'Inspection' },
+    { id: 'customer_approval', label: lang === 'en' ? 'Client Appr.' : 'Appr. Client' },
+    { id: 'repair', label: lang === 'en' ? 'Repair' : 'Réparation' },
+    { id: 'final_qc', label: lang === 'en' ? 'QC Check' : 'Contrôle QC' },
+    { id: 'ready_to_ship', label: lang === 'en' ? 'Ready' : 'Prêt' },
     { id: 'shipped', label: t('stShipped') }
   ];
   
@@ -5766,27 +5766,27 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     const rmaIsEarly = earlyStatuses.includes(rma.status);
     
     // Priority overrides
-    if (device.shipped_at) return 'Expédié';
-    if (device.qc_complete) return 'Prêt';
-    if (device.report_complete && !device.qc_complete) return 'Contrôle QC';
+    if (device.shipped_at) return lang === 'en' ? 'Shipped' : 'Expédié';
+    if (device.qc_complete) return lang === 'en' ? 'Ready' : 'Prêt';
+    if (device.report_complete && !device.qc_complete) return lang === 'en' ? 'QC Check' : 'Contrôle QC';
     
     // If RMA is early, use RMA status; otherwise use device status
     const status = rmaIsEarly ? rma.status : (device.status || rma.status);
     
     const labels = {
-      'submitted': 'Soumis',
-      'approved': 'Approuvé',
-      'waiting_bc': 'Attente BC',
-      'bc_review': 'BC en revue',
-      'bc_approved': 'BC Approuvé',
-      'waiting_device': 'Attente appareil',
-      'received': 'Reçu',
-      'in_queue': 'En file',
-      'calibration_in_progress': 'Étalonnage',
-      'repair_in_progress': 'Réparation',
-      'final_qc': 'Contrôle QC',
-      'ready_to_ship': 'Prêt',
-      'shipped': 'Expédié'
+      'submitted': (lang === 'en' ? 'Submitted' : 'Soumis'),
+      'approved': (lang === 'en' ? 'Approved' : 'Approuvé'),
+      'waiting_bc': lang === 'en' ? 'Awaiting PO' : 'Attente BC',
+      'bc_review': lang === 'en' ? 'PO in review' : 'BC en revue',
+      'bc_approved': lang === 'en' ? 'PO Approved' : 'BC Approuvé',
+      'waiting_device': lang === 'en' ? 'Awaiting device' : 'Attente appareil',
+      'received': lang === 'en' ? 'Received' : 'Reçu',
+      'in_queue': lang === 'en' ? 'In queue' : 'En file',
+      'calibration_in_progress': lang === 'en' ? 'Calibration' : 'Étalonnage',
+      'repair_in_progress': lang === 'en' ? 'Repair' : 'Réparation',
+      'final_qc': lang === 'en' ? 'QC Check' : 'Contrôle QC',
+      'ready_to_ship': lang === 'en' ? 'Ready' : 'Prêt',
+      'shipped': lang === 'en' ? 'Shipped' : 'Expédié'
     };
     return labels[status] || status;
   };
@@ -5859,9 +5859,9 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 {getDeviceStatusLabel(device)}
               </span>
               <p className="text-sm text-gray-500 mt-2">
-                {device.service_type === 'calibration' ? '🔬 Étalonnage' : 
-                 device.service_type === 'repair' ? '🔧 Réparation' : 
-                 '🔬🔧 Étal. + Rép.'}
+                {device.service_type === 'calibration' ? (lang === 'en' ? '🔬 Calibration' : '🔬 Étalonnage') : 
+                 device.service_type === 'repair' ? (lang === 'en' ? '🔧 Repair' : '🔧 Réparation') : 
+                 (lang === 'en' ? '🔬🔧 Cal. + Rep.' : '🔬🔧 Étal. + Rép.')}
               </p>
             </div>
           </div>
@@ -5880,7 +5880,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     const { data: addrs } = await supabase.from('shipping_addresses').select('*').eq('company_id', rma.company_id).order('label');
                     if (!addrs || addrs.length === 0) { notify(lang === 'en' ? 'No address registered for this client' : 'Aucune adresse enregistrée pour ce client', 'error'); return; }
                     const labels = addrs.map((a, i) => `${i + 1}. ${a.label || a.company_name || '—'} — ${a.address_line1}, ${a.postal_code} ${a.city}`).join('\n');
-                    const choice = prompt(`Choisir une adresse de retour (numéro):\n\n${labels}\n\n0 = Utiliser l'adresse RMA par défaut`);
+                    const choice = prompt(lang === 'en' ? `Choose return address (numéro):\n\n${labels}\n\n0 = Utiliser l'adresse RMA par défaut`);
                     if (choice === null) return;
                     const idx = parseInt(choice);
                     if (idx === 0) {
@@ -5895,7 +5895,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     }
                   }}
                   className="text-xs text-blue-500 hover:text-blue-700 hover:underline"
-                >✏️ Modifier</button>
+                >{lang === 'en' ? '✏️ Edit' : '✏️ Modifier'}</button>
               )}
             </div>
             {(() => {
@@ -5926,7 +5926,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
               {/* Not received message */}
               {!isDeviceReceived && !device.report_complete && (
                 <span className="px-3 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium flex items-center gap-2">
-                  📦 Appareil non réceptionné - Marquer comme reçu pour démarrer le service
+                  {lang === 'en' ? '📦 Device not received - Mark as received to start service' : '📦 Appareil non réceptionné - Marquer comme reçu pour démarrer le service'}
                 </span>
               )}
               
@@ -5936,7 +5936,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                   onClick={() => setShowServiceModal(device)}
                   className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium flex items-center gap-2"
                 >
-                  🔧 {device.report_complete ? 'Modifier Service' : device.service_findings ? 'Continuer Service' : 'Traiter Appareil'}
+                  🔧 {device.report_complete ? (lang === 'en' ? 'Edit Service' : 'Modifier Service') : device.service_findings ? (lang === 'en' ? 'Continue Service' : 'Continuer Service') : (lang === 'en' ? 'Process Device' : 'Traiter Appareil')}
                 </button>
               )}
               
@@ -5971,9 +5971,9 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
           <div className="flex border-b">
             {[
-              { id: 'details', label: 'Détails', icon: '📋' },
-              { id: 'history', label: 'Historique', icon: '📜' },
-              { id: 'documents', label: 'Documents', icon: '📄' }
+              { id: 'details', label: lang === 'en' ? 'Details' : 'Détails', icon: '📋' },
+              { id: 'history', label: lang === 'en' ? 'History' : 'Historique', icon: '📜' },
+              { id: 'documents', label: lang === 'en' ? 'Documents' : 'Documents', icon: '📄' }
             ].map(tab => (
               <button
                 key={tab.id}
@@ -5995,14 +5995,14 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
               <div className="space-y-6">
                 {/* Service Info */}
                 <div>
-                  <h3 className="font-bold text-gray-800 mb-3">Informations du service</h3>
+                  <h3 className="font-bold text-gray-800 mb-3">{lang === 'en' ? 'Service information' : 'Informations du service'}</h3>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <div className="bg-gray-50 rounded-lg p-3">
-                      <p className="text-xs text-gray-500 uppercase">Type de service</p>
+                      <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'Service type' : 'Type de service'}</p>
                       <p className="font-medium">{device.service_type === 'calibration' ? t('calibration') : device.service_type === 'repair' ? t('repair') : device.service_type}</p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-3">
-                      <p className="text-xs text-gray-500 uppercase">Technicien</p>
+                      <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'Technician' : 'Technicien'}</p>
                       <p className="font-medium">{device.technician_name || '—'}</p>
                     </div>
                     {device.cal_type && (
@@ -6035,7 +6035,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 {/* Findings & Work */}
                 {(device.service_findings || device.work_completed) && (
                   <div>
-                    <h3 className="font-bold text-gray-800 mb-3">Rapport de service</h3>
+                    <h3 className="font-bold text-gray-800 mb-3">{lang === 'en' ? 'Service report' : 'Rapport de service'}</h3>
                     {device.service_findings && (
                       <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-3">
                         <p className="text-xs text-amber-600 uppercase mb-1">{t('findings')}</p>
@@ -6054,7 +6054,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 {/* Customer Notes */}
                 {device.notes && (
                   <div>
-                    <h3 className="font-bold text-gray-800 mb-3">Notes du client</h3>
+                    <h3 className="font-bold text-gray-800 mb-3">{lang === 'en' ? 'Client notes' : 'Notes du client'}</h3>
                     <div className="bg-gray-50 rounded-lg p-4">
                       <p className="text-gray-700 whitespace-pre-wrap">{device.notes}</p>
                     </div>
@@ -6064,7 +6064,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 {/* Internal Notes */}
                 {device.internal_notes && (
                   <div>
-                    <h3 className="font-bold text-gray-800 mb-3">Notes internes</h3>
+                    <h3 className="font-bold text-gray-800 mb-3">{lang === 'en' ? 'Internal notes' : 'Notes internes'}</h3>
                     <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
                       <p className="text-gray-700 whitespace-pre-wrap">{device.internal_notes}</p>
                     </div>
@@ -6081,7 +6081,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                         <p className="text-red-700 whitespace-pre-wrap">{device.qc_rejection_reason}</p>
                         {device.qc_rejected_at && (
                           <p className="text-red-500 text-sm mt-2">
-                            Rejeté le {new Date(device.qc_rejected_at).toLocaleDateString('fr-FR')} à {new Date(device.qc_rejected_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'})}
+                            {lang === 'en' ? 'Rejected on' : 'Rejeté le'} {new Date(device.qc_rejected_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} {lang === 'en' ? 'at' : 'à'} {new Date(device.qc_rejected_at).toLocaleTimeString(lang === 'en' ? 'en-US' : 'fr-FR', {hour: '2-digit', minute: '2-digit'})}
                           </p>
                         )}
                       </div>
@@ -6104,22 +6104,22 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             {/* History Tab */}
             {deviceTab === 'history' && (
               <div className="space-y-4">
-                <h3 className="font-bold text-gray-800">Historique de cet appareil</h3>
+                <h3 className="font-bold text-gray-800">{lang === 'en' ? 'History of this device' : 'Historique de cet appareil'}</h3>
                 <div className="relative">
                   <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
                   <div className="space-y-4">
                     {[
                       { date: rma.created_at, label: t('stSubmitted'), icon: '📝', color: 'gray' },
-                      rma.request_number && { date: rma.created_at, label: 'RMA créé', icon: '📋', color: 'blue' },
-                      rma.quote_sent_at && { date: rma.quote_sent_at, label: 'Devis envoyé', icon: '💰', color: 'amber' },
-                      rma.bc_submitted_at && { date: rma.bc_submitted_at, label: 'BC soumis', icon: '📄', color: 'purple' },
-                      rma.bc_approved_at && { date: rma.bc_approved_at, label: 'BC approuvé - Attente appareil', icon: '✅', color: 'green' },
-                      rma.received_at && { date: rma.received_at, label: 'Appareil reçu', icon: '📦', color: 'cyan' },
-                      device.service_started_at && { date: device.service_started_at, label: device.service_type === 'repair' ? 'Réparation démarrée' : 'Étalonnage démarré', icon: '🔧', color: 'indigo' },
-                      device.report_completed_at && { date: device.report_completed_at, label: 'Rapport complété', icon: '📋', color: 'blue' },
-                      device.qc_completed_at && { date: device.qc_completed_at, label: 'QC validé - Prêt à expédier', icon: '✅', color: 'purple' },
+                      rma.request_number && { date: rma.created_at, label: lang === 'en' ? 'RMA Created' : 'RMA créé', icon: '📋', color: 'blue' },
+                      rma.quote_sent_at && { date: rma.quote_sent_at, label: lang === 'en' ? 'Quote Sent' : 'Devis envoyé', icon: '💰', color: 'amber' },
+                      rma.bc_submitted_at && { date: rma.bc_submitted_at, label: lang === 'en' ? 'PO submitted' : 'BC soumis', icon: '📄', color: 'purple' },
+                      rma.bc_approved_at && { date: rma.bc_approved_at, label: lang === 'en' ? 'PO approved - Awaiting device' : 'BC approuvé - Attente appareil', icon: '✅', color: 'green' },
+                      rma.received_at && { date: rma.received_at, label: lang === 'en' ? 'Device Received' : 'Appareil reçu', icon: '📦', color: 'cyan' },
+                      device.service_started_at && { date: device.service_started_at, label: device.service_type === 'repair' ? (lang === 'en' ? 'Repair started' : 'Réparation démarrée') : (lang === 'en' ? 'Calibration started' : 'Étalonnage démarré'), icon: '🔧', color: 'indigo' },
+                      device.report_completed_at && { date: device.report_completed_at, label: lang === 'en' ? 'Report completed' : 'Rapport complété', icon: '📋', color: 'blue' },
+                      device.qc_completed_at && { date: device.qc_completed_at, label: lang === 'en' ? 'QC passed - Ready to ship' : 'QC validé - Prêt à expédier', icon: '✅', color: 'purple' },
                       device.qc_rejected_at && { date: device.qc_rejected_at, label: (lang === 'en' ? 'QC rejected' : 'QC rejeté'), icon: '❌', color: 'red' },
-                      device.shipped_at && { date: device.shipped_at, label: 'Expédié', icon: '🚚', color: 'green' }
+                      device.shipped_at && { date: device.shipped_at, label: lang === 'en' ? 'Shipped' : 'Expédié', icon: '🚚', color: 'green' }
                     ].filter(Boolean).sort((a, b) => new Date(a.date) - new Date(b.date)).map((event, idx) => (
                       <div key={idx} className="relative pl-10">
                         <div className={`absolute left-2 w-5 h-5 rounded-full border-2 border-white shadow flex items-center justify-center text-xs ${
@@ -6136,7 +6136,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                         <div className="bg-gray-50 rounded-lg p-3">
                           <p className="font-medium text-gray-800">{event.icon} {event.label}</p>
                           <p className="text-sm text-gray-500">
-                            {new Date(event.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            {new Date(event.date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </p>
                         </div>
                       </div>
@@ -6149,7 +6149,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             {/* Documents Tab */}
             {deviceTab === 'documents' && (
               <div className="space-y-4">
-                <h3 className="font-bold text-gray-800">📁 Documents</h3>
+                <h3 className="font-bold text-gray-800">{lang === 'en' ? '📁 Documents' : '📁 Documents'}</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   
                   {/* === 1. DEVIS (QUOTE) === */}
@@ -6172,8 +6172,8 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors border-gray-200 opacity-75">
                       <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-2xl">📂</div>
                       <div>
-                        <p className="font-medium text-gray-600">{att.file_name || 'Ancien Devis'}</p>
-                        <p className="text-xs text-gray-400">{att.notes || 'Archivé'} • 🔒 Admin uniquement</p>
+                        <p className="font-medium text-gray-600">{att.file_name || (lang === 'en' ? 'Previous Quote' : 'Ancien Devis')}</p>
+                        <p className="text-xs text-gray-400">{att.notes || (lang === 'en' ? 'Archived' : 'Archivé')} • 🔒 Admin uniquement</p>
                       </div>
                     </a>
                   ))}
@@ -6185,7 +6185,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
                       <div>
                         <p className="font-medium text-gray-800">{lang === 'en' ? 'Signed Quote / PO' : 'Devis Signé / BC'}</p>
-                        <p className="text-sm text-green-600">{rma.bc_number ? `N° ${rma.bc_number}` : 'Signé'}</p>
+                        <p className="text-sm text-green-600">{rma.bc_number ? `N° ${rma.bc_number}` : (lang === 'en' ? 'Signed' : 'Signé')}</p>
                       </div>
                     </a>
                   )}
@@ -6196,7 +6196,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
                       <div>
                         <p className="font-medium text-gray-800">{lang === 'en' ? 'Signed Quote / PO' : 'Devis Signé / BC'}</p>
-                        <p className="text-sm text-green-600">{rma.bc_number ? `N° ${rma.bc_number}` : 'Signé'}</p>
+                        <p className="text-sm text-green-600">{rma.bc_number ? `N° ${rma.bc_number}` : (lang === 'en' ? 'Signed' : 'Signé')}</p>
                       </div>
                     </a>
                   ))}
@@ -6208,7 +6208,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
                       <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
                       <div>
-                        <p className="font-medium text-gray-800">Bon de Commande Client</p>
+                        <p className="font-medium text-gray-800">{lang === 'en' ? 'Client Purchase Order' : 'Bon de Commande Client'}</p>
                         <p className="text-sm text-purple-600">{rma.bc_number ? `N° ${rma.bc_number}` : 'BC client'}</p>
                       </div>
                     </a>
@@ -6219,7 +6219,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
                       <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
                       <div>
-                        <p className="font-medium text-gray-800">Bon de Commande Client</p>
+                        <p className="font-medium text-gray-800">{lang === 'en' ? 'Client Purchase Order' : 'Bon de Commande Client'}</p>
                         <p className="text-sm text-purple-600">{rma.bc_number ? `N° ${rma.bc_number}` : att.file_name}</p>
                       </div>
                     </a>
@@ -6256,7 +6256,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">🏷️</div>
                       <div>
                         <p className="font-medium text-gray-800">{lang === 'en' ? 'UPS Label' : 'Étiquette UPS'}</p>
-                        <p className="text-sm text-amber-600">{device.tracking_number || 'Label d\'expédition'}</p>
+                        <p className="text-sm text-amber-600">{device.tracking_number || 'lang === 'en' ? 'Shipping label' : "Label d'expédition"'}</p>
                       </div>
                     </a>
                   )}
@@ -6292,7 +6292,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
                       <div>
                         <p className="font-medium text-gray-800">{lang === 'en' ? 'Signed Supplement / PO' : 'Supplément Signé / BC'}</p>
-                        <p className="text-sm text-green-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : (rma.supplement_number ? `N° ${rma.supplement_number}` : 'Approuvé')}</p>
+                        <p className="text-sm text-green-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : (rma.supplement_number ? `N° ${rma.supplement_number}` : (lang === 'en' ? 'Approved' : 'Approuvé'))}</p>
                       </div>
                     </a>
                   )}
@@ -6303,7 +6303,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
                       <div>
                         <p className="font-medium text-gray-800">{lang === 'en' ? 'Signed Supplement / PO' : 'Supplément Signé / BC'}</p>
-                        <p className="text-sm text-green-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : (rma.supplement_number ? `N° ${rma.supplement_number}` : 'Approuvé')}</p>
+                        <p className="text-sm text-green-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : (rma.supplement_number ? `N° ${rma.supplement_number}` : (lang === 'en' ? 'Approved' : 'Approuvé'))}</p>
                       </div>
                     </a>
                   ))}
@@ -6361,9 +6361,9 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                                 </div>
                               )}
                               <div className="flex-1 min-w-0">
-                                <p className="font-medium text-gray-800 truncate text-sm">{(doc.file_name || 'Document').replace(/Avenant/gi, 'Supplément')}</p>
+                                <p className="font-medium text-gray-800 truncate text-sm">{(doc.file_name || 'Document').replace(/Avenant/gi, (lang === 'en' ? 'Supplement' : 'Supplément'))}</p>
                                 <p className="text-xs text-gray-400">
-                                  {isInternal ? '🔒 Interne' : '👁️ Visible client'} • {new Date(doc.created_at).toLocaleDateString('fr-FR')}
+                                  {isInternal ? (lang === 'en' ? '🔒 Internal' : '🔒 Interne') : (lang === 'en' ? '👁️ Visible to client' : '👁️ Visible client')} • {new Date(doc.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
                                 </p>
                               </div>
                             </a>
@@ -6371,7 +6371,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                               <button 
                                 onClick={() => handleToggleDocVisibility(doc)} 
                                 className={`p-1.5 rounded-lg transition-colors ${isInternal ? 'text-gray-400 hover:bg-blue-50 hover:text-blue-600' : 'text-blue-500 hover:bg-gray-100 hover:text-gray-600'}`}
-                                title={isInternal ? 'Rendre visible au client' : 'Masquer au client'}
+                                title={isInternal ? (lang === 'en' ? 'Make visible to client' : 'Rendre visible au client') : (lang === 'en' ? 'Hide from client' : 'Masquer au client')}
                               >
                                 {isInternal ? (
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" /></svg>
@@ -6411,7 +6411,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 {docToDelete && (
                   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl max-w-sm w-full p-6">
-                      <h3 className="text-lg font-bold text-gray-800 mb-2">Supprimer le document?</h3>
+                      <h3 className="text-lg font-bold text-gray-800 mb-2">{lang === 'en' ? 'Delete this document?' : 'Supprimer le document?'}</h3>
                       <p className="text-gray-600 text-sm mb-1">{docToDelete.file_name}</p>
                       <p className="text-red-500 text-xs mb-4">{lang === 'en' ? 'This action is irreversible.' : 'Cette action est irréversible.'}</p>
                       <div className="flex gap-3">
@@ -6432,14 +6432,14 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     <div className="bg-white rounded-xl max-w-md w-full">
                       <div className="p-6 border-b border-gray-200">
                         <div className="flex justify-between items-center">
-                          <h2 className="text-lg font-bold text-[#2D5A7B]">📄 Ajouter un document</h2>
+                          <h2 className="text-lg font-bold text-[#2D5A7B]">{lang === 'en' ? '📄 Add a document' : '📄 Ajouter un document'}</h2>
                           <button onClick={() => { setShowDocUploadModal(false); setDocUploadFile(null); setDocUploadName(''); }} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
                         </div>
                       </div>
                       <div className="p-6 space-y-4">
                         {/* File selector */}
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Fichier</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'File' : 'Fichier'}</label>
                           <input 
                             type="file" 
                             onChange={(e) => {
@@ -6460,7 +6460,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                             type="text"
                             value={docUploadName}
                             onChange={(e) => setDocUploadName(e.target.value)}
-                            placeholder="Nom du document..."
+                            placeholder={lang === 'en' ? 'Document name...' : 'Nom du document...'}
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           />
                         </div>
@@ -6474,10 +6474,10 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           >
                             <option value="general">{lang === 'en' ? '📄 General Document' : '📄 Document général'}</option>
-                            <option value="rapport">📋 Rapport</option>
-                            <option value="certificat">🏆 Certificat</option>
-                            <option value="bon_livraison">📦 Bon de livraison</option>
-                            <option value="facture">📋 Facture</option>
+                            <option value="rapport">{lang === 'en' ? '📋 Report' : '📋 Rapport'}</option>
+                            <option value="certificat">{lang === 'en' ? '🏆 Certificate' : '🏆 Certificat'}</option>
+                            <option value="bon_livraison">{lang === 'en' ? '📦 Delivery Note' : '📦 Bon de livraison'}</option>
+                            <option value="facture">{lang === 'en' ? '📋 Invoice' : '📋 Facture'}</option>
                             <option value="note_technique">{lang === 'en' ? '🔧 Technical Note' : '🔧 Note technique'}</option>
                             <option value="correspondance">{lang === 'en' ? '✉️ Correspondence' : '✉️ Correspondance'}</option>
                           </select>
@@ -6487,10 +6487,10 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                         <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
                           <div>
                             <p className="font-medium text-sm text-gray-800">
-                              {docUploadShared ? '👁️ Visible au client' : '🔒 Document interne'}
+                              {docUploadShared ? (lang === 'en' ? '👁️ Visible to client' : '👁️ Visible au client') : (lang === 'en' ? '🔒 Internal document' : '🔒 Document interne')}
                             </p>
                             <p className="text-xs text-gray-500">
-                              {docUploadShared ? 'Le client pourra voir ce document' : 'Seuls les admins verront ce document'}
+                              {docUploadShared ? (lang === 'en' ? 'Client will be able to see this document' : 'Le client pourra voir ce document') : (lang === 'en' ? 'Only admins will see this document' : 'Seuls les admins verront ce document')}
                             </p>
                           </div>
                           <button 
@@ -6513,7 +6513,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                           disabled={!docUploadFile || docUploading}
                           className="flex-1 px-4 py-2 bg-[#2D5A7B] text-white rounded-lg hover:bg-[#2a4f7f] font-medium disabled:opacity-50"
                         >
-                          {docUploading ? '⏳ Envoi...' : '📤 Ajouter'}
+                          {docUploading ? (lang === 'en' ? '⏳ Uploading...' : '⏳ Envoi...') : (lang === 'en' ? '📤 Add' : '📤 Ajouter')}
                         </button>
                       </div>
                     </div>
@@ -6547,20 +6547,20 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
               <span className={`px-3 py-1.5 rounded-full text-sm font-bold ${
                 isRMAClosed ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
               }`}>
-                {isRMAClosed ? '✅ TERMINÉ' : '🔄 OUVERT'}
+                {isRMAClosed ? (lang === 'en' ? '✅ COMPLETED' : '✅ TERMINÉ') : (lang === 'en' ? '🔄 OPEN' : '🔄 OUVERT')}
               </span>
               {isContractRMA && (
-                <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">📋 CONTRAT</span>
+                <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">{lang === 'en' ? '📋 CONTRACT' : '📋 CONTRAT'}</span>
               )}
             </div>
-            <p className="text-gray-500">Créé le {new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
+            <p className="text-gray-500">{lang === 'en' ? 'Created on' : 'Créé le'} {new Date(rma.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
           </div>
         </div>
         
         {/* Hidden shipping options - top right */}
         {!isRMAClosed && devices.some(d => d.status !== 'shipped') && (
           <div className="relative group">
-            <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors" title="Options avancées">
+            <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors" title={lang === 'en' ? 'Advanced options' : 'Options avancées'}>
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -6596,7 +6596,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             <p className="font-bold text-gray-800">{company.name || '—'}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Contact</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">{lang === 'en' ? 'Contact' : 'Contact'}</p>
             <p className="font-medium text-gray-700">{company.contact_name || '—'}</p>
           </div>
           <div>
@@ -6639,7 +6639,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="w-3 h-3 bg-amber-500 rounded-full animate-pulse"></span>
-            <span className="font-medium text-amber-800">💬 Chat ouvert avec le client</span>
+            <span className="font-medium text-amber-800">{lang === 'en' ? '💬 Open chat with client' : '💬 Chat ouvert avec le client'}</span>
           </div>
           <span className="text-sm text-amber-600">{lang === 'en' ? "See Messages tab to reply" : "Voir l'onglet Messages pour répondre"}</span>
         </div>
@@ -6652,7 +6652,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             <span className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">🔧</span>
             <div>
               <h2 className="font-bold text-gray-800">{t('devices')}</h2>
-              <p className="text-sm text-gray-500">{devices.length} appareil(s) • Cliquez pour voir les détails</p>
+              <p className="text-sm text-gray-500">{devices.length} {lang === 'en' ? 'device(s) • Click to view details' : 'appareil(s) • Cliquez pour voir les détails'}</p>
             </div>
           </div>
         </div>
@@ -6683,9 +6683,9 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' :
                       'bg-purple-100 text-purple-700'
                     }`}>
-                      {device.service_type === 'calibration' ? '🔬 Étalonnage' : 
-                       device.service_type === 'repair' ? '🔧 Réparation' : 
-                       '🔬🔧 Étal. + Rép.'}
+                      {device.service_type === 'calibration' ? (lang === 'en' ? '🔬 Calibration' : '🔬 Étalonnage') : 
+                       device.service_type === 'repair' ? (lang === 'en' ? '🔧 Repair' : '🔧 Réparation') : 
+                       (lang === 'en' ? '🔬🔧 Cal. + Rep.' : '🔬🔧 Étal. + Rép.')}
                     </span>
                     <span className="text-gray-400 text-xl">→</span>
                   </div>
@@ -6697,7 +6697,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 {/* Return address line */}
                 {deviceAddresses[device.id] && (
                   <div className="mt-2 flex items-center gap-2">
-                    <span className="text-xs text-gray-400">📍 Retour:</span>
+                    <span className="text-xs text-gray-400">{lang === 'en' ? '📍 Return:' : '📍 Retour:'}</span>
                     <span className="text-xs text-gray-500">
                       {deviceAddresses[device.id].company_name || deviceAddresses[device.id].label || '—'}, {deviceAddresses[device.id].postal_code} {deviceAddresses[device.id].city}
                     </span>
@@ -6779,20 +6779,20 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
   const needsCertificate = isCalibration && !certificateUrl;
   
   const calTypeOptions = [
-    { value: 'none', label: 'Ne pas afficher' },
+    { value: 'none', label: lang === 'en' ? 'Do not show' : 'Ne pas afficher' },
     { value: 'ISO 21501-4', label: 'ISO 21501-4' },
     { value: 'Non-ISO', label: 'Non-ISO' },
-    { value: 'Bio Collecteur', label: 'Bio Collecteur' },
-    { value: 'Compteur Liquide', label: 'Compteur Liquide' },
-    { value: 'Sonde de Température', label: 'Sonde de Température' },
-    { value: 'Diluteur', label: 'Diluteur' }
+    { value: 'Bio Collecteur', label: lang === 'en' ? 'Bio Collector' : 'Bio Collecteur' },
+    { value: 'Compteur Liquide', label: lang === 'en' ? 'Liquid Counter' : 'Compteur Liquide' },
+    { value: 'Sonde de Température', label: lang === 'en' ? 'Temperature Probe' : 'Sonde de Température' },
+    { value: 'Diluteur', label: lang === 'en' ? 'Diluter' : 'Diluteur' }
   ];
   
   const receptionOptions = [
-    { value: 'none', label: 'Ne pas afficher' },
-    { value: 'Conforme', label: 'Conforme' },
-    { value: 'Non conforme', label: 'Non conforme' },
-    { value: 'À vérifier', label: 'À vérifier' }
+    { value: 'none', label: lang === 'en' ? 'Do not show' : 'Ne pas afficher' },
+    { value: 'Conforme', label: lang === 'en' ? 'Compliant' : 'Conforme' },
+    { value: 'Non conforme', label: lang === 'en' ? 'Non-compliant' : 'Non conforme' },
+    { value: 'À vérifier', label: lang === 'en' ? 'To Review' : 'À vérifier' }
   ];
   
   // Load staff members for technician dropdown
@@ -6846,19 +6846,19 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
   const getDefaultChecklist = () => {
     if (device.service_type === 'calibration') {
       return [
-        { id: 'visual_inspection', label: 'Inspection visuelle effectuée', checked: false },
-        { id: 'cleaning', label: 'Nettoyage effectué', checked: false },
-        { id: 'calibration_performed', label: 'Étalonnage réalisé selon procédure', checked: false },
-        { id: 'results_within_spec', label: 'Résultats dans les spécifications', checked: false },
-        { id: 'certificate_generated', label: 'Certificat d\'étalonnage généré', checked: false },
+        { id: 'visual_inspection', label: lang === 'en' ? 'Visual inspection performed' : 'Inspection visuelle effectuée', checked: false },
+        { id: 'cleaning', label: lang === 'en' ? 'Cleaning performed' : 'Nettoyage effectué', checked: false },
+        { id: 'calibration_performed', label: lang === 'en' ? 'Calibration performed per procedure' : 'Étalonnage réalisé selon procédure', checked: false },
+        { id: 'results_within_spec', label: lang === 'en' ? 'Results within specifications' : 'Résultats dans les spécifications', checked: false },
+        { id: 'certificate_generated', label: lang === 'en' ? 'Calibration certificate generated' : 'Certificat d\'étalonnage généré', checked: false },
       ];
     } else {
       return [
-        { id: 'visual_inspection', label: 'Inspection visuelle effectuée', checked: false },
-        { id: 'diagnostic', label: 'Diagnostic complet réalisé', checked: false },
-        { id: 'repair_performed', label: 'Réparation effectuée', checked: false },
-        { id: 'parts_replaced', label: 'Pièces remplacées (si applicable)', checked: false },
-        { id: 'functional_test', label: 'Test fonctionnel OK', checked: false },
+        { id: 'visual_inspection', label: lang === 'en' ? 'Visual inspection performed' : 'Inspection visuelle effectuée', checked: false },
+        { id: 'diagnostic', label: lang === 'en' ? 'Full diagnostic completed' : 'Diagnostic complet réalisé', checked: false },
+        { id: 'repair_performed', label: lang === 'en' ? 'Repair performed' : 'Réparation effectuée', checked: false },
+        { id: 'parts_replaced', label: lang === 'en' ? 'Parts replaced (if applicable)' : 'Pièces remplacées (si applicable)', checked: false },
+        { id: 'functional_test', label: lang === 'en' ? 'Functional test OK' : 'Test fonctionnel OK', checked: false },
       ];
     }
   };
@@ -6913,11 +6913,11 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
   const getValidationMessage = () => {
     const missing = [];
     if (!technicianName) missing.push('Technicien');
-    if (!calType) missing.push('Étalonnage effectué');
-    if (!receptionResult) missing.push('Résultats à la réception');
+    if (!calType) missing.push((lang === 'en' ? 'Calibration performed' : 'Étalonnage effectué'));
+    if (!receptionResult) missing.push((lang === 'en' ? 'Reception results' : 'Résultats à la réception'));
     if (!findings.trim()) missing.push('Constatations');
-    if (!workCompleted.trim()) missing.push('Actions effectuées');
-    if (isCalibration && !certificateUrl) missing.push('Certificat d\'étalonnage');
+    if (!workCompleted.trim()) missing.push((lang === 'en' ? 'Actions performed' : 'Actions effectuées'));
+    if (isCalibration && !certificateUrl) missing.push(lang === 'en' ? 'Calibration certificate' : 'Certificat d\'étalonnage');
     return missing.length > 0 ? `Veuillez remplir: ${missing.join(', ')}` : null;
   };
   
@@ -7005,7 +7005,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     if (reportComplete) return <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">{lang === 'en' ? '✓ Report completed' : '✓ Rapport terminé'}</span>;
     if (!additionalWorkNeeded) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button></>);
     if (additionalWorkNeeded && !avenantSent) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">{lang === 'en' ? '⚠️ Create supplement from RMA page' : '⚠️ Créer avenant depuis page RMA'}</span></>);
-    if (additionalWorkNeeded && avenantSent && !avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><span className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg">⏳ Attente approbation</span></>);
+    if (additionalWorkNeeded && avenantSent && !avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><span className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg">{lang === 'en' ? '⏳ Awaiting approval' : '⏳ Attente approbation'}</span></>);
     if (additionalWorkNeeded && avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button></>);
     return null;
   };
@@ -7014,7 +7014,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">← Retour</button>
+          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">{lang === 'en' ? '← Back' : '← Retour'}</button>
           <div><h1 className="text-2xl font-bold text-gray-800">SERVICE - {device.model_name}</h1><p className="text-gray-500">SN: {device.serial_number} • RMA: {rma.request_number}</p></div>
         </div>
         <div className="flex items-center gap-3">{renderActionButtons()}</div>
@@ -7023,7 +7023,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
       {additionalWorkNeeded && (
         <div className={`rounded-lg p-3 ${avenantApproved ? 'bg-green-100 border border-green-300' : avenantSent ? 'bg-purple-100 border border-purple-300' : 'bg-amber-100 border border-amber-300'}`}>
           <span className={`font-medium ${avenantApproved ? 'text-green-800' : avenantSent ? 'text-purple-800' : 'text-amber-800'}`}>
-            {avenantApproved ? '✓ Avenant approuvé par le client' : avenantSent ? '📤 Avenant envoyé - En attente approbation' : '⚠️ Travaux supplémentaires détectés - Avenant requis'}
+            {avenantApproved ? (lang === 'en' ? '✓ Supplement approved by client' : '✓ Avenant approuvé par le client') : avenantSent ? (lang === 'en' ? '📤 Supplement sent - Awaiting approval' : '📤 Avenant envoyé - En attente approbation') : (lang === 'en' ? '⚠️ Additional work detected - Supplement required' : '⚠️ Travaux supplémentaires détectés - Avenant requis')}
           </span>
         </div>
       )}
@@ -7035,12 +7035,12 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
             <div className="space-y-2">
               <div><p className="text-xs text-gray-500">{t('model')}</p><p className="font-bold text-gray-800">{device.model_name}</p></div>
               <div><p className="text-xs text-gray-500">{lang === 'en' ? 'Serial #' : 'N° série'}</p><p className="font-medium text-gray-800">{device.serial_number}</p></div>
-              <div><p className="text-xs text-gray-500">Service</p><p className="font-medium">{device.service_type === 'calibration' ? '🔬 Étalonnage' : '🔧 Réparation'}</p></div>
+              <div><p className="text-xs text-gray-500">{lang === 'en' ? 'Service' : 'Service'}</p><p className="font-medium">{device.service_type === 'calibration' ? (lang === 'en' ? '🔬 Calibration' : '🔬 Étalonnage') : '🔧 Réparation'}</p></div>
             </div>
           </div>
           {device.notes && (
             <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
-              <h3 className="font-bold text-amber-800 mb-2">📝 Notes Client</h3>
+              <h3 className="font-bold text-amber-800 mb-2">{lang === 'en' ? '📝 Client Notes' : '📝 Notes Client'}</h3>
               <p className="text-amber-900">"{device.notes}"</p>
             </div>
           )}
@@ -7051,17 +7051,17 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
           
           {/* Report Options Section */}
           <div className="bg-blue-50 rounded-xl border border-blue-200 p-4 space-y-3">
-            <h3 className="font-bold text-blue-800">Options du Rapport</h3>
+            <h3 className="font-bold text-blue-800">{lang === 'en' ? 'Report Options' : 'Options du Rapport'}</h3>
             
             {/* Technician */}
             <div>
-              <label className="text-sm text-gray-600 block mb-1">Technicien(ne) de service *</label>
+              <label className="text-sm text-gray-600 block mb-1">{lang === 'en' ? 'Service technician *' : 'Technicien(ne) de service *'}</label>
               <select 
                 value={technicianName} 
                 onChange={e => setTechnicianName(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg text-sm"
               >
-                <option value="">{lang === 'en' ? '— Select —' : lang === 'en' ? '— Select —' : '— Sélectionner —'}</option>
+                <option value="">{lang === 'en' ? '— Select —' : '— Sélectionner —'}</option>
                 {staffMembers.map(s => (
                   <option key={s.id} value={s.full_name}>{s.full_name}</option>
                 ))}
@@ -7072,7 +7072,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
             <div>
               <label className="text-sm text-gray-600 block mb-1">{lang === 'en' ? 'Calibration performed *' : 'Étalonnage effectué *'}</label>
               <select value={calType} onChange={e => setCalType(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
-                <option value="">{lang === 'en' ? '— Select —' : lang === 'en' ? '— Select —' : '— Sélectionner —'}</option>
+                <option value="">{lang === 'en' ? '— Select —' : '— Sélectionner —'}</option>
                 {calTypeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
               </select>
             </div>
@@ -7081,7 +7081,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
             <div>
               <label className="text-sm text-gray-600 block mb-1">{lang === 'en' ? 'Reception results *' : 'Résultats à la réception *'}</label>
               <select value={receptionResult} onChange={e => setReceptionResult(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
-                <option value="">{lang === 'en' ? '— Select —' : lang === 'en' ? '— Select —' : '— Sélectionner —'}</option>
+                <option value="">{lang === 'en' ? '— Select —' : '— Sélectionner —'}</option>
                 {receptionOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
               </select>
             </div>
@@ -7091,7 +7091,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
           {isCalibration && (
             <div className={`rounded-xl border p-4 ${certificateUrl ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
               <h3 className={`font-bold mb-2 ${certificateUrl ? 'text-green-800' : 'text-amber-800'}`}>
-                📜 Certificat d'Étalonnage {certificateUrl ? '✓' : '*'}
+                {lang === 'en' ? '📜 Calibration Certificate' : "📜 Certificat d'Étalonnage"} {certificateUrl ? '✓' : '*'}
               </h3>
               
               {certificateUrl ? (
@@ -7109,9 +7109,9 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                 </div>
               ) : (
                 <div>
-                  <p className="text-sm text-amber-700 mb-2">Requis pour envoyer au QC</p>
+                  <p className="text-sm text-amber-700 mb-2">{lang === 'en' ? 'Required to send to QC' : 'Requis pour envoyer au QC'}</p>
                   <label className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer ${uploadingCert ? 'bg-gray-300' : 'bg-amber-500 hover:bg-amber-600 text-white'}`}>
-                    {uploadingCert ? '⏳ Téléchargement...' : '📤 Télécharger PDF'}
+                    {uploadingCert ? (lang === 'en' ? '⏳ Uploading...' : '⏳ Téléchargement...') : (lang === 'en' ? '📤 Upload PDF' : '📤 Télécharger PDF')}
                     <input type="file" accept=".pdf" onChange={handleCertificateUpload} disabled={uploadingCert} className="hidden" />
                   </label>
                 </div>
@@ -7123,11 +7123,11 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-bold text-gray-700">1. CONSTATATIONS *</h3>
+              <h3 className="font-bold text-gray-700">{lang === 'en' ? '1. FINDINGS *' : '1. CONSTATATIONS *'}</h3>
               <TechTranslateButton onInsert={(text) => setFindings(prev => prev ? prev + '\n' + text : text)} />
             </div>
             <p className="text-sm text-gray-500 mb-3">{lang === 'en' ? "What you observed (appears on report and supplement)" : "Ce que vous avez observé (apparaît sur rapport et avenant)"}</p>
-            <textarea value={findings} onChange={e => setFindings(e.target.value)} placeholder="Ex: Calibration effectuée selon les spécifications..." className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
+            <textarea value={findings} onChange={e => setFindings(e.target.value)} placeholder={lang === 'en' ? 'Ex: Calibration performed per specifications...' : 'Ex: Calibration effectuée selon les spécifications...'} className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border p-4">
@@ -7137,8 +7137,8 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                 <p className="text-sm text-gray-500">{lang === 'en' ? "Additional parts or labor" : "Pièces ou main d'œuvre en plus"}</p>
               </div>
               <div className="flex gap-3">
-                <button onClick={() => { setAdditionalWorkNeeded(false); setWorkItemsLocked(false); }} className={`px-4 py-2 rounded-lg font-medium ${!additionalWorkNeeded ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>Non (RAS)</button>
-                <button onClick={() => setAdditionalWorkNeeded(true)} className={`px-4 py-2 rounded-lg font-medium ${additionalWorkNeeded ? 'bg-amber-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>Oui</button>
+                <button onClick={() => { setAdditionalWorkNeeded(false); setWorkItemsLocked(false); }} className={`px-4 py-2 rounded-lg font-medium ${!additionalWorkNeeded ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>{lang === 'en' ? 'No (N/A)' : 'Non (RAS)'}</button>
+                <button onClick={() => setAdditionalWorkNeeded(true)} className={`px-4 py-2 rounded-lg font-medium ${additionalWorkNeeded ? 'bg-amber-500 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>{lang === 'en' ? 'Yes' : 'Oui'}</button>
               </div>
             </div>
             {additionalWorkNeeded && (
@@ -7148,7 +7148,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-sm text-gray-500 flex items-center gap-2">{lang === 'en' ? '🔒 Saved parts' : '🔒 Pièces enregistrées'}</span>
-                      <button onClick={() => setWorkItemsLocked(false)} className="px-3 py-1 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg">✏️ Modifier</button>
+                      <button onClick={() => setWorkItemsLocked(false)} className="px-3 py-1 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg">{lang === 'en' ? '✏️ Edit' : '✏️ Modifier'}</button>
                     </div>
                     <div className="space-y-2">
                       {workItems.map((item, idx) => (
@@ -7163,7 +7163,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                     </div>
                     {workItems.length > 0 && (
                       <div className="mt-4 pt-4 border-t flex justify-between">
-                        <span className="font-medium">Sous-total:</span>
+                        <span className="font-medium">{lang === 'en' ? 'Subtotal:' : 'Sous-total:'}</span>
                         <span className="text-xl font-bold text-amber-700">€{totalAdditional.toFixed(2)}</span>
                       </div>
                     )}
@@ -7182,7 +7182,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                               onChange={e => updateWorkItem(item.id, 'part_number', e.target.value)}
                               onBlur={e => lookupPart(item.id, e.target.value)}
                               onKeyDown={e => e.key === 'Enter' && lookupPart(item.id, e.target.value)}
-                              placeholder="N° Pièce" 
+                              placeholder={lang === 'en' ? 'Part #' : 'N° Pièce'} 
                               className="w-28 px-3 py-2 border rounded-lg text-sm"
                             />
                             {partsLoading[item.id] && <span className="absolute right-2 top-2 text-blue-500 text-sm">...</span>}
@@ -7198,7 +7198,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                     <button onClick={addWorkItem} className="mt-3 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">{lang === 'en' ? '+ Add part' : '+ Ajouter pièce'}</button>
                     {workItems.length > 0 && (
                       <div className="mt-4 pt-4 border-t flex justify-between">
-                        <span className="font-medium">Sous-total:</span>
+                        <span className="font-medium">{lang === 'en' ? 'Subtotal:' : 'Sous-total:'}</span>
                         <span className="text-xl font-bold text-amber-700">€{totalAdditional.toFixed(2)}</span>
                       </div>
                     )}
@@ -7215,7 +7215,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
             </div>
             <p className="text-sm text-gray-500 mb-4">{lang === 'en' ? 'Check and describe work performed' : 'Cochez et décrivez le travail effectué'}</p>
             <div className="bg-gray-50 rounded-lg p-4 mb-4">
-              <p className="text-xs text-gray-500 uppercase mb-3">Checklist</p>
+              <p className="text-xs text-gray-500 uppercase mb-3">{lang === 'en' ? 'Checklist' : 'Checklist'}</p>
               <div className="space-y-2">
                 {checklist.map(item => (
                   <label key={item.id} className="flex items-center gap-3 cursor-pointer hover:bg-gray-100 p-2 rounded-lg">
@@ -7225,7 +7225,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                 ))}
               </div>
             </div>
-            <textarea value={workCompleted} onChange={e => setWorkCompleted(e.target.value)} placeholder="Décrivez les travaux réalisés..." className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
+            <textarea value={workCompleted} onChange={e => setWorkCompleted(e.target.value)} placeholder={lang === 'en' ? 'Describe the work performed...' : 'Décrivez les travaux réalisés...'} className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
           </div>
         </div>
       </div>
@@ -7235,8 +7235,8 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
 
 // Report Preview Modal - Exact replica of official Lighthouse France Rapport PDF
 function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving, technicianName, calType, receptionResult }) {
-  const today = new Date().toLocaleDateString('fr-FR');
-  const serviceTypeText = device.service_type === 'calibration' ? 'Étalonnage' : device.service_type === 'repair' ? 'Réparation' : 'Étalonnage et Réparation';
+  const today = new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR');
+  const serviceTypeText = device.service_type === 'calibration' ? (lang === 'en' ? 'Calibration' : 'Étalonnage') : device.service_type === 'repair' ? (lang === 'en' ? 'Repair' : 'Réparation') : (lang === 'en' ? 'Calibration and Repair' : 'Étalonnage et Réparation');
   const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
   
   const showCalType = calType && calType !== 'none';
@@ -7246,14 +7246,14 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">← Retour</button>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">{lang === 'en' ? '← Back' : '← Retour'}</button>
           <div><h1 className="text-2xl font-bold text-gray-800">{lang === 'en' ? '📄 Service Report Preview' : '📄 Aperçu Rapport de Service'}</h1><p className="text-gray-500">{device.model_name} • SN: {device.serial_number}</p></div>
         </div>
         <div className="flex items-center gap-3">
           {canComplete ? (
-            <button onClick={onComplete} disabled={saving} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50">{saving ? 'Envoi...' : '✓ Terminer Rapport → QC'}</button>
+            <button onClick={onComplete} disabled={saving} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50">{saving ? (lang === 'en' ? 'Sending...' : 'Envoi...') : (lang === 'en' ? '✓ Complete Report → QC' : '✓ Terminer Rapport → QC')}</button>
           ) : (
-            <span className="px-4 py-2 bg-amber-100 text-amber-700 rounded-lg">⏳ Approbation client requise</span>
+            <span className="px-4 py-2 bg-amber-100 text-amber-700 rounded-lg">{lang === 'en' ? '⏳ Client approval required' : '⏳ Approbation client requise'}</span>
           )}
         </div>
       </div>
@@ -7300,7 +7300,7 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
                   <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">{lang === 'en' ? "Completion date" : "Date d'achèvement"}</td>
                   <td className="py-1 text-gray-800">{today}</td>
                   <td className="py-1 text-gray-800">
-                    <span className="font-bold text-[#003366]">RMA # </span>{rma.request_number}
+                    <span className="font-bold text-[#003366]">{lang === 'en' ? 'RMA # ' : 'RMA # '}</span>{rma.request_number}
                   </td>
                 </tr>
                 
@@ -7318,10 +7318,10 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
                 
                 {/* Row 4: Code postal + Contact */}
                 <tr>
-                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Code postal / Ville</td>
+                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">{lang === 'en' ? 'Postal code / City' : 'Code postal / Ville'}</td>
                   <td className="py-1 text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
                   <td className="py-1 text-gray-800">
-                    <span className="font-bold text-[#003366]">Contact </span>{rma.companies?.contact_name || '—'}
+                    <span className="font-bold text-[#003366]">{lang === 'en' ? 'Contact ' : 'Contact '}</span>{rma.companies?.contact_name || '—'}
                   </td>
                 </tr>
                 
@@ -7330,7 +7330,7 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
                   <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">{t('phone')}</td>
                   <td className="py-1 text-gray-800">{rma.companies?.phone || '—'}</td>
                   <td className="py-1 text-gray-800 align-top">
-                    <span className="font-bold text-[#003366]">Technicien(ne) de service</span>
+                    <span className="font-bold text-[#003366]">{lang === 'en' ? 'Service technician' : 'Technicien(ne) de service'}</span>
                   </td>
                 </tr>
                 
@@ -7358,7 +7358,7 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
               <tbody>
                 {/* Motif de retour = Service type + Customer notes */}
                 <tr>
-                  <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Motif de retour</td>
+                  <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">{lang === 'en' ? 'Return reason' : 'Motif de retour'}</td>
                   <td className="pt-6 pb-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word' }}>{motifText}</td>
                 </tr>
                 
@@ -7488,7 +7488,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...navy);
-  pdf.text('SUPPLÉMENT AU DEVIS', pageWidth - margin, y + 5, { align: 'right' });
+  pdf.text((lang === 'en' ? 'QUOTE SUPPLEMENT' : 'SUPPLÉMENT AU DEVIS'), pageWidth - margin, y + 5, { align: 'right' });
   
   // Document number (SUP-0226-001) - primary
   pdf.setFontSize(11);
@@ -7521,10 +7521,10 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  const qDate = new Date().toLocaleDateString('fr-FR');
+  const qDate = new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR');
   pdf.text(qDate, margin + 5, y + 12);
   pdf.text('30 jours', margin + 60, y + 12);
-  pdf.text('A reception de facture', margin + 115, y + 12);
+  pdf.text((lang === 'en' ? 'Upon receipt of invoice' : 'A reception de facture'), margin + 115, y + 12);
   y += 20;
 
   // ===== CLIENT =====
@@ -7601,7 +7601,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
-    const deviceHeader = `${device.model_name || 'Appareil'} (SN: ${device.serial_number || 'N/A'})`;
+    const deviceHeader = `${device.model_name || (lang === 'en' ? 'Device' : 'Appareil')} (SN: ${device.serial_number || 'N/A'})`;
     pdf.text(deviceHeader, colDesc, y + 5.5);
     y += 8;
     
@@ -7654,7 +7654,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setTextColor(...white);
   pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('TOTAL SUPPLÉMENT HT', margin + 10, y + 9);
+  pdf.text((lang === 'en' ? 'TOTAL SUPPLEMENT excl. VAT' : 'TOTAL SUPPLÉMENT HT'), margin + 10, y + 9);
   pdf.setFontSize(18);
   pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 10, { align: 'right' });
   y += 18;
@@ -7830,13 +7830,13 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
         {/* Modal Header - Like RMA Quote */}
         <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
           <div>
-            <h2 className="text-xl font-bold">Avenant au Devis</h2>
+            <h2 className="text-xl font-bold">{lang === 'en' ? 'Quote Supplement' : 'Avenant au Devis'}</h2>
             <p className="text-gray-400">{rma.request_number} • {rma.companies?.name}</p>
           </div>
           <div className="flex items-center gap-3">
             {alreadySent && (
               <span className="px-3 py-1 bg-green-500 rounded-full text-xs font-bold">
-                ✓ Envoyé le {new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR')}
+                ✓ {lang === 'en' ? 'Sent on' : 'Envoyé le'} {new Date(rma.avenant_sent_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
               </span>
             )}
             <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">✕</button>
@@ -7865,7 +7865,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
               </div>
               <div className="text-right">
                 <p className="text-2xl font-bold text-[#2D5A7B]">{lang === 'en' ? 'QUOTE SUPPLEMENT' : 'SUPPLÉMENT AU DEVIS'}</p>
-                <p className="text-sm font-bold text-[#2D5A7B]">N° {rma.supplement_number || '(Généré à l\'envoi)'}</p>
+                <p className="text-sm font-bold text-[#2D5A7B]">N° {rma.supplement_number || '${lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)"}'}</p>
                 <p className="text-xs text-gray-500">RMA: {rma.request_number}</p>
               </div>
             </div>
@@ -7875,14 +7875,14 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
             <div>
               <p className="text-xs text-gray-500 uppercase">{t('date')}</p>
-              <p className="font-medium">{alreadySent ? new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
+              <p className="font-medium">{alreadySent ? new Date(rma.avenant_sent_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
             </div>
             <div>
               <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'Validity' : 'Validité'}</p>
-              <p className="font-medium">30 jours</p>
+              <p className="font-medium">{lang === 'en' ? '30 days' : '30 jours'}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase">Conditions</p>
+              <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'Terms' : 'Conditions'}</p>
               <p className="font-medium">{lang === 'en' ? 'Upon receipt of invoice' : 'À réception de facture'}</p>
             </div>
           </div>
@@ -7898,7 +7898,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           {/* Introduction */}
           <div className="px-8 py-4 bg-green-50 border-b border-green-200">
             <p className="text-green-800">
-              <strong>Objet :</strong> Suite à l'inspection de vos appareils, notre équipe technique a identifié des travaux supplémentaires nécessaires. 
+              <strong>{lang === 'en' ? 'Subject:' : 'Objet :'}</strong> Suite à l'inspection de vos appareils, notre équipe technique a identifié des travaux supplémentaires nécessaires. 
               Veuillez trouver ci-dessous le détail des interventions recommandées.
             </p>
           </div>
@@ -7915,14 +7915,14 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <h3 className="font-bold text-lg text-[#1a1a2e]">{device.model_name}</h3>
-                      <p className="text-gray-500 text-sm">N° de série: {device.serial_number}</p>
+                      <p className="text-gray-500 text-sm">{lang === 'en' ? 'Serial #' : 'N° de série'}: {device.serial_number}</p>
                     </div>
                     <span className="text-xl font-bold text-[#2D5A7B] whitespace-nowrap">{deviceTotal.toFixed(2)} €</span>
                   </div>
                   
                   {device.service_findings && (
                     <div className="bg-gray-100 rounded-lg p-3 mb-3">
-                      <p className="text-xs text-gray-500 uppercase font-medium mb-1">Constatations du technicien</p>
+                      <p className="text-xs text-gray-500 uppercase font-medium mb-1">{lang === 'en' ? 'Technician findings' : 'Constatations du technicien'}</p>
                       <p className="text-gray-700">{device.service_findings}</p>
                     </div>
                   )}
@@ -7933,7 +7933,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                         <tr className="border-b-2 border-gray-200">
                           <th className="text-left py-2 text-gray-600 font-medium">{t('description')}</th>
                           <th className="text-center py-2 text-gray-600 font-medium w-16">{lang === 'en' ? 'Qty' : 'Qté'}</th>
-                          <th className="text-right py-2 text-gray-600 font-medium w-24">Prix Unit.</th>
+                          <th className="text-right py-2 text-gray-600 font-medium w-24">{lang === 'en' ? 'Unit Price' : 'Prix Unit.'}</th>
                           <th className="text-right py-2 text-gray-600 font-medium w-24">{t('total')}</th>
                         </tr>
                       </thead>
@@ -7978,7 +7978,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
 
           {/* Conditions */}
           <div className="px-8 py-4 border-b">
-            <p className="font-bold text-[#1a1a2e] text-sm mb-2">Conditions:</p>
+            <p className="font-bold text-[#1a1a2e] text-sm mb-2">{lang === 'en' ? 'Terms:' : 'Conditions:'}</p>
             <ul className="text-sm text-gray-600 space-y-1">
               <li>{lang === 'en' ? '• This supplementary quote is valid for 30 days' : '• Ce devis complémentaire est valable 30 jours'}</li>
               <li>{lang === 'en' ? '• Work will be performed after receiving your approval' : '• Les travaux seront effectués après réception de votre accord'}</li>
@@ -7990,13 +7990,13 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           <div className="px-8 py-6 flex justify-between items-end">
             <div>
               <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">{lang === 'en' ? 'Prepared by' : 'Établi par'}</p>
-              <p className="font-bold text-lg text-[#1a1a2e]">Service Technique</p>
+              <p className="font-bold text-lg text-[#1a1a2e]">{lang === 'en' ? 'Technical Service' : 'Service Technique'}</p>
               <p className="text-gray-500">Lighthouse France</p>
             </div>
             <div className="text-center">
-              <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Bon pour accord</p>
+              <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">{lang === 'en' ? 'Approved for agreement' : 'Bon pour accord'}</p>
               <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
-                <span className="text-gray-300 text-xs">Signature et cachet</span>
+                <span className="text-gray-300 text-xs">{lang === 'en' ? 'Signature and stamp' : 'Signature et cachet'}</span>
               </div>
             </div>
           </div>
@@ -8019,7 +8019,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
               disabled={downloading}
               className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
             >
-              {downloading ? '...' : '📥 Télécharger PDF'}
+              {downloading ? '...' : (lang === 'en' ? '📥 Download PDF' : '📥 Télécharger PDF')}
             </button>
             {!alreadySent && (
               <button 
@@ -8027,7 +8027,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                 disabled={sending}
                 className="px-6 py-2 bg-[#00A651] hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50"
               >
-                {sending ? 'Génération & envoi...' : '📧 Envoyer au Client'}
+                {sending ? (lang === 'en' ? 'Generating & sending...' : 'Génération & envoi...') : (lang === 'en' ? '📧 Send to Client' : '📧 Envoyer au Client')}
               </button>
             )}
             {alreadySent && (
@@ -8055,7 +8055,7 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">Demandes</h1>
+        <h1 className="text-2xl font-bold text-gray-800">{lang === 'en' ? 'Requests' : 'Demandes'}</h1>
         <div className="flex gap-2">
           <button onClick={() => setFilter('pending')} className={`px-4 py-2 rounded-lg text-sm font-medium ${filter === 'pending' ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}>
             En attente ({allPending.length})
@@ -8069,14 +8069,14 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
       {/* Modification Requests Alert */}
       {modificationRequests.length > 0 && filter === 'pending' && (
         <div className="bg-red-50 border-2 border-red-300 p-4 rounded-xl">
-          <p className="font-bold text-red-800">🔴 {modificationRequests.length} demande(s) de modification de devis</p>
+          <p className="font-bold text-red-800">🔴 {modificationRequests.length} {lang === 'en' ? 'quote modification request(s)' : 'demande(s) de modification de devis'}</p>
           <p className="text-sm text-red-600">{lang === 'en' ? 'Client requested modifications - please revise and resend' : 'Le client a demandé des modifications - veuillez réviser et renvoyer'}</p>
         </div>
       )}
       
       {pendingRequests.length > 0 && filter === 'pending' && (
         <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg">
-          <p className="font-medium text-amber-800">⚠️ {pendingRequests.length} nouvelle(s) demande(s) - Créez un devis pour traiter</p>
+          <p className="font-medium text-amber-800">⚠️ {pendingRequests.length} {lang === 'en' ? 'new request(s) - Create a quote to process' : 'nouvelle(s) demande(s) - Créez un devis pour traiter'}</p>
         </div>
       )}
       
@@ -8084,18 +8084,18 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">ID / RMA</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'ID / RMA' : 'ID / RMA'}</th>
               <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('client')}</th>
               <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('type')}</th>
               <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('devices')}</th>
               <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('status')}</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Soumis</th>
+              <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Submitted' : 'Soumis'}</th>
               <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {displayRequests.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{filter === 'pending' ? 'Aucune demande en attente' : 'Aucune demande'}</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{filter === 'pending' ? (lang === 'en' ? 'No pending requests' : 'Aucune demande en attente') : (lang === 'en' ? 'No requests' : 'Aucune demande')}</td></tr>
             ) : displayRequests.map(req => {
               const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
               const devices = req.request_devices || [];
@@ -8110,7 +8110,7 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
                       {req.request_number ? (
                         <span className="font-mono font-bold text-[#00A651]">{req.request_number}</span>
                       ) : (
-                        <span className="text-amber-600 font-medium">Nouvelle</span>
+                        <span className="text-amber-600 font-medium">{lang === 'en' ? 'New' : 'Nouvelle'}</span>
                       )}
                       {isContractRMA && (
                         <span className="px-1.5 py-0.5 text-xs font-bold rounded bg-emerald-100 text-emerald-700">
@@ -8124,15 +8124,15 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
                       <p className="font-medium text-gray-800">{req.companies?.name || '—'}</p>
                     </div>
                   </td>
-                  <td className="px-4 py-3"><span className="text-sm">{req.request_type === 'service' ? '🔧 Service' : '📦 Pièces'}</span></td>
+                  <td className="px-4 py-3"><span className="text-sm">{req.request_type === 'service' ? '🔧 Service' : (lang === 'en' ? '📦 Parts' : '📦 Pièces')}</span></td>
                   <td className="px-4 py-3"><span className="text-sm text-gray-600">{devices.length > 0 ? devices.length + ' appareil(s)' : '1 appareil'}</span></td>
-                  <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span></td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{new Date(req.created_at).toLocaleDateString('fr-FR')}</td>
+                  <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span></td>
+                  <td className="px-4 py-3 text-sm text-gray-500">{new Date(req.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
                       {(isPending || needsRevision) && (
                         <button onClick={() => setQuoteRequest(req)} className={`px-3 py-1 text-sm text-white rounded font-medium ${needsRevision ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}>
-                          {needsRevision ? '🔴 Réviser Devis' : '💰 Créer Devis'}
+                          {needsRevision ? (lang === 'en' ? '🔴 Revise Quote' : '🔴 Réviser Devis') : (lang === 'en' ? '💰 Create Quote' : '💰 Créer Devis')}
                         </button>
                       )}
                       <button onClick={() => setSelectedRequest(req)} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">{t('view')}</button>
@@ -8163,18 +8163,18 @@ function RequestDetailModal({ request, onClose, onCreateQuote }) {
             <h2 className="text-xl font-bold text-gray-800">{request.request_number || 'Nouvelle Demande'}</h2>
             <p className="text-sm text-gray-500">{request.companies?.name}</p>
           </div>
-          <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+          <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span>
         </div>
         
         <div className="p-6 space-y-6">
           <div className="grid md:grid-cols-2 gap-4">
             <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">{t('client')}</h3><p className="font-medium">{request.companies?.name}</p></div>
-            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">Service</h3><p className="font-medium">{request.requested_service}</p><p className="text-sm text-gray-500">Soumis le {new Date(request.created_at).toLocaleDateString('fr-FR')}</p></div>
+            <div className="bg-gray-50 rounded-lg p-4"><h3 className="font-bold text-gray-700 mb-2">{lang === 'en' ? 'Service' : 'Service'}</h3><p className="font-medium">{request.requested_service}</p><p className="text-sm text-gray-500">Soumis le {new Date(request.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p></div>
           </div>
           
           {/* Devices */}
           <div>
-            <h3 className="font-bold text-gray-700 mb-3">Appareils ({devices.length || 1})</h3>
+            <h3 className="font-bold text-gray-700 mb-3">{lang === 'en' ? `Devices (${devices.length || 1})` : `Appareils (${devices.length || 1})`}</h3>
             {devices.length > 0 ? (
               <div className="space-y-2">
                 {devices.map((d, i) => (
@@ -8193,7 +8193,7 @@ function RequestDetailModal({ request, onClose, onCreateQuote }) {
             )}
           </div>
           
-          {request.problem_description && <div><h3 className="font-bold text-gray-700 mb-2">Notes du client</h3><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm whitespace-pre-wrap">{request.problem_description}</p></div></div>}
+          {request.problem_description && <div><h3 className="font-bold text-gray-700 mb-2">{lang === 'en' ? 'Client notes' : 'Notes du client'}</h3><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm whitespace-pre-wrap">{request.problem_description}</p></div></div>}
         </div>
         
         <div className="px-6 py-4 border-t bg-gray-50 flex justify-between">
@@ -8232,7 +8232,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
     return (
       <div className="p-8 text-center">
         <p className="text-red-500">{lang === 'en' ? 'Error: Order not found' : 'Erreur: Commande non trouvée'}</p>
-        <button onClick={onBack} className="mt-4 px-4 py-2 bg-gray-200 rounded-lg">← Retour</button>
+        <button onClick={onBack} className="mt-4 px-4 py-2 bg-gray-200 rounded-lg">{lang === 'en' ? '← Back' : '← Retour'}</button>
       </div>
     );
   }
@@ -8346,7 +8346,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
         .update({ category: newCategory })
         .eq('id', doc.id);
       if (error) throw error;
-      notify(isInternal ? '👁️ Document visible au client' : '🔒 Document masqué au client');
+      notify(isInternal ? (lang === 'en' ? '👁️ Document visible to client' : '👁️ Document visible au client') : (lang === 'en' ? '🔒 Document hidden from client' : '🔒 Document masqué au client'));
       await refreshAttachments();
     } catch (err) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
@@ -8356,11 +8356,11 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
   // Parts order progress steps
   const progressSteps = [
     { id: 'submitted', label: t('stSubmitted'), icon: '📋' },
-    { id: 'quote_sent', label: 'Devis', icon: '💰' },
+    { id: 'quote_sent', label: lang === 'en' ? 'Quote' : 'Devis', icon: '💰' },
     { id: 'bc_review', label: 'BC', icon: '✍️' },
-    { id: 'in_progress', label: 'En cours', icon: '📦' },
-    { id: 'ready_to_ship', label: 'Prêt', icon: '🚚' },
-    { id: 'shipped', label: 'Expédié', icon: '✅' }
+    { id: 'in_progress', label: lang === 'en' ? 'In progress' : 'En cours', icon: '📦' },
+    { id: 'ready_to_ship', label: lang === 'en' ? 'Ready' : 'Prêt', icon: '🚚' },
+    { id: 'shipped', label: lang === 'en' ? 'Shipped' : 'Expédié', icon: '✅' }
   ];
   
   const getStepIndex = (status) => {
@@ -8446,7 +8446,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
     });
     
     if (error) {
-      notify('Erreur envoi message', 'error');
+      notify(lang === 'en' ? 'Error sending message' : 'Erreur envoi message', 'error');
     } else {
       setNewMessage('');
       // Refresh messages
@@ -8500,12 +8500,12 @@ const STATUS_STYLES = {
               </button>
               <div>
                 <div className="flex items-center gap-3">
-                  <h1 className="text-2xl font-bold text-gray-800">{order.request_number || 'Nouvelle Commande'}</h1>
+                  <h1 className="text-2xl font-bold text-gray-800">{order.request_number || (lang === 'en' ? 'New Order' : 'Nouvelle Commande')}</h1>
                   <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusStyle.bg} ${statusStyle.text}`}>
-                    {statusStyle.label}
+                    {lang === 'en' && statusStyle.en ? statusStyle.en : statusStyle.label}
                   </span>
                 </div>
-                <p className="text-gray-500">{company.name} • Commande de pièces détachées</p>
+                <p className="text-gray-500">{company.name} • {lang === 'en' ? 'Parts order' : 'Commande de pièces détachées'}</p>
               </div>
             </div>
             
@@ -8516,7 +8516,7 @@ const STATUS_STYLES = {
                   onClick={() => onOpenQuoteEditor(order)}
                   className={`px-4 py-2 ${order.status === 'quote_revision_requested' ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'} text-white rounded-lg font-medium`}
                 >
-                  💰 {order.status === 'quote_revision_requested' ? 'Réviser Devis' : 'Créer Devis'}
+                  💰 {order.status === 'quote_revision_requested' ? (lang === 'en' ? 'Revise Quote' : 'Réviser Devis') : (lang === 'en' ? 'Create Quote' : 'Créer Devis')}
                 </button>
               )}
               {order.status === 'in_progress' && (
@@ -8553,10 +8553,10 @@ const STATUS_STYLES = {
             <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
               <div className="flex border-b">
                 {[
-                  { id: 'details', label: 'Détails', icon: '📋' },
-                  { id: 'messages', label: 'Messages', icon: '💬', badge: messages.filter(m => m.sender_type === 'client' && !m.read_at).length },
-                  { id: 'documents', label: 'Documents', icon: '📄' },
-                  { id: 'history', label: 'Historique', icon: '📜' }
+                  { id: 'details', label: lang === 'en' ? 'Details' : 'Détails', icon: '📋' },
+                  { id: 'messages', label: lang === 'en' ? 'Messages' : 'Messages', icon: '💬', badge: messages.filter(m => m.sender_type === 'client' && !m.read_at).length },
+                  { id: 'documents', label: lang === 'en' ? 'Documents' : 'Documents', icon: '📄' },
+                  { id: 'history', label: lang === 'en' ? 'History' : 'Historique', icon: '📜' }
                 ].map(tab => (
                   <button
                     key={tab.id}
@@ -8589,7 +8589,7 @@ const STATUS_STYLES = {
                     
                     {/* Parts List */}
                     <div>
-                      <h3 className="font-bold text-gray-800 mb-3">📦 Pièces commandées ({parts.length})</h3>
+                      <h3 className="font-bold text-gray-800 mb-3">{lang === 'en' ? `📦 Parts ordered (${parts.length})` : `📦 Pièces commandées (${parts.length})`}</h3>
                       <div className="space-y-2">
                         {parts.length > 0 ? parts.map((part, idx) => (
                           <div key={idx} className="bg-gray-50 rounded-lg p-4 border">
@@ -8608,7 +8608,7 @@ const STATUS_STYLES = {
                           </div>
                         )) : (
                           <div className="bg-amber-50 rounded-lg p-4">
-                            <p className="text-amber-700 whitespace-pre-wrap">{order.problem_description || 'Pas de pièces spécifiées'}</p>
+                            <p className="text-amber-700 whitespace-pre-wrap">{order.problem_description || (lang === 'en' ? 'No parts specified' : 'Pas de pièces spécifiées')}</p>
                           </div>
                         )}
                       </div>
@@ -8617,10 +8617,10 @@ const STATUS_STYLES = {
                     {/* Quote Summary */}
                     {quoteData.grandTotal && (
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <h3 className="font-bold text-blue-800 mb-2">💰 Devis</h3>
+                        <h3 className="font-bold text-blue-800 mb-2">{lang === 'en' ? '💰 Quote' : '💰 Devis'}</h3>
                         <div className="grid grid-cols-3 gap-4 text-sm">
                           <div>
-                            <p className="text-blue-600">Sous-total HT</p>
+                            <p className="text-blue-600">{lang === 'en' ? 'Subtotal excl. VAT' : 'Sous-total HT'}</p>
                             <p className="font-bold text-blue-800">{(quoteData.subtotal || 0).toFixed(2)} €</p>
                           </div>
                           <div>
@@ -8656,11 +8656,11 @@ const STATUS_STYLES = {
                             <p className="font-mono font-bold text-green-800">{shippingData.blNumber}</p>
                           </div>
                           <div>
-                            <p className="text-green-600">Colis</p>
+                            <p className="text-green-600">{lang === 'en' ? 'Parcels' : 'Colis'}</p>
                             <p className="font-bold text-green-800">{shippingData.parcels}</p>
                           </div>
                           <div>
-                            <p className="text-green-600">Poids</p>
+                            <p className="text-green-600">{lang === 'en' ? 'Weight' : 'Poids'}</p>
                             <p className="font-bold text-green-800">{shippingData.weight} kg</p>
                           </div>
                         </div>
@@ -8670,11 +8670,11 @@ const STATUS_STYLES = {
                     {/* Order Info */}
                     <div className="grid grid-cols-2 gap-4">
                       <div className="bg-gray-50 rounded-lg p-3">
-                        <p className="text-xs text-gray-500 uppercase">Soumis le</p>
-                        <p className="font-medium">{new Date(order.created_at).toLocaleDateString('fr-FR', { dateStyle: 'full' })}</p>
+                        <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'Submitted on' : 'Soumis le'}</p>
+                        <p className="font-medium">{new Date(order.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR', { dateStyle: 'full' })}</p>
                       </div>
                       <div className="bg-gray-50 rounded-lg p-3">
-                        <p className="text-xs text-gray-500 uppercase">Urgence</p>
+                        <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'Urgent' : 'Urgence'}</p>
                         <p className="font-medium">{order.urgency || 'Normal'}</p>
                       </div>
                       {order.quote_number && (
@@ -8685,7 +8685,7 @@ const STATUS_STYLES = {
                       )}
                       {order.bc_number && (
                         <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                          <p className="text-xs text-green-500 uppercase">N° Bon de Commande</p>
+                          <p className="text-xs text-green-500 uppercase">{lang === 'en' ? 'PO Number' : 'N° Bon de Commande'}</p>
                           <p className="font-mono font-bold text-green-700">{order.bc_number}</p>
                         </div>
                       )}
@@ -8696,7 +8696,7 @@ const STATUS_STYLES = {
                 {/* Messages Tab */}
                 {activeTab === 'messages' && (
                   <div className="space-y-4">
-                    <h3 className="font-bold text-gray-800">💬 Messages avec le client</h3>
+                    <h3 className="font-bold text-gray-800">{lang === 'en' ? '💬 Messages with client' : '💬 Messages avec le client'}</h3>
                     
                     {/* Messages List */}
                     <div className="space-y-3 max-h-96 overflow-y-auto">
@@ -8712,7 +8712,7 @@ const STATUS_STYLES = {
                               {msg.sender_name || (msg.sender_type === 'admin' ? 'Admin' : 'Client')}
                             </span>
                             <span className="text-xs text-gray-400">
-                              {new Date(msg.created_at).toLocaleString('fr-FR')}
+                              {new Date(msg.created_at).toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR')}
                             </span>
                           </div>
                           <p className="text-gray-800 whitespace-pre-wrap">{msg.message}</p>
@@ -8735,7 +8735,7 @@ const STATUS_STYLES = {
                           disabled={sendingMessage || !newMessage.trim()}
                           className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50"
                         >
-                          {sendingMessage ? '...' : '📤 Envoyer'}
+                          {sendingMessage ? '...' : (lang === 'en' ? '📤 Send' : '📤 Envoyer')}
                         </button>
                       </div>
                     </div>
@@ -8746,7 +8746,7 @@ const STATUS_STYLES = {
                 {activeTab === 'documents' && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-bold text-gray-800">📄 Documents</h3>
+                      <h3 className="font-bold text-gray-800">{lang === 'en' ? '📄 Documents' : '📄 Documents'}</h3>
                       <button
                         onClick={() => setShowDocUploadModal(true)}
                         className="px-4 py-2 bg-[#2D5A7B] hover:bg-[#2a5490] text-white rounded-lg text-sm font-medium flex items-center gap-2"
@@ -8776,7 +8776,7 @@ const STATUS_STYLES = {
                           <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl shrink-0">✅</div>
                           <div>
                             <p className="font-medium text-gray-800">{lang === 'en' ? 'Signed Quote / PO' : 'Devis Signé / BC'}</p>
-                            <p className="text-sm text-green-600">{order.bc_number ? `N° ${order.bc_number}` : 'Signé'}</p>
+                            <p className="text-sm text-green-600">{order.bc_number ? `N° ${order.bc_number}` : (lang === 'en' ? 'Signed' : 'Signé')}</p>
                           </div>
                         </a>
                       )}
@@ -8787,7 +8787,7 @@ const STATUS_STYLES = {
                           className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
                           <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📝</div>
                           <div>
-                            <p className="font-medium text-gray-800">Bon de Commande Client</p>
+                            <p className="font-medium text-gray-800">{lang === 'en' ? 'Client Purchase Order' : 'Bon de Commande Client'}</p>
                             <p className="text-sm text-purple-600">{order.bc_number ? `N° ${order.bc_number}` : 'BC client'}</p>
                           </div>
                         </a>
@@ -8830,14 +8830,14 @@ const STATUS_STYLES = {
                             new Date(inv.due_date) < new Date() ? 'bg-red-100' : 'bg-amber-100'
                           }`}>📋</div>
                           <div className="flex-1">
-                            <p className="font-medium text-gray-800">Facture</p>
+                            <p className="font-medium text-gray-800">{lang === 'en' ? 'Invoice' : 'Facture'}</p>
                             <p className={`text-sm ${
                               inv.status === 'paid' ? 'text-green-600' :
                               new Date(inv.due_date) < new Date() ? 'text-red-600' : 'text-amber-600'
                             }`}>
                               N° {inv.invoice_number} — {parseFloat(inv.total_ttc || 0).toFixed(2)} € TTC
                               {inv.status === 'paid' ? ' ✅' : 
-                               new Date(inv.due_date) < new Date() ? ' ⚠️ En retard' : ''}
+                               new Date(inv.due_date) < new Date() ? (lang === 'en' ? ' ⚠️ Overdue' : ' ⚠️ En retard') : ''}
                             </p>
                           </div>
                         </a>
@@ -8865,9 +8865,9 @@ const STATUS_STYLES = {
                                     <div className="min-w-0">
                                       <p className="font-medium text-sm truncate">{doc.file_name}</p>
                                       <p className="text-xs text-gray-500">
-                                        {new Date(doc.created_at).toLocaleDateString('fr-FR')}
+                                        {new Date(doc.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
                                         {isInternal && <span className="ml-2 text-amber-600 font-medium">{lang === 'en' ? '🔒 Internal' : '🔒 Interne'}</span>}
-                                        {!isInternal && <span className="ml-2 text-green-600">👁️ Visible client</span>}
+                                        {!isInternal && <span className="ml-2 text-green-600">{lang === 'en' ? '👁️ Visible to client' : '👁️ Visible client'}</span>}
                                       </p>
                                     </div>
                                   </a>
@@ -8875,7 +8875,7 @@ const STATUS_STYLES = {
                                     <button
                                       onClick={() => handleToggleDocVisibility(doc)}
                                       className={`p-1.5 rounded-lg text-xs ${isInternal ? 'bg-green-100 hover:bg-green-200 text-green-700' : 'bg-amber-100 hover:bg-amber-200 text-amber-700'}`}
-                                      title={isInternal ? 'Rendre visible' : 'Masquer'}
+                                      title={isInternal ? (lang === 'en' ? 'Make visible' : 'Rendre visible') : (lang === 'en' ? 'Hide' : 'Masquer')}
                                     >
                                       {isInternal ? '👁️' : '🔒'}
                                     </button>
@@ -8905,13 +8905,13 @@ const STATUS_STYLES = {
                         <div className="bg-white rounded-xl max-w-md w-full">
                           <div className="p-6 border-b border-gray-200">
                             <div className="flex justify-between items-center">
-                              <h2 className="text-lg font-bold text-[#2D5A7B]">📄 Ajouter un document</h2>
+                              <h2 className="text-lg font-bold text-[#2D5A7B]">{lang === 'en' ? '📄 Add a document' : '📄 Ajouter un document'}</h2>
                               <button onClick={() => { setShowDocUploadModal(false); setDocUploadFile(null); setDocUploadName(''); }} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
                             </div>
                           </div>
                           <div className="p-6 space-y-4">
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Fichier</label>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'File' : 'Fichier'}</label>
                               <input 
                                 type="file" 
                                 onChange={(e) => {
@@ -8927,7 +8927,7 @@ const STATUS_STYLES = {
                                 type="text"
                                 value={docUploadName}
                                 onChange={(e) => setDocUploadName(e.target.value)}
-                                placeholder="Nom du document..."
+                                placeholder={lang === 'en' ? 'Document name...' : 'Nom du document...'}
                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
                               />
                             </div>
@@ -8939,9 +8939,9 @@ const STATUS_STYLES = {
                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                               >
                                 <option value="general">{lang === 'en' ? '📄 General Document' : '📄 Document général'}</option>
-                                <option value="rapport">📋 Rapport</option>
-                                <option value="bon_livraison">📦 Bon de livraison</option>
-                                <option value="facture">📋 Facture</option>
+                                <option value="rapport">{lang === 'en' ? '📋 Report' : '📋 Rapport'}</option>
+                                <option value="bon_livraison">{lang === 'en' ? '📦 Delivery Note' : '📦 Bon de livraison'}</option>
+                                <option value="facture">{lang === 'en' ? '📋 Invoice' : '📋 Facture'}</option>
                                 <option value="note_technique">{lang === 'en' ? '🔧 Technical Note' : '🔧 Note technique'}</option>
                                 <option value="correspondance">{lang === 'en' ? '✉️ Correspondence' : '✉️ Correspondance'}</option>
                               </select>
@@ -8949,10 +8949,10 @@ const STATUS_STYLES = {
                             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
                               <div>
                                 <p className="font-medium text-sm text-gray-800">
-                                  {docUploadShared ? '👁️ Visible au client' : '🔒 Document interne'}
+                                  {docUploadShared ? (lang === 'en' ? '👁️ Visible to client' : '👁️ Visible au client') : (lang === 'en' ? '🔒 Internal document' : '🔒 Document interne')}
                                 </p>
                                 <p className="text-xs text-gray-500">
-                                  {docUploadShared ? 'Le client pourra voir ce document' : 'Seuls les admins verront ce document'}
+                                  {docUploadShared ? (lang === 'en' ? 'Client will be able to see this document' : 'Le client pourra voir ce document') : (lang === 'en' ? 'Only admins will see this document' : 'Seuls les admins verront ce document')}
                                 </p>
                               </div>
                               <button 
@@ -8975,7 +8975,7 @@ const STATUS_STYLES = {
                               disabled={!docUploadFile || docUploading}
                               className="flex-1 px-4 py-2 bg-[#2D5A7B] hover:bg-[#2a5490] text-white rounded-lg font-medium disabled:opacity-50"
                             >
-                              {docUploading ? '⏳ Envoi...' : '📤 Envoyer'}
+                              {docUploading ? (lang === 'en' ? '⏳ Uploading...' : '⏳ Envoi...') : (lang === 'en' ? '📤 Upload' : '📤 Envoyer')}
                             </button>
                           </div>
                         </div>
@@ -8987,23 +8987,23 @@ const STATUS_STYLES = {
                 {/* History Tab */}
                 {activeTab === 'history' && (
                   <div className="space-y-4">
-                    <h3 className="font-bold text-gray-800">📜 Historique</h3>
+                    <h3 className="font-bold text-gray-800">{lang === 'en' ? '📜 History' : '📜 Historique'}</h3>
                     
                     <div className="space-y-3">
                       {/* Build history from timestamps */}
                       {[
-                        order.shipped_at && { date: order.shipped_at, label: 'Expédié', icon: '🚚', color: 'green' },
-                        order.bc_approved_at && { date: order.bc_approved_at, label: 'BC Approuvé', icon: '✅', color: 'green' },
-                        order.bc_submitted_at && { date: order.bc_submitted_at, label: 'BC Soumis', icon: '✍️', color: 'blue' },
-                        order.quote_sent_at && { date: order.quote_sent_at, label: 'Devis envoyé', icon: '💰', color: 'purple' },
-                        order.created_at && { date: order.created_at, label: 'Demande créée', icon: '📋', color: 'gray' }
+                        order.shipped_at && { date: order.shipped_at, label: lang === 'en' ? 'Shipped' : 'Expédié', icon: '🚚', color: 'green' },
+                        order.bc_approved_at && { date: order.bc_approved_at, label: lang === 'en' ? 'PO Approved' : 'BC Approuvé', icon: '✅', color: 'green' },
+                        order.bc_submitted_at && { date: order.bc_submitted_at, label: lang === 'en' ? 'PO Submitted' : 'BC Soumis', icon: '✍️', color: 'blue' },
+                        order.quote_sent_at && { date: order.quote_sent_at, label: lang === 'en' ? 'Quote Sent' : 'Devis envoyé', icon: '💰', color: 'purple' },
+                        order.created_at && { date: order.created_at, label: lang === 'en' ? 'Request Created' : 'Demande créée', icon: '📋', color: 'gray' }
                       ].filter(Boolean).sort((a, b) => new Date(b.date) - new Date(a.date)).map((event, idx) => (
                         <div key={idx} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg border">
                           <span className="text-xl">{event.icon}</span>
                           <div>
                             <p className="font-medium text-gray-800">{event.label}</p>
                             <p className="text-sm text-gray-500">
-                              {new Date(event.date).toLocaleDateString('fr-FR', { dateStyle: 'full' })} à {new Date(event.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                              {new Date(event.date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR', { dateStyle: 'full' })} à {new Date(event.date).toLocaleTimeString(lang === 'en' ? 'en-US' : 'fr-FR', { hour: '2-digit', minute: '2-digit' })}
                             </p>
                           </div>
                         </div>
@@ -9020,7 +9020,7 @@ const STATUS_STYLES = {
             {/* Client Info Card */}
             <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
               <div className="bg-gradient-to-r from-[#2D5A7B] to-[#2d4a6f] px-4 py-3">
-                <h3 className="font-bold text-white">🏢 Client</h3>
+                <h3 className="font-bold text-white">{lang === 'en' ? '🏢 Client' : '🏢 Client'}</h3>
               </div>
               <div className="p-4 space-y-3">
                 <div>
@@ -9028,7 +9028,7 @@ const STATUS_STYLES = {
                   <p className="font-bold text-gray-800">{company.name || '—'}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 uppercase tracking-wide">Contact</p>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">{lang === 'en' ? 'Contact' : 'Contact'}</p>
                   <p className="font-medium text-gray-700">{company.contact_name || '—'}</p>
                 </div>
                 <div>
@@ -9054,7 +9054,7 @@ const STATUS_STYLES = {
             {/* Quick Actions Card */}
             <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
               <div className="bg-amber-500 px-4 py-3">
-                <h3 className="font-bold text-white">⚡ Actions rapides</h3>
+                <h3 className="font-bold text-white">{lang === 'en' ? '⚡ Quick actions' : '⚡ Actions rapides'}</h3>
               </div>
               <div className="p-4 space-y-2">
                 {(order.status === 'submitted' || order.status === 'quote_revision_requested') && (
@@ -9062,14 +9062,14 @@ const STATUS_STYLES = {
                     onClick={() => onOpenQuoteEditor(order)}
                     className="w-full px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium"
                   >
-                    💰 Créer/Réviser Devis
+                    {lang === 'en' ? '💰 Create/Revise Quote' : '💰 Créer/Réviser Devis'}
                   </button>
                 )}
                 
                 {order.status === 'bc_review' && (
                   <button
                     onClick={() => {
-                      notify('Utilisez l\'onglet BC à vérifier dans la liste');
+                      notify(lang === 'en' ? 'Use the PO to review tab in the list' : "Utilisez l'onglet BC à vérifier dans la liste");
                     }}
                     className="w-full px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium"
                   >
@@ -9083,7 +9083,7 @@ const STATUS_STYLES = {
                     disabled={saving}
                     className="w-full px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium disabled:opacity-50"
                   >
-                    🚚 Marquer Prêt à Expédier
+                    {lang === 'en' ? '🚚 Mark Ready to Ship' : '🚚 Marquer Prêt à Expédier'}
                   </button>
                 )}
                 
@@ -9092,7 +9092,7 @@ const STATUS_STYLES = {
                     onClick={() => setShowShipping(true)}
                     className="w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
                   >
-                    📦 Créer Expédition & BL
+                    {lang === 'en' ? '📦 Create Shipment & DN' : '📦 Créer Expédition & BL'}
                   </button>
                 )}
                 
@@ -9113,12 +9113,12 @@ const STATUS_STYLES = {
             {order.bc_signature_url && (
               <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
                 <div className="bg-green-500 px-4 py-3">
-                  <h3 className="font-bold text-white">✍️ Signature</h3>
+                  <h3 className="font-bold text-white">{lang === 'en' ? '✍️ Signature' : '✍️ Signature'}</h3>
                 </div>
                 <div className="p-4">
                   <img src={order.bc_signature_url} alt="Signature" className="max-h-20 mx-auto bg-gray-50 rounded p-2 border" />
                   <p className="text-center text-sm text-gray-500 mt-2">
-                    {order.bc_signed_by || '—'} {order.bc_signature_date && `• ${new Date(order.bc_signature_date).toLocaleDateString('fr-FR')}`}
+                    {order.bc_signed_by || '—'} {order.bc_signature_date && `• ${new Date(order.bc_signature_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}`}
                   </p>
                 </div>
               </div>
@@ -9156,25 +9156,25 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
 
   // Parts order status styles
   const PARTS_STATUS = {
-    submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Nouvelle' },
-    quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
-    quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: 'Révision' },
-    bc_review: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'BC à vérifier' },
-    in_progress: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En cours' },
-    ready_to_ship: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Prêt' },
+    submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'New' : 'Nouvelle' },
+    quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: lang === 'en' ? 'Quote Sent' : 'Devis envoyé' },
+    quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: lang === 'en' ? 'Revision' : 'Révision' },
+    bc_review: { bg: 'bg-blue-100', text: 'text-blue-700', label: lang === 'en' ? 'PO to Review' : 'BC à vérifier' },
+    in_progress: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? 'In progress' : 'En cours' },
+    ready_to_ship: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: lang === 'en' ? 'Ready' : 'Prêt' },
     shipped: { bg: 'bg-green-100', text: 'text-green-700', label: t('stShipped') },
-    delivered: { bg: 'bg-green-100', text: 'text-green-700', label: 'Livré' },
-    completed: { bg: 'bg-green-100', text: 'text-green-700', label: 'Terminé' }
+    delivered: { bg: 'bg-green-100', text: 'text-green-700', label: lang === 'en' ? 'Delivered' : 'Livré' },
+    completed: { bg: 'bg-green-100', text: 'text-green-700', label: lang === 'en' ? 'Completed' : 'Terminé' }
   };
   
   // Stats cards for filtering
   const stats = [
-    { id: 'pending', label: 'À traiter', value: allPending.length, color: 'bg-amber-500', icon: '📋' },
-    { id: 'bc', label: 'BC à vérifier', value: bcReviewOrders.length, color: 'bg-red-500', icon: '📄' },
-    { id: 'quote_sent', label: 'Devis envoyés', value: quoteSentOrders.length, color: 'bg-purple-500', icon: '💰' },
-    { id: 'in_progress', label: 'En cours', value: inProgressOrders.length, color: 'bg-orange-500', icon: '📦' },
-    { id: 'ready', label: 'Prêt', value: readyToShipOrders.length, color: 'bg-indigo-500', icon: '🚚' },
-    { id: 'shipped', label: 'Expédiées', value: shippedOrders.length, color: 'bg-green-500', icon: '✅' }
+    { id: 'pending', label: lang === 'en' ? 'To Process' : 'À traiter', value: allPending.length, color: 'bg-amber-500', icon: '📋' },
+    { id: 'bc', label: lang === 'en' ? 'PO to Review' : 'BC à vérifier', value: bcReviewOrders.length, color: 'bg-red-500', icon: '📄' },
+    { id: 'quote_sent', label: lang === 'en' ? 'Quotes Sent' : 'Devis envoyés', value: quoteSentOrders.length, color: 'bg-purple-500', icon: '💰' },
+    { id: 'in_progress', label: lang === 'en' ? 'In progress' : 'En cours', value: inProgressOrders.length, color: 'bg-orange-500', icon: '📦' },
+    { id: 'ready', label: lang === 'en' ? 'Ready' : 'Prêt', value: readyToShipOrders.length, color: 'bg-indigo-500', icon: '🚚' },
+    { id: 'shipped', label: lang === 'en' ? 'Shipped' : 'Expédiées', value: shippedOrders.length, color: 'bg-green-500', icon: '✅' }
   ];
   
   // Orders for the table (excluding pending and bc_review which have their own sections)
@@ -9251,8 +9251,8 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
       {filter && (
         <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
           <span className="text-blue-700 font-medium">Filtre: {filterLabel}</span>
-          <span className="text-blue-600">({filteredOrders.length} commandes)</span>
-          <button onClick={() => setFilter(null)} className="ml-auto text-blue-600 hover:text-blue-800 font-medium">✕ Effacer</button>
+          <span className="text-blue-600">({filteredOrders.length} {lang === 'en' ? 'orders' : 'commandes'})</span>
+          <button onClick={() => setFilter(null)} className="ml-auto text-blue-600 hover:text-blue-800 font-medium">{lang === 'en' ? '✕ Clear' : '✕ Effacer'}</button>
         </div>
       )}
       
@@ -9272,8 +9272,8 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
                     <span className="font-mono font-bold text-amber-600 text-lg">{order.request_number}</span>
                     <p className="font-medium text-gray-800">{order.companies?.name}</p>
                     <p className="text-sm text-gray-500">
-                      BC soumis le {order.bc_submitted_at ? new Date(order.bc_submitted_at).toLocaleDateString('fr-FR') : new Date(order.updated_at).toLocaleDateString('fr-FR')}
-                      {order.bc_signed_by && <span className="ml-2">• Signé par: {order.bc_signed_by}</span>}
+                      BC soumis le {order.bc_submitted_at ? new Date(order.bc_submitted_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : new Date(order.updated_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
+                      {order.bc_signed_by && <span className="ml-2">• {lang === 'en' ? 'Signed by' : 'Signé par'}: {order.bc_signed_by}</span>}
                     </p>
                   </div>
                 </div>
@@ -9293,7 +9293,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
       {allPending.length > 0 && (!filter || filter === 'pending') && (
         <div className="bg-amber-50 border-2 border-amber-300 rounded-xl shadow-lg">
           <div className="px-6 py-4 border-b border-amber-200 bg-amber-100 rounded-t-xl">
-            <h2 className="font-bold text-amber-800 text-lg">📋 Nouvelles Demandes ({allPending.length})</h2>
+            <h2 className="font-bold text-amber-800 text-lg">{lang === 'en' ? `📋 New Requests (${allPending.length})` : `📋 Nouvelles Demandes (${allPending.length})`}</h2>
             <p className="text-sm text-amber-600">{lang === 'en' ? 'Create a quote for these requests' : 'Créez un devis pour ces demandes'}</p>
           </div>
           <div className="p-4 space-y-3">
@@ -9311,7 +9311,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
                     <div>
                       <p className="font-bold text-gray-800">{order.companies?.name}</p>
                       <p className="text-sm text-gray-500">
-                        {needsRevision ? 'Modification demandée' : 'Nouvelle commande'} • {new Date(order.created_at).toLocaleDateString('fr-FR')}
+                        {needsRevision ? (lang === 'en' ? 'Modification requested' : 'Modification demandée') : (lang === 'en' ? 'New order' : 'Nouvelle commande')} • {new Date(order.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
                       </p>
                       {needsRevision && order.revision_notes && (
                         <p className="text-sm text-red-600 mt-1">💬 {order.revision_notes.substring(0, 100)}{order.revision_notes.length > 100 ? '...' : ''}</p>
@@ -9329,7 +9329,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
                       onClick={() => setQuoteOrder(order)}
                       className={`px-6 py-2 ${needsRevision ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'} text-white rounded-lg font-medium`}
                     >
-                      💰 {needsRevision ? 'Réviser Devis' : 'Créer Devis'}
+                      💰 {needsRevision ? (lang === 'en' ? 'Revise Quote' : 'Réviser Devis') : (lang === 'en' ? 'Create Quote' : 'Créer Devis')}
                     </button>
                   </div>
                 </div>
@@ -9344,7 +9344,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
         <div className="bg-white rounded-xl shadow-sm">
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="font-bold text-gray-800">
-              {filterLabel ? `${filterLabel} (${filteredOrders.length})` : `Autres Commandes (${tableOrders.length})`}
+              {filterLabel ? `${filterLabel} (${filteredOrders.length})` : (lang === 'en' ? `Other Orders (${tableOrders.length})` : `Autres Commandes (${tableOrders.length})`)}
             </h2>
           </div>
           
@@ -9352,7 +9352,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">N° Commande</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Order #' : 'N° Commande'}</th>
                   <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('client')}</th>
                   <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Parts' : 'Pièces'}</th>
                   <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('total')}</th>
@@ -9363,7 +9363,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filteredOrders.length === 0 ? (
-                  <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Aucune commande</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{lang === 'en' ? 'No orders' : 'Aucune commande'}</td></tr>
                 ) : filteredOrders.map(order => {
                   const style = PARTS_STATUS[order.status] || PARTS_STATUS.submitted;
                   const quoteData = order.quote_data || {};
@@ -9384,7 +9384,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
                       <td className="px-4 py-3"><p className="font-medium text-gray-800">{order.companies?.name || '—'}</p></td>
                       <td className="px-4 py-3">
                         {partsCount > 0 ? (
-                          <span className="text-sm">{partsCount} pièce(s)</span>
+                          <span className="text-sm">{partsCount} {lang === 'en' ? 'part(s)' : 'pièce(s)'}</span>
                         ) : (
                           <span className="text-gray-400 text-sm">{lang === 'en' ? 'To define' : 'À définir'}</span>
                         )}
@@ -9397,9 +9397,9 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">{new Date(order.created_at).toLocaleDateString('fr-FR')}</td>
+                      <td className="px-4 py-3 text-sm text-gray-500">{new Date(order.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</td>
                       <td className="px-4 py-3">
                         {hasBCToReview ? (
                           <button 
@@ -9413,7 +9413,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
                             onClick={(e) => { e.stopPropagation(); setQuoteOrder(order); }} 
                             className={`px-3 py-1 text-sm text-white rounded ${order.status === 'quote_revision_requested' ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}
                           >
-                            💰 {order.status === 'quote_revision_requested' ? 'Réviser' : 'Créer Devis'}
+                            💰 {order.status === 'quote_revision_requested' ? 'Réviser' : (lang === 'en' ? 'Create Quote' : 'Créer Devis')}
                           </button>
                         ) : (
                           <button 
@@ -9546,7 +9546,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
     if (error) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
     } else {
-      notify(`✅ BC N° ${bcNumber} approuvé! Commande de pièces lancée.`);
+      notify(lang === 'en' ? `✅ PO # ${bcNumber} approved! Parts order initiated.` : `✅ BC N° ${bcNumber} approuvé! Commande de pièces lancée.`);
       reload();
       onClose();
     }
@@ -9555,7 +9555,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
   
   const rejectBC = async () => {
     if (!rejectReason.trim()) {
-      notify('Veuillez indiquer la raison du refus', 'error');
+      notify(lang === 'en' ? 'Please indicate the rejection reason' : 'Veuillez indiquer la raison du refus', 'error');
       return;
     }
     setRejecting(true);
@@ -9586,7 +9586,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
   
   // Get the document URL - prefer signed_quote_url (generated PDF with signature), then bc_file_url (uploaded BC)
   const documentUrl = order.signed_quote_url || order.bc_file_url;
-  const documentType = order.signed_quote_url ? 'Devis Signé' : 'Bon de Commande';
+  const documentType = order.signed_quote_url ? (lang === 'en' ? 'Signed Quote' : 'Devis Signé') : 'Bon de Commande';
   
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={onClose}>
@@ -9657,7 +9657,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
             <div className="bg-white rounded-lg p-4 border">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <p className="text-gray-500">N° Commande</p>
+                  <p className="text-gray-500">{lang === 'en' ? 'Order #' : 'N° Commande'}</p>
                   <p className="font-mono font-bold text-amber-600">{order.request_number}</p>
                 </div>
                 <div>
@@ -9665,8 +9665,8 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
                   <p className="font-medium">{lang === 'en' ? 'Spare parts' : 'Pièces détachées'}</p>
                 </div>
                 <div>
-                  <p className="text-gray-500">Soumission BC</p>
-                  <p className="font-medium">{order.bc_submitted_at ? new Date(order.bc_submitted_at).toLocaleString('fr-FR') : '—'}</p>
+                  <p className="text-gray-500">{lang === 'en' ? 'PO Submission' : 'Soumission BC'}</p>
+                  <p className="font-medium">{order.bc_submitted_at ? new Date(order.bc_submitted_at).toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR') : '—'}</p>
                 </div>
                 <div>
                   <p className="text-gray-500">{t('client')}</p>
@@ -9677,7 +9677,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
             
             {/* Documents Available */}
             <div className="bg-white rounded-lg p-4 border">
-              <h4 className="font-medium text-gray-700 mb-2">📁 Documents</h4>
+              <h4 className="font-medium text-gray-700 mb-2">{lang === 'en' ? '📁 Documents' : '📁 Documents'}</h4>
               <div className="space-y-2 text-sm">
                 {order.quote_url && (
                   <a href={order.quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600 hover:underline">
@@ -9700,10 +9700,10 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
             {/* Signature */}
             {order.bc_signature_url && (
               <div className="bg-white rounded-lg p-4 border">
-                <h4 className="font-medium text-gray-700 mb-2">✍️ Signature</h4>
+                <h4 className="font-medium text-gray-700 mb-2">{lang === 'en' ? '✍️ Signature' : '✍️ Signature'}</h4>
                 <img src={order.bc_signature_url} alt="Signature" className="max-h-20 mx-auto bg-gray-50 rounded p-2 border" />
                 <p className="text-center text-xs text-gray-500 mt-1">
-                  {order.bc_signed_by || '—'} {order.bc_signature_date && `• ${new Date(order.bc_signature_date).toLocaleDateString('fr-FR')}`}
+                  {order.bc_signed_by || '—'} {order.bc_signature_date && `• ${new Date(order.bc_signature_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}`}
                 </p>
               </div>
             )}
@@ -9715,7 +9715,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
                 {parts.map((p, i) => (
                   <div key={i} className="bg-gray-50 rounded p-2 text-sm">
                     <p className="font-medium">{p.description}</p>
-                    <p className="text-gray-500">Réf: {p.partNumber || '—'} • Qté: {p.quantity}</p>
+                    <p className="text-gray-500">{lang === 'en' ? 'Ref' : 'Réf'}: {p.partNumber || '—'} • {lang === 'en' ? 'Qty' : 'Qté'}: {p.quantity}</p>
                   </div>
                 ))}
               </div>
@@ -9723,7 +9723,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
             
             {/* Quote Info */}
             <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-              <h4 className="font-medium text-blue-800 mb-1">💰 Devis</h4>
+              <h4 className="font-medium text-blue-800 mb-1">{lang === 'en' ? '💰 Quote' : '💰 Devis'}</h4>
               <p className="text-xl font-bold text-blue-700">{(quoteData.grandTotal || 0).toFixed(2)} €</p>
               {order.quote_url && (
                 <a href={order.quote_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
@@ -9734,7 +9734,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
             
             {/* BC Number */}
             <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-              <h4 className="font-medium text-green-800 mb-2">📋 N° Bon de Commande</h4>
+              <h4 className="font-medium text-green-800 mb-2">{lang === 'en' ? '📋 PO Number' : '📋 N° Bon de Commande'}</h4>
               {useAutoNumber ? (
                 <div>
                   <div className="flex items-center gap-2 mb-2">
@@ -9743,7 +9743,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
                   </div>
                   <input
                     type="text"
-                    value={generatingNumber ? 'Génération...' : bcNumber}
+                    value={generatingNumber ? (lang === 'en' ? 'Generating...' : 'Génération...') : bcNumber}
                     onChange={e => setBcNumber(e.target.value)}
                     className="w-full px-3 py-2 border border-green-300 rounded-lg text-center font-mono font-bold bg-white"
                     placeholder="BC-MMYY-NNN"
@@ -9751,20 +9751,20 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
                 </div>
               ) : (
                 <div>
-                  <p className="text-xs text-gray-500 mb-2">Entrez le N° BC du client</p>
+                  <p className="text-xs text-gray-500 mb-2">{lang === 'en' ? "Enter the client PO #" : "Entrez le N° BC du client"}</p>
                   <input
                     type="text"
                     value={bcNumber}
                     onChange={e => setBcNumber(e.target.value)}
                     className="w-full px-3 py-2 border border-green-300 rounded-lg text-center font-mono font-bold bg-white"
-                    placeholder="N° BC du client..."
+                    placeholder={lang === 'en' ? 'Client PO #...' : 'N° BC du client...'}
                   />
                   <button
                     onClick={generateBCNumber}
                     disabled={generatingNumber}
                     className="mt-2 w-full text-xs text-green-600 hover:text-green-800 underline"
                   >
-                    {generatingNumber ? 'Génération...' : 'Ou générer un numéro automatique'}
+                    {generatingNumber ? (lang === 'en' ? 'Generating...' : 'Génération...') : (lang === 'en' ? 'Or generate automatic number' : 'Ou générer un numéro automatique')}
                   </button>
                 </div>
               )}
@@ -9772,11 +9772,11 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
             
             {/* Reject Reason */}
             <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-              <h4 className="font-medium text-red-800 mb-2">Refuser le BC?</h4>
+              <h4 className="font-medium text-red-800 mb-2">{lang === 'en' ? 'Reject the PO?' : 'Refuser le BC?'}</h4>
               <textarea
                 value={rejectReason}
                 onChange={e => setRejectReason(e.target.value)}
-                placeholder="Raison du refus..."
+                placeholder={lang === 'en' ? 'Rejection reason...' : 'Raison du refus...'}
                 className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm h-20 resize-none"
               />
             </div>
@@ -9788,7 +9788,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
                 disabled={approving}
                 className="w-full px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50"
               >
-                {approving ? 'Approbation...' : '✅ Approuver BC'}
+                {approving ? (lang === 'en' ? 'Approving...' : 'Approbation...') : (lang === 'en' ? '✅ Approve PO' : '✅ Approuver BC')}
               </button>
               <button
                 onClick={rejectBC}
@@ -9835,7 +9835,7 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
       reload();
       if (newStatus !== 'ready_to_ship') onClose();
     } catch (err) {
-      notify(`Erreur: ${err.message}`, 'error');
+      notify(lang === 'en' ? `Error: ${err.message}` : `Erreur: ${err.message}`, 'error');
     }
     setSaving(false);
   };
@@ -9870,9 +9870,9 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
         <div className="px-6 py-4 border-b bg-gray-50">
           <div className="flex items-center justify-between">
             {[
-              { id: 'in_progress', label: 'En cours', icon: '📦' },
-              { id: 'ready_to_ship', label: 'Prêt', icon: '🚚' },
-              { id: 'shipped', label: 'Expédié', icon: '✅' }
+              { id: 'in_progress', label: lang === 'en' ? 'In progress' : 'En cours', icon: '📦' },
+              { id: 'ready_to_ship', label: lang === 'en' ? 'Ready' : 'Prêt', icon: '🚚' },
+              { id: 'shipped', label: lang === 'en' ? 'Shipped' : 'Expédié', icon: '✅' }
             ].map((step, idx) => {
               const statusOrder = ['in_progress', 'ready_to_ship', 'shipped'];
               const currentIdx = statusOrder.indexOf(order.status);
@@ -9920,14 +9920,14 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             {order.status === 'in_progress' && (
               <>
-                <h4 className="font-bold text-blue-800 mb-2">📦 Commande en cours de traitement</h4>
+                <h4 className="font-bold text-blue-800 mb-2">{lang === 'en' ? '📦 Order being processed' : '📦 Commande en cours de traitement'}</h4>
                 <p className="text-blue-600 text-sm mb-4">{lang === 'en' ? 'When parts are ready, mark as ready to ship.' : 'Quand les pièces sont prêtes, marquez comme prêt à expédier.'}</p>
                 <button
                   onClick={() => updateStatus('ready_to_ship', {})}
                   disabled={saving}
                   className="w-full px-4 py-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-bold disabled:opacity-50"
                 >
-                  {saving ? '...' : '🚚 Marquer Prêt à Expédier'}
+                  {saving ? '...' : (lang === 'en' ? '🚚 Mark Ready to Ship' : '{lang === 'en' ? '🚚 Mark Ready to Ship' : '🚚 Marquer Prêt à Expédier'}')}
                 </button>
               </>
             )}
@@ -9940,7 +9940,7 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
                   onClick={() => setShowShipping(true)}
                   className="w-full px-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold"
                 >
-                  📦 Créer Expédition & BL
+                  {lang === 'en' ? '📦 Create Shipment & DN' : '📦 Créer Expédition & BL'}
                 </button>
               </>
             )}
@@ -9948,7 +9948,7 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
           
           {/* Documents Section */}
           <div className="bg-gray-50 rounded-lg p-4 border">
-            <h3 className="font-bold text-gray-800 mb-3">📁 Documents</h3>
+            <h3 className="font-bold text-gray-800 mb-3">{lang === 'en' ? '📁 Documents' : '📁 Documents'}</h3>
             <div className="grid grid-cols-2 gap-3">
               {order.quote_url && (
                 <a href={order.quote_url} target="_blank" rel="noopener noreferrer" 
@@ -9956,7 +9956,7 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
                   <span className="text-2xl">📄</span>
                   <div>
                     <p className="font-medium text-gray-800">{t('quote')}</p>
-                    <p className="text-xs text-gray-500">Original</p>
+                    <p className="text-xs text-gray-500">{lang === 'en' ? 'Original' : 'Original'}</p>
                   </div>
                 </a>
               )}
@@ -9976,7 +9976,7 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
                   <span className="text-2xl">📎</span>
                   <div>
                     <p className="font-medium text-gray-800">{lang === 'en' ? 'PO Uploaded' : 'BC Uploadé'}</p>
-                    <p className="text-xs text-gray-500">Fichier client</p>
+                    <p className="text-xs text-gray-500">{lang === 'en' ? 'Client file' : 'Fichier client'}</p>
                   </div>
                 </a>
               )}
@@ -10046,13 +10046,13 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
         <div className="px-6 py-4 border-b sticky top-0 bg-white flex justify-between items-center">
           <div>
             <h2 className="text-xl font-bold text-gray-800">
-              {order.request_number || 'Nouvelle Commande de Pièces'}
+              {order.request_number || (lang === 'en' ? 'New Parts Order' : 'Nouvelle Commande de Pièces')}
             </h2>
             <p className="text-sm text-gray-500">{order.companies?.name}</p>
           </div>
           <div className="flex items-center gap-3">
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>
-              {style.label}
+              {lang === 'en' && style.en ? style.en : style.label}
             </span>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
           </div>
@@ -10076,14 +10076,14 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
                 {order.parts_data.parts.map((part, idx) => (
                   <div key={idx} className="bg-amber-50 rounded-lg p-4 border border-amber-200">
                     <div className="flex justify-between items-start mb-2">
-                      <span className="font-bold text-amber-900">Pièce #{part.num || idx + 1}</span>
-                      <span className="text-sm bg-amber-200 px-2 py-0.5 rounded text-amber-800">Qté: {part.quantity || 1}</span>
+                      <span className="font-bold text-amber-900">{lang === 'en' ? 'Part' : 'Pièce'} #{part.num || idx + 1}</span>
+                      <span className="text-sm bg-amber-200 px-2 py-0.5 rounded text-amber-800">{lang === 'en' ? 'Qty' : 'Qté'}: {part.quantity || 1}</span>
                     </div>
                     
                     <div className="grid md:grid-cols-2 gap-2 text-sm mb-2">
                       {part.device_for && (
                         <div>
-                          <span className="text-gray-500">Pour appareil:</span>
+                          <span className="text-gray-500">{lang === 'en' ? 'For device:' : 'Pour appareil:'}</span>
                           <span className="ml-2 font-medium">{part.device_for}</span>
                         </div>
                       )}
@@ -10097,7 +10097,7 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
                     
                     {part.description && (
                       <div className="mt-2 bg-white rounded p-2">
-                        <span className="text-gray-500 text-xs">Description:</span>
+                        <span className="text-gray-500 text-xs">{lang === 'en' ? 'Description:' : 'Description:'}</span>
                         <p className="text-gray-800">{part.description}</p>
                       </div>
                     )}
@@ -10105,7 +10105,7 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
                     {/* Photos */}
                     {part.photos && part.photos.length > 0 && (
                       <div className="mt-3">
-                        <span className="text-gray-500 text-sm">📷 Photos ({part.photos.length}):</span>
+                        <span className="text-gray-500 text-sm">{lang === 'en' ? `📷 Photos (${part.photos.length}):` : `📷 Photos (${part.photos.length}):`}</span>
                         <div className="flex flex-wrap gap-2 mt-2">
                           {part.photos.map((photoUrl, pIdx) => (
                             <a 
@@ -10139,7 +10139,7 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
           {/* Shipping Address */}
           {order.shipping_address_id && (
             <div>
-              <h3 className="font-bold text-gray-700 mb-3">📍 Adresse de livraison</h3>
+              <h3 className="font-bold text-gray-700 mb-3">{lang === 'en' ? '📍 Shipping address' : '📍 Adresse de livraison'}</h3>
               <div className="bg-blue-50 rounded-lg p-4">
                 <p className="text-gray-600">ID: {order.shipping_address_id}</p>
               </div>
@@ -10149,7 +10149,7 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
           {/* Documents Section */}
           {(order.quote_url || order.signed_quote_url || order.bc_file_url || order.quote_data?.shipping?.upsLabelUrl || order.quote_data?.shipping?.blUrl) && (
             <div>
-              <h3 className="font-bold text-gray-700 mb-3">📁 Documents</h3>
+              <h3 className="font-bold text-gray-700 mb-3">{lang === 'en' ? '📁 Documents' : '📁 Documents'}</h3>
               <div className="bg-gray-50 rounded-lg p-4">
                 <div className="grid grid-cols-2 gap-3">
                   {order.quote_url && (
@@ -10158,7 +10158,7 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
                       <span className="text-xl">📄</span>
                       <div>
                         <p className="font-medium text-gray-800 text-sm">{t('quote')}</p>
-                        <p className="text-xs text-gray-500">Original</p>
+                        <p className="text-xs text-gray-500">{lang === 'en' ? 'Original' : 'Original'}</p>
                       </div>
                     </a>
                   )}
@@ -10178,7 +10178,7 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
                       <span className="text-xl">📎</span>
                       <div>
                         <p className="font-medium text-gray-800 text-sm">{lang === 'en' ? 'PO Uploaded' : 'BC Uploadé'}</p>
-                        <p className="text-xs text-gray-500">Fichier client</p>
+                        <p className="text-xs text-gray-500">{lang === 'en' ? 'Client file' : 'Fichier client'}</p>
                       </div>
                     </a>
                   )}
@@ -10226,11 +10226,11 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
           {/* Order Info */}
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-xs text-gray-500 uppercase mb-1">Soumis le</p>
-              <p className="font-medium">{new Date(order.created_at).toLocaleDateString('fr-FR', { dateStyle: 'full' })}</p>
+              <p className="text-xs text-gray-500 uppercase mb-1">{lang === 'en' ? 'Submitted on' : 'Soumis le'}</p>
+              <p className="font-medium">{new Date(order.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR', { dateStyle: 'full' })}</p>
             </div>
             <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-xs text-gray-500 uppercase mb-1">Urgence</p>
+              <p className="text-xs text-gray-500 uppercase mb-1">{lang === 'en' ? 'Urgent' : 'Urgence'}</p>
               <p className="font-medium">{order.urgency || 'Normal'}</p>
             </div>
           </div>
@@ -10240,7 +10240,7 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
           <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">{t('close')}</button>
           {(isPending || needsRevision) && (
             <button onClick={onCreateQuote} className={`px-6 py-2 text-white rounded-lg font-medium ${needsRevision ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}>
-              💰 {needsRevision ? 'Réviser Devis' : 'Créer Devis'}
+              💰 {needsRevision ? (lang === 'en' ? 'Revise Quote' : 'Réviser Devis') : (lang === 'en' ? 'Create Quote' : 'Créer Devis')}
             </button>
           )}
         </div>
@@ -10499,11 +10499,11 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
       
       if (error) throw error;
       
-      notify(`Devis ${quoteNumber || quoteRef} envoyé pour ${order.companies?.name}`);
+      notify(lang === 'en' ? `Quote ${quoteNumber || quoteRef} sent for ${order.companies?.name}` : `Devis ${quoteNumber || quoteRef} envoyé pour ${order.companies?.name}`);
       reload();
       onClose();
     } catch (err) {
-      notify(`Erreur: ${err.message}`, 'error');
+      notify(lang === 'en' ? `Error: ${err.message}` : `Erreur: ${err.message}`, 'error');
     }
     setSaving(false);
   };
@@ -10555,7 +10555,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
               
               {/* Customer Request - Structured Display */}
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <h3 className="font-bold text-amber-800 mb-3">📋 Demande du client</h3>
+                <h3 className="font-bold text-amber-800 mb-3">{lang === 'en' ? '📋 Client request' : '📋 Demande du client'}</h3>
                 
                 {/* Check for structured parts_data first */}
                 {order.parts_data?.parts ? (
@@ -10563,14 +10563,14 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                     {order.parts_data.parts.map((part, idx) => (
                       <div key={idx} className="bg-white rounded-lg p-4 border border-amber-200">
                         <div className="flex justify-between items-start mb-2">
-                          <span className="font-bold text-amber-900">Pièce #{part.num || idx + 1}</span>
-                          <span className="text-sm text-amber-600">Qté: {part.quantity || 1}</span>
+                          <span className="font-bold text-amber-900">{lang === 'en' ? 'Part' : 'Pièce'} #{part.num || idx + 1}</span>
+                          <span className="text-sm text-amber-600">{lang === 'en' ? 'Qty' : 'Qté'}: {part.quantity || 1}</span>
                         </div>
                         
                         <div className="grid md:grid-cols-2 gap-3 text-sm">
                           {part.device_for && (
                             <div>
-                              <span className="text-gray-500">Pour appareil:</span>
+                              <span className="text-gray-500">{lang === 'en' ? 'For device:' : 'Pour appareil:'}</span>
                               <span className="ml-2 font-medium text-gray-800">{part.device_for}</span>
                             </div>
                           )}
@@ -10584,7 +10584,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                         
                         {part.description && (
                           <div className="mt-2">
-                            <span className="text-gray-500 text-sm">Description:</span>
+                            <span className="text-gray-500 text-sm">{lang === 'en' ? 'Description:' : 'Description:'}</span>
                             <p className="text-gray-800 mt-1">{part.description}</p>
                           </div>
                         )}
@@ -10592,7 +10592,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                         {/* Photos */}
                         {part.photos && part.photos.length > 0 && (
                           <div className="mt-3">
-                            <span className="text-gray-500 text-sm">Photos:</span>
+                            <span className="text-gray-500 text-sm">{lang === 'en' ? 'Photos:' : 'Photos:'}</span>
                             <div className="flex flex-wrap gap-2 mt-2">
                               {part.photos.map((photoUrl, pIdx) => (
                                 <a 
@@ -10629,7 +10629,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                     type="text"
                     value={searchTerm}
                     onChange={(e) => handleSearch(e.target.value)}
-                    placeholder="Rechercher par référence ou description..."
+                    placeholder={lang === 'en' ? 'Search by reference or description...' : 'Rechercher par référence ou description...'}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
                   />
                   {searchResults.length > 0 && (
@@ -10668,7 +10668,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                         <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 w-32">{lang === 'en' ? 'Reference' : 'Référence'}</th>
                         <th className="px-3 py-2 text-left text-xs font-bold text-gray-600">{t('description')}</th>
                         <th className="px-3 py-2 text-center text-xs font-bold text-gray-600 w-20">{lang === 'en' ? 'Qty' : 'Qté'}</th>
-                        <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 w-24">Prix Unit.</th>
+                        <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 w-24">{lang === 'en' ? 'Unit Price' : 'Prix Unit.'}</th>
                         <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 w-24">{t('total')}</th>
                         <th className="px-3 py-2 w-12"></th>
                       </tr>
@@ -10682,7 +10682,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                               value={part.partNumber}
                               onChange={(e) => updatePart(part.id, 'partNumber', e.target.value)}
                               className="w-full px-2 py-1 border border-gray-200 rounded text-sm font-mono"
-                              placeholder="Réf..."
+                              placeholder={lang === 'en' ? 'Ref...' : 'Réf...'}
                             />
                           </td>
                           <td className="px-3 py-2">
@@ -10729,7 +10729,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                       {quoteParts.length === 0 && (
                         <tr>
                           <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
-                            Aucune pièce ajoutée. Utilisez la recherche ci-dessus.
+                            {lang === 'en' ? 'No parts added. Use the search above.' : 'Aucune pièce ajoutée. Utilisez la recherche ci-dessus.'}
                           </td>
                         </tr>
                       )}
@@ -10740,10 +10740,10 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
               
               {/* Shipping */}
               <div className="bg-blue-50 rounded-lg p-4">
-                <h3 className="font-bold text-blue-800 mb-3">🚚 Frais de port</h3>
+                <h3 className="font-bold text-blue-800 mb-3">{lang === 'en' ? '🚚 Shipping fees' : '🚚 Frais de port'}</h3>
                 <div className="flex items-center gap-4">
                   <div>
-                    <label className="text-sm text-blue-600">Nombre de colis</label>
+                    <label className="text-sm text-blue-600">{lang === 'en' ? 'Number of parcels' : 'Nombre de colis'}</label>
                     <input
                       type="number"
                       min="0"
@@ -10770,7 +10770,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                     />
                   </div>
                   <div className="text-right flex-1">
-                    <span className="text-blue-600">Total port:</span>
+                    <span className="text-blue-600">{lang === 'en' ? 'Total shipping:' : 'Total port:'}</span>
                     <span className="font-bold text-blue-800 ml-2">{shippingData.total.toFixed(2)} €</span>
                   </div>
                 </div>
@@ -10783,11 +10783,11 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                   <span className="font-medium">{partsTotal.toFixed(2)} €</span>
                 </div>
                 <div className="flex justify-between text-lg">
-                  <span>Frais de port:</span>
+                  <span>{lang === 'en' ? 'Shipping:' : 'Frais de port:'}</span>
                   <span className="font-medium">{shippingData.total.toFixed(2)} €</span>
                 </div>
                 <div className="flex justify-between text-xl font-bold text-[#2D5A7B] mt-2 pt-2 border-t border-gray-300">
-                  <span>TOTAL HT:</span>
+                  <span>{lang === 'en' ? 'TOTAL excl. VAT:' : 'TOTAL HT:'}</span>
                   <span>{grandTotal.toFixed(2)} €</span>
                 </div>
               </div>
@@ -10827,12 +10827,12 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                 {/* Info Bar */}
                 <div className="bg-gray-100 px-6 py-3 flex justify-between text-sm">
                   <div>
-                    <span className="text-gray-500">Date: </span>
-                    <span className="font-medium">{today.toLocaleDateString('fr-FR')}</span>
+                    <span className="text-gray-500">{lang === 'en' ? 'Date: ' : 'Date: '}</span>
+                    <span className="font-medium">{today.toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</span>
                   </div>
                   <div>
                     <span className="text-gray-500">{lang === 'en' ? 'Validity: ' : 'Validité: '}</span>
-                    <span className="font-medium">30 jours</span>
+                    <span className="font-medium">{lang === 'en' ? '30 days' : '30 jours'}</span>
                   </div>
                 </div>
                 
@@ -10853,7 +10853,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                         <th className="px-3 py-2 text-left text-sm w-12">{lang === 'en' ? 'Qty' : 'Qté'}</th>
                         <th className="px-3 py-2 text-left text-sm">{lang === 'en' ? 'Reference' : 'Référence'}</th>
                         <th className="px-3 py-2 text-left text-sm">{lang === 'en' ? 'Description' : 'Désignation'}</th>
-                        <th className="px-3 py-2 text-right text-sm w-20">Prix Unit.</th>
+                        <th className="px-3 py-2 text-right text-sm w-20">{lang === 'en' ? 'Unit Price' : 'Prix Unit.'}</th>
                         <th className="px-3 py-2 text-right text-sm w-20">{t('totalHT')}</th>
                       </tr>
                     </thead>
@@ -10877,7 +10877,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                         </tr>
                       )}
                       <tr className="bg-[#2D5A7B] text-white">
-                        <td colSpan={4} className="px-3 py-2 text-right font-bold whitespace-nowrap">TOTAL HT</td>
+                        <td colSpan={4} className="px-3 py-2 text-right font-bold whitespace-nowrap">{lang === 'en' ? 'TOTAL excl. VAT' : 'TOTAL HT'}</td>
                         <td className="px-3 py-2 text-right font-bold whitespace-nowrap">{grandTotal.toFixed(2)} €</td>
                       </tr>
                     </tbody>
@@ -10892,9 +10892,9 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                         <p className="text-gray-500">Lighthouse France</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-xs text-gray-500 uppercase mb-1">Bon pour accord</p>
+                        <p className="text-xs text-gray-500 uppercase mb-1">{lang === 'en' ? 'Approved for agreement' : 'Bon pour accord'}</p>
                         <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded"></div>
-                        <p className="text-xs text-gray-400 mt-1">Signature et cachet</p>
+                        <p className="text-xs text-gray-400 mt-1">{lang === 'en' ? 'Signature and stamp' : 'Signature et cachet'}</p>
                       </div>
                     </div>
                   </div>
@@ -10915,14 +10915,14 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
               <p className="text-6xl mb-4">📧</p>
               <h3 className="text-2xl font-bold text-gray-800 mb-2">{lang === 'en' ? 'Ready to send' : 'Prêt à envoyer'}</h3>
               <p className="text-gray-600 mb-6">
-                Le devis sera envoyé au client {order.companies?.name}.
+                {lang === 'en' ? `The quote will be sent to client ${order.companies?.name}.` : `Le devis sera envoyé au client ${order.companies?.name}.`}
                 <br />
                 Montant total: <strong className="text-[#2D5A7B]">{grandTotal.toFixed(2)} € HT</strong>
               </p>
               <div className="bg-gray-50 rounded-lg p-4 max-w-md mx-auto text-left">
                 <p className="text-sm text-gray-600"><strong>{lang === 'en' ? 'Reference:' : 'Référence:'}</strong> {quoteRef}</p>
                 <p className="text-sm text-gray-600"><strong>{lang === 'en' ? 'Parts:' : 'Pièces:'}</strong> {quoteParts.length}</p>
-                <p className="text-sm text-gray-600"><strong>Port:</strong> {shippingData.total.toFixed(2)} €</p>
+                <p className="text-sm text-gray-600"><strong>{lang === 'en' ? 'Shipping:' : 'Port:'}</strong> {shippingData.total.toFixed(2)} €</p>
               </div>
             </div>
           )}
@@ -10947,7 +10947,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                 disabled={step === 1 && quoteParts.length === 0}
                 className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
               >
-                {step === 1 ? 'Aperçu →' : 'Confirmer →'}
+                {step === 1 ? (lang === 'en' ? 'Preview →' : 'Aperçu →') : 'Confirmer →'}
               </button>
             ) : (
               <button
@@ -10955,7 +10955,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
                 disabled={saving}
                 className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium disabled:opacity-50"
               >
-                {saving ? 'Envoi...' : '📧 Envoyer le Devis'}
+                {saving ? (lang === 'en' ? 'Sending...' : 'Envoi...') : (lang === 'en' ? '📧 Send Quote' : '📧 Envoyer le Devis')}
               </button>
             )}
           </div>
@@ -11090,7 +11090,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
           },
           packages: packagesList,
           serviceCode: '11', // UPS Standard
-          description: `${order.request_number} - ${parts.length} pièce(s)`,
+          description: `${order.request_number} - ${parts.length} {lang === 'en' ? 'part(s)' : 'pièce(s)'}`,
           isReturn: false
         }
       });
@@ -11116,11 +11116,11 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
         packageLabels: data.packages || []
       }));
       
-      notify(`✅ ${data.packages?.length || 1} étiquette(s) UPS créée(s): ${data.trackingNumber}`);
+      notify(lang === 'en' ? `✅ ${data.packages?.length || 1} UPS label(s) created: ${data.trackingNumber}` : `✅ ${data.packages?.length || 1} étiquette(s) UPS créée(s): ${data.trackingNumber}`);
       setStep(2);
     } catch (err) {
       console.error('UPS Label creation error:', err);
-      notify('❌ Erreur UPS: ' + (err.message || 'Erreur inconnue'), 'error');
+      notify(lang === 'en' ? '❌ UPS Error: ' : '❌ Erreur UPS: ' + (err.message || 'Erreur inconnue'), 'error');
     }
     setUpsLoading(false);
   };
@@ -11192,7 +11192,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       const s = shipment;
       const w = window.open('', '_blank');
       if (!w) { notify(lang === 'en' ? 'Popup blocked' : 'Popup bloqué', 'error'); return; }
-      w.document.write(`<html><head><title>UPS Label</title><style>body{font-family:Arial;padding:20px}.label{border:3px solid #351C15;padding:20px;max-width:400px;margin:0 auto}.ups{font-size:32px;font-weight:bold;color:#351C15;text-align:center}.tracking{font-size:18px;font-family:monospace;text-align:center;margin:20px 0;padding:10px;background:#f5f5f5}.addr{margin:15px 0;padding:15px;border:1px solid #ddd}</style></head><body><div class="label"><div class="ups">UPS</div><div class="tracking">${s.trackingNumber}</div><div class="addr"><small>DESTINATAIRE:</small><br><strong>${s.address.company_name}</strong><br>${s.address.attention ? 'À l\'att. de: ' + s.address.attention + '<br>' : ''}${s.address.address_line1}<br>${s.address.postal_code} ${s.address.city}<br>${s.address.country}</div><div class="addr"><small>{lang === 'en' ? 'SENDER:' : 'EXPÉDITEUR:'}</small><br><strong>LIGHTHOUSE FRANCE</strong><br>16 rue Paul Sejourne<br>94000 Créteil<br>France</div><p style="text-align:center;font-size:20px;font-weight:bold">${s.parcels} COLIS - ${s.weight} KG</p><p style="text-align:center;color:#666">${order.request_number}</p></div><script>window.print()</script></body></html>`);
+      w.document.write(`<html><head><title>UPS Label</title><style>body{font-family:Arial;padding:20px}.label{border:3px solid #351C15;padding:20px;max-width:400px;margin:0 auto}.ups{font-size:32px;font-weight:bold;color:#351C15;text-align:center}.tracking{font-size:18px;font-family:monospace;text-align:center;margin:20px 0;padding:10px;background:#f5f5f5}.addr{margin:15px 0;padding:15px;border:1px solid #ddd}</style></head><body><div class="label"><div class="ups">UPS</div><div class="tracking">${s.trackingNumber}</div><div class="addr"><small>${lang === 'en' ? 'RECIPIENT:' : 'DESTINATAIRE:'}</small><br><strong>${s.address.company_name}</strong><br>${s.address.attention ? 'À l\'att. de: ' + s.address.attention + '<br>' : ''}${s.address.address_line1}<br>${s.address.postal_code} ${s.address.city}<br>${s.address.country}</div><div class="addr"><small>${lang === 'en' ? 'SENDER:' : 'EXPÉDITEUR:'}</small><br><strong>LIGHTHOUSE FRANCE</strong><br>16 rue Paul Sejourne<br>94000 Créteil<br>France</div><p style="text-align:center;font-size:20px;font-weight:bold">${s.parcels} COLIS - ${s.weight} KG</p><p style="text-align:center;color:#666">${order.request_number}</p></div><script>window.print()</script></body></html>`);
       w.document.close();
       setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
     }
@@ -11293,7 +11293,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       <div class="header">
         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" onerror="this.outerHTML='<div style=\\'font-size:24px;font-weight:bold;color:#333\\'>LIGHTHOUSE<div style=\\'font-size:10px;color:#666\\'>FRANCE</div></div>'">
         <div class="header-right">
-          <div class="doc-title">BON DE LIVRAISON</div>
+          <div class="doc-title">{lang === 'en' ? 'DELIVERY NOTE' : 'BON DE LIVRAISON'}</div>
           <div class="doc-number">N° ${bl.blNumber}</div>
           <div class="doc-ref">Réf: ${bl.orderNumber}</div>
         </div>
@@ -11304,7 +11304,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       </div>
 
       <div class="client-box">
-        <div class="client-label">Destinataire</div>
+        <div class="client-label">{lang === 'en' ? 'Recipient' : 'Destinataire'}</div>
         <div class="client-name">${bl.client.name}</div>
         ${bl.client.attention ? `<div>{lang === 'en' ? "Attention: " : "À l'attention de: "}<strong>${bl.client.attention}</strong></div>` : ''}
         <div>${bl.client.street}</div>
@@ -11334,10 +11334,10 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       <div class="shipping-section">
         <div class="shipping-title">{lang === 'en' ? 'Shipping Information' : "Informations d'expédition"}</div>
         <div class="shipping-grid">
-          <div class="shipping-item"><span class="shipping-label">Transporteur:</span><span class="shipping-value">${bl.shipping.carrier}</span></div>
-          <div class="shipping-item"><span class="shipping-label">N° de suivi:</span><span class="shipping-value" style="font-family:monospace">${bl.shipping.tracking}</span></div>
-          <div class="shipping-item"><span class="shipping-label">Nombre de colis:</span><span class="shipping-value">${bl.shipping.parcels}</span></div>
-          <div class="shipping-item"><span class="shipping-label">Poids:</span><span class="shipping-value">${bl.shipping.weight} kg</span></div>
+          <div class="shipping-item"><span class="shipping-label">{lang === 'en' ? 'Carrier:' : 'Transporteur:'}</span><span class="shipping-value">${bl.shipping.carrier}</span></div>
+          <div class="shipping-item"><span class="shipping-label">{lang === 'en' ? 'Tracking #:' : 'N° de suivi:'}</span><span class="shipping-value" style="font-family:monospace">${bl.shipping.tracking}</span></div>
+          <div class="shipping-item"><span class="shipping-label">{lang === 'en' ? 'Number of parcels:' : 'Nombre de colis:'}</span><span class="shipping-value">${bl.shipping.parcels}</span></div>
+          <div class="shipping-item"><span class="shipping-label">{lang === 'en' ? 'Weight:' : 'Poids:'}</span><span class="shipping-value">${bl.shipping.weight} kg</span></div>
         </div>
       </div>
 
@@ -11504,12 +11504,12 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       reload();
       onClose();
     } catch (err) {
-      notify(`Erreur: ${err.message}`, 'error');
+      notify(lang === 'en' ? `Error: ${err.message}` : `Erreur: ${err.message}`, 'error');
     }
     setSaving(false);
   };
   
-  const stepLabels = ['Vérification', 'Étiquette UPS', 'Bon de Livraison'];
+  const stepLabels = [(lang === 'en' ? 'Verification' : 'Vérification'), (lang === 'en' ? 'UPS Label' : 'Étiquette UPS'), (lang === 'en' ? 'Delivery Note' : 'Bon de Livraison')];
   
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
@@ -11519,7 +11519,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
           <div className="flex justify-between items-center">
             <div>
               <h2 className="text-xl font-bold">🚚 Expédition - {order.request_number}</h2>
-              <p className="text-green-100 text-sm">{parts.length} pièce(s)</p>
+              <p className="text-green-100 text-sm">{parts.length} {lang === 'en' ? 'part(s)' : 'pièce(s)'}</p>
             </div>
             <button onClick={onClose} className="text-white/70 hover:text-white text-2xl">&times;</button>
           </div>
@@ -11543,7 +11543,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
                 <div className="text-4xl mb-4">⏳</div>
-                <p className="text-gray-500">Chargement des informations...</p>
+                <p className="text-gray-500">{lang === 'en' ? 'Loading information...' : 'Chargement des informations...'}</p>
               </div>
             </div>
           )}
@@ -11554,7 +11554,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
               {/* Address Section */}
               <div className="bg-white border-2 border-gray-200 rounded-xl">
                 <div className="bg-amber-50 px-4 py-3 border-b">
-                  <h3 className="font-bold text-amber-800">📍 Adresse de livraison</h3>
+                  <h3 className="font-bold text-amber-800">{lang === 'en' ? '📍 Shipping address' : '📍 Adresse de livraison'}</h3>
                 </div>
                 <div className="p-4 grid md:grid-cols-2 gap-4">
                   <div>
@@ -11563,18 +11563,18 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? "Attention" : "À l'attention de"}</label>
-                    <input type="text" value={shipment.address.attention} onChange={e => updateAddress('attention', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Nom du contact" />
+                    <input type="text" value={shipment.address.attention} onChange={e => updateAddress('attention', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder={lang === 'en' ? 'Contact name' : 'Nom du contact'} />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Adresse *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Address *' : 'Adresse *'}</label>
                     <input type="text" value={shipment.address.address_line1} onChange={e => updateAddress('address_line1', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Code postal *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Postal code *' : 'Code postal *'}</label>
                     <input type="text" value={shipment.address.postal_code} onChange={e => updateAddress('postal_code', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Ville *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'City *' : 'Ville *'}</label>
                     <input type="text" value={shipment.address.city} onChange={e => updateAddress('city', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
                   <div>
@@ -11591,7 +11591,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
               {/* Parts Section */}
               <div className="bg-white border-2 border-gray-200 rounded-xl">
                 <div className="bg-blue-50 px-4 py-3 border-b">
-                  <h3 className="font-bold text-blue-800">📦 Pièces à expédier ({parts.length})</h3>
+                  <h3 className="font-bold text-blue-800">{lang === 'en' ? `📦 Parts to ship (${parts.length})` : `📦 Pièces à expédier (${parts.length})`}</h3>
                 </div>
                 <div className="p-4">
                   <div className="space-y-2">
@@ -11618,7 +11618,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                 </div>
                 <div className="p-4 grid md:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de colis</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Number of parcels' : 'Nombre de colis'}</label>
                     <div className="flex items-center gap-2">
                       <button 
                         onClick={() => updateShipmentField('parcels', Math.max(1, (shipment.parcels || 1) - 1))}
@@ -11637,20 +11637,20 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                       >+</button>
                     </div>
                     {shipment.parcels > 1 && (
-                      <p className="text-xs text-green-600 mt-1">📦 {shipment.parcels} étiquettes seront créées</p>
+                      <p className="text-xs text-green-600 mt-1">📦 {lang === 'en' ? `${shipment.parcels} labels will be created` : `${shipment.parcels} étiquettes seront créées`}</p>
                     )}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Poids total (kg)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Total weight (kg)' : 'Poids total (kg)'}</label>
                     <input type="text" value={shipment.weight} onChange={e => updateShipmentField('weight', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">BL #</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'DN #' : 'BL #'}</label>
                     <input type="text" value={generateBLNumber()} disabled className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 font-mono" />
                   </div>
                   <div className="md:col-span-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Notes internes</label>
-                    <textarea value={shipment.notes || ''} onChange={e => updateShipmentField('notes', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={2} placeholder="Notes pour l'expédition..." />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Internal notes' : 'Notes internes'}</label>
+                    <textarea value={shipment.notes || ''} onChange={e => updateShipmentField('notes', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={2} placeholder={lang === 'en' ? 'Shipping notes...' : "Notes pour l'expédition..."} />
                   </div>
                 </div>
               </div>
@@ -11659,10 +11659,10 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
               <div className="bg-gray-50 rounded-xl p-4">
                 <h4 className="font-bold text-gray-700 mb-2">{lang === 'en' ? '📋 Order Summary' : '📋 Récapitulatif Commande'}</h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div><span className="text-gray-500">N°:</span> <span className="font-mono font-bold text-amber-600">{order.request_number}</span></div>
-                  <div><span className="text-gray-500">Client:</span> <span className="font-medium">{order.companies?.name}</span></div>
+                  <div><span className="text-gray-500">{lang === 'en' ? 'No.:' : 'N°:'}</span> <span className="font-mono font-bold text-amber-600">{order.request_number}</span></div>
+                  <div><span className="text-gray-500">{lang === 'en' ? 'Client:' : 'Client:'}</span> <span className="font-medium">{order.companies?.name}</span></div>
                   <div><span className="text-gray-500">{lang === 'en' ? 'Parts:' : 'Pièces:'}</span> <span className="font-medium">{parts.length}</span></div>
-                  <div><span className="text-gray-500">Date:</span> <span className="font-medium">{new Date().toLocaleDateString('fr-FR')}</span></div>
+                  <div><span className="text-gray-500">{lang === 'en' ? 'Date:' : 'Date:'}</span> <span className="font-medium">{new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</span></div>
                 </div>
               </div>
             </div>
@@ -11678,7 +11678,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                 </div>
                 <div className="text-right">
                   <p className="font-mono text-lg font-bold text-amber-600">{shipment.trackingNumber}</p>
-                  <a href={`https://www.ups.com/track?tracknum=${shipment.trackingNumber}`} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline">Suivre →</a>
+                  <a href={`https://www.ups.com/track?tracknum=${shipment.trackingNumber}`} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline">{lang === 'en' ? 'Track →' : 'Suivre →'}</a>
                 </div>
               </div>
               
@@ -11696,7 +11696,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                       </div>
                       <div className="flex items-center gap-3">
                         <span className={labelsPrinted[pkgIdx] ? 'text-green-600 font-medium text-sm' : 'text-gray-400 text-sm'}>
-                          {labelsPrinted[pkgIdx] ? '✓ Imprimé' : ''}
+                          {labelsPrinted[pkgIdx] ? (lang === 'en' ? '✓ Printed' : '✓ Imprimé') : ''}
                         </span>
                         <button 
                           onClick={() => printLabel(pkgIdx)} 
@@ -11712,7 +11712,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
               
               {/* Summary */}
               <div className="mt-4 pt-4 border-t flex justify-between items-center text-sm text-gray-600">
-                <span>{shipment.address.company_name} • {shipment.parcels || 1} colis • {shipment.weight} kg</span>
+                <span>{shipment.address.company_name} • {shipment.parcels || 1} {lang === 'en' ? 'parcels' : 'colis'} • {shipment.weight} kg</span>
                 <span className="text-gray-400">{order.request_number}</span>
               </div>
             </div>
@@ -11729,11 +11729,11 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                 <div className="bg-gray-100 px-4 py-3 rounded-t-xl flex justify-between items-center">
                   <div>
                     <h3 className="font-bold">{bl.blNumber}</h3>
-                    <p className="text-sm text-gray-500">{bl.parts.length} pièce(s)</p>
+                    <p className="text-sm text-gray-500">{bl.parts.length} {lang === 'en' ? 'part(s)' : 'pièce(s)'}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className={blsPrinted[0] ? 'text-green-600 font-medium' : 'text-gray-400'}>{blsPrinted[0] ? '✓ Imprimé' : ''}</span>
-                    <button onClick={() => setStep(1)} className="px-3 py-1 bg-white hover:bg-gray-50 border rounded text-sm">✏️ Modifier</button>
+                    <span className={blsPrinted[0] ? 'text-green-600 font-medium' : 'text-gray-400'}>{blsPrinted[0] ? (lang === 'en' ? '✓ Printed' : '✓ Imprimé') : ''}</span>
+                    <button onClick={() => setStep(1)} className="px-3 py-1 bg-white hover:bg-gray-50 border rounded text-sm">{lang === 'en' ? '✏️ Edit' : '✏️ Modifier'}</button>
                     <button onClick={printBL} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">{lang === 'en' ? '🖨️ Print DN' : '🖨️ Imprimer BL'}</button>
                   </div>
                 </div>
@@ -11752,9 +11752,9 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                       <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#2D5A7B' }}>BON DE LIVRAISON</div>
+                          <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#2D5A7B' }}>{lang === 'en' ? 'DELIVERY NOTE' : 'BON DE LIVRAISON'}</div>
                           <div data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#2D5A7B', marginTop: '4px' }}>N° {bl.blNumber}</div>
-                          <div style={{ fontSize: '9pt', color: '#666', marginTop: '4px' }}>Réf: {bl.orderNumber}</div>
+                          <div style={{ fontSize: '9pt', color: '#666', marginTop: '4px' }}>{lang === 'en' ? 'Ref:' : 'Réf:'} {bl.orderNumber}</div>
                         </div>
                       </div>
 
@@ -11767,7 +11767,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                       <div style={{ display: 'flex', gap: '15px', margin: '12px 0' }}>
                         {/* Client box */}
                         <div style={{ flex: '1.5', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
-                          <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Destinataire</div>
+                          <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>{lang === 'en' ? 'Recipient' : 'Destinataire'}</div>
                           <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{bl.client.name}</div>
                           {bl.client.attention && <div>{lang === 'en' ? "Attention: " : "À l'attention de: "}<strong>{bl.client.attention}</strong></div>}
                           <div>{bl.client.street}</div>
@@ -11805,16 +11805,16 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                       <div style={{ margin: '15px 0' }}>
                         <div style={{ fontWeight: 'bold', fontSize: '11pt', marginBottom: '10px', borderBottom: '1px solid #333', paddingBottom: '5px' }}>{lang === 'en' ? 'Shipping Information' : "Informations d'expédition"}</div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Transporteur:</span><span style={{ fontWeight: '600' }}>{bl.shipping.carrier}</span></div>
-                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>N° de suivi:</span><span style={{ fontWeight: '600', fontFamily: 'monospace' }}>{bl.shipping.tracking}</span></div>
-                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Nombre de colis:</span><span style={{ fontWeight: '600' }}>{bl.shipping.parcels}</span></div>
-                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Poids:</span><span style={{ fontWeight: '600' }}>{bl.shipping.weight} kg</span></div>
+                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>{lang === 'en' ? 'Carrier:' : 'Transporteur:'}</span><span style={{ fontWeight: '600' }}>{bl.shipping.carrier}</span></div>
+                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>{lang === 'en' ? 'Tracking #:' : 'N° de suivi:'}</span><span style={{ fontWeight: '600', fontFamily: 'monospace' }}>{bl.shipping.tracking}</span></div>
+                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>{lang === 'en' ? 'Number of parcels:' : 'Nombre de colis:'}</span><span style={{ fontWeight: '600' }}>{bl.shipping.parcels}</span></div>
+                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>{lang === 'en' ? 'Weight:' : 'Poids:'}</span><span style={{ fontWeight: '600' }}>{bl.shipping.weight} kg</span></div>
                         </div>
                       </div>
 
                       {/* Prepared by */}
                       <div style={{ fontSize: '10pt', marginTop: '12px', color: '#666' }}>
-                        Préparé par: <strong style={{ color: '#333' }}>{employeeName}</strong>
+                        {lang === 'en' ? 'Prepared by:' : 'Préparé par:'} <strong style={{ color: '#333' }}>{employeeName}</strong>
                       </div>
                     </div>
 
@@ -11851,7 +11851,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
               >
                 {upsLoading ? (
                   <>
-                    <span className="animate-spin">⏳</span> Création étiquette UPS...
+                    <span className="animate-spin">⏳</span> {lang === 'en' ? 'Creating UPS label...' : 'Création étiquette UPS...'}
                   </>
                 ) : (
                   <>{lang === 'en' ? '📦 Create UPS Label →' : '📦 Créer Étiquette UPS →'}</>
@@ -11861,14 +11861,14 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
           )}
           {step === 2 && (
             <>
-              <button onClick={() => setStep(1)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">← Retour</button>
-              <button onClick={() => setStep(3)} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium">Continuer vers BL →</button>
+              <button onClick={() => setStep(1)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">{lang === 'en' ? '← Back' : '← Retour'}</button>
+              <button onClick={() => setStep(3)} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium">{lang === 'en' ? 'Continue to DN →' : 'Continuer vers BL →'}</button>
             </>
           )}
           {step === 3 && (
             <>
-              <button onClick={() => setStep(2)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">← Retour</button>
-              <button onClick={markAsShipped} disabled={saving} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">{saving ? '⏳ Traitement...' : '🚚 Marquer Expédié'}</button>
+              <button onClick={() => setStep(2)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">{lang === 'en' ? '← Back' : '← Retour'}</button>
+              <button onClick={markAsShipped} disabled={saving} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">{saving ? (lang === 'en' ? '⏳ Processing...' : '⏳ Traitement...') : (lang === 'en' ? '🚚 Mark Shipped' : '🚚 Marquer Expédié')}</button>
             </>
           )}
         </div>
@@ -12180,7 +12180,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
             <div className="space-y-6">
               {/* Destination */}
               <div>
-                <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">📍 Destination</h3>
+                <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">{lang === 'en' ? '📍 Destination' : '📍 Destination'}</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {Object.entries(LIGHTHOUSE_OFFICES).map(([key, office]) => (
                     <button
@@ -12204,7 +12204,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
               {/* Device selection with per-device service */}
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-bold text-gray-800 flex items-center gap-2">📦 Devices & Service</h3>
+                  <h3 className="font-bold text-gray-800 flex items-center gap-2">{lang === 'en' ? '📦 Devices & Service' : '📦 Devices & Service'}</h3>
                   <button onClick={toggleAll} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">
                     {selectedDeviceIds.size === devices.length ? 'Deselect All' : 'Select All'}
                   </button>
@@ -12279,7 +12279,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
 
               {/* Notes */}
               <div>
-                <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">📝 Notes / Instructions</h3>
+                <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">{lang === 'en' ? '📝 Notes / Instructions' : '📝 Notes / Instructions'}</h3>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
@@ -12315,7 +12315,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
               </div>
 
               {/* BL Preview */}
-              <h3 className="font-bold text-gray-800">📄 Bon de Livraison Preview</h3>
+              <h3 className="font-bold text-gray-800">{lang === 'en' ? '📄 Delivery Note Preview' : '📄 Bon de Livraison Preview'}</h3>
               <div className="border rounded-xl overflow-hidden bg-white shadow-sm">
                 <div id="internal-bl-preview" style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', height: '297mm', position: 'relative', overflow: 'hidden' }}>
                   {/* Watermark */}
@@ -12328,7 +12328,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                     <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">WORLDWIDE SOLUTIONS</div></div>'; }} />
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#2D5A7B' }}>BON DE LIVRAISON</div>
+                        <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#2D5A7B' }}>{lang === 'en' ? 'DELIVERY NOTE' : 'BON DE LIVRAISON'}</div>
                         <div style={{ fontSize: '10pt', color: '#888', fontStyle: 'italic' }}>Internal Transfer — {destination === 'hollande' ? 'Hollande' : 'USA'}</div>
                         <div data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#2D5A7B', marginTop: '4px' }}>N° {destination === 'hollande' ? 'Hollande' : 'USA'} BL-XXXX-XXX</div>
                         <div style={{ fontSize: '9pt', color: '#666', marginTop: '2px' }}>RMA: {rma.request_number}</div>
@@ -12349,13 +12349,13 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                         <div>{biz.address || '16 rue Paul Séjourné'}</div>
                         <div>{biz.postal_code || '94000'} {biz.city || 'Créteil'}</div>
                         <div>France</div>
-                        <div style={{ marginTop: '4px', fontSize: '9pt', color: '#666' }}>Tél: {biz.phone || '01 43 77 28 07'}</div>
+                        <div style={{ marginTop: '4px', fontSize: '9pt', color: '#666' }}>{lang === 'en' ? 'Tel:' : 'Tél:'} {biz.phone || '01 43 77 28 07'}</div>
                       </div>
                       {/* TO */}
                       <div style={{ flex: '1', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
-                        <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Destinataire / To</div>
+                        <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>{lang === 'en' ? 'Recipient / To' : 'Destinataire / To'}</div>
                         <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{destOffice.company_name}</div>
-                        {destOffice.attention && <div>Attn: <strong>{destOffice.attention}</strong></div>}
+                        {destOffice.attention && <div>{lang === 'en' ? 'Attn: ' : 'Attn: '}<strong>{destOffice.attention}</strong></div>}
                         <div>{destOffice.address_line1}</div>
                         <div>{destOffice.postal_code} {destOffice.city}</div>
                         <div>{destOffice.country}</div>
@@ -12374,7 +12374,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                         <tr style={{ background: 'rgba(51,51,51,0.35)' }}>
                           <th style={{ color: '#333', padding: '8px 10px', textAlign: 'left', fontSize: '9pt', width: '35px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>Qty</th>
                           <th style={{ color: '#333', padding: '8px 10px', textAlign: 'left', fontSize: '9pt', fontWeight: 'bold', borderBottom: '2px solid #333' }}>{t('description')}</th>
-                          <th style={{ color: '#333', padding: '8px 10px', textAlign: 'left', fontSize: '9pt', width: '110px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>SN</th>
+                          <th style={{ color: '#333', padding: '8px 10px', textAlign: 'left', fontSize: '9pt', width: '110px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>{lang === 'en' ? 'SN' : 'SN'}</th>
                           <th style={{ color: '#333', padding: '8px 10px', textAlign: 'center', fontSize: '9pt', width: '80px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>Calibration</th>
                           <th style={{ color: '#333', padding: '8px 10px', textAlign: 'center', fontSize: '9pt', width: '70px', fontWeight: 'bold', borderBottom: '2px solid #333' }}>Repair</th>
                         </tr>
@@ -12419,7 +12419,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                     {/* General notes */}
                     {notes && (
                       <div style={{ margin: '12px 0', padding: '10px 15px', background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: '6px' }}>
-                        <div style={{ fontWeight: 'bold', fontSize: '10pt', marginBottom: '4px' }}>Notes / Instructions:</div>
+                        <div style={{ fontWeight: 'bold', fontSize: '10pt', marginBottom: '4px' }}>{lang === 'en' ? 'Notes / Instructions:' : 'Notes / Instructions:'}</div>
                         <div style={{ fontSize: '10pt', color: '#4B5563', whiteSpace: 'pre-wrap' }}>{notes}</div>
                       </div>
                     )}
@@ -12791,7 +12791,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     })).filter(s => s.devices.length > 0); // Remove empty shipments
     
     if (updatedShipmentsWithDevices.length === 0) {
-      notify(lang === 'en' ? 'No devices selected in the shipping groups' : 'Aucun appareil sélectionné dans les groupes d\'expédition', 'error');
+      notify(lang === 'en' ? 'No devices selected in the shipping groups' : (lang === 'en' ? 'No devices selected in groups' : 'Aucun appareil sélectionné dans les groupes d\'expédition', 'error');
       return;
     }
     
@@ -12863,7 +12863,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           }
         }
         
-        notify(`✅ ${data.packages?.length || 1} étiquette(s) UPS créée(s): ${data.trackingNumber}`);
+        notify(lang === 'en' ? `✅ ${data.packages?.length || 1} UPS label(s) created: ${data.trackingNumber}` : `✅ ${data.packages?.length || 1} étiquette(s) UPS créée(s): ${data.trackingNumber}`);
       }
       
       setUpsLabels(prev => ({ ...prev, ...newLabels }));
@@ -12871,7 +12871,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       setStep(2);
     } catch (err) {
       console.error('UPS Label creation error:', err);
-      notify('❌ Erreur UPS: ' + (err.message || 'Erreur inconnue'), 'error');
+      notify(lang === 'en' ? '❌ UPS Error: ' : '❌ Erreur UPS: ' + (err.message || 'Erreur inconnue'), 'error');
     }
     setUpsLoading(false);
   };
@@ -12898,7 +12898,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     date: getFrenchDate(),
     rmaNumber: rma.request_number,
     client: { name: shipment.address.company_name, attention: shipment.address.attention, street: shipment.address.address_line1, city: `${shipment.address.postal_code} ${shipment.address.city}`, country: shipment.address.country || 'France' },
-    devices: shipment.devices.map(d => ({ model: d.model_name, serial: d.serial_number, service: d.service_type === 'repair' ? 'Réparation' : 'Étalonnage' })),
+    devices: shipment.devices.map(d => ({ model: d.model_name, serial: d.serial_number, service: d.service_type === 'repair' ? (lang === 'en' ? 'Repair' : 'Réparation') : (lang === 'en' ? 'Calibration' : 'Étalonnage') })),
     shipping: { carrier: 'UPS', tracking: shipment.trackingNumber, parcels: shipment.parcels, weight: shipment.weight }
   });
   
@@ -12938,7 +12938,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       // Fallback to generated label if no real PDF
       const w = window.open('', '_blank');
       if (!w) { notify(lang === 'en' ? 'Popup blocked' : 'Popup bloqué', 'error'); return; }
-      w.document.write(`<html><head><title>UPS Label</title><style>body{font-family:Arial;padding:20px}.label{border:3px solid #351C15;padding:20px;max-width:400px;margin:0 auto}.ups{font-size:32px;font-weight:bold;color:#351C15;text-align:center}.tracking{font-size:18px;font-family:monospace;text-align:center;margin:20px 0;padding:10px;background:#f5f5f5}.addr{margin:15px 0;padding:15px;border:1px solid #ddd}</style></head><body><div class="label"><div class="ups">UPS</div><div class="tracking">${s.trackingNumber}</div><div class="addr"><small>DESTINATAIRE:</small><br><strong>${s.address.company_name}</strong><br>${s.address.attention ? 'À l att. de: ' + s.address.attention + '<br>' : ''}${s.address.address_line1}<br>${s.address.postal_code} ${s.address.city}<br>${s.address.country}</div><div class="addr"><small>{lang === 'en' ? 'SENDER:' : 'EXPÉDITEUR:'}</small><br><strong>LIGHTHOUSE FRANCE</strong><br>16 rue Paul Sejourne<br>94000 Créteil<br>France</div><p style="text-align:center;font-size:20px;font-weight:bold">${s.parcels} COLIS - ${s.weight} KG</p><p style="text-align:center;color:#666">${rma.request_number}</p></div><script>window.print()</script></body></html>`);
+      w.document.write(`<html><head><title>UPS Label</title><style>body{font-family:Arial;padding:20px}.label{border:3px solid #351C15;padding:20px;max-width:400px;margin:0 auto}.ups{font-size:32px;font-weight:bold;color:#351C15;text-align:center}.tracking{font-size:18px;font-family:monospace;text-align:center;margin:20px 0;padding:10px;background:#f5f5f5}.addr{margin:15px 0;padding:15px;border:1px solid #ddd}</style></head><body><div class="label"><div class="ups">UPS</div><div class="tracking">${s.trackingNumber}</div><div class="addr"><small>${lang === 'en' ? 'RECIPIENT:' : 'DESTINATAIRE:'}</small><br><strong>${s.address.company_name}</strong><br>${s.address.attention ? 'À l att. de: ' + s.address.attention + '<br>' : ''}${s.address.address_line1}<br>${s.address.postal_code} ${s.address.city}<br>${s.address.country}</div><div class="addr"><small>${lang === 'en' ? 'SENDER:' : 'EXPÉDITEUR:'}</small><br><strong>LIGHTHOUSE FRANCE</strong><br>16 rue Paul Sejourne<br>94000 Créteil<br>France</div><p style="text-align:center;font-size:20px;font-weight:bold">${s.parcels} COLIS - ${s.weight} KG</p><p style="text-align:center;color:#666">${rma.request_number}</p></div><script>window.print()</script></body></html>`);
       w.document.close();
       setLabelsPrinted(prev => ({ ...prev, [index]: true }));
     }
@@ -13039,7 +13039,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       <div class="header">
         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" onerror="this.outerHTML='<div style=\\'font-size:24px;font-weight:bold;color:#333\\'>LIGHTHOUSE<div style=\\'font-size:10px;color:#666\\'>FRANCE</div></div>'">
         <div class="header-right">
-          <div class="doc-title">BON DE LIVRAISON</div>
+          <div class="doc-title">{lang === 'en' ? 'DELIVERY NOTE' : 'BON DE LIVRAISON'}</div>
           <div class="doc-number">N° ${bl.blNumber}</div>
           ${bl.bcNumbers && bl.bcNumbers.length > 0 ? `<div class="doc-ref">${bl.bcNumbers.length === 1 ? 'Commande: ' : 'Commandes: '}${bl.bcNumbers.join(', ')}</div>` : ''}
           <div class="doc-ref">RMA: ${bl.rmaNumber}</div>
@@ -13051,7 +13051,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       </div>
 
       <div class="client-box">
-        <div class="client-label">Destinataire</div>
+        <div class="client-label">{lang === 'en' ? 'Recipient' : 'Destinataire'}</div>
         <div class="client-name">${bl.client.name}</div>
         ${bl.client.attention ? `<div>{lang === 'en' ? "Attention: " : "À l'attention de: "}<strong>${bl.client.attention}</strong></div>` : ''}
         <div>${bl.client.street}</div>
@@ -13065,7 +13065,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
             <th style="width:50px">{lang === 'en' ? 'Qty' : 'Qté'}</th>
             <th>{lang === 'en' ? 'Description' : 'Désignation'}</th>
             <th style="width:120px">{t('serialNumber')}</th>
-            <th style="width:100px">Service</th>
+            <th style="width:100px">{lang === 'en' ? 'Service' : 'Service'}</th>
           </tr>
         </thead>
         <tbody>
@@ -13083,10 +13083,10 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       <div class="shipping-section">
         <div class="shipping-title">{lang === 'en' ? 'Shipping Information' : "Informations d'expédition"}</div>
         <div class="shipping-grid">
-          <div class="shipping-item"><span class="shipping-label">Transporteur:</span><span class="shipping-value">${bl.shipping.carrier}</span></div>
-          <div class="shipping-item"><span class="shipping-label">N° de suivi:</span><span class="shipping-value" style="font-family:monospace">${bl.shipping.tracking}</span></div>
-          <div class="shipping-item"><span class="shipping-label">Nombre de colis:</span><span class="shipping-value">${bl.shipping.parcels}</span></div>
-          <div class="shipping-item"><span class="shipping-label">Poids:</span><span class="shipping-value">${bl.shipping.weight} kg</span></div>
+          <div class="shipping-item"><span class="shipping-label">{lang === 'en' ? 'Carrier:' : 'Transporteur:'}</span><span class="shipping-value">${bl.shipping.carrier}</span></div>
+          <div class="shipping-item"><span class="shipping-label">{lang === 'en' ? 'Tracking #:' : 'N° de suivi:'}</span><span class="shipping-value" style="font-family:monospace">${bl.shipping.tracking}</span></div>
+          <div class="shipping-item"><span class="shipping-label">{lang === 'en' ? 'Number of parcels:' : 'Nombre de colis:'}</span><span class="shipping-value">${bl.shipping.parcels}</span></div>
+          <div class="shipping-item"><span class="shipping-label">{lang === 'en' ? 'Weight:' : 'Poids:'}</span><span class="shipping-value">${bl.shipping.weight} kg</span></div>
         </div>
       </div>
 
@@ -13280,7 +13280,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       
       setGeneratedBLs(blData);
       setStep(4); // Move to final step
-      notify('✅ Documents d\'expédition enregistrés! Prêt pour scan UPS.');
+      notify(lang === 'en' ? '✅ Shipping documents saved! Ready for UPS scan.' : "✅ Documents d'expédition enregistrés! Prêt pour scan UPS.");
       reload();
     } catch (err) { 
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + (err.message || 'Error'), 'error'); 
@@ -13316,7 +13316,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     setSaving(false);
   };
   
-  const stepLabels = ['Vérification', 'Étiquette UPS', 'Bon de Livraison', 'Expédier'];
+  const stepLabels = [(lang === 'en' ? 'Verification' : 'Vérification'), (lang === 'en' ? 'UPS Label' : 'Étiquette UPS'), (lang === 'en' ? 'Delivery Note' : 'Bon de Livraison'), 'Expédier'];
   
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
@@ -13350,7 +13350,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
                 <div className="text-4xl mb-4">⏳</div>
-                <p className="text-gray-500">Chargement des informations...</p>
+                <p className="text-gray-500">{lang === 'en' ? 'Loading information...' : 'Chargement des informations...'}</p>
               </div>
             </div>
           )}
@@ -13365,7 +13365,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                     <span className="text-2xl">📦</span>
                     <div>
                       <h4 className="font-bold text-amber-800">{lang === 'en' ? 'Multi-address Shipping' : 'Expédition multi-adresses'}</h4>
-                      <p className="text-sm text-amber-700">Les appareils ont des adresses de retour différentes. {shipments.length} envois séparés seront créés, chacun avec son propre BL et étiquette UPS.</p>
+                      <p className="text-sm text-amber-700">{lang === 'en' ? `Devices have different return addresses. ${shipments.length} separate shipments will be created, each with its own DN and UPS label.` : `Les appareils ont des adresses de retour différentes. ${shipments.length} envois séparés seront créés, chacun avec son propre BL et étiquette UPS.`}</p>
                     </div>
                   </div>
                 </div>
@@ -13376,15 +13376,15 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                   {/* Shipment group header */}
                   {shipments.length > 1 && (
                     <div className="bg-gradient-to-r from-[#1a1a2e] to-[#2d2d44] text-white rounded-t-xl px-4 py-3 flex justify-between items-center">
-                      <h3 className="font-bold">Envoi {idx + 1} / {shipments.length}</h3>
-                      <span className="text-sm text-gray-300">{shipment.devices.length} appareil(s) → {shipment.address.city || '?'}</span>
+                      <h3 className="font-bold">{lang === 'en' ? 'Shipment' : 'Envoi'} {idx + 1} / {shipments.length}</h3>
+                      <span className="text-sm text-gray-300">{shipment.devices.length} {lang === 'en' ? 'device(s)' : 'appareil(s)'} → {shipment.address.city || '?'}</span>
                     </div>
                   )}
                   
                   {/* Devices in this shipment group */}
                   {shipments.length > 1 && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                      <p className="text-xs text-blue-600 font-medium uppercase mb-2">Appareils dans cet envoi:</p>
+                      <p className="text-xs text-blue-600 font-medium uppercase mb-2">{lang === 'en' ? 'Devices in this shipment:' : 'Appareils dans cet envoi:'}</p>
                       <div className="flex flex-wrap gap-2">
                         {shipment.devices.map(d => (
                           <span key={d.id} className="px-2 py-1 bg-white border rounded text-xs font-mono">{d.model_name} - {d.serial_number}</span>
@@ -13396,7 +13396,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                   {/* Address Section */}
                   <div className="bg-white border-2 border-gray-200 rounded-xl">
                     <div className="bg-amber-50 px-4 py-3 border-b">
-                      <h3 className="font-bold text-amber-800">📍 Adresse de livraison{shipments.length > 1 ? ` (Envoi ${idx + 1})` : ''}</h3>
+                      <h3 className="font-bold text-amber-800">{lang === 'en' ? `📍 Shipping address${shipments.length > 1 ? ` (Shipment ${idx + 1})` : ''}` : `📍 Adresse de livraison${shipments.length > 1 ? ` (Envoi ${idx + 1})` : ''}`}</h3>
                     </div>
                     <div className="p-4 grid md:grid-cols-2 gap-4">
                       <div>
@@ -13405,18 +13405,18 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? "Attention" : "À l'attention de"}</label>
-                        <input type="text" value={shipment.address.attention} onChange={e => updateAddress(idx, 'attention', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Nom du contact" />
+                        <input type="text" value={shipment.address.attention} onChange={e => updateAddress(idx, 'attention', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder={lang === 'en' ? 'Contact name' : 'Nom du contact'} />
                       </div>
                       <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Adresse *</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Address *' : 'Adresse *'}</label>
                         <input type="text" value={shipment.address.address_line1} onChange={e => updateAddress(idx, 'address_line1', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Code postal *</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Postal code *' : 'Code postal *'}</label>
                         <input type="text" value={shipment.address.postal_code} onChange={e => updateAddress(idx, 'postal_code', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Ville *</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'City *' : 'Ville *'}</label>
                         <input type="text" value={shipment.address.city} onChange={e => updateAddress(idx, 'city', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                       </div>
                       <div>
@@ -13433,12 +13433,12 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                   {/* Shipping Details per shipment */}
                   <div className="bg-white border-2 border-gray-200 rounded-xl">
                     <div className="bg-green-50 px-4 py-3 border-b flex justify-between items-center">
-                      <h3 className="font-bold text-green-800">🚚 Détails d'expédition{shipments.length > 1 ? ` (Envoi ${idx + 1})` : ''}</h3>
+                      <h3 className="font-bold text-green-800">{lang === 'en' ? `🚚 Shipping details${shipments.length > 1 ? ` (Shipment ${idx + 1})` : ''}` : `🚚 Détails d'expédition${shipments.length > 1 ? ` (Envoi ${idx + 1})` : ''}`}</h3>
                       <span className="text-xs text-green-600">{lang === 'en' ? '💡 UPS creates 1 label per package' : '💡 UPS crée 1 étiquette par colis'}</span>
                     </div>
                     <div className="p-4 grid md:grid-cols-3 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de colis</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Number of parcels' : 'Nombre de colis'}</label>
                         <div className="flex items-center gap-2">
                           <button 
                             onClick={() => updateShipment(idx, 'parcels', Math.max(1, (shipment.parcels || 1) - 1))}
@@ -13457,20 +13457,20 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                           >+</button>
                         </div>
                         {shipment.parcels > 1 && (
-                          <p className="text-xs text-green-600 mt-1">📦 {shipment.parcels} étiquettes seront créées</p>
+                          <p className="text-xs text-green-600 mt-1">📦 {lang === 'en' ? `${shipment.parcels} labels will be created` : `${shipment.parcels} étiquettes seront créées`}</p>
                         )}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Poids total (kg)</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Total weight (kg)' : 'Poids total (kg)'}</label>
                         <input type="text" value={shipment.weight} onChange={e => updateShipment(idx, 'weight', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">BL #</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'DN #' : 'BL #'}</label>
                         <input type="text" value={generateBLNumber(idx)} disabled className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 font-mono" />
                       </div>
                       <div className="md:col-span-3">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Notes internes</label>
-                        <textarea value={shipment.notes || ''} onChange={e => updateShipment(idx, 'notes', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={2} placeholder="Notes pour l'expédition..." />
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Internal notes' : 'Notes internes'}</label>
+                        <textarea value={shipment.notes || ''} onChange={e => updateShipment(idx, 'notes', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={2} placeholder={lang === 'en' ? 'Shipping notes...' : "Notes pour l'expédition..."} />
                       </div>
                     </div>
                   </div>
@@ -13529,7 +13529,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                         onClick={toggleAllReady}
                         className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 rounded text-blue-700"
                       >
-                        {selectedDeviceIds.size === readyDevices.length && readyDevices.length > 0 ? 'Désélectionner' : 'Tout sélectionner'}
+                        {selectedDeviceIds.size === readyDevices.length && readyDevices.length > 0 ? (lang === 'en' ? 'Deselect' : 'Désélectionner') : (lang === 'en' ? 'Select all' : 'Tout sélectionner')}
                       </button>
                     )}
                   </div>
@@ -13564,19 +13564,19 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                                 <div className="text-sm text-gray-500 font-mono">{device.serial_number}</div>
                               </div>
                               <span className={`px-2 py-1 rounded text-xs font-medium ${device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                                {device.service_type === 'repair' ? '🔧 Réparation' : '🔬 Étalonnage'}
+                                {device.service_type === 'repair' ? (lang === 'en' ? '🔧 Repair' : '🔧 Réparation') : '🔬 Étalonnage'}
                               </span>
                               {device.calibration_certificate_url && (
                                 <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm" onClick={e => e.stopPropagation()}>📄</a>
                               )}
                               <span className={`px-2 py-1 rounded text-xs font-medium ${isReady ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                                {isReady ? '✓ Prêt' : device.status || 'En cours'}
+                                {isReady ? (lang === 'en' ? '✓ Ready' : '✓ Prêt') : device.status || (lang === 'en' ? 'In progress' : 'En cours')}
                               </span>
                             </div>
                             {/* Return address for this device */}
                             {addr && (
                               <div className="mt-2 ml-8 flex items-center gap-2">
-                                <span className="text-xs text-gray-400">📍 Retour:</span>
+                                <span className="text-xs text-gray-400">{lang === 'en' ? '📍 Return:' : '📍 Retour:'}</span>
                                 <span className="text-xs text-gray-600">{addr.company_name || addr.label || '—'}, {addr.address_line1 || ''}, {addr.postal_code || ''} {addr.city || ''}</span>
                                 {addrInfo.isDifferent && (
                                   <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium">{lang === 'en' ? 'Specific address' : 'Adresse spécifique'}</span>
@@ -13595,10 +13595,10 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
               <div className="bg-gray-50 rounded-xl p-4">
                 <h4 className="font-bold text-gray-700 mb-2">{lang === 'en' ? '📋 RMA Summary' : '📋 Récapitulatif RMA'}</h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div><span className="text-gray-500">RMA:</span> <span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span></div>
-                  <div><span className="text-gray-500">Client:</span> <span className="font-medium">{rma.companies?.name}</span></div>
-                  <div><span className="text-gray-500">Appareils:</span> <span className="font-medium">{devices.length}</span></div>
-                  <div><span className="text-gray-500">Date:</span> <span className="font-medium">{new Date().toLocaleDateString('fr-FR')}</span></div>
+                  <div><span className="text-gray-500">{lang === 'en' ? 'RMA:' : 'RMA:'}</span> <span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span></div>
+                  <div><span className="text-gray-500">{lang === 'en' ? 'Client:' : 'Client:'}</span> <span className="font-medium">{rma.companies?.name}</span></div>
+                  <div><span className="text-gray-500">{lang === 'en' ? 'Devices:' : 'Appareils:'}</span> <span className="font-medium">{devices.length}</span></div>
+                  <div><span className="text-gray-500">{lang === 'en' ? 'Date:' : 'Date:'}</span> <span className="font-medium">{new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</span></div>
                 </div>
               </div>
             </div>
@@ -13609,12 +13609,12 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
             <div key={idx} className="bg-white border-2 rounded-xl p-6 mb-4">
               <div className="flex justify-between items-center mb-4">
                 <div>
-                  <h3 className="font-bold text-lg">Expédition #{idx + 1}</h3>
+                  <h3 className="font-bold text-lg">{lang === 'en' ? 'Shipment' : 'Expédition'} #{idx + 1}</h3>
                   <p className="text-gray-500">{shipment.address.postal_code} {shipment.address.city}</p>
                 </div>
                 <div className="text-right">
                   <p className="font-mono text-lg font-bold text-amber-600">{shipment.trackingNumber}</p>
-                  <a href={`https://www.ups.com/track?tracknum=${shipment.trackingNumber}`} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline">Suivre →</a>
+                  <a href={`https://www.ups.com/track?tracknum=${shipment.trackingNumber}`} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline">{lang === 'en' ? 'Track →' : 'Suivre →'}</a>
                 </div>
               </div>
               
@@ -13632,7 +13632,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                       </div>
                       <div className="flex items-center gap-3">
                         <span className={labelsPrinted[`${idx}-${pkgIdx}`] ? 'text-green-600 font-medium text-sm' : 'text-gray-400 text-sm'}>
-                          {labelsPrinted[`${idx}-${pkgIdx}`] ? '✓ Imprimé' : ''}
+                          {labelsPrinted[`${idx}-${pkgIdx}`] ? (lang === 'en' ? '✓ Printed' : '✓ Imprimé') : ''}
                         </span>
                         <button 
                           onClick={() => {
@@ -13664,7 +13664,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
               
               {/* Summary */}
               <div className="mt-4 pt-4 border-t flex justify-between items-center text-sm text-gray-600">
-                <span>{shipment.address.company_name} • {shipment.parcels || 1} colis • {shipment.weight} kg</span>
+                <span>{shipment.address.company_name} • {shipment.parcels || 1} {lang === 'en' ? 'parcels' : 'colis'} • {shipment.weight} kg</span>
                 <span className="text-gray-400">{rma.request_number}</span>
               </div>
             </div>
@@ -13684,8 +13684,8 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                     <p className="text-sm text-gray-500">{bl.devices.length} appareil(s)</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className={blsPrinted[idx] ? 'text-green-600 font-medium' : 'text-gray-400'}>{blsPrinted[idx] ? '✓ Imprimé' : ''}</span>
-                    <button onClick={() => setStep(1)} className="px-3 py-1 bg-white hover:bg-gray-50 border rounded text-sm">✏️ Modifier</button>
+                    <span className={blsPrinted[idx] ? 'text-green-600 font-medium' : 'text-gray-400'}>{blsPrinted[idx] ? (lang === 'en' ? '✓ Printed' : '✓ Imprimé') : ''}</span>
+                    <button onClick={() => setStep(1)} className="px-3 py-1 bg-white hover:bg-gray-50 border rounded text-sm">{lang === 'en' ? '✏️ Edit' : '✏️ Modifier'}</button>
                     <button onClick={() => printBL(idx)} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">{lang === 'en' ? '🖨️ Print DN' : '🖨️ Imprimer BL'}</button>
                   </div>
                 </div>
@@ -13704,7 +13704,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                       <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#2D5A7B' }}>BON DE LIVRAISON</div>
+                          <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#2D5A7B' }}>{lang === 'en' ? 'DELIVERY NOTE' : 'BON DE LIVRAISON'}</div>
                           <div data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#2D5A7B', marginTop: '4px' }}>N° {bl.blNumber}</div>
                           <div style={{ fontSize: '9pt', color: '#666', marginTop: '2px' }}>RMA: {bl.rmaNumber}</div>
                         </div>
@@ -13719,7 +13719,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                       <div style={{ display: 'flex', gap: '15px', margin: '12px 0' }}>
                         {/* Client box */}
                         <div style={{ flex: '1.5', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
-                          <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Destinataire</div>
+                          <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>{lang === 'en' ? 'Recipient' : 'Destinataire'}</div>
                           <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{bl.client.name}</div>
                           {bl.client.attention && <div>{lang === 'en' ? "Attention: " : "À l'attention de: "}<strong>{bl.client.attention}</strong></div>}
                           <div>{bl.client.street}</div>
@@ -13746,7 +13746,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                             <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '50px', fontWeight: 'bold' }}>{lang === 'en' ? 'Qty' : 'Qté'}</th>
                             <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', fontWeight: 'bold' }}>{lang === 'en' ? 'Description' : 'Désignation'}</th>
                             <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '120px', fontWeight: 'bold' }}>{t('serialNumber')}</th>
-                            <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '100px', fontWeight: 'bold' }}>Service</th>
+                            <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '100px', fontWeight: 'bold' }}>{lang === 'en' ? 'Service' : 'Service'}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -13765,16 +13765,16 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                       <div style={{ margin: '15px 0' }}>
                         <div style={{ fontWeight: 'bold', fontSize: '11pt', marginBottom: '10px', borderBottom: '1px solid #333', paddingBottom: '5px' }}>{lang === 'en' ? 'Shipping Information' : "Informations d'expédition"}</div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Transporteur:</span><span style={{ fontWeight: '600' }}>{bl.shipping.carrier}</span></div>
-                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>N° de suivi:</span><span style={{ fontWeight: '600', fontFamily: 'monospace' }}>{bl.shipping.tracking}</span></div>
-                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Nombre de colis:</span><span style={{ fontWeight: '600' }}>{bl.shipping.parcels}</span></div>
-                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Poids:</span><span style={{ fontWeight: '600' }}>{bl.shipping.weight} kg</span></div>
+                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>{lang === 'en' ? 'Carrier:' : 'Transporteur:'}</span><span style={{ fontWeight: '600' }}>{bl.shipping.carrier}</span></div>
+                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>{lang === 'en' ? 'Tracking #:' : 'N° de suivi:'}</span><span style={{ fontWeight: '600', fontFamily: 'monospace' }}>{bl.shipping.tracking}</span></div>
+                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>{lang === 'en' ? 'Number of parcels:' : 'Nombre de colis:'}</span><span style={{ fontWeight: '600' }}>{bl.shipping.parcels}</span></div>
+                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>{lang === 'en' ? 'Weight:' : 'Poids:'}</span><span style={{ fontWeight: '600' }}>{bl.shipping.weight} kg</span></div>
                         </div>
                       </div>
 
                       {/* Prepared by */}
                       <div style={{ fontSize: '10pt', marginTop: '12px', color: '#666' }}>
-                        Préparé par: <strong style={{ color: '#333' }}>{employeeName}</strong>
+                        {lang === 'en' ? 'Prepared by:' : 'Préparé par:'} <strong style={{ color: '#333' }}>{employeeName}</strong>
                       </div>
                     </div>
 
@@ -13829,31 +13829,31 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
               >
                 {upsLoading ? (
                   <>
-                    <span className="animate-spin">⏳</span> Création étiquette UPS...
+                    <span className="animate-spin">⏳</span> {lang === 'en' ? 'Creating UPS label...' : 'Création étiquette UPS...'}
                   </>
                 ) : (
-                  <>📦 Créer Étiquette UPS ({selectedDeviceIds.size} appareil{selectedDeviceIds.size > 1 ? 's' : ''}) →</>
+                  <>{lang === 'en' ? `📦 Create UPS Label (${selectedDeviceIds.size} device${selectedDeviceIds.size > 1 ? 's' : ''}) →` : `📦 Créer Étiquette UPS (${selectedDeviceIds.size} appareil${selectedDeviceIds.size > 1 ? 's' : ''}) →`}</>
                 )}
               </button>
             </>
           )}
           {step === 2 && (
             <>
-              <button onClick={() => setStep(1)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">← Retour</button>
-              <button onClick={() => setStep(3)} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium">Continuer vers BL →</button>
+              <button onClick={() => setStep(1)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">{lang === 'en' ? '← Back' : '← Retour'}</button>
+              <button onClick={() => setStep(3)} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium">{lang === 'en' ? 'Continue to DN →' : 'Continuer vers BL →'}</button>
             </>
           )}
           {step === 3 && (
             <>
-              <button onClick={() => setStep(2)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">← Retour</button>
-              <button onClick={saveShippingDocs} disabled={saving} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">{saving ? '⏳ Traitement...' : '💾 Enregistrer Documents'}</button>
+              <button onClick={() => setStep(2)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">{lang === 'en' ? '← Back' : '← Retour'}</button>
+              <button onClick={saveShippingDocs} disabled={saving} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">{saving ? (lang === 'en' ? '⏳ Processing...' : '⏳ Traitement...') : (lang === 'en' ? '💾 Save Documents' : '💾 Enregistrer Documents')}</button>
             </>
           )}
           {step === 4 && (
             <div className="flex gap-3 ml-auto">
-              <button onClick={onClose} className="px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">📋 Voir le RMA</button>
+              <button onClick={onClose} className="px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">{lang === 'en' ? '📋 View RMA' : '📋 Voir le RMA'}</button>
               <button onClick={markAsShipped} disabled={saving} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50">
-                {saving ? '⏳...' : '🚚 Marquer Expédié (Fermer RMA)'}
+                {saving ? '⏳...' : (lang === 'en' ? '🚚 Mark Shipped (Close RMA)' : '🚚 Marquer Expédié (Fermer RMA)')}
               </button>
             </div>
           )}
@@ -14051,7 +14051,7 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
         <div className="w-72 bg-white rounded-xl shadow-sm border flex flex-col flex-shrink-0">
           <div className="p-3 border-b bg-gray-50">
             <div className="flex items-center justify-between mb-2">
-              <span className="font-bold text-gray-800">💬 Messages</span>
+              <span className="font-bold text-gray-800">{lang === 'en' ? '💬 Messages' : '💬 Messages'}</span>
               {totalUnread > 0 && <span className="px-2 py-0.5 bg-red-500 text-white rounded-full text-xs font-bold">{totalUnread}</span>}
             </div>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search..." className="w-full px-3 py-1.5 border rounded text-sm mb-2" />
@@ -14094,7 +14094,7 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
                   <button onClick={() => setEnglishMode(!englishMode)} className={`px-2 py-1 rounded text-xs font-medium ${englishMode ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
                     {englishMode ? '🇬🇧 EN' : '🇫🇷 FR'}
                   </button>
-                  <button onClick={() => setShowRMASidebar(!showRMASidebar)} className={`px-2 py-1 rounded text-xs font-medium ${showRMASidebar ? 'bg-purple-500 text-white' : 'bg-purple-100'}`}>📋 RMA</button>
+                  <button onClick={() => setShowRMASidebar(!showRMASidebar)} className={`px-2 py-1 rounded text-xs font-medium ${showRMASidebar ? 'bg-purple-500 text-white' : 'bg-purple-100'}`}>{lang === 'en' ? '📋 RMA' : '📋 RMA'}</button>
                   <button onClick={toggleChat} className={`px-2 py-1 rounded text-xs font-medium ${selectedRMA.chat_status === 'open' ? 'bg-green-500 text-white' : 'bg-amber-500 text-white'}`}>
                     {selectedRMA.chat_status === 'open' ? '✓ Close' : '+ Open'}
                   </button>
@@ -14114,7 +14114,7 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
                           <div className={`max-w-[70%] p-3 rounded-lg ${isAdmin ? 'bg-blue-500 text-white' : 'bg-gray-100'}`}>
                             <div className="flex justify-between text-xs mb-1 gap-2">
                               <span className={isAdmin ? 'text-blue-200' : 'text-gray-500'}>{msg.sender_name || (isAdmin ? 'Admin' : 'Client')}</span>
-                              <span className={isAdmin ? 'text-blue-200' : 'text-gray-400'}>{new Date(msg.created_at).toLocaleString('fr-FR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+                              <span className={isAdmin ? 'text-blue-200' : 'text-gray-400'}>{new Date(msg.created_at).toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
                             </div>
                             {englishMode && !isAdmin && trans ? (
                               <><p className="text-sm">{trans}</p><p className="text-xs mt-1 pt-1 border-t border-gray-200 text-gray-400 italic">🇫🇷 {msg.content}</p></>
@@ -14180,7 +14180,7 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
                       </div>
                     ) : (
                       <div className="flex gap-2">
-                        <textarea value={frenchOutput} onChange={e => setFrenchOutput(e.target.value)} placeholder="Message en français..." className="flex-1 px-2 py-1.5 border rounded text-sm resize-none" rows={2} />
+                        <textarea value={frenchOutput} onChange={e => setFrenchOutput(e.target.value)} placeholder={lang === 'en' ? 'Message in French...' : 'Message en français...'} className="flex-1 px-2 py-1.5 border rounded text-sm resize-none" rows={2} />
                         <div className="flex flex-col gap-1">
                           <label className="px-2 py-1.5 bg-gray-200 rounded text-xs cursor-pointer text-center">📎<input type="file" className="hidden" onChange={handleFile} /></label>
                           <button onClick={sendMessage} disabled={sendingMessage || !frenchOutput.trim()} className="px-3 py-1.5 bg-blue-500 text-white rounded text-xs disabled:opacity-50">📤</button>
@@ -14193,11 +14193,11 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
                 {/* RMA Sidebar */}
                 {showRMASidebar && (
                   <div className="w-72 border-l bg-gray-50 p-3 overflow-y-auto flex-shrink-0">
-                    <h3 className="font-bold text-gray-700 mb-3">📋 RMA Info</h3>
+                    <h3 className="font-bold text-gray-700 mb-3">{lang === 'en' ? '📋 RMA Info' : '📋 RMA Info'}</h3>
                     <div className="space-y-2 text-sm">
                       <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">RMA</span><p className="font-mono font-bold text-[#00A651]">{selectedRMA.request_number}</p></div>
                       <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Status</span><p>{selectedRMA.status}</p></div>
-                      <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Service</span><p>{selectedRMA.requested_service}</p></div>
+                      <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">{lang === 'en' ? 'Service' : 'Service'}</span><p>{selectedRMA.requested_service}</p></div>
                       <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Company</span><p>{selectedRMA.companies?.name}</p></div>
                       <div className="bg-white p-2 rounded border">
                         <span className="text-gray-500 text-xs">Devices ({selectedRMA.request_devices?.length || 0})</span>
@@ -14350,7 +14350,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
         <div className="relative">
           <input 
             type="text" 
-            placeholder="🔍 Client, N° série, ou RMA..." 
+            placeholder={lang === 'en' ? '🔍 Client, Serial #, or RMA...' : '🔍 Client, N° série, ou RMA...'} 
             value={search} 
             onChange={e => setSearch(e.target.value)} 
             className="px-4 py-2 border border-gray-300 rounded-lg w-96" 
@@ -14373,7 +14373,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
           {searchResults.rmas.filter(r => r.request_type !== 'parts').length > 0 && (
             <div className="bg-white rounded-xl shadow-sm">
               <div className="px-6 py-4 border-b border-gray-100 bg-blue-50">
-                <h2 className="font-bold text-blue-800">📋 RMAs trouvés ({searchResults.rmas.filter(r => r.request_type !== 'parts').length})</h2>
+                <h2 className="font-bold text-blue-800">{lang === 'en' ? `📋 RMAs found (${searchResults.rmas` : `📋 RMAs trouvés (${searchResults.rmas`.filter(r => r.request_type !== 'parts').length})</h2>
               </div>
               <div className="divide-y divide-gray-100">
                 {searchResults.rmas.filter(r => r.request_type !== 'parts').map(rma => {
@@ -14389,18 +14389,18 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
                         <div>
                           <div className="flex items-center gap-3">
                             <span className="font-mono font-bold text-[#00A651] text-lg">{rma.request_number}</span>
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
-                            <span className="text-xs text-blue-500">Cliquez pour ouvrir →</span>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span>
+                            <span className="text-xs text-blue-500">{lang === 'en' ? 'Click to open →' : 'Cliquez pour ouvrir →'}</span>
                           </div>
                           <p className="text-gray-600 mt-1">{rma.companies?.name}</p>
-                          <p className="text-sm text-gray-400">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
+                          <p className="text-sm text-gray-400">{new Date(rma.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-gray-500">{devices.length} appareil(s)</p>
                           {devices.slice(0, 3).map((d, i) => (
                             <p key={i} className="text-xs text-gray-400">{d.model_name} - {d.serial_number}</p>
                           ))}
-                          {devices.length > 3 && <p className="text-xs text-gray-400">+{devices.length - 3} autres</p>}
+                          {devices.length > 3 && <p className="text-xs text-gray-400">+{devices.length - 3} {lang === 'en' ? 'more' : 'autres'}</p>}
                         </div>
                       </div>
                     </div>
@@ -14414,20 +14414,20 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
           {searchResults.rmas.filter(r => r.request_type === 'parts').length > 0 && (
             <div className="bg-white rounded-xl shadow-sm">
               <div className="px-6 py-4 border-b border-gray-100 bg-amber-50">
-                <h2 className="font-bold text-amber-800">🔩 Commandes Pièces ({searchResults.rmas.filter(r => r.request_type === 'parts').length})</h2>
+                <h2 className="font-bold text-amber-800">{lang === 'en' ? `🔩 Parts Orders (${searchResults.rmas` : `🔩 Commandes Pièces (${searchResults.rmas`}.filter(r => r.request_type === 'parts').length})</h2>
               </div>
               <div className="divide-y divide-gray-100">
                 {searchResults.rmas.filter(r => r.request_type === 'parts').map(po => {
                   const poStyles = {
-                    submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Nouvelle' },
-                    quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé' },
-                    quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: 'Révision' },
-                    bc_review: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'BC à vérifier' },
-                    in_progress: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'En cours' },
-                    ready_to_ship: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Prêt' },
+                    submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'New' : 'Nouvelle' },
+                    quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: lang === 'en' ? 'Quote Sent' : 'Devis envoyé' },
+                    quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: lang === 'en' ? 'Revision' : 'Révision' },
+                    bc_review: { bg: 'bg-blue-100', text: 'text-blue-700', label: lang === 'en' ? 'PO to Review' : 'BC à vérifier' },
+                    in_progress: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? 'In progress' : 'En cours' },
+                    ready_to_ship: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: lang === 'en' ? 'Ready' : 'Prêt' },
                     shipped: { bg: 'bg-green-100', text: 'text-green-700', label: t('stShipped') },
-                    delivered: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Livré' },
-                    completed: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Terminé' }
+                    delivered: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: lang === 'en' ? 'Delivered' : 'Livré' },
+                    completed: { bg: 'bg-gray-100', text: 'text-gray-700', label: lang === 'en' ? 'Completed' : 'Terminé' }
                   };
                   const style = poStyles[po.status] || { bg: 'bg-gray-100', text: 'text-gray-700', label: po.status };
                   const parts = po.quote_data?.parts || [];
@@ -14444,15 +14444,15 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
                         <div>
                           <div className="flex items-center gap-3">
                             <span className="font-mono font-bold text-amber-600 text-lg">{po.request_number}</span>
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span>
                             {po.bc_number && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-mono">{po.bc_number}</span>}
-                            <span className="text-xs text-amber-500">Cliquez pour ouvrir →</span>
+                            <span className="text-xs text-amber-500">{lang === 'en' ? 'Click to open →' : 'Cliquez pour ouvrir →'}</span>
                           </div>
                           <p className="text-gray-600 mt-1">{po.companies?.name}</p>
-                          <p className="text-sm text-gray-400">{new Date(po.created_at).toLocaleDateString('fr-FR')}</p>
+                          <p className="text-sm text-gray-400">{new Date(po.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm text-gray-500">{parts.length} pièce(s)</p>
+                          <p className="text-sm text-gray-500">{parts.length} {lang === 'en' ? 'part(s)' : 'pièce(s)'}</p>
                           {total > 0 && <p className="text-sm font-bold text-gray-700">{total.toFixed(2)} €</p>}
                           {shipping.trackingNumber && <p className="text-xs text-blue-500 font-mono mt-1">🚚 {shipping.trackingNumber}</p>}
                         </div>
@@ -14468,7 +14468,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
           {searchResults.serialDevices.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm">
               <div className="px-6 py-4 border-b border-gray-100 bg-green-50">
-                <h2 className="font-bold text-green-800">🔧 Historique N° Série ({searchResults.serialDevices.length} RMA(s))</h2>
+                <h2 className="font-bold text-green-800">{lang === 'en' ? `🔧 Serial # History (${searchResults.serialDevices.length} RMA(s))` : `🔧 Historique N° Série (${searchResults.serialDevices.length} RMA(s))`}</h2>
               </div>
               <div className="divide-y divide-gray-100">
                 {/* Group by serial number */}
@@ -14499,15 +14499,15 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
                             >
                               <div className="flex items-center gap-3">
                                 <span className="font-mono text-[#00A651] font-medium">{rma.request_number}</span>
-                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
-                                <span className="text-sm text-gray-500">{device.service_type === 'repair' ? '🔧 Réparation' : '🔬 Étalonnage'}</span>
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span>
+                                <span className="text-sm text-gray-500">{device.service_type === 'repair' ? (lang === 'en' ? '🔧 Repair' : '🔧 Réparation') : '🔬 Étalonnage'}</span>
                               </div>
                               <div className="flex items-center gap-4">
                                 <div className="text-right">
                                   <p className="text-sm text-gray-600">{rma.companies?.name}</p>
-                                  <p className="text-xs text-gray-400">{new Date(rma.created_at).toLocaleDateString('fr-FR')}</p>
+                                  <p className="text-xs text-gray-400">{new Date(rma.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
                                 </div>
-                                <span className="text-green-500 text-sm">Voir appareil →</span>
+                                <span className="text-green-500 text-sm">{lang === 'en' ? 'View device →' : 'Voir appareil →'}</span>
                               </div>
                             </div>
                           );
@@ -14524,7 +14524,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
           {searchResults.equipment.length > 0 && searchResults.serialDevices.length === 0 && (
             <div className="bg-white rounded-xl shadow-sm">
               <div className="px-6 py-4 border-b border-gray-100 bg-amber-50">
-                <h2 className="font-bold text-amber-800">📦 Appareils enregistrés ({searchResults.equipment.length})</h2>
+                <h2 className="font-bold text-amber-800">{lang === 'en' ? `📦 Registered Devices (${searchResults.equipment.length})` : `📦 Appareils enregistrés (${searchResults.equipment.length})`}</h2>
               </div>
               <div className="divide-y divide-gray-100">
                 {searchResults.equipment.map(eq => (
@@ -14552,10 +14552,10 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Entreprise</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Contact principal</th>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Company' : 'Entreprise'}</th>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Primary contact' : 'Contact principal'}</th>
                     <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('city')}</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMAs</th>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'RMAs' : 'RMAs'}</th>
                     <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('actions')}</th>
                   </tr>
                 </thead>
@@ -14593,10 +14593,10 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Entreprise</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Contact principal</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Company' : 'Entreprise'}</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Primary contact' : 'Contact principal'}</th>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('city')}</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">RMAs</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'RMAs' : 'RMAs'}</th>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('actions')}</th>
               </tr>
             </thead>
@@ -14679,13 +14679,13 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
 
   const tabDefs = [
     { id: 'rmas', label: 'RMAs', icon: '📋', count: requests.length },
-    { id: 'parts', label: 'Pièces', icon: '🔩', count: partsOrdersList.length },
-    { id: 'rentals', label: 'Locations', icon: '📅' },
-    { id: 'contracts', label: 'Contrats', icon: '📑' },
-    { id: 'devices', label: 'Appareils', icon: '🔧', count: equipment.length },
-    { id: 'sites', label: 'Sites', icon: '📍' },
+    { id: 'parts', label: lang === 'en' ? 'Parts' : 'Pièces', icon: '🔩', count: partsOrdersList.length },
+    { id: 'rentals', label: lang === 'en' ? 'Rentals' : 'Locations', icon: '📅' },
+    { id: 'contracts', label: lang === 'en' ? 'Contracts' : 'Contrats', icon: '📑' },
+    { id: 'devices', label: lang === 'en' ? 'Devices' : 'Appareils', icon: '🔧', count: equipment.length },
+    { id: 'sites', label: lang === 'en' ? 'Sites' : 'Sites', icon: '📍' },
     { id: 'info', label: 'Info', icon: 'ℹ️' },
-    { id: 'contacts', label: 'Contacts', icon: '👤', count: client.profiles?.length || 0 }
+    { id: 'contacts', label: lang === 'en' ? 'Contacts' : 'Contacts', icon: '👤', count: client.profiles?.length || 0 }
   ];
   
   return (
@@ -14721,7 +14721,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           {/* === RMAs === */}
           {activeTab === 'rmas' && (
             <div className="space-y-3">
-              {requests.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun RMA</p> : requests.map(req => { 
+              {requests.length === 0 ? <p className="text-center text-gray-400 py-8">{lang === 'en' ? 'No RMAs' : 'Aucun RMA'}</p> : requests.map(req => { 
                 const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted; 
                 return (
                   <div key={req.id} onClick={() => handleSelectItem(req)} className="bg-gray-50 rounded-lg p-4 flex justify-between items-center hover:bg-gray-100 cursor-pointer transition-colors">
@@ -14729,12 +14729,12 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                       <span className="font-mono font-bold text-[#00A651]">{req.request_number || 'En attente'}</span>
                       <div>
                         <p className="font-medium">{req.requested_service}</p>
-                        <p className="text-sm text-gray-500">{req.request_devices?.length || 1} appareil(s)</p>
+                        <p className="text-sm text-gray-500">{req.request_devices?.length || 1} {lang === 'en' ? 'device(s)' : 'appareil(s)'}</p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <span className={'px-2 py-1 rounded-full text-xs font-medium ' + style.bg + ' ' + style.text}>{style.label}</span>
-                      <p className="text-xs text-gray-400 mt-1">{new Date(req.created_at).toLocaleDateString('fr-FR')}</p>
+                      <span className={'px-2 py-1 rounded-full text-xs font-medium ' + style.bg + ' ' + style.text}>{lang === 'en' && style.en ? style.en : style.label}</span>
+                      <p className="text-xs text-gray-400 mt-1">{new Date(req.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
                     </div>
                   </div>
                 ); 
@@ -14746,7 +14746,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           {activeTab === 'parts' && (
             <div className="space-y-3">
               {partsOrdersList.length === 0 ? <p className="text-center text-gray-400 py-8">{lang === 'en' ? 'No parts orders' : 'Aucune commande de pièces'}</p> : partsOrdersList.map(po => {
-                const poS = { submitted:'Nouvelle', quote_sent:'Devis envoyé', bc_review:'BC à vérifier', in_progress:'En cours', ready_to_ship:'Prêt', shipped:'Expédié', delivered:'Livré', completed:'Terminé', cancelled:'Annulée' };
+                const poS = { submitted:'Nouvelle', quote_sent:'Devis envoyé', bc_review:'BC à vérifier', in_progress:'En cours', ready_to_ship:'Prêt', shipped:'Expédié', delivered:'Livré', completed:'Terminé', cancelled:(lang === 'en' ? 'Cancelled' : 'Annulée') };
                 const parts = po.quote_data?.parts || [];
                 const total = po.quote_data?.grandTotal || 0;
                 return (
@@ -14754,12 +14754,12 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                     <div className="flex justify-between items-start">
                       <div>
                         <span className="font-mono font-bold text-amber-600">{po.request_number || '—'}</span>
-                        <p className="text-sm text-gray-600 mt-1">{parts.length} pièce(s)</p>
+                        <p className="text-sm text-gray-600 mt-1">{parts.length} {lang === 'en' ? 'part(s)' : 'pièce(s)'}</p>
                         {po.bc_number && <p className="text-xs text-green-600 font-mono">BC: {po.bc_number}</p>}
                       </div>
                       <div className="text-right">
                         <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">{poS[po.status] || po.status}</span>
-                        <p className="text-xs text-gray-400 mt-1">{new Date(po.created_at).toLocaleDateString('fr-FR')}</p>
+                        <p className="text-xs text-gray-400 mt-1">{new Date(po.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
                         {total > 0 && <p className="text-sm font-bold text-gray-700">{total.toFixed(2)} €</p>}
                       </div>
                     </div>
@@ -14772,7 +14772,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           {/* === Contracts === */}
           {activeTab === 'contracts' && !selectedContract && (
             <div className="space-y-3">
-              {clientContracts.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun contrat</p> : clientContracts.map(c => (
+              {clientContracts.length === 0 ? <p className="text-center text-gray-400 py-8">{lang === 'en' ? 'No contracts' : 'Aucun contrat'}</p> : clientContracts.map(c => (
                 <div key={c.id} onClick={() => setSelectedContract(c)} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 cursor-pointer transition-colors">
                   <div className="flex justify-between items-start">
                     <div>
@@ -14790,7 +14790,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           )}
           {activeTab === 'contracts' && selectedContract && (
             <div>
-              <button onClick={() => setSelectedContract(null)} className="text-sm text-blue-600 hover:underline mb-4">← Retour aux contrats</button>
+              <button onClick={() => setSelectedContract(null)} className="text-sm text-blue-600 hover:underline mb-4">{lang === 'en' ? '← Back to contracts' : '← Retour aux contrats'}</button>
               <ContractDetailView 
                 contract={selectedContract}
                 clients={[client]}
@@ -14804,8 +14804,8 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           {/* === Locations (Rentals) === */}
           {activeTab === 'rentals' && !selectedRental && (
             <div className="space-y-3">
-              {clientRentals.length === 0 ? <p className="text-center text-gray-400 py-8">Aucune location</p> : clientRentals.map(rental => {
-                const rStyles = { requested:'Nouvelle', quote_sent:'Devis envoyé', waiting_bc:'Attente BC', bc_review:'BC à vérifier', bc_approved:'BC approuvé', shipped:'Expédié', in_rental:'En location', return_pending:'Retour attendu', returned:'Retourné', completed:'Terminé', cancelled:'Annulé' };
+              {clientRentals.length === 0 ? <p className="text-center text-gray-400 py-8">{lang === 'en' ? 'No rentals' : 'Aucune location'}</p> : clientRentals.map(rental => {
+                const rStyles = lang === 'en' ? { requested:'New', quote_sent:'Quote Sent', waiting_bc:'Awaiting PO', bc_review:'PO to Review', bc_approved:'PO Approved', shipped:'Shipped', in_rental:'On Rental', return_pending:'Return Expected', returned:'Returned', completed:'Completed', cancelled:'Cancelled' } : { requested:'Nouvelle', quote_sent:'Devis envoyé', waiting_bc:'Attente BC', bc_review:'BC à vérifier', bc_approved:'BC approuvé', shipped:'Expédié', in_rental:'En location', return_pending:'Retour attendu', returned:'Retourné', completed:'Terminé', cancelled:'Annulé' };
                 const rColors = { requested:'bg-amber-100 text-amber-700', quote_sent:'bg-blue-100 text-blue-700', bc_review:'bg-orange-100 text-orange-700', bc_approved:'bg-green-100 text-green-700', shipped:'bg-cyan-100 text-cyan-700', in_rental:'bg-purple-100 text-purple-700', return_pending:'bg-orange-100 text-orange-700', returned:'bg-teal-100 text-teal-700', completed:'bg-green-100 text-green-700', cancelled:'bg-red-100 text-red-700' };
                 const items = rental.rental_request_items || [];
                 return (
@@ -14813,16 +14813,16 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                     <div className="flex justify-between items-start">
                       <div>
                         <span className="font-mono font-bold text-purple-600">{rental.rental_number || '—'}</span>
-                        <p className="text-sm text-gray-600 mt-1">{items.length} appareil(s)</p>
+                        <p className="text-sm text-gray-600 mt-1">{items.length} {lang === 'en' ? 'device(s)' : 'appareil(s)'}</p>
                         {rental.start_date && (
                           <p className="text-xs text-gray-500 mt-0.5">
-                            {new Date(rental.start_date).toLocaleDateString('fr-FR')} → {rental.end_date ? new Date(rental.end_date).toLocaleDateString('fr-FR') : '—'}
+                            {new Date(rental.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} → {rental.end_date ? new Date(rental.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '—'}
                           </p>
                         )}
                       </div>
                       <div className="text-right">
                         <span className={'px-2 py-1 rounded-full text-xs font-medium ' + (rColors[rental.status] || 'bg-gray-100 text-gray-700')}>{rStyles[rental.status] || rental.status}</span>
-                        <p className="text-xs text-gray-400 mt-1">{new Date(rental.created_at).toLocaleDateString('fr-FR')}</p>
+                        <p className="text-xs text-gray-400 mt-1">{new Date(rental.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
                         {rental.quote_total > 0 && <p className="text-sm font-bold text-gray-700 mt-1">{parseFloat(rental.quote_total).toFixed(2)} €</p>}
                         <p className="text-xs text-blue-500 mt-1">{lang === 'en' ? 'View details →' : 'Voir détails →'}</p>
                       </div>
@@ -14841,7 +14841,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           )}
           {activeTab === 'rentals' && selectedRental && (() => {
             const rental = selectedRental;
-            const rStatusStyles = { requested:'Nouvelle demande', quote_sent:'Devis envoyé', waiting_bc:'Attente BC', bc_review:'BC à vérifier', bc_approved:'BC approuvé', shipped:'Expédié', in_rental:'En location', return_pending:'Retour attendu', returned:'Retourné', completed:'Terminé', cancelled:'Annulé' };
+            const rStatusStyles = { requested:(lang === 'en' ? 'New request' : 'Nouvelle demande'), quote_sent:'Devis envoyé', waiting_bc:'Attente BC', bc_review:'BC à vérifier', bc_approved:'BC approuvé', shipped:'Expédié', in_rental:'En location', return_pending:'Retour attendu', returned:'Retourné', completed:'Terminé', cancelled:'Annulé' };
             const rStatusColors = { requested:'bg-amber-100 text-amber-700', quote_sent:'bg-blue-100 text-blue-700', bc_review:'bg-orange-100 text-orange-700', bc_approved:'bg-green-100 text-green-700', shipped:'bg-cyan-100 text-cyan-700', in_rental:'bg-purple-100 text-purple-700', return_pending:'bg-orange-100 text-orange-700', returned:'bg-teal-100 text-teal-700', completed:'bg-green-100 text-green-700', cancelled:'bg-red-100 text-red-700' };
             const items = rental.rental_request_items || [];
             const days = rental.start_date && rental.end_date ? Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1 : 0;
@@ -14854,7 +14854,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
             
             return (
               <div className="space-y-4">
-                <button onClick={() => setSelectedRental(null)} className="text-sm text-blue-600 hover:underline">← Retour aux locations</button>
+                <button onClick={() => setSelectedRental(null)} className="text-sm text-blue-600 hover:underline">{lang === 'en' ? '← Back to rentals' : '← Retour aux locations'}</button>
                 
                 {/* Header */}
                 <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
@@ -14867,7 +14867,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                   </div>
                   {rental.start_date && (
                     <div className="mt-3 pt-3 border-t border-purple-200">
-                      <p className="font-medium text-purple-700">{new Date(rental.start_date).toLocaleDateString('fr-FR')} → {rental.end_date ? new Date(rental.end_date).toLocaleDateString('fr-FR') : '—'}</p>
+                      <p className="font-medium text-purple-700">{new Date(rental.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} → {rental.end_date ? new Date(rental.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '—'}</p>
                       {days > 0 && <p className="text-sm text-purple-500">{days} jours de location</p>}
                     </div>
                   )}
@@ -14883,7 +14883,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                           <div>
                             <p className="font-medium">{item.item_name || item.model_name || item.device_type || '—'}</p>
                             {item.rental_days && <p className="text-sm text-gray-500">{item.rental_days} jours × {parseFloat(item.applied_rate || 0).toFixed(2)} € ({item.rate_type || '—'})</p>}
-                            {item.quantity > 1 && <p className="text-sm text-gray-500">Qté: {item.quantity}</p>}
+                            {item.quantity > 1 && <p className="text-sm text-gray-500">{lang === 'en' ? 'Qty' : 'Qté'}: {item.quantity}</p>}
                           </div>
                           {item.line_total != null && <p className="font-bold">{parseFloat(item.line_total).toFixed(2)} €</p>}
                         </div>
@@ -14895,10 +14895,10 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                 {/* Financials */}
                 {subtotal > 0 && (
                   <div>
-                    <h4 className="font-bold text-gray-700 mb-2">Montants</h4>
+                    <h4 className="font-bold text-gray-700 mb-2">{lang === 'en' ? 'Amounts' : 'Montants'}</h4>
                     <div className="bg-gray-50 rounded-lg p-4 space-y-1">
                       <div className="flex justify-between text-sm"><span>{t('subtotal')}</span><span>{subtotal.toFixed(2)} €</span></div>
-                      {shipping > 0 && <div className="flex justify-between text-sm"><span>Frais de port</span><span>{shipping.toFixed(2)} €</span></div>}
+                      {shipping > 0 && <div className="flex justify-between text-sm"><span>{lang === 'en' ? 'Shipping fees' : 'Frais de port'}</span><span>{shipping.toFixed(2)} €</span></div>}
                       <div className="flex justify-between font-bold border-t pt-1 mt-1"><span>{t('totalHT')}</span><span>{totalHT.toFixed(2)} €</span></div>
                       <div className="flex justify-between text-sm text-gray-500"><span>TVA ({taxRate}%)</span><span>{tax.toFixed(2)} €</span></div>
                       <div className="flex justify-between font-bold text-lg border-t pt-2"><span>{t('totalTTC')}</span><span className="text-purple-600">{totalTTC.toFixed(2)} €</span></div>
@@ -14919,13 +14919,13 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                 {/* BC Info */}
                 {rental.bc_file_url && (
                   <div>
-                    <h4 className="font-bold text-gray-700 mb-2">Bon de commande</h4>
+                    <h4 className="font-bold text-gray-700 mb-2">{lang === 'en' ? 'Purchase order' : 'Bon de commande'}</h4>
                     <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100">
                       <span className="text-2xl">📄</span>
                       <div>
-                        <p className="font-medium">BC</p>
-                        {rental.bc_signed_by && <p className="text-sm text-gray-500">Signé par {rental.bc_signed_by}</p>}
-                        {rental.bc_submitted_at && <p className="text-sm text-gray-400">Le {new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR')}</p>}
+                        <p className="font-medium">{lang === 'en' ? 'PO' : 'BC'}</p>
+                        {rental.bc_signed_by && <p className="text-sm text-gray-500">{lang === 'en' ? 'Signed by' : 'Signé par'} {rental.bc_signed_by}</p>}
+                        {rental.bc_submitted_at && <p className="text-sm text-gray-400">Le {new Date(rental.bc_submitted_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>}
                       </div>
                     </a>
                   </div>
@@ -14934,10 +14934,10 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                 {/* Shipping Address */}
                 {rental.shipping_address && (
                   <div>
-                    <h4 className="font-bold text-gray-700 mb-2">Adresse de livraison</h4>
+                    <h4 className="font-bold text-gray-700 mb-2">{lang === 'en' ? 'Shipping address' : 'Adresse de livraison'}</h4>
                     <div className="bg-gray-50 rounded-lg p-4">
                       <p className="font-medium">{rental.shipping_address.company_name || rental.shipping_address.label}</p>
-                      {rental.shipping_address.attention && <p className="text-sm text-gray-600">À l'att. {rental.shipping_address.attention}</p>}
+                      {rental.shipping_address.attention && <p className="text-sm text-gray-600">{lang === 'en' ? 'Attn.' : "À l'att."} {rental.shipping_address.attention}</p>}
                       <p className="text-sm text-gray-500">{rental.shipping_address.address_line1}</p>
                       <p className="text-sm text-gray-500">{rental.shipping_address.postal_code} {rental.shipping_address.city}</p>
                     </div>
@@ -14949,7 +14949,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                   <div>
                     <h4 className="font-bold text-gray-700 mb-2">{t('back')}</h4>
                     <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-sm">{lang === 'en' ? 'Condition: ' : 'État: '}<span className="font-medium">{rental.return_condition === 'good' ? 'Bon état' : rental.return_condition === 'damaged' ? 'Endommagé' : 'Éléments manquants'}</span></p>
+                      <p className="text-sm">{lang === 'en' ? 'Condition: ' : 'État: '}<span className="font-medium">{rental.return_condition === 'good' ? (lang === 'en' ? 'Good condition' : 'Bon état') : rental.return_condition === 'damaged' ? (lang === 'en' ? 'Damaged' : 'Endommagé') : (lang === 'en' ? 'Missing items' : 'Éléments manquants')}</span></p>
                       {rental.return_notes && <p className="text-sm text-gray-500 mt-1">Notes: {rental.return_notes}</p>}
                     </div>
                   </div>
@@ -14969,7 +14969,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           {/* === Sites (Shipping Addresses) === */}
           {activeTab === 'sites' && (
             <div className="space-y-3">
-              {clientLocations.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun site</p> : clientLocations.map(loc => (
+              {clientLocations.length === 0 ? <p className="text-center text-gray-400 py-8">{lang === 'en' ? 'No sites' : 'Aucun site'}</p> : clientLocations.map(loc => (
                 <div key={loc.id} className="bg-gray-50 rounded-lg p-4">
                   <p className="font-medium">{loc.label || loc.company_name || 'Site'}</p>
                   <p className="text-sm text-gray-500">{loc.address_line1}, {loc.postal_code} {loc.city}</p>
@@ -14981,7 +14981,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           {/* === Devices === */}
           {activeTab === 'devices' && !selectedEquipment && (
             <div className="space-y-3">
-              {equipment.length === 0 ? <p className="text-center text-gray-400 py-8">Aucun appareil</p> : equipment.map(eq => { 
+              {equipment.length === 0 ? <p className="text-center text-gray-400 py-8">{lang === 'en' ? 'No devices' : 'Aucun appareil'}</p> : equipment.map(eq => { 
                 const rmaCount = getDeviceRMAHistory(eq.serial_number).length;
                 return (
                   <div key={eq.id} onClick={() => setSelectedEquipment(eq)} className="bg-gray-50 rounded-lg p-4 flex justify-between items-center hover:bg-gray-100 cursor-pointer transition-colors">
@@ -15001,12 +15001,12 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           
           {activeTab === 'devices' && selectedEquipment && (
             <div className="space-y-4">
-              <button onClick={() => setSelectedEquipment(null)} className="text-sm text-blue-600 hover:underline">← Retour</button>
+              <button onClick={() => setSelectedEquipment(null)} className="text-sm text-blue-600 hover:underline">{lang === 'en' ? '← Back' : '← Retour'}</button>
               <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
                 <h3 className="font-bold text-blue-800">{selectedEquipment.model_name}</h3>
                 <p className="text-sm text-blue-600">SN: {selectedEquipment.serial_number}</p>
               </div>
-              <h4 className="font-medium text-gray-700">Historique RMAs:</h4>
+              <h4 className="font-medium text-gray-700">{lang === 'en' ? 'RMA History:' : 'Historique RMAs:'}</h4>
               <div className="space-y-3">
                 {getDeviceRMAHistory(selectedEquipment.serial_number).map(rma => {
                   const style = STATUS_STYLES[rma.status] || STATUS_STYLES.submitted;
@@ -15014,7 +15014,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                     <div key={rma.id} onClick={() => handleSelectItem(rma)} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 cursor-pointer transition-colors">
                       <div className="flex justify-between items-start">
                         <span className="font-mono font-bold text-[#00A651]">{rma.request_number}</span>
-                        <span className={'px-2 py-1 rounded-full text-xs font-medium ' + style.bg + ' ' + style.text}>{style.label}</span>
+                        <span className={'px-2 py-1 rounded-full text-xs font-medium ' + style.bg + ' ' + style.text}>{lang === 'en' && style.en ? style.en : style.label}</span>
                       </div>
                     </div>
                   );
@@ -15028,15 +15028,15 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
             <div className="space-y-4">
               {editing ? (
                 <div className="space-y-4 max-w-lg">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Nom</label><input type="text" value={editData.name} onChange={e => setEditData({...editData, name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Name' : 'Nom'}</label><input type="text" value={editData.name} onChange={e => setEditData({...editData, name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('address')}</label><input type="text" value={editData.billing_address} onChange={e => setEditData({...editData, billing_address: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Code postal</label><input type="text" value={editData.billing_postal_code} onChange={e => setEditData({...editData, billing_postal_code: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Postal code' : 'Code postal'}</label><input type="text" value={editData.billing_postal_code} onChange={e => setEditData({...editData, billing_postal_code: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('city')}</label><input type="text" value={editData.billing_city} onChange={e => setEditData({...editData, billing_city: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label><input type="text" value={editData.siret} onChange={e => setEditData({...editData, siret: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">N° TVA</label><input type="text" value={editData.vat_number} onChange={e => setEditData({...editData, vat_number: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'SIRET' : 'SIRET'}</label><input type="text" value={editData.siret} onChange={e => setEditData({...editData, siret: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'VAT #' : 'N° TVA'}</label><input type="text" value={editData.vat_number} onChange={e => setEditData({...editData, vat_number: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
                   </div>
                   <div className="flex gap-2 pt-2">
                     <button onClick={() => setEditing(false)} className="px-4 py-2 bg-gray-200 rounded-lg">{t('cancel')}</button>
@@ -15047,10 +15047,10 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                 <div className="space-y-4">
                   {isAdmin && <button onClick={() => setEditing(true)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">{t('edit')}</button>}
                   <div className="grid md:grid-cols-2 gap-4">
-                    <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">Nom</p><p className="font-medium">{client.name}</p></div>
+                    <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">{lang === 'en' ? 'Name' : 'Nom'}</p><p className="font-medium">{client.name}</p></div>
                     <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">{t('address')}</p><p className="font-medium">{client.billing_address || '—'}</p><p className="text-sm text-gray-600">{client.billing_postal_code} {client.billing_city}</p></div>
-                    <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">SIRET</p><p className="font-medium">{client.siret || '—'}</p></div>
-                    <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">N° TVA</p><p className="font-medium">{client.vat_number || '—'}</p></div>
+                    <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">{lang === 'en' ? 'SIRET' : 'SIRET'}</p><p className="font-medium">{client.siret || '—'}</p></div>
+                    <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">{lang === 'en' ? 'VAT #' : 'N° TVA'}</p><p className="font-medium">{client.vat_number || '—'}</p></div>
                   </div>
                 </div>
               )}
@@ -15090,19 +15090,19 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
   const [savedReportUrl, setSavedReportUrl] = useState(device.report_url || null);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
-  const today = new Date().toLocaleDateString('fr-FR');
+  const today = new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR');
   
   // Get checklist from device
   const checklist = device.work_checklist || {};
   const defaultChecklist = [
-    { id: 'visual', label: 'Inspection visuelle effectuée', checked: checklist.visual !== false },
-    { id: 'cleaning', label: 'Nettoyage effectué', checked: checklist.cleaning !== false },
-    { id: 'calibration', label: 'Étalonnage réalisé selon procédure', checked: checklist.calibration !== false },
-    { id: 'results', label: 'Résultats dans les spécifications', checked: checklist.results !== false },
-    { id: 'certificate', label: 'Certificat d\'étalonnage généré', checked: checklist.certificate !== false }
+    { id: 'visual', label: lang === 'en' ? 'Visual inspection performed' : 'Inspection visuelle effectuée', checked: checklist.visual !== false },
+    { id: 'cleaning', label: lang === 'en' ? 'Cleaning performed' : 'Nettoyage effectué', checked: checklist.cleaning !== false },
+    { id: 'calibration', label: lang === 'en' ? 'Calibration performed per procedure' : 'Étalonnage réalisé selon procédure', checked: checklist.calibration !== false },
+    { id: 'results', label: lang === 'en' ? 'Results within specifications' : 'Résultats dans les spécifications', checked: checklist.results !== false },
+    { id: 'certificate', label: lang === 'en' ? 'Calibration certificate generated' : 'Certificat d\'étalonnage généré', checked: checklist.certificate !== false }
   ];
   
-  const serviceTypeText = device.service_type === 'calibration' ? 'Étalonnage' : device.service_type === 'repair' ? 'Réparation' : 'Étalonnage et Réparation';
+  const serviceTypeText = device.service_type === 'calibration' ? (lang === 'en' ? 'Calibration' : 'Étalonnage') : device.service_type === 'repair' ? (lang === 'en' ? 'Repair' : 'Réparation') : (lang === 'en' ? 'Calibration and Repair' : 'Étalonnage et Réparation');
   const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
   
   const showCalType = device.cal_type && device.cal_type !== 'none';
@@ -15111,7 +15111,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
   // Reject QC - send back to tech with notes
   const rejectQC = async () => {
     if (!rejectionReason.trim()) {
-      notify('Veuillez indiquer la raison du rejet', 'error');
+      notify(lang === 'en' ? 'Please indicate the rejection reason' : 'Veuillez indiquer la raison du rejet', 'error');
       return;
     }
     setSaving(true);
@@ -15179,7 +15179,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
         notify(lang === 'en' ? '✓ PDF report saved!' : '✓ Rapport PDF enregistré!');
         return reportUrl;
       } else {
-        notify('Erreur upload', 'error');
+        notify(lang === 'en' ? 'Upload error' : 'Erreur upload', 'error');
         return null;
       }
     } catch (err) {
@@ -15222,7 +15222,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
         }).eq('id', rma.id);
       }
       
-      notify(reportUrl ? '✓ QC validé + Rapport enregistré!' : '✓ QC validé');
+      notify(reportUrl ? (lang === 'en' ? '✓ QC passed + Report saved!' : '✓ QC validé + Rapport enregistré!') : (lang === 'en' ? '✓ QC passed' : '✓ QC validé'));
       onBack();
     } catch (err) {
       console.error('approveQC error:', err);
@@ -15236,7 +15236,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">← Retour</button>
+          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">{lang === 'en' ? '← Back' : '← Retour'}</button>
           <div>
             <h1 className="text-2xl font-bold text-gray-800">{lang === 'en' ? 'QUALITY CHECK' : 'CONTRÔLE QUALITÉ'}</h1>
             <p className="text-gray-500">{device.model_name} • SN: {device.serial_number} • {rma.request_number}</p>
@@ -15254,14 +15254,14 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
             onClick={() => setStep(1)}
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium ${step === 1 ? 'bg-blue-500 text-white' : step > 1 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
           >
-            {step > 1 ? '✓' : '1.'} Rapport de Service
+            {step > 1 ? '✓' : '1.'} {lang === 'en' ? 'Service Report' : 'Rapport de Service'}
           </button>
           <div className="w-8 h-0.5 bg-gray-300"></div>
           <button 
             onClick={() => setStep(2)}
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium ${step === 2 ? 'bg-blue-500 text-white' : step > 2 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
           >
-            {step > 2 ? '✓' : '2.'} Certificat
+            {step > 2 ? '✓' : '2.'} {lang === 'en' ? 'Certificate' : 'Certificat'}
           </button>
           <div className="w-8 h-0.5 bg-gray-300"></div>
           <button 
@@ -15302,8 +15302,8 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
                 <tbody>
                   <tr>
                     <td className="py-1 font-bold text-[#003366] whitespace-nowrap">{lang === 'en' ? "Completion date" : "Date d'achèvement"}</td>
-                    <td className="py-1 text-gray-800">{device.report_completed_at ? new Date(device.report_completed_at).toLocaleDateString('fr-FR') : today}</td>
-                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">RMA # </span>{rma.request_number}</td>
+                    <td className="py-1 text-gray-800">{device.report_completed_at ? new Date(device.report_completed_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : today}</td>
+                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">{lang === 'en' ? 'RMA # ' : 'RMA # '}</span>{rma.request_number}</td>
                   </tr>
                   <tr>
                     <td className="py-1 font-bold text-[#003366] whitespace-nowrap">{t('client')}</td>
@@ -15314,14 +15314,14 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
                     <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.billing_address || '—'}</td>
                   </tr>
                   <tr>
-                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Code postal / Ville</td>
+                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">{lang === 'en' ? 'Postal code / City' : 'Code postal / Ville'}</td>
                     <td className="py-1 text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
-                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">Contact </span>{rma.companies?.contact_name || '—'}</td>
+                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">{lang === 'en' ? 'Contact ' : 'Contact '}</span>{rma.companies?.contact_name || '—'}</td>
                   </tr>
                   <tr>
                     <td className="py-1 font-bold text-[#003366] whitespace-nowrap">{t('phone')}</td>
                     <td className="py-1 text-gray-800">{rma.companies?.phone || '—'}</td>
-                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">Technicien(ne) de service</span></td>
+                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">{lang === 'en' ? 'Service technician' : 'Technicien(ne) de service'}</span></td>
                   </tr>
                   <tr>
                     <td className="py-1 font-bold text-[#003366] whitespace-nowrap">{lang === 'en' ? 'Model#' : 'Modèle#'}</td>
@@ -15344,7 +15344,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
                   </colgroup>
                   <tbody>
                     <tr>
-                      <td className="pt-6 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Motif de retour</td>
+                      <td className="pt-6 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">{lang === 'en' ? 'Return reason' : 'Motif de retour'}</td>
                       <td className="pt-6 pb-2 text-gray-800">{motifText}</td>
                     </tr>
                     {showCalType && (
@@ -15406,10 +15406,10 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
                 onClick={saveReportPDF}
                 className={`px-6 py-3 rounded-lg font-medium ${savedReportUrl ? 'bg-green-100 text-green-700' : 'bg-green-600 hover:bg-green-700 text-white'}`}
               >
-                {savedReportUrl ? '✓ Rapport enregistré' : '💾 Enregistrer le Rapport PDF'}
+                {savedReportUrl ? (lang === 'en' ? '✓ Report saved' : '✓ Rapport enregistré') : (lang === 'en' ? '💾 Save Report PDF' : '💾 Enregistrer le Rapport PDF')}
               </button>
               {savedReportUrl && (
-                <a href={savedReportUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm">📄 Voir PDF</a>
+                <a href={savedReportUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm">{lang === 'en' ? '📄 View PDF' : '📄 Voir PDF'}</a>
               )}
             </div>
             <button onClick={() => setStep(2)} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
@@ -15426,7 +15426,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
             <div className="text-center mb-6">
               <p className="text-6xl mb-4">📜</p>
               <h2 className="text-xl font-bold text-gray-800 mb-2">
-                {device.service_type === 'repair' ? 'Documents de Réparation' : 'Certificat d\'Étalonnage'}
+                {device.service_type === 'repair' ? (lang === 'en' ? 'Repair Documents' : 'Documents de Réparation') : (lang === 'en' ? 'Calibration Certificate' : 'Certificat d\'Étalonnage')}
               </h2>
               <p className="text-gray-500">{lang === 'en' ? 'Verify the document is correct and complete' : 'Vérifiez que le document est correct et complet'}</p>
             </div>
@@ -15438,7 +15438,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
                   <iframe 
                     src={device.calibration_certificate_url} 
                     className="w-full h-full"
-                    title="Certificat d'étalonnage"
+                    title={lang === 'en' ? 'Calibration certificate' : "Certificat d'étalonnage"}
                   />
                 </div>
                 <div className="text-center">
@@ -15460,7 +15460,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
             )}
             
             <p className="text-sm text-gray-500 mt-4 text-center">
-              Vérifiez: Nom client, N° série, Date, Tolérances, Signatures
+              {lang === 'en' ? 'Check: Client name, Serial #, Date, Tolerances, Signatures' : 'Vérifiez: Nom client, N° série, Date, Tolérances, Signatures'}
             </p>
           </div>
           
@@ -15477,7 +15477,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
               </button>
             </div>
             <button onClick={() => setStep(3)} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
-              {device.calibration_certificate_url || device.service_type === 'repair' ? 'Document OK → Validation' : 'Continuer →'}
+              {device.calibration_certificate_url || device.service_type === 'repair' ? (lang === 'en' ? 'Document OK → Validation' : 'Document OK → Validation') : (lang === 'en' ? 'Continue →' : 'Continuer →')}
             </button>
           </div>
         </div>
@@ -15489,30 +15489,30 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
           <div className="bg-white rounded-xl shadow-sm border p-8">
             <div className="text-center mb-8">
               <p className="text-6xl mb-4">✅</p>
-              <h2 className="text-xl font-bold text-gray-800 mb-2">Validation Finale</h2>
-              <p className="text-gray-500">Confirmez que tous les documents sont corrects</p>
+              <h2 className="text-xl font-bold text-gray-800 mb-2">{lang === 'en' ? 'Final Validation' : 'Validation Finale'}</h2>
+              <p className="text-gray-500">{lang === 'en' ? 'Confirm all documents are correct' : 'Confirmez que tous les documents sont corrects'}</p>
             </div>
             
             {/* Summary */}
             <div className="bg-gray-50 rounded-xl p-6 mb-6">
               <h3 className="font-bold text-gray-700 mb-4">{lang === 'en' ? 'Summary' : 'Résumé'}</h3>
               <div className="grid grid-cols-2 gap-4 text-sm">
-                <div><span className="text-gray-500">Client:</span> <span className="font-medium">{rma.companies?.name}</span></div>
-                <div><span className="text-gray-500">RMA:</span> <span className="font-medium text-blue-600">{rma.request_number}</span></div>
-                <div><span className="text-gray-500">Appareil:</span> <span className="font-medium">{device.model_name}</span></div>
+                <div><span className="text-gray-500">{lang === 'en' ? 'Client:' : 'Client:'}</span> <span className="font-medium">{rma.companies?.name}</span></div>
+                <div><span className="text-gray-500">{lang === 'en' ? 'RMA:' : 'RMA:'}</span> <span className="font-medium text-blue-600">{rma.request_number}</span></div>
+                <div><span className="text-gray-500">{lang === 'en' ? 'Device:' : 'Appareil:'}</span> <span className="font-medium">{device.model_name}</span></div>
                 <div><span className="text-gray-500">{lang === 'en' ? 'Serial #:' : 'N° Série:'}</span> <span className="font-medium font-mono">{device.serial_number}</span></div>
-                <div><span className="text-gray-500">Service:</span> <span className="font-medium">{serviceTypeText}</span></div>
-                <div><span className="text-gray-500">Technicien:</span> <span className="font-medium">{device.technician_name || '—'}</span></div>
+                <div><span className="text-gray-500">{lang === 'en' ? 'Service:' : 'Service:'}</span> <span className="font-medium">{serviceTypeText}</span></div>
+                <div><span className="text-gray-500">{lang === 'en' ? 'Technician:' : 'Technicien:'}</span> <span className="font-medium">{device.technician_name || '—'}</span></div>
               </div>
             </div>
             
             {/* Notes */}
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Notes QC (optionnel)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'en' ? 'QC notes (optional)' : 'Notes QC (optionnel)'}</label>
               <textarea 
                 value={qcNotes}
                 onChange={e => setQcNotes(e.target.value)}
-                placeholder="Remarques ou observations..."
+                placeholder={lang === 'en' ? 'Remarks or observations...' : 'Remarques ou observations...'}
                 className="w-full px-4 py-3 border rounded-xl h-20 resize-none"
               />
             </div>
@@ -15548,7 +15548,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
                 disabled={saving}
                 className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium text-lg disabled:opacity-50"
               >
-                {saving ? 'Validation...' : '✓ J\'approuve - Prêt pour expédition'}
+                {saving ? (lang === 'en' ? 'Validating...' : 'Validation...') : (lang === 'en' ? "✓ I approve - Ready for shipment" : "✓ J'approuve - Prêt pour expédition")}
               </button>
             ) : (
               <span className="px-6 py-3 bg-green-100 text-green-700 rounded-lg font-medium">{lang === 'en' ? '✓ Already validated' : '✓ Déjà validé'}</span>
@@ -15563,12 +15563,12 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
             <h3 className="text-xl font-bold text-gray-800 mb-4">{lang === 'en' ? '❌ Reject Quality Check' : '❌ Rejeter le Contrôle Qualité'}</h3>
             <p className="text-gray-600 mb-4">
-              Indiquez la raison du rejet. Le technicien verra ces notes et devra corriger le problème.
+              {lang === 'en' ? 'Indicate the reason for rejection. The technician will see these notes and will need to correct the issue.' : 'Indiquez la raison du rejet. Le technicien verra ces notes et devra corriger le problème.'}
             </p>
             <textarea 
               value={rejectionReason}
               onChange={(e) => setRejectionReason(e.target.value)}
-              placeholder="Décrivez les problèmes à corriger..."
+              placeholder={lang === 'en' ? 'Describe the issues to fix...' : 'Décrivez les problèmes à corriger...'}
               className="w-full border rounded-lg p-3 h-32 mb-4"
             />
             <div className="flex justify-end gap-3">
@@ -15583,7 +15583,7 @@ function QCReviewModal({ device, rma, onBack, notify, profile }) {
                 disabled={saving || !rejectionReason.trim()}
                 className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg disabled:opacity-50"
               >
-                {saving ? 'Rejet...' : 'Confirmer le Rejet'}
+                {saving ? (lang === 'en' ? 'Rejecting...' : 'Rejet...') : (lang === 'en' ? 'Confirm Rejection' : 'Confirmer le Rejet')}
               </button>
             </div>
           </div>
@@ -15614,7 +15614,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
     
     if (error) {
       console.error('Error loading contracts:', error);
-      notify('Erreur de chargement des contrats', 'error');
+      notify(lang === 'en' ? 'Error loading contracts' : 'Erreur de chargement des contrats', 'error');
     } else {
       setContracts(data || []);
     }
@@ -15626,20 +15626,20 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
   }, [loadContracts]);
 
   const CONTRACT_STATUS_STYLES = {
-    requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: '🆕 Nouvelle demande' },
-    modification_requested: { bg: 'bg-orange-100', text: 'text-orange-700', label: '✏️ Modification demandée' },
-    refused: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ Refusé' },
-    quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: '📧 Devis envoyé' },
-    quote_approved: { bg: 'bg-purple-100', text: 'text-purple-700', label: '✅ Devis approuvé' },
-    bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: '📄 Attente BC' },
-    active: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Actif' },
-    expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: '⏰ Expiré' },
-    cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ Annulé' }
+    requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? '🆕 New request' : '🆕 Nouvelle demande' },
+    modification_requested: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? '✏️ Modification requested' : '✏️ Modification demandée' },
+    refused: { bg: 'bg-red-100', text: 'text-red-700', label: lang === 'en' ? '❌ Rejected' : '❌ Refusé' },
+    quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: lang === 'en' ? '📧 Quote sent' : '📧 Devis envoyé' },
+    quote_approved: { bg: 'bg-purple-100', text: 'text-purple-700', label: lang === 'en' ? '✅ Quote approved' : '✅ Devis approuvé' },
+    bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? '📄 Awaiting PO' : '📄 Attente BC' },
+    active: { bg: 'bg-green-100', text: 'text-green-700', label: lang === 'en' ? '✅ Active' : '✅ Actif' },
+    expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: lang === 'en' ? '⏰ Expired' : '⏰ Expiré' },
+    cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: lang === 'en' ? '❌ Cancelled' : '❌ Annulé' }
   };
 
   const getStatusBadge = (status) => {
     const style = CONTRACT_STATUS_STYLES[status] || CONTRACT_STATUS_STYLES.requested;
-    return <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>;
+    return <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span>;
   };
 
   // Separate new requests from processed contracts
@@ -15743,7 +15743,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
         return (
           <div className="bg-red-50 border-2 border-red-300 rounded-xl shadow-lg">
             <div className="px-6 py-4 border-b border-red-200 bg-red-100 rounded-t-xl">
-              <h2 className="font-bold text-red-800 text-lg">⚠️ BC Contrats à Vérifier ({bcPendingContracts.length})</h2>
+              <h2 className="font-bold text-red-800 text-lg">{lang === 'en' ? `⚠️ Contract POs to Review (${bcPendingContracts.length})` : `⚠️ BC Contrats à Vérifier (${bcPendingContracts.length})`}</h2>
               <p className="text-sm text-red-600">{lang === 'en' ? 'Review PO and activate contract' : 'Vérifiez le BC et activez le contrat'}</p>
             </div>
             <div className="p-4 space-y-3">
@@ -15755,8 +15755,8 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
                       <span className="font-mono font-bold text-[#00A651]">{contract.contract_number}</span>
                       <p className="font-medium text-gray-800">{contract.companies?.name || contract.company_name_manual}</p>
                       <p className="text-sm text-gray-500">
-                        BC soumis le {contract.bc_submitted_at ? new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR') : '—'}
-                        {contract.bc_signed_by && <span className="ml-2">• Signé par: {contract.bc_signed_by}</span>}
+                        BC soumis le {contract.bc_submitted_at ? new Date(contract.bc_submitted_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '—'}
+                        {contract.bc_signed_by && <span className="ml-2">• {lang === 'en' ? 'Signed by' : 'Signé par'}: {contract.bc_signed_by}</span>}
                       </p>
                     </div>
                   </div>
@@ -15792,10 +15792,10 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
                     <div>
                       <p className="font-medium text-gray-800">{contract.companies?.name || 'Client'}</p>
                       <p className="text-sm text-gray-500">
-                        {devices.length} appareil(s) • Demandé le {new Date(contract.created_at).toLocaleDateString('fr-FR')}
+                        {devices.length} {lang === 'en' ? 'device(s) • Requested on' : 'appareil(s) • Demandé le'} {new Date(contract.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
                       </p>
                       <p className="text-xs text-gray-400">
-                        Période souhaitée: {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
+                        {lang === 'en' ? 'Desired period:' : 'Période souhaitée:'} {new Date(contract.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} - {new Date(contract.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
                       </p>
                     </div>
                   </div>
@@ -15819,14 +15819,14 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
           className={`bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${filter === 'pending' ? 'ring-2 ring-blue-400' : ''}`}
         >
           <div className="text-3xl font-bold text-blue-600">{stats.pending}</div>
-          <div className="text-sm text-gray-600">En cours</div>
+          <div className="text-sm text-gray-600">{lang === 'en' ? 'In progress' : 'En cours'}</div>
         </div>
         <div 
           onClick={() => setFilter('active')}
           className={`bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${filter === 'active' ? 'ring-2 ring-green-400' : ''}`}
         >
           <div className="text-3xl font-bold text-green-600">{stats.active}</div>
-          <div className="text-sm text-gray-600">Actifs</div>
+          <div className="text-sm text-gray-600">{lang === 'en' ? 'Active' : 'Actifs'}</div>
         </div>
         <div 
           onClick={() => setFilter('expired')}
@@ -15848,13 +15848,13 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b flex justify-between items-center">
           <h2 className="font-bold text-gray-800">
-            {filter === 'all' ? 'Tous les contrats' : 
-             filter === 'pending' ? 'En cours de traitement' :
-             filter === 'active' ? 'Contrats actifs' : 'Contrats expirés'}
+            {filter === 'all' ? (lang === 'en' ? 'All contracts' : 'Tous les contrats') : 
+             filter === 'pending' ? (lang === 'en' ? 'In progress' : 'En cours de traitement') :
+             filter === 'active' ? (lang === 'en' ? 'Active contracts' : 'Contrats actifs') : (lang === 'en' ? 'Expired contracts' : 'Contrats expirés')}
           </h2>
           {filter !== 'all' && (
             <button onClick={() => setFilter('all')} className="text-sm text-gray-500 hover:text-gray-700">
-              Voir tout
+              {lang === 'en' ? 'View all' : 'Voir tout'}
             </button>
           )}
         </div>
@@ -15868,11 +15868,11 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">N° Contrat</th>
+                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">{lang === 'en' ? 'Contract #' : 'N° Contrat'}</th>
                 <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">{t('client')}</th>
                 <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">{lang === 'en' ? 'Period' : 'Période'}</th>
                 <th className="px-6 py-3 text-center text-xs font-bold text-gray-600">{t('devices')}</th>
-                <th className="px-6 py-3 text-center text-xs font-bold text-gray-600">Tokens</th>
+                <th className="px-6 py-3 text-center text-xs font-bold text-gray-600">{lang === 'en' ? 'Tokens' : 'Tokens'}</th>
                 <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">{t('status')}</th>
                 <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">{t('actions')}</th>
               </tr>
@@ -15892,7 +15892,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
                       <div className="font-medium">{contract.companies?.name || contract.company_name_manual || 'N/A'}</div>
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      {new Date(contract.start_date).toLocaleDateString('fr-FR')} - {new Date(contract.end_date).toLocaleDateString('fr-FR')}
+                      {new Date(contract.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} - {new Date(contract.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
                     </td>
                     <td className="px-6 py-4 text-center">
                       <span className="font-bold">{devices.length}</span>
@@ -16001,11 +16001,11 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
 
   const getDeviceTypeLabel = (type) => {
     const labels = {
-      particle_counter: 'Compteur Particules Aéroportées',
-      bio_collector: 'Bio Collecteur',
-      liquid_counter: 'Compteur Particules Liquide',
-      temp_humidity: 'Capteur Temp/Humidité',
-      other: 'Autre Équipement'
+      particle_counter: lang === 'en' ? 'Airborne Particle Counter' : 'Compteur Particules Aéroportées',
+      bio_collector: lang === 'en' ? 'Bio Collector' : 'Bio Collecteur',
+      liquid_counter: lang === 'en' ? 'Liquid Particle Counter' : 'Compteur Particules Liquide',
+      temp_humidity: lang === 'en' ? 'Temp/Humidity Sensor' : 'Capteur Temp/Humidité',
+      other: lang === 'en' ? 'Other Equipment' : 'Autre Équipement'
     };
     return labels[type] || type;
   };
@@ -16092,7 +16092,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
         }).eq('id', d.id);
       }
 
-      notify(`✅ Devis contrat envoyé! N° ${contractNumber}`);
+      notify(lang === 'en' ? `✅ Contract quote sent! # ${contractNumber}` : `✅ Devis contrat envoyé! N° ${contractNumber}`);
       onSent();
     } catch (err) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
@@ -16103,7 +16103,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <button onClick={onClose} className="text-gray-500 hover:text-gray-700">← Retour</button>
+        <button onClick={onClose} className="text-gray-500 hover:text-gray-700">{lang === 'en' ? '← Back' : '← Retour'}</button>
         <h1 className="text-2xl font-bold text-gray-800">{lang === 'en' ? 'Create Contract Quote' : 'Créer Devis Contrat'}</h1>
         <div className="flex gap-1 ml-4">
           {[1,2,3].map(s => (
@@ -16117,11 +16117,11 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
         <div className="px-6 py-4 bg-[#1a1a2e] text-white flex justify-between items-center">
           <div>
             <h2 className="text-xl font-bold">
-              {step === 1 && 'Tarification du Contrat'}
-              {step === 2 && 'Aperçu du Devis'}
-              {step === 3 && 'Confirmer l\'envoi'}
+              {step === 1 && (lang === 'en' ? 'Contract Pricing' : 'Tarification du Contrat')}
+              {step === 2 && (lang === 'en' ? 'Quote Preview' : 'Aperçu du Devis')}
+              {step === 3 && (lang === 'en' ? 'Confirm send' : "Confirmer l'envoi")}
             </h2>
-            <p className="text-gray-300">{contract.companies?.name} • {devicePricing.length} appareil(s)</p>
+            <p className="text-gray-300">{contract.companies?.name} • {devicePricing.length} {lang === 'en' ? 'device(s)' : 'appareil(s)'}</p>
           </div>
           <div className="text-right">
             <p className="text-xs text-gray-400">{t('totalHT')}</p>
@@ -16150,7 +16150,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                     </p>
                   )}
                   {contract.companies?.phone && (
-                    <p className="text-gray-600 text-sm">Tél: {contract.companies.phone}</p>
+                    <p className="text-gray-600 text-sm">{lang === 'en' ? 'Tel' : 'Tél'}: {contract.companies.phone}</p>
                   )}
                   {contract.companies?.email && (
                     <p className="text-gray-600 text-sm">{contract.companies.email}</p>
@@ -16158,7 +16158,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-gray-500">{lang === 'en' ? 'Requested on' : 'Demandé le'}</p>
-                  <p className="font-medium">{new Date(contract.created_at).toLocaleDateString('fr-FR')}</p>
+                  <p className="font-medium">{new Date(contract.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
                 </div>
               </div>
             </div>
@@ -16175,7 +16175,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 />
               </div>
               <div className="bg-gray-50 rounded-lg p-4">
-                <label className="text-sm text-gray-500 block mb-1">Date fin contrat</label>
+                <label className="text-sm text-gray-500 block mb-1">{lang === 'en' ? 'Contract end date' : 'Date fin contrat'}</label>
                 <input
                   type="date"
                   value={contractDates.end_date}
@@ -16187,7 +16187,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
 
             {/* Devices Pricing - RMA Style with Nettoyage */}
             <div>
-              <h3 className="font-bold text-gray-800 mb-4">Tarification par Appareil</h3>
+              <h3 className="font-bold text-gray-800 mb-4">{lang === 'en' ? 'Pricing by Device' : 'Tarification par Appareil'}</h3>
               <div className="space-y-4">
                 {devicePricing.map((device, index) => (
                   <div key={device.id} className="bg-gray-50 rounded-lg p-4 border">
@@ -16195,7 +16195,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                     <div className="flex items-center gap-3 mb-4 pb-3 border-b">
                       <span className="bg-[#1a1a2e] text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">{index + 1}</span>
                       <div>
-                        <p className="font-bold">{device.model || 'Appareil'}</p>
+                        <p className="font-bold">{device.model || (lang === 'en' ? 'Device' : 'Appareil')}</p>
                         <p className="text-sm text-gray-500">SN: {device.serial} • {getDeviceTypeLabel(device.deviceType)}</p>
                       </div>
                       <div className="ml-auto text-right">
@@ -16232,7 +16232,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                         />
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">Prix € HT</label>
+                        <label className="text-xs text-gray-500">{lang === 'en' ? 'Price € excl. VAT' : 'Prix € HT'}</label>
                         <input
                           type="number"
                           value={device.calibrationPrice}
@@ -16256,7 +16256,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                               onChange={e => updateDevice(device.id, 'needsNettoyage', e.target.checked)}
                               className="w-4 h-4"
                             />
-                            <span className="font-medium text-amber-800">Nettoyage cellule</span>
+                            <span className="font-medium text-amber-800">{lang === 'en' ? 'Cell cleaning' : 'Nettoyage cellule'}</span>
                             <span className="text-xs text-amber-600">{lang === 'en' ? '(if required based on condition)' : '(si requis selon état)'}</span>
                           </label>
                         </div>
@@ -16290,13 +16290,13 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
 
             {/* Shipping - Same as RMA */}
             <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-              <h3 className="font-bold text-blue-800 mb-3">📦 Frais de Port</h3>
+              <h3 className="font-bold text-blue-800 mb-3">{lang === 'en' ? '📦 Shipping Fees' : '📦 Frais de Port'}</h3>
               <div className="grid grid-cols-4 gap-4 items-center">
                 <div className="col-span-2">
                   <p className="text-sm text-blue-700">{lang === 'en' ? 'Round-trip shipping mainland France' : 'Transport aller-retour France métropolitaine'}</p>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Nb colis</label>
+                  <label className="text-xs text-gray-500">{lang === 'en' ? 'Nb parcels' : 'Nb colis'}</label>
                   <input
                     type="number"
                     value={shippingData.parcels}
@@ -16306,7 +16306,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Prix/colis</label>
+                  <label className="text-xs text-gray-500">{lang === 'en' ? 'Price/parcel' : 'Prix/colis'}</label>
                   <input
                     type="number"
                     value={shippingData.unitPrice}
@@ -16326,13 +16326,13 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
             <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
               <div className="flex justify-between items-center">
                 <div>
-                  <span className="text-emerald-800 font-medium">{devicePricing.length} appareil(s)</span>
+                  <span className="text-emerald-800 font-medium">{devicePricing.length} {lang === 'en' ? 'device(s)' : 'appareil(s)'}</span>
                   <span className="text-emerald-600 mx-3">•</span>
-                  <span className="text-emerald-800">{totalTokens} étalonnage(s)/an</span>
+                  <span className="text-emerald-800">{totalTokens} {lang === 'en' ? 'calibration(s)/yr' : 'étalonnage(s)/an'}</span>
                   {hasNettoyage && (
                     <>
                       <span className="text-emerald-600 mx-3">•</span>
-                      <span className="text-amber-700">+ Nettoyage</span>
+                      <span className="text-amber-700">{lang === 'en' ? '+ Cleaning' : '+ Nettoyage'}</span>
                     </>
                   )}
                 </div>
@@ -16436,7 +16436,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                   <p className="text-gray-600 text-sm">{contract.companies.country}</p>
                 )}
                 {contract.companies?.phone && (
-                  <p className="text-gray-600 text-sm">Tél: {contract.companies.phone}</p>
+                  <p className="text-gray-600 text-sm">{lang === 'en' ? 'Tel' : 'Tél'}: {contract.companies.phone}</p>
                 )}
                 {contract.companies?.email && (
                   <p className="text-gray-600 text-sm">{contract.companies.email}</p>
@@ -16482,10 +16482,10 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
             height: 80,
             render: () => (
               <div className="px-6 py-3 border-b bg-gray-50">
-                <p className="text-xs text-gray-500 uppercase mb-1">Conditions</p>
+                <p className="text-xs text-gray-500 uppercase mb-1">{lang === 'en' ? 'Terms' : 'Conditions'}</p>
                 <ul className="text-xs text-gray-600 space-y-0.5">
-                  <li>• Période du contrat: {new Date(contractDates.start_date).toLocaleDateString('fr-FR')} au {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</li>
-                  <li>• {totalTokens} étalonnage(s) inclus pendant la période contractuelle</li>
+                  <li>• Période du contrat: {new Date(contractDates.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} au {new Date(contractDates.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</li>
+                  <li>• {lang === 'en' ? `${totalTokens} calibration(s) included during the contract period` : `${totalTokens} étalonnage(s) inclus pendant la période contractuelle`}</li>
                   <li>{lang === 'en' ? '• Additional calibrations billed at standard rate' : '• Étalonnages supplémentaires facturés au tarif standard'}</li>
                   <li>{lang === 'en' ? "• This offer does not include repair or replacement of non-consumable parts" : "• Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables"}</li>
                   <li>{lang === 'en' ? '• A supplementary quote will be issued if defective parts are found' : '• Un devis complémentaire sera établi si des pièces sont trouvées défectueuses'}</li>
@@ -16507,7 +16507,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                     <tr className="bg-[#1a1a2e] text-white">
                       <th className="px-3 py-2 text-left text-xs font-bold w-12">{lang === 'en' ? 'Qty' : 'Qté'}</th>
                       <th className="px-3 py-2 text-left text-xs font-bold">{lang === 'en' ? 'Description' : 'Désignation'}</th>
-                      <th className="px-3 py-2 text-right text-xs font-bold w-20">Prix Unit.</th>
+                      <th className="px-3 py-2 text-right text-xs font-bold w-20">{lang === 'en' ? 'Unit Price' : 'Prix Unit.'}</th>
                       <th className="px-3 py-2 text-right text-xs font-bold w-20">{t('totalHT')}</th>
                     </tr>
                   </thead>
@@ -16531,7 +16531,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                         <tr className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                           <td className="px-3 py-2 text-center text-sm w-12">{device.tokens_total}</td>
                           <td className="px-3 py-2 text-sm">
-                            <span className="font-medium">Étalonnage {device.model}</span>
+                            <span className="font-medium">{lang === 'en' ? 'Calibration' : 'Étalonnage'} {device.model}</span>
                             <span className="text-gray-500 text-xs ml-1">(SN: {device.serial})</span>
                           </td>
                           <td className="px-3 py-2 text-right text-sm w-20">{device.calibrationPrice.toFixed(2)} €</td>
@@ -16542,7 +16542,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                         <tr className="bg-amber-50">
                           <td className="px-3 py-2 text-center text-sm w-12">{device.nettoyageQty}</td>
                           <td className="px-3 py-2 text-sm">
-                            <span className="font-medium text-amber-800">Nettoyage cellule</span>
+                            <span className="font-medium text-amber-800">{lang === 'en' ? 'Cell cleaning' : 'Nettoyage cellule'}</span>
                             <span className="text-amber-600 text-xs ml-1">- si requis ({device.model})</span>
                           </td>
                           <td className="px-3 py-2 text-right text-sm w-20">{device.nettoyagePrice.toFixed(2)} €</td>
@@ -16567,7 +16567,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                     <tr className="bg-blue-50">
                       <td className="px-3 py-2 text-center text-sm w-12">{shippingData.parcels}</td>
                       <td className="px-3 py-2 text-sm">
-                        <span className="font-medium text-blue-800">Frais de port</span>
+                        <span className="font-medium text-blue-800">{lang === 'en' ? 'Shipping fees' : 'Frais de port'}</span>
                         <span className="text-blue-600 text-xs ml-1">({shippingData.parcels} colis)</span>
                       </td>
                       <td className="px-3 py-2 text-right text-sm w-20">{shippingData.unitPrice.toFixed(2)} €</td>
@@ -16590,7 +16590,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                     <tr className="bg-[#00A651] text-white">
                       <td className="px-3 py-2 w-12"></td>
                       <td className="px-3 py-2"></td>
-                      <td className="px-3 py-2 text-right font-bold text-sm w-20">TOTAL HT</td>
+                      <td className="px-3 py-2 text-right font-bold text-sm w-20">{lang === 'en' ? 'TOTAL excl. VAT' : 'TOTAL HT'}</td>
                       <td className="px-3 py-2 text-right font-bold text-sm w-20">{grandTotal.toFixed(2)} €</td>
                     </tr>
                   </tbody>
@@ -16626,9 +16626,9 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                     />
                   </div>
                   <div className="text-center">
-                    <p className="text-xs text-gray-500 uppercase mb-1">Bon pour accord</p>
+                    <p className="text-xs text-gray-500 uppercase mb-1">{lang === 'en' ? 'Approved for agreement' : 'Bon pour accord'}</p>
                     <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded"></div>
-                    <p className="text-xs text-gray-400 mt-1">Signature et cachet</p>
+                    <p className="text-xs text-gray-400 mt-1">{lang === 'en' ? 'Signature and stamp' : 'Signature et cachet'}</p>
                   </div>
                 </div>
               </div>
@@ -16686,23 +16686,23 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-bold text-[#00A651]">DEVIS CONTRAT</p>
-                  <p className="text-sm font-bold text-[#2D5A7B]">N° {contract.contract_number || '(Généré à l\'envoi)'}</p>
+                  <p className="text-lg font-bold text-[#00A651]">{lang === 'en' ? 'CONTRACT QUOTE' : 'DEVIS CONTRAT'}</p>
+                  <p className="text-sm font-bold text-[#2D5A7B]">N° {contract.contract_number || '${lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)"}'}</p>
                 </div>
               </div>
               {pageNum === 1 && (
                 <div className="bg-gray-100 px-6 py-2 flex justify-between text-xs border-t">
                   <div>
-                    <span className="text-gray-500">Date: </span>
-                    <span className="font-medium">{today.toLocaleDateString('fr-FR')}</span>
+                    <span className="text-gray-500">{lang === 'en' ? 'Date: ' : 'Date: '}</span>
+                    <span className="font-medium">{today.toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</span>
                   </div>
                   <div>
                     <span className="text-gray-500">{lang === 'en' ? 'Period: ' : 'Période: '}</span>
-                    <span className="font-medium">{new Date(contractDates.start_date).toLocaleDateString('fr-FR')} - {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</span>
+                    <span className="font-medium">{new Date(contractDates.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} - {new Date(contractDates.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</span>
                   </div>
                   <div>
                     <span className="text-gray-500">{lang === 'en' ? 'Validity: ' : 'Validité: '}</span>
-                    <span className="font-medium">30 jours</span>
+                    <span className="font-medium">{lang === 'en' ? '30 days' : '30 jours'}</span>
                   </div>
                 </div>
               )}
@@ -16759,15 +16759,15 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
               <p className="text-6xl mb-4">📧</p>
               <h3 className="text-xl font-bold text-gray-800 mb-2">{lang === 'en' ? 'Ready to send' : 'Prêt à envoyer'}</h3>
               <p className="text-gray-600 mb-6">
-                Le devis de contrat sera envoyé au client {contract.companies?.name}.
-                <br />Montant total: <strong className="text-[#00A651]">{grandTotal.toFixed(2)} € HT</strong>
+                {lang === 'en' ? `The contract quote will be sent to client ${contract.companies?.name}.` : `Le devis de contrat sera envoyé au client ${contract.companies?.name}.`}
+                <br />{lang === 'en' ? 'Total amount: ' : 'Montant total: '}<strong className="text-[#00A651]">{grandTotal.toFixed(2)} € HT</strong>
               </p>
               <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
                 <p className="text-sm text-gray-600">
-                  <strong>{lang === 'en' ? 'Period:' : 'Période:'}</strong> {new Date(contractDates.start_date).toLocaleDateString('fr-FR')} - {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}
+                  <strong>{lang === 'en' ? 'Period:' : 'Période:'}</strong> {new Date(contractDates.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} - {new Date(contractDates.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
                 </p>
                 <p className="text-sm text-gray-600">
-                  <strong>Appareils:</strong> {devicePricing.length}
+                  <strong>{lang === 'en' ? 'Devices:' : 'Appareils:'}</strong> {devicePricing.length}
                 </p>
                 <p className="text-sm text-gray-600">
                   <strong>{lang === 'en' ? 'Calibrations included:' : 'Étalonnages inclus:'}</strong> {totalTokens}
@@ -16793,7 +16793,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 {/* Refuse/Modification/Delete buttons only on step 1 */}
                 <button
                   onClick={async () => {
-                    const reason = window.prompt('Raison de la demande de modification:\n(Ce message sera visible par le client)');
+                    const reason = window.prompt(lang === 'en' ? 'Reason for modification request:\n(This message will be visible to the client)' : 'Raison de la demande de modification:\n(Ce message sera visible par le client)');
                     if (reason && reason.trim()) {
                       setSaving(true);
                       try {
@@ -16822,7 +16822,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 </button>
                 <button
                   onClick={async () => {
-                    const reason = window.prompt('Raison du refus:\n(Ce message sera visible par le client)');
+                    const reason = window.prompt(lang === 'en' ? 'Reason for rejection:\n(This message will be visible to the client)' : 'Raison du refus:\n(Ce message sera visible par le client)');
                     if (reason && reason.trim()) {
                       setSaving(true);
                       try {
@@ -16851,8 +16851,8 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 </button>
                 <button
                   onClick={async () => {
-                    const confirmation = window.prompt('⚠️ SUPPRIMER cette demande de contrat?\n\nTapez "SUPPRIMER" pour confirmer:');
-                    if (confirmation === 'SUPPRIMER') {
+                    const confirmation = window.prompt(lang === 'en' ? '⚠️ DELETE this contract request?\n\nType "DELETE" to confirm:' : '⚠️ SUPPRIMER cette demande de contrat?\n\nTapez "SUPPRIMER" pour confirmer:');
+                    if (confirmation === (lang === 'en' ? 'DELETE' : 'SUPPRIMER')) {
                       setSaving(true);
                       try {
                         // Get contract device IDs
@@ -16909,7 +16909,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 onClick={() => setStep(step + 1)}
                 className="px-6 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008f45]"
               >
-                {step === 1 ? 'Aperçu →' : 'Confirmer →'}
+                {step === 1 ? (lang === 'en' ? 'Preview →' : 'Aperçu →') : 'Confirmer →'}
               </button>
             )}
             {step === 3 && (
@@ -16918,7 +16918,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 disabled={saving}
                 className="px-6 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008f45] disabled:opacity-50"
               >
-                {saving ? 'Envoi...' : '✅ Envoyer le Devis'}
+                {saving ? (lang === 'en' ? 'Sending...' : 'Envoi...') : (lang === 'en' ? '✅ Send Quote' : '✅ Envoyer le Devis')}
               </button>
             )}
           </div>
@@ -16997,7 +16997,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
       onUpdate();
     } catch (err) {
       console.error('Error saving:', err);
-      notify('Erreur lors de la sauvegarde', 'error');
+      notify(lang === 'en' ? 'Error saving' : 'Erreur lors de la sauvegarde', 'error');
     } finally {
       setSaving(false);
     }
@@ -17019,7 +17019,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
 
       if (error) throw error;
 
-      notify(`Statut mis à jour: ${newStatus}`, 'success');
+      notify(lang === 'en' ? `Status updated: ${newStatus}` : `Statut mis à jour: ${newStatus}`, 'success');
       onUpdate();
       onClose();
     } catch (err) {
@@ -17034,20 +17034,20 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
   const totalTokens = devices.reduce((sum, d) => sum + (parseInt(d.tokens_total) || 0), 0);
 
   const CONTRACT_STATUS_STYLES = {
-    requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: '🆕 Nouvelle demande' },
-    quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: '📧 Devis envoyé' },
-    quote_approved: { bg: 'bg-purple-100', text: 'text-purple-700', label: '✅ Devis approuvé' },
-    bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: '📄 Attente BC' },
-    active: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Actif' },
-    expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: '⏰ Expiré' },
-    cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ Annulé' }
+    requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? '🆕 New request' : '🆕 Nouvelle demande' },
+    quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: lang === 'en' ? '📧 Quote sent' : '📧 Devis envoyé' },
+    quote_approved: { bg: 'bg-purple-100', text: 'text-purple-700', label: lang === 'en' ? '✅ Quote approved' : '✅ Devis approuvé' },
+    bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? '📄 Awaiting PO' : '📄 Attente BC' },
+    active: { bg: 'bg-green-100', text: 'text-green-700', label: lang === 'en' ? '✅ Active' : '✅ Actif' },
+    expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: lang === 'en' ? '⏰ Expired' : '⏰ Expiré' },
+    cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: lang === 'en' ? '❌ Cancelled' : '❌ Annulé' }
   };
 
   const getStatusBadge = (status) => {
     const style = CONTRACT_STATUS_STYLES[status] || CONTRACT_STATUS_STYLES.requested;
     return (
       <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>
-        {style.label}
+        {lang === 'en' && style.en ? style.en : style.label}
       </span>
     );
   };
@@ -17069,11 +17069,11 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
             <div>
               <h3 className="font-bold text-amber-800">{lang === 'en' ? "Existing contract detected" : "Contrat existant détecté"}</h3>
               <p className="text-sm text-amber-700">
-                Ce client a déjà {existingContracts.length} contrat(s) actif(s):
+                {lang === 'en' ? `This client already has ${existingContracts.length} active contract(s):` : `Ce client a déjà ${existingContracts.length} contrat(s) actif(s):`}
               </p>
               <ul className="text-sm text-amber-700 mt-1">
                 {existingContracts.map(c => (
-                  <li key={c.id}>• {c.contract_number} ({new Date(c.start_date).toLocaleDateString('fr-FR')} - {new Date(c.end_date).toLocaleDateString('fr-FR')})</li>
+                  <li key={c.id}>• {c.contract_number} ({new Date(c.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} - {new Date(c.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')})</li>
                 ))}
               </ul>
             </div>
@@ -17091,11 +17091,11 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
             <div>
               <h2 className="text-xl font-bold text-orange-800">{lang === 'en' ? 'Purchase Order to Review' : 'Bon de Commande à Vérifier'}</h2>
               <p className="text-orange-700">
-                Le client a soumis son bon de commande. Vérifiez les documents et activez le contrat.
+                {lang === 'en' ? 'Client submitted their purchase order. Review documents and activate the contract.' : 'Le client a soumis son bon de commande. Vérifiez les documents et activez le contrat.'}
               </p>
               {contract.bc_submitted_at && (
                 <p className="text-sm text-orange-600 mt-1">
-                  Soumis le {new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(contract.bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                  {lang === 'en' ? 'Submitted on' : 'Soumis le'} {new Date(contract.bc_submitted_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} à {new Date(contract.bc_submitted_at).toLocaleTimeString(lang === 'en' ? 'en-US' : 'fr-FR', { hour: '2-digit', minute: '2-digit' })}
                   {contract.bc_signed_by && ` par ${contract.bc_signed_by}`}
                 </p>
               )}
@@ -17113,7 +17113,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
                   </div>
                   <div>
                     <p className="font-bold text-green-800">{lang === 'en' ? 'Signed Quote' : 'Devis Signé'}</p>
-                    <p className="text-xs text-green-600">PDF avec signature client</p>
+                    <p className="text-xs text-green-600">{lang === 'en' ? 'PDF with client signature' : 'PDF avec signature client'}</p>
                   </div>
                 </div>
                 <a
@@ -17169,7 +17169,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
             </button>
             <button
               onClick={() => {
-                const reason = window.prompt('Raison du rejet:');
+                const reason = window.prompt(lang === 'en' ? 'Reason for rejection:' : 'Raison du rejet:');
                 if (reason) {
                   // Update with rejection
                   supabase.from('contracts').update({
@@ -17195,7 +17195,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
         <div className="flex justify-between items-start mb-4">
           <div>
             <h1 className="text-2xl font-bold text-[#2D5A7B]">
-              Contrat {contract.contract_number || '(En attente)'}
+              Contrat {contract.contract_number || (lang === 'en' ? '(Pending)' : '(En attente)')}
             </h1>
             <p className="text-gray-600">{contract.companies?.name}</p>
           </div>
@@ -17214,11 +17214,11 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
                 className="w-full px-3 py-2 border rounded-lg"
               />
             ) : (
-              <p className="text-gray-900">{new Date(contract.start_date).toLocaleDateString('fr-FR')}</p>
+              <p className="text-gray-900">{new Date(contract.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
             )}
           </div>
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Date de fin</label>
+            <label className="block text-sm font-bold text-gray-700 mb-1">{lang === 'en' ? 'End date' : 'Date de fin'}</label>
             {editMode ? (
               <input
                 type="date"
@@ -17227,7 +17227,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
                 className="w-full px-3 py-2 border rounded-lg"
               />
             ) : (
-              <p className="text-gray-900">{new Date(contract.end_date).toLocaleDateString('fr-FR')}</p>
+              <p className="text-gray-900">{new Date(contract.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
             )}
           </div>
           <div>
@@ -17241,21 +17241,21 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
         {/* Customer Notes */}
         {contract.customer_notes && (
           <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-            <h4 className="font-bold text-blue-800 text-sm mb-1">Notes du client:</h4>
+            <h4 className="font-bold text-blue-800 text-sm mb-1">{lang === 'en' ? 'Client notes:' : 'Notes du client:'}</h4>
             <p className="text-sm text-blue-700">{contract.customer_notes}</p>
           </div>
         )}
 
         {/* Internal Notes */}
         <div className="mb-4">
-          <label className="block text-sm font-bold text-gray-700 mb-1">Notes internes</label>
+          <label className="block text-sm font-bold text-gray-700 mb-1">{lang === 'en' ? 'Internal notes' : 'Notes internes'}</label>
           {editMode ? (
             <textarea
               value={contractData.internal_notes}
               onChange={e => setContractData({...contractData, internal_notes: e.target.value})}
               rows={2}
               className="w-full px-3 py-2 border rounded-lg"
-              placeholder="Notes visibles uniquement par l'équipe..."
+              placeholder={lang === 'en' ? 'Notes visible only to the team...' : "Notes visibles uniquement par l'équipe..."}
             />
           ) : (
             <p className="text-gray-600 text-sm">{contract.internal_notes || '—'}</p>
@@ -17282,7 +17282,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
       {/* Devices Table */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b flex justify-between items-center">
-          <h2 className="font-bold text-gray-800">Appareils ({devices.length})</h2>
+          <h2 className="font-bold text-gray-800">{lang === 'en' ? `Devices (${devices.length})` : `Appareils (${devices.length})`}</h2>
           {!editMode && contract.status !== 'active' && (
             <button
               onClick={() => setEditMode(true)}
@@ -17297,12 +17297,12 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">#</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">Surnom</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{lang === 'en' ? '#' : '#'}</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{lang === 'en' ? 'Nickname' : 'Surnom'}</th>
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{t('serialNumber')}</th>
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{t('model')}</th>
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{t('type')}</th>
-                <th className="px-4 py-3 text-center text-xs font-bold text-gray-600">Tokens</th>
+                <th className="px-4 py-3 text-center text-xs font-bold text-gray-600">{lang === 'en' ? 'Tokens' : 'Tokens'}</th>
                 <th className="px-4 py-3 text-right text-xs font-bold text-gray-600">{t('unitPrice')}</th>
                 {contract.status === 'active' && (
                   <th className="px-4 py-3 text-center text-xs font-bold text-gray-600">{lang === 'en' ? 'Used' : 'Utilisés'}</th>
@@ -17317,11 +17317,11 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
                   <td className="px-4 py-3 text-sm font-mono">{device.serial_number}</td>
                   <td className="px-4 py-3 text-sm font-medium">{device.model_name}</td>
                   <td className="px-4 py-3 text-sm">
-                    {device.device_type === 'particle_counter' && '🔬 Compteur Air'}
-                    {device.device_type === 'bio_collector' && '🧫 Bio Collecteur'}
-                    {device.device_type === 'liquid_counter' && '💧 Compteur Liquide'}
-                    {device.device_type === 'temp_humidity' && '🌡️ Temp/Humidité'}
-                    {device.device_type === 'other' && '📦 Autre'}
+                    {device.device_type === 'particle_counter' && (lang === 'en' ? '🔬 Air Counter' : '🔬 Compteur Air')}
+                    {device.device_type === 'bio_collector' && (lang === 'en' ? '🧫 Bio Collector' : '🧫 Bio Collecteur')}
+                    {device.device_type === 'liquid_counter' && (lang === 'en' ? '💧 Liquid Counter' : '💧 Compteur Liquide')}
+                    {device.device_type === 'temp_humidity' && (lang === 'en' ? '🌡️ Temp/Humidity' : '🌡️ Temp/Humidité')}
+                    {device.device_type === 'other' && (lang === 'en' ? '📦 Other' : '📦 Autre')}
                     {!device.device_type && '—'}
                   </td>
                   <td className="px-4 py-3 text-center">
@@ -17364,7 +17364,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
             </tbody>
             <tfoot className="bg-gray-100">
               <tr>
-                <td colSpan={5} className="px-4 py-3 text-right font-bold">Total:</td>
+                <td colSpan={5} className="px-4 py-3 text-right font-bold">{lang === 'en' ? 'Total:' : 'Total:'}</td>
                 <td className="px-4 py-3 text-center font-bold text-green-600">{totalTokens}</td>
                 <td className="px-4 py-3 text-right font-bold text-[#2D5A7B]">{totalPrice.toFixed(2)} €</td>
                 {contract.status === 'active' && <td></td>}
@@ -17390,7 +17390,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
                 disabled={saving}
                 className="px-4 py-2 bg-[#00A651] text-white rounded-lg hover:bg-[#008c44] disabled:opacity-50"
               >
-                {saving ? 'Enregistrement...' : 'Enregistrer les modifications'}
+                {saving ? (lang === 'en' ? 'Saving...' : 'Enregistrement...') : (lang === 'en' ? 'Save changes' : 'Enregistrer les modifications')}
               </button>
             </>
           )}
@@ -17411,7 +17411,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
               </button>
               <button
                 onClick={async () => {
-                  const reason = window.prompt('Raison de la demande de modification:\n(Ce message sera visible par le client)');
+                  const reason = window.prompt(lang === 'en' ? 'Reason for modification request:\n(This message will be visible to the client)' : 'Raison de la demande de modification:\n(Ce message sera visible par le client)');
                   if (reason) {
                     setSaving(true);
                     try {
@@ -17435,7 +17435,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
               </button>
               <button
                 onClick={async () => {
-                  const reason = window.prompt('Raison du refus:\n(Ce message sera visible par le client)');
+                  const reason = window.prompt(lang === 'en' ? 'Reason for rejection:\n(This message will be visible to the client)' : 'Raison du refus:\n(Ce message sera visible par le client)');
                   if (reason) {
                     setSaving(true);
                     try {
@@ -17462,7 +17462,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
 
           {contract.status === 'modification_requested' && (
             <div className="w-full bg-amber-50 border border-amber-200 rounded-lg p-4 mb-2">
-              <p className="text-amber-800 font-medium">⏳ En attente de modification par le client</p>
+              <p className="text-amber-800 font-medium">{lang === 'en' ? '⏳ Awaiting client modification' : '⏳ En attente de modification par le client'}</p>
               {contract.admin_notes && (
                 <p className="text-amber-700 text-sm mt-1">Message: "{contract.admin_notes}"</p>
               )}
@@ -17511,8 +17511,8 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
           {contract.status !== 'cancelled' && contract.status !== 'active' && !editMode && (
             <button
               onClick={() => {
-                if (window.confirm('Êtes-vous sûr de vouloir annuler ce contrat? Tapez "annuler contrat" pour confirmer.')) {
-                  const confirmation = window.prompt('Tapez "annuler contrat" pour confirmer:');
+                if (window.confirm(lang === 'en' ? 'Are you sure you want to cancel this contract? Type "cancel contract" to confirm.' : 'Êtes-vous sûr de vouloir annuler ce contrat? Tapez "annuler contrat" pour confirmer.')) {
+                  const confirmation = window.prompt(lang === 'en' ? 'Type "cancel contract" to confirm:' : 'Tapez "annuler contrat" pour confirmer:');
                   if (confirmation?.toLowerCase() === 'annuler contrat') {
                     updateContractStatus('cancelled');
                   }
@@ -17528,8 +17528,8 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
           {/* Delete Contract - Admin only, for any status */}
           <button
             onClick={async () => {
-              const confirmation = window.prompt('⚠️ ATTENTION: Cette action est irréversible!\n\nTapez "SUPPRIMER" pour confirmer la suppression définitive du contrat ' + (contract.contract_number || contract.id) + ':');
-              if (confirmation === 'SUPPRIMER') {
+              const confirmation = window.prompt((lang === 'en' ? '⚠️ WARNING: This action is irreversible!\n\nType "DELETE" to confirm permanent deletion of contract ' : '⚠️ ATTENTION: Cette action est irréversible!\n\nTapez "SUPPRIMER" pour confirmer la suppression définitive du contrat ') + + (contract.contract_number || contract.id) + ':');
+              if (confirmation === (lang === 'en' ? 'DELETE' : 'SUPPRIMER')) {
                 setSaving(true);
                 try {
                   // First, get all contract device IDs from database
@@ -17629,7 +17629,7 @@ function BCFileUploader({ onUploaded, currentUrl }) {
       onUploaded(publicUrl);
     } catch (err) {
       console.error('Upload error:', err);
-      alert('Erreur upload: ' + err.message);
+      alert(lang === 'en' ? 'Upload error: ' : 'Erreur upload: ' + err.message);
     }
     setUploading(false);
   };
@@ -17710,7 +17710,7 @@ function BCFileUploader({ onUploaded, currentUrl }) {
               <>
                 <div className="text-2xl mb-1">📄</div>
                 <p className="text-xs text-gray-600">{lang === 'en' ? 'Click to select' : 'Cliquez pour sélectionner'}</p>
-                <p className="text-xs text-gray-400">PDF, DOC, Image</p>
+                <p className="text-xs text-gray-400">{lang === 'en' ? 'PDF, DOC, Image' : 'PDF, DOC, Image'}</p>
               </>
             )}
           </div>
@@ -17795,7 +17795,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
             conflicts.push({
               serial: cd.serial_number,
               contractNumber: existingContract.contract_number,
-              period: `${new Date(existingContract.start_date).toLocaleDateString('fr-FR')} - ${new Date(existingContract.end_date).toLocaleDateString('fr-FR')}`
+              period: `${new Date(existingContract.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} - ${new Date(existingContract.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}`
             });
           }
         }
@@ -17805,7 +17805,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
         const conflictMsg = conflicts.map(c => 
           `• ${c.serial} déjà dans contrat ${c.contractNumber} (${c.period})`
         ).join('\n');
-        notify(`❌ Conflit de numéros de série détecté:\n${conflictMsg}`, 'error');
+        notify(lang === 'en' ? `❌ Serial number conflict detected:\n${conflictMsg}` : `❌ Conflit de numéros de série détecté:\n${conflictMsg}`, 'error');
         setSaving(false);
         return;
       }
@@ -17863,7 +17863,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">← Retour</button>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">{lang === 'en' ? '← Back' : '← Retour'}</button>
           <h1 className="text-2xl font-bold text-gray-800">{lang === 'en' ? 'Create Contract Manually' : 'Créer un Contrat Manuellement'}</h1>
         </div>
       </div>
@@ -17879,7 +17879,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
           {/* Client Selection */}
           <div className="grid md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Client existant</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'en' ? 'Existing client' : 'Client existant'}</label>
               <select
                 value={contractData.company_id}
                 onChange={e => setContractData({ ...contractData, company_id: e.target.value, company_name: '' })}
@@ -17892,12 +17892,12 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Ou nom du client (si pas de compte)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'en' ? 'Or client name (if no account)' : 'Ou nom du client (si pas de compte)'}</label>
               <input
                 type="text"
                 value={contractData.company_name}
                 onChange={e => setContractData({ ...contractData, company_name: e.target.value, company_id: '' })}
-                placeholder="Nom de l'entreprise..."
+                placeholder={lang === 'en' ? 'Company name...' : "Nom de l'entreprise..."}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
                 disabled={!!contractData.company_id}
               />
@@ -17908,7 +17908,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
           {/* Contract Details */}
           <div className="grid md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">N° Contrat</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'en' ? 'Contract #' : 'N° Contrat'}</label>
               <input
                 type="text"
                 value={contractData.contract_number}
@@ -17926,7 +17926,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Date fin</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'en' ? 'End date' : 'Date fin'}</label>
               <input
                 type="date"
                 value={contractData.end_date}
@@ -17944,14 +17944,14 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
                 onChange={e => setContractData({ ...contractData, status: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg"
               >
-                <option value="active">✅ Actif</option>
-                <option value="bc_pending">📄 Attente BC</option>
+                <option value="active">{lang === 'en' ? '✅ Active' : '✅ Actif'}</option>
+                <option value="bc_pending">{lang === 'en' ? '📄 Awaiting PO' : '📄 Attente BC'}</option>
                 <option value="quote_approved">{lang === 'en' ? '✅ Quote approved' : '✅ Devis approuvé'}</option>
                 <option value="expired">{lang === 'en' ? '⏰ Expired' : '⏰ Expiré'}</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Bon de Commande (optionnel)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'en' ? 'Purchase Order (optional)' : 'Bon de Commande (optionnel)'}</label>
               <BCFileUploader 
                 onUploaded={(url) => setContractData({ ...contractData, bc_url: url })}
                 currentUrl={contractData.bc_url}
@@ -17960,20 +17960,20 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Notes internes</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'en' ? 'Internal notes' : 'Notes internes'}</label>
             <textarea
               value={contractData.internal_notes}
               onChange={e => setContractData({ ...contractData, internal_notes: e.target.value })}
               rows={2}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-              placeholder="Notes sur ce contrat..."
+              placeholder={lang === 'en' ? 'Notes on this contract...' : 'Notes sur ce contrat...'}
             />
           </div>
 
           {/* Devices Section */}
           <div className="border-t pt-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-gray-800">Appareils sous contrat ({devices.length})</h3>
+              <h3 className="font-bold text-gray-800">{lang === 'en' ? `Devices under contract (${devices.length})` : `Appareils sous contrat (${devices.length})`}</h3>
               <button
                 onClick={addDevice}
                 className="px-4 py-2 bg-[#00A651] text-white rounded-lg text-sm hover:bg-[#008f45]"
@@ -18005,7 +18005,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
                           value={device.model_name}
                           onChange={e => updateDevice(device.id, 'model_name', e.target.value)}
                           className="w-full px-3 py-2 border rounded-lg text-sm"
-                          placeholder="Modèle..."
+                          placeholder={lang === 'en' ? 'Model...' : 'Modèle...'}
                         />
                       </div>
                       <div>
@@ -18015,15 +18015,15 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
                           onChange={e => updateDevice(device.id, 'device_type', e.target.value)}
                           className="w-full px-3 py-2 border rounded-lg text-sm"
                         >
-                          <option value="particle_counter">Compteur particules</option>
-                          <option value="bio_collector">Bio collecteur</option>
-                          <option value="liquid_counter">Compteur liquide</option>
+                          <option value="particle_counter">{lang === 'en' ? 'Particle counter' : 'Compteur particules'}</option>
+                          <option value="bio_collector">{lang === 'en' ? 'Bio collector' : 'Bio collecteur'}</option>
+                          <option value="liquid_counter">{lang === 'en' ? 'Liquid counter' : 'Compteur liquide'}</option>
                           <option value="temp_humidity">{lang === 'en' ? "Temp/Humidity" : "Temp/Humidité"}</option>
-                          <option value="other">Autre</option>
+                          <option value="other">{lang === 'en' ? 'Other' : 'Autre'}</option>
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">Tokens/an</label>
+                        <label className="block text-xs text-gray-500 mb-1">{lang === 'en' ? 'Tokens/yr' : 'Tokens/an'}</label>
                         <input
                           type="number"
                           value={device.tokens_total}
@@ -18033,7 +18033,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">Prix €</label>
+                        <label className="block text-xs text-gray-500 mb-1">{lang === 'en' ? 'Price €' : 'Prix €'}</label>
                         <input
                           type="number"
                           value={device.unit_price}
@@ -18068,7 +18068,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
               </div>
               <div className="text-right">
                 <span className="text-emerald-800 font-bold text-xl">{totalPrice.toFixed(2)} €</span>
-                <span className="text-emerald-600 text-sm ml-2">HT</span>
+                <span className="text-emerald-600 text-sm ml-2">{lang === 'en' ? 'excl. VAT' : 'HT'}</span>
               </div>
             </div>
           </div>
@@ -18084,7 +18084,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
             disabled={saving}
             className="px-8 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold disabled:opacity-50"
           >
-            {saving ? 'Création...' : '✅ Créer le Contrat'}
+            {saving ? (lang === 'en' ? 'Creating...' : 'Création...') : (lang === 'en' ? '✅ Create Contract' : '✅ Créer le Contrat')}
           </button>
         </div>
       </div>
@@ -18158,7 +18158,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
   const frenchDate = (dateStr) => {
     if (!dateStr) return '—';
     const d = new Date(dateStr);
-    const months = ['jan.', 'fév.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+    const months = lang === 'en' ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] : ['jan.', 'fév.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
     return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
   };
 
@@ -18220,9 +18220,9 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
       for (const inv of toExport) {
         // Add to summary
         summaryData.push({
-          'N° Facture': inv.invoice_number || '',
-          'Date Création': inv.created_at ? new Date(inv.created_at).toLocaleDateString('fr-FR') : '',
-          'Date Facture': inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString('fr-FR') : '',
+          (lang === 'en' ? 'Invoice #' : 'N° Facture'): inv.invoice_number || '',
+          'Date Création': inv.created_at ? new Date(inv.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '',
+          'Date Facture': inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '',
           'Client': inv.companies?.name || '',
           'N° RMA': inv.service_requests?.request_number || '',
           'Total HT': parseFloat(inv.total_ht || 0).toFixed(2),
@@ -18250,7 +18250,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
       // Create Excel summary
       const ws = window.XLSX.utils.json_to_sheet(summaryData);
       const wb = window.XLSX.utils.book_new();
-      window.XLSX.utils.book_append_sheet(wb, ws, 'Factures');
+      window.XLSX.utils.book_append_sheet(wb, ws, (lang === 'en' ? 'Invoices' : 'Factures'));
       
       // Set column widths
       ws['!cols'] = [
@@ -18287,17 +18287,17 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
-      notify(`✅ Export terminé: ${toExport.length} facture(s), ${pdfCount} PDF(s)`);
+      notify(lang === 'en' ? `✅ Export complete: ${toExport.length} invoice(s), ${pdfCount} PDF(s)` : `✅ Export terminé: ${toExport.length} facture(s), ${pdfCount} PDF(s)`);
     } catch (err) {
       console.error('Export error:', err);
-      notify('Erreur lors de l\'export: ' + (err.message || 'Erreur'), 'error');
+      notify((lang === 'en' ? 'Export error: ' : "Erreur lors de l'export: ") + (err.message || 'Error'), 'error');
     }
     setExporting(false);
   };
 
   const tabs = [
-    { id: 'to_create', label: 'À Facturer', icon: '🔔', count: rmasToInvoice.length, color: 'amber' },
-    { id: 'invoices', label: 'Factures', icon: '📄', count: invoices.length, color: 'blue' }
+    { id: 'to_create', label: lang === 'en' ? 'To Invoice' : 'À Facturer', icon: '🔔', count: rmasToInvoice.length, color: 'amber' },
+    { id: 'invoices', label: lang === 'en' ? 'Invoices' : 'Factures', icon: '📄', count: invoices.length, color: 'blue' }
   ];
 
   // Stats
@@ -18319,7 +18319,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
         <div className="flex items-center gap-3">
           <input
             type="text"
-            placeholder="🔍 Rechercher..."
+            placeholder={lang === 'en' ? '🔍 Search...' : '🔍 Rechercher...'}
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg w-64"
@@ -18364,7 +18364,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
         <div className="p-4">
           {loading ? (
             <div className="text-center py-12 text-gray-400">
-              <div className="animate-spin text-3xl mb-2">⏳</div>Chargement...
+              <div className="animate-spin text-3xl mb-2">⏳</div>{lang === 'en' ? 'Loading...' : 'Chargement...'}
             </div>
           ) : (
             <>
@@ -18394,7 +18394,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                               <span className="font-medium text-gray-700">{rma.companies?.name}</span>
                             </div>
                             <div className="text-sm text-gray-500">
-                              {devices.length} appareil(s) • Expédié: {frenchDate(rma.shipped_at || rma.updated_at)}
+                              {devices.length} {lang === 'en' ? 'device(s) • Shipped:' : 'appareil(s) • Expédié:'} {frenchDate(rma.shipped_at || rma.updated_at)}
                             </div>
                           </div>
                           <div className="text-right shrink-0">
@@ -18420,7 +18420,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                   {/* Date range filter + Export */}
                   <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
                     <div className="flex items-center gap-2">
-                      <label className="text-sm text-gray-600 font-medium">Du:</label>
+                      <label className="text-sm text-gray-600 font-medium">{lang === 'en' ? 'From:' : 'Du:'}</label>
                       <input
                         type="date"
                         value={exportFrom}
@@ -18429,7 +18429,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                       />
                     </div>
                     <div className="flex items-center gap-2">
-                      <label className="text-sm text-gray-600 font-medium">Au:</label>
+                      <label className="text-sm text-gray-600 font-medium">{lang === 'en' ? 'To:' : 'Au:'}</label>
                       <input
                         type="date"
                         value={exportTo}
@@ -18447,7 +18447,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                     )}
                     <div className="flex-1" />
                     <div className="text-sm text-gray-600">
-                      <span className="font-medium">{filteredInvoices.length}</span> facture(s) • 
+                      <span className="font-medium">{filteredInvoices.length}</span> {lang === 'en' ? 'invoice(s) • ' : 'facture(s) • '}
                       <span className="font-medium text-green-600 ml-1">{filteredTotal.toFixed(2)} €</span>
                     </div>
                     <button
@@ -18458,7 +18458,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                       {exporting ? (
                         <><span className="animate-spin">⏳</span> Export en cours...</>
                       ) : (
-                        <>📥 Exporter ZIP</>
+                        <>{lang === 'en' ? '📥 Export ZIP' : '📥 Exporter ZIP'}</>
                       )}
                     </button>
                   </div>
@@ -18467,7 +18467,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                   {filteredInvoices.length === 0 ? (
                     <div className="text-center py-12 text-gray-400">
                       <div className="text-4xl mb-2">📂</div>
-                      <p>Aucune facture {(exportFrom || exportTo) ? 'pour cette période' : ''}</p>
+                      <p>{lang === 'en' ? `No invoices ${(exportFrom || exportTo) ? 'for this period' : ''}` : `Aucune facture ${(exportFrom || exportTo) ? 'pour cette période' : ''}`}</p>
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -18491,7 +18491,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                           </div>
                           <div className="text-right shrink-0 w-28">
                             <p className="font-bold text-gray-800">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
-                            <p className="text-xs text-gray-400">TTC</p>
+                            <p className="text-xs text-gray-400">{lang === 'en' ? 'incl. VAT' : 'TTC'}</p>
                           </div>
                           {inv.pdf_url && (
                             <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer"
@@ -18548,7 +18548,7 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
   const frenchDate = (dateStr) => {
     if (!dateStr) return '—';
     const d = new Date(dateStr);
-    const months = ['jan.', 'fév.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+    const months = lang === 'en' ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] : ['jan.', 'fév.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
     return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
   };
 
@@ -18556,10 +18556,10 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
     if (inv.status === 'paid') return <span className="px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-sm font-bold">{lang === 'en' ? '✅ Paid' : '✅ Payée'}</span>;
     if (inv.status === 'cancelled') return <span className="px-3 py-1.5 bg-gray-100 text-gray-500 rounded-full text-sm font-bold">{lang === 'en' ? 'Cancelled' : 'Annulée'}</span>;
     if (inv.status === 'partially_paid') return <span className="px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-full text-sm font-bold">{lang === 'en' ? '⚠️ Partial payment' : '⚠️ Paiement partiel'}</span>;
-    if (isOverdue) return <span className="px-3 py-1.5 bg-red-100 text-red-700 rounded-full text-sm font-bold animate-pulse">🔴 En retard ({daysPastDue}j)</span>;
+    if (isOverdue) return <span className="px-3 py-1.5 bg-red-100 text-red-700 rounded-full text-sm font-bold animate-pulse">{lang === 'en' ? '🔴 Overdue' : '🔴 En retard'} ({daysPastDue}{lang === 'en' ? 'd' : 'j'})</span>;
     if (inv.status === 'sent') return <span className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-full text-sm font-bold">{lang === 'en' ? '📤 Sent' : '📤 Envoyée'}</span>;
     if (inv.status === 'created' || inv.status === 'draft') return <span className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-sm font-bold">{lang === 'en' ? '📄 Created' : '📄 Créée'}</span>;
-    return <span className="px-3 py-1.5 bg-blue-100 text-blue-600 rounded-full text-sm font-bold">📋 En cours</span>;
+    return <span className="px-3 py-1.5 bg-blue-100 text-blue-600 rounded-full text-sm font-bold">{lang === 'en' ? '📋 In progress' : '📋 En cours'}</span>;
   };
 
   const markAsSent = async () => {
@@ -18584,13 +18584,13 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
     if (!error) {
       setInv({ ...inv, ...updates });
       setShowPayment(false); setPaymentAmount(''); setPaymentRef('');
-      notify(isFullyPaid ? '✅ Facture payée en totalité!' : `✅ Paiement de ${amount.toFixed(2)} € enregistré`);
+      notify(isFullyPaid ? (lang === 'en' ? '✅ Invoice fully paid!' : '✅ Facture payée en totalité!') : (lang === 'en' ? `✅ Payment of ${amount.toFixed(2)} € recorded` : `✅ Paiement de ${amount.toFixed(2)} € enregistré`));
       if (reload) reload();
     }
   };
 
   const cancelInvoice = async () => {
-    if (!confirm(`Annuler la facture ${inv.invoice_number} ? Cette action est irréversible.`)) return;
+    if (!confirm(lang === 'en' ? `Cancel invoice ${inv.invoice_number}? This action is irreversible.` : `Annuler la facture ${inv.invoice_number} ? Cette action est irréversible.`)) return;
     const { error } = await supabase.from('invoices').update({ status: 'cancelled' }).eq('id', inv.id);
     if (!error) { notify(lang === 'en' ? 'Invoice cancelled' : 'Facture annulée'); if (reload) reload(); onClose(); }
   };
@@ -18616,8 +18616,8 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-3">
               <span className="text-red-500 text-xl animate-pulse">🔴</span>
               <div>
-                <p className="text-red-800 font-bold">Facture en retard — {daysPastDue} jour{daysPastDue > 1 ? 's' : ''}</p>
-                <p className="text-red-600 text-sm">Échéance: {frenchDate(inv.due_date)} • Reste dû: {remaining.toFixed(2)} €</p>
+                <p className="text-red-800 font-bold">{lang === 'en' ? `Invoice overdue — ${daysPastDue} day${daysPastDue > 1 ? 's' : ''}` : `Facture en retard — ${daysPastDue} jour${daysPastDue > 1 ? 's' : ''}`}</p>
+                <p className="text-red-600 text-sm">{lang === 'en' ? 'Due:' : 'Échéance:'} {frenchDate(inv.due_date)} • {lang === 'en' ? 'Remaining:' : 'Reste dû:'} {remaining.toFixed(2)} €</p>
               </div>
             </div>
           )}
@@ -18647,9 +18647,9 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
           {/* References */}
           <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
             {inv.client_ref && <div><span className="text-gray-500">{lang === 'en' ? 'Your ref:' : 'Vos réf:'}</span> <span className="font-medium">{inv.client_ref}</span></div>}
-            {rma.request_number && <div><span className="text-gray-500">RMA:</span> <span className="font-medium">{rma.request_number}</span></div>}
-            {rma.quote_number && <div><span className="text-gray-500">Devis:</span> <span className="font-medium">{rma.quote_number}</span></div>}
-            {rma.bc_number && <div><span className="text-gray-500">BC:</span> <span className="font-medium">{rma.bc_number}</span></div>}
+            {rma.request_number && <div><span className="text-gray-500">{lang === 'en' ? 'RMA:' : 'RMA:'}</span> <span className="font-medium">{rma.request_number}</span></div>}
+            {rma.quote_number && <div><span className="text-gray-500">{lang === 'en' ? 'Quote:' : 'Devis:'}</span> <span className="font-medium">{rma.quote_number}</span></div>}
+            {rma.bc_number && <div><span className="text-gray-500">{lang === 'en' ? 'PO:' : 'BC:'}</span> <span className="font-medium">{rma.bc_number}</span></div>}
             {inv.sent_at && <div><span className="text-gray-500">{lang === 'en' ? 'Sent:' : 'Envoyée:'}</span> <span className="font-medium">{frenchDate(inv.sent_at)}</span></div>}
             {inv.paid_at && <div><span className="text-gray-500">{lang === 'en' ? 'Paid on:' : 'Payée le:'}</span> <span className="font-medium text-green-700">{frenchDate(inv.paid_at)}</span></div>}
             {inv.payment_reference && <div className="col-span-2"><span className="text-gray-500">{lang === 'en' ? 'Payment ref:' : 'Réf. paiement:'}</span> <span className="font-medium">{inv.payment_reference}</span></div>}
@@ -18657,14 +18657,14 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
 
           {/* Line Items */}
           <div>
-            <h4 className="font-medium text-gray-700 mb-2 text-sm">Lignes de facturation</h4>
+            <h4 className="font-medium text-gray-700 mb-2 text-sm">{lang === 'en' ? 'Invoice lines' : 'Lignes de facturation'}</h4>
             <div className="border rounded-lg overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-[#2D5A7B] text-white">
                   <tr>
                     <th className="text-left p-2 text-xs">{lang === 'en' ? 'Qty' : 'Qté'}</th>
                     <th className="text-left p-2 text-xs">{lang === 'en' ? 'Description' : 'Désignation'}</th>
-                    <th className="text-right p-2 text-xs">P.U. HT</th>
+                    <th className="text-right p-2 text-xs">{lang === 'en' ? 'U.P. excl.' : 'P.U. HT'}</th>
                     <th className="text-right p-2 text-xs">{t('totalHT')}</th>
                   </tr>
                 </thead>
@@ -18685,8 +18685,8 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
                   <span className="font-medium">{parseFloat(inv.subtotal_ht || 0).toFixed(2)} €</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">{inv.is_tva_exonerated ? 'TVA (exonérée)' : `TVA ${inv.tva_rate || 20}%`}</span>
-                  <span className="font-medium">{inv.is_tva_exonerated ? 'EXONÉRÉ' : (parseFloat(inv.tva_amount || 0).toFixed(2) + ' €')}</span>
+                  <span className="text-gray-500">{inv.is_tva_exonerated ? (lang === 'en' ? 'VAT (exempt)' : 'TVA (exonérée)') : `TVA ${inv.tva_rate || 20}%`}</span>
+                  <span className="font-medium">{inv.is_tva_exonerated ? (lang === 'en' ? 'EXEMPT' : 'EXONÉRÉ') : (parseFloat(inv.tva_amount || 0).toFixed(2) + ' €')}</span>
                 </div>
                 <div className="flex justify-between pt-1 border-t">
                   <span className="font-bold text-[#2D5A7B]">{t('totalTTC')}</span>
@@ -18705,24 +18705,24 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
           {/* Payment Recording */}
           {showPayment && (
             <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-              <h4 className="font-bold text-green-800 mb-3">💰 Enregistrer un paiement</h4>
+              <h4 className="font-bold text-green-800 mb-3">{lang === 'en' ? '💰 Record a payment' : '💰 Enregistrer un paiement'}</h4>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Montant (€)</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">{lang === 'en' ? 'Amount (€)' : 'Montant (€)'}</label>
                   <input type="number" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)}
                     placeholder={remaining.toFixed(2)} className="w-full px-3 py-2 border rounded-lg text-lg font-bold" autoFocus />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Date du paiement</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">{lang === 'en' ? 'Payment date' : 'Date du paiement'}</label>
                   <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">{lang === 'en' ? 'Payment ref' : 'Réf. paiement'}</label>
-                  <input type="text" value={paymentRef} onChange={e => setPaymentRef(e.target.value)} placeholder="Virement, chèque n°..." className="w-full px-3 py-2 border rounded-lg" />
+                  <input type="text" value={paymentRef} onChange={e => setPaymentRef(e.target.value)} placeholder={lang === 'en' ? 'Wire transfer, check #...' : 'Virement, chèque n°...'} className="w-full px-3 py-2 border rounded-lg" />
                 </div>
               </div>
               <div className="flex gap-2 mt-3">
-                <button onClick={recordPayment} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium">✅ Enregistrer</button>
+                <button onClick={recordPayment} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium">{lang === 'en' ? '✅ Save' : '✅ Enregistrer'}</button>
                 <button onClick={() => setPaymentAmount(remaining.toFixed(2))} className="px-4 py-2 bg-green-100 hover:bg-green-200 text-green-800 rounded-lg text-sm font-medium">Solder ({remaining.toFixed(2)} €)</button>
                 <button onClick={() => setShowPayment(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">{t('cancel')}</button>
               </div>
@@ -18731,7 +18731,7 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
 
           {inv.notes && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-              <p className="text-sm text-yellow-800"><strong>Notes:</strong> {inv.notes}</p>
+              <p className="text-sm text-yellow-800"><strong>{lang === 'en' ? 'Notes:' : 'Notes:'}</strong> {inv.notes}</p>
             </div>
           )}
         </div>
@@ -18740,18 +18740,18 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
         <div className="px-6 py-4 border-t bg-gray-50 flex items-center justify-between rounded-b-2xl">
           <div className="flex items-center gap-2">
             {inv.pdf_url && (
-              <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-[#2D5A7B] hover:bg-[#2a5490] text-white rounded-lg font-medium text-sm flex items-center gap-1">📄 PDF</a>
+              <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-[#2D5A7B] hover:bg-[#2a5490] text-white rounded-lg font-medium text-sm flex items-center gap-1">{lang === 'en' ? '📄 PDF' : '📄 PDF'}</a>
             )}
             {inv.status !== 'paid' && inv.status !== 'cancelled' && (
-              <button onClick={cancelInvoice} className="px-4 py-2 bg-gray-200 hover:bg-red-100 text-gray-600 hover:text-red-600 rounded-lg text-sm font-medium">🗑️ Annuler</button>
+              <button onClick={cancelInvoice} className="px-4 py-2 bg-gray-200 hover:bg-red-100 text-gray-600 hover:text-red-600 rounded-lg text-sm font-medium">{lang === 'en' ? '🗑️ Cancel' : '🗑️ Annuler'}</button>
             )}
           </div>
           <div className="flex items-center gap-2">
             {(inv.status === 'created' || inv.status === 'draft') && (
-              <button onClick={markAsSent} className="px-5 py-2 bg-[#00A651] hover:bg-[#008a43] text-white rounded-lg font-medium text-sm">📤 Envoyer au client</button>
+              <button onClick={markAsSent} className="px-5 py-2 bg-[#00A651] hover:bg-[#008a43] text-white rounded-lg font-medium text-sm">{lang === 'en' ? '📤 Send to client' : '📤 Envoyer au client'}</button>
             )}
             {inv.status !== 'paid' && inv.status !== 'cancelled' && (
-              <button onClick={() => { setShowPayment(true); setPaymentAmount(remaining.toFixed(2)); }} className="px-5 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium text-sm">💰 Enregistrer paiement</button>
+              <button onClick={() => { setShowPayment(true); setPaymentAmount(remaining.toFixed(2)); }} className="px-5 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium text-sm">{lang === 'en' ? '💰 Record payment' : '💰 Enregistrer paiement'}</button>
             )}
             <button onClick={onClose} className="px-5 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium text-sm">{t('close')}</button>
           </div>
@@ -18797,7 +18797,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
         id: `hdr-${device.id}`,
         deviceId: device.id,
         lineType: 'device_header',
-        description: `${device.model_name || device.model || 'Appareil'} — SN: ${device.serial_number}`,
+        description: `${device.model_name || device.model || (lang === 'en' ? 'Device' : 'Appareil')} — SN: ${device.serial_number}`,
         quantity: null,
         unitPrice: null,
         total: null,
@@ -18812,7 +18812,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
           id: `cal-${device.id}`,
           deviceId: device.id,
           lineType: 'calibration',
-          description: `Étalonnage${qd.calPartNumber ? ' (' + qd.calPartNumber + ')' : ''}`,
+          description: `${lang === 'en' ? 'Calibration' : 'Étalonnage'}${qd.calPartNumber ? ' (' + qd.calPartNumber + ')' : ''}`,
           quantity: 1,
           unitPrice: price,
           total: price,
@@ -18828,7 +18828,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
             id: `rep-${device.id}`,
             deviceId: device.id,
             lineType: 'repair',
-            description: `Réparation${qd.repairPartNumber ? ' (' + qd.repairPartNumber + ')' : ''}`,
+            description: `${lang === 'en' ? 'Repair' : 'Réparation'}${qd.repairPartNumber ? ' (' + qd.repairPartNumber + ')' : ''}`,
             quantity: 1,
             unitPrice: price,
             total: price,
@@ -18859,7 +18859,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
             id: `part-${device.id}-${pi}`,
             deviceId: device.id,
             lineType: 'parts',
-            description: `${part.name || part.partNumber || 'Pièce'} (${part.partNumber || ''})`,
+            description: `${part.name || part.partNumber || (lang === 'en' ? 'Part' : 'Pièce')} (${part.partNumber || ''})`,
             quantity: parseInt(part.quantity) || 1,
             unitPrice: parseFloat(part.price) || 0,
             total: partTotal,
@@ -18875,7 +18875,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
             id: `supp-${device.id}-${wi}`,
             deviceId: device.id,
             lineType: 'other',
-            description: `${item.description || item.name || 'Travaux supplémentaires'}`,
+            description: `${item.description || item.name || (lang === 'en' ? 'Additional work' : 'Travaux supplémentaires')}`,
             quantity: parseInt(item.quantity) || 1,
             unitPrice: parseFloat(item.price) || 0,
             total: (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1),
@@ -19055,7 +19055,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
 
       setSavedInvoice({ ...newInvoice, pdf_url: pdfUrl, invoice_number: invoiceNumber });
       setStep(3);
-      notify(`✅ Facture ${invoiceNumber} créée!`);
+      notify(lang === 'en' ? `✅ Invoice ${invoiceNumber} created!` : `✅ Facture ${invoiceNumber} créée!`);
       if (reload) reload();
     } catch (err) {
       console.error('Invoice save error:', err);
@@ -19096,17 +19096,17 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1">{lang === 'en' ? 'Your client ref.' : 'Vos réf. client'}</label>
-                  <input type="text" value={clientRef} onChange={e => setClientRef(e.target.value)} placeholder="Référence client..." className="w-full px-3 py-2 border rounded-lg text-sm" />
+                  <input type="text" value={clientRef} onChange={e => setClientRef(e.target.value)} placeholder={lang === 'en' ? 'Client reference...' : 'Référence client...'} className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">N° TVA client</label>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">{lang === 'en' ? 'Client VAT #' : 'N° TVA client'}</label>
                   <input type="text" value={clientTVA} onChange={e => setClientTVA(e.target.value)} placeholder="FR..." className="w-full px-3 py-2 border rounded-lg text-sm font-mono" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1">{lang === 'en' ? 'Payment terms' : 'Délai paiement'}</label>
                   <div className="flex items-center gap-2">
                     <input type="number" value={paymentTermsDays} onChange={e => setPaymentTermsDays(parseInt(e.target.value) || 30)} className="w-20 px-3 py-2 border rounded-lg text-sm" />
-                    <span className="text-sm text-gray-500">jours</span>
+                    <span className="text-sm text-gray-500">{lang === 'en' ? 'days' : 'jours'}</span>
                   </div>
                 </div>
               </div>
@@ -19121,14 +19121,14 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
 
               {/* Line items table */}
               <div>
-                <h3 className="font-bold text-gray-800 mb-3">Lignes de facture</h3>
+                <h3 className="font-bold text-gray-800 mb-3">{lang === 'en' ? 'Invoice lines' : 'Lignes de facture'}</h3>
                 <div className="border rounded-xl overflow-hidden">
                   <table className="w-full">
                     <thead>
                       <tr className="bg-gray-50 text-left">
                         <th className="px-3 py-2 text-xs font-bold text-gray-500 w-12">{lang === 'en' ? 'Qty' : 'Qté'}</th>
                         <th className="px-3 py-2 text-xs font-bold text-gray-500">{lang === 'en' ? 'Description' : 'Désignation'}</th>
-                        <th className="px-3 py-2 text-xs font-bold text-gray-500 w-28 text-right">P.U. HT</th>
+                        <th className="px-3 py-2 text-xs font-bold text-gray-500 w-28 text-right">{lang === 'en' ? 'U.P. excl.' : 'P.U. HT'}</th>
                         <th className="px-3 py-2 text-xs font-bold text-gray-500 w-28 text-right">{t('totalHT')}</th>
                         <th className="px-3 py-2 w-10"></th>
                       </tr>
@@ -19184,8 +19184,8 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
                     <span className="font-medium">{subtotalHT.toFixed(2)} €</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">TVA {isExonerated ? '(exonéré)' : '20%'}</span>
-                    <span className="font-medium">{isExonerated ? 'EXONÉRÉ' : tvaAmount.toFixed(2) + ' €'}</span>
+                    <span className="text-gray-500">{lang === 'en' ? 'VAT' : 'TVA'} {isExonerated ? (lang === 'en' ? '(exempt)' : '(exonéré)') : '20%'}</span>
+                    <span className="font-medium">{isExonerated ? (lang === 'en' ? 'EXEMPT' : 'EXONÉRÉ') : tvaAmount.toFixed(2) + ' €'}</span>
                   </div>
                   <div className="flex justify-between text-lg font-bold border-t pt-2">
                     <span>{t('totalTTC')}</span>
@@ -19196,8 +19196,8 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
 
               {/* Notes */}
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">Notes internes</label>
-                <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes internes (non visibles sur la facture)..." rows={2} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                <label className="block text-sm font-medium text-gray-600 mb-1">{lang === 'en' ? 'Internal notes' : 'Notes internes'}</label>
+                <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={lang === 'en' ? 'Internal notes (not visible on invoice)...' : 'Notes internes (non visibles sur la facture)...'} rows={2} className="w-full px-3 py-2 border rounded-lg text-sm" />
               </div>
             </div>
           )}
@@ -19206,7 +19206,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
           {step === 3 && savedInvoice && (
             <div className="text-center py-8">
               <div className="text-6xl mb-4">✅</div>
-              <h3 className="text-2xl font-bold text-green-700 mb-2">{lang === 'en' ? 'Invoice Created!' : (lang === 'en' ? 'Invoice Created!' : 'Facture Créée!')}</h3>
+              <h3 className="text-2xl font-bold text-green-700 mb-2">{lang === 'en' ? 'Invoice Created!' : 'Facture Créée!'}</h3>
               <p className="text-lg font-mono text-gray-700 mb-1">{savedInvoice.invoice_number}</p>
               <p className="text-gray-500 mb-6">{company.name} — {totalTTC.toFixed(2)} € TTC</p>
               <div className="flex items-center justify-center gap-3">
@@ -19238,7 +19238,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
                 disabled={saving || serviceLines.length === 0}
                 className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
               >
-                {saving ? '⏳ Génération...' : 'Générer Facture PDF & Enregistrer'}
+                {saving ? (lang === 'en' ? '⏳ Generating...' : '⏳ Génération...') : (lang === 'en' ? 'Generate Invoice PDF & Save' : 'Générer Facture PDF & Enregistrer')}
               </button>
             </>
           )}
@@ -19332,7 +19332,7 @@ function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang
   // Format year_month for display
   const formatYearMonth = (ym) => {
     if (!ym || ym.length !== 4) return ym;
-    const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
+    const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', (lang === 'en' ? 'Aug' : 'Aoû'), 'Sep', 'Oct', 'Nov', 'Déc'];
     const mm = parseInt(ym.slice(0, 2)) - 1;
     const yy = ym.slice(2);
     return `${months[mm]} 20${yy}`;
@@ -19422,16 +19422,16 @@ function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang
                     <div>
                       <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
                         <span className="text-lg">🔢</span>
-                        Numéro RMA (FR-XXXXX)
+                        {lang === 'en' ? 'RMA Number (FR-XXXXX)' : 'Numéro RMA (FR-XXXXX)'}
                       </h3>
                       <p className="text-sm text-gray-500 mb-4">
-                        Le numéro RMA est séquentiel et ne se réinitialise pas chaque mois.
+                        {lang === 'en' ? 'RMA number is sequential and does not reset each month.' : 'Le numéro RMA est séquentiel et ne se réinitialise pas chaque mois.'}
                       </p>
                       
                       <div className="bg-[#00A651]/10 rounded-xl p-4 border border-[#00A651]/30 max-w-xs">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-medium text-gray-500">RMA</span>
-                          <span className="text-xs bg-[#00A651] text-white px-2 py-0.5 rounded font-mono">FR</span>
+                          <span className="text-xs bg-[#00A651] text-white px-2 py-0.5 rounded font-mono">{lang === 'en' ? 'FR' : 'FR'}</span>
                         </div>
                         
                         {isEditingRMA ? (
@@ -19441,7 +19441,7 @@ function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang
                               value={newValue}
                               onChange={e => setNewValue(e.target.value)}
                               className="w-full px-3 py-2 border rounded-lg text-center font-mono"
-                              placeholder="Valeur actuelle"
+                              placeholder={lang === 'en' ? 'Current value' : 'Valeur actuelle'}
                               min="0"
                             />
                             <div className="flex gap-2">
@@ -19493,7 +19493,7 @@ function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang
                     Compteurs du mois actuel ({formatYearMonth(currentYearMonth)})
                   </h3>
                   <p className="text-sm text-gray-500 mb-4">
-                    Format: PREFIX-MMYY-NNN (ex: DEV-0226-001). Les compteurs se réinitialisent chaque mois.
+                    {lang === 'en' ? 'Format: PREFIX-MMYY-NNN (e.g. DEV-0226-001). Counters reset each month.' : 'Format: PREFIX-MMYY-NNN (ex: DEV-0226-001). Les compteurs se réinitialisent chaque mois.'}
                   </p>
                   
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -19517,7 +19517,7 @@ function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang
                                 value={newValue}
                                 onChange={e => setNewValue(e.target.value)}
                                 className="w-full px-3 py-2 border rounded-lg text-center font-mono"
-                                placeholder="Valeur actuelle"
+                                placeholder={lang === 'en' ? 'Current value' : 'Valeur actuelle'}
                                 min="0"
                               />
                               <div className="flex gap-2">
@@ -19605,8 +19605,8 @@ function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang
                 <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
                   <h4 className="font-medium text-blue-800 mb-2">{lang === 'en' ? '💡 How it works' : '💡 Comment ça marche'}</h4>
                   <ul className="text-sm text-blue-700 space-y-1">
-                    <li>• <strong>RMA (FR-XXXXX)</strong>{lang === 'en' ? ': Sequential number, does not reset' : ': Numéro séquentiel continu, ne se réinitialise pas'}</li>
-                    <li>• <strong>Documents (DEV, BC, BL, FAC, CTR, SUP)</strong>{lang === 'en' ? ': Format PREFIX-MMYY-NNN, resets monthly' : ': Format PREFIX-MMYY-NNN, réinitialisation mensuelle'}</li>
+                    <li>• <strong>{lang === 'en' ? 'RMA (FR-XXXXX)' : 'RMA (FR-XXXXX)'}</strong>{lang === 'en' ? ': Sequential number, does not reset' : ': Numéro séquentiel continu, ne se réinitialise pas'}</li>
+                    <li>• <strong>{lang === 'en' ? 'Documents (DEV, PO, DN, INV, CTR, SUP)' : 'Documents (DEV, BC, BL, FAC, CTR, SUP)'}</strong>{lang === 'en' ? ': Format PREFIX-MMYY-NNN, resets monthly' : ': Format PREFIX-MMYY-NNN, réinitialisation mensuelle'}</li>
                     <li>{lang === 'en' ? '• PO can be the client number (if provided) or auto-generated' : '• Le BC peut être le numéro du client (si fourni) ou auto-généré'}</li>
                     <li>{lang === 'en' ? '• PO number is referenced on the Delivery Note (DN)' : '• Le numéro BC est référencé sur le Bon de Livraison (BL)'}</li>
                     <li>{lang === 'en' ? '• Use the ✏️ button to correct a counter if needed' : '• Utilisez le bouton ✏️ pour corriger un compteur si nécessaire'}</li>
@@ -19722,7 +19722,7 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b bg-gradient-to-r from-blue-600 to-indigo-600 flex justify-between items-center">
           <div>
-            <h2 className="text-lg font-bold text-white">🏢 Informations de l'entreprise</h2>
+            <h2 className="text-lg font-bold text-white">{lang === 'en' ? "🏢 Company information" : "🏢 Informations de l'entreprise"}</h2>
             <p className="text-blue-100 text-sm">{lang === 'en' ? 'Used on DN, quotes and invoices' : 'Utilisées sur les BL, devis et factures'}</p>
           </div>
           {!editingSettings && (
@@ -19741,7 +19741,7 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
                   <input type="text" value={tempSettings.company_name} onChange={e => setTempSettings({...tempSettings, company_name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Capital</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Capital' : 'Capital'}</label>
                   <div className="flex">
                     <input type="text" value={tempSettings.capital} onChange={e => setTempSettings({...tempSettings, capital: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-l-lg" />
                     <span className="px-3 py-2 bg-gray-100 border border-l-0 border-gray-300 rounded-r-lg">€</span>
@@ -19756,7 +19756,7 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
               
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code postal</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Postal code' : 'Code postal'}</label>
                   <input type="text" value={tempSettings.postal_code} onChange={e => setTempSettings({...tempSettings, postal_code: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                 </div>
                 <div>
@@ -19777,27 +19777,27 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Site web</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Website' : 'Site web'}</label>
                 <input type="text" value={tempSettings.website} onChange={e => setTempSettings({...tempSettings, website: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
               </div>
               
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'SIRET' : 'SIRET'}</label>
                   <input type="text" value={tempSettings.siret} onChange={e => setTempSettings({...tempSettings, siret: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">TVA Intracommunautaire</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Intra-community VAT' : 'TVA Intracommunautaire'}</label>
                   <input type="text" value={tempSettings.tva} onChange={e => setTempSettings({...tempSettings, tva: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                 </div>
               </div>
               
               {/* Bank / Invoice Info Section */}
               <div className="pt-4 mt-4 border-t border-dashed border-gray-300">
-                <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">✍️ Signataire des devis</h4>
+                <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">{lang === 'en' ? '✍️ Quote signatory' : '✍️ Signataire des devis'}</h4>
                 <div className="grid md:grid-cols-2 gap-4 mb-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nom du signataire</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Signatory name' : 'Nom du signataire'}</label>
                     <input type="text" value={tempSettings.quote_signatory || ''} onChange={e => setTempSettings({...tempSettings, quote_signatory: e.target.value})} placeholder="M. Meleney" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
                 </div>
@@ -19808,16 +19808,16 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
                 <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">{lang === 'en' ? '🏦 Bank Details (invoices)' : '🏦 Coordonnées bancaires (factures)'}</h4>
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Banque</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Bank' : 'Banque'}</label>
                     <input type="text" value={tempSettings.bank_name || ''} onChange={e => setTempSettings({...tempSettings, bank_name: e.target.value})} placeholder="SOCIETE GENERALE" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Agence / Ville</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Branch / City' : 'Agence / Ville'}</label>
                     <input type="text" value={tempSettings.bank_branch || ''} onChange={e => setTempSettings({...tempSettings, bank_branch: e.target.value})} placeholder="LAGNY sur Marne" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
                 </div>
                 <div className="mt-3">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">IBAN</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'IBAN' : 'IBAN'}</label>
                   <input type="text" value={tempSettings.iban || ''} onChange={e => setTempSettings({...tempSettings, iban: e.target.value})} placeholder="FR76 3000 3008 8800 0200 1313 327" className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono" />
                 </div>
                 <div className="mt-3">
@@ -19826,11 +19826,11 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
                 </div>
                 <div className="grid md:grid-cols-2 gap-4 mt-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">BIC / SWIFT</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'BIC / SWIFT' : 'BIC / SWIFT'}</label>
                     <input type="text" value={tempSettings.bic || ''} onChange={e => setTempSettings({...tempSettings, bic: e.target.value})} placeholder="SOGEFRPP" className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Conditions de paiement (jours)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Payment terms (days)' : 'Conditions de paiement (jours)'}</label>
                     <input type="number" value={tempSettings.payment_terms_days || 30} onChange={e => setTempSettings({...tempSettings, payment_terms_days: parseInt(e.target.value) || 30})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
                 </div>
@@ -19843,7 +19843,7 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
               <div className="flex justify-end gap-3 pt-4 border-t">
                 <button onClick={() => setEditingSettings(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">{t('cancel')}</button>
                 <button onClick={saveSettings} disabled={saving} className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50">
-                  {saving ? '⏳ Enregistrement...' : '✅ Enregistrer'}
+                  {saving ? (lang === 'en' ? '⏳ Saving...' : '⏳ Enregistrement...') : (lang === 'en' ? '✅ Save' : '✅ Enregistrer')}
                 </button>
               </div>
             </div>
@@ -19864,11 +19864,11 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
                   <h4 className="font-medium text-gray-700 mb-3">{lang === 'en' ? 'Legal Information' : 'Informations légales'}</h4>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between py-2 border-b border-gray-100">
-                      <span className="text-gray-500">Capital</span>
+                      <span className="text-gray-500">{lang === 'en' ? 'Capital' : 'Capital'}</span>
                       <span className="font-medium">{businessSettings.capital} €</span>
                     </div>
                     <div className="flex justify-between py-2 border-b border-gray-100">
-                      <span className="text-gray-500">SIRET</span>
+                      <span className="text-gray-500">{lang === 'en' ? 'SIRET' : 'SIRET'}</span>
                       <span className="font-mono">{businessSettings.siret}</span>
                     </div>
                     <div className="flex justify-between py-2">
@@ -19886,30 +19886,30 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
                   <div className="space-y-2 text-sm">
                     {businessSettings.bank_name && (
                       <div className="flex justify-between py-1">
-                        <span className="text-gray-500">Banque</span>
+                        <span className="text-gray-500">{lang === 'en' ? 'Bank' : 'Banque'}</span>
                         <span>{businessSettings.bank_name}{businessSettings.bank_branch ? ` — ${businessSettings.bank_branch}` : ''}</span>
                       </div>
                     )}
                     {businessSettings.iban && (
                       <div className="flex justify-between py-1">
-                        <span className="text-gray-500">IBAN</span>
+                        <span className="text-gray-500">{lang === 'en' ? 'IBAN' : 'IBAN'}</span>
                         <span className="font-mono text-xs">{businessSettings.iban}</span>
                       </div>
                     )}
                     {businessSettings.rib && (
                       <div className="flex justify-between py-1">
-                        <span className="text-gray-500">RIB</span>
+                        <span className="text-gray-500">{lang === 'en' ? 'RIB' : 'RIB'}</span>
                         <span className="font-mono text-xs">{businessSettings.rib}</span>
                       </div>
                     )}
                     {businessSettings.bic && (
                       <div className="flex justify-between py-1">
-                        <span className="text-gray-500">BIC</span>
+                        <span className="text-gray-500">{lang === 'en' ? 'BIC' : 'BIC'}</span>
                         <span className="font-mono">{businessSettings.bic}</span>
                       </div>
                     )}
                     <div className="flex justify-between py-1">
-                      <span className="text-gray-500">Conditions paiement</span>
+                      <span className="text-gray-500">{lang === 'en' ? 'Payment terms' : 'Conditions paiement'}</span>
                       <span>{businessSettings.payment_terms_days || 30} jours</span>
                     </div>
                   </div>
@@ -19939,12 +19939,12 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer">
           <div className="text-3xl mb-3">💰</div>
-          <h3 className="font-bold text-gray-800">Tarification</h3>
+          <h3 className="font-bold text-gray-800">{lang === 'en' ? 'Pricing' : 'Tarification'}</h3>
           <p className="text-sm text-gray-500">{lang === 'en' ? 'Manage service pricing' : 'Gérer les prix des services'}</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer">
           <div className="text-3xl mb-3">🔑</div>
-          <h3 className="font-bold text-gray-800">Permissions</h3>
+          <h3 className="font-bold text-gray-800">{lang === 'en' ? 'Permissions' : 'Permissions'}</h3>
           <p className="text-sm text-gray-500">{lang === 'en' ? 'Manage employee access' : 'Gérer les accès des employés'}</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer">
@@ -20037,11 +20037,11 @@ const QUOTE_DEFAULTS = {
 };
 
 const CAL_TYPE_LABELS = {
-  particle_counter: { icon: '🔬', label: 'Compteur de Particules Aéroportées' },
-  bio_collector: { icon: '🧫', label: 'Bio Collecteur' },
-  liquid_counter: { icon: '💧', label: 'Compteur Particules Liquide' },
-  temp_humidity: { icon: '🌡️', label: 'Capteur Temp/Humidité' },
-  other: { icon: '⚙️', label: 'Autre Équipement' }
+  particle_counter: { icon: '🔬', label: lang === 'en' ? 'Airborne Particle Counter' : 'Compteur de Particules Aéroportées' },
+  bio_collector: { icon: '🧫', label: lang === 'en' ? 'Bio Collector' : 'Bio Collecteur' },
+  liquid_counter: { icon: '💧', label: lang === 'en' ? 'Liquid Particle Counter' : 'Compteur Particules Liquide' },
+  temp_humidity: { icon: '🌡️', label: lang === 'en' ? 'Temp/Humidity Sensor' : 'Capteur Temp/Humidité' },
+  other: { icon: '⚙️', label: lang === 'en' ? 'Other Equipment' : 'Autre Équipement' }
 };
 
 function QuoteContentSettings({ businessSettings, setBusinessSettings, notify }) {
@@ -20139,7 +20139,7 @@ function QuoteContentSettings({ businessSettings, setBusinessSettings, notify })
   };
 
   const resetToDefaults = () => {
-    if (window.confirm('Remettre tous les textes par défaut ? Les modifications non sauvegardées seront perdues.')) {
+    if (window.confirm(lang === 'en' ? 'Reset all text to defaults? Unsaved changes will be lost.' : 'Remettre tous les textes par défaut ? Les modifications non sauvegardées seront perdues.')) {
       setDraft(JSON.parse(JSON.stringify(QUOTE_DEFAULTS)));
     }
   };
@@ -20184,7 +20184,7 @@ function QuoteContentSettings({ businessSettings, setBusinessSettings, notify })
             value={p}
             onChange={(e) => onUpdate(idx, e.target.value)}
             className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="Texte de la prestation..."
+            placeholder={lang === 'en' ? 'Service description text...' : 'Texte de la prestation...'}
           />
           <button onClick={() => onRemove(idx)} className="text-red-400 hover:text-red-600 text-lg shrink-0 mt-0.5" title={lang === "en" ? "Delete" : "Supprimer"}>×</button>
         </div>
@@ -20199,8 +20199,8 @@ function QuoteContentSettings({ businessSettings, setBusinessSettings, notify })
     <div className="bg-white rounded-xl shadow-sm overflow-hidden">
       <div className="px-6 py-4 border-b bg-gradient-to-r from-green-600 to-emerald-600 flex justify-between items-center">
         <div>
-          <h2 className="text-lg font-bold text-white">📝 Contenu des devis</h2>
-          <p className="text-green-100 text-sm">Textes des prestations, conditions et signataire sur les PDF de devis</p>
+          <h2 className="text-lg font-bold text-white">{lang === 'en' ? '📝 Quote content' : '📝 Contenu des devis'}</h2>
+          <p className="text-green-100 text-sm">{lang === 'en' ? "Service texts, terms and signatory on quote PDFs" : "Textes des prestations, conditions et signataire sur les PDF de devis"}</p>
         </div>
         {!editing && (
           <button onClick={() => { setDraft(getWorkingCopy()); setEditing(true); }} className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg font-medium">
@@ -20215,11 +20215,11 @@ function QuoteContentSettings({ businessSettings, setBusinessSettings, notify })
             {/* Signatory */}
             <div className="grid md:grid-cols-2 gap-4 pb-4 border-b border-gray-200">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nom du signataire (sur le devis PDF)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Signatory name (on quote PDF)' : 'Nom du signataire (sur le devis PDF)'}</label>
                 <input type="text" value={draft.signatory_name} onChange={e => setDraft({ ...draft, signatory_name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="M. Meleney" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Entreprise du signataire</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? "Signatory company" : "Entreprise du signataire"}</label>
                 <input type="text" value={draft.signatory_company} onChange={e => setDraft({ ...draft, signatory_company: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Lighthouse France" />
               </div>
             </div>
@@ -20240,7 +20240,7 @@ function QuoteContentSettings({ businessSettings, setBusinessSettings, notify })
                     {expandedSection === 'cal_' + key && (
                       <div className="p-4 space-y-3">
                         <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Titre de la section</label>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">{lang === 'en' ? 'Section title' : 'Titre de la section'}</label>
                           <input
                             type="text"
                             value={draft.calibration[key]?.title || ''}
@@ -20249,7 +20249,7 @@ function QuoteContentSettings({ businessSettings, setBusinessSettings, notify })
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Lignes de prestation</label>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">{lang === 'en' ? 'Service lines' : 'Lignes de prestation'}</label>
                           {renderPrestationsEditor(
                             draft.calibration[key]?.prestations || [],
                             (idx, val) => updateCalPrestation(key, idx, val),
@@ -20276,7 +20276,7 @@ function QuoteContentSettings({ businessSettings, setBusinessSettings, notify })
               {expandedSection === 'repair' && (
                 <div className="p-4 space-y-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Titre de la section</label>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">{lang === 'en' ? 'Section title' : 'Titre de la section'}</label>
                     <input
                       type="text"
                       value={draft.repair.title}
@@ -20285,7 +20285,7 @@ function QuoteContentSettings({ businessSettings, setBusinessSettings, notify })
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Lignes de prestation</label>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">{lang === 'en' ? 'Service lines' : 'Lignes de prestation'}</label>
                     {renderPrestationsEditor(draft.repair.prestations, updateRepairPrestation, addRepairPrestation, removeRepairPrestation)}
                   </div>
                 </div>
@@ -20317,7 +20317,7 @@ function QuoteContentSettings({ businessSettings, setBusinessSettings, notify })
               <div className="flex gap-3">
                 <button onClick={() => setEditing(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">{t('cancel')}</button>
                 <button onClick={saveQuoteSettings} disabled={saving} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">
-                  {saving ? '⏳ Enregistrement...' : '✅ Enregistrer'}
+                  {saving ? (lang === 'en' ? '⏳ Saving...' : '⏳ Enregistrement...') : (lang === 'en' ? '✅ Save' : '✅ Enregistrer')}
                 </button>
               </div>
             </div>
@@ -20327,7 +20327,7 @@ function QuoteContentSettings({ businessSettings, setBusinessSettings, notify })
             {/* Read-only summary */}
             <div className="flex items-center gap-4 text-sm">
               <div className="flex items-center gap-2 text-gray-600">
-                <span className="font-medium">Signataire:</span>
+                <span className="font-medium">{lang === 'en' ? 'Signatory:' : 'Signataire:'}</span>
                 <span>{businessSettings.quote_settings?.signatory_name || businessSettings.quote_signatory || 'M. Meleney'}</span>
               </div>
             </div>
@@ -21277,10 +21277,10 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
   // Get device type label
   const getDeviceTypeLabel = (type) => {
     const labels = {
-      particle_counter: 'Compteur Particules (Air)',
-      bio_collector: 'Bio Collecteur',
-      liquid_counter: 'Compteur Particules (Liquide)',
-      temp_humidity: 'Capteur Temp/Humidité',
+      particle_counter: lang === 'en' ? 'Particle Counter (Air)' : 'Compteur Particules (Air)',
+      bio_collector: lang === 'en' ? 'Bio Collector' : 'Bio Collecteur',
+      liquid_counter: lang === 'en' ? 'Particle Counter (Liquid)' : 'Compteur Particules (Liquide)',
+      temp_humidity: lang === 'en' ? 'Temp/Humidity Sensor' : 'Capteur Temp/Humidité',
       other: 'Autre'
     };
     return labels[type] || type;
@@ -21397,7 +21397,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
             file_url: request.quote_url,
             file_name: `${rmaNumber}_devis_${revLabel}.pdf`,
             category: 'internal_devis_revision',
-            notes: `Devis ${revLabel} - archivé le ${new Date().toLocaleDateString('fr-FR')}`
+            notes: `Devis ${revLabel} - archivé le ${new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}`
           });
           if (archErr) {
             console.error('Archive insert error:', archErr);
@@ -21528,12 +21528,12 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
 
       if (isFullyContractCovered) {
         const bcDocUrl = contractBcFileUrl || contractSignedQuoteUrl;
-        const bcCopied = bcDocUrl ? ' (BC/Devis contrat copié)' : ' (⚠️ BC contrat non trouvé)';
-        notify(`✅ Contrat! RMA ${rmaNumber} créé - En attente de réception${bcCopied}`);
+        const bcCopied = bcDocUrl ? ` (${lang === 'en' ? 'Contract PO/Quote copied' : 'BC/Devis contrat copié'})` : ` (⚠️ ${lang === 'en' ? 'Contract PO not found' : 'BC contrat non trouvé'})`;
+        notify(lang === 'en' ? `✅ Contract! RMA ${rmaNumber} created - Awaiting reception${bcCopied}` : `✅ Contrat! RMA ${rmaNumber} créé - En attente de réception${bcCopied}`);
       } else if (isRevision) {
-        notify(`✅ Devis révisé envoyé! ${quoteNumber} Rev-${newRevisionCount} → ${request.companies?.name || 'Client'}`);
+        notify(lang === 'en' ? `✅ Revised quote sent! ${quoteNumber} Rev-${newRevisionCount} → ${request.companies?.name || 'Client'}` : `✅ Devis révisé envoyé! ${quoteNumber} Rev-${newRevisionCount} → ${request.companies?.name || 'Client'}`);
       } else if (hasContractCoveredDevices) {
-        notify(`✅ Devis envoyé! RMA: ${rmaNumber} (certains appareils sous contrat)`);
+        notify(lang === 'en' ? `✅ Quote sent! RMA: ${rmaNumber} (some devices under contract)` : `✅ Devis envoyé! RMA: ${rmaNumber} (certains appareils sous contrat)`);
       } else {
         notify(lang === 'en' ? '✅ Quote sent! RMA: ' : '✅ Devis envoyé! RMA: ' + rmaNumber);
       }
@@ -21550,7 +21550,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
   // Decline revision request
   const declineRevision = async () => {
     if (!declineNotes.trim()) {
-      notify('Veuillez indiquer la raison du refus.', 'error');
+      notify(lang === 'en' ? 'Please indicate the rejection reason.' : 'Veuillez indiquer la raison du refus.', 'error');
       return;
     }
     setSaving(true);
@@ -21562,7 +21562,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       }).eq('id', request.id);
       
       if (error) throw error;
-      notify(`❌ Modification refusée - ${request.companies?.name || 'Client'} sera notifié`);
+      notify(lang === 'en' ? `❌ Modification declined - ${request.companies?.name || 'Client'} will be notified` : `❌ Modification refusée - ${request.companies?.name || 'Client'} sera notifié`);
       reload();
       onClose();
     } catch (err) {
@@ -21580,9 +21580,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           <div className="flex items-center gap-6">
             <div>
               <h2 className="text-xl font-bold flex items-center gap-2">
-                {step === 1 && (isRevision ? '🔴 Réviser le Devis' : 'Créer le Devis')}
-                {step === 2 && 'Aperçu du Devis'}
-                {step === 3 && (isFullyContractCovered ? 'Confirmer RMA Contrat' : 'Confirmer l\'envoi')}
+                {step === 1 && (isRevision ? (lang === 'en' ? '🔴 Revise Quote' : '🔴 Réviser le Devis') : (lang === 'en' ? 'Create Quote' : 'Créer le Devis'))}
+                {step === 2 && (lang === 'en' ? 'Quote Preview' : 'Aperçu du Devis')}
+                {step === 3 && (isFullyContractCovered ? (lang === 'en' ? 'Confirm Contract RMA' : 'Confirmer RMA Contrat') : (lang === 'en' ? "Confirm send" : "Confirmer l'envoi"))}
               </h2>
               <p className="text-gray-300">
                 {request.companies?.name} • {devicePricing.length} appareil(s)
@@ -21613,7 +21613,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
               <div className="flex items-center gap-3">
                 <div className="w-6 h-6 border-2 border-[#00A651] border-t-transparent rounded-full animate-spin"></div>
                 <span className="text-gray-600">
-                  {loadingParts ? 'Chargement tarifs...' : 'Vérification contrat en cours...'}
+                  {loadingParts ? (lang === 'en' ? 'Loading prices...' : 'Chargement tarifs...') : (lang === 'en' ? 'Checking contract...' : 'Vérification contrat en cours...')}
                 </span>
               </div>
             </div>
@@ -21632,20 +21632,20 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                       <div className="flex items-start gap-3">
                         <span className="text-3xl">🔴</span>
                         <div className="flex-1">
-                          <p className="font-bold text-red-800 text-lg">Demande de modification du client</p>
+                          <p className="font-bold text-red-800 text-lg">{lang === 'en' ? 'Client modification request' : 'Demande de modification du client'}</p>
                           <p className="text-sm text-red-600 mt-1">
-                            {request.companies?.name} a demandé des modifications au devis {request.quote_number}
+                            {request.companies?.name} {lang === 'en' ? 'requested modifications to quote' : 'a demandé des modifications au devis'} {request.quote_number}
                             {currentRevisionCount > 0 && ` (actuellement Rev-${currentRevisionCount})`}
                           </p>
                           {clientRevisionNotes && (
                             <div className="mt-3 p-3 bg-white rounded-lg border border-red-200">
-                              <p className="text-xs font-medium text-gray-500 mb-1">💬 Message du client :</p>
+                              <p className="text-xs font-medium text-gray-500 mb-1">{lang === 'en' ? '💬 Client message:' : '💬 Message du client :'}</p>
                               <p className="text-gray-800 whitespace-pre-wrap">{clientRevisionNotes}</p>
                             </div>
                           )}
                           <div className="mt-3 flex gap-2">
                             <p className="text-xs text-red-500 italic flex-1">
-                              Modifiez les tarifs ci-dessous puis envoyez le devis révisé, ou refusez la modification.
+                              {lang === 'en' ? 'Modify prices below then send the revised quote, or reject the modification.' : 'Modifiez les tarifs ci-dessous puis envoyez le devis révisé, ou refusez la modification.'}
                             </p>
                             {!declineMode ? (
                               <button onClick={() => setDeclineMode(true)} className="px-3 py-1 text-xs bg-white border border-red-300 text-red-600 rounded hover:bg-red-50 font-medium">
@@ -21664,14 +21664,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     {/* Decline mode */}
                     {declineMode && (
                       <div className="mt-3 p-4 rounded-xl border-2 border-orange-300 bg-orange-50">
-                        <p className="font-bold text-orange-800 mb-2">❌ Refuser la modification</p>
+                        <p className="font-bold text-orange-800 mb-2">{lang === 'en' ? '❌ Decline modification' : '❌ Refuser la modification'}</p>
                         <p className="text-sm text-orange-600 mb-3">
-                          Le client sera notifié que sa demande a été refusée et recevra le motif ci-dessous. Le devis original reste en vigueur.
+                          {lang === 'en' ? 'Client will be notified their request was rejected and will receive the reason below. The original quote remains in effect.' : 'Le client sera notifié que sa demande a été refusée et recevra le motif ci-dessous. Le devis original reste en vigueur.'}
                         </p>
                         <textarea
                           value={declineNotes}
                           onChange={e => setDeclineNotes(e.target.value)}
-                          placeholder="Expliquez au client pourquoi la modification ne peut pas être acceptée..."
+                          placeholder={lang === 'en' ? 'Explain to the client why the modification cannot be accepted...' : 'Expliquez au client pourquoi la modification ne peut pas être acceptée...'}
                           className="w-full p-3 border rounded-lg text-sm resize-none focus:ring-2 focus:ring-orange-300"
                           rows={3}
                         />
@@ -21684,7 +21684,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                             disabled={saving || !declineNotes.trim()}
                             className="px-4 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 font-medium"
                           >
-                            {saving ? 'Envoi...' : '❌ Confirmer le refus'}
+                            {saving ? (lang === 'en' ? 'Sending...' : 'Envoi...') : (lang === 'en' ? '❌ Confirm rejection' : '❌ Confirmer le refus')}
                           </button>
                         </div>
                       </div>
@@ -21703,14 +21703,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                         </p>
                         <p className="text-emerald-700 text-sm mt-1">
                           {isFullyContractCovered 
-                            ? 'Étalonnage(s) couvert(s) par contrat. Le RMA sera créé directement en "Attente Appareil" avec le BC du contrat.'
+                            ? (lang === 'en' ? 'Calibration(s) covered by contract. RMA will be created directly in "Awaiting Device" with the contract PO.' : 'Étalonnage(s) couvert(s) par contrat. Le RMA sera créé directement en "Attente Appareil" avec le BC du contrat.')
                             : `${devicePricing.filter(d => d.isContractCovered).length} appareil(s) couvert(s) par contrat. Les réparations ou appareils non couverts seront facturés normalement.`
                           }
                         </p>
                         {contractInfo?.primaryContract && (
                           <p className="text-xs text-emerald-600 mt-2">
                             Contrat: {contractInfo.primaryContract.contract_number} • 
-                            Valide jusqu'au {new Date(contractInfo.primaryContract.end_date).toLocaleDateString('fr-FR')}
+                            Valide jusqu'au {new Date(contractInfo.primaryContract.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
                           </p>
                         )}
                       </div>
@@ -21754,7 +21754,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                 </div>
 
                 {/* Device Pricing Cards */}
-                <h3 className="font-bold text-gray-800 mb-3">Tarification par Appareil</h3>
+                <h3 className="font-bold text-gray-800 mb-3">{lang === 'en' ? 'Pricing by Device' : 'Tarification par Appareil'}</h3>
                 <div className="space-y-4">
                   {devicePricing.map((device, index) => {
                     const calTemplate = CALIBRATION_TEMPLATES[device.deviceType] || CALIBRATION_TEMPLATES.particle_counter;
@@ -21770,7 +21770,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                           <div className="flex items-center gap-3">
                             <span className="bg-white/20 px-2 py-1 rounded text-sm font-bold">#{index + 1}</span>
                             <div>
-                              <p className="font-bold">{device.model || 'Appareil'}</p>
+                              <p className="font-bold">{device.model || (lang === 'en' ? 'Device' : 'Appareil')}</p>
                               <p className="text-sm text-gray-300">SN: {device.serial} • {getDeviceTypeLabel(device.deviceType)}</p>
                             </div>
                           </div>
@@ -21789,7 +21789,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                         {/* Device Edit Form */}
                         {isEditing && (
                           <div className="bg-blue-50 p-4 border-b border-blue-200">
-                            <p className="text-sm font-bold text-blue-800 mb-3">✏️ Modifier les informations de l'appareil</p>
+                            <p className="text-sm font-bold text-blue-800 mb-3">{lang === 'en' ? "✏️ Edit device information" : "✏️ Modifier les informations de l'appareil"}</p>
                             <div className="grid grid-cols-2 gap-3">
                               <div>
                                 <label className="block text-xs font-medium text-gray-600 mb-1">{t('model')}</label>
@@ -21810,21 +21810,21 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                                 />
                               </div>
                               <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Type d'appareil</label>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">{lang === 'en' ? "Device type" : "Type d'appareil"}</label>
                                 <select
                                   value={device.deviceType}
                                   onChange={e => updateDevice(device.id, 'deviceType', e.target.value)}
                                   className="w-full px-3 py-2 border rounded-lg text-sm"
                                 >
-                                  <option value="particle_counter">Compteur Particules (Air)</option>
-                                  <option value="liquid_counter">Compteur Particules (Liquide)</option>
-                                  <option value="bio_collector">Bio Collecteur</option>
+                                  <option value="particle_counter">{lang === 'en' ? 'Particle Counter (Air)' : 'Compteur Particules (Air)'}</option>
+                                  <option value="liquid_counter">{lang === 'en' ? 'Particle Counter (Liquid)' : 'Compteur Particules (Liquide)'}</option>
+                                  <option value="bio_collector">{lang === 'en' ? 'Bio Collector' : 'Bio Collecteur'}</option>
                                   <option value="temp_humidity">{lang === 'en' ? "Temp/Humidity Sensor" : "Capteur Temp/Humidité"}</option>
-                                  <option value="other">Autre</option>
+                                  <option value="other">{lang === 'en' ? 'Other' : 'Autre'}</option>
                                 </select>
                               </div>
                               <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Type de service</label>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">{lang === 'en' ? 'Service type' : 'Type de service'}</label>
                                 <select
                                   value={device.serviceType}
                                   onChange={e => {
@@ -21853,7 +21853,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                         {/* Customer Notes (Internal) */}
                         {device.customerNotes && (
                           <div className="bg-yellow-50 px-4 py-2 border-b border-yellow-200">
-                            <p className="text-xs text-yellow-700 font-medium">💬 Note client (interne) :</p>
+                            <p className="text-xs text-yellow-700 font-medium">{lang === 'en' ? '💬 Client note (internal):' : '💬 Note client (interne) :'}</p>
                             <p className="text-sm text-yellow-800">{device.customerNotes}</p>
                           </div>
                         )}
@@ -21883,7 +21883,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                             <div className="w-14 text-center">{lang === 'en' ? 'Qty' : 'Qté'}</div>
                             <div className="w-28">{lang === 'en' ? 'Part #' : 'N° Pièce'}</div>
                             <div className="flex-1">{lang === 'en' ? 'Description' : 'Désignation'}</div>
-                            <div className="w-24 text-right">Prix Unit.</div>
+                            <div className="w-24 text-right">{lang === 'en' ? 'Unit Price' : 'Prix Unit.'}</div>
                             <div className="w-24 text-right">{t('total')}</div>
                             <div className="w-8"></div>
                           </div>
@@ -21934,7 +21934,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                                       ? 'text-blue-800' 
                                       : 'text-orange-800'
                                   }`}>
-                                    Étalonnage {device.model}
+                                    {lang === 'en' ? 'Calibration' : 'Étalonnage'} {device.model}
                                     {device.calPartNumber && partsCache[device.calPartNumber] && (
                                       <span className="ml-1 text-green-600">✓</span>
                                     )}
@@ -21943,7 +21943,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                                 {/* Unit Price */}
                                 {device.isContractCovered ? (
                                   <div className="w-24 text-right">
-                                    <span className="px-2 py-1 bg-emerald-600 text-white text-xs rounded">Contrat</span>
+                                    <span className="px-2 py-1 bg-emerald-600 text-white text-xs rounded">{lang === 'en' ? 'Contract' : 'Contrat'}</span>
                                   </div>
                                 ) : (
                                   <div className="w-24">
@@ -22012,7 +22012,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                                 {/* Unit Price */}
                                 {device.isContractCovered ? (
                                   <div className="w-24 text-right">
-                                    <span className="px-2 py-1 bg-emerald-600 text-white text-xs rounded">Contrat</span>
+                                    <span className="px-2 py-1 bg-emerald-600 text-white text-xs rounded">{lang === 'en' ? 'Contract' : 'Contrat'}</span>
                                   </div>
                                 ) : (
                                   <div className="w-24">
@@ -22065,7 +22065,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                                 {/* Description */}
                                 <div className="flex-1">
                                   <span className="text-sm text-orange-800">
-                                    Réparation {device.model}
+                                    {lang === 'en' ? 'Repair' : 'Réparation'} {device.model}
                                     {device.repairPartNumber && partsCache[device.repairPartNumber] && (
                                       <span className="ml-1 text-green-600">✓</span>
                                     )}
@@ -22118,7 +22118,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                                         updatePart(device.id, part.id, 'description', partsDescriptionCache[pn]);
                                       }
                                     }}
-                                    placeholder="N° pièce"
+                                    placeholder={lang === 'en' ? 'Part #' : 'N° pièce'}
                                     className={`w-full px-2 py-1.5 border rounded text-xs font-mono ${
                                       part.partNumber && partsCache[part.partNumber]
                                         ? 'border-green-400 bg-green-50'
@@ -22156,7 +22156,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                           ))}
                           
                           <button onClick={() => addPart(device.id)} className="text-sm text-[#00A651] font-medium hover:underline ml-16">
-                            + Ajouter pièce/service
+                            {lang === 'en' ? '+ Add part/service' : '+ Ajouter pièce/service'}
                           </button>
                         </div>
                       </div>
@@ -22167,7 +22167,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                 {/* GLOBAL SHIPPING SECTION */}
                 <div className="mt-6 p-4 bg-gray-100 rounded-lg border-2 border-gray-300">
                   <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    📦 Frais de port
+                    {lang === 'en' ? '📦 Shipping fees' : '📦 Frais de port'}
                     <span className="text-sm font-normal text-gray-500">
                       ({shippingData.parcels} colis × {shippingData.unitPrice.toFixed(2)}€)
                     </span>
@@ -22198,7 +22198,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     </div>
                     {/* Parcels */}
                     <div className="w-24">
-                      <label className="block text-xs text-gray-500 mb-1">Nb Colis</label>
+                      <label className="block text-xs text-gray-500 mb-1">{lang === 'en' ? 'Nb Parcels' : 'Nb Colis'}</label>
                       <input
                         type="number"
                         min="1"
@@ -22216,7 +22216,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     </div>
                     {/* Unit Price */}
                     <div className="w-24">
-                      <label className="block text-xs text-gray-500 mb-1">Prix/colis</label>
+                      <label className="block text-xs text-gray-500 mb-1">{lang === 'en' ? 'Price/parcel' : 'Prix/colis'}</label>
                       <div className="flex items-center gap-1">
                         <input
                           type="number"
@@ -22236,7 +22236,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     </div>
                     {/* Total */}
                     <div className="flex-1 text-right">
-                      <label className="block text-xs text-gray-500 mb-1">Total port</label>
+                      <label className="block text-xs text-gray-500 mb-1">{lang === 'en' ? 'Total shipping' : 'Total port'}</label>
                       <p className="text-lg font-bold text-[#00A651]">{shippingData.total.toFixed(2)} €</p>
                     </div>
                   </div>
@@ -22272,8 +22272,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                           ) : device.isContractCovered && device.needsRepair ? (
                             <>
                               <p className="font-bold text-[#00A651]">{getDeviceServiceTotal(device).toFixed(2)} €</p>
-                              <p className="text-xs text-emerald-600">Cal: Contrat</p>
-                              <p className="text-xs text-gray-400">Rép: {device.repairPrice}€</p>
+                              <p className="text-xs text-emerald-600">{lang === 'en' ? 'Cal: Contract' : 'Cal: Contrat'}</p>
+                              <p className="text-xs text-gray-400">{lang === 'en' ? 'Rep' : 'Rép'}: {device.repairPrice}€</p>
                             </>
                           ) : (
                             <>
@@ -22289,15 +22289,15 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                 {/* Totals */}
                 <div className="border-t pt-4 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Sous-total services</span>
+                    <span className="text-gray-600">{lang === 'en' ? 'Services subtotal' : 'Sous-total services'}</span>
                     <span className="font-medium">{servicesSubtotal.toFixed(2)} €</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Frais de port total</span>
+                    <span className="text-gray-600">{lang === 'en' ? 'Total shipping fees' : 'Frais de port total'}</span>
                     <span className="font-medium">{shippingTotal.toFixed(2)} €</span>
                   </div>
                   <div className="flex justify-between items-center bg-[#00A651] text-white px-4 py-3 rounded-lg mt-4">
-                    <span className="font-bold">TOTAL HT</span>
+                    <span className="font-bold">{lang === 'en' ? 'TOTAL excl. VAT' : 'TOTAL HT'}</span>
                     <span className="font-bold text-xl">{grandTotal.toFixed(2)} €</span>
                   </div>
                 </div>
@@ -22335,8 +22335,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-[#2D5A7B]">OFFRE DE PRIX</p>
-                      <p className="text-sm font-bold text-[#2D5A7B]">N° {request.quote_number || '(Généré à l\'envoi)'}</p>
+                      <p className="text-2xl font-bold text-[#2D5A7B]">{lang === 'en' ? 'PRICE QUOTE' : 'OFFRE DE PRIX'}</p>
+                      <p className="text-sm font-bold text-[#2D5A7B]">N° {request.quote_number || '${lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)"}'}</p>
                       <p className="text-xs text-gray-500">RMA: {request.request_number}</p>
                     </div>
                   </div>
@@ -22346,14 +22346,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                 <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
                   <div>
                     <p className="text-xs text-gray-500 uppercase">{t('date')}</p>
-                    <p className="font-medium">{today.toLocaleDateString('fr-FR')}</p>
+                    <p className="font-medium">{today.toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'Validity' : 'Validité'}</p>
-                    <p className="font-medium">30 jours</p>
+                    <p className="font-medium">{lang === 'en' ? '30 days' : '30 jours'}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 uppercase">Conditions</p>
+                    <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'Terms' : 'Conditions'}</p>
                     <p className="font-medium">{lang === 'en' ? 'Upon receipt of invoice' : 'À réception de facture'}</p>
                   </div>
                 </div>
@@ -22416,7 +22416,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                       <tr className="bg-[#1a1a2e] text-white">
                         <th className="px-4 py-3 text-center w-16">{lang === 'en' ? 'Qty' : 'Qté'}</th>
                         <th className="px-4 py-3 text-left">{lang === 'en' ? 'Description' : 'Désignation'}</th>
-                        <th className="px-4 py-3 text-right w-28">Prix Unit.</th>
+                        <th className="px-4 py-3 text-right w-28">{lang === 'en' ? 'Unit Price' : 'Prix Unit.'}</th>
                         <th className="px-4 py-3 text-right w-28">{t('totalHT')}</th>
                       </tr>
                     </thead>
@@ -22433,14 +22433,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                             <tr key={`${device.id}-cal`} className="border-b">
                               <td className="px-4 py-3 text-center">{qty}</td>
                               <td className="px-4 py-3">
-                                Étalonnage {device.model} (SN: {device.serial})
-                                {device.isContractCovered && <span className="ml-2 px-2 py-0.5 bg-emerald-500 text-white text-xs rounded">CONTRAT</span>}
+                                {lang === 'en' ? 'Calibration' : 'Étalonnage'} {device.model} (SN: {device.serial})
+                                {device.isContractCovered && <span className="ml-2 px-2 py-0.5 bg-emerald-500 text-white text-xs rounded">{lang === 'en' ? 'CONTRACT' : 'CONTRAT'}</span>}
                               </td>
                               <td className="px-4 py-3 text-right whitespace-nowrap">
-                                {device.isContractCovered ? <span className="text-emerald-600">Contrat</span> : `${unitPrice.toFixed(2)} €`}
+                                {device.isContractCovered ? <span className="text-emerald-600">{lang === 'en' ? 'Contract' : 'Contrat'}</span> : `${unitPrice.toFixed(2)} €`}
                               </td>
                               <td className="px-4 py-3 text-right font-medium whitespace-nowrap">
-                                {device.isContractCovered ? <span className="text-emerald-600">Contrat</span> : `${lineTotal.toFixed(2)} €`}
+                                {device.isContractCovered ? <span className="text-emerald-600">{lang === 'en' ? 'Contract' : 'Contrat'}</span> : `${lineTotal.toFixed(2)} €`}
                               </td>
                             </tr>
                           );
@@ -22469,7 +22469,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                           rows.push(
                             <tr key={`${device.id}-repair`} className="border-b">
                               <td className="px-4 py-3 text-center">{qty}</td>
-                              <td className="px-4 py-3">Réparation {device.model} (SN: {device.serial})</td>
+                              <td className="px-4 py-3">{lang === 'en' ? 'Repair' : 'Réparation'} {device.model} (SN: {device.serial})</td>
                               <td className="px-4 py-3 text-right whitespace-nowrap">{unitPrice.toFixed(2)} €</td>
                               <td className="px-4 py-3 text-right font-medium whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
                             </tr>
@@ -22486,7 +22486,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                               <td className="px-4 py-3 text-center">{qty}</td>
                               <td className="px-4 py-3">
                                 {part.partNumber && <span className="text-gray-500 mr-1">[{part.partNumber}]</span>}
-                                {part.description || 'Pièce/Service'}
+                                {part.description || (lang === 'en' ? 'Part/Service' : 'Pièce/Service')}
                               </td>
                               <td className="px-4 py-3 text-right whitespace-nowrap">{unitPrice.toFixed(2)} €</td>
                               <td className="px-4 py-3 text-right font-medium whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
@@ -22502,17 +22502,17 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                         <td className="px-4 py-3 text-center">{shippingData.parcels}</td>
                         <td className="px-4 py-3">Frais de port ({shippingData.parcels} colis)</td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
-                          {isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${shippingData.unitPrice.toFixed(2)} €`}
+                          {isFullyContractCovered ? <span className="text-emerald-600">{lang === 'en' ? 'Contract' : 'Contrat'}</span> : `${shippingData.unitPrice.toFixed(2)} €`}
                         </td>
                         <td className="px-4 py-3 text-right font-medium whitespace-nowrap">
-                          {isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${shippingTotal.toFixed(2)} €`}
+                          {isFullyContractCovered ? <span className="text-emerald-600">{lang === 'en' ? 'Contract' : 'Contrat'}</span> : `${shippingTotal.toFixed(2)} €`}
                         </td>
                       </tr>
                     </tbody>
                     <tfoot>
                       <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#2D5A7B] text-white"}>
                         <td colSpan={2} className="px-4 py-4"></td>
-                        <td className="px-4 py-4 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
+                        <td className="px-4 py-4 text-right font-bold text-lg whitespace-nowrap">{lang === 'en' ? 'TOTAL excl. VAT' : 'TOTAL HT'}</td>
                         <td className="px-4 py-4 text-right font-bold text-xl whitespace-nowrap">
                           {isFullyContractCovered ? 'Contrat' : `${grandTotal.toFixed(2)} €`}
                         </td>
@@ -22530,7 +22530,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
 
                 {/* Disclaimers */}
                 <div className="px-8 py-4 border-t">
-                  <p className="text-xs text-gray-500 uppercase mb-2">Conditions</p>
+                  <p className="text-xs text-gray-500 uppercase mb-2">{lang === 'en' ? 'Terms' : 'Conditions'}</p>
                   <ul className="text-xs text-gray-600 space-y-1">
                     {QUOTE_DISCLAIMERS.map((d, i) => (
                       <li key={i}>• {d}</li>
@@ -22542,7 +22542,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                 <div className="px-8 py-6 border-t flex justify-between items-end">
                   <div className="flex items-end gap-6">
                     <div>
-                      <p className="text-xs text-gray-500 uppercase mb-1">Etabli par</p>
+                      <p className="text-xs text-gray-500 uppercase mb-1">{lang === 'en' ? 'Prepared by' : 'Etabli par'}</p>
                       <p className="font-bold text-lg">{signatory}</p>
                       <p className="text-gray-600">Lighthouse France</p>
                     </div>
@@ -22555,9 +22555,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     />
                   </div>
                   <div className="text-right">
-                    <p className="text-xs text-gray-400 mb-1">Signature client</p>
+                    <p className="text-xs text-gray-400 mb-1">{lang === 'en' ? 'Client signature' : 'Signature client'}</p>
                     <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
-                    <p className="text-xs text-gray-400 mt-1">Lu et approuve</p>
+                    <p className="text-xs text-gray-400 mt-1">{lang === 'en' ? 'Read and approved' : 'Lu et approuve'}</p>
                   </div>
                 </div>
 
@@ -22578,14 +22578,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                   <span className="text-5xl text-white">{isFullyContractCovered ? '📋' : isRevision ? '🔄' : '📧'}</span>
                 </div>
                 <h3 className="text-2xl font-bold text-gray-800 mb-2">
-                  {isFullyContractCovered ? 'Créer le RMA (Contrat)' : isRevision ? 'Envoyer le devis révisé' : 'Confirmer l\'envoi du devis'}
+                  {isFullyContractCovered ? (lang === 'en' ? 'Create RMA (Contract)' : 'Créer le RMA (Contrat)') : isRevision ? (lang === 'en' ? 'Send revised quote' : 'Envoyer le devis révisé') : (lang === 'en' ? 'Confirm quote sending' : "Confirmer l'envoi du devis")}
                 </h3>
                 <p className="text-gray-600 mb-6">
                   {isFullyContractCovered 
-                    ? 'Le RMA sera créé directement en "Attente Appareil" avec le BC du contrat.'
+                    ? (lang === 'en' ? 'RMA will be created directly in "Awaiting Device" with the contract PO.' : 'Le RMA sera créé directement en "Attente Appareil" avec le BC du contrat.')
                     : isRevision
                     ? `Le devis ${request.quote_number} Rev-${currentRevisionCount + 1} sera envoyé au client. L'ancien devis sera archivé.`
-                    : 'Le devis sera envoyé au client et disponible sur son portail.'
+                    : (lang === 'en' ? 'The quote will be sent to the client and available on their portal.' : 'Le devis sera envoyé au client et disponible sur son portail.')
                   }
                 </p>
                 
@@ -22601,7 +22601,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                       <div key={d.id} className="flex justify-between items-center">
                         <span>
                           {d.model} <span className="text-gray-400">({d.serial})</span>
-                          {d.isContractCovered && <span className="ml-2 px-2 py-0.5 bg-emerald-200 text-emerald-700 rounded text-xs font-bold">CONTRAT</span>}
+                          {d.isContractCovered && <span className="ml-2 px-2 py-0.5 bg-emerald-200 text-emerald-700 rounded text-xs font-bold">{lang === 'en' ? 'CONTRACT' : 'CONTRAT'}</span>}
                         </span>
                         <span className="font-medium">
                           {d.isContractCovered ? '0,00 €' : `${(getDeviceServiceTotal(d) + d.shipping).toFixed(2)} €`}
@@ -22622,7 +22622,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     <p className="font-medium mb-2">{lang === 'en' ? '🎯 Contract workflow:' : '🎯 Workflow contrat :'}</p>
                     <p className="mb-1">{lang === 'en' ? '✓ An RMA number will be assigned automatically' : '✓ Un numéro RMA sera attribué automatiquement'}</p>
                     <p className="mb-1">{lang === 'en' ? '✓ Contract PO will be copied to RMA' : '✓ Le BC du contrat sera copié dans le RMA'}</p>
-                    <p className="mb-1">✓ Statut directement "Attente Appareil"</p>
+                    <p className="mb-1">{lang === 'en' ? '✓ Status directly set to "Awaiting Device"' : '✓ Statut directement "Attente Appareil"'}</p>
                     <p>{lang === 'en' ? "✓ No client approval needed" : "✓ Pas d'approbation client nécessaire"}</p>
                   </div>
                 ) : isRevision ? (
@@ -22630,15 +22630,15 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     <p className="font-medium mb-2">{lang === 'en' ? '🔄 Quote Revision:' : '🔄 Révision du devis :'}</p>
                     <p className="mb-1">{lang === 'en' ? "✓ Previous quote will be archived (admin-only visibility)" : "✓ L'ancien devis sera archivé (visible uniquement par les admins)"}</p>
                     <p className="mb-1">✓ Le numéro reste {request.quote_number} avec mention Rev-{currentRevisionCount + 1}</p>
-                    <p className="mb-1">✓ Le client devra approuver et re-signer le nouveau devis</p>
+                    <p className="mb-1">{lang === 'en' ? '✓ Client will need to approve and re-sign the new quote' : '✓ Le client devra approuver et re-signer le nouveau devis'}</p>
                     <p>{lang === 'en' ? '✓ Client will only see the most recent quote' : '✓ Le client ne verra que le devis le plus récent'}</p>
                   </div>
                 ) : (
                   <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 text-left">
                     <p className="font-medium mb-2">{lang === 'en' ? 'After sending:' : 'Après envoi :'}</p>
                     <p className="mb-1">{lang === 'en' ? '✓ An RMA number will be assigned automatically' : '✓ Un numéro RMA sera attribué automatiquement'}</p>
-                    <p className="mb-1">✓ Le client recevra une notification</p>
-                    <p>✓ Le devis sera disponible sur son portail</p>
+                    <p className="mb-1">{lang === 'en' ? '✓ Client will receive a notification' : '✓ Le client recevra une notification'}</p>
+                    <p>{lang === 'en' ? '✓ Quote will be available on their portal' : '✓ Le devis sera disponible sur son portail'}</p>
                   </div>
                 )}
               </div>
@@ -22663,7 +22663,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                 disabled={saving} 
                 className={`px-10 py-3 text-white rounded-lg font-bold text-lg disabled:opacity-50 ${isFullyContractCovered ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}
               >
-                {saving ? 'Envoi en cours...' : isFullyContractCovered ? '📋 Créer RMA Contrat' : isRevision ? '🔄 Envoyer Devis Révisé' : '✅ Confirmer et Envoyer'}
+                {saving ? (lang === 'en' ? 'Sending...' : 'Envoi en cours...') : isFullyContractCovered ? (lang === 'en' ? '📋 Create Contract RMA' : '📋 Créer RMA Contrat') : isRevision ? (lang === 'en' ? '🔄 Send Revised Quote' : '🔄 Envoyer Devis Révisé') : (lang === 'en' ? '✅ Confirm and Send' : '✅ Confirmer et Envoyer')}
               </button>
             )}
             {(loadingContract || loadingParts) && step === 1 && (
@@ -22776,7 +22776,7 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
           const jsonData = window.XLSX.utils.sheet_to_json(worksheet);
 
           if (jsonData.length === 0) {
-            notify('Le fichier est vide', 'error');
+            notify(lang === 'en' ? 'File is empty' : 'Le fichier est vide', 'error');
             setUploading(false);
             return;
           }
@@ -22841,10 +22841,10 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
 
           // Parse each row
           for (const row of jsonData) {
-            const partNumber = findColumn(row, 'Part Number', 'PartNumber', 'part_number', 'Ref', 'Reference', 'SKU', 'PN', 'Part No', 'Numéro', 'N° Pièce');
-            const description = findColumn(row, 'Description', 'Desc', 'Name', 'Nom', 'Désignation', 'Designation', 'Libellé', 'Libelle', 'Label');
+            const partNumber = findColumn(row, 'Part Number', 'PartNumber', 'part_number', 'Ref', 'Reference', 'SKU', 'PN', 'Part No', 'Numéro', (lang === 'en' ? 'Part #' : 'N° Pièce'));
+            const description = findColumn(row, 'Description', 'Desc', 'Name', 'Nom', (lang === 'en' ? 'Description' : 'Désignation'), 'Designation', 'Libellé', 'Libelle', 'Label');
             const descriptionFr = findColumn(row, 'Description FR', 'description_fr', 'Nom FR');
-            const category = findColumn(row, 'Category', 'Categorie', 'Catégorie', 'Type', 'Cat', 'Famille');
+            const category = findColumn(row, 'Category', 'Categorie', (lang === 'en' ? 'Category' : 'Catégorie'), 'Type', 'Cat', 'Famille');
             const rawPrice = findColumn(row, 'Price', 'Prix', 'Unit Price', 'Prix Unitaire', 'Cost', 'Tarif', 'PU', 'Prix HT', 'Montant');
             const rawQuantity = findColumn(row, 'Quantity', 'Stock', 'Qty', 'QTY', 'Qté', 'Quantité');
             const location = findColumn(row, 'Location', 'Emplacement', 'Loc', 'Lieu');
@@ -22976,21 +22976,21 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
           }
 
           const totalErrors = insertErrors + updateErrors;
-          const message = `Import terminé: ${toInsert.length - insertErrors} créés, ${toUpdate.length - updateErrors} mis à jour${skipped > 0 ? `, ${skipped} ignorés` : ''}${totalErrors > 0 ? `, ${totalErrors} erreurs` : ''}`;
+          const message = `${lang === 'en' ? 'Import complete' : 'Import terminé'}: ${toInsert.length - insertErrors} ${lang === 'en' ? 'created' : 'créés'}, ${toUpdate.length - updateErrors} ${lang === 'en' ? 'updated' : 'mis à jour'}${skipped > 0 ? `, ${skipped} ${lang === 'en' ? 'skipped' : 'ignorés'}` : ''}${totalErrors > 0 ? `, ${totalErrors} ${lang === 'en' ? 'errors' : 'erreurs'}` : ''}`;
           
           notify(message, totalErrors > 0 ? 'error' : 'success');
           loadParts();
           setShowUploadModal(false);
         } catch (err) {
           console.error('Parse error:', err);
-          notify('Erreur lors de la lecture du fichier Excel', 'error');
+          notify(lang === 'en' ? 'Error reading Excel file' : 'Erreur lors de la lecture du fichier Excel', 'error');
         }
         setUploading(false);
       };
       reader.readAsArrayBuffer(file);
     } catch (err) {
       console.error('Upload error:', err);
-      notify('Erreur lors du chargement du fichier', 'error');
+      notify(lang === 'en' ? 'Error loading file' : 'Erreur lors du chargement du fichier', 'error');
       setUploading(false);
     }
   };
@@ -23021,7 +23021,7 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
       setShowAddModal(false);
     } catch (err) {
       console.error('Save error:', err);
-      notify('Erreur lors de la sauvegarde', 'error');
+      notify(lang === 'en' ? 'Error saving' : 'Erreur lors de la sauvegarde', 'error');
     }
   };
 
@@ -23031,7 +23031,7 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
     
     const { error } = await supabase.from('parts_pricing').delete().eq('id', id);
     if (error) {
-      notify('Erreur lors de la suppression', 'error');
+      notify(lang === 'en' ? 'Error deleting' : 'Erreur lors de la suppression', 'error');
     } else {
       notify((lang === 'en' ? 'Part deleted' : 'Pièce supprimée'));
       loadParts();
@@ -23044,7 +23044,7 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">{t('pricing')}</h1>
-          <p className="text-gray-500">{parts.length} pièces au catalogue</p>
+          <p className="text-gray-500">{parts.length} {lang === 'en' ? 'parts in catalog' : 'pièces au catalogue'}</p>
         </div>
         <div className="flex gap-3">
           <button
@@ -23069,7 +23069,7 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
         <div className="flex-1 relative">
           <input
             type="text"
-            placeholder="Rechercher par numéro de pièce ou description..."
+            placeholder={lang === 'en' ? 'Search by part number or description...' : 'Rechercher par numéro de pièce ou description...'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
@@ -23100,8 +23100,8 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
             <p className="text-4xl mb-4">📦</p>
             <p className="text-gray-500">
               {searchTerm || categoryFilter !== 'all' 
-                ? 'Aucune pièce ne correspond à votre recherche' 
-                : 'Aucune pièce au catalogue. Importez un fichier Excel pour commencer.'}
+                ? (lang === 'en' ? 'No parts match your search' : 'Aucune pièce ne correspond à votre recherche') 
+                : (lang === 'en' ? 'No parts in catalog. Import an Excel file to get started.' : 'Aucune pièce au catalogue. Importez un fichier Excel pour commencer.')}
             </p>
           </div>
         ) : (
@@ -23112,9 +23112,9 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">{lang === 'en' ? 'Part #' : 'N° Pièce'}</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">{t('description')}</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">{lang === 'en' ? 'Category' : 'Catégorie'}</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-600">Prix Unit.</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600">Stock</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Emplacement</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-600">{lang === 'en' ? 'Unit Price' : 'Prix Unit.'}</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600">{lang === 'en' ? 'Stock' : 'Stock'}</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">{lang === 'en' ? 'Location' : 'Emplacement'}</th>
                   <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600">{t('actions')}</th>
                 </tr>
               </thead>
@@ -23151,7 +23151,7 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
                         <button
                           onClick={() => { setEditingPart(part); setShowAddModal(true); }}
                           className="p-1 text-blue-500 hover:bg-blue-50 rounded"
-                          title="Modifier"
+                          title={lang === 'en' ? 'Edit' : 'Modifier'}
                         >
                           ✏️
                         </button>
@@ -23179,7 +23179,7 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold">Importer un fichier Excel</h2>
+              <h2 className="text-xl font-bold">{lang === 'en' ? 'Import Excel file' : 'Importer un fichier Excel'}</h2>
               <button onClick={() => setShowUploadModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
             </div>
             
@@ -23187,7 +23187,7 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
               <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center">
                 <p className="text-4xl mb-4">📁</p>
                 <p className="text-gray-600 mb-4">
-                  Glissez-déposez votre fichier Excel ici ou
+                  {lang === 'en' ? 'Drag and drop your Excel file here or' : 'Glissez-déposez votre fichier Excel ici ou'}
                 </p>
                 <label className="cursor-pointer inline-block px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
                   Sélectionner un fichier
@@ -23202,16 +23202,16 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
               </div>
               
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm">
-                <p className="font-medium text-blue-800 mb-2">Colonnes attendues :</p>
+                <p className="font-medium text-blue-800 mb-2">{lang === 'en' ? 'Expected columns:' : 'Colonnes attendues :'}</p>
                 <ul className="text-blue-700 text-xs space-y-1">
                   <li>• <strong>Part Number</strong> {lang === 'en' ? '(required) - Unique part number' : '(obligatoire) - Numéro de pièce unique'}</li>
-                  <li>• <strong>{t('description')}</strong> - Description en anglais</li>
-                  <li>• <strong>Description FR</strong>{lang === 'en' ? ' - Description in French' : ' - Description en français'}</li>
+                  <li>• <strong>{t('description')}</strong>{lang === 'en' ? ' - Description in English' : ' - Description en anglais'}</li>
+                  <li>• <strong>{lang === 'en' ? 'Description FR' : 'Description FR'}</strong>{lang === 'en' ? ' - Description in French' : ' - Description en français'}</li>
                   <li>• <strong>Category</strong>{lang === 'en' ? ' - Category (e.g. Filters, Sensors...)' : ' - Catégorie (ex: Filtres, Capteurs...)'}</li>
-                  <li>• <strong>Price</strong> - Prix unitaire HT</li>
+                  <li>• <strong>Price</strong>{lang === 'en' ? ' - Unit price excl. VAT' : ' - Prix unitaire HT'}</li>
                   <li>• <strong>Quantity</strong>{lang === 'en' ? ' - Quantity in stock' : ' - Quantité en stock'}</li>
-                  <li>• <strong>Location</strong> - Emplacement de stockage</li>
-                  <li>• <strong>Supplier</strong> - Fournisseur</li>
+                  <li>• <strong>{lang === 'en' ? 'Rental' : 'Location'}</strong>{lang === 'en' ? ' - Storage location' : ' - Emplacement de stockage'}</li>
+                  <li>• <strong>Supplier</strong>{lang === 'en' ? ' - Supplier' : ' - Fournisseur'}</li>
                 </ul>
               </div>
 
@@ -23219,10 +23219,10 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-6 h-6 border-4 border-green-500 border-t-transparent rounded-full animate-spin"></div>
-                    <span className="text-green-800 font-medium">Import en cours...</span>
+                    <span className="text-green-800 font-medium">{lang === 'en' ? 'Importing...' : 'Import en cours...'}</span>
                   </div>
                   <p className="text-green-700 text-sm">
-                    Traitement par lots de 500 pièces. Pour 3000 pièces, comptez environ 30 secondes à 2 minutes.
+                    {lang === 'en' ? 'Processing in batches of 500 parts. For 3000 parts, expect about 30 seconds to 2 minutes.' : 'Traitement par lots de 500 pièces. Pour 3000 pièces, comptez environ 30 secondes à 2 minutes.'}
                   </p>
                 </div>
               )}
@@ -23262,7 +23262,7 @@ function PartEditModal({ part, onSave, onClose }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.part_number.trim()) {
-      alert('Le numéro de pièce est obligatoire');
+      alert(lang === 'en' ? 'Part number is required' : 'Le numéro de pièce est obligatoire');
       return;
     }
     onSave({
@@ -23277,7 +23277,7 @@ function PartEditModal({ part, onSave, onClose }) {
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white px-6 py-4 border-b flex justify-between items-center">
-          <h2 className="text-xl font-bold">{part ? 'Modifier la pièce' : 'Ajouter une pièce'}</h2>
+          <h2 className="text-xl font-bold">{part ? 'Modifier la pièce' : (lang === 'en' ? 'Add a part' : 'Ajouter une pièce')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
         </div>
         
@@ -23301,13 +23301,13 @@ function PartEditModal({ part, onSave, onClose }) {
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
-                placeholder="ex: Filtres, Capteurs, Pompes..."
+                placeholder={lang === 'en' ? 'e.g. Filters, Sensors, Pumps...' : 'ex: Filtres, Capteurs, Pompes...'}
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description (EN)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Description (EN)' : 'Description (EN)'}</label>
             <input
               type="text"
               value={formData.description}
@@ -23317,7 +23317,7 @@ function PartEditModal({ part, onSave, onClose }) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description (FR)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Description (FR)' : 'Description (FR)'}</label>
             <input
               type="text"
               value={formData.description_fr}
@@ -23328,7 +23328,7 @@ function PartEditModal({ part, onSave, onClose }) {
 
           <div className="grid md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Prix Unitaire (€)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Unit Price (€)' : 'Prix Unitaire (€)'}</label>
               <input
                 type="number"
                 step="0.01"
@@ -23339,7 +23339,7 @@ function PartEditModal({ part, onSave, onClose }) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Stock</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Stock' : 'Stock'}</label>
               <input
                 type="number"
                 value={formData.quantity_in_stock}
@@ -23360,17 +23360,17 @@ function PartEditModal({ part, onSave, onClose }) {
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Emplacement</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Location' : 'Emplacement'}</label>
               <input
                 type="text"
                 value={formData.location}
                 onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
-                placeholder="ex: Étagère A3, Tiroir 12..."
+                placeholder={lang === 'en' ? 'e.g. Shelf A3, Drawer 12...' : 'ex: Étagère A3, Tiroir 12...'}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Fournisseur</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Supplier' : 'Fournisseur'}</label>
               <input
                 type="text"
                 value={formData.supplier}
@@ -23392,7 +23392,7 @@ function PartEditModal({ part, onSave, onClose }) {
               type="submit"
               className="flex-1 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium"
             >
-              {part ? t('save') : 'Créer'}
+              {part ? t('save') : (lang === 'en' ? 'Create' : 'Créer')}
             </button>
           </div>
         </form>
@@ -23438,17 +23438,17 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
 
   const getStatusStyle = (status) => {
     const styles = {
-      requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Nouvelle demande' },
-      quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Devis envoyé' },
-      waiting_bc: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Attente BC' },
-      bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: '⚠️ BC à vérifier' },
-      bc_approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'BC approuvé' },
+      requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'New request' : 'Nouvelle demande' },
+      quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: lang === 'en' ? 'Quote Sent' : 'Devis envoyé' },
+      waiting_bc: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'Awaiting PO' : 'Attente BC' },
+      bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? '⚠️ PO to review' : '⚠️ BC à vérifier' },
+      bc_approved: { bg: 'bg-green-100', text: 'text-green-700', label: lang === 'en' ? 'PO approved' : 'BC approuvé' },
       shipped: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: t('stShipped') },
-      in_rental: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'En location' },
-      return_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Retour attendu' },
-      returned: { bg: 'bg-teal-100', text: 'text-teal-700', label: 'Retourné' },
-      completed: { bg: 'bg-green-100', text: 'text-green-700', label: 'Terminé' },
-      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
+      in_rental: { bg: 'bg-purple-100', text: 'text-purple-700', label: lang === 'en' ? 'On rental' : 'En location' },
+      return_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? 'Return expected' : 'Retour attendu' },
+      returned: { bg: 'bg-teal-100', text: 'text-teal-700', label: lang === 'en' ? 'Returned' : 'Retourné' },
+      completed: { bg: 'bg-green-100', text: 'text-green-700', label: lang === 'en' ? 'Completed' : 'Terminé' },
+      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: lang === 'en' ? 'Cancelled' : 'Annulé' }
     };
     return styles[status] || { bg: 'bg-gray-100', text: 'text-gray-700', label: status };
   };
@@ -23510,28 +23510,28 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">Locations</h1>
+        <h1 className="text-2xl font-bold text-gray-800">{lang === 'en' ? 'Rentals' : 'Locations'}</h1>
         <div className="flex gap-2">
-          <button onClick={() => setShowAddDevice(true)} className="px-4 py-2 bg-[#8B5CF6] text-white rounded-lg font-medium hover:bg-[#7C3AED]">+ Ajouter Appareil</button>
+          <button onClick={() => setShowAddDevice(true)} className="px-4 py-2 bg-[#8B5CF6] text-white rounded-lg font-medium hover:bg-[#7C3AED]">{lang === 'en' ? '+ Add Device' : '+ Ajouter Appareil'}</button>
           <button onClick={() => setShowAddBundle(true)} className="px-4 py-2 bg-[#8B5CF6]/80 text-white rounded-lg font-medium hover:bg-[#7C3AED]">{lang === 'en' ? '+ Create Kit' : '+ Créer Kit'}</button>
         </div>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm border"><p className="text-3xl font-bold text-amber-600">{pendingRequests.length}</p><p className="text-gray-500 text-sm">Nouvelles demandes</p></div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border"><p className="text-3xl font-bold text-amber-600">{pendingRequests.length}</p><p className="text-gray-500 text-sm">{lang === 'en' ? 'New requests' : 'Nouvelles demandes'}</p></div>
         <div className="bg-white rounded-xl p-4 shadow-sm border"><p className="text-3xl font-bold text-orange-600">{bcReviewRequests.length}</p><p className="text-gray-500 text-sm">{lang === 'en' ? 'PO to review' : 'BC à vérifier'}</p></div>
-        <div className="bg-white rounded-xl p-4 shadow-sm border"><p className="text-3xl font-bold text-purple-600">{activeRentals.length}</p><p className="text-gray-500 text-sm">Locations actives</p></div>
-        <div className="bg-white rounded-xl p-4 shadow-sm border"><p className="text-3xl font-bold text-[#8B5CF6]">{inventory.length}</p><p className="text-gray-500 text-sm">Appareils en parc</p></div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border"><p className="text-3xl font-bold text-purple-600">{activeRentals.length}</p><p className="text-gray-500 text-sm">{lang === 'en' ? 'Active rentals' : 'Locations actives'}</p></div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border"><p className="text-3xl font-bold text-[#8B5CF6]">{inventory.length}</p><p className="text-gray-500 text-sm">{lang === 'en' ? 'Equipment fleet' : 'Appareils en parc'}</p></div>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-2 border-b">
         {[
-          { id: 'requests', label: 'Demandes', badge: pendingRequests.length + bcReviewRequests.length },
-          { id: 'inventory', label: 'Inventaire', badge: inventory.length },
-          { id: 'bundles', label: 'Kits', badge: bundles.length },
-          { id: 'calendar', label: 'Calendrier' }
+          { id: 'requests', label: lang === 'en' ? 'Requests' : 'Demandes', badge: pendingRequests.length + bcReviewRequests.length },
+          { id: 'inventory', label: lang === 'en' ? 'Inventory' : 'Inventaire', badge: inventory.length },
+          { id: 'bundles', label: lang === 'en' ? 'Kits' : 'Kits', badge: bundles.length },
+          { id: 'calendar', label: lang === 'en' ? 'Calendar' : 'Calendrier' }
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 py-2 font-medium border-b-2 -mb-px transition-colors ${activeTab === tab.id ? 'border-[#8B5CF6] text-[#8B5CF6]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
             {tab.label} {tab.badge > 0 && <span className="ml-1 px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">{tab.badge}</span>}
@@ -23545,7 +23545,7 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">N° Location</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Rental #' : 'N° Location'}</th>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('client')}</th>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Period' : 'Période'}</th>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Equipment' : 'Équipement'}</th>
@@ -23555,17 +23555,17 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
             </thead>
             <tbody className="divide-y">
               {rentals.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Aucune demande de location</td></tr>
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">{lang === 'en' ? 'No rental requests' : 'Aucune demande de location'}</td></tr>
               ) : rentals.map(rental => {
                 const style = getStatusStyle(rental.status);
                 const days = Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1;
                 return (
                   <tr key={rental.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3"><span className="font-bold text-[#8B5CF6]">{rental.rental_number}</span><p className="text-xs text-gray-400">{new Date(rental.created_at).toLocaleDateString('fr-FR')}</p></td>
+                    <td className="px-4 py-3"><span className="font-bold text-[#8B5CF6]">{rental.rental_number}</span><p className="text-xs text-gray-400">{new Date(rental.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p></td>
                     <td className="px-4 py-3"><span className="font-medium">{rental.companies?.name}</span></td>
-                    <td className="px-4 py-3"><span className="text-sm">{new Date(rental.start_date).toLocaleDateString('fr-FR')} → {new Date(rental.end_date).toLocaleDateString('fr-FR')}</span><p className="text-xs text-gray-400">{days} jours</p></td>
-                    <td className="px-4 py-3"><span className="text-sm">{rental.rental_request_items?.length || 0} appareil(s)</span></td>
-                    <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span></td>
+                    <td className="px-4 py-3"><span className="text-sm">{new Date(rental.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} → {new Date(rental.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</span><p className="text-xs text-gray-400">{days} jours</p></td>
+                    <td className="px-4 py-3"><span className="text-sm">{rental.rental_request_items?.length || 0} {lang === 'en' ? 'device(s)' : 'appareil(s)'}</span></td>
+                    <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span></td>
                     <td className="px-4 py-3">
                       <button onClick={() => setSelectedRental(rental)} className="px-3 py-1 bg-[#8B5CF6] text-white text-sm rounded hover:bg-[#7C3AED]">{lang === 'en' ? 'Manage' : 'Gérer'}</button>
                     </td>
@@ -23585,16 +23585,16 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
               <tr>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('model')}</th>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('serialNumber')}</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Prix/Jour</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Prix/Semaine</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">Prix/Mois</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Price/Day' : 'Prix/Jour'}</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Price/Week' : 'Prix/Semaine'}</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Price/Month' : 'Prix/Mois'}</th>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('status')}</th>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {inventory.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Aucun appareil dans l'inventaire de location</td></tr>
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{lang === 'en' ? "No devices in rental inventory" : "Aucun appareil dans l'inventaire de location"}</td></tr>
               ) : inventory.map(device => (
                 <tr key={device.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><span className="font-medium">{device.model_name}</span><p className="text-xs text-gray-400">{device.device_type}</p></td>
@@ -23602,7 +23602,7 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
                   <td className="px-4 py-3"><span className="font-medium">€{device.price_per_day}</span></td>
                   <td className="px-4 py-3">{device.price_per_week ? `€${device.price_per_week}` : <span className="text-gray-400">—</span>}</td>
                   <td className="px-4 py-3">{device.price_per_month ? `€${device.price_per_month}` : <span className="text-gray-400">—</span>}</td>
-                  <td className="px-4 py-3">{device.is_available ? <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">Disponible</span> : <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">Indisponible</span>}</td>
+                  <td className="px-4 py-3">{device.is_available ? <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">{lang === 'en' ? 'Available' : 'Disponible'}</span> : <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">{lang === 'en' ? 'Unavailable' : 'Indisponible'}</span>}</td>
                   <td className="px-4 py-3 flex gap-2">
                     <button onClick={() => { setEditingDevice(device); setShowAddDevice(true); }} className="px-2 py-1 bg-gray-100 text-gray-600 text-sm rounded hover:bg-gray-200">✏️</button>
                     <button onClick={() => deleteDevice(device.id)} className="px-2 py-1 bg-red-100 text-red-600 text-sm rounded hover:bg-red-200">🗑️</button>
@@ -23630,8 +23630,8 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
               <p className="text-sm text-gray-600 mb-4">{bundle.description_fr || bundle.description || '—'}</p>
               <div className="text-xs text-gray-400 mb-4">Contient: {bundle.rental_bundle_items?.map(bi => bi.rental_inventory?.model_name).join(', ')}</div>
               <div className="flex justify-between items-end">
-                <div><p className="text-2xl font-bold text-[#8B5CF6]">€{bundle.price_per_day}</p><p className="text-xs text-gray-500">/jour</p></div>
-                {bundle.is_active ? <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">Actif</span> : <span className="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full">Inactif</span>}
+                <div><p className="text-2xl font-bold text-[#8B5CF6]">€{bundle.price_per_day}</p><p className="text-xs text-gray-500">{lang === 'en' ? '/day' : '/jour'}</p></div>
+                {bundle.is_active ? <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">{lang === 'en' ? 'Active' : 'Actif'}</span> : <span className="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full">{lang === 'en' ? 'Inactive' : 'Inactif'}</span>}
               </div>
             </div>
           ))}
@@ -23673,7 +23673,7 @@ function RentalDeviceModal({ device, onSave, onClose }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.serial_number || !formData.model_name || !formData.price_per_day) {
-      alert('Veuillez remplir les champs obligatoires (N° Série, Modèle, Prix/Jour)');
+      alert(lang === 'en' ? 'Please fill in required fields (Serial #, Model, Price/Day)' : 'Veuillez remplir les champs obligatoires (N° Série, Modèle, Prix/Jour)');
       return;
     }
     onSave({
@@ -23689,7 +23689,7 @@ function RentalDeviceModal({ device, onSave, onClose }) {
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white px-6 py-4 border-b flex justify-between items-center">
-          <h2 className="text-xl font-bold">{device ? 'Modifier l\'appareil' : 'Ajouter un appareil'}</h2>
+          <h2 className="text-xl font-bold">{device ? (lang === 'en' ? 'Edit device' : "Modifier l'appareil") : (lang === 'en' ? 'Add a device' : 'Ajouter un appareil')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
@@ -23707,10 +23707,10 @@ function RentalDeviceModal({ device, onSave, onClose }) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('type')}</label>
               <select value={formData.device_type} onChange={e => setFormData({...formData, device_type: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
-                <option value="particle_counter">Compteur de particules</option>
-                <option value="bio_collector">Bio collecteur</option>
-                <option value="liquid_counter">Compteur liquide</option>
-                <option value="other">Autre</option>
+                <option value="particle_counter">{lang === 'en' ? 'Particle counter' : 'Compteur de particules'}</option>
+                <option value="bio_collector">{lang === 'en' ? 'Bio collector' : 'Bio collecteur'}</option>
+                <option value="liquid_counter">{lang === 'en' ? 'Liquid counter' : 'Compteur liquide'}</option>
+                <option value="other">{lang === 'en' ? 'Other' : 'Autre'}</option>
               </select>
             </div>
             <div>
@@ -23719,21 +23719,21 @@ function RentalDeviceModal({ device, onSave, onClose }) {
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description (FR)</label>
-            <textarea value={formData.description_fr} onChange={e => setFormData({...formData, description_fr: e.target.value})} className="w-full px-3 py-2 border rounded-lg h-20 resize-none" placeholder="Description visible par les clients" />
+            <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Description (FR)' : 'Description (FR)'}</label>
+            <textarea value={formData.description_fr} onChange={e => setFormData({...formData, description_fr: e.target.value})} className="w-full px-3 py-2 border rounded-lg h-20 resize-none" placeholder={lang === 'en' ? 'Description visible to clients' : 'Description visible par les clients'} />
           </div>
           <div className="grid md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Prix/Jour (€) *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Price/Day (€) *' : 'Prix/Jour (€) *'}</label>
               <input type="number" step="0.01" value={formData.price_per_day} onChange={e => setFormData({...formData, price_per_day: e.target.value})} className="w-full px-3 py-2 border rounded-lg" required />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Prix/Semaine (€)</label>
-              <input type="number" step="0.01" value={formData.price_per_week} onChange={e => setFormData({...formData, price_per_week: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Auto: 7x jour" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Price/Week (€)' : 'Prix/Semaine (€)'}</label>
+              <input type="number" step="0.01" value={formData.price_per_week} onChange={e => setFormData({...formData, price_per_week: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder={lang === 'en' ? 'Auto: 7x day' : 'Auto: 7x jour'} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Prix/Mois (€)</label>
-              <input type="number" step="0.01" value={formData.price_per_month} onChange={e => setFormData({...formData, price_per_month: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Auto: 30x jour" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Price/Month (€)' : 'Prix/Mois (€)'}</label>
+              <input type="number" step="0.01" value={formData.price_per_month} onChange={e => setFormData({...formData, price_per_month: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder={lang === 'en' ? 'Auto: 30x day' : 'Auto: 30x jour'} />
             </div>
           </div>
           <div className="grid md:grid-cols-2 gap-4">
@@ -23749,12 +23749,12 @@ function RentalDeviceModal({ device, onSave, onClose }) {
           {!formData.is_available && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? "Unavailability reason" : "Raison d'indisponibilité"}</label>
-              <input type="text" value={formData.availability_notes} onChange={e => setFormData({...formData, availability_notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Ex: En maintenance jusqu'au 15/02" />
+              <input type="text" value={formData.availability_notes} onChange={e => setFormData({...formData, availability_notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder={lang === 'en' ? 'Ex: In maintenance until 15/02' : "Ex: En maintenance jusqu'au 15/02"} />
             </div>
           )}
           <div className="flex gap-3 pt-4">
             <button type="button" onClick={onClose} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium">{t('cancel')}</button>
-            <button type="submit" className="flex-1 py-2 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white rounded-lg font-medium">{device ? t('save') : 'Créer'}</button>
+            <button type="submit" className="flex-1 py-2 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white rounded-lg font-medium">{device ? t('save') : (lang === 'en' ? 'Create' : 'Créer')}</button>
           </div>
         </form>
       </div>
@@ -23780,7 +23780,7 @@ function RentalBundleModal({ bundle, inventory, onSave, onClose }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.bundle_name || !formData.price_per_day || selectedDevices.length === 0) {
-      alert('Veuillez remplir les champs obligatoires et sélectionner au moins un appareil');
+      alert(lang === 'en' ? 'Please fill in required fields and select at least one device' : 'Veuillez remplir les champs obligatoires et sélectionner au moins un appareil');
       return;
     }
     onSave({
@@ -23804,22 +23804,22 @@ function RentalBundleModal({ bundle, inventory, onSave, onClose }) {
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white px-6 py-4 border-b flex justify-between items-center">
-          <h2 className="text-xl font-bold">{bundle ? 'Modifier le kit' : 'Créer un kit'}</h2>
+          <h2 className="text-xl font-bold">{bundle ? (lang === 'en' ? 'Edit kit' : 'Modifier le kit') : (lang === 'en' ? 'Create kit' : 'Créer un kit')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="grid md:grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Nom du kit *</label><input type="text" value={formData.bundle_name} onChange={e => setFormData({...formData, bundle_name: e.target.value})} className="w-full px-3 py-2 border rounded-lg" required placeholder="Ex: Kit Comptage Complet" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Code</label><input type="text" value={formData.bundle_code} onChange={e => setFormData({...formData, bundle_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Ex: KIT-001" /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Kit name *' : 'Nom du kit *'}</label><input type="text" value={formData.bundle_name} onChange={e => setFormData({...formData, bundle_name: e.target.value})} className="w-full px-3 py-2 border rounded-lg" required placeholder={lang === 'en' ? 'Ex: Complete Counting Kit' : 'Ex: Kit Comptage Complet'} /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Code' : 'Code'}</label><input type="text" value={formData.bundle_code} onChange={e => setFormData({...formData, bundle_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder={lang === 'en' ? 'Ex: KIT-001' : 'Ex: KIT-001'} /></div>
           </div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Description (FR)</label><textarea value={formData.description_fr} onChange={e => setFormData({...formData, description_fr: e.target.value})} className="w-full px-3 py-2 border rounded-lg h-20 resize-none" /></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Description (FR)' : 'Description (FR)'}</label><textarea value={formData.description_fr} onChange={e => setFormData({...formData, description_fr: e.target.value})} className="w-full px-3 py-2 border rounded-lg h-20 resize-none" /></div>
           <div className="grid md:grid-cols-3 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Prix/Jour (€) *</label><input type="number" step="0.01" value={formData.price_per_day} onChange={e => setFormData({...formData, price_per_day: e.target.value})} className="w-full px-3 py-2 border rounded-lg" required /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Prix/Semaine (€)</label><input type="number" step="0.01" value={formData.price_per_week} onChange={e => setFormData({...formData, price_per_week: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Prix/Mois (€)</label><input type="number" step="0.01" value={formData.price_per_month} onChange={e => setFormData({...formData, price_per_month: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Price/Day (€) *' : 'Prix/Jour (€) *'}</label><input type="number" step="0.01" value={formData.price_per_day} onChange={e => setFormData({...formData, price_per_day: e.target.value})} className="w-full px-3 py-2 border rounded-lg" required /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Price/Week (€)' : 'Prix/Semaine (€)'}</label><input type="number" step="0.01" value={formData.price_per_week} onChange={e => setFormData({...formData, price_per_week: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Price/Month (€)' : 'Prix/Mois (€)'}</label><input type="number" step="0.01" value={formData.price_per_month} onChange={e => setFormData({...formData, price_per_month: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Appareils inclus *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'en' ? 'Devices included *' : 'Appareils inclus *'}</label>
             <div className="grid md:grid-cols-2 gap-2 max-h-48 overflow-y-auto border rounded-lg p-3">
               {inventory.map(device => (
                 <label key={device.id} className={`flex items-center gap-2 p-2 rounded cursor-pointer ${selectedDevices.includes(device.id) ? 'bg-[#8B5CF6]/10' : 'hover:bg-gray-50'}`}>
@@ -23830,10 +23830,10 @@ function RentalBundleModal({ bundle, inventory, onSave, onClose }) {
             </div>
             <p className="text-xs text-gray-500 mt-1">{selectedDevices.length} {lang === 'en' ? 'device(s) selected' : 'appareil(s) sélectionné(s)'}</p>
           </div>
-          <div className="flex items-center gap-2"><input type="checkbox" checked={formData.is_active} onChange={e => setFormData({...formData, is_active: e.target.checked})} className="w-5 h-5 rounded" /><label className="text-sm font-medium text-gray-700">Kit actif (visible par les clients)</label></div>
+          <div className="flex items-center gap-2"><input type="checkbox" checked={formData.is_active} onChange={e => setFormData({...formData, is_active: e.target.checked})} className="w-5 h-5 rounded" /><label className="text-sm font-medium text-gray-700">{lang === 'en' ? 'Active kit (visible to clients)' : 'Kit actif (visible par les clients)'}</label></div>
           <div className="flex gap-3 pt-4">
             <button type="button" onClick={onClose} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium">{t('cancel')}</button>
-            <button type="submit" className="flex-1 py-2 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white rounded-lg font-medium">{bundle ? t('save') : 'Créer'}</button>
+            <button type="submit" className="flex-1 py-2 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white rounded-lg font-medium">{bundle ? t('save') : (lang === 'en' ? 'Create' : 'Créer')}</button>
           </div>
         </form>
       </div>
@@ -23857,7 +23857,7 @@ function RentalCalendarView({ bookings, inventory }) {
     <div className="bg-white rounded-xl shadow-sm border p-6">
       <div className="flex items-center justify-between mb-6">
         <button onClick={() => setCurrentMonth(new Date(year, month - 1, 1))} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">←</button>
-        <h3 className="text-lg font-bold">{currentMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</h3>
+        <h3 className="text-lg font-bold">{currentMonth.toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR', { month: 'long', year: 'numeric' })}</h3>
         <button onClick={() => setCurrentMonth(new Date(year, month + 1, 1))} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">→</button>
       </div>
       <div className="grid grid-cols-7 gap-1 mb-2">
@@ -23944,7 +23944,7 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings })
   };
 
   const rejectBC = async () => {
-    const reason = prompt('Raison du rejet:');
+    const reason = prompt(lang === 'en' ? 'Reason for rejection:' : 'Raison du rejet:');
     if (!reason) return;
     await updateStatus('waiting_bc', { bc_rejected_at: new Date().toISOString(), bc_rejection_reason: reason, bc_file_url: null });
   };
@@ -23982,17 +23982,17 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings })
 
   const getStatusStyle = (s) => {
     const styles = {
-      requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Nouvelle demande' },
-      quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Devis envoyé' },
-      waiting_bc: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Attente BC' },
-      bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'BC à vérifier' },
-      bc_approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'BC approuvé' },
+      requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'New request' : 'Nouvelle demande' },
+      quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: lang === 'en' ? 'Quote Sent' : 'Devis envoyé' },
+      waiting_bc: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'Awaiting PO' : 'Attente BC' },
+      bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? 'PO to Review' : 'BC à vérifier' },
+      bc_approved: { bg: 'bg-green-100', text: 'text-green-700', label: lang === 'en' ? 'PO approved' : 'BC approuvé' },
       shipped: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: t('stShipped') },
-      in_rental: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'En location' },
-      return_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Retour attendu' },
-      returned: { bg: 'bg-teal-100', text: 'text-teal-700', label: 'Retourné' },
-      completed: { bg: 'bg-green-100', text: 'text-green-700', label: 'Terminé' },
-      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
+      in_rental: { bg: 'bg-purple-100', text: 'text-purple-700', label: lang === 'en' ? 'On rental' : 'En location' },
+      return_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? 'Return expected' : 'Retour attendu' },
+      returned: { bg: 'bg-teal-100', text: 'text-teal-700', label: lang === 'en' ? 'Returned' : 'Retourné' },
+      completed: { bg: 'bg-green-100', text: 'text-green-700', label: lang === 'en' ? 'Completed' : 'Terminé' },
+      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: lang === 'en' ? 'Cancelled' : 'Annulé' }
     };
     return styles[s] || { bg: 'bg-gray-100', text: 'text-gray-700', label: s };
   };
@@ -24013,9 +24013,9 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings })
         <div className="p-6 space-y-6">
           {/* Status & Period */}
           <div className="flex items-center justify-between">
-            <span className={`px-4 py-2 rounded-full font-medium ${style.bg} ${style.text}`}>{style.label}</span>
+            <span className={`px-4 py-2 rounded-full font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span>
             <div className="text-right">
-              <p className="font-bold">{new Date(rental.start_date).toLocaleDateString('fr-FR')} → {new Date(rental.end_date).toLocaleDateString('fr-FR')}</p>
+              <p className="font-bold">{new Date(rental.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} → {new Date(rental.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
               <p className="text-sm text-gray-500">{days} jours de location</p>
             </div>
           </div>
@@ -24042,22 +24042,22 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings })
               <h3 className="font-bold text-amber-800 mb-4">{lang === 'en' ? 'Create quote' : 'Créer le devis'}</h3>
               <div className="grid md:grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Frais de port (€)</label>
+                  <label className="block text-sm font-medium mb-1">{lang === 'en' ? 'Shipping fees (€)' : 'Frais de port (€)'}</label>
                   <input type="number" step="0.01" value={quoteShipping} onChange={e => setQuoteShipping(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Notes devis</label>
+                  <label className="block text-sm font-medium mb-1">{lang === 'en' ? 'Quote notes' : 'Notes devis'}</label>
                   <input type="text" value={quoteNotes} onChange={e => setQuoteNotes(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
                 </div>
               </div>
               <div className="bg-white rounded-lg p-4 mb-4">
                 <div className="flex justify-between mb-1"><span>{t('subtotal')}</span><span>€{subtotal.toFixed(2)}</span></div>
-                <div className="flex justify-between mb-1"><span>Frais de port</span><span>€{parseFloat(quoteShipping || 0).toFixed(2)}</span></div>
+                <div className="flex justify-between mb-1"><span>{lang === 'en' ? 'Shipping fees' : 'Frais de port'}</span><span>€{parseFloat(quoteShipping || 0).toFixed(2)}</span></div>
                 <div className="flex justify-between mb-1 font-bold"><span>{t('totalHT')}</span><span>€{totalHT.toFixed(2)}</span></div>
                 <div className="flex justify-between mb-1 text-sm text-gray-500"><span>TVA ({taxRate}%)</span><span>€{tax.toFixed(2)}</span></div>
                 <div className="flex justify-between font-bold text-lg border-t pt-2"><span>{t('totalTTC')}</span><span className="text-[#8B5CF6]">€{totalTTC.toFixed(2)}</span></div>
               </div>
-              <button onClick={sendQuote} disabled={saving} className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold disabled:opacity-50">{saving ? 'Envoi...' : 'Envoyer le devis'}</button>
+              <button onClick={sendQuote} disabled={saving} className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold disabled:opacity-50">{saving ? (lang === 'en' ? 'Sending...' : 'Envoi...') : (lang === 'en' ? 'Send quote' : 'Envoyer le devis')}</button>
             </div>
           )}
 
@@ -24068,7 +24068,7 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings })
               {rental.bc_file_url && (
                 <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-white rounded-lg mb-4 hover:bg-gray-50">
                   <span className="text-2xl">📄</span>
-                  <div><p className="font-medium">BC soumis par {rental.bc_signed_by}</p><p className="text-sm text-gray-500">Le {new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR')}</p></div>
+                  <div><p className="font-medium">BC soumis par {rental.bc_signed_by}</p><p className="text-sm text-gray-500">Le {new Date(rental.bc_submitted_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p></div>
                 </a>
               )}
               <div className="flex gap-3">
@@ -24083,7 +24083,7 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings })
             <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-4">
               <h3 className="font-bold text-cyan-800 mb-4">{t('shipping')}</h3>
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">N° de suivi</label>
+                <label className="block text-sm font-medium mb-1">{lang === 'en' ? 'Tracking #' : 'N° de suivi'}</label>
                 <input type="text" value={trackingNumber} onChange={e => setTrackingNumber(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="1Z..." />
               </div>
               <button onClick={markShipped} disabled={saving || !trackingNumber} className="w-full py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-bold disabled:opacity-50">{lang === 'en' ? 'Mark as shipped' : 'Marquer comme expédié'}</button>
@@ -24099,7 +24099,7 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings })
 
           {status === 'in_rental' && (
             <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-              <p className="text-orange-700 mb-4">{lang === 'en' ? 'Expected rental end: ' : 'Fin de location prévue: '}<strong>{new Date(rental.end_date).toLocaleDateString('fr-FR')}</strong></p>
+              <p className="text-orange-700 mb-4">{lang === 'en' ? 'Expected rental end: ' : 'Fin de location prévue: '}<strong>{new Date(rental.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</strong></p>
               <button onClick={markReturnPending} disabled={saving} className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold">{lang === 'en' ? 'Period ended → Awaiting return' : 'Période terminée → Attente retour'}</button>
             </div>
           )}
@@ -24127,7 +24127,7 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings })
 
           {status === 'returned' && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <p className="text-green-700 mb-4">{lang === 'en' ? 'Equipment returned. Condition: ' : 'Matériel retourné. État: '}<strong>{returnCondition === 'good' ? 'Bon état' : returnCondition === 'damaged' ? 'Endommagé' : 'Éléments manquants'}</strong></p>
+              <p className="text-green-700 mb-4">{lang === 'en' ? 'Equipment returned. Condition: ' : 'Matériel retourné. État: '}<strong>{returnCondition === 'good' ? (lang === 'en' ? 'Good condition' : 'Bon état') : returnCondition === 'damaged' ? (lang === 'en' ? 'Damaged' : 'Endommagé') : (lang === 'en' ? 'Missing items' : 'Éléments manquants')}</strong></p>
               <button onClick={completeRental} disabled={saving} className="w-full py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold">{lang === 'en' ? 'Close rental' : 'Clôturer la location'}</button>
             </div>
           )}
@@ -24143,9 +24143,9 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings })
           {/* Shipping Address */}
           {rental.shipping_address && (
             <div>
-              <h3 className="font-bold text-gray-700 mb-2">Adresse de livraison</h3>
+              <h3 className="font-bold text-gray-700 mb-2">{lang === 'en' ? 'Shipping address' : 'Adresse de livraison'}</h3>
               <p className="text-gray-600">{rental.shipping_address.company_name}</p>
-              {rental.shipping_address.attention && <p className="text-gray-600">À l'att. {rental.shipping_address.attention}</p>}
+              {rental.shipping_address.attention && <p className="text-gray-600">{lang === 'en' ? 'Attn.' : "À l'att."} {rental.shipping_address.attention}</p>}
               <p className="text-gray-600">{rental.shipping_address.address_line1}</p>
               <p className="text-gray-600">{rental.shipping_address.postal_code} {rental.shipping_address.city}</p>
             </div>
