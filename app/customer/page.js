@@ -2545,6 +2545,7 @@ export default function CustomerPortal() {
             requests={requests}
             t={t}
             setPage={setPage}
+            setSelectedRequest={setSelectedRequest}
           />
         )}
         
@@ -2589,6 +2590,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
   const [messages, setMessages] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'service', 'parts', 'messages'
+  const [deviceSearch, setDeviceSearch] = useState('');
 
   // Load messages
   useEffect(() => {
@@ -3106,62 +3108,98 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
       {activeTab === 'devices' && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-100">
           <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="font-bold text-[#1E3A5F] text-lg">Suivi de vos appareils</h2>
-            <p className="text-sm text-gray-500">Tous les appareils que vous avez envoyés en service</p>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="font-bold text-[#1E3A5F] text-lg">Suivi de vos appareils</h2>
+                <p className="text-sm text-gray-500">Tous les appareils que vous avez envoyés en service</p>
+              </div>
+            </div>
+            {/* Search bar */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="🔍 Rechercher par N° de série, modèle..."
+                value={deviceSearch || ''}
+                onChange={e => setDeviceSearch(e.target.value)}
+                className="w-full pl-4 pr-10 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B7AB4] text-sm"
+              />
+              {deviceSearch && (
+                <button 
+                  onClick={() => setDeviceSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >✕</button>
+              )}
+            </div>
           </div>
           
-          {allDevices.length === 0 ? (
-            <div className="p-12 text-center">
-              <p className="text-4xl mb-3">🔧</p>
-              <p className="text-gray-500">Aucun appareil en cours de traitement</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 text-left text-sm text-gray-600">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">Appareil</th>
-                    <th className="px-4 py-3 font-medium">N° Série</th>
-                    <th className="px-4 py-3 font-medium">Demande</th>
-                    <th className="px-4 py-3 font-medium">Statut</th>
-                    <th className="px-4 py-3 font-medium">Date</th>
-                    <th className="px-4 py-3 font-medium"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {allDevices.map((dev, i) => {
-                    const status = dev.status || dev.request_status || 'pending';
-                    const style = STATUS_STYLES[status] || STATUS_STYLES.submitted;
-                    return (
-                      <tr key={i} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 font-medium text-[#1E3A5F]">{dev.model_name || 'N/A'}</td>
-                        <td className="px-4 py-3 font-mono text-sm">{dev.serial_number}</td>
-                        <td className="px-4 py-3">
-                          <span className="text-[#3B7AB4] font-mono text-sm">{dev.request_number}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
-                            {style.label}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          {new Date(dev.request_date).toLocaleDateString('fr-FR')}
-                        </td>
-                        <td className="px-4 py-3">
-                          <button 
-                            onClick={() => viewDeviceHistory(dev.serial_number)}
-                            className="text-[#3B7AB4] text-sm hover:underline"
-                          >
-                            Historique →
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {(() => {
+            const searchTerm = (deviceSearch || '').toLowerCase().trim();
+            const filteredDevices = searchTerm 
+              ? allDevices.filter(d => 
+                  d.serial_number?.toLowerCase().includes(searchTerm) ||
+                  d.model_name?.toLowerCase().includes(searchTerm) ||
+                  d.request_number?.toLowerCase().includes(searchTerm)
+                )
+              : allDevices;
+            
+            return filteredDevices.length === 0 ? (
+              <div className="p-12 text-center">
+                <p className="text-4xl mb-3">{searchTerm ? '🔍' : '🔧'}</p>
+                <p className="text-gray-500">{searchTerm ? `Aucun appareil trouvé pour "${deviceSearch}"` : 'Aucun appareil en cours de traitement'}</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 text-left text-sm text-gray-600">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Appareil</th>
+                      <th className="px-4 py-3 font-medium">N° Série</th>
+                      <th className="px-4 py-3 font-medium">Demande</th>
+                      <th className="px-4 py-3 font-medium">Statut</th>
+                      <th className="px-4 py-3 font-medium">Date</th>
+                      <th className="px-4 py-3 font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredDevices.map((dev, i) => {
+                      const status = dev.status || dev.request_status || 'pending';
+                      const style = STATUS_STYLES[status] || STATUS_STYLES.submitted;
+                      return (
+                        <tr key={i} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 font-medium text-[#1E3A5F]">{dev.model_name || 'N/A'}</td>
+                          <td className="px-4 py-3 font-mono text-sm">{dev.serial_number}</td>
+                          <td className="px-4 py-3">
+                            <span className="text-[#3B7AB4] font-mono text-sm">{dev.request_number}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                              {style.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500">
+                            {new Date(dev.request_date).toLocaleDateString('fr-FR')}
+                          </td>
+                          <td className="px-4 py-3">
+                            <button 
+                              onClick={() => viewDeviceHistory(dev.serial_number)}
+                              className="text-[#3B7AB4] text-sm hover:underline"
+                            >
+                              Historique →
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {searchTerm && (
+                  <div className="px-4 py-2 bg-gray-50 text-xs text-gray-500 border-t">
+                    {filteredDevices.length} résultat(s) pour "{deviceSearch}"
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -7109,7 +7147,9 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   const [sending, setSending] = useState(false);
   const [activeTab, setActiveTab] = useState('details');
   const [shippingAddress, setShippingAddress] = useState(null);
+  const [deviceAddresses, setDeviceAddresses] = useState({});
   const [attachments, setAttachments] = useState([]);
+  const [expandedDevice, setExpandedDevice] = useState(null); // device.id or null
   
   // BC Submission state
   const [showBCModal, setShowBCModal] = useState(false);
@@ -7261,7 +7301,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         .eq('request_id', request.id);
       if (files) setAttachments(files);
       
-      // Load shipping address
+      // Load shipping address (RMA default)
       if (request.shipping_address_id) {
         const { data: addr } = await supabase
           .from('shipping_addresses')
@@ -7269,6 +7309,30 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           .eq('id', request.shipping_address_id)
           .single();
         if (addr) setShippingAddress(addr);
+      }
+      
+      // Load per-device shipping addresses
+      const devices = request.request_devices || [];
+      const addressIds = new Set();
+      if (request.shipping_address_id) addressIds.add(request.shipping_address_id);
+      devices.forEach(d => { if (d.shipping_address_id) addressIds.add(d.shipping_address_id); });
+      
+      if (addressIds.size > 0) {
+        const { data: addrs } = await supabase
+          .from('shipping_addresses')
+          .select('*')
+          .in('id', Array.from(addressIds));
+        if (addrs) {
+          const addrMap = {};
+          addrs.forEach(a => { addrMap[a.id] = a; });
+          // Map each device to its address (device-specific or RMA default)
+          const devAddrMap = {};
+          devices.forEach(d => {
+            const addrId = d.shipping_address_id || request.shipping_address_id;
+            if (addrId && addrMap[addrId]) devAddrMap[d.id] = addrMap[addrId];
+          });
+          setDeviceAddresses(devAddrMap);
+        }
       }
     };
     loadData();
@@ -8844,7 +8908,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 </div>
               )}
 
-              {/* Devices Section */}
+              {/* ===== DEVICE-CENTRIC CARDS ===== */}
               {!isPartsOrder && (
                 <div>
                   <div className="flex items-center gap-3 mb-4">
@@ -8853,123 +8917,258 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     </div>
                     <div>
                       <h2 className="text-lg font-bold text-[#1E3A5F]">Appareils</h2>
-                      <p className="text-sm text-gray-500">{request.request_devices?.length || 0} appareil(s) enregistré(s)</p>
+                      <p className="text-sm text-gray-500">{request.request_devices?.length || 0} appareil(s) — cliquez pour voir les détails</p>
                     </div>
                   </div>
                   
-                  <div className="grid gap-4">
-                    {request.request_devices?.map((device, idx) => (
-                      <div key={device.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                        <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
-                          <span className="text-sm font-medium text-gray-500">Appareil #{idx + 1}</span>
-                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            device.service_type === 'calibration' ? 'bg-blue-100 text-blue-700' : 
-                            device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' :
-                            device.service_type === 'calibration_repair' ? 'bg-purple-100 text-purple-700' :
-                            'bg-gray-100 text-gray-700'
-                          }`}>
-                            {device.service_type === 'calibration' ? '🔬 Étalonnage' : 
-                             device.service_type === 'repair' ? '🔧 Réparation' :
-                             device.service_type === 'calibration_repair' ? '🔬🔧 Étal. + Rép.' :
-                             device.service_type}
-                          </span>
-                        </div>
-                        <div className="p-4">
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div>
-                              <p className="text-xs text-gray-500 uppercase tracking-wide">Modèle</p>
-                              <p className="font-semibold text-[#1E3A5F]">{device.model_name || 'N/A'}</p>
+                  <div className="space-y-4">
+                    {request.request_devices?.map((device, idx) => {
+                      const isExpanded = expandedDevice === device.id;
+                      const devStyle = STATUS_STYLES[device.status] || STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
+                      const devAddr = deviceAddresses[device.id] || shippingAddress;
+                      const deviceAttachments = attachments.filter(a => 
+                        a.device_serial === device.serial_number && !a.category?.startsWith('internal_')
+                      );
+                      
+                      return (
+                        <div key={device.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all">
+                          {/* Device Header - Always visible, clickable */}
+                          <button
+                            onClick={() => setExpandedDevice(isExpanded ? null : device.id)}
+                            className="w-full text-left px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                          >
+                            <div className="flex items-center gap-4 flex-1 min-w-0">
+                              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1E3A5F] to-[#3B7AB4] flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                                {idx + 1}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-bold text-[#1E3A5F] text-lg">{device.model_name || 'Appareil'}</p>
+                                <p className="font-mono text-sm text-[#3B7AB4]">SN: {device.serial_number}</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-xs text-gray-500 uppercase tracking-wide">N° de série</p>
-                              <p className="font-mono font-semibold text-[#3B7AB4]">{device.serial_number}</p>
+                            <div className="flex items-center gap-3 flex-shrink-0">
+                              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                device.service_type === 'calibration' ? 'bg-blue-100 text-blue-700' : 
+                                device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' :
+                                device.service_type === 'calibration_repair' ? 'bg-purple-100 text-purple-700' :
+                                'bg-gray-100 text-gray-700'
+                              }`}>
+                                {device.service_type === 'calibration' ? '🔬 Étalonnage' : 
+                                 device.service_type === 'repair' ? '🔧 Réparation' :
+                                 device.service_type === 'calibration_repair' ? '🔬🔧 Étal. + Rép.' :
+                                 device.service_type}
+                              </span>
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${devStyle.bg} ${devStyle.text}`}>
+                                {devStyle.label}
+                              </span>
+                              <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
                             </div>
-                            <div>
-                              <p className="text-xs text-gray-500 uppercase tracking-wide">Marque</p>
-                              <p className="font-medium">{device.equipment_type || 'Lighthouse'}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-gray-500 uppercase tracking-wide">Statut</p>
-                              <p className="font-medium">{STATUS_STYLES[device.status]?.label || 'En attente'}</p>
-                            </div>
-                          </div>
-                          {device.notes && (
-                            <div className="mt-4 pt-4 border-t border-gray-100">
-                              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Notes / Description du problème</p>
-                              <p className="text-gray-700 text-sm">{device.notes}</p>
-                            </div>
-                          )}
-                          {device.accessories && device.accessories.length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              <span className="text-xs text-gray-500">Accessoires:</span>
-                              {device.accessories.map((acc, i) => (
-                                <span key={i} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
-                                  {acc === 'charger' ? 'Chargeur' : 
-                                   acc === 'battery' ? 'Batterie' : 
-                                   acc === 'powerCable' ? 'Câble' : 
-                                   acc === 'carryingCase' ? 'Mallette' : acc}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {/* Photos for this device */}
-                          {attachments.filter(a => 
-                            a.file_type?.startsWith('image/') && 
-                            (a.device_serial === device.serial_number || !a.device_serial)
-                          ).length > 0 && (
-                            <div className="mt-4 pt-4 border-t border-gray-100">
-                              <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Photos</p>
-                              <div className="flex gap-2 flex-wrap">
-                                {attachments
-                                  .filter(a => a.file_type?.startsWith('image/') && (a.device_serial === device.serial_number || !a.device_serial))
-                                  .slice(0, 4)
-                                  .map((img) => (
-                                    <a 
-                                      key={img.id}
-                                      href={img.file_url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 hover:opacity-80 transition-opacity border border-gray-200"
-                                    >
-                                      <img src={img.file_url} alt="" className="w-full h-full object-cover" />
-                                    </a>
-                                  ))
-                                }
-                                {attachments.filter(a => a.file_type?.startsWith('image/')).length > 4 && (
-                                  <button
-                                    onClick={() => setActiveTab('documents')}
-                                    className="w-16 h-16 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-500 text-xs hover:bg-gray-200"
-                                  >
-                                    +{attachments.filter(a => a.file_type?.startsWith('image/')).length - 4}
-                                  </button>
+                          </button>
+                          
+                          {/* Expanded Content */}
+                          {isExpanded && (
+                            <div className="border-t border-gray-200">
+                              {/* Device Info Grid */}
+                              <div className="px-5 py-4 bg-gray-50">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                  <div>
+                                    <p className="text-xs text-gray-500 uppercase tracking-wide">Modèle</p>
+                                    <p className="font-semibold text-[#1E3A5F]">{device.model_name || 'N/A'}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-gray-500 uppercase tracking-wide">N° de série</p>
+                                    <p className="font-mono font-semibold text-[#3B7AB4]">{device.serial_number}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-gray-500 uppercase tracking-wide">Marque</p>
+                                    <p className="font-medium">{device.equipment_type || 'Lighthouse'}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-gray-500 uppercase tracking-wide">Service</p>
+                                    <p className="font-medium">
+                                      {device.service_type === 'calibration' ? 'Étalonnage' :
+                                       device.service_type === 'repair' ? 'Réparation' :
+                                       device.service_type === 'calibration_repair' ? 'Étalonnage + Réparation' :
+                                       device.service_type || '—'}
+                                    </p>
+                                  </div>
+                                </div>
+                                {device.accessories && device.accessories.length > 0 && (
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    <span className="text-xs text-gray-500">Accessoires:</span>
+                                    {device.accessories.map((acc, i) => (
+                                      <span key={i} className="px-2 py-0.5 bg-white text-gray-600 text-xs rounded-full border">
+                                        {acc === 'charger' ? 'Chargeur' : acc === 'battery' ? 'Batterie' : acc === 'powerCable' ? 'Câble' : acc === 'carryingCase' ? 'Mallette' : acc}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                {device.notes && (
+                                  <div className="mt-3 pt-3 border-t border-gray-200">
+                                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Notes</p>
+                                    <p className="text-gray-700 text-sm">{device.notes}</p>
+                                  </div>
                                 )}
                               </div>
+                              
+                              {/* Shipping Address for this device */}
+                              {devAddr && (
+                                <div className="px-5 py-3 border-t border-gray-100">
+                                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">📍 Adresse de retour</p>
+                                  <div className="flex items-start gap-3">
+                                    <div className="text-sm text-gray-700">
+                                      <p className="font-semibold text-[#1E3A5F]">{devAddr.company_name}</p>
+                                      {devAddr.attention && <p>À l'att. de: {devAddr.attention}</p>}
+                                      <p>{devAddr.address_line1}</p>
+                                      <p>{devAddr.postal_code} {devAddr.city}</p>
+                                      {devAddr.country && devAddr.country !== 'France' && <p>{devAddr.country}</p>}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Tracking info if shipped */}
+                              {device.tracking_number && (
+                                <div className="bg-green-50 px-5 py-3 border-t border-green-100">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm font-medium text-green-800">🚚 Expédié</span>
+                                    <a 
+                                      href={device.tracking_url || `https://www.ups.com/track?tracknum=${device.tracking_number}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-sm text-green-700 font-mono hover:underline"
+                                    >
+                                      {device.tracking_number} →
+                                    </a>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* === Documents for this device === */}
+                              <div className="px-5 py-4 border-t border-gray-100">
+                                <p className="text-xs text-gray-500 uppercase tracking-wide mb-3">📁 Documents</p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                  {/* Quote (RMA-level, shown on every device) */}
+                                  {request.quote_url && (
+                                    <a href={request.quote_url} target="_blank" rel="noopener noreferrer"
+                                       className="flex items-center gap-3 p-3 border rounded-lg hover:bg-blue-50 transition-colors border-blue-200">
+                                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-lg">💰</div>
+                                      <div className="min-w-0">
+                                        <p className="font-medium text-gray-800 text-sm">
+                                          Devis{request.quote_revision_count > 0 ? ` Rev-${request.quote_revision_count}` : ''}
+                                        </p>
+                                        <p className="text-xs text-blue-600 truncate">{request.quote_number ? `N° ${request.quote_number}` : request.request_number}</p>
+                                      </div>
+                                    </a>
+                                  )}
+                                  
+                                  {/* Signed Quote / BC (RMA-level) */}
+                                  {request.signed_quote_url && (
+                                    <a href={request.signed_quote_url} target="_blank" rel="noopener noreferrer"
+                                       className="flex items-center gap-3 p-3 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
+                                      <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center text-lg">✅</div>
+                                      <div className="min-w-0">
+                                        <p className="font-medium text-gray-800 text-sm">Devis Signé / BC</p>
+                                        <p className="text-xs text-green-600">{request.bc_signed_by ? `Signé par ${request.bc_signed_by}` : 'Signé'}</p>
+                                      </div>
+                                    </a>
+                                  )}
+                                  
+                                  {/* BC file if separate */}
+                                  {request.bc_file_url && request.bc_file_url !== request.signed_quote_url && (
+                                    <a href={request.bc_file_url} target="_blank" rel="noopener noreferrer"
+                                       className="flex items-center gap-3 p-3 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                                      <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center text-lg">📋</div>
+                                      <div className="min-w-0">
+                                        <p className="font-medium text-gray-800 text-sm">Bon de Commande</p>
+                                        <p className="text-xs text-purple-600">{request.bc_number ? `N° ${request.bc_number}` : 'BC'}</p>
+                                      </div>
+                                    </a>
+                                  )}
+                                  
+                                  {/* Per-device: Service Report */}
+                                  {device.report_url && (
+                                    <a href={device.report_url} target="_blank" rel="noopener noreferrer"
+                                       className="flex items-center gap-3 p-3 border rounded-lg hover:bg-blue-50 transition-colors border-blue-200">
+                                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-lg">📋</div>
+                                      <div className="min-w-0">
+                                        <p className="font-medium text-gray-800 text-sm">Rapport de Service</p>
+                                        <p className="text-xs text-blue-600">SN: {device.serial_number}</p>
+                                      </div>
+                                    </a>
+                                  )}
+                                  
+                                  {/* Per-device: Calibration Certificate */}
+                                  {device.calibration_certificate_url && (
+                                    <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer"
+                                       className="flex items-center gap-3 p-3 border rounded-lg hover:bg-emerald-50 transition-colors border-emerald-300">
+                                      <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center text-lg">🏆</div>
+                                      <div className="min-w-0">
+                                        <p className="font-medium text-gray-800 text-sm">Certificat d'Étalonnage</p>
+                                        <p className="text-xs text-emerald-600">{device.certificate_number || device.serial_number}</p>
+                                      </div>
+                                    </a>
+                                  )}
+                                  
+                                  {/* Per-device: BL */}
+                                  {device.bl_url && (
+                                    <a href={device.bl_url} target="_blank" rel="noopener noreferrer"
+                                       className="flex items-center gap-3 p-3 border rounded-lg hover:bg-cyan-50 transition-colors border-cyan-200">
+                                      <div className="w-10 h-10 bg-cyan-100 rounded-lg flex items-center justify-center text-lg">📄</div>
+                                      <div className="min-w-0">
+                                        <p className="font-medium text-gray-800 text-sm">Bon de Livraison</p>
+                                        <p className="text-xs text-cyan-600">{device.bl_number ? `N° ${device.bl_number}` : 'BL'}</p>
+                                      </div>
+                                    </a>
+                                  )}
+                                  
+                                  {/* Per-device attachments (non-image, non-internal) */}
+                                  {deviceAttachments.filter(a => !a.file_type?.startsWith('image/')).map(att => (
+                                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
+                                       className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
+                                      <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-xs font-bold text-gray-600">
+                                        {att.file_name?.split('.').pop()?.toUpperCase() || 'DOC'}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="font-medium text-gray-800 text-sm truncate">{att.file_name}</p>
+                                        <p className="text-xs text-gray-500">{new Date(att.created_at).toLocaleDateString('fr-FR')}</p>
+                                      </div>
+                                    </a>
+                                  ))}
+                                </div>
+                                
+                                {/* No docs yet message */}
+                                {!request.quote_url && !request.signed_quote_url && !device.report_url && !device.calibration_certificate_url && !device.bl_url && deviceAttachments.length === 0 && (
+                                  <p className="text-sm text-gray-400 italic">Aucun document disponible pour le moment</p>
+                                )}
+                              </div>
+                              
+                              {/* Photos for this device */}
+                              {attachments.filter(a => 
+                                a.file_type?.startsWith('image/') && 
+                                (a.device_serial === device.serial_number || (!a.device_serial && idx === 0))
+                              ).length > 0 && (
+                                <div className="px-5 py-3 border-t border-gray-100">
+                                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">📷 Photos</p>
+                                  <div className="flex gap-2 flex-wrap">
+                                    {attachments
+                                      .filter(a => a.file_type?.startsWith('image/') && (a.device_serial === device.serial_number || (!a.device_serial && idx === 0)))
+                                      .slice(0, 6)
+                                      .map((img) => (
+                                        <a key={img.id} href={img.file_url} target="_blank" rel="noopener noreferrer"
+                                           className="w-14 h-14 rounded-lg overflow-hidden bg-gray-100 hover:opacity-80 transition-opacity border">
+                                          <img src={img.file_url} alt="" className="w-full h-full object-cover" />
+                                        </a>
+                                      ))
+                                    }
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
-                        {/* Tracking info if shipped */}
-                        {device.tracking_number && (
-                          <div className="bg-green-50 px-4 py-3 border-t border-green-100">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                                </svg>
-                                <span className="text-sm font-medium text-green-800">Expédié</span>
-                              </div>
-                              <a 
-                                href={device.tracking_url || `https://www.google.com/search?q=${device.tracking_number}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-sm text-green-700 font-mono hover:underline"
-                              >
-                                {device.tracking_number} →
-                              </a>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -8992,28 +9191,6 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                         <p className="text-gray-700">{line}</p>
                       </div>
                     ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Shipping Address */}
-              {shippingAddress && (
-                <div>
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                      <span className="text-lg">📍</span>
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-bold text-[#1E3A5F]">Adresse de retour</h2>
-                      <p className="text-sm text-gray-500">L'appareil sera renvoyé à cette adresse</p>
-                    </div>
-                  </div>
-                  <div className="bg-white border border-gray-200 rounded-xl p-4">
-                    <p className="font-semibold text-[#1E3A5F]">{shippingAddress.company_name}</p>
-                    {shippingAddress.attention && <p className="text-gray-600">À l'attention de: {shippingAddress.attention}</p>}
-                    <p className="text-gray-600">{shippingAddress.address_line1}</p>
-                    <p className="text-gray-600">{shippingAddress.postal_code} {shippingAddress.city}</p>
-                    <p className="text-gray-600">{shippingAddress.country || 'France'}</p>
                   </div>
                 </div>
               )}
@@ -9128,154 +9305,135 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             </div>
           )}
 
-          {/* Documents Tab */}
+          {/* Documents Tab - Device-centric view */}
           {activeTab === 'documents' && (
             <div className="space-y-6">
-              {/* Photos from request */}
-              {attachments.filter(a => a.file_type?.startsWith('image/')).length > 0 && (
+              {/* RMA-level documents (quote, BC) */}
+              {(request.quote_url || request.signed_quote_url || request.bc_file_url) && (
                 <div>
-                  <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    Photos soumises
-                  </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {attachments.filter(a => a.file_type?.startsWith('image/')).map((img) => (
-                      <a 
-                        key={img.id}
-                        href={img.file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition-opacity border border-gray-200"
-                      >
-                        <img 
-                          src={img.file_url} 
-                          alt={img.file_name}
-                          className="w-full h-full object-cover"
-                        />
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Other documents */}
-              {attachments.filter(a => !a.file_type?.startsWith('image/')).length > 0 && (
-                <div>
-                  <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Documents
-                  </h3>
-                  <div className="space-y-2">
-                    {attachments.filter(a => !a.file_type?.startsWith('image/')).map((doc) => (
-                      <a 
-                        key={doc.id}
-                        href={doc.file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
-                      >
-                        <div className="w-10 h-10 bg-[#3B7AB4] rounded flex items-center justify-center text-white font-bold text-xs">
-                          {doc.file_name?.split('.').pop()?.toUpperCase() || 'DOC'}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-[#1E3A5F] truncate">{doc.file_name}</p>
-                          <p className="text-xs text-gray-500">
-                            Ajouté le {new Date(doc.created_at).toLocaleDateString('fr-FR')}
-                          </p>
-                        </div>
-                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Certificates and Quotes - from Lighthouse */}
-              <div>
-                <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
-                  📁 {isPartsOrder ? 'Devis et Documents' : 'Certificats et Devis'}
-                </h3>
-                {request.quote_url || request.certificate_url || request.bc_file_url || request.signed_quote_url ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {/* === DEVIS (QUOTE) === */}
+                  <h3 className="font-semibold text-[#1E3A5F] mb-3">📁 Documents de la demande</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {request.quote_url && (
                       <a href={request.quote_url} target="_blank" rel="noopener noreferrer"
-                         className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors border-blue-200">
-                        <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
-                        <div>
-                          <p className="font-medium text-gray-800">
-                            Devis{request.quote_revision_count > 0 ? ` Rev-${request.quote_revision_count}` : ''}
-                          </p>
-                          <p className="text-sm text-blue-600">{request.quote_number ? `N° ${request.quote_number}` : request.request_number}</p>
+                         className="flex items-center gap-3 p-3 border rounded-lg hover:bg-blue-50 transition-colors border-blue-200">
+                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-lg">💰</div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-800 text-sm">Devis{request.quote_revision_count > 0 ? ` Rev-${request.quote_revision_count}` : ''}</p>
+                          <p className="text-xs text-blue-600 truncate">{request.quote_number ? `N° ${request.quote_number}` : request.request_number}</p>
                         </div>
                       </a>
                     )}
-                    
-                    {/* === DEVIS SIGNÉ / BON DE COMMANDE === */}
                     {request.signed_quote_url && (
                       <a href={request.signed_quote_url} target="_blank" rel="noopener noreferrer"
-                         className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
-                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
-                        <div>
-                          <p className="font-medium text-gray-800">Devis Signé / BC</p>
-                          <p className="text-sm text-green-600">{request.bc_signed_by ? `Signé par ${request.bc_signed_by}` : 'Signé'}</p>
+                         className="flex items-center gap-3 p-3 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
+                        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center text-lg">✅</div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-800 text-sm">Devis Signé / BC</p>
+                          <p className="text-xs text-green-600">{request.bc_signed_by ? `Signé par ${request.bc_signed_by}` : 'Signé'}</p>
                         </div>
                       </a>
                     )}
-                    
-                    {/* === BON DE COMMANDE (uploaded BC file) === */}
                     {request.bc_file_url && request.bc_file_url !== request.signed_quote_url && (
                       <a href={request.bc_file_url} target="_blank" rel="noopener noreferrer"
-                         className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
-                        <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
-                        <div>
-                          <p className="font-medium text-gray-800">
-                            {request.is_contract_rma ? 'Bon de Commande (Contrat)' : 'Bon de Commande'}
-                          </p>
-                          <p className="text-sm text-purple-600">
-                            {request.bc_number ? `N° ${request.bc_number}` : request.bc_signed_by ? `Signé par ${request.bc_signed_by}` : 'Télécharger le BC'}
-                          </p>
-                        </div>
-                      </a>
-                    )}
-                    
-                    {/* === CERTIFICAT === */}
-                    {request.certificate_url && (
-                      <a href={request.certificate_url} target="_blank" rel="noopener noreferrer"
-                         className="flex items-center gap-4 p-4 border rounded-lg hover:bg-emerald-50 transition-colors border-emerald-200">
-                        <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center text-2xl">🏅</div>
-                        <div>
-                          <p className="font-medium text-gray-800">Certificat d'étalonnage</p>
-                          <p className="text-sm text-emerald-600">Télécharger le certificat</p>
+                         className="flex items-center gap-3 p-3 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                        <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center text-lg">📋</div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-800 text-sm">Bon de Commande</p>
+                          <p className="text-xs text-purple-600">{request.bc_number ? `N° ${request.bc_number}` : 'BC'}</p>
                         </div>
                       </a>
                     )}
                   </div>
-                ) : (
-                  <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-2xl mb-2">📄</p>
-                    <p className="text-gray-500">
-                      {isPartsOrder ? 'Les devis apparaîtront ici une fois disponibles' : 'Les certificats et devis apparaîtront ici une fois disponibles'}
-                    </p>
+                </div>
+              )}
+              
+              {/* Per-device documents */}
+              {!isPartsOrder && request.request_devices?.map((device, idx) => {
+                const devAtts = attachments.filter(a => a.device_serial === device.serial_number && !a.category?.startsWith('internal_'));
+                const hasDeviceDocs = device.report_url || device.calibration_certificate_url || device.bl_url || devAtts.length > 0;
+                const devImages = attachments.filter(a => a.file_type?.startsWith('image/') && (a.device_serial === device.serial_number || (!a.device_serial && idx === 0)));
+                
+                if (!hasDeviceDocs && devImages.length === 0) return null;
+                
+                return (
+                  <div key={device.id}>
+                    <h3 className="font-semibold text-[#1E3A5F] mb-3 flex items-center gap-2">
+                      <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#1E3A5F] to-[#3B7AB4] flex items-center justify-center text-white text-xs font-bold">{idx + 1}</span>
+                      {device.model_name} — <span className="font-mono text-sm text-[#3B7AB4]">SN: {device.serial_number}</span>
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {device.report_url && (
+                        <a href={device.report_url} target="_blank" rel="noopener noreferrer"
+                           className="flex items-center gap-3 p-3 border rounded-lg hover:bg-blue-50 transition-colors border-blue-200">
+                          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-lg">📋</div>
+                          <div><p className="font-medium text-gray-800 text-sm">Rapport de Service</p></div>
+                        </a>
+                      )}
+                      {device.calibration_certificate_url && (
+                        <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer"
+                           className="flex items-center gap-3 p-3 border rounded-lg hover:bg-emerald-50 transition-colors border-emerald-300">
+                          <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center text-lg">🏆</div>
+                          <div><p className="font-medium text-gray-800 text-sm">Certificat d'Étalonnage</p></div>
+                        </a>
+                      )}
+                      {device.bl_url && (
+                        <a href={device.bl_url} target="_blank" rel="noopener noreferrer"
+                           className="flex items-center gap-3 p-3 border rounded-lg hover:bg-cyan-50 transition-colors border-cyan-200">
+                          <div className="w-10 h-10 bg-cyan-100 rounded-lg flex items-center justify-center text-lg">📄</div>
+                          <div><p className="font-medium text-gray-800 text-sm">Bon de Livraison</p></div>
+                        </a>
+                      )}
+                      {devAtts.filter(a => !a.file_type?.startsWith('image/')).map(att => (
+                        <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
+                           className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
+                          <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-xs font-bold text-gray-600">
+                            {att.file_name?.split('.').pop()?.toUpperCase() || 'DOC'}
+                          </div>
+                          <div className="min-w-0"><p className="font-medium text-gray-800 text-sm truncate">{att.file_name}</p></div>
+                        </a>
+                      ))}
+                    </div>
+                    {/* Photos for this device */}
+                    {devImages.length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-xs text-gray-500 mb-2">📷 Photos</p>
+                        <div className="flex gap-2 flex-wrap">
+                          {devImages.map(img => (
+                            <a key={img.id} href={img.file_url} target="_blank" rel="noopener noreferrer"
+                               className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 hover:opacity-80 border">
+                              <img src={img.file_url} alt="" className="w-full h-full object-cover" />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })}
+              
+              {/* Photos without device association (parts orders or unlinked) */}
+              {(isPartsOrder || !request.request_devices?.length) && attachments.filter(a => a.file_type?.startsWith('image/')).length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-[#1E3A5F] mb-3">📷 Photos soumises</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {attachments.filter(a => a.file_type?.startsWith('image/')).map(img => (
+                      <a key={img.id} href={img.file_url} target="_blank" rel="noopener noreferrer"
+                         className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 border">
+                        <img src={img.file_url} alt={img.file_name} className="w-full h-full object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-              {/* Empty state if no attachments at all */}
-              {attachments.length === 0 && !request.quote_url && !request.certificate_url && !request.bc_file_url && !request.signed_quote_url && (
+              {/* Empty state */}
+              {attachments.length === 0 && !request.quote_url && !request.certificate_url && !request.bc_file_url && !request.signed_quote_url && 
+               !request.request_devices?.some(d => d.report_url || d.calibration_certificate_url || d.bl_url) && (
                 <div className="text-center py-12">
-                  <svg className="w-16 h-16 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                  </svg>
+                  <p className="text-4xl mb-3">📄</p>
                   <p className="text-gray-500">Aucun document disponible</p>
                   <p className="text-sm text-gray-400">
-                    {isPartsOrder ? 'Les devis et bons de commande apparaîtront ici' : 'Les photos, devis et certificats apparaîtront ici'}
+                    {isPartsOrder ? 'Les devis et bons de commande apparaîtront ici' : 'Les rapports, certificats et devis apparaîtront ici'}
                   </p>
                 </div>
               )}
@@ -9301,10 +9459,12 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
 // ============================================
 // DEVICE HISTORY PAGE
 // ============================================
-function DeviceHistoryPage({ profile, requests, t, setPage }) {
+function DeviceHistoryPage({ profile, requests, t, setPage, setSelectedRequest }) {
   const [serialNumber, setSerialNumber] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [history, setHistory] = useState([]);
   const [allRequests, setAllRequests] = useState([]);
+  const [rmaAttachments, setRmaAttachments] = useState({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -9312,6 +9472,7 @@ function DeviceHistoryPage({ profile, requests, t, setPage }) {
     const storedSerial = sessionStorage.getItem('viewDeviceSerial');
     if (storedSerial) {
       setSerialNumber(storedSerial);
+      setSearchInput(storedSerial);
       sessionStorage.removeItem('viewDeviceSerial');
     }
   }, []);
@@ -9339,6 +9500,24 @@ function DeviceHistoryPage({ profile, requests, t, setPage }) {
         .order('event_date', { ascending: false });
       
       if (data) setHistory(data);
+      
+      // Load attachments for each matching RMA
+      if (matchingRequests.length > 0) {
+        const { data: atts } = await supabase
+          .from('request_attachments')
+          .select('*')
+          .in('request_id', matchingRequests.map(r => r.id))
+          .not('category', 'like', 'internal_%');
+        if (atts) {
+          const attMap = {};
+          atts.forEach(a => {
+            if (!attMap[a.request_id]) attMap[a.request_id] = [];
+            attMap[a.request_id].push(a);
+          });
+          setRmaAttachments(attMap);
+        }
+      }
+      
       setLoading(false);
     };
     loadHistory();
@@ -9346,6 +9525,12 @@ function DeviceHistoryPage({ profile, requests, t, setPage }) {
 
   // Get device info from first request
   const deviceInfo = allRequests[0]?.request_devices?.find(d => d.serial_number === serialNumber);
+  
+  // Handle search
+  const handleSearch = () => {
+    const term = searchInput.trim();
+    if (term) setSerialNumber(term);
+  };
 
   return (
     <div>
@@ -9357,12 +9542,33 @@ function DeviceHistoryPage({ profile, requests, t, setPage }) {
       </button>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
+        {/* Search bar */}
         <div className="mb-6 pb-6 border-b border-gray-100">
-          <h1 className="text-2xl font-bold text-[#1E3A5F]">Historique de l'appareil</h1>
+          <h1 className="text-2xl font-bold text-[#1E3A5F] mb-4">🔍 Historique d'un appareil</h1>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Entrez un N° de série..."
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSearch()}
+              className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B7AB4] font-mono"
+            />
+            <button
+              onClick={handleSearch}
+              className="px-6 py-2.5 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
+            >
+              Rechercher
+            </button>
+          </div>
           {deviceInfo && (
-            <div className="mt-2">
-              <p className="text-lg font-medium">{deviceInfo.model_name}</p>
-              <p className="font-mono text-[#3B7AB4]">SN: {serialNumber}</p>
+            <div className="mt-4 flex items-center gap-4">
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#1E3A5F] to-[#3B7AB4] flex items-center justify-center text-white text-2xl">🔧</div>
+              <div>
+                <p className="text-xl font-bold text-[#1E3A5F]">{deviceInfo.model_name}</p>
+                <p className="font-mono text-[#3B7AB4]">SN: {serialNumber}</p>
+                <p className="text-sm text-gray-500">{allRequests.length} demande(s) de service</p>
+              </div>
             </div>
           )}
         </div>
@@ -9371,52 +9577,120 @@ function DeviceHistoryPage({ profile, requests, t, setPage }) {
           <div className="flex justify-center py-12">
             <div className="w-8 h-8 border-4 border-[#3B7AB4] border-t-transparent rounded-full animate-spin" />
           </div>
+        ) : !serialNumber ? (
+          <div className="text-center py-12">
+            <p className="text-4xl mb-3">🔍</p>
+            <p className="text-gray-500">Entrez un numéro de série pour voir l'historique de l'appareil</p>
+          </div>
         ) : (
-          <div className="space-y-8">
-            {/* Service History from Requests */}
-            <div>
-              <h2 className="font-bold text-[#1E3A5F] mb-4">Historique des services</h2>
-              {allRequests.length === 0 ? (
-                <p className="text-gray-500">Aucun historique de service trouvé</p>
-              ) : (
-                <div className="space-y-4">
-                  {allRequests.map(req => {
-                    const device = req.request_devices?.find(d => d.serial_number === serialNumber);
-                    const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
-                    return (
-                      <div 
-                        key={req.id}
-                        className="p-4 border border-gray-200 rounded-lg hover:border-[#3B7AB4] cursor-pointer transition-colors"
-                        onClick={() => {
-                          setPage('request-detail');
-                          // Would need to pass the request somehow
-                        }}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <span className="font-mono font-bold text-[#3B7AB4]">{req.request_number}</span>
-                            <p className="text-sm text-gray-600 mt-1">
-                              {device?.service_type === 'calibration' ? 'Étalonnage' : 
-                               device?.service_type === 'repair' ? 'Réparation' :
-                               device?.service_type === 'calibration_repair' ? 'Étalonnage + Réparation' :
-                               device?.service_type}
-                            </p>
-                          </div>
-                          <div className="text-right">
+          <div className="space-y-6">
+            {/* Service History from Requests - with per-device documents */}
+            {allRequests.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-4xl mb-3">📋</p>
+                <p className="text-gray-500">Aucun historique de service trouvé pour SN: {serialNumber}</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {allRequests.map(req => {
+                  const device = req.request_devices?.find(d => d.serial_number === serialNumber);
+                  const style = STATUS_STYLES[req.status] || STATUS_STYLES.submitted;
+                  const reqAtts = rmaAttachments[req.id] || [];
+                  const deviceAtts = reqAtts.filter(a => a.device_serial === serialNumber);
+                  
+                  // Check if there are any docs for this device in this RMA
+                  const hasDocs = req.quote_url || req.signed_quote_url || device?.report_url || 
+                                  device?.calibration_certificate_url || device?.bl_url || deviceAtts.length > 0;
+                  
+                  return (
+                    <div key={req.id} className="border border-gray-200 rounded-xl overflow-hidden">
+                      {/* RMA Header */}
+                      <div className="p-4 bg-gray-50 flex justify-between items-start cursor-pointer hover:bg-gray-100"
+                           onClick={() => {
+                             if (setSelectedRequest) {
+                               setSelectedRequest(req);
+                               setPage('request-detail');
+                             }
+                           }}>
+                        <div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono font-bold text-[#3B7AB4] text-lg">{req.request_number}</span>
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
                               {style.label}
                             </span>
-                            <p className="text-sm text-gray-400 mt-2">
-                              {new Date(req.created_at).toLocaleDateString('fr-FR')}
-                            </p>
                           </div>
+                          <p className="text-sm text-gray-600 mt-1">
+                            {device?.service_type === 'calibration' ? '🔬 Étalonnage' : 
+                             device?.service_type === 'repair' ? '🔧 Réparation' :
+                             device?.service_type === 'calibration_repair' ? '🔬🔧 Étalonnage + Réparation' :
+                             device?.service_type || 'Service'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm text-gray-400">
+                            {new Date(req.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                          </p>
+                          <p className="text-xs text-[#3B7AB4] mt-1">Voir la demande →</p>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                      
+                      {/* Documents for this device in this RMA */}
+                      {hasDocs && (
+                        <div className="p-4 border-t border-gray-100">
+                          <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">📁 Documents</p>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            {req.quote_url && (
+                              <a href={req.quote_url} target="_blank" rel="noopener noreferrer"
+                                 className="flex items-center gap-2 p-2 border rounded-lg hover:bg-blue-50 text-sm border-blue-200">
+                                <span className="text-lg">💰</span>
+                                <span className="text-gray-800 font-medium truncate">
+                                  Devis{req.quote_revision_count > 0 ? ` Rev-${req.quote_revision_count}` : ''}
+                                </span>
+                              </a>
+                            )}
+                            {req.signed_quote_url && (
+                              <a href={req.signed_quote_url} target="_blank" rel="noopener noreferrer"
+                                 className="flex items-center gap-2 p-2 border rounded-lg hover:bg-green-50 text-sm border-green-200">
+                                <span className="text-lg">✅</span>
+                                <span className="text-gray-800 font-medium truncate">BC Signé</span>
+                              </a>
+                            )}
+                            {device?.report_url && (
+                              <a href={device.report_url} target="_blank" rel="noopener noreferrer"
+                                 className="flex items-center gap-2 p-2 border rounded-lg hover:bg-blue-50 text-sm border-blue-200">
+                                <span className="text-lg">📋</span>
+                                <span className="text-gray-800 font-medium truncate">Rapport</span>
+                              </a>
+                            )}
+                            {device?.calibration_certificate_url && (
+                              <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer"
+                                 className="flex items-center gap-2 p-2 border rounded-lg hover:bg-emerald-50 text-sm border-emerald-300">
+                                <span className="text-lg">🏆</span>
+                                <span className="text-gray-800 font-medium truncate">Certificat</span>
+                              </a>
+                            )}
+                            {device?.bl_url && (
+                              <a href={device.bl_url} target="_blank" rel="noopener noreferrer"
+                                 className="flex items-center gap-2 p-2 border rounded-lg hover:bg-cyan-50 text-sm border-cyan-200">
+                                <span className="text-lg">📄</span>
+                                <span className="text-gray-800 font-medium truncate">BL</span>
+                              </a>
+                            )}
+                            {deviceAtts.filter(a => !a.file_type?.startsWith('image/')).map(att => (
+                              <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
+                                 className="flex items-center gap-2 p-2 border rounded-lg hover:bg-gray-50 text-sm">
+                                <span className="text-lg">📎</span>
+                                <span className="text-gray-800 font-medium truncate">{att.file_name}</span>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Event Timeline */}
             {history.length > 0 && (
