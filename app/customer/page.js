@@ -6987,10 +6987,23 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
   }
 
   // Equipment List View
+  const [equipSearch, setEquipSearch] = useState('');
+  const filteredEquipment = equipment.filter(e => {
+    if (!equipSearch.trim()) return true;
+    const q = equipSearch.toLowerCase();
+    return (
+      (e.model_name || '').toLowerCase().includes(q) ||
+      (e.serial_number || '').toLowerCase().includes(q) ||
+      (e.brand || '').toLowerCase().includes(q) ||
+      (e.nickname || '').toLowerCase().includes(q) ||
+      (e.notes || '').toLowerCase().includes(q)
+    );
+  });
+  
   return (
     <>
       <div>
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center mb-4">
           <h1 className="text-2xl font-bold text-[#1E3A5F]">{t('myEquipment')}</h1>
           <button
             onClick={() => {
@@ -7003,6 +7016,25 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
             + Ajouter un Équipement
           </button>
       </div>
+      
+      {/* Search Bar */}
+      {equipment.length > 0 && (
+        <div className="mb-4 relative">
+          <input
+            type="text"
+            placeholder="🔍 Rechercher par modèle, N° de série, marque, surnom..."
+            value={equipSearch}
+            onChange={e => setEquipSearch(e.target.value)}
+            className="w-full px-4 py-2.5 pl-4 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent bg-white text-sm"
+          />
+          {equipSearch && (
+            <div className="flex items-center gap-3 mt-2">
+              <span className="text-sm text-gray-500">{filteredEquipment.length} sur {equipment.length} appareil(s)</span>
+              <button onClick={() => setEquipSearch('')} className="text-sm text-[#3B7AB4] hover:underline">Effacer</button>
+            </div>
+          )}
+        </div>
+      )}
 
       {equipment.length === 0 ? (
         <div className="bg-white rounded-xl p-12 text-center shadow-sm border border-gray-100">
@@ -7018,6 +7050,12 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
             + Ajouter votre premier équipement
           </button>
         </div>
+      ) : filteredEquipment.length === 0 ? (
+        <div className="bg-white rounded-xl p-12 text-center shadow-sm border border-gray-100">
+          <p className="text-4xl mb-3">🔍</p>
+          <p className="text-gray-500 mb-2">Aucun résultat pour "{equipSearch}"</p>
+          <p className="text-gray-400 text-sm">Essayez un autre terme de recherche</p>
+        </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           {/* Table Header */}
@@ -7029,7 +7067,7 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
           </div>
           
           {/* Table Rows - sorted alphabetically by model */}
-          {[...equipment]
+          {[...filteredEquipment]
             .sort((a, b) => (a.model_name || '').localeCompare(b.model_name || ''))
             .map((equip, index) => (
             <div 
