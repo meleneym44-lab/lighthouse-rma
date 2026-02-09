@@ -213,7 +213,8 @@ const getDeviceImageUrl = (modelName) => {
   if (m.startsWith('solair')) return '/images/products/Solair-Emoji.png';
   if (m.startsWith('ls-') || m === 'ls20' || m === 'ls60') return '/images/products/LS-Emoji.png';
   if (m.startsWith('vertex')) return '/images/products/Vertex-Emoji.png';
-  // Future: add Remote, Handheld, ActiveCount, etc.
+  if (m.startsWith('handheld') || m.startsWith('iaq handheld')) return '/images/products/HandHeld-Emoji.png';
+  if (m.startsWith('activecount') || m.includes('active count')) return '/images/products/ActiveCount-Emoji.png';
   return null;
 };
 
