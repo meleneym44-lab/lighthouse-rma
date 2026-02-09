@@ -4445,7 +4445,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
       )}
       
       {/* BC Review Modal */}
-      {reviewingBC && <BCReviewModal rma={reviewingBC} onClose={() = lang={lang}> setReviewingBC(null)} notify={notify} reload={reload} />}
+      {reviewingBC && <BCReviewModal rma={reviewingBC} onClose={() => setReviewingBC(null)} notify={notify} reload={reload} lang={lang} />}
     </div>
   );
 }
@@ -5798,7 +5798,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
       <DeviceServiceModal
         device={showServiceModal}
         rma={rma}
-        onBack={() = lang={lang}> { setShowServiceModal(null); reload(); }}
+        onBack={() => { setShowServiceModal(null); reload(); }}
         notify={notify}
         reload={reload}
         profile={profile}
@@ -5813,7 +5813,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
       <QCReviewModal
         device={showQCReview}
         rma={rma}
-        onBack={() = lang={lang}> { setShowQCReview(null); reload(); }}
+        onBack={() => { setShowQCReview(null); reload(); }}
         notify={notify}
         profile={profile}
       />
@@ -6622,12 +6622,12 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
 
       {/* RMA-Level Actions */}
       {!isRMAClosed && (
-        <RMAActions 
+        <RMAActions lang={lang} 
           rma={rma} 
           devices={devices} 
           notify={notify} 
           reload={reload}
-          onOpenShipping={() = lang={lang}> setShowShippingModal(true)}
+          onOpenShipping={() => setShowShippingModal(true)}
           onOpenAvenant={() => setShowAvenantPreview(true)}
           onStartService={(device) => setShowServiceModal(device)}
           saving={saving}
@@ -6718,7 +6718,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         <ShippingModal
           rma={rma}
           devices={devices}
-          onClose={() = lang={lang}> setShowShippingModal(false)}
+          onClose={() => setShowShippingModal(false)}
           notify={notify}
           reload={reload}
           profile={profile}
@@ -6730,7 +6730,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         <InternalShippingModal
           rma={rma}
           devices={devices}
-          onClose={() = lang={lang}> setShowInternalShipping(false)}
+          onClose={() => setShowInternalShipping(false)}
           notify={notify}
           reload={reload}
           profile={profile}
@@ -6741,7 +6741,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
       {showAvenantPreview && (
         <AvenantPreviewModal
           rma={rma}
-          devices={devices.filter(d = lang={lang}> d.additional_work_needed)}
+          devices={devices.filter(d => d.additional_work_needed)}
           onClose={() => setShowAvenantPreview(false)}
           notify={notify}
           reload={reload}
@@ -6999,7 +6999,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
   };
 
   if (showReportPreview) {
-    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() = lang={lang}> setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} technicianName={technicianName} calType={calType} receptionResult={receptionResult} />;
+    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} technicianName={technicianName} calType={calType} receptionResult={receptionResult} lang={lang} />;
   }
 
   const renderActionButtons = () => {
@@ -7125,7 +7125,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-bold text-gray-700">{lang === 'en' ? '1. FINDINGS *' : '1. CONSTATATIONS *'}</h3>
-              <TechTranslateButton onInsert={(text) = lang={lang}> setFindings(prev => prev ? prev + '\n' + text : text)} />
+              <TechTranslateButton onInsert={(text) => setFindings(prev => prev ? prev + '\n' + text : text)} lang={lang} />
             </div>
             <p className="text-sm text-gray-500 mb-3">{lang === 'en' ? "What you observed (appears on report and supplement)" : "Ce que vous avez observé (apparaît sur rapport et avenant)"}</p>
             <textarea value={findings} onChange={e => setFindings(e.target.value)} placeholder={lang === 'en' ? 'Ex: Calibration performed per specifications...' : 'Ex: Calibration effectuée selon les spécifications...'} className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
@@ -7212,7 +7212,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-bold text-gray-700">{lang === 'en' ? '3. WORK COMPLETED *' : '3. TRAVAUX RÉALISÉS *'}</h3>
-              <TechTranslateButton onInsert={(text) = lang={lang}> setWorkCompleted(prev => prev ? prev + '\n' + text : text)} />
+              <TechTranslateButton onInsert={(text) => setWorkCompleted(prev => prev ? prev + '\n' + text : text)} lang={lang} />
             </div>
             <p className="text-sm text-gray-500 mb-4">{lang === 'en' ? 'Check and describe work performed' : 'Cochez et décrivez le travail effectué'}</p>
             <div className="bg-gray-50 rounded-lg p-4 mb-4">
@@ -8145,8 +8145,8 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
           </tbody>
         </table>
       </div>
-      {selectedRequest && <RequestDetailModal request={selectedRequest} onClose={() = lang={lang}> setSelectedRequest(null)} onCreateQuote={() => { setSelectedRequest(null); setQuoteRequest(selectedRequest); }} />}
-      {quoteRequest && <QuoteEditorModal request={quoteRequest} onClose={() = lang={lang}> setQuoteRequest(null)} notify={notify} reload={reload} profile={profile} businessSettings={businessSettings} />}
+      {selectedRequest && <RequestDetailModal request={selectedRequest} onClose={() => setSelectedRequest(null)} onCreateQuote={() => { setSelectedRequest(null); setQuoteRequest(selectedRequest); }} lang={lang} />}
+      {quoteRequest && <QuoteEditorModal request={quoteRequest} onClose={() => setQuoteRequest(null)} notify={notify} reload={reload} profile={profile} businessSettings={businessSettings} lang={lang} />}
     </div>
   );
 }
@@ -8480,7 +8480,7 @@ const STATUS_STYLES = {
     return (
       <PartsShippingModal
         order={order}
-        onClose={() = lang={lang}> { setShowShipping(false); reload(); }}
+        onClose={() => { setShowShipping(false); reload(); }}
         notify={notify}
         reload={reload}
         profile={profile}
@@ -8730,7 +8730,7 @@ const STATUS_STYLES = {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none h-20"
                       />
                       <div className="flex justify-between items-center mt-2">
-                        <TechTranslateButton onInsert={(text) = lang={lang}> setNewMessage(prev => prev ? prev + '\n' + text : text)} />
+                        <TechTranslateButton onInsert={(text) => setNewMessage(prev => prev ? prev + '\n' + text : text)} lang={lang} />
                         <button
                           onClick={sendMessage}
                           disabled={sendingMessage || !newMessage.trim()}
@@ -9445,16 +9445,16 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
       
       {/* Modals */}
       {selectedOrder && (
-        <PartsOrderDetailModal 
+        <PartsOrderDetailModal lang={lang} 
           order={selectedOrder} 
-          onClose={() = lang={lang}> setSelectedOrder(null)} 
+          onClose={() => setSelectedOrder(null)} 
           onCreateQuote={() => { setSelectedOrder(null); setQuoteOrder(selectedOrder); }} 
         />
       )}
       {quoteOrder && (
-        <PartsQuoteEditor 
+        <PartsQuoteEditor lang={lang} 
           order={quoteOrder} 
-          onClose={() = lang={lang}> setQuoteOrder(null)} 
+          onClose={() => setQuoteOrder(null)} 
           notify={notify} 
           reload={reload} 
           profile={profile} 
@@ -9463,7 +9463,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
       {bcReviewOrder && (
         <PartsBCReviewModal
           order={bcReviewOrder}
-          onClose={() = lang={lang}> setBcReviewOrder(null)}
+          onClose={() => setBcReviewOrder(null)}
           notify={notify}
           reload={reload}
         />
@@ -9471,7 +9471,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
       {processOrder && (
         <PartsProcessModal
           order={processOrder}
-          onClose={() = lang={lang}> setProcessOrder(null)}
+          onClose={() => setProcessOrder(null)}
           notify={notify}
           reload={reload}
           profile={profile}
@@ -9845,7 +9845,7 @@ function PartsProcessModal({ order, onClose, notify, reload, profile, lang = 'fr
     return (
       <PartsShippingModal
         order={order}
-        onClose={() = lang={lang}> { setShowShipping(false); onClose(); }}
+        onClose={() => { setShowShipping(false); onClose(); }}
         notify={notify}
         reload={reload}
         profile={profile}
@@ -14620,7 +14620,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
         </div>
       )}
       
-      {selectedClient && <ClientDetailModal client={selectedClient} requests={requests.filter(r = lang={lang}> r.company_id === selectedClient.id && r.request_type !== 'parts')} partsOrders={requests.filter(r => r.company_id === selectedClient.id && r.request_type === 'parts')} equipment={equipment.filter(e => e.company_id === selectedClient.id)} onClose={() => setSelectedClient(null)} notify={notify} reload={reload} isAdmin={isAdmin} onSelectRMA={onSelectRMA} onSelectDevice={onSelectDevice} />}
+      {selectedClient && <ClientDetailModal client={selectedClient} requests={requests.filter(r => r.company_id === selectedClient.id && r.request_type !== 'parts')} partsOrders={requests.filter(r => r.company_id === selectedClient.id && r.request_type === 'parts')} equipment={equipment.filter(e => e.company_id === selectedClient.id)} onClose={() => setSelectedClient(null)} notify={notify} reload={reload} isAdmin={isAdmin} onSelectRMA={onSelectRMA} onSelectDevice={onSelectDevice} lang={lang} />}
     </div>
   );
 }
@@ -14792,11 +14792,11 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           {activeTab === 'contracts' && selectedContract && (
             <div>
               <button onClick={() => setSelectedContract(null)} className="text-sm text-blue-600 hover:underline mb-4">{lang === 'en' ? '← Back to contracts' : '← Retour aux contrats'}</button>
-              <ContractDetailView 
+              <ContractDetailView lang={lang} 
                 contract={selectedContract}
                 clients={[client]}
                 notify={notify}
-                onClose={() = lang={lang}> setSelectedContract(null)}
+                onClose={() => setSelectedContract(null)}
                 onUpdate={() => { loadContracts(); setSelectedContract(null); }}
               />
             </div>
@@ -15675,11 +15675,11 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
   // Contract Detail View
   if (selectedContract) {
     return (
-      <ContractDetailView 
+      <ContractDetailView lang={lang} 
         contract={selectedContract}
         clients={clients}
         notify={notify}
-        onClose={() = lang={lang}> setSelectedContract(null)}
+        onClose={() => setSelectedContract(null)}
         onUpdate={() => { loadContracts(); if (reloadMain) reloadMain(); }}
       />
     );
@@ -15692,7 +15692,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
         contract={quoteContract}
         profile={profile}
         notify={notify}
-        onClose={() = lang={lang}> setQuoteContract(null)}
+        onClose={() => setQuoteContract(null)}
         onSent={() => { setQuoteContract(null); loadContracts(); if (reloadMain) reloadMain(); }}
       />
     );
@@ -15700,9 +15700,9 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
   
   // Contract BC Review Modal - render on top of main view
   const contractBCModal = reviewingContractBC && (
-    <ContractBCReviewModal 
+    <ContractBCReviewModal lang={lang} 
       contract={reviewingContractBC}
-      onClose={() = lang={lang}> setReviewingContractBC(null)}
+      onClose={() => setReviewingContractBC(null)}
       notify={notify}
       reload={() => { loadContracts(); if (reloadMain) reloadMain(); }}
     />
@@ -15714,7 +15714,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
       <CreateContractModal
         clients={clients}
         notify={notify}
-        onClose={() = lang={lang}> setShowCreateModal(false)}
+        onClose={() => setShowCreateModal(false)}
         onCreated={() => { setShowCreateModal(false); loadContracts(); if (reloadMain) reloadMain(); }}
       />
     );
@@ -17953,8 +17953,8 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'en' ? 'Purchase Order (optional)' : 'Bon de Commande (optionnel)'}</label>
-              <BCFileUploader 
-                onUploaded={(url) = lang={lang}> setContractData({ ...contractData, bc_url: url })}
+              <BCFileUploader lang={lang} 
+                onUploaded={(url) => setContractData({ ...contractData, bc_url: url })}
                 currentUrl={contractData.bc_url}
               />
             </div>
@@ -18514,13 +18514,13 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
 
       {/* Invoice Creation Modal */}
       {creatingFor && (
-        <InvoiceCreationModal rma={creatingFor} onClose={() = lang={lang}> setCreatingFor(null)} notify={notify}
+        <InvoiceCreationModal lang={lang} rma={creatingFor} onClose={() => setCreatingFor(null)} notify={notify}
           reload={() => { loadInvoices(); if (reload) reload(); }} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />
       )}
 
       {/* Invoice Detail Modal */}
       {viewingInvoice && (
-        <InvoiceDetailModal invoice={viewingInvoice} onClose={() = lang={lang}> { setViewingInvoice(null); loadInvoices(); }}
+        <InvoiceDetailModal lang={lang} invoice={viewingInvoice} onClose={() => { setViewingInvoice(null); loadInvoices(); }}
           notify={notify} reload={() => { loadInvoices(); if (reload) reload(); }} businessSettings={businessSettings} t={t} lang={lang} />
       )}
     </div>
@@ -23237,7 +23237,7 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
         <PartEditModal
           part={editingPart}
           onSave={savePart}
-          onClose={() = lang={lang}> { setShowAddModal(false); setEditingPart(null); }}
+          onClose={() => { setShowAddModal(false); setEditingPart(null); }}
         />
       )}
     </div>
