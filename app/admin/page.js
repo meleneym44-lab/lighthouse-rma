@@ -60,6 +60,8 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   const biz = options.businessSettings || {};
   const shippingInfo = options.shipping || { parcels: 1, unitPrice: 45, total: 45 };
   const quoteNumber = options.quoteNumber || rma.quote_number || null; // DEV-0226-001 format
+  const revisionNumber = options.revisionNumber || 0;
+  const quoteNumberDisplay = quoteNumber ? (revisionNumber > 0 ? `${quoteNumber} Rev-${revisionNumber}` : quoteNumber) : null;
   
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
@@ -124,7 +126,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text('N° ' + (quoteNumber || '—'), pageWidth - margin, y + 11, { align: 'right' });
+  pdf.text('N° ' + (quoteNumberDisplay || '—'), pageWidth - margin, y + 11, { align: 'right' });
   
   // RMA reference (FR-00327) - secondary reference
   if (rma.request_number) {
@@ -2746,7 +2748,8 @@ const STATUS_STYLES = {
   repair_in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Réparation' },
   final_qc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Contrôle QC' },
   ready_to_ship: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Prêt' },
-  quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: '🔴 Modification demandée' }
+  quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: '🔴 Modification demandée' },
+  quote_revision_declined: { bg: 'bg-orange-100', text: 'text-orange-700', label: '❌ Modification refusée' }
 };
 
 export default function AdminPortal() {
@@ -3848,7 +3851,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
             const readyStatuses = ['ready_to_ship', 'ready'];
             
             // Early stages = before device physically arrives (use RMA status)
-            const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 
+            const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 'quote_revision_declined', 
                                    'approved', 'bc_pending', 'bc_review', 'waiting_bc', 'waiting_po', 'waiting_device', 'bc_approved'];
             
             // Helper to get device's effective status
@@ -3973,7 +3976,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               // Get the actual status to use
               // Before devices arrive: use RMA status
               // After devices arrive: use device.status individually
-              const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 
+              const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 'quote_revision_declined', 
                                      'approved', 'bc_pending', 'bc_review', 'waiting_bc', 'waiting_po', 'waiting_device', 'bc_approved'];
               const rmaIsEarly = earlyStatuses.includes(rma.status);
               
@@ -5434,7 +5437,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   // Get device status label
   const getDeviceStatusLabel = (device) => {
     // Early stages = before device physically arrives
-    const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 
+    const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 'quote_revision_declined', 
                            'approved', 'bc_pending', 'bc_review', 'waiting_bc', 'waiting_po', 'waiting_device', 'bc_approved'];
     const rmaIsEarly = earlyStatuses.includes(rma.status);
     
@@ -20362,6 +20365,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
   const [partsDescriptionCache, setPartsDescriptionCache] = useState({}); // Cache of part descriptions
   const [loadingParts, setLoadingParts] = useState(true); // Loading state for parts
   
+  // Revision state
+  const isRevision = request?.status === 'quote_revision_requested';
+  const existingQuoteData = request?.quote_data || null;
+  const clientRevisionNotes = request?.quote_revision_notes || '';
+  const currentRevisionCount = request?.quote_revision_count || 0;
+  const [declineMode, setDeclineMode] = useState(false);
+  const [declineNotes, setDeclineNotes] = useState('');
+  
   // Shipping state - based on parcels count from RMA request
   const parcelsCount = request?.parcels_count || 1;
   const [shippingData, setShippingData] = useState({
@@ -20630,6 +20641,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
     
     // Initialize device pricing from request
     if (devices.length > 0) {
+      // If this is a revision with saved quote data, restore the previous pricing
+      const savedDevices = isRevision && existingQuoteData?.devices;
+      
       setDevicePricing(devices.map((d, i) => {
         const deviceType = d.device_type || 'particle_counter';
         const serviceType = d.service_type || 'calibration';
@@ -20638,15 +20652,21 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
         
         const calTemplate = CALIBRATION_TEMPLATES[deviceType] || CALIBRATION_TEMPLATES.particle_counter;
         const modelName = d.model_name || '';
+        const serialTrimmed = (d.serial_number || '').trim();
+        
+        // Try to find matching saved device data for revision pre-fill
+        const savedDevice = savedDevices 
+          ? savedDevices.find(sd => sd.serial === serialTrimmed) || savedDevices[i]
+          : null;
         
         // Get calibration part number and price from parts database
-        const calPartNumber = getCalibrationPartNumber(modelName);
+        const calPartNumber = savedDevice?.calPartNumber || getCalibrationPartNumber(modelName);
         const calPrice = calPartNumber && partsCache[calPartNumber] 
           ? partsCache[calPartNumber] 
           : calTemplate.defaultPrice;
         
         // Determine nettoyage cell type for air particle counters
-        const needsNettoyage = needsCal && deviceType === 'particle_counter';
+        const needsNettoyage = savedDevice ? (savedDevice.needsNettoyage ?? (needsCal && deviceType === 'particle_counter')) : (needsCal && deviceType === 'particle_counter');
         const nettoyageCellType = needsNettoyage ? NETTOYAGE_TEMPLATE.getCellType(modelName) : null;
         const nettoyagePartNumber = needsNettoyage ? NETTOYAGE_TEMPLATE.getPartNumber(modelName) : null;
         // Get nettoyage price from parts cache (cell1 or cell2)
@@ -20655,12 +20675,11 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           : 0;
         
         // Check contract coverage - trim serial number for matching
-        const serialTrimmed = (d.serial_number || '').trim();
         const contractDevice = contractInfo?.deviceMap?.[serialTrimmed];
         const isContractCovered = needsCal && contractDevice && contractDevice.tokens_remaining > 0;
         const tokensExhausted = needsCal && contractDevice && contractDevice.tokens_remaining <= 0;
         
-        console.log(`📊 Device ${serialTrimmed}: model="${modelName}", calPart=${calPartNumber}, price=${calPrice}, nettoyage=${nettoyageCellType}`);
+        console.log(`📊 Device ${serialTrimmed}: model="${modelName}", calPart=${calPartNumber}, price=${calPrice}, nettoyage=${nettoyageCellType}${savedDevice ? ' (restored from quote_data)' : ''}`);
         
         return {
           id: d.id || `device-${i}`,
@@ -20684,19 +20703,30 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           nettoyageCellType: nettoyageCellType,
           nettoyagePartNumber: nettoyagePartNumber,
           nettoyageQty: 1,
-          nettoyagePrice: isContractCovered ? 0 : nettoyagePrice,
+          nettoyagePrice: isContractCovered ? 0 : (savedDevice ? (parseFloat(savedDevice.nettoyagePrice) || nettoyagePrice) : nettoyagePrice),
           hideNettoyageOnQuote: false, // Option to hide nettoyage on quote (price still included)
-          // Pricing - 0 for contract-covered calibrations
+          // Pricing - restore from saved data if revision, otherwise calculate fresh
           calibrationQty: 1,
-          calibrationPrice: isContractCovered ? 0 : (needsCal ? calPrice : 0),
+          calibrationPrice: isContractCovered ? 0 : (savedDevice ? (parseFloat(savedDevice.calibrationPrice) || 0) : (needsCal ? calPrice : 0)),
           repairQty: 1,
-          repairPrice: needsRepair ? REPAIR_TEMPLATE.defaultPrice : 0,
-          repairPartNumber: '',
-          additionalParts: [],
+          repairPrice: savedDevice ? (parseFloat(savedDevice.repairPrice) || 0) : (needsRepair ? REPAIR_TEMPLATE.defaultPrice : 0),
+          repairPartNumber: savedDevice?.repairPartNumber || '',
+          additionalParts: savedDevice?.additionalParts || [],
           shippingPartNumber: 'Shipping1',
           shipping: isContractCovered ? 0 : defaultShipping
         };
       }));
+
+      // Also restore shipping data from saved quote if revision
+      if (savedDevices && existingQuoteData?.shipping) {
+        const savedShipping = existingQuoteData.shipping;
+        setShippingData(prev => ({
+          ...prev,
+          unitPrice: savedShipping.unitPrice || prev.unitPrice,
+          parcels: savedShipping.parcels || prev.parcels,
+          total: savedShipping.total || prev.total
+        }));
+      }
     }
   }, [loadingContract, loadingParts, contractInfo, partsCache]);
 
@@ -20875,16 +20905,25 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       }
     }
     
-    // Get next document number for quote (DEV-MMYY-NNN)
+    // For revisions, keep the existing quote number and increment revision count
+    // For new quotes, generate a new number
     let quoteNumber = null;
-    try {
-      const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'DEV' });
-      if (!docNumError && docNumData) {
-        quoteNumber = docNumData;
+    let newRevisionCount = 0;
+    
+    if (isRevision && request.quote_number) {
+      // Keep same quote number, increment revision
+      quoteNumber = request.quote_number;
+      newRevisionCount = currentRevisionCount + 1;
+    } else {
+      // New quote - get next document number
+      try {
+        const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'DEV' });
+        if (!docNumError && docNumData) {
+          quoteNumber = docNumData;
+        }
+      } catch (e) {
+        console.error('Could not generate document number:', e);
       }
-    } catch (e) {
-      console.error('Could not generate document number:', e);
-      // Continue without document number if it fails
     }
 
     // Save complete quote data
@@ -20929,6 +20968,25 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
     };
 
     try {
+      // === REVISION: Archive old quote PDF as internal attachment before generating new one ===
+      if (isRevision && request.quote_url) {
+        try {
+          const revLabel = currentRevisionCount > 0 ? `Rev-${currentRevisionCount}` : 'Original';
+          await supabase.from('request_attachments').insert({
+            request_id: request.id,
+            file_url: request.quote_url,
+            file_name: `${rmaNumber}_devis_${revLabel}.pdf`,
+            category: 'internal_devis_revision',
+            notes: `Devis ${revLabel} - archivé le ${new Date().toLocaleDateString('fr-FR')}`,
+            uploaded_by: profile?.id || null
+          });
+          console.log(`📂 Archived old quote as internal_devis_revision (${revLabel})`);
+        } catch (archiveErr) {
+          console.error('Could not archive old quote:', archiveErr);
+          // Continue even if archive fails
+        }
+      }
+
       // Generate Quote PDF
       let quoteUrl = null;
       try {
@@ -20947,10 +21005,12 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           isContractRMA: hasContractCoveredDevices,
           isFullyContractCovered: isFullyContractCovered,
           quoteNumber: quoteNumber,
+          revisionNumber: newRevisionCount,
           businessSettings: businessSettings || {},
           quoteSettings: businessSettings?.quote_settings || null
         });
-        const fileName = `${rmaNumber}_devis_${Date.now()}.pdf`;
+        const revSuffix = newRevisionCount > 0 ? `_rev${newRevisionCount}` : '';
+        const fileName = `${rmaNumber}_devis${revSuffix}_${Date.now()}.pdf`;
         quoteUrl = await uploadPDFToStorage(pdfBlob, `quotes/${rmaNumber}`, fileName);
       } catch (pdfErr) {
         console.error('PDF generation error:', pdfErr);
@@ -20985,10 +21045,23 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
         quote_shipping: shippingTotal,
         quote_data: quoteData,
         quote_revision_notes: null,
+        quote_revision_count: newRevisionCount,
         // Contract fields
         is_contract_rma: hasContractCoveredDevices,
         contract_id: hasContractCoveredDevices ? contractInfo?.primaryContract?.id : null
       };
+      
+      // If this is a revision, reset BC/signature fields so client re-signs
+      if (isRevision) {
+        updateData.bc_file_url = null;
+        updateData.bc_submitted_at = null;
+        updateData.bc_approved_at = null;
+        updateData.bc_signed_by = null;
+        updateData.bc_signature_date = null;
+        updateData.bc_signature_url = null;
+        updateData.signed_quote_url = null;
+        updateData.quote_approved_at = null;
+      }
       
       // Add quote PDF URL if generated
       if (quoteUrl) {
@@ -21034,6 +21107,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
         const bcDocUrl = contractBcFileUrl || contractSignedQuoteUrl;
         const bcCopied = bcDocUrl ? ' (BC/Devis contrat copié)' : ' (⚠️ BC contrat non trouvé)';
         notify(`✅ Contrat! RMA ${rmaNumber} créé - En attente de réception${bcCopied}`);
+      } else if (isRevision) {
+        notify(`✅ Devis révisé envoyé! ${quoteNumber} Rev-${newRevisionCount} → ${request.companies?.name || 'Client'}`);
       } else if (hasContractCoveredDevices) {
         notify(`✅ Devis envoyé! RMA: ${rmaNumber} (certains appareils sous contrat)`);
       } else {
@@ -21049,6 +21124,30 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
     setSaving(false);
   };
 
+  // Decline revision request
+  const declineRevision = async () => {
+    if (!declineNotes.trim()) {
+      notify('Veuillez indiquer la raison du refus.', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('service_requests').update({
+        status: 'quote_revision_declined',
+        admin_decline_notes: declineNotes,
+        quote_revision_declined_at: new Date().toISOString()
+      }).eq('id', request.id);
+      
+      if (error) throw error;
+      notify(`❌ Modification refusée - ${request.companies?.name || 'Client'} sera notifié`);
+      reload();
+      onClose();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSaving(false);
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={onClose}>
       <div className="bg-white w-full h-full md:w-[98%] md:h-[98%] md:m-auto md:rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
@@ -21058,11 +21157,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           <div className="flex items-center gap-6">
             <div>
               <h2 className="text-xl font-bold flex items-center gap-2">
-                {step === 1 && 'Créer le Devis'}
+                {step === 1 && (isRevision ? '🔴 Réviser le Devis' : 'Créer le Devis')}
                 {step === 2 && 'Aperçu du Devis'}
                 {step === 3 && (isFullyContractCovered ? 'Confirmer RMA Contrat' : 'Confirmer l\'envoi')}
               </h2>
-              <p className="text-gray-300">{request.companies?.name} • {devicePricing.length} appareil(s)</p>
+              <p className="text-gray-300">
+                {request.companies?.name} • {devicePricing.length} appareil(s)
+                {isRevision && request.quote_number && <span className="ml-2 text-red-300">• {request.quote_number} → Rev-{currentRevisionCount + 1}</span>}
+              </p>
             </div>
             <div className="flex gap-1">
               {[1,2,3].map(s => (
@@ -21100,6 +21202,73 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
               {/* LEFT SIDE - Customer Info & Devices */}
               <div className="flex-1 p-6 overflow-y-auto">
                 
+                {/* REVISION BANNER - Client modification request */}
+                {isRevision && (
+                  <div className="mb-6">
+                    <div className="p-4 rounded-xl border-2 border-red-300 bg-red-50">
+                      <div className="flex items-start gap-3">
+                        <span className="text-3xl">🔴</span>
+                        <div className="flex-1">
+                          <p className="font-bold text-red-800 text-lg">Demande de modification du client</p>
+                          <p className="text-sm text-red-600 mt-1">
+                            {request.companies?.name} a demandé des modifications au devis {request.quote_number}
+                            {currentRevisionCount > 0 && ` (actuellement Rev-${currentRevisionCount})`}
+                          </p>
+                          {clientRevisionNotes && (
+                            <div className="mt-3 p-3 bg-white rounded-lg border border-red-200">
+                              <p className="text-xs font-medium text-gray-500 mb-1">💬 Message du client :</p>
+                              <p className="text-gray-800 whitespace-pre-wrap">{clientRevisionNotes}</p>
+                            </div>
+                          )}
+                          <div className="mt-3 flex gap-2">
+                            <p className="text-xs text-red-500 italic flex-1">
+                              Modifiez les tarifs ci-dessous puis envoyez le devis révisé, ou refusez la modification.
+                            </p>
+                            {!declineMode ? (
+                              <button onClick={() => setDeclineMode(true)} className="px-3 py-1 text-xs bg-white border border-red-300 text-red-600 rounded hover:bg-red-50 font-medium">
+                                ❌ Refuser la modification
+                              </button>
+                            ) : (
+                              <button onClick={() => setDeclineMode(false)} className="px-3 py-1 text-xs bg-white border border-gray-300 text-gray-600 rounded hover:bg-gray-50 font-medium">
+                                ← Annuler le refus
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Decline mode */}
+                    {declineMode && (
+                      <div className="mt-3 p-4 rounded-xl border-2 border-orange-300 bg-orange-50">
+                        <p className="font-bold text-orange-800 mb-2">❌ Refuser la modification</p>
+                        <p className="text-sm text-orange-600 mb-3">
+                          Le client sera notifié que sa demande a été refusée et recevra le motif ci-dessous. Le devis original reste en vigueur.
+                        </p>
+                        <textarea
+                          value={declineNotes}
+                          onChange={e => setDeclineNotes(e.target.value)}
+                          placeholder="Expliquez au client pourquoi la modification ne peut pas être acceptée..."
+                          className="w-full p-3 border rounded-lg text-sm resize-none focus:ring-2 focus:ring-orange-300"
+                          rows={3}
+                        />
+                        <div className="mt-3 flex gap-2 justify-end">
+                          <button onClick={() => setDeclineMode(false)} className="px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+                            Annuler
+                          </button>
+                          <button 
+                            onClick={declineRevision} 
+                            disabled={saving || !declineNotes.trim()}
+                            className="px-4 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 font-medium"
+                          >
+                            {saving ? 'Envoi...' : '❌ Confirmer le refus'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* CONTRACT CUSTOMER BANNER */}
                 {hasContractCoveredDevices && (
                   <div className="mb-6 p-4 rounded-xl border-2 bg-emerald-50 border-emerald-300">
@@ -21990,22 +22159,27 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           {step === 3 && (
             <div className="flex items-center justify-center min-h-full p-8">
               <div className="text-center max-w-lg">
-                <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 ${isFullyContractCovered ? 'bg-emerald-500' : 'bg-[#00A651]'}`}>
-                  <span className="text-5xl text-white">{isFullyContractCovered ? '📋' : '📧'}</span>
+                <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 ${isFullyContractCovered ? 'bg-emerald-500' : isRevision ? 'bg-red-500' : 'bg-[#00A651]'}`}>
+                  <span className="text-5xl text-white">{isFullyContractCovered ? '📋' : isRevision ? '🔄' : '📧'}</span>
                 </div>
                 <h3 className="text-2xl font-bold text-gray-800 mb-2">
-                  {isFullyContractCovered ? 'Créer le RMA (Contrat)' : 'Confirmer l\'envoi du devis'}
+                  {isFullyContractCovered ? 'Créer le RMA (Contrat)' : isRevision ? 'Envoyer le devis révisé' : 'Confirmer l\'envoi du devis'}
                 </h3>
                 <p className="text-gray-600 mb-6">
                   {isFullyContractCovered 
                     ? 'Le RMA sera créé directement en "Attente Appareil" avec le BC du contrat.'
+                    : isRevision
+                    ? `Le devis ${request.quote_number} Rev-${currentRevisionCount + 1} sera envoyé au client. L'ancien devis sera archivé.`
                     : 'Le devis sera envoyé au client et disponible sur son portail.'
                   }
                 </p>
                 
-                <div className={`rounded-xl p-6 mb-6 text-left ${isFullyContractCovered ? 'bg-emerald-50 border border-emerald-200' : 'bg-gray-50'}`}>
+                <div className={`rounded-xl p-6 mb-6 text-left ${isFullyContractCovered ? 'bg-emerald-50 border border-emerald-200' : isRevision ? 'bg-red-50 border border-red-200' : 'bg-gray-50'}`}>
                   <p className="text-lg font-bold text-gray-800 mb-1">{request.companies?.name}</p>
-                  <p className="text-sm text-gray-500 mb-4">{devicePricing.length} appareil(s)</p>
+                  <p className="text-sm text-gray-500 mb-4">
+                    {devicePricing.length} appareil(s)
+                    {isRevision && <span className="ml-2 text-red-500 font-medium">• Révision {currentRevisionCount + 1}</span>}
+                  </p>
                   
                   <div className="space-y-2 text-sm border-t pt-3">
                     {devicePricing.map(d => (
@@ -22035,6 +22209,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     <p className="mb-1">✓ Le BC du contrat sera copié dans le RMA</p>
                     <p className="mb-1">✓ Statut directement "Attente Appareil"</p>
                     <p>✓ Pas d'approbation client nécessaire</p>
+                  </div>
+                ) : isRevision ? (
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-800 text-left">
+                    <p className="font-medium mb-2">🔄 Révision du devis :</p>
+                    <p className="mb-1">✓ L'ancien devis sera archivé (visible uniquement par les admins)</p>
+                    <p className="mb-1">✓ Le numéro reste {request.quote_number} avec mention Rev-{currentRevisionCount + 1}</p>
+                    <p className="mb-1">✓ Le client devra approuver et re-signer le nouveau devis</p>
+                    <p>✓ Le client ne verra que le devis le plus récent</p>
                   </div>
                 ) : (
                   <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 text-left">
@@ -22066,7 +22248,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                 disabled={saving} 
                 className={`px-10 py-3 text-white rounded-lg font-bold text-lg disabled:opacity-50 ${isFullyContractCovered ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}
               >
-                {saving ? 'Envoi en cours...' : isFullyContractCovered ? '📋 Créer RMA Contrat' : '✅ Confirmer et Envoyer'}
+                {saving ? 'Envoi en cours...' : isFullyContractCovered ? '📋 Créer RMA Contrat' : isRevision ? '🔄 Envoyer Devis Révisé' : '✅ Confirmer et Envoyer'}
               </button>
             )}
             {(loadingContract || loadingParts) && step === 1 && (
