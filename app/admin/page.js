@@ -1180,7 +1180,7 @@ function TechTranslateModal({ isOpen, onClose, onInsert }) {
 }
 
 // Tech Translate Button - Opens the modal
-function TechTranslateButton({ onInsert }) {
+function TechTranslateButton({ onInsert, lang = 'fr' }) {
   const [isOpen, setIsOpen] = useState(false);
   
   return (
@@ -3365,6 +3365,7 @@ export default function AdminPortal() {
 }
 
 function LoginPage() {
+  const lang = 'fr';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -4444,13 +4445,13 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
       )}
       
       {/* BC Review Modal */}
-      {reviewingBC && <BCReviewModal rma={reviewingBC} onClose={() => setReviewingBC(null)} notify={notify} reload={reload} />}
+      {reviewingBC && <BCReviewModal rma={reviewingBC} onClose={() = lang={lang}> setReviewingBC(null)} notify={notify} reload={reload} />}
     </div>
   );
 }
 
 // BC Review Modal - Full screen document review
-function BCReviewModal({ rma, onClose, notify, reload }) {
+function BCReviewModal({ rma, onClose, notify, reload, lang = 'fr' }) {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -4888,7 +4889,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
 // ============================================
 // CONTRACT BC REVIEW MODAL - Copied from RMA BCReviewModal
 // ============================================
-function ContractBCReviewModal({ contract, onClose, notify, reload }) {
+function ContractBCReviewModal({ contract, onClose, notify, reload, lang = 'fr' }) {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -5108,7 +5109,7 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
 // ============================================
 // RMA ACTIONS COMPONENT - RMA-level action buttons
 // ============================================
-function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenant, onStartService, saving, setSaving }) {
+function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenant, onStartService, saving, setSaving, lang = 'fr' }) {
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [selectedToReceive, setSelectedToReceive] = useState(new Set());
   
@@ -5797,7 +5798,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
       <DeviceServiceModal
         device={showServiceModal}
         rma={rma}
-        onBack={() => { setShowServiceModal(null); reload(); }}
+        onBack={() = lang={lang}> { setShowServiceModal(null); reload(); }}
         notify={notify}
         reload={reload}
         profile={profile}
@@ -5812,7 +5813,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
       <QCReviewModal
         device={showQCReview}
         rma={rma}
-        onBack={() => { setShowQCReview(null); reload(); }}
+        onBack={() = lang={lang}> { setShowQCReview(null); reload(); }}
         notify={notify}
         profile={profile}
       />
@@ -6626,7 +6627,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           devices={devices} 
           notify={notify} 
           reload={reload}
-          onOpenShipping={() => setShowShippingModal(true)}
+          onOpenShipping={() = lang={lang}> setShowShippingModal(true)}
           onOpenAvenant={() => setShowAvenantPreview(true)}
           onStartService={(device) => setShowServiceModal(device)}
           saving={saving}
@@ -6717,7 +6718,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         <ShippingModal
           rma={rma}
           devices={devices}
-          onClose={() => setShowShippingModal(false)}
+          onClose={() = lang={lang}> setShowShippingModal(false)}
           notify={notify}
           reload={reload}
           profile={profile}
@@ -6729,7 +6730,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         <InternalShippingModal
           rma={rma}
           devices={devices}
-          onClose={() => setShowInternalShipping(false)}
+          onClose={() = lang={lang}> setShowInternalShipping(false)}
           notify={notify}
           reload={reload}
           profile={profile}
@@ -6740,7 +6741,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
       {showAvenantPreview && (
         <AvenantPreviewModal
           rma={rma}
-          devices={devices.filter(d => d.additional_work_needed)}
+          devices={devices.filter(d = lang={lang}> d.additional_work_needed)}
           onClose={() => setShowAvenantPreview(false)}
           notify={notify}
           reload={reload}
@@ -6753,7 +6754,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
 }
 
 // Device Service Modal - For filling inspection/findings
-function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, businessSettings }) {
+function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, businessSettings, lang = 'fr' }) {
   const [findings, setFindings] = useState(device.service_findings || '');
   const [additionalWorkNeeded, setAdditionalWorkNeeded] = useState(device.additional_work_needed || false);
   const [workItems, setWorkItems] = useState(device.additional_work_items || []);
@@ -6998,7 +6999,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
   };
 
   if (showReportPreview) {
-    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} technicianName={technicianName} calType={calType} receptionResult={receptionResult} />;
+    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() = lang={lang}> setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} technicianName={technicianName} calType={calType} receptionResult={receptionResult} />;
   }
 
   const renderActionButtons = () => {
@@ -7124,7 +7125,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-bold text-gray-700">{lang === 'en' ? '1. FINDINGS *' : '1. CONSTATATIONS *'}</h3>
-              <TechTranslateButton onInsert={(text) => setFindings(prev => prev ? prev + '\n' + text : text)} />
+              <TechTranslateButton onInsert={(text) = lang={lang}> setFindings(prev => prev ? prev + '\n' + text : text)} />
             </div>
             <p className="text-sm text-gray-500 mb-3">{lang === 'en' ? "What you observed (appears on report and supplement)" : "Ce que vous avez observé (apparaît sur rapport et avenant)"}</p>
             <textarea value={findings} onChange={e => setFindings(e.target.value)} placeholder={lang === 'en' ? 'Ex: Calibration performed per specifications...' : 'Ex: Calibration effectuée selon les spécifications...'} className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
@@ -7211,7 +7212,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-bold text-gray-700">{lang === 'en' ? '3. WORK COMPLETED *' : '3. TRAVAUX RÉALISÉS *'}</h3>
-              <TechTranslateButton onInsert={(text) => setWorkCompleted(prev => prev ? prev + '\n' + text : text)} />
+              <TechTranslateButton onInsert={(text) = lang={lang}> setWorkCompleted(prev => prev ? prev + '\n' + text : text)} />
             </div>
             <p className="text-sm text-gray-500 mb-4">{lang === 'en' ? 'Check and describe work performed' : 'Cochez et décrivez le travail effectué'}</p>
             <div className="bg-gray-50 rounded-lg p-4 mb-4">
@@ -7234,7 +7235,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
 }
 
 // Report Preview Modal - Exact replica of official Lighthouse France Rapport PDF
-function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving, technicianName, calType, receptionResult }) {
+function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving, technicianName, calType, receptionResult, lang = 'fr' }) {
   const today = new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR');
   const serviceTypeText = device.service_type === 'calibration' ? (lang === 'en' ? 'Calibration' : 'Étalonnage') : device.service_type === 'repair' ? (lang === 'en' ? 'Repair' : 'Réparation') : (lang === 'en' ? 'Calibration and Repair' : 'Étalonnage et Réparation');
   const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
@@ -7718,7 +7719,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
 };
 
 // Avenant Preview Modal - Shows additional work quote to send to client
-function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySent, businessSettings }) {
+function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySent, businessSettings, lang = 'fr' }) {
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
@@ -8144,13 +8145,13 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
           </tbody>
         </table>
       </div>
-      {selectedRequest && <RequestDetailModal request={selectedRequest} onClose={() => setSelectedRequest(null)} onCreateQuote={() => { setSelectedRequest(null); setQuoteRequest(selectedRequest); }} />}
-      {quoteRequest && <QuoteEditorModal request={quoteRequest} onClose={() => setQuoteRequest(null)} notify={notify} reload={reload} profile={profile} businessSettings={businessSettings} />}
+      {selectedRequest && <RequestDetailModal request={selectedRequest} onClose={() = lang={lang}> setSelectedRequest(null)} onCreateQuote={() => { setSelectedRequest(null); setQuoteRequest(selectedRequest); }} />}
+      {quoteRequest && <QuoteEditorModal request={quoteRequest} onClose={() = lang={lang}> setQuoteRequest(null)} notify={notify} reload={reload} profile={profile} businessSettings={businessSettings} />}
     </div>
   );
 }
 
-function RequestDetailModal({ request, onClose, onCreateQuote }) {
+function RequestDetailModal({ request, onClose, onCreateQuote, lang = 'fr' }) {
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
   const devices = request.request_devices || [];
   const isPending = request.status === 'submitted' && !request.request_number;
@@ -8479,7 +8480,7 @@ const STATUS_STYLES = {
     return (
       <PartsShippingModal
         order={order}
-        onClose={() => { setShowShipping(false); reload(); }}
+        onClose={() = lang={lang}> { setShowShipping(false); reload(); }}
         notify={notify}
         reload={reload}
         profile={profile}
@@ -8729,7 +8730,7 @@ const STATUS_STYLES = {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none h-20"
                       />
                       <div className="flex justify-between items-center mt-2">
-                        <TechTranslateButton onInsert={(text) => setNewMessage(prev => prev ? prev + '\n' + text : text)} />
+                        <TechTranslateButton onInsert={(text) = lang={lang}> setNewMessage(prev => prev ? prev + '\n' + text : text)} />
                         <button
                           onClick={sendMessage}
                           disabled={sendingMessage || !newMessage.trim()}
@@ -9446,14 +9447,14 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
       {selectedOrder && (
         <PartsOrderDetailModal 
           order={selectedOrder} 
-          onClose={() => setSelectedOrder(null)} 
+          onClose={() = lang={lang}> setSelectedOrder(null)} 
           onCreateQuote={() => { setSelectedOrder(null); setQuoteOrder(selectedOrder); }} 
         />
       )}
       {quoteOrder && (
         <PartsQuoteEditor 
           order={quoteOrder} 
-          onClose={() => setQuoteOrder(null)} 
+          onClose={() = lang={lang}> setQuoteOrder(null)} 
           notify={notify} 
           reload={reload} 
           profile={profile} 
@@ -9462,7 +9463,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
       {bcReviewOrder && (
         <PartsBCReviewModal
           order={bcReviewOrder}
-          onClose={() => setBcReviewOrder(null)}
+          onClose={() = lang={lang}> setBcReviewOrder(null)}
           notify={notify}
           reload={reload}
         />
@@ -9470,7 +9471,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
       {processOrder && (
         <PartsProcessModal
           order={processOrder}
-          onClose={() => setProcessOrder(null)}
+          onClose={() = lang={lang}> setProcessOrder(null)}
           notify={notify}
           reload={reload}
           profile={profile}
@@ -9482,7 +9483,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
 // ============================================
 // PARTS BC REVIEW MODAL (identical to RMA BCReviewModal)
 // ============================================
-function PartsBCReviewModal({ order, onClose, notify, reload }) {
+function PartsBCReviewModal({ order, onClose, notify, reload, lang = 'fr' }) {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -9811,7 +9812,7 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
 // ============================================
 // PARTS PROCESS MODAL (for approved orders)
 // ============================================
-function PartsProcessModal({ order, onClose, notify, reload, profile }) {
+function PartsProcessModal({ order, onClose, notify, reload, profile, lang = 'fr' }) {
   const [saving, setSaving] = useState(false);
   const [showShipping, setShowShipping] = useState(false);
   
@@ -9844,7 +9845,7 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
     return (
       <PartsShippingModal
         order={order}
-        onClose={() => { setShowShipping(false); onClose(); }}
+        onClose={() = lang={lang}> { setShowShipping(false); onClose(); }}
         notify={notify}
         reload={reload}
         profile={profile}
@@ -10035,7 +10036,7 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
 }
 
 // Parts Order Detail Modal
-function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
+function PartsOrderDetailModal({ order, onClose, onCreateQuote, lang = 'fr' }) {
   const style = STATUS_STYLES[order.status] || STATUS_STYLES.submitted;
   const isPending = order.status === 'submitted' && !order.request_number;
   const needsRevision = order.status === 'quote_revision_requested';
@@ -10252,7 +10253,7 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
 // ============================================
 // PARTS QUOTE EDITOR - Build parts quote
 // ============================================
-function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
+function PartsQuoteEditor({ order, onClose, notify, reload, profile, lang = 'fr' }) {
   const [step, setStep] = useState(1); // 1=Edit Parts, 2=Preview, 3=Confirm
   const [quoteParts, setQuoteParts] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -10969,7 +10970,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
 // ============================================
 // PARTS ORDER SHIPPING MODAL - 3 Steps like RMA
 // ============================================
-function PartsShippingModal({ order, onClose, notify, reload, profile, businessSettings }) {
+function PartsShippingModal({ order, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [shipment, setShipment] = useState(null);
@@ -11907,7 +11908,7 @@ const LIGHTHOUSE_OFFICES = {
   }
 };
 
-function InternalShippingModal({ rma, devices, onClose, notify, reload, profile, businessSettings }) {
+function InternalShippingModal({ rma, devices, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
   // Steps: 1=Config, 2=UPS Label Created + BL Preview, 3=Saved
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -12524,7 +12525,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
 // ============================================
 // SHIPPING MODAL - Full shipping workflow v26
 // ============================================
-function ShippingModal({ rma, devices, onClose, notify, reload, profile, businessSettings }) {
+function ShippingModal({ rma, devices, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [shipments, setShipments] = useState([]);
@@ -14619,12 +14620,12 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
         </div>
       )}
       
-      {selectedClient && <ClientDetailModal client={selectedClient} requests={requests.filter(r => r.company_id === selectedClient.id && r.request_type !== 'parts')} partsOrders={requests.filter(r => r.company_id === selectedClient.id && r.request_type === 'parts')} equipment={equipment.filter(e => e.company_id === selectedClient.id)} onClose={() => setSelectedClient(null)} notify={notify} reload={reload} isAdmin={isAdmin} onSelectRMA={onSelectRMA} onSelectDevice={onSelectDevice} />}
+      {selectedClient && <ClientDetailModal client={selectedClient} requests={requests.filter(r = lang={lang}> r.company_id === selectedClient.id && r.request_type !== 'parts')} partsOrders={requests.filter(r => r.company_id === selectedClient.id && r.request_type === 'parts')} equipment={equipment.filter(e => e.company_id === selectedClient.id)} onClose={() => setSelectedClient(null)} notify={notify} reload={reload} isAdmin={isAdmin} onSelectRMA={onSelectRMA} onSelectDevice={onSelectDevice} />}
     </div>
   );
 }
 
-function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, notify, reload, isAdmin, onSelectRMA, onSelectDevice }) {
+function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, notify, reload, isAdmin, onSelectRMA, onSelectDevice, lang = 'fr' }) {
   const [activeTab, setActiveTab] = useState('rmas');
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState({ name: client.name || '', billing_address: client.billing_address || '', billing_city: client.billing_city || '', billing_postal_code: client.billing_postal_code || '', siret: client.siret || '', vat_number: client.vat_number || '' });
@@ -14795,7 +14796,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                 contract={selectedContract}
                 clients={[client]}
                 notify={notify}
-                onClose={() => setSelectedContract(null)}
+                onClose={() = lang={lang}> setSelectedContract(null)}
                 onUpdate={() => { loadContracts(); setSelectedContract(null); }}
               />
             </div>
@@ -15083,7 +15084,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
 }
 
 // QC Review Modal - View report, certificate, then approve
-function QCReviewModal({ device, rma, onBack, notify, profile }) {
+function QCReviewModal({ device, rma, onBack, notify, profile, lang = 'fr' }) {
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState(1); // 1: Report, 2: Certificate, 3: Approve
   const [qcNotes, setQcNotes] = useState(device.qc_notes || '');
@@ -15678,7 +15679,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
         contract={selectedContract}
         clients={clients}
         notify={notify}
-        onClose={() => setSelectedContract(null)}
+        onClose={() = lang={lang}> setSelectedContract(null)}
         onUpdate={() => { loadContracts(); if (reloadMain) reloadMain(); }}
       />
     );
@@ -15691,7 +15692,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
         contract={quoteContract}
         profile={profile}
         notify={notify}
-        onClose={() => setQuoteContract(null)}
+        onClose={() = lang={lang}> setQuoteContract(null)}
         onSent={() => { setQuoteContract(null); loadContracts(); if (reloadMain) reloadMain(); }}
       />
     );
@@ -15701,7 +15702,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
   const contractBCModal = reviewingContractBC && (
     <ContractBCReviewModal 
       contract={reviewingContractBC}
-      onClose={() => setReviewingContractBC(null)}
+      onClose={() = lang={lang}> setReviewingContractBC(null)}
       notify={notify}
       reload={() => { loadContracts(); if (reloadMain) reloadMain(); }}
     />
@@ -15713,7 +15714,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
       <CreateContractModal
         clients={clients}
         notify={notify}
-        onClose={() => setShowCreateModal(false)}
+        onClose={() = lang={lang}> setShowCreateModal(false)}
         onCreated={() => { setShowCreateModal(false); loadContracts(); if (reloadMain) reloadMain(); }}
       />
     );
@@ -15926,7 +15927,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
 // ============================================
 // CONTRACT QUOTE EDITOR - Matches RMA Quote Style
 // ============================================
-function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
+function ContractQuoteEditor({ contract, profile, notify, onClose, onSent, lang = 'fr' }) {
   const [step, setStep] = useState(1); // 1=Edit, 2=Preview, 3=Confirm
   const [saving, setSaving] = useState(false);
   const [quoteRef, setQuoteRef] = useState('');
@@ -16932,7 +16933,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
 // ============================================
 // CONTRACT DETAIL VIEW
 // ============================================
-function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
+function ContractDetailView({ contract, clients, notify, onClose, onUpdate, lang = 'fr' }) {
   const [editMode, setEditMode] = useState(contract.status === 'requested');
   const [saving, setSaving] = useState(false);
   const [devices, setDevices] = useState(contract.contract_devices || []);
@@ -17602,7 +17603,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
 // ============================================
 // BC FILE UPLOADER (Admin side)
 // ============================================
-function BCFileUploader({ onUploaded, currentUrl }) {
+function BCFileUploader({ onUploaded, currentUrl, lang = 'fr' }) {
   const [uploading, setUploading] = useState(false);
   const [urlMode, setUrlMode] = useState(false);
   const [urlInput, setUrlInput] = useState(currentUrl || '');
@@ -17720,7 +17721,7 @@ function BCFileUploader({ onUploaded, currentUrl }) {
   );
 }
 
-function CreateContractModal({ clients, notify, onClose, onCreated }) {
+function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' }) {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [contractData, setContractData] = useState({
@@ -17953,7 +17954,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'en' ? 'Purchase Order (optional)' : 'Bon de Commande (optionnel)'}</label>
               <BCFileUploader 
-                onUploaded={(url) => setContractData({ ...contractData, bc_url: url })}
+                onUploaded={(url) = lang={lang}> setContractData({ ...contractData, bc_url: url })}
                 currentUrl={contractData.bc_url}
               />
             </div>
@@ -18513,13 +18514,13 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
 
       {/* Invoice Creation Modal */}
       {creatingFor && (
-        <InvoiceCreationModal rma={creatingFor} onClose={() => setCreatingFor(null)} notify={notify}
+        <InvoiceCreationModal rma={creatingFor} onClose={() = lang={lang}> setCreatingFor(null)} notify={notify}
           reload={() => { loadInvoices(); if (reload) reload(); }} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />
       )}
 
       {/* Invoice Detail Modal */}
       {viewingInvoice && (
-        <InvoiceDetailModal invoice={viewingInvoice} onClose={() => { setViewingInvoice(null); loadInvoices(); }}
+        <InvoiceDetailModal invoice={viewingInvoice} onClose={() = lang={lang}> { setViewingInvoice(null); loadInvoices(); }}
           notify={notify} reload={() => { loadInvoices(); if (reload) reload(); }} businessSettings={businessSettings} t={t} lang={lang} />
       )}
     </div>
@@ -18530,7 +18531,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
 // ============================================
 // INVOICE DETAIL MODAL - View/manage invoice
 // ============================================
-function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings }) {
+function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings, lang = 'fr' }) {
   const [inv, setInv] = useState(invoice);
   const [showPayment, setShowPayment] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -18764,7 +18765,7 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
 // ============================================
 // INVOICE CREATION MODAL
 // ============================================
-function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessSettings }) {
+function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
   const [step, setStep] = useState(1); // 1=Edit lines, 2=Preview, 3=Saved
   const [lines, setLines] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -20773,7 +20774,7 @@ const isFranceMetropolitan = (postalCode) => {
 // ============================================
 // QUOTE EDITOR MODAL
 // ============================================
-function QuoteEditorModal({ request, onClose, notify, reload, profile, businessSettings }) {
+function QuoteEditorModal({ request, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
   const [step, setStep] = useState(1); // 1=Edit Pricing, 2=Preview, 3=Confirm
   const [devicePricing, setDevicePricing] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -23236,7 +23237,7 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
         <PartEditModal
           part={editingPart}
           onSave={savePart}
-          onClose={() => { setShowAddModal(false); setEditingPart(null); }}
+          onClose={() = lang={lang}> { setShowAddModal(false); setEditingPart(null); }}
         />
       )}
     </div>
@@ -23246,7 +23247,7 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
 // ============================================
 // PART EDIT MODAL
 // ============================================
-function PartEditModal({ part, onSave, onClose }) {
+function PartEditModal({ part, onSave, onClose, lang = 'fr' }) {
   const [formData, setFormData] = useState({
     part_number: part?.part_number || '',
     description: part?.description || '',
