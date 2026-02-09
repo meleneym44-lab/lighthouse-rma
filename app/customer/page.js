@@ -2063,8 +2063,6 @@ const StepProgress = ({ status, serviceType }) => {
   const getStepIndex = (currentStatus) => {
     if (!currentStatus) return 0;
     
-    console.log('🔍 StepProgress - status:', currentStatus, 'isRepair:', isRepair);
-    
     if (isRepair) {
       // Repair flow mapping (11 steps: 0-10)
       const repairMap = {
@@ -2081,7 +2079,6 @@ const StepProgress = ({ status, serviceType }) => {
         'shipped': 10, 'delivered': 10, 'completed': 10
       };
       const index = repairMap[currentStatus] ?? 0;
-      console.log('🔍 Repair step index:', index);
       return index;
     } else {
       // Calibration flow mapping (10 steps: 0-9)
@@ -2098,7 +2095,6 @@ const StepProgress = ({ status, serviceType }) => {
         'shipped': 9, 'delivered': 9, 'completed': 9
       };
       const index = calibrationMap[currentStatus] ?? 0;
-      console.log('🔍 Calibration step index:', index);
       return index;
     }
   };
@@ -7624,50 +7620,6 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             )}
           </div>
           
-          {/* Per-Device Progress Bars */}
-          {!isPartsOrder && (request.request_devices || []).length > 0 && (
-            <div className="mt-4 space-y-3">
-              <p className="text-xs text-gray-500 uppercase font-medium">Suivi par appareil</p>
-              {(request.request_devices || []).map((device, idx) => {
-                const deviceServiceType = device.service_type || request.requested_service;
-                
-                // For early steps (before received), use RMA status
-                // For later steps (received onwards), use device status independently
-                const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 'quote_revision_declined',
-                                       'bc_pending', 'bc_review', 'waiting_bc', 'waiting_device'];
-                const rmaIsEarly = earlyStatuses.includes(request.status);
-                
-                // If RMA is still in early stages, all devices show RMA status
-                // Once RMA moves past waiting_device, each device tracks independently
-                const effectiveStatus = rmaIsEarly ? request.status : (device.status || request.status);
-                
-                return (
-                  <div key={device.id || idx} className="bg-gray-50 rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-800">{device.model_name || device.model || 'Appareil'}</span>
-                        <span className="text-xs text-gray-500 font-mono">SN: {device.serial_number || '—'}</span>
-                      </div>
-                      <span className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-600">
-                        {deviceServiceType === 'calibration' ? '🔬 Étalonnage' : 
-                         deviceServiceType === 'repair' ? '🔧 Réparation' : 
-                         deviceServiceType === 'calibration_repair' || deviceServiceType === 'cal_repair' ? '🔬+🔧 Étal. & Rép.' :
-                         deviceServiceType}
-                      </span>
-                    </div>
-                    <StepProgress status={effectiveStatus} serviceType={deviceServiceType} />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          
-          {/* Fallback: Single progress bar if no devices */}
-          {!isPartsOrder && (request.request_devices || []).length === 0 && (
-            <div className="mt-4">
-              <StepProgress status={request.status} serviceType={request.requested_service} />
-            </div>
-          )}
         </div>
 
         {/* Quote Sent - Review Required */}
@@ -8958,12 +8910,28 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                                  device.service_type === 'calibration_repair' ? '🔬🔧 Étal. + Rép.' :
                                  device.service_type}
                               </span>
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${devStyle.bg} ${devStyle.text}`}>
-                                {devStyle.label}
-                              </span>
                               <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
                             </div>
                           </button>
+                          
+                          {/* Per-device Progress Tracker - Always visible */}
+                          {(() => {
+                            const serviceType = device.service_type || request.requested_service || 'calibration';
+                            const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 'quote_revision_declined',
+                              'approved', 'bc_pending', 'bc_review', 'waiting_bc', 'waiting_po', 'waiting_device', 'bc_approved', 'waiting_reception'];
+                            const rmaIsEarly = earlyStatuses.includes(request.status);
+                            const effectiveStatus = (() => {
+                              if (device.shipped_at) return 'shipped';
+                              if (device.qc_complete) return 'ready_to_ship';
+                              if (device.report_complete && !device.qc_complete) return 'final_qc';
+                              return rmaIsEarly ? request.status : (device.status || request.status);
+                            })();
+                            return (
+                              <div className="px-4 py-3 border-t border-gray-100">
+                                <StepProgress status={effectiveStatus} serviceType={serviceType} />
+                              </div>
+                            );
+                          })()}
                           
                           {/* Expanded Content */}
                           {isExpanded && (
