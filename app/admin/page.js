@@ -5834,11 +5834,25 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
                       <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
                       <div>
-                        <p className="font-medium text-gray-800">Devis</p>
+                        <p className="font-medium text-gray-800">
+                          Devis{rma.quote_revision_count > 0 ? ` Rev-${rma.quote_revision_count}` : ''} (actuel)
+                        </p>
                         <p className="text-sm text-blue-600">{rma.quote_number ? `N° ${rma.quote_number}` : rma.request_number}</p>
                       </div>
                     </a>
                   )}
+                  
+                  {/* === 1b. ARCHIVED QUOTE REVISIONS (admin-only) === */}
+                  {attachments.filter(a => a.category === 'internal_devis_revision' && a.file_url).map(att => (
+                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors border-gray-200 opacity-75">
+                      <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-2xl">📂</div>
+                      <div>
+                        <p className="font-medium text-gray-600">{att.file_name || 'Ancien Devis'}</p>
+                        <p className="text-xs text-gray-400">{att.notes || 'Archivé'} • 🔒 Admin uniquement</p>
+                      </div>
+                    </a>
+                  ))}
                   
                   {/* === 2. DEVIS SIGNÉ / BON DE COMMANDE (signed quote = BC) === */}
                   {rma.signed_quote_url && (
@@ -5998,6 +6012,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 {attachments.filter(a => 
                   !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category) &&
                   !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category?.replace('internal_', '')) &&
+                  a.category !== 'internal_devis_revision' &&
                   a.file_url
                 ).length > 0 && (
                   <div className="mt-4">
@@ -6006,6 +6021,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       {attachments.filter(a => 
                         !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category) &&
                         !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category?.replace('internal_', '')) &&
+                        a.category !== 'internal_devis_revision' &&
                         a.file_url
                       ).map(doc => {
                         const isInternal = doc.category?.startsWith('internal_');
@@ -21045,7 +21061,6 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
         quote_shipping: shippingTotal,
         quote_data: quoteData,
         quote_revision_notes: null,
-        quote_revision_count: newRevisionCount,
         // Contract fields
         is_contract_rma: hasContractCoveredDevices,
         contract_id: hasContractCoveredDevices ? contractInfo?.primaryContract?.id : null
@@ -21053,6 +21068,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       
       // If this is a revision, reset BC/signature fields so client re-signs
       if (isRevision) {
+        updateData.quote_revision_count = newRevisionCount;
         updateData.bc_file_url = null;
         updateData.bc_submitted_at = null;
         updateData.bc_approved_at = null;
@@ -21295,14 +21311,6 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                   </div>
                 )}
                 
-                {/* Revision Request Alert */}
-                {request.status === 'quote_revision_requested' && (
-                  <div className="mb-6 p-4 bg-red-100 border-2 border-red-300 rounded-xl">
-                    <p className="font-bold text-red-800">🔴 Modification demandée par le client</p>
-                    <p className="text-red-700 mt-1">{request.quote_revision_notes}</p>
-                  </div>
-                )}
-
                 {/* Non-Metro Warning */}
                 {!isMetro && (
                   <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl">
