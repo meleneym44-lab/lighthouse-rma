@@ -4330,7 +4330,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                       <div key={step.id} className="flex-1" style={{ minWidth: '50px' }}>
                         <div 
                           className={`
-                            flex items-center justify-center h-9 px-1 text-[9px] font-medium text-center leading-tight
+                            flex items-center justify-center h-9 px-2 text-[10px] font-medium text-center leading-tight
                             ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
                             ${index === 0 ? 'rounded-l-sm' : ''}
                             ${isLast ? 'rounded-r-sm' : ''}
@@ -5741,7 +5741,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             <div key={step.id} className="flex-1" style={{ minWidth: '50px' }}>
               <div 
                 className={`
-                  flex items-center justify-center h-9 px-1 text-[9px] font-medium text-center leading-tight
+                  flex items-center justify-center h-9 px-2 text-[10px] font-medium text-center leading-tight
                   ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
                   ${index === 0 ? 'rounded-l-md' : ''}
                   ${isLast ? 'rounded-r-md' : ''}
