@@ -485,6 +485,11 @@ async function generateQuotePDF(options) {
   const requiredSections = quoteData.requiredSections || { calibrationTypes: ['particle_counter'], hasRepair: false };
   const createdBy = quoteData.createdBy || 'M. Meleney';
   
+  // Revision info
+  const revisionCount = request.quote_revision_count || 0;
+  const quoteNumber = request.quote_number || null;
+  const quoteNumberDisplay = quoteNumber ? (revisionCount > 0 ? `${quoteNumber} Rev-${revisionCount}` : quoteNumber) : null;
+  
   const company = request.companies || {};
   
   const pageWidth = 210, pageHeight = 297, margin = 15;
@@ -563,16 +568,33 @@ async function generateQuotePDF(options) {
     pdf.text('LIGHTHOUSE', margin, y + 8);
   }
   
+  // Title - show DEVIS SIGNE / DEVIS Rev-N / OFFRE DE PRIX
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...navy);
-  pdf.text(isSigned ? 'DEVIS SIGNE' : 'OFFRE DE PRIX', pageWidth - margin, y + 8, { align: 'right' });
-  pdf.setFontSize(11);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  pdf.text('N. ' + (request.request_number || 'FR-XXXXX'), pageWidth - margin, y + 14, { align: 'right' });
+  let pdfTitle = 'OFFRE DE PRIX';
+  if (isSigned) {
+    pdfTitle = revisionCount > 0 ? `DEVIS SIGNE Rev-${revisionCount}` : 'DEVIS SIGNE';
+  } else if (revisionCount > 0) {
+    pdfTitle = `OFFRE DE PRIX Rev-${revisionCount}`;
+  }
+  pdf.text(pdfTitle, pageWidth - margin, y + 5, { align: 'right' });
   
-  y += 18;
+  // Document number
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('N\u00b0 ' + (quoteNumberDisplay || request.request_number || '\u2014'), pageWidth - margin, y + 11, { align: 'right' });
+  
+  // RMA reference
+  if (request.request_number) {
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('RMA: ' + request.request_number, pageWidth - margin, y + 16, { align: 'right' });
+  }
+  
+  y += 20;
   pdf.setDrawColor(...navy);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
@@ -620,11 +642,10 @@ async function generateQuotePDF(options) {
   }
   y += 8;
 
-  // ===== SERVICE DESCRIPTION BLOCKS =====
+  // ===== SERVICE DESCRIPTION BLOCKS (page-break aware per line) =====
   const calibrationTypes = requiredSections.calibrationTypes || ['particle_counter'];
   const hasRepair = requiredSections.hasRepair || false;
 
-  // Service descriptions data
   const CAL_DATA = {
     particle_counter: {
       title: "Etalonnage Compteur de Particules Aeroportees",
@@ -658,6 +679,16 @@ async function generateQuotePDF(options) {
         "Fourniture d'un rapport de test et de calibration"
       ]
     },
+    temp_humidity: {
+      title: "Etalonnage Capteur Temperature/Humidite",
+      prestations: [
+        "Verification des fonctionnalites du capteur",
+        "Etalonnage temperature sur points de reference certifies",
+        "Etalonnage humidite relative",
+        "Verification de la stabilite des mesures",
+        "Fourniture d'un certificat d'etalonnage"
+      ]
+    },
     other: {
       title: "Etalonnage Equipement",
       prestations: [
@@ -687,186 +718,176 @@ async function generateQuotePDF(options) {
     "Les equipements envoyes devront etre decontamines de toutes substances chimiques, bacteriennes ou radioactives."
   ];
 
-  // Draw service blocks
+  // Draw service blocks - page-break aware per line
   const drawServiceBlock = (data, color) => {
     const lineH = 5;
-    let lines = [];
+    const titleH = 10;
+    const allLines = [];
     data.prestations.forEach(p => {
       const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
-      wrapped.forEach(l => lines.push(l));
+      wrapped.forEach((l, i) => allLines.push({ text: l, isFirst: i === 0 }));
     });
-    const blockH = 12 + (lines.length * lineH);
-    checkPageBreak(blockH);
+    checkPageBreak(titleH + lineH * 2);
+    let vLineStartY = y;
     
     pdf.setDrawColor(...color);
     pdf.setLineWidth(1);
-    pdf.line(margin, y, margin, y + blockH - 3);
-    
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
     pdf.text(data.title, margin + 5, y + 6);
-    y += 10;
+    y += titleH;
     
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...gray);
-    data.prestations.forEach(p => {
-      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
-      wrapped.forEach((line, i) => {
-        if (i === 0) pdf.text('-', margin + 5, y);
-        pdf.text(line, margin + 9, y);
-        y += lineH;
-      });
+    allLines.forEach((lineObj) => {
+      if (y + lineH > getUsableHeight()) {
+        pdf.setDrawColor(...color);
+        pdf.setLineWidth(1);
+        pdf.line(margin, vLineStartY, margin, y - 2);
+        addFooter();
+        pdf.addPage();
+        y = margin;
+        vLineStartY = y;
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(...gray);
+      }
+      if (lineObj.isFirst) pdf.text('-', margin + 5, y);
+      pdf.text(lineObj.text, margin + 9, y);
+      y += lineH;
     });
-    y += 3;
+    
+    pdf.setDrawColor(...color);
+    pdf.setLineWidth(1);
+    const lineEndY = Math.max(vLineStartY + 5, y - 7);
+    pdf.line(margin, vLineStartY, margin, lineEndY);
+    y += 5;
   };
 
-  // Draw calibration blocks (blue)
   calibrationTypes.forEach(type => {
     const data = CAL_DATA[type] || CAL_DATA.particle_counter;
     drawServiceBlock(data, [59, 130, 246]);
   });
   
-  // Draw repair block (orange) if needed
   if (hasRepair) {
     drawServiceBlock(REPAIR_DATA, [249, 115, 22]);
   }
 
-  // ===== CONDITIONS/DISCLAIMERS =====
-  checkPageBreak(25);
-  pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...lightGray);
-  pdf.text('CONDITIONS', margin, y);
-  y += 4;
-  pdf.setFontSize(8);
-  pdf.setTextColor(...gray);
-  DISCLAIMERS.forEach(d => {
-    pdf.text('- ' + d, margin, y);
-    y += 4;
-  });
+  // ===== DETAILED PRICING TABLE =====
   y += 5;
-
-  // ===== DETAILED PRICING TABLE (Qté | Désignation | Prix Unit. | Total HT) =====
   const rowH = 7;
   const colQty = margin;
   const colDesc = margin + 12;
   const colUnit = pageWidth - margin - 45;
   const colTotal = pageWidth - margin - 3;
   
-  checkPageBreak(60);
+  const drawTableHeader = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(margin, y, contentWidth, 9, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...white);
+    pdf.text('Qte', colQty + 3, y + 6);
+    pdf.text('Designation', colDesc, y + 6);
+    pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
+    pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
+    y += 9;
+  };
+  
+  const checkTablePageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) {
+      addFooter();
+      pdf.addPage();
+      y = margin;
+      drawTableHeader();
+      return true;
+    }
+    return false;
+  };
+  
+  const drawTableRow = (qty, desc, unitDisplay, totalDisplay, bgIndex) => {
+    checkTablePageBreak(rowH);
+    pdf.setFillColor(bgIndex % 2 === 0 ? 255 : 250, bgIndex % 2 === 0 ? 255 : 250, bgIndex % 2 === 0 ? 255 : 250);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(String(qty), colQty + 3, y + 5);
+    pdf.text(desc.substring(0, 60), colDesc, y + 5);
+    pdf.text(unitDisplay, colUnit, y + 5, { align: 'right' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(totalDisplay, colTotal, y + 5, { align: 'right' });
+    y += rowH;
+  };
+  
+  // Keep-together logic
+  let totalRowCount = 0;
+  devicePricing.forEach(device => {
+    if (device.needsCalibration) totalRowCount++;
+    if (device.needsNettoyage && !device.isContractCovered && device.nettoyagePrice > 0) totalRowCount++;
+    if (device.needsRepair) totalRowCount++;
+    totalRowCount += (device.additionalParts || []).length;
+  });
+  totalRowCount += 1; // shipping
+  const totalTableHeight = 7 + 9 + (totalRowCount * rowH) + 11 + 4;
+  const spaceRemaining = getUsableHeight() - y;
+  const freshPageSpace = getUsableHeight() - margin;
+  if (totalTableHeight > spaceRemaining && totalTableHeight <= freshPageSpace) {
+    addFooter();
+    pdf.addPage();
+    y = margin;
+  }
   
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   pdf.text('Recapitulatif des Prix', margin, y);
   y += 7;
-
-  // Header row
-  pdf.setFillColor(...darkBlue);
-  pdf.rect(margin, y, contentWidth, 9, 'F');
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...white);
-  pdf.text('Qte', colQty + 3, y + 6);
-  pdf.text('Designation', colDesc, y + 6);
-  pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
-  pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
-  y += 9;
+  drawTableHeader();
 
   let rowIndex = 0;
   let hasNettoyage = false;
 
-  // Build line items from devicePricing (from quote_data)
   devicePricing.forEach((device) => {
-    // Calibration row
     if (device.needsCalibration) {
       const qty = device.calibrationQty || 1;
       const unitPrice = parseFloat(device.calibrationPrice) || 0;
       const lineTotal = qty * unitPrice;
       const isContract = device.isContractCovered;
-      
-      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
-      pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkBlue);
-      pdf.text(String(qty), colQty + 3, y + 5);
       const calDesc = `Etalonnage ${device.model || ''} (SN: ${device.serial || ''})${isContract ? ' [CONTRAT]' : ''}`;
-      pdf.text(calDesc.substring(0, 60), colDesc, y + 5);
-      pdf.text(isContract ? 'Contrat' : unitPrice.toFixed(2) + ' €', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(isContract ? 'Contrat' : lineTotal.toFixed(2) + ' €', colTotal, y + 5, { align: 'right' });
-      y += rowH;
+      drawTableRow(qty, calDesc, isContract ? 'Contrat' : unitPrice.toFixed(2) + ' EUR', isContract ? 'Contrat' : lineTotal.toFixed(2) + ' EUR', rowIndex);
       rowIndex++;
     }
-    
-    // Nettoyage row
     if (device.needsNettoyage && !device.isContractCovered && device.nettoyagePrice > 0) {
       hasNettoyage = true;
       const qty = device.nettoyageQty || 1;
       const unitPrice = parseFloat(device.nettoyagePrice) || 0;
       const lineTotal = qty * unitPrice;
-      
-      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
-      pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkBlue);
-      pdf.text(String(qty), colQty + 3, y + 5);
-      pdf.text('Nettoyage cellule - si requis selon etat du capteur', colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' €', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' €', colTotal, y + 5, { align: 'right' });
-      y += rowH;
+      drawTableRow(qty, 'Nettoyage cellule - si requis selon etat du capteur', unitPrice.toFixed(2) + ' EUR', lineTotal.toFixed(2) + ' EUR', rowIndex);
       rowIndex++;
     }
-    
-    // Repair row
     if (device.needsRepair) {
       const qty = device.repairQty || 1;
       const unitPrice = parseFloat(device.repairPrice) || 0;
       const lineTotal = qty * unitPrice;
-      
-      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
-      pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkBlue);
-      pdf.text(String(qty), colQty + 3, y + 5);
       const repDesc = `Reparation ${device.model || ''} (SN: ${device.serial || ''})`;
-      pdf.text(repDesc.substring(0, 60), colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' €', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' €', colTotal, y + 5, { align: 'right' });
-      y += rowH;
+      drawTableRow(qty, repDesc, unitPrice.toFixed(2) + ' EUR', lineTotal.toFixed(2) + ' EUR', rowIndex);
       rowIndex++;
     }
-    
-    // Additional parts
     (device.additionalParts || []).forEach(part => {
       const qty = parseInt(part.quantity) || 1;
       const unitPrice = parseFloat(part.price) || 0;
       const lineTotal = qty * unitPrice;
-      
-      pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
-      pdf.rect(margin, y, contentWidth, rowH, 'F');
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkBlue);
-      pdf.text(String(qty), colQty + 3, y + 5);
       const partDesc = part.partNumber ? `[${part.partNumber}] ${part.description || 'Piece'}` : (part.description || 'Piece/Service');
-      pdf.text(partDesc.substring(0, 55), colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' €', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' €', colTotal, y + 5, { align: 'right' });
-      y += rowH;
+      drawTableRow(qty, partDesc, unitPrice.toFixed(2) + ' EUR', lineTotal.toFixed(2) + ' EUR', rowIndex);
       rowIndex++;
     });
   });
   
-  // Shipping row
+  // Shipping + Total kept together
+  checkTablePageBreak(rowH + 11 + 4);
   pdf.setFillColor(245, 245, 245);
   pdf.rect(margin, y, contentWidth, rowH, 'F');
   pdf.setFontSize(9);
@@ -875,9 +896,9 @@ async function generateQuotePDF(options) {
   pdf.text(String(shipping.parcels || 1), colQty + 3, y + 5);
   const shipDesc = shipping.parcels > 1 ? `Frais de port (${shipping.parcels} colis)` : 'Frais de port';
   pdf.text(shipDesc, colDesc, y + 5);
-  pdf.text((shipping.unitPrice || 45).toFixed(2) + ' €', colUnit, y + 5, { align: 'right' });
+  pdf.text((shipping.unitPrice || 45).toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
   pdf.setFont('helvetica', 'bold');
-  pdf.text(shippingTotal.toFixed(2) + ' €', colTotal, y + 5, { align: 'right' });
+  pdf.text(shippingTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
   y += rowH;
 
   // Total row
@@ -888,11 +909,12 @@ async function generateQuotePDF(options) {
   pdf.setFont('helvetica', 'bold');
   pdf.text('TOTAL HT', colUnit - 30, y + 7.5);
   pdf.setFontSize(16);
-  pdf.text(grandTotal.toFixed(2) + ' €', colTotal, y + 8, { align: 'right' });
+  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
   y += 15;
   
   // Nettoyage disclaimer
   if (hasNettoyage) {
+    checkPageBreak(8);
     pdf.setFontSize(7);
     pdf.setFont('helvetica', 'italic');
     pdf.setTextColor(...lightGray);
@@ -900,8 +922,35 @@ async function generateQuotePDF(options) {
     y += 5;
   }
 
-  // ===== SIGNATURE SECTION =====
-  const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
+  // ===== CONDITIONS/DISCLAIMERS =====
+  y += 3;
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS', margin, y);
+  y += 4;
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  DISCLAIMERS.forEach(d => {
+    checkPageBreak(5);
+    const wrapped = pdf.splitTextToSize('- ' + d, contentWidth);
+    wrapped.forEach(line => {
+      checkPageBreak(4);
+      pdf.text(line, margin, y);
+      y += 4;
+    });
+  });
+  y += 3;
+
+  // ===== SIGNATURE SECTION - ALWAYS ON LAST PAGE =====
+  const signatureHeight = 45;
+  if (y + signatureHeight > getUsableHeight()) {
+    addFooter();
+    pdf.addPage();
+    y = margin;
+  }
+  const sigY = Math.max(y + 5, getUsableHeight() - signatureHeight);
   
   pdf.setDrawColor(200, 200, 200);
   pdf.setLineWidth(0.3);
@@ -970,6 +1019,18 @@ async function generateQuotePDF(options) {
   }
 
   addFooter();
+  
+  // Page numbers for multi-page quotes
+  const totalPages = pdf.internal.getNumberOfPages();
+  if (totalPages > 1) {
+    for (let i = 1; i <= totalPages; i++) {
+      pdf.setPage(i);
+      pdf.setFontSize(7);
+      pdf.setTextColor(180, 180, 180);
+      pdf.text(`Page ${i} / ${totalPages}`, pageWidth - margin, pageHeight - 2, { align: 'right' });
+    }
+  }
+  
   return pdf.output('blob');
 }
 
@@ -7105,11 +7166,16 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
     }
     
     setApprovingQuote(true);
-    const { error } = await supabase.from('service_requests').update({
+    const revisionUpdateData = {
       status: 'quote_revision_requested',
       quote_revision_notes: revisionNotes,
       quote_revision_requested_at: new Date().toISOString()
-    }).eq('id', request.id);
+    };
+    // Clear decline notes if coming from declined state
+    if (request.status === 'quote_revision_declined') {
+      revisionUpdateData.admin_decline_notes = null;
+    }
+    const { error } = await supabase.from('service_requests').update(revisionUpdateData).eq('id', request.id);
     
     if (error) {
       notify('Erreur: ' + error.message, 'error');
@@ -7549,9 +7615,15 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   <span className="text-white text-2xl">💰</span>
                 </div>
                 <div>
-                  <p className="font-bold text-blue-800 text-lg">Devis reçu - Action requise</p>
+                  <p className="font-bold text-blue-800 text-lg">
+                    {request.quote_revision_count > 0 
+                      ? `Devis Rev-${request.quote_revision_count} reçu - Action requise`
+                      : 'Devis reçu - Action requise'}
+                  </p>
                   <p className="text-sm text-blue-600">
-                    Examinez le devis, puis approuvez et soumettez votre bon de commande
+                    {request.quote_revision_count > 0
+                      ? `Votre devis révisé (${request.quote_number} Rev-${request.quote_revision_count}) est prêt. Examinez-le puis approuvez et soumettez votre bon de commande.`
+                      : 'Examinez le devis, puis approuvez et soumettez votre bon de commande'}
                   </p>
                 </div>
               </div>
@@ -8156,8 +8228,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               {/* Modal Header */}
               <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
                 <div>
-                  <h2 className="text-xl font-bold">Offre de Prix</h2>
-                  <p className="text-gray-400">{request.request_number}</p>
+                  <h2 className="text-xl font-bold">
+                    {request.quote_revision_count > 0 ? `Devis Rev-${request.quote_revision_count}` : 'Offre de Prix'}
+                  </h2>
+                  <p className="text-gray-400">{request.quote_number || request.request_number}</p>
                 </div>
                 <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
               </div>
@@ -8183,8 +8257,11 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-[#2D5A7B]">OFFRE DE PRIX</p>
-                      <p className="text-gray-500">N° {request.request_number}</p>
+                      <p className="text-2xl font-bold text-[#2D5A7B]">
+                        {request.quote_revision_count > 0 ? `OFFRE DE PRIX Rev-${request.quote_revision_count}` : 'OFFRE DE PRIX'}
+                      </p>
+                      <p className="text-gray-500 font-medium">N° {request.quote_number || request.request_number}</p>
+                      {request.quote_number && request.request_number && <p className="text-xs text-gray-400">RMA: {request.request_number}</p>}
                     </div>
                   </div>
                 </div>
