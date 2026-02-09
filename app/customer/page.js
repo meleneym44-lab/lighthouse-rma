@@ -2290,6 +2290,7 @@ export default function CustomerPortal() {
             return;
           }
           setProfile(p);
+          if (p.preferred_language) setLang(p.preferred_language);
           await loadData(p);
         }
       }
@@ -2329,6 +2330,7 @@ export default function CustomerPortal() {
       }
       setUser(data.user);
       setProfile(p);
+      if (p.preferred_language) setLang(p.preferred_language);
       setPage('dashboard');
       await loadData(p);
     }
@@ -2460,13 +2462,13 @@ export default function CustomerPortal() {
             {/* Lang toggle */}
             <div className="flex items-center gap-2">
               <button 
-                onClick={() => setLang('fr')} 
+                onClick={() => { setLang('fr'); if (profile?.id) supabase.from('profiles').update({ preferred_language: 'fr' }).eq('id', profile.id); }} 
                 className={`px-2 py-1 rounded text-sm font-bold ${lang === 'fr' ? 'bg-[#00A651] text-white' : 'text-white/50'}`}
               >
                 FR
               </button>
               <button 
-                onClick={() => setLang('en')} 
+                onClick={() => { setLang('en'); if (profile?.id) supabase.from('profiles').update({ preferred_language: 'en' }).eq('id', profile.id); }} 
                 className={`px-2 py-1 rounded text-sm font-bold ${lang === 'en' ? 'bg-[#00A651] text-white' : 'text-white/50'}`}
               >
                 EN
@@ -2523,6 +2525,8 @@ export default function CustomerPortal() {
             t={t}
             notify={notify}
             refresh={refresh}
+            lang={lang}
+            setLang={setLang}
           />
         )}
         
@@ -5370,7 +5374,7 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
 // ============================================
 // SETTINGS PAGE
 // ============================================
-function SettingsPage({ profile, addresses, t, notify, refresh }) {
+function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang }) {
   const [activeSection, setActiveSection] = useState('profile');
   
   // Profile editing
@@ -5693,12 +5697,13 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
   };
 
   const sections = [
-    { id: 'profile', label: 'Profil', icon: '👤' },
-    { id: 'company', label: 'Entreprise', icon: '🏢' },
-    ...(isAdmin ? [{ id: 'team', label: 'Équipe', icon: '👥' }] : []),
-    { id: 'addresses', label: 'Adresses', icon: '📍' },
+    { id: 'profile', label: lang === 'en' ? 'Profile' : 'Profil', icon: '👤' },
+    { id: 'company', label: lang === 'en' ? 'Company' : 'Entreprise', icon: '🏢' },
+    ...(isAdmin ? [{ id: 'team', label: lang === 'en' ? 'Team' : 'Équipe', icon: '👥' }] : []),
+    { id: 'addresses', label: lang === 'en' ? 'Addresses' : 'Adresses', icon: '📍' },
+    { id: 'language', label: lang === 'en' ? 'Language' : 'Langue', icon: '🌐' },
     { id: 'notifications', label: 'Notifications', icon: '🔔' },
-    { id: 'security', label: 'Sécurité', icon: '🔒' }
+    { id: 'security', label: lang === 'en' ? 'Security' : 'Sécurité', icon: '🔒' }
   ];
 
   return (
@@ -6175,6 +6180,81 @@ function SettingsPage({ profile, addresses, t, notify, refresh }) {
         </div>
       )}
 
+      {/* Language Section */}
+      {activeSection === 'language' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="text-lg font-bold text-[#1E3A5F]">{lang === 'en' ? 'Language Preference' : 'Préférence de langue'}</h2>
+            <p className="text-sm text-gray-500">{lang === 'en' ? 'Choose the display language for your portal. This only affects the interface, not documents.' : 'Choisissez la langue d\'affichage du portail. Ceci n\'affecte que l\'interface, pas les documents.'}</p>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* French Option */}
+              <button
+                onClick={async () => {
+                  setLang('fr');
+                  setSaving(true);
+                  const { error } = await supabase.from('profiles').update({ preferred_language: 'fr' }).eq('id', profile.id);
+                  setSaving(false);
+                  if (!error) notify('Langue mise à jour — Français', 'success');
+                  else notify('Erreur lors de la sauvegarde', 'error');
+                }}
+                className={`p-6 rounded-xl border-2 transition-all text-left ${
+                  lang === 'fr' 
+                    ? 'border-[#3B7AB4] bg-[#E8F2F8] ring-2 ring-[#3B7AB4]/20' 
+                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <span className="text-4xl">🇫🇷</span>
+                  <div className="flex-1">
+                    <p className="font-bold text-lg text-[#1E3A5F]">Français</p>
+                    <p className="text-sm text-gray-500">Afficher le portail en français</p>
+                  </div>
+                  {lang === 'fr' && (
+                    <span className="w-6 h-6 rounded-full bg-[#3B7AB4] flex items-center justify-center text-white text-xs font-bold">✓</span>
+                  )}
+                </div>
+              </button>
+              
+              {/* English Option */}
+              <button
+                onClick={async () => {
+                  setLang('en');
+                  setSaving(true);
+                  const { error } = await supabase.from('profiles').update({ preferred_language: 'en' }).eq('id', profile.id);
+                  setSaving(false);
+                  if (!error) notify('Language updated — English', 'success');
+                  else notify('Error saving preference', 'error');
+                }}
+                className={`p-6 rounded-xl border-2 transition-all text-left ${
+                  lang === 'en' 
+                    ? 'border-[#3B7AB4] bg-[#E8F2F8] ring-2 ring-[#3B7AB4]/20' 
+                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <span className="text-4xl">🇬🇧</span>
+                  <div className="flex-1">
+                    <p className="font-bold text-lg text-[#1E3A5F]">English</p>
+                    <p className="text-sm text-gray-500">Display portal in English</p>
+                  </div>
+                  {lang === 'en' && (
+                    <span className="w-6 h-6 rounded-full bg-[#3B7AB4] flex items-center justify-center text-white text-xs font-bold">✓</span>
+                  )}
+                </div>
+              </button>
+            </div>
+            
+            <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-sm text-amber-800">
+                <strong>💡 {lang === 'en' ? 'Note:' : 'Remarque :'}</strong> {lang === 'en' ? 'This setting only changes the portal interface language. Official documents (quotes, certificates, reports) will remain in French.' : 'Ce paramètre change uniquement la langue de l\'interface. Les documents officiels (devis, certificats, rapports) resteront en français.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Notifications Section */}
       {activeSection === 'notifications' && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100">
@@ -6568,6 +6648,7 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
   const [newEquipment, setNewEquipment] = useState({
     nickname: '', brand: 'Lighthouse', brand_other: '', model_name: '', serial_number: '', notes: ''
   });
+  const [equipSearch, setEquipSearch] = useState('');
 
   // Load equipment
   useEffect(() => {
@@ -6987,7 +7068,6 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
   }
 
   // Equipment List View
-  const [equipSearch, setEquipSearch] = useState('');
   const filteredEquipment = equipment.filter(e => {
     if (!equipSearch.trim()) return true;
     const q = equipSearch.toLowerCase();
