@@ -202,6 +202,21 @@ const PRODUCT_CODES = {
   '520_acc': { model: 'System Cabinet', category: 'other' },
 };
 
+// Product emoji image mapping — maps model names to custom product images
+// Images hosted at /images/products/ in the public folder
+const getDeviceImageUrl = (modelName) => {
+  if (!modelName) return null;
+  const m = modelName.toLowerCase();
+  if (m.startsWith('apexp') || m === 'apex p3' || m === 'apex p5') return '/images/products/ApexP-Emoji.png';
+  if (m.startsWith('apexr') || m.startsWith('apex r') || m === 'apexbcrp') return '/images/products/ApexR-Emoji.png';
+  if (m.startsWith('apexz') || m === 'apex z' || m === 'apex 1100') return '/images/products/ApexZ-Emoji.png';
+  if (m.startsWith('solair')) return '/images/products/Solair-Emoji.png';
+  if (m.startsWith('ls-') || m === 'ls20' || m === 'ls60') return '/images/products/LS-Emoji.png';
+  if (m.startsWith('vertex')) return '/images/products/Vertex-Emoji.png';
+  // Future: add Remote, Handheld, ActiveCount, etc.
+  return null;
+};
+
 // Decode serial number to get model and category
 const decodeSerialNumber = (serialNumber) => {
   if (!serialNumber) return null;
@@ -2886,7 +2901,8 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {(req.request_devices || []).slice(0, 3).map((dev, i) => (
-                          <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
+                          <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded inline-flex items-center gap-1">
+                            {getDeviceImageUrl(dev.model_name) && <img src={getDeviceImageUrl(dev.model_name)} alt="" className="w-4 h-4 object-contain" />}
                             {dev.model_name} - {dev.serial_number}
                           </span>
                         ))}
@@ -3036,7 +3052,8 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {(req.request_devices || []).map((dev, i) => (
-                        <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
+                        <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded inline-flex items-center gap-1">
+                          {getDeviceImageUrl(dev.model_name) && <img src={getDeviceImageUrl(dev.model_name)} alt="" className="w-4 h-4 object-contain" />}
                           {dev.model_name} - {dev.serial_number}
                         </span>
                       ))}
@@ -3162,7 +3179,14 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                       const style = STATUS_STYLES[status] || STATUS_STYLES.submitted;
                       return (
                         <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium text-[#1E3A5F]">{dev.model_name || 'N/A'}</td>
+                          <td className="px-4 py-3 font-medium text-[#1E3A5F]">
+                            <div className="flex items-center gap-2">
+                              {getDeviceImageUrl(dev.model_name) && (
+                                <img src={getDeviceImageUrl(dev.model_name)} alt="" className="w-7 h-7 object-contain flex-shrink-0" />
+                              )}
+                              {dev.model_name || 'N/A'}
+                            </div>
+                          </td>
                           <td className="px-4 py-3 font-mono text-sm">{dev.serial_number}</td>
                           <td className="px-4 py-3">
                             <span className="text-[#3B7AB4] font-mono text-sm">{dev.request_number}</span>
@@ -6719,8 +6743,17 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
             <div className="flex justify-between items-start">
               <div>
                 <p className="text-white/70 text-sm uppercase tracking-wide mb-1">Équipement</p>
-                <p className="text-2xl font-bold">{selectedDevice.model_name}</p>
-                <p className="font-mono text-lg mt-1">{selectedDevice.serial_number}</p>
+                <div className="flex items-center gap-4">
+                  {getDeviceImageUrl(selectedDevice.model_name) && (
+                    <div className="w-16 h-16 rounded-xl bg-white/20 flex items-center justify-center overflow-hidden flex-shrink-0">
+                      <img src={getDeviceImageUrl(selectedDevice.model_name)} alt="" className="w-14 h-14 object-contain" />
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-2xl font-bold">{selectedDevice.model_name}</p>
+                    <p className="font-mono text-lg mt-1">{selectedDevice.serial_number}</p>
+                  </div>
+                </div>
               </div>
             <div className="flex flex-col items-end gap-2">
               <span className="px-3 py-1 bg-white/20 rounded-full text-sm">
@@ -7010,6 +7043,7 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
                 </span>
               </div>
               <div className="col-span-4 font-medium text-[#1E3A5F] flex items-center gap-2">
+                {getDeviceImageUrl(equip.model_name) && <img src={getDeviceImageUrl(equip.model_name)} alt="" className="w-6 h-6 object-contain flex-shrink-0" />}
                 {equip.model_name || 'Modèle inconnu'}
                 <span className="text-gray-300 group-hover:text-[#3B7AB4] transition-colors">→</span>
               </div>
@@ -8747,7 +8781,13 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               <div className="px-6 py-5 border-b border-gray-100">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#1E3A5F] to-[#3B7AB4] flex items-center justify-center text-white text-2xl">🔧</div>
+                    {getDeviceImageUrl(device.model_name) ? (
+                      <div className="w-14 h-14 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        <img src={getDeviceImageUrl(device.model_name)} alt={device.model_name} className="w-12 h-12 object-contain" />
+                      </div>
+                    ) : (
+                      <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#1E3A5F] to-[#3B7AB4] flex items-center justify-center text-white text-2xl flex-shrink-0">🔧</div>
+                    )}
                     <div>
                       <h2 className="text-xl font-bold text-[#1E3A5F]">{device.model_name || 'Appareil'}</h2>
                       <p className="font-mono text-[#3B7AB4]">SN: {device.serial_number}</p>
@@ -9142,9 +9182,15 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                               {/* Device info row */}
                               <div className="px-5 py-4 flex items-center justify-between">
                                 <div className="flex items-center gap-4 flex-1 min-w-0">
-                                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1E3A5F] to-[#3B7AB4] flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
-                                    {idx + 1}
-                                  </div>
+                                  {getDeviceImageUrl(device.model_name) ? (
+                                    <div className="w-12 h-12 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                      <img src={getDeviceImageUrl(device.model_name)} alt={device.model_name} className="w-10 h-10 object-contain" />
+                                    </div>
+                                  ) : (
+                                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1E3A5F] to-[#3B7AB4] flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                                      {idx + 1}
+                                    </div>
+                                  )}
                                   <div className="min-w-0">
                                     <p className="font-bold text-[#1E3A5F] text-lg">{device.model_name || 'Appareil'}</p>
                                     <p className="font-mono text-sm text-[#3B7AB4]">SN: {device.serial_number}</p>
@@ -9480,7 +9526,13 @@ function DeviceHistoryPage({ profile, requests, t, setPage, setSelectedRequest }
           </div>
           {deviceInfo && (
             <div className="mt-4 flex items-center gap-4">
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#1E3A5F] to-[#3B7AB4] flex items-center justify-center text-white text-2xl">🔧</div>
+              {getDeviceImageUrl(deviceInfo.model_name) ? (
+                <div className="w-14 h-14 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  <img src={getDeviceImageUrl(deviceInfo.model_name)} alt={deviceInfo.model_name} className="w-12 h-12 object-contain" />
+                </div>
+              ) : (
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#1E3A5F] to-[#3B7AB4] flex items-center justify-center text-white text-2xl flex-shrink-0">🔧</div>
+              )}
               <div>
                 <p className="text-xl font-bold text-[#1E3A5F]">{deviceInfo.model_name}</p>
                 <p className="font-mono text-[#3B7AB4]">SN: {serialNumber}</p>
@@ -10463,15 +10515,23 @@ function ContractsPage({ profile, t, notify, setPage }) {
                         <div key={device.id} className={`p-4 rounded-xl border-2 ${isComplete ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-white'}`}>
                           <div className="flex items-start justify-between mb-3">
                             <div className="flex items-center gap-3">
-                              <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl ${
-                                isComplete ? 'bg-green-500 text-white' : 'bg-[#1E3A5F] text-white'
-                              }`}>
-                                {device.device_type === 'particle_counter' && '🔬'}
-                                {device.device_type === 'bio_collector' && '🧫'}
-                                {device.device_type === 'liquid_counter' && '💧'}
-                                {device.device_type === 'temp_humidity' && '🌡️'}
-                                {(!device.device_type || device.device_type === 'other') && '📦'}
-                              </div>
+                              {getDeviceImageUrl(device.model_name) ? (
+                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden ${
+                                  isComplete ? 'bg-green-50 border-2 border-green-300' : 'bg-gray-50 border border-gray-200'
+                                }`}>
+                                  <img src={getDeviceImageUrl(device.model_name)} alt={device.model_name} className="w-10 h-10 object-contain" />
+                                </div>
+                              ) : (
+                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl ${
+                                  isComplete ? 'bg-green-500 text-white' : 'bg-[#1E3A5F] text-white'
+                                }`}>
+                                  {device.device_type === 'particle_counter' && '🔬'}
+                                  {device.device_type === 'bio_collector' && '🧫'}
+                                  {device.device_type === 'liquid_counter' && '💧'}
+                                  {device.device_type === 'temp_humidity' && '🌡️'}
+                                  {(!device.device_type || device.device_type === 'other') && '📦'}
+                                </div>
+                              )}
                               <div>
                                 <p className="font-bold text-[#1E3A5F]">{device.model_name || 'Appareil'}</p>
                                 <p className="text-sm text-gray-500">N° Série: {device.serial_number}</p>
@@ -12045,7 +12105,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
                       <div key={device.id} onClick={() => available && toggleSelection('device', device)}
                         className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${!available ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed' : selected ? 'bg-[#8B5CF6]/10 border-[#8B5CF6]' : 'bg-white border-gray-200 hover:border-[#8B5CF6]/50'}`}>
                         <div className="flex items-start justify-between mb-2">
-                          <div><h4 className="font-bold text-gray-800">{device.model_name}</h4><p className="text-sm text-gray-500 font-mono">SN: {device.serial_number}</p></div>
+                          <div><div className="flex items-center gap-2">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-8 h-8 object-contain" />}<h4 className="font-bold text-gray-800">{device.model_name}</h4></div><p className="text-sm text-gray-500 font-mono">SN: {device.serial_number}</p></div>
                           {selected && <span className="text-[#8B5CF6] text-xl">✓</span>}
                         </div>
                         <div className="flex items-end justify-between">
