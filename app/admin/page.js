@@ -20988,15 +20988,18 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       if (isRevision && request.quote_url) {
         try {
           const revLabel = currentRevisionCount > 0 ? `Rev-${currentRevisionCount}` : 'Original';
-          await supabase.from('request_attachments').insert({
+          const { error: archErr } = await supabase.from('request_attachments').insert({
             request_id: request.id,
             file_url: request.quote_url,
             file_name: `${rmaNumber}_devis_${revLabel}.pdf`,
             category: 'internal_devis_revision',
-            notes: `Devis ${revLabel} - archivé le ${new Date().toLocaleDateString('fr-FR')}`,
-            uploaded_by: profile?.id || null
+            notes: `Devis ${revLabel} - archivé le ${new Date().toLocaleDateString('fr-FR')}`
           });
-          console.log(`📂 Archived old quote as internal_devis_revision (${revLabel})`);
+          if (archErr) {
+            console.error('Archive insert error:', archErr);
+          } else {
+            console.log(`📂 Archived old quote as internal_devis_revision (${revLabel})`);
+          }
         } catch (archiveErr) {
           console.error('Could not archive old quote:', archiveErr);
           // Continue even if archive fails
