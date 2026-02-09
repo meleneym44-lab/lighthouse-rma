@@ -577,11 +577,11 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
       y += 4;
     });
   });
-  y += 3;
+  y += 1;
 
   // ===== SIGNATURE SECTION - ALWAYS ON LAST PAGE =====
-  // Signature block needs ~45mm of vertical space
-  const signatureHeight = 45;
+  // Signature content: line at sigY, text to sigY+35, total ~38mm from y
+  const signatureHeight = 38;
   const signatoryName = qs.signatory_name || biz.quote_signatory || 'M. Meleney';
   const signatoryCompany = qs.signatory_company || biz.company_name || 'Lighthouse France';
 
@@ -594,7 +594,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   }
 
   // Position signature at the bottom of the current (last) page
-  const sigY = Math.max(y + 5, getUsableHeight() - signatureHeight);
+  const sigY = Math.max(y + 3, getUsableHeight() - signatureHeight);
   
   pdf.setDrawColor(200, 200, 200);
   pdf.setLineWidth(0.3);
@@ -616,7 +616,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   if (capcertLogo) {
     try {
       const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
+      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 30, 30);
     } catch (e) {}
   }
 
@@ -628,9 +628,9 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.setDrawColor(180, 180, 180);
   pdf.setLineWidth(0.3);
   pdf.setLineDashPattern([2, 2], 0);
-  pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 22, 2, 2, 'D');
+  pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 20, 2, 2, 'D');
   pdf.setLineDashPattern([], 0);
-  pdf.text('Lu et approuve', sigBoxX + 18, sigY + 37);
+  pdf.text('Lu et approuve', sigBoxX + 18, sigY + 34);
 
   addFooter();
   
@@ -4320,17 +4320,17 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               const currentIndex = getStepIndex(effectiveStatus);
               
               return (
-                <div className="flex">
+                <div className="flex w-full">
                   {steps.map((step, index) => {
                     const isCompleted = index < currentIndex;
                     const isCurrent = index === currentIndex;
                     const isLast = index === steps.length - 1;
                     
                     return (
-                      <div key={step.id} style={{ width: '58px', minWidth: '58px', maxWidth: '58px', flexShrink: 0 }}>
+                      <div key={step.id} className="flex-1" style={{ minWidth: '50px' }}>
                         <div 
                           className={`
-                            flex items-center justify-center h-8 px-1 text-[7px] font-medium text-center leading-tight
+                            flex items-center justify-center h-8 px-1 text-[8px] font-medium text-center leading-tight
                             ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
                             ${index === 0 ? 'rounded-l-sm' : ''}
                             ${isLast ? 'rounded-r-sm' : ''}
@@ -5731,17 +5731,17 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     const currentIndex = getStepIndex(effectiveStatus, isRepair);
     
     return (
-      <div className="flex">
+      <div className="flex w-full">
         {steps.map((step, index) => {
           const isCompleted = index < currentIndex;
           const isCurrent = index === currentIndex;
           const isLast = index === steps.length - 1;
           
           return (
-            <div key={step.id} style={{ width: '58px', minWidth: '58px', maxWidth: '58px', flexShrink: 0 }}>
+            <div key={step.id} className="flex-1" style={{ minWidth: '50px' }}>
               <div 
                 className={`
-                  flex items-center justify-center h-8 px-1 text-[7px] font-medium text-center leading-tight
+                  flex items-center justify-center h-8 px-1 text-[8px] font-medium text-center leading-tight
                   ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
                   ${index === 0 ? 'rounded-l-md' : ''}
                   ${isLast ? 'rounded-r-md' : ''}
