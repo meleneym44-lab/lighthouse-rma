@@ -2057,13 +2057,14 @@ const StepProgress = ({ status, serviceType }) => {
     { id: 'shipped', label: 'Expédié', shortLabel: 'Expédié' }
   ];
 
-  // REPAIR: 11 steps
+  // REPAIR: 12 steps
   const repairSteps = [
     { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
     { id: 'rma_created', label: 'RMA/Devis Créé', shortLabel: 'Devis' },
     { id: 'approved', label: 'Devis Approuvé', shortLabel: 'Approuvé' },
     { id: 'waiting', label: 'En attente réception', shortLabel: 'Attente' },
     { id: 'received', label: 'Reçu', shortLabel: 'Reçu' },
+    { id: 'queue', label: "File d'attente", shortLabel: 'File' },
     { id: 'inspection', label: 'Inspection', shortLabel: 'Insp.' },
     { id: 'approval', label: 'Approbation', shortLabel: 'Appr.' },
     { id: 'repair', label: 'Réparation', shortLabel: 'Rép.' },
@@ -2080,19 +2081,20 @@ const StepProgress = ({ status, serviceType }) => {
     if (!currentStatus) return 0;
     
     if (isRepair) {
-      // Repair flow mapping (11 steps: 0-10)
+      // Repair flow mapping (12 steps: 0-11)
       const repairMap = {
         'submitted': 0, 'pending': 0,
         'quote_sent': 1, 'quote_revision_requested': 1, 'quote_revision_declined': 1,
         'bc_pending': 2, 'bc_review': 2, 'waiting_bc': 2,
         'waiting_device': 3,
         'received': 4, 'received_repair': 4,
-        'inspection': 5, 'inspection_complete': 5,
-        'customer_approval': 6, 'waiting_approval': 6,
-        'repair_in_progress': 7, 'in_progress': 7, 'waiting_parts': 7,
-        'final_qc': 8, 'quality_check': 8,
-        'ready_to_ship': 9,
-        'shipped': 10, 'delivered': 10, 'completed': 10
+        'in_queue': 5, 'queued': 5,
+        'inspection': 6, 'inspection_complete': 6,
+        'customer_approval': 7, 'waiting_approval': 7,
+        'repair_in_progress': 8, 'in_progress': 8, 'waiting_parts': 8,
+        'final_qc': 9, 'quality_check': 9,
+        'ready_to_ship': 10,
+        'shipped': 11, 'delivered': 11, 'completed': 11
       };
       const index = repairMap[currentStatus] ?? 0;
       return index;
