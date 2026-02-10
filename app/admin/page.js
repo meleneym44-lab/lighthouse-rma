@@ -2711,6 +2711,169 @@ const generateReportPDFFromHTML = async (device, rma, technicianName, calType, r
 };
 
 
+// ============ RMA LABEL PRINTING (Brady M611 - PTL-37-351 1.9" x 3") ============
+const printDeviceLabels = (devicesToPrint, rma, lang = 'fr') => {
+  const printWindow = window.open('', '_blank', 'width=500,height=700');
+  if (!printWindow) {
+    alert(lang === 'en' ? 'Please allow popups for label printing' : 'Veuillez autoriser les popups pour imprimer les étiquettes');
+    return;
+  }
+
+  const labels = devicesToPrint.map((device, idx) => {
+    const rmaNum = rma.rma_number || 'N/A';
+    const client = rma.companies?.name || '';
+    const model = device.model_name || '';
+    const serial = device.serial_number || '';
+    const serviceType = device.service_type === 'repair' 
+      ? (lang === 'en' ? 'Repair' : 'Réparation')
+      : device.service_type === 'calibration_repair' 
+        ? (lang === 'en' ? 'Cal. + Repair' : 'Étal. + Rép.')
+        : (lang === 'en' ? 'Calibration' : 'Étalonnage');
+    const arrivalDate = new Date(device.received_at || rma.received_at || new Date())
+      .toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR');
+    const qty = device.quantity || 1;
+
+    return `
+      <div class="label">
+        <div class="rma-number">RMA# ${rmaNum}</div>
+        <div class="divider"></div>
+        <div class="client">${client}</div>
+        <div class="model">${model}</div>
+        <div class="divider"></div>
+        <div class="serial-label">${lang === 'en' ? 'S/N' : 'N° Série'}</div>
+        <div class="serial">${serial}</div>
+        <div class="barcode-container">
+          <canvas id="barcode-${idx}"></canvas>
+        </div>
+        <div class="divider"></div>
+        <div class="service">${serviceType}</div>
+        <div class="date-qty">
+          <span>${lang === 'en' ? 'Received' : 'Arrivée'}: ${arrivalDate}</span>
+          <span>${lang === 'en' ? 'Qty' : 'Qté'}: ${qty}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>RMA Labels</title>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
+  <style>
+    @page {
+      size: 1.9in 3in;
+      margin: 0;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; }
+    .label {
+      width: 1.9in;
+      height: 3in;
+      padding: 0.1in 0.12in;
+      page-break-after: always;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      overflow: hidden;
+    }
+    .label:last-child { page-break-after: auto; }
+    .rma-number {
+      font-size: 14pt;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+    .divider {
+      width: 80%;
+      height: 1px;
+      background: #999;
+      margin: 3px 0;
+    }
+    .client {
+      font-size: 9pt;
+      font-weight: bold;
+      margin-top: 1px;
+    }
+    .model {
+      font-size: 8pt;
+      color: #444;
+      margin-bottom: 1px;
+    }
+    .serial-label {
+      font-size: 6pt;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 2px;
+    }
+    .serial {
+      font-size: 10pt;
+      font-weight: bold;
+      font-family: 'Courier New', monospace;
+      letter-spacing: 0.5px;
+    }
+    .barcode-container {
+      margin: 3px 0;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+    }
+    .barcode-container canvas {
+      max-width: 1.6in;
+      height: 35px;
+    }
+    .service {
+      font-size: 9pt;
+      font-weight: bold;
+      margin-top: 1px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .date-qty {
+      font-size: 7pt;
+      color: #555;
+      margin-top: 2px;
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+    }
+    @media screen {
+      body { background: #eee; display: flex; flex-wrap: wrap; gap: 20px; padding: 20px; justify-content: center; }
+      .label { background: white; border: 1px dashed #ccc; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    }
+  </style>
+</head>
+<body>
+  ${labels}
+  <script>
+    window.onload = function() {
+      ${devicesToPrint.map((device, idx) => `
+        try {
+          JsBarcode("#barcode-${idx}", "${(device.serial_number || '').replace(/"/g, '')}", {
+            format: "CODE128",
+            width: 1.5,
+            height: 30,
+            displayValue: false,
+            margin: 0
+          });
+        } catch(e) { console.error('Barcode error:', e); }
+      `).join('\n')}
+      
+      // Auto-print after short delay
+      setTimeout(function() {
+        window.print();
+      }, 500);
+    };
+  <\/script>
+</body>
+</html>`);
+  printWindow.document.close();
+};
+
+
 // ============ ADMIN TRANSLATIONS ============
 const AT = {
   fr: {
@@ -5171,6 +5334,20 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
       }
       
       notify(lang === 'en' ? `✅ ${selectedToReceive.size} device(s) marked as received!` : `✅ ${selectedToReceive.size} appareil(s) marqué(s) comme reçu(s)!`);
+      
+      // Prompt to print labels for received devices
+      const receivedDevicesList = devices.filter(d => selectedToReceive.has(d.id));
+      if (receivedDevicesList.length > 0) {
+        const shouldPrint = confirm(
+          lang === 'en' 
+            ? `Print labels for ${receivedDevicesList.length} received device(s)?` 
+            : `Imprimer les étiquettes pour ${receivedDevicesList.length} appareil(s) reçu(s) ?`
+        );
+        if (shouldPrint) {
+          printDeviceLabels(receivedDevicesList, rma, lang);
+        }
+      }
+      
       setShowReceiveModal(false);
       setSelectedToReceive(new Set());
       reload();
@@ -5845,6 +6022,12 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-gray-700 font-medium"
           >
             ← Retour au RMA
+          </button>
+          <button 
+            onClick={() => printDeviceLabels([device], rma, lang)}
+            className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-medium text-sm flex items-center gap-1"
+          >
+            🏷️ {lang === 'en' ? 'Print Label' : 'Étiquette'}
           </button>
         </div>
         
@@ -6659,6 +6842,15 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
               <h2 className="font-bold text-gray-800">{t('devices')}</h2>
               <p className="text-sm text-gray-500">{devices.length} {lang === 'en' ? 'device(s) • Click to view details' : 'appareil(s) • Cliquez pour voir les détails'}</p>
             </div>
+            <div className="ml-auto flex gap-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); printDeviceLabels(devices, rma, lang); }}
+                className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium flex items-center gap-1"
+                title={lang === 'en' ? 'Print all labels' : 'Imprimer toutes les étiquettes'}
+              >
+                🏷️ {lang === 'en' ? 'Print Labels' : 'Étiquettes'} ({devices.length})
+              </button>
+            </div>
           </div>
         </div>
         
@@ -6692,6 +6884,11 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                        device.service_type === 'repair' ? (lang === 'en' ? '🔧 Repair' : '🔧 Réparation') : 
                        (lang === 'en' ? '🔬🔧 Cal. + Rep.' : '🔬🔧 Étal. + Rép.')}
                     </span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); printDeviceLabels([device], rma, lang); }}
+                      className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                      title={lang === 'en' ? 'Print label' : 'Imprimer étiquette'}
+                    >🏷️</button>
                     <span className="text-gray-400 text-xl">→</span>
                   </div>
                 </div>
