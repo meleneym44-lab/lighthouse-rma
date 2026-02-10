@@ -24301,45 +24301,92 @@ function CreateUSAOrderModal({ onClose, onSaved, clients = [], notify, profile, 
     try {
       const result = { form: {}, items: [] };
 
-      // Try to find PO / Quote number
+      // === ORDER / REFERENCE NUMBERS ===
+      // Lighthouse format: "Order N° 4104"
+      const orderMatch = text.match(/Order\s+N[°o]\s*(\d+)/i);
+      if (orderMatch) result.form.po_number = orderMatch[1].trim();
+
+      // Quote number patterns
+      const quoteMatch = text.match(/(?:Quote|Quotation|Devis|QU-|V\.\s*réf\.?\s*:)\s*([A-Z0-9-]+)/i);
+      if (quoteMatch && quoteMatch[1].trim().length > 1) result.form.quote_number = quoteMatch[1].trim();
+
+      // Customer reference: "Ref. cust : C3018 -C3084"
+      const custRefMatch = text.match(/Ref\.?\s*cust\.?\s*:\s*([A-Z0-9][A-Z0-9\s-]*[A-Z0-9])/i);
+      if (custRefMatch) result.form.notes = 'Ref. cust: ' + custRefMatch[1].trim();
+
+      // PO / Purchase Order
       const poMatch = text.match(/(?:PO|Purchase Order|P\.O\.?)[\s#:]*([A-Z0-9-]+)/i);
-      if (poMatch) result.form.po_number = poMatch[1].trim();
+      if (poMatch && !result.form.po_number) result.form.po_number = poMatch[1].trim();
 
-      const quoteMatch = text.match(/(?:Quote|Quotation|Devis|QU-)[\s#:]*([A-Z0-9-]+)/i);
-      if (quoteMatch) result.form.quote_number = quoteMatch[1].trim();
+      // === CUSTOMER INFO ===
+      // "Invoice and dispatch to:" followed by customer info
+      const dispatchMatch = text.match(/(?:Invoice and dispatch to|Ship To|Bill To|Dispatch to)\s*:\s*(.+?)(?:Tél|Tel|SIRET|Page)/is);
+      if (dispatchMatch) {
+        const dispatchText = dispatchMatch[1].trim();
+        // Try to extract name from dispatch section
+        const nameMatch = dispatchText.match(/^([A-Za-zÀ-ÿ\s'-]+?)(?:\d|$)/);
+        if (nameMatch) result.form.customer_contact = nameMatch[1].trim();
+      }
 
-      // Try to find company name (look for common patterns)
+      // Contact name: look for name pattern before "Invoice and dispatch"
+      const contactMatch = text.match(/(\d{2}\/\d{2}\/\d{4})\s+([A-Za-zÀ-ÿ]+\s+[A-Za-zÀ-ÿ]+)\s+(?:Invoice|Facture)/i);
+      if (contactMatch) result.form.customer_contact = contactMatch[2].trim();
+
+      // Company name patterns
       const companyPatterns = [
-        /(?:Bill To|Ship To|Customer|Client|Sold To)[\s:]*\n?\s*([A-Z][A-Za-z\s&.,'-]+)/i,
-        /(?:Company|Société|Organisation)[\s:]*([A-Z][A-Za-z\s&.,'-]+)/i
+        /(?:Bill To|Ship To|Customer|Client|Sold To)[\s:]*\n?\s*([A-Z][A-Za-zÀ-ÿ\s&.,'-]+)/i,
+        /(?:Company|Société|Organisation)[\s:]*([A-Z][A-Za-zÀ-ÿ\s&.,'-]+)/i
       ];
       for (const pattern of companyPatterns) {
         const m = text.match(pattern);
         if (m) { result.form.customer_name = m[1].trim(); break; }
       }
 
-      // Try to find email
-      const emailMatch = text.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
-      if (emailMatch) result.form.customer_email = emailMatch[1];
+      // Email (skip lighthouse internal emails)
+      const emails = text.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g) || [];
+      const customerEmail = emails.find(e => !e.includes('golighthouse') && !e.includes('lighthouse'));
+      if (customerEmail) result.form.customer_email = customerEmail;
 
-      // Try to find phone
-      const phoneMatch = text.match(/(?:Tel|Phone|Tél|Fax)[\s.:]*([+0-9\s()-]{8,})/i);
+      // Phone: look for customer phone (not Lighthouse's own number)
+      const phoneMatch = text.match(/(?:Tél|Tel|Phone)[\s.:]*([+0-9\s()-]{8,})/i);
       if (phoneMatch) result.form.customer_phone = phoneMatch[1].trim();
 
-      // Try to extract line items (part number, description, qty, price pattern)
-      const linePattern = /([A-Z0-9]{2,}[-][A-Z0-9-]+)\s+(.+?)\s+(\d+)\s+[\$€£]?([\d,]+\.?\d*)\s+[\$€£]?([\d,]+\.?\d*)/g;
+      // === LINE ITEMS ===
+      // Lighthouse Salesforce format: "$ QTY DESCRIPTION UNIT_PRICE $ TOTAL PART_NUMBER"
+      // Example: "$ 1  Gas Sampler Valve Stem - AC 100  33,99  $  33,99  211317177-1"
+      const itemPattern = /\$\s*(\d+)\s+(.+?)\s+(\d+[.,]\d{2})\s+\$\s+(\d+[.,]\d{2})\s+(\d{5,}-\d+)/g;
       let match;
-      while ((match = linePattern.exec(text)) !== null) {
+      while ((match = itemPattern.exec(text)) !== null) {
+        const qty = parseInt(match[1]) || 1;
+        const desc = match[2].trim();
+        const unitPrice = parseFloat(match[3].replace(',', '.')) || 0;
+        const totalPrice = parseFloat(match[4].replace(',', '.')) || 0;
+        const partNum = match[5].trim();
+
         result.items.push({
-          part_number: match[1],
-          description: match[2].trim(),
-          quantity: parseInt(match[3]) || 1,
-          unit_price: parseFloat(match[4].replace(',', '')) || 0,
-          total: parseFloat(match[5].replace(',', '')) || 0
+          part_number: partNum,
+          description: desc,
+          quantity: qty,
+          unit_price: unitPrice,
+          total: totalPrice
         });
       }
 
-      return (result.form.po_number || result.form.quote_number || result.form.customer_name || result.items.length > 0) ? result : null;
+      // Fallback: try generic line item pattern if Lighthouse format didn't match
+      if (result.items.length === 0) {
+        const genericPattern = /([A-Z0-9]{2,}[-][A-Z0-9-]+)\s+(.+?)\s+(\d+)\s+[\$€£]?([\d,]+\.?\d*)\s+[\$€£]?([\d,]+\.?\d*)/g;
+        while ((match = genericPattern.exec(text)) !== null) {
+          result.items.push({
+            part_number: match[1],
+            description: match[2].trim(),
+            quantity: parseInt(match[3]) || 1,
+            unit_price: parseFloat(match[4].replace(',', '.')) || 0,
+            total: parseFloat(match[5].replace(',', '.')) || 0
+          });
+        }
+      }
+
+      return (result.form.po_number || result.form.quote_number || result.form.customer_name || result.form.customer_contact || result.items.length > 0) ? result : null;
     } catch {
       return null;
     }
