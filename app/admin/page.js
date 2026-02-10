@@ -2881,6 +2881,7 @@ const AT = {
     dashboard: 'Tableau de Bord', messages: 'Messages', requests: 'Demandes',
     parts: 'Pièces Détachées', rentals: 'Locations', contracts: 'Contrats',
     invoices: 'Factures', clients: 'Clients', pricing: 'Tarifs & Pièces',
+    usaOrders: 'Commandes USA',
     kpis: 'KPIs', settings: 'Paramètres', admin: 'Admin',
     
     // Header
@@ -3016,6 +3017,7 @@ const AT = {
     dashboard: 'Dashboard', messages: 'Messages', requests: 'Requests',
     parts: 'Parts Orders', rentals: 'Rentals', contracts: 'Contracts',
     invoices: 'Invoices', clients: 'Clients', pricing: 'Pricing & Parts',
+    usaOrders: 'USA Orders',
     kpis: 'KPIs', settings: 'Settings', admin: 'Admin',
     
     // Header
@@ -3381,6 +3383,7 @@ export default function AdminPortal() {
     { id: 'rentals', label: t('rentals'), icon: '📅', badge: rentalActionCount > 0 ? rentalActionCount : null },
     { id: 'contracts', label: t('contracts'), icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
     { id: 'invoices', label: t('invoices'), icon: '📋' },
+    { id: 'usa_orders', label: t('usaOrders'), icon: '🇺🇸' },
     { id: 'clients', label: t('clients'), icon: '👥' },
     { id: 'pricing', label: t('pricing'), icon: '💰' },
     { id: 'kpi', label: t('kpis'), icon: '📈' },
@@ -3510,6 +3513,7 @@ export default function AdminPortal() {
             {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} t={t} lang={lang} />}
             {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} t={t} lang={lang} reloadMain={loadData} />}
             {activeSheet === 'invoices' && <InvoicesSheet requests={requests} clients={clients} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
+            {activeSheet === 'usa_orders' && <USAOrdersSheet clients={clients} notify={notify} reload={loadData} profile={profile} t={t} lang={lang} />}
             {activeSheet === 'rentals' && <RentalsSheet
               t={t} lang={lang} 
               rentals={rentalRequests} 
@@ -23791,6 +23795,755 @@ function PartEditModal({ part, onSave, onClose, lang = 'fr' }) {
 // ============================================
 // RENTALS SHEET - Admin Management
 // ============================================
+// ============================================
+// USA ORDERS SHEET - Commandes USA
+// ============================================
+function USAOrdersSheet({ clients = [], notify, reload, profile, t = k=>k, lang = 'fr' }) {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Load orders
+  const loadOrders = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('usa_orders')
+      .select('*')
+      .order('created_at', { ascending: false });
+    setOrders(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadOrders(); }, []);
+
+  const statusConfig = {
+    order_created: { label: lang === 'en' ? 'Order Created' : 'Commande créée', bg: 'bg-blue-100', text: 'text-blue-700', icon: '📦' },
+    received_france: { label: lang === 'en' ? 'Received at France' : 'Reçu en France', bg: 'bg-cyan-100', text: 'text-cyan-700', icon: '🏭' },
+    qc_complete: { label: lang === 'en' ? 'QC Complete' : 'QC Validé', bg: 'bg-purple-100', text: 'text-purple-700', icon: '✅' },
+    shipped: { label: lang === 'en' ? 'Shipped' : 'Expédié', bg: 'bg-green-100', text: 'text-green-700', icon: '🚚' }
+  };
+
+  const steps = [
+    { id: 'order_created', label: lang === 'en' ? 'Ordered' : 'Commandé' },
+    { id: 'received_france', label: lang === 'en' ? 'Received' : 'Reçu' },
+    { id: 'qc_complete', label: lang === 'en' ? 'QC' : 'QC' },
+    { id: 'shipped', label: lang === 'en' ? 'Shipped' : 'Expédié' }
+  ];
+
+  const getStepIndex = (status) => {
+    const map = { order_created: 0, received_france: 1, qc_complete: 2, shipped: 3 };
+    return map[status] ?? 0;
+  };
+
+  // Filter orders
+  const filtered = orders.filter(o => {
+    if (filter !== 'all' && o.status !== filter) return false;
+    if (search) {
+      const s = search.toLowerCase();
+      return (o.po_number || '').toLowerCase().includes(s) ||
+             (o.quote_number || '').toLowerCase().includes(s) ||
+             (o.customer_name || '').toLowerCase().includes(s) ||
+             (o.invoice_number || '').toLowerCase().includes(s);
+    }
+    return true;
+  });
+
+  // Status counts
+  const counts = {
+    all: orders.length,
+    order_created: orders.filter(o => o.status === 'order_created').length,
+    received_france: orders.filter(o => o.status === 'received_france').length,
+    qc_complete: orders.filter(o => o.status === 'qc_complete').length,
+    shipped: orders.filter(o => o.status === 'shipped').length
+  };
+
+  // Update order status
+  const updateStatus = async (orderId, newStatus) => {
+    setSaving(true);
+    const update = { status: newStatus };
+    const now = new Date().toISOString();
+    if (newStatus === 'received_france') update.received_france_at = now;
+    if (newStatus === 'qc_complete') update.qc_completed_at = now;
+    if (newStatus === 'shipped') update.shipped_at = now;
+
+    const { error } = await supabase.from('usa_orders').update(update).eq('id', orderId);
+    if (error) {
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
+    } else {
+      notify(lang === 'en' ? '✅ Status updated!' : '✅ Statut mis à jour !');
+      loadOrders();
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder(prev => ({ ...prev, ...update }));
+      }
+    }
+    setSaving(false);
+  };
+
+  // Delete order
+  const deleteOrder = async (orderId) => {
+    if (!confirm(lang === 'en' ? 'Delete this order?' : 'Supprimer cette commande ?')) return;
+    const { error } = await supabase.from('usa_orders').delete().eq('id', orderId);
+    if (error) {
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
+    } else {
+      notify(lang === 'en' ? '✅ Order deleted' : '✅ Commande supprimée');
+      setSelectedOrder(null);
+      loadOrders();
+    }
+  };
+
+  // ---- ORDER DETAIL VIEW ----
+  if (selectedOrder) {
+    const order = selectedOrder;
+    const sc = statusConfig[order.status] || statusConfig.order_created;
+    const currentStep = getStepIndex(order.status);
+    const items = Array.isArray(order.line_items) ? order.line_items : [];
+    const nextStatus = order.status === 'order_created' ? 'received_france' :
+                       order.status === 'received_france' ? 'qc_complete' :
+                       order.status === 'qc_complete' ? 'shipped' : null;
+
+    return (
+      <div className="space-y-6">
+        {/* Back + Header */}
+        <div className="flex items-center justify-between">
+          <button onClick={() => setSelectedOrder(null)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
+            ← {lang === 'en' ? 'Back to Orders' : 'Retour aux commandes'}
+          </button>
+          <div className="flex items-center gap-3">
+            {nextStatus && (
+              <button
+                onClick={() => updateStatus(order.id, nextStatus)}
+                disabled={saving}
+                className="px-4 py-2 bg-[#00A651] hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                {saving ? '⏳' : statusConfig[nextStatus]?.icon} {lang === 'en' ? `Mark as ${statusConfig[nextStatus]?.label}` : `Marquer ${statusConfig[nextStatus]?.label}`}
+              </button>
+            )}
+            <button onClick={() => deleteOrder(order.id)} className="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm">
+              🗑️
+            </button>
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="bg-white rounded-xl shadow-sm border p-4">
+          <div className="flex w-full">
+            {steps.map((step, i) => {
+              const isComplete = i < currentStep;
+              const isCurrent = i === currentStep;
+              return (
+                <div key={step.id} className="flex-1 flex flex-col items-center relative">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold z-10 ${
+                    isComplete ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'
+                  }`}>
+                    {isComplete ? '✓' : i + 1}
+                  </div>
+                  <span className={`text-xs mt-1 font-medium ${isComplete ? 'text-green-700' : isCurrent ? 'text-blue-700' : 'text-gray-400'}`}>{step.label}</span>
+                  {i < steps.length - 1 && (
+                    <div className={`absolute top-5 left-[55%] w-[90%] h-0.5 ${isComplete ? 'bg-[#00A651]' : 'bg-gray-200'}`} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex justify-between text-xs text-gray-400 mt-3 px-2">
+            <span>{order.order_created_at ? new Date(order.order_created_at).toLocaleDateString('fr-FR') : '—'}</span>
+            <span>{order.received_france_at ? new Date(order.received_france_at).toLocaleDateString('fr-FR') : '—'}</span>
+            <span>{order.qc_completed_at ? new Date(order.qc_completed_at).toLocaleDateString('fr-FR') : '—'}</span>
+            <span>{order.shipped_at ? new Date(order.shipped_at).toLocaleDateString('fr-FR') : '—'}</span>
+          </div>
+        </div>
+
+        {/* Order Info + Customer */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-white rounded-xl shadow-sm border p-5">
+            <h3 className="font-bold text-gray-800 mb-3">{lang === 'en' ? '📋 Order Details' : '📋 Détails Commande'}</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-gray-500">PO #</span><span className="font-mono font-medium">{order.po_number || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">{lang === 'en' ? 'Quote #' : 'Devis #'}</span><span className="font-mono font-medium">{order.quote_number || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">{lang === 'en' ? 'Status' : 'Statut'}</span><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${sc.bg} ${sc.text}`}>{sc.icon} {sc.label}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">{lang === 'en' ? 'Created' : 'Créé le'}</span><span>{new Date(order.created_at).toLocaleDateString('fr-FR')}</span></div>
+              {order.tracking_number && <div className="flex justify-between"><span className="text-gray-500">Tracking</span><span className="font-mono">{order.tracking_number}</span></div>}
+              {order.shipping_carrier && <div className="flex justify-between"><span className="text-gray-500">{lang === 'en' ? 'Carrier' : 'Transporteur'}</span><span>{order.shipping_carrier}</span></div>}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border p-5">
+            <h3 className="font-bold text-gray-800 mb-3">{lang === 'en' ? '👤 Customer' : '👤 Client'}</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-gray-500">{lang === 'en' ? 'Company' : 'Société'}</span><span className="font-medium">{order.customer_name || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Contact</span><span>{order.customer_contact || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Email</span><span>{order.customer_email || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">{lang === 'en' ? 'Phone' : 'Tél.'}</span><span>{order.customer_phone || '—'}</span></div>
+              {order.customer_address && <div><span className="text-gray-500">{lang === 'en' ? 'Address' : 'Adresse'}</span><p className="mt-1 text-gray-700">{order.customer_address}</p></div>}
+            </div>
+          </div>
+        </div>
+
+        {/* Line Items */}
+        <div className="bg-white rounded-xl shadow-sm border p-5">
+          <h3 className="font-bold text-gray-800 mb-3">{lang === 'en' ? '📦 Line Items' : '📦 Articles'}</h3>
+          {items.length === 0 ? (
+            <p className="text-gray-400 text-sm">{lang === 'en' ? 'No items' : 'Aucun article'}</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-gray-500">
+                  <th className="pb-2">{lang === 'en' ? 'Part #' : 'Réf.'}</th>
+                  <th className="pb-2">Description</th>
+                  <th className="pb-2 text-center">{lang === 'en' ? 'Qty' : 'Qté'}</th>
+                  <th className="pb-2 text-right">{lang === 'en' ? 'Unit Price' : 'Prix unit.'}</th>
+                  <th className="pb-2 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, i) => (
+                  <tr key={i} className="border-b last:border-0">
+                    <td className="py-2 font-mono text-xs">{item.part_number || '—'}</td>
+                    <td className="py-2">{item.description || '—'}</td>
+                    <td className="py-2 text-center">{item.quantity || 0}</td>
+                    <td className="py-2 text-right">€{(item.unit_price || 0).toFixed(2)}</td>
+                    <td className="py-2 text-right font-medium">€{(item.total || 0).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2"><td colSpan="4" className="py-2 text-right font-medium">{lang === 'en' ? 'Subtotal' : 'Sous-total'}</td><td className="py-2 text-right font-bold">€{(order.subtotal || 0).toFixed(2)}</td></tr>
+                <tr><td colSpan="4" className="py-1 text-right text-gray-500">TVA ({order.tax_rate || 20}%)</td><td className="py-1 text-right">€{(order.tax_amount || 0).toFixed(2)}</td></tr>
+                <tr className="border-t"><td colSpan="4" className="py-2 text-right font-bold text-lg">Total</td><td className="py-2 text-right font-bold text-lg text-[#00A651]">€{(order.total || 0).toFixed(2)}</td></tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+
+        {/* Shipping & Notes */}
+        {(order.status === 'qc_complete' || order.status === 'shipped') && (
+          <div className="bg-white rounded-xl shadow-sm border p-5">
+            <h3 className="font-bold text-gray-800 mb-3">🚚 {lang === 'en' ? 'Shipping Details' : 'Détails Expédition'}</h3>
+            <ShippingEditor order={order} onSave={async (updates) => {
+              const { error } = await supabase.from('usa_orders').update(updates).eq('id', order.id);
+              if (error) { notify('Erreur: ' + error.message, 'error'); }
+              else { notify('✅ Saved!'); setSelectedOrder(prev => ({ ...prev, ...updates })); loadOrders(); }
+            }} lang={lang} />
+          </div>
+        )}
+
+        {/* Notes */}
+        <div className="bg-white rounded-xl shadow-sm border p-5">
+          <h3 className="font-bold text-gray-800 mb-3">📝 Notes</h3>
+          <textarea
+            className="w-full border rounded-lg p-3 text-sm"
+            rows={3}
+            defaultValue={order.notes || ''}
+            onBlur={async (e) => {
+              if (e.target.value !== (order.notes || '')) {
+                await supabase.from('usa_orders').update({ notes: e.target.value }).eq('id', order.id);
+                setSelectedOrder(prev => ({ ...prev, notes: e.target.value }));
+              }
+            }}
+            placeholder={lang === 'en' ? 'Add notes...' : 'Ajouter des notes...'}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // ---- ORDER LIST VIEW ----
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">🇺🇸 {lang === 'en' ? 'USA Orders' : 'Commandes USA'}</h1>
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="px-4 py-2 bg-[#00A651] hover:bg-green-700 text-white rounded-lg font-bold flex items-center gap-2"
+        >
+          + {lang === 'en' ? 'New Order' : 'Nouvelle Commande'}
+        </button>
+      </div>
+
+      {/* Status Filter Tabs */}
+      <div className="flex flex-wrap gap-2">
+        {[
+          { id: 'all', label: lang === 'en' ? 'All' : 'Tout', count: counts.all },
+          { id: 'order_created', label: lang === 'en' ? 'Ordered' : 'Commandé', count: counts.order_created },
+          { id: 'received_france', label: lang === 'en' ? 'Received' : 'Reçu', count: counts.received_france },
+          { id: 'qc_complete', label: 'QC', count: counts.qc_complete },
+          { id: 'shipped', label: lang === 'en' ? 'Shipped' : 'Expédié', count: counts.shipped }
+        ].map(f => (
+          <button
+            key={f.id}
+            onClick={() => setFilter(f.id)}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              filter === f.id ? 'bg-[#00A651] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {f.label} ({f.count})
+          </button>
+        ))}
+      </div>
+
+      {/* Search */}
+      <input
+        type="text"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        placeholder={lang === 'en' ? '🔍 Search PO#, quote#, customer...' : '🔍 Rechercher PO#, devis#, client...'}
+        className="w-full px-4 py-2 border rounded-lg text-sm"
+      />
+
+      {/* Orders List */}
+      {loading ? (
+        <div className="text-center py-12 text-gray-400">{lang === 'en' ? 'Loading...' : 'Chargement...'}</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12 text-gray-400">
+          <p className="text-4xl mb-2">📦</p>
+          <p>{lang === 'en' ? 'No orders found' : 'Aucune commande trouvée'}</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(order => {
+            const sc = statusConfig[order.status] || statusConfig.order_created;
+            const items = Array.isArray(order.line_items) ? order.line_items : [];
+            const currentStep = getStepIndex(order.status);
+            return (
+              <div
+                key={order.id}
+                onClick={() => setSelectedOrder(order)}
+                className="bg-white rounded-xl shadow-sm border p-4 hover:shadow-md cursor-pointer transition-shadow"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-gray-800">{order.po_number || order.quote_number || 'N/A'}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${sc.bg} ${sc.text}`}>{sc.icon} {sc.label}</span>
+                  </div>
+                  <div className="text-right text-sm text-gray-500">
+                    <span className="font-bold text-[#00A651]">€{(order.total || 0).toFixed(2)}</span>
+                    <span className="ml-3">{new Date(order.created_at).toLocaleDateString('fr-FR')}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-600">
+                    <span className="font-medium">{order.customer_name || (lang === 'en' ? 'No customer' : 'Pas de client')}</span>
+                    {items.length > 0 && <span className="ml-2 text-gray-400">• {items.length} {lang === 'en' ? 'item(s)' : 'article(s)'}</span>}
+                  </div>
+
+                  {/* Mini progress */}
+                  <div className="flex items-center gap-1">
+                    {steps.map((step, i) => (
+                      <div key={step.id} className={`w-6 h-1.5 rounded-full ${i <= currentStep ? 'bg-[#00A651]' : 'bg-gray-200'}`} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Create Order Modal */}
+      {showCreateModal && (
+        <CreateUSAOrderModal
+          onClose={() => setShowCreateModal(false)}
+          onSaved={() => { setShowCreateModal(false); loadOrders(); }}
+          clients={clients}
+          notify={notify}
+          profile={profile}
+          lang={lang}
+        />
+      )}
+    </div>
+  );
+}
+
+// Shipping editor sub-component
+function ShippingEditor({ order, onSave, lang = 'fr' }) {
+  const [carrier, setCarrier] = useState(order.shipping_carrier || '');
+  const [tracking, setTracking] = useState(order.tracking_number || '');
+  const [address, setAddress] = useState(order.shipping_address || '');
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-gray-500 font-medium">{lang === 'en' ? 'Carrier' : 'Transporteur'}</label>
+          <input value={carrier} onChange={e => setCarrier(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm mt-1" placeholder="UPS, DHL, FedEx..." />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 font-medium">{lang === 'en' ? 'Tracking #' : 'N° Suivi'}</label>
+          <input value={tracking} onChange={e => setTracking(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm mt-1 font-mono" placeholder="1Z..." />
+        </div>
+      </div>
+      <div>
+        <label className="text-xs text-gray-500 font-medium">{lang === 'en' ? 'Shipping Address' : 'Adresse de livraison'}</label>
+        <textarea value={address} onChange={e => setAddress(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm mt-1" rows={2} />
+      </div>
+      <button
+        onClick={() => onSave({ shipping_carrier: carrier, tracking_number: tracking, shipping_address: address })}
+        className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium"
+      >
+        💾 {lang === 'en' ? 'Save Shipping' : 'Enregistrer'}
+      </button>
+    </div>
+  );
+}
+
+// Create USA Order Modal with PDF Upload + OCR
+function CreateUSAOrderModal({ onClose, onSaved, clients = [], notify, profile, lang = 'fr' }) {
+  const [step, setStep] = useState('input'); // input | review
+  const [pdfText, setPdfText] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Form state
+  const [form, setForm] = useState({
+    po_number: '',
+    quote_number: '',
+    customer_name: '',
+    customer_contact: '',
+    customer_email: '',
+    customer_phone: '',
+    customer_address: '',
+    notes: ''
+  });
+
+  const [lineItems, setLineItems] = useState([
+    { part_number: '', description: '', quantity: 1, unit_price: 0, total: 0 }
+  ]);
+
+  // Calculate totals
+  const subtotal = lineItems.reduce((sum, item) => sum + (item.total || 0), 0);
+  const taxRate = 20;
+  const taxAmount = subtotal * (taxRate / 100);
+  const total = subtotal + taxAmount;
+
+  // Update line item
+  const updateItem = (index, field, value) => {
+    const newItems = [...lineItems];
+    newItems[index] = { ...newItems[index], [field]: value };
+    if (field === 'quantity' || field === 'unit_price') {
+      newItems[index].total = (parseFloat(newItems[index].quantity) || 0) * (parseFloat(newItems[index].unit_price) || 0);
+    }
+    setLineItems(newItems);
+  };
+
+  const addItem = () => setLineItems([...lineItems, { part_number: '', description: '', quantity: 1, unit_price: 0, total: 0 }]);
+  const removeItem = (i) => setLineItems(lineItems.filter((_, idx) => idx !== i));
+
+  // PDF Upload & Extract Text
+  const handlePDFUpload = async (file) => {
+    if (!file || !file.name.endsWith('.pdf')) {
+      notify(lang === 'en' ? 'Please upload a PDF file' : 'Veuillez télécharger un fichier PDF', 'error');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      // Load pdf.js from CDN
+      if (!window.pdfjsLib) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
+
+      // Read PDF
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        fullText += pageText + '\n';
+      }
+
+      setPdfText(fullText);
+
+      // Try to auto-extract data from text
+      const extracted = parseQuotePDF(fullText);
+      if (extracted) {
+        setForm(prev => ({
+          ...prev,
+          ...extracted.form
+        }));
+        if (extracted.items && extracted.items.length > 0) {
+          setLineItems(extracted.items);
+        }
+        notify(lang === 'en' ? '✅ Data extracted from PDF! Please review.' : '✅ Données extraites du PDF ! Veuillez vérifier.');
+      } else {
+        notify(lang === 'en' ? 'PDF text extracted. Please fill in details manually.' : 'Texte PDF extrait. Veuillez remplir les détails manuellement.');
+      }
+
+      // Upload PDF to storage
+      const fileName = `usa-orders/${Date.now()}_${file.name}`;
+      await supabase.storage.from('documents').upload(fileName, file);
+      setForm(prev => ({ ...prev, source_pdf_path: fileName }));
+
+    } catch (err) {
+      console.error('PDF extraction error:', err);
+      notify((lang === 'en' ? 'PDF extraction failed: ' : 'Erreur extraction PDF: ') + err.message, 'error');
+    }
+    setUploading(false);
+  };
+
+  // Simple PDF text parser for Salesforce quotes
+  const parseQuotePDF = (text) => {
+    try {
+      const result = { form: {}, items: [] };
+
+      // Try to find PO / Quote number
+      const poMatch = text.match(/(?:PO|Purchase Order|P\.O\.?)[\s#:]*([A-Z0-9-]+)/i);
+      if (poMatch) result.form.po_number = poMatch[1].trim();
+
+      const quoteMatch = text.match(/(?:Quote|Quotation|Devis|QU-)[\s#:]*([A-Z0-9-]+)/i);
+      if (quoteMatch) result.form.quote_number = quoteMatch[1].trim();
+
+      // Try to find company name (look for common patterns)
+      const companyPatterns = [
+        /(?:Bill To|Ship To|Customer|Client|Sold To)[\s:]*\n?\s*([A-Z][A-Za-z\s&.,'-]+)/i,
+        /(?:Company|Société|Organisation)[\s:]*([A-Z][A-Za-z\s&.,'-]+)/i
+      ];
+      for (const pattern of companyPatterns) {
+        const m = text.match(pattern);
+        if (m) { result.form.customer_name = m[1].trim(); break; }
+      }
+
+      // Try to find email
+      const emailMatch = text.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+      if (emailMatch) result.form.customer_email = emailMatch[1];
+
+      // Try to find phone
+      const phoneMatch = text.match(/(?:Tel|Phone|Tél|Fax)[\s.:]*([+0-9\s()-]{8,})/i);
+      if (phoneMatch) result.form.customer_phone = phoneMatch[1].trim();
+
+      // Try to extract line items (part number, description, qty, price pattern)
+      const linePattern = /([A-Z0-9]{2,}[-][A-Z0-9-]+)\s+(.+?)\s+(\d+)\s+[\$€£]?([\d,]+\.?\d*)\s+[\$€£]?([\d,]+\.?\d*)/g;
+      let match;
+      while ((match = linePattern.exec(text)) !== null) {
+        result.items.push({
+          part_number: match[1],
+          description: match[2].trim(),
+          quantity: parseInt(match[3]) || 1,
+          unit_price: parseFloat(match[4].replace(',', '')) || 0,
+          total: parseFloat(match[5].replace(',', '')) || 0
+        });
+      }
+
+      return (result.form.po_number || result.form.quote_number || result.form.customer_name || result.items.length > 0) ? result : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Save order
+  const saveOrder = async () => {
+    if (!form.customer_name && !form.po_number) {
+      notify(lang === 'en' ? 'Please enter a customer name or PO number' : 'Veuillez entrer un nom de client ou un numéro PO', 'error');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const validItems = lineItems.filter(item => item.part_number || item.description);
+
+      const orderData = {
+        ...form,
+        line_items: validItems,
+        subtotal: subtotal,
+        tax_rate: taxRate,
+        tax_amount: taxAmount,
+        total: total,
+        status: 'order_created',
+        order_created_at: new Date().toISOString(),
+        created_by: profile?.id
+      };
+
+      // Try to link to existing client
+      if (form.customer_name) {
+        const matchedClient = clients.find(c =>
+          c.company_name?.toLowerCase().includes(form.customer_name.toLowerCase()) ||
+          form.customer_name.toLowerCase().includes(c.company_name?.toLowerCase() || '')
+        );
+        if (matchedClient) orderData.client_id = matchedClient.id;
+      }
+
+      const { error } = await supabase.from('usa_orders').insert(orderData);
+      if (error) throw error;
+
+      notify(lang === 'en' ? '✅ Order created!' : '✅ Commande créée !');
+      onSaved();
+    } catch (err) {
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="p-4 border-b bg-blue-50 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-gray-800">🇺🇸 {lang === 'en' ? 'New USA Order' : 'Nouvelle Commande USA'}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {/* PDF Upload Section */}
+          <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center bg-gray-50">
+            <p className="text-gray-600 mb-3">{lang === 'en' ? '📄 Upload Salesforce Quote/PO PDF to auto-extract data' : '📄 Télécharger le PDF Devis/PO Salesforce pour extraction automatique'}</p>
+            <label className="inline-block px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium cursor-pointer">
+              {uploading ? '⏳ Extracting...' : (lang === 'en' ? '📤 Upload PDF' : '📤 Télécharger PDF')}
+              <input
+                type="file"
+                accept=".pdf"
+                className="hidden"
+                disabled={uploading}
+                onChange={e => e.target.files[0] && handlePDFUpload(e.target.files[0])}
+              />
+            </label>
+            {pdfText && (
+              <details className="mt-3 text-left">
+                <summary className="text-sm text-gray-500 cursor-pointer">{lang === 'en' ? 'View extracted text' : 'Voir le texte extrait'}</summary>
+                <pre className="mt-2 p-3 bg-white border rounded text-xs max-h-40 overflow-y-auto whitespace-pre-wrap">{pdfText}</pre>
+              </details>
+            )}
+          </div>
+
+          {/* Customer Info */}
+          <div>
+            <h4 className="font-bold text-gray-700 mb-2">{lang === 'en' ? '👤 Customer Info' : '👤 Info Client'}</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-500">{lang === 'en' ? 'Company' : 'Société'} *</label>
+                <input value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm mt-1" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Contact</label>
+                <input value={form.customer_contact} onChange={e => setForm({ ...form, customer_contact: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm mt-1" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Email</label>
+                <input value={form.customer_email} onChange={e => setForm({ ...form, customer_email: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm mt-1" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">{lang === 'en' ? 'Phone' : 'Tél.'}</label>
+                <input value={form.customer_phone} onChange={e => setForm({ ...form, customer_phone: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm mt-1" />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs text-gray-500">{lang === 'en' ? 'Address' : 'Adresse'}</label>
+                <input value={form.customer_address} onChange={e => setForm({ ...form, customer_address: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm mt-1" />
+              </div>
+            </div>
+          </div>
+
+          {/* Order Reference */}
+          <div>
+            <h4 className="font-bold text-gray-700 mb-2">{lang === 'en' ? '📋 Order Reference' : '📋 Référence Commande'}</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-500">PO #</label>
+                <input value={form.po_number} onChange={e => setForm({ ...form, po_number: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm mt-1 font-mono" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">{lang === 'en' ? 'Quote #' : 'Devis #'}</label>
+                <input value={form.quote_number} onChange={e => setForm({ ...form, quote_number: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm mt-1 font-mono" />
+              </div>
+            </div>
+          </div>
+
+          {/* Line Items */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-bold text-gray-700">{lang === 'en' ? '📦 Line Items' : '📦 Articles'}</h4>
+              <button onClick={addItem} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm font-medium">+ {lang === 'en' ? 'Add Item' : 'Ajouter'}</button>
+            </div>
+            <div className="space-y-2">
+              {lineItems.map((item, i) => (
+                <div key={i} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg">
+                  <input
+                    value={item.part_number}
+                    onChange={e => updateItem(i, 'part_number', e.target.value)}
+                    placeholder={lang === 'en' ? 'Part #' : 'Réf.'}
+                    className="w-32 border rounded px-2 py-1.5 text-sm font-mono"
+                  />
+                  <input
+                    value={item.description}
+                    onChange={e => updateItem(i, 'description', e.target.value)}
+                    placeholder="Description"
+                    className="flex-1 border rounded px-2 py-1.5 text-sm"
+                  />
+                  <input
+                    type="number"
+                    value={item.quantity}
+                    onChange={e => updateItem(i, 'quantity', parseInt(e.target.value) || 0)}
+                    className="w-16 border rounded px-2 py-1.5 text-sm text-center"
+                    min="1"
+                  />
+                  <input
+                    type="number"
+                    value={item.unit_price}
+                    onChange={e => updateItem(i, 'unit_price', parseFloat(e.target.value) || 0)}
+                    className="w-24 border rounded px-2 py-1.5 text-sm text-right"
+                    step="0.01"
+                    placeholder="€"
+                  />
+                  <span className="w-24 text-right text-sm font-medium">€{(item.total || 0).toFixed(2)}</span>
+                  {lineItems.length > 1 && (
+                    <button onClick={() => removeItem(i)} className="text-red-400 hover:text-red-600 text-lg px-1">&times;</button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Totals */}
+            <div className="mt-3 border-t pt-3 text-right space-y-1">
+              <p className="text-sm text-gray-500">{lang === 'en' ? 'Subtotal' : 'Sous-total'}: <span className="font-medium text-gray-800">€{subtotal.toFixed(2)}</span></p>
+              <p className="text-sm text-gray-500">TVA ({taxRate}%): <span className="font-medium text-gray-800">€{taxAmount.toFixed(2)}</span></p>
+              <p className="text-lg font-bold text-[#00A651]">Total: €{total.toFixed(2)}</p>
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="text-xs text-gray-500 font-medium">Notes</label>
+            <textarea
+              value={form.notes}
+              onChange={e => setForm({ ...form, notes: e.target.value })}
+              className="w-full border rounded-lg px-3 py-2 text-sm mt-1"
+              rows={2}
+              placeholder={lang === 'en' ? 'Optional notes...' : 'Notes optionnelles...'}
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t bg-gray-50 flex items-center justify-between">
+          <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
+            {lang === 'en' ? 'Cancel' : 'Annuler'}
+          </button>
+          <button
+            onClick={saveOrder}
+            disabled={saving}
+            className="px-6 py-2 bg-[#00A651] hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving ? '⏳...' : '✅'} {lang === 'en' ? 'Create Order' : 'Créer la Commande'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RentalsSheet({ rentals = [], clients, notify, reload, profile, businessSettings, t = k=>k, lang = 'fr' }) {
   const [activeTab, setActiveTab] = useState('requests'); // 'requests', 'inventory', 'bundles', 'calendar'
   const [selectedRental, setSelectedRental] = useState(null);
