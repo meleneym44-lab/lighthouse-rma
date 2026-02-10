@@ -5280,6 +5280,8 @@ function ContractBCReviewModal({ contract, onClose, notify, reload, lang = 'fr' 
 function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenant, onStartService, saving, setSaving, lang = 'fr' }) {
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [selectedToReceive, setSelectedToReceive] = useState(new Set());
+  const [showQueueModal, setShowQueueModal] = useState(false);
+  const [selectedToQueue, setSelectedToQueue] = useState(new Set());
   
   // Devices that haven't been received yet
   const unreceiveDevices = devices.filter(d => !d.received_at && d.status !== 'received' && !['in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped'].includes(d.status));
@@ -5361,6 +5363,31 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
     setSaving(false);
   };
   
+  // Mark selected devices as queued
+  const markSelectedAsQueued = async () => {
+    if (selectedToQueue.size === 0) {
+      notify(lang === 'en' ? 'Select at least one device' : 'Sélectionnez au moins un appareil', 'error');
+      return;
+    }
+    
+    setSaving(true);
+    try {
+      for (const deviceId of selectedToQueue) {
+        await supabase.from('request_devices').update({ 
+          status: 'in_queue'
+        }).eq('id', deviceId);
+      }
+      
+      notify(lang === 'en' ? `✅ ${selectedToQueue.size} device(s) moved to queue!` : `✅ ${selectedToQueue.size} appareil(s) mis en file d'attente !`);
+      setShowQueueModal(false);
+      setSelectedToQueue(new Set());
+      reload();
+    } catch (err) {
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+    }
+    setSaving(false);
+  };
+  
   // Start service on RMA - update status and open first device
   const startService = async () => {
     setSaving(true);
@@ -5424,22 +5451,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
           {/* Received but not queued - show queue button */}
           {receivedNotQueued.length > 0 && (
             <button
-              onClick={async () => {
-                setSaving(true);
-                try {
-                  const now = new Date().toISOString();
-                  for (const d of receivedNotQueued) {
-                    await supabase.from('request_devices').update({ 
-                      status: 'in_queue', updated_at: now 
-                    }).eq('id', d.id);
-                  }
-                  notify(lang === 'en' ? `✅ ${receivedNotQueued.length} device(s) moved to queue!` : `✅ ${receivedNotQueued.length} appareil(s) mis en file d'attente !`);
-                  reload();
-                } catch (err) {
-                  notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
-                }
-                setSaving(false);
-              }}
+              onClick={() => setShowQueueModal(true)}
               disabled={saving}
               className="px-4 py-2 bg-indigo-400 hover:bg-indigo-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
             >
@@ -5639,6 +5651,101 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
                 className="px-6 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-bold disabled:opacity-50 flex items-center gap-2"
               >
                 {saving ? (lang === 'en' ? '⏳ Saving...' : '⏳ Enregistrement...') : (lang === 'en' ? `📦 Receive (${selectedToReceive.size})` : `📦 Réceptionner (${selectedToReceive.size})`)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Queue Modal */}
+      {showQueueModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[80vh] overflow-hidden">
+            <div className="p-4 border-b bg-indigo-50">
+              <h3 className="text-lg font-bold text-gray-800">{lang === 'en' ? "📋 Move to Queue" : "📋 Mettre en file d'attente"}</h3>
+              <p className="text-sm text-gray-600 mt-1">{lang === 'en' ? 'Select the devices to move to the service queue' : "Sélectionnez les appareils à mettre en file d'attente"}</p>
+            </div>
+            
+            <div className="p-4 max-h-[50vh] overflow-y-auto">
+              <div className="space-y-2">
+                {/* Select all button */}
+                <button
+                  onClick={() => {
+                    if (selectedToQueue.size === receivedNotQueued.length) {
+                      setSelectedToQueue(new Set());
+                    } else {
+                      setSelectedToQueue(new Set(receivedNotQueued.map(d => d.id)));
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg text-left font-medium"
+                >
+                  {selectedToQueue.size === receivedNotQueued.length ? (lang === 'en' ? '☑️ Deselect all' : '☑️ Tout désélectionner') : (lang === 'en' ? '☐ Select all' : '☐ Tout sélectionner')}
+                </button>
+                
+                {receivedNotQueued.map(device => (
+                  <label 
+                    key={device.id}
+                    className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                      selectedToQueue.has(device.id) ? 'bg-indigo-50 border-indigo-300' : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedToQueue.has(device.id)}
+                      onChange={(e) => {
+                        const newSet = new Set(selectedToQueue);
+                        if (e.target.checked) {
+                          newSet.add(device.id);
+                        } else {
+                          newSet.delete(device.id);
+                        }
+                        setSelectedToQueue(newSet);
+                      }}
+                      className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-800">{device.model_name || (lang === 'en' ? 'Device' : 'Appareil')}</p>
+                      <p className="text-sm text-gray-500 font-mono">SN: {device.serial_number || '—'}</p>
+                    </div>
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      {device.service_type === 'repair' ? (lang === 'en' ? '🔧 Rep.' : '🔧 Rép.') : (lang === 'en' ? '🔬 Cal.' : '🔬 Étal.')}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              
+              {/* Already queued devices */}
+              {queuedDevices.length > 0 && (
+                <div className="mt-4 pt-4 border-t">
+                  <p className="text-sm text-gray-500 mb-2">{lang === 'en' ? 'Already in queue:' : 'Déjà en file :'}</p>
+                  <div className="space-y-1">
+                    {queuedDevices.map(device => (
+                      <div key={device.id} className="flex items-center gap-2 text-sm text-gray-400 bg-gray-50 p-2 rounded">
+                        <span>✓</span>
+                        <span>{device.model_name || (lang === 'en' ? 'Device' : 'Appareil')}</span>
+                        <span className="font-mono text-xs">SN: {device.serial_number}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t bg-gray-50 flex items-center justify-between">
+              <button
+                onClick={() => { setShowQueueModal(false); setSelectedToQueue(new Set()); }}
+                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium"
+              >
+                {lang === 'en' ? 'Cancel' : 'Annuler'}
+              </button>
+              <button
+                onClick={markSelectedAsQueued}
+                disabled={saving || selectedToQueue.size === 0}
+                className="px-6 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-bold disabled:opacity-50 flex items-center gap-2"
+              >
+                {saving ? '⏳...' : (lang === 'en' ? `📋 Queue (${selectedToQueue.size})` : `📋 File d'attente (${selectedToQueue.size})`)}
               </button>
             </div>
           </div>
@@ -6159,8 +6266,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     setSaving(true);
                     try {
                       await supabase.from('request_devices').update({ 
-                        status: 'in_queue',
-                        updated_at: new Date().toISOString()
+                        status: 'in_queue'
                       }).eq('id', device.id);
                       notify(lang === 'en' ? "✅ Device moved to queue!" : "✅ Appareil mis en file d'attente !");
                       reload();
