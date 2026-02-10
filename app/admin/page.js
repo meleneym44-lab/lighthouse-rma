@@ -4411,6 +4411,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                 { id: 'bc_approved', label: t('stQuoteApproved') },
                 { id: 'waiting_device', label: lang === 'en' ? 'Pending' : 'Attente' },
                 { id: 'received', label: t('stReceived') },
+                { id: 'queue', label: lang === 'en' ? 'Queue' : 'File' },
                 { id: 'inspection', label: lang === 'en' ? 'Inspection' : 'Inspection' },
                 { id: 'customer_approval', label: lang === 'en' ? 'Client Appr.' : 'Appr. Client' },
                 { id: 'repair', label: lang === 'en' ? 'Repair' : 'Réparation' },
@@ -4429,35 +4430,35 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                 }
                 
                 if (isRepair) {
-                  // Repair: 11 steps (0-10)
+                  // Repair: 12 steps (0-11) - includes File d'attente
                   const map = {
                     'submitted': 0, 'pending': 0, 'waiting_approval': 0,
                     'approved': 1, 'rma_created': 1, 'quote_sent': 1,
                     'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
                     'waiting_device': 3, 'bc_approved': 3,
-                    'received': 4, 'in_queue': 4,
-                    'inspection': 5, 'inspection_complete': 5,
-                    'customer_approval': 6, 'quote_approved': 6, 'waiting_parts': 6,
-                    'repair': 7, 'repair_in_progress': 7, 'in_progress': 7,
-                    'final_qc': 8, 'qc': 8, 'quality_check': 8,
-                    'ready_to_ship': 9, 'ready': 9,
-                    'shipped': 10, 'delivered': 10, 'completed': 10
+                    'received': 4,
+                    'in_queue': 5, 'queue': 5, 'queued': 5,
+                    'inspection': 6, 'inspection_complete': 6,
+                    'customer_approval': 7, 'quote_approved': 7, 'waiting_parts': 7,
+                    'repair': 8, 'repair_in_progress': 8, 'in_progress': 8,
+                    'final_qc': 9, 'qc': 9, 'quality_check': 9,
+                    'ready_to_ship': 10, 'ready': 10,
+                    'shipped': 11, 'delivered': 11, 'completed': 11
                   };
                   return map[status] ?? 1;
                 } else {
-                  // Calibration: 11 steps (0-10)
+                  // Calibration: 10 steps (0-9)
                   const map = {
                     'submitted': 0, 'pending': 0, 'waiting_approval': 0,
                     'approved': 1, 'rma_created': 1, 'quote_sent': 1,
                     'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
                     'waiting_device': 3, 'bc_approved': 3,
-                    'received': 4, 'in_queue': 4,
-                    'queue': 5, 'queued': 5,
+                    'received': 4,
+                    'in_queue': 5, 'queue': 5, 'queued': 5,
                     'calibration': 6, 'calibration_in_progress': 6, 'in_progress': 6,
                     'final_qc': 7, 'qc': 7, 'quality_check': 7,
                     'ready_to_ship': 8, 'ready': 8,
-                    'shipping': 9,
-                    'shipped': 10, 'delivered': 10, 'completed': 10
+                    'shipped': 9, 'delivered': 9, 'completed': 9
                   };
                   return map[status] ?? 1;
                 }
@@ -5281,14 +5282,17 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
   const [selectedToReceive, setSelectedToReceive] = useState(new Set());
   
   // Devices that haven't been received yet
-  const unreceiveDevices = devices.filter(d => !d.received_at && d.status !== 'received' && !['calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped'].includes(d.status));
-  const receivedDevices = devices.filter(d => d.received_at || d.status === 'received' || ['calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped'].includes(d.status));
+  const unreceiveDevices = devices.filter(d => !d.received_at && d.status !== 'received' && !['in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped'].includes(d.status));
+  const receivedDevices = devices.filter(d => d.received_at || d.status === 'received' || ['in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped'].includes(d.status));
+  const receivedNotQueued = devices.filter(d => d.status === 'received');
+  const queuedDevices = devices.filter(d => ['in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped'].includes(d.status));
   
   // Determine what actions are available based on RMA/device state
   const isWaitingForDevice = ['approved', 'waiting_bc', 'waiting_device', 'waiting_po', 'bc_review', 'bc_approved'].includes(rma.status) && 
     unreceiveDevices.length > 0;
   
   const hasReceivedDevices = receivedDevices.length > 0;
+  const hasQueuedDevices = queuedDevices.length > 0;
   
   const allQCComplete = devices.length > 0 && devices.every(d => d.qc_complete);
   const allReadyToShip = devices.length > 0 && devices.every(d => d.status === 'ready_to_ship' || d.qc_complete);
@@ -5369,10 +5373,10 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
       notify(lang === 'en' ? '✅ Service started!' : '✅ Service démarré!');
       reload();
       
-      // Open service modal for first received device
-      const firstReceived = devices.find(d => d.status === 'received' || d.received_at);
-      if (firstReceived && onStartService) {
-        onStartService(firstReceived);
+      // Open service modal for first queued device
+      const firstQueued = devices.find(d => d.status === 'in_queue');
+      if (firstQueued && onStartService) {
+        onStartService(firstQueued);
       }
     } catch (err) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
@@ -5417,8 +5421,34 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
             </button>
           )}
           
-          {/* Received - show start service button */}
-          {hasReceivedDevices && !devices.some(d => d.service_findings || d.report_complete) && (
+          {/* Received but not queued - show queue button */}
+          {receivedNotQueued.length > 0 && (
+            <button
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  const now = new Date().toISOString();
+                  for (const d of receivedNotQueued) {
+                    await supabase.from('request_devices').update({ 
+                      status: 'in_queue', updated_at: now 
+                    }).eq('id', d.id);
+                  }
+                  notify(lang === 'en' ? `✅ ${receivedNotQueued.length} device(s) moved to queue!` : `✅ ${receivedNotQueued.length} appareil(s) mis en file d'attente !`);
+                  reload();
+                } catch (err) {
+                  notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+                }
+                setSaving(false);
+              }}
+              disabled={saving}
+              className="px-4 py-2 bg-indigo-400 hover:bg-indigo-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
+            >
+              {saving ? '⏳' : '📋'} {lang === 'en' ? `Queue (${receivedNotQueued.length})` : `File d'attente (${receivedNotQueued.length})`}
+            </button>
+          )}
+          
+          {/* Received & queued - show start service button */}
+          {hasQueuedDevices && !devices.some(d => d.service_findings || d.report_complete) && (
             <button
               onClick={startService}
               disabled={saving}
@@ -5851,6 +5881,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     { id: 'bc_approved', label: t('stQuoteApproved') },
     { id: 'waiting_device', label: lang === 'en' ? 'Pending' : 'Attente' },
     { id: 'received', label: t('stReceived') },
+    { id: 'queue', label: lang === 'en' ? 'Queue' : 'File' },
     { id: 'inspection', label: lang === 'en' ? 'Inspection' : 'Inspection' },
     { id: 'customer_approval', label: lang === 'en' ? 'Client Appr.' : 'Appr. Client' },
     { id: 'repair', label: lang === 'en' ? 'Repair' : 'Réparation' },
@@ -5869,13 +5900,14 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         'approved': 1, 'rma_created': 1, 'quote_sent': 1,
         'waiting_bc': 2, 'bc_submitted': 2, 'bc_review': 2,
         'bc_approved': 3, 'waiting_device': 3, 'waiting_po': 3, 'waiting_reception': 3,
-        'received': 4, 'in_queue': 4,
-        'inspection': 5, 'inspection_complete': 5,
-        'customer_approval': 6, 'waiting_customer': 6,
-        'repair_in_progress': 7, 'repair': 7,
-        'final_qc': 8, 'qc_complete': 8, 'qc_rejected': 7,
-        'ready_to_ship': 9,
-        'shipped': 10, 'delivered': 10, 'completed': 10
+        'received': 4,
+        'in_queue': 5, 'queue': 5, 'queued': 5,
+        'inspection': 6, 'inspection_complete': 6,
+        'customer_approval': 7, 'waiting_customer': 7,
+        'repair_in_progress': 8, 'repair': 8,
+        'final_qc': 9, 'qc_complete': 9, 'qc_rejected': 8,
+        'ready_to_ship': 10,
+        'shipped': 11, 'delivered': 11, 'completed': 11
       };
       return repairMap[status] ?? 0;
     } else {
@@ -6011,7 +6043,9 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     const needsQC = device.report_complete && !device.qc_complete;
     // Device must be received (have received_at or be in service status) before starting service
     const isDeviceReceived = device.received_at || ['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship'].includes(device.status);
-    const canStartService = isDeviceReceived && !device.report_complete && !isDeviceShipped;
+    const isDeviceInQueue = ['in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship'].includes(device.status);
+    const isReceivedNotQueued = isDeviceReceived && device.status === 'received';
+    const canStartService = isDeviceInQueue && !device.report_complete && !isDeviceShipped;
     
     return (
       <div className="space-y-6">
@@ -6116,6 +6150,30 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 <span className="px-3 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium flex items-center gap-2">
                   {lang === 'en' ? '📦 Device not received - Mark as received to start service' : '📦 Appareil non réceptionné - Marquer comme reçu pour démarrer le service'}
                 </span>
+              )}
+              
+              {/* Queue button - received but not yet in queue */}
+              {isReceivedNotQueued && !device.report_complete && (
+                <button
+                  onClick={async () => {
+                    setSaving(true);
+                    try {
+                      await supabase.from('request_devices').update({ 
+                        status: 'in_queue',
+                        updated_at: new Date().toISOString()
+                      }).eq('id', device.id);
+                      notify(lang === 'en' ? "✅ Device moved to queue!" : "✅ Appareil mis en file d'attente !");
+                      reload();
+                    } catch (err) {
+                      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+                    }
+                    setSaving(false);
+                  }}
+                  disabled={saving}
+                  className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium flex items-center gap-2"
+                >
+                  📋 {saving ? '⏳...' : (lang === 'en' ? "Move to Queue" : "Mettre en file d'attente")}
+                </button>
               )}
               
               {/* Service button - Edit or Start */}
