@@ -2712,7 +2712,7 @@ const generateReportPDFFromHTML = async (device, rma, technicianName, calType, r
 
 
 // ============ RMA LABEL PRINTING (Brady M611 - PTL-37-351 1.9" x 3") ============
-const printDeviceLabels = (devicesToPrint, rma, lang = 'fr') => {
+const printDeviceLabels = (devicesToPrint, rma, lang = 'fr', totalDeviceCount = null) => {
   const printWindow = window.open('', '_blank', 'width=500,height=700');
   if (!printWindow) {
     alert(lang === 'en' ? 'Please allow popups for label printing' : 'Veuillez autoriser les popups pour imprimer les étiquettes');
@@ -2720,7 +2720,7 @@ const printDeviceLabels = (devicesToPrint, rma, lang = 'fr') => {
   }
 
   const labels = devicesToPrint.map((device, idx) => {
-    const rmaNum = rma.rma_number || 'N/A';
+    const rmaNum = rma.request_number || 'N/A';
     const client = rma.companies?.name || '';
     const model = device.model_name || '';
     const serial = device.serial_number || '';
@@ -2731,7 +2731,7 @@ const printDeviceLabels = (devicesToPrint, rma, lang = 'fr') => {
         : (lang === 'en' ? 'Calibration' : 'Étalonnage');
     const arrivalDate = new Date(device.received_at || rma.received_at || new Date())
       .toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR');
-    const qty = device.quantity || 1;
+    const totalDevices = totalDeviceCount || rma.request_devices?.length || rma.device_count || devicesToPrint.length;
 
     return `
       <div class="label">
@@ -2749,7 +2749,7 @@ const printDeviceLabels = (devicesToPrint, rma, lang = 'fr') => {
         <div class="service">${serviceType}</div>
         <div class="date-qty">
           <span>${lang === 'en' ? 'Received' : 'Arrivée'}: ${arrivalDate}</span>
-          <span>${lang === 'en' ? 'Qty' : 'Qté'}: ${qty}</span>
+          <span>${lang === 'en' ? 'Devices' : 'Appareils'}: ${totalDevices}</span>
         </div>
       </div>
     `;
@@ -6024,7 +6024,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             ← Retour au RMA
           </button>
           <button 
-            onClick={() => printDeviceLabels([device], rma, lang)}
+            onClick={() => printDeviceLabels([device], rma, lang, devices.length)}
             className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-medium text-sm flex items-center gap-1"
           >
             🏷️ {lang === 'en' ? 'Print Label' : 'Étiquette'}
@@ -6885,7 +6885,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                        (lang === 'en' ? '🔬🔧 Cal. + Rep.' : '🔬🔧 Étal. + Rép.')}
                     </span>
                     <button
-                      onClick={(e) => { e.stopPropagation(); printDeviceLabels([device], rma, lang); }}
+                      onClick={(e) => { e.stopPropagation(); printDeviceLabels([device], rma, lang, devices.length); }}
                       className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
                       title={lang === 'en' ? 'Print label' : 'Imprimer étiquette'}
                     >🏷️</button>
