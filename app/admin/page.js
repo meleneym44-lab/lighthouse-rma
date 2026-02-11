@@ -8042,7 +8042,6 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   const company = rma.companies || {};
   const biz = options.businessSettings || {};
   const supNumber = options.supNumber || null; // SUP-0226-001 format
-  const lang = options.lang || 'fr';
   
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
@@ -8104,7 +8103,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...navy);
-  pdf.text((lang === 'en' ? 'QUOTE SUPPLEMENT' : 'SUPPLÉMENT AU DEVIS'), pageWidth - margin, y + 5, { align: 'right' });
+  pdf.text('SUPPLÉMENT AU DEVIS', pageWidth - margin, y + 5, { align: 'right' });
   
   // Document number (SUP-0226-001) - primary
   pdf.setFontSize(11);
@@ -8137,10 +8136,10 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  const qDate = new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR');
+  const qDate = new Date().toLocaleDateString('fr-FR');
   pdf.text(qDate, margin + 5, y + 12);
   pdf.text('30 jours', margin + 60, y + 12);
-  pdf.text((lang === 'en' ? 'Upon receipt of invoice' : 'A reception de facture'), margin + 115, y + 12);
+  pdf.text('A reception de facture', margin + 115, y + 12);
   y += 20;
 
   // ===== CLIENT =====
@@ -8217,7 +8216,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
-    const deviceHeader = `${device.model_name || (lang === 'en' ? 'Device' : 'Appareil')} (SN: ${device.serial_number || 'N/A'})`;
+    const deviceHeader = `${device.model_name || 'Appareil'} (SN: ${device.serial_number || 'N/A'})`;
     pdf.text(deviceHeader, colDesc, y + 5.5);
     y += 8;
     
@@ -8254,7 +8253,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
       
       if (isWarranty) {
         pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(41, 98, 255); // blue
+        pdf.setTextColor(41, 98, 255);
         pdf.text('Sous garantie', colTotal, y + 5, { align: 'right' });
       } else {
         pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
@@ -8278,7 +8277,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setTextColor(...white);
   pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
-  pdf.text((lang === 'en' ? 'TOTAL SUPPLEMENT excl. VAT' : 'TOTAL SUPPLÉMENT HT'), margin + 10, y + 9);
+  pdf.text('TOTAL SUPPLÉMENT HT', margin + 10, y + 9);
   pdf.setFontSize(18);
   pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 10, { align: 'right' });
   y += 18;
@@ -8340,10 +8339,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   addFooter();
   return { blob: pdf.output('blob'), total: grandTotal };
 };
-
-// Avenant Preview Modal - Shows additional work quote to send to client
 function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySent, businessSettings, lang = 'fr' }) {
-  const t = k => k;
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
@@ -8360,16 +8356,16 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
   const downloadPDF = async () => {
     setDownloading(true);
     try {
-      const { blob } = await generateAvenantPDF(rma, devicesWithWork, { businessSettings, lang });
+      const { blob } = await generateAvenantPDF(rma, devicesWithWork, { businessSettings });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `Supplement_${rma.supplement_number || rma.request_number}_${Date.now()}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-      notify(lang === 'en' ? '📥 PDF downloaded!' : '📥 PDF téléchargé!');
+      notify('📥 PDF téléchargé!');
     } catch (err) {
-      notify(lang === 'en' ? 'Error generating PDF: ' : 'Erreur génération PDF: ' + err.message, 'error');
+      notify('Erreur génération PDF: ' + err.message, 'error');
     }
     setDownloading(false);
   };
@@ -8390,8 +8386,8 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
       }
       
       // 1. Generate PDF
-      notify(lang === 'en' ? '📄 Generating PDF...' : '📄 Génération du PDF...');
-      const { blob, total } = await generateAvenantPDF(rma, devicesWithWork, { businessSettings, supNumber, lang });
+      notify('📄 Génération du PDF...');
+      const { blob, total } = await generateAvenantPDF(rma, devicesWithWork, { businessSettings, supNumber });
       
       // 2. Upload to storage
       const fileName = `supplement_${supNumber || rma.request_number}_${Date.now()}.pdf`;
@@ -8439,12 +8435,12 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
         device_serial: devicesWithWork.map(d => d.serial_number).join(', ')
       });
       
-      notify(lang === 'en' ? '✅ Supplement sent to client!' : '✅ Supplément envoyé au client!');
+      notify('✅ Supplément envoyé au client!');
       reload();
       onClose();
     } catch (err) {
       console.error('Avenant send error:', err);
-      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+      notify('Erreur: ' + err.message, 'error');
     }
     setSending(false);
   };
@@ -8455,13 +8451,13 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
         {/* Modal Header - Like RMA Quote */}
         <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
           <div>
-            <h2 className="text-xl font-bold">{lang === 'en' ? 'Quote Supplement' : 'Supplément au Devis'}</h2>
+            <h2 className="text-xl font-bold">Supplément au Devis</h2>
             <p className="text-gray-400">{rma.request_number} • {rma.companies?.name}</p>
           </div>
           <div className="flex items-center gap-3">
             {alreadySent && (
               <span className="px-3 py-1 bg-green-500 rounded-full text-xs font-bold">
-                ✓ {lang === 'en' ? 'Sent on' : 'Envoyé le'} {new Date(rma.avenant_sent_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
+                ✓ Envoyé le {new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR')}
               </span>
             )}
             <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">✕</button>
@@ -8489,8 +8485,8 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-2xl font-bold text-[#2D5A7B]">{lang === 'en' ? 'QUOTE SUPPLEMENT' : 'SUPPLÉMENT AU DEVIS'}</p>
-                <p className="text-sm font-bold text-[#2D5A7B]">N° {rma.supplement_number || (lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)")}</p>
+                <p className="text-2xl font-bold text-[#2D5A7B]">SUPPLÉMENT AU DEVIS</p>
+                <p className="text-sm font-bold text-[#2D5A7B]">N° {rma.supplement_number || '(Généré à l\'envoi)'}</p>
                 <p className="text-xs text-gray-500">RMA: {rma.request_number}</p>
               </div>
             </div>
@@ -8499,22 +8495,22 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           {/* Info Bar */}
           <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
             <div>
-              <p className="text-xs text-gray-500 uppercase">{t('date')}</p>
-              <p className="font-medium">{alreadySent ? new Date(rma.avenant_sent_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
+              <p className="text-xs text-gray-500 uppercase">Date</p>
+              <p className="font-medium">{alreadySent ? new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'Validity' : 'Validité'}</p>
-              <p className="font-medium">{lang === 'en' ? '30 days' : '30 jours'}</p>
+              <p className="text-xs text-gray-500 uppercase">Validité</p>
+              <p className="font-medium">30 jours</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'Terms' : 'Conditions'}</p>
-              <p className="font-medium">{lang === 'en' ? 'Upon receipt of invoice' : 'À réception de facture'}</p>
+              <p className="text-xs text-gray-500 uppercase">Conditions</p>
+              <p className="font-medium">À réception de facture</p>
             </div>
           </div>
 
           {/* Client Info */}
           <div className="px-8 py-4 border-b">
-            <p className="text-xs text-gray-500 uppercase">{t('client')}</p>
+            <p className="text-xs text-gray-500 uppercase">Client</p>
             <p className="font-bold text-xl text-[#1a1a2e]">{rma.companies?.name}</p>
             {rma.companies?.billing_address && <p className="text-gray-600">{rma.companies?.billing_address}</p>}
             <p className="text-gray-600">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</p>
@@ -8523,7 +8519,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           {/* Introduction */}
           <div className="px-8 py-4 bg-green-50 border-b border-green-200">
             <p className="text-green-800">
-              <strong>{lang === 'en' ? 'Subject:' : 'Objet :'}</strong> Suite à l'inspection de vos appareils, notre équipe technique a identifié des travaux supplémentaires nécessaires. 
+              <strong>Objet :</strong> Suite à l'inspection de vos appareils, notre équipe technique a identifié des travaux supplémentaires nécessaires. 
               Veuillez trouver ci-dessous le détail des interventions recommandées.
             </p>
           </div>
@@ -8534,21 +8530,20 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
               const deviceTotal = (device.additional_work_items || []).filter(i => !i.warranty).reduce((sum, item) => 
                 sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
               );
-              const hasWarranty = (device.additional_work_items || []).some(i => i.warranty);
               
               return (
                 <div key={device.id} className="border-l-4 border-blue-500 pl-4">
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <h3 className="font-bold text-lg text-[#1a1a2e]">{device.model_name}</h3>
-                      <p className="text-gray-500 text-sm">{lang === 'en' ? 'Serial #' : 'N° de série'}: {device.serial_number}</p>
+                      <p className="text-gray-500 text-sm">N° de série: {device.serial_number}</p>
                     </div>
                     <span className="text-xl font-bold text-[#2D5A7B] whitespace-nowrap">{deviceTotal.toFixed(2)} €</span>
                   </div>
                   
                   {device.service_findings && (
                     <div className="bg-gray-100 rounded-lg p-3 mb-3">
-                      <p className="text-xs text-gray-500 uppercase font-medium mb-1">{lang === 'en' ? 'Technician findings' : 'Constatations du technicien'}</p>
+                      <p className="text-xs text-gray-500 uppercase font-medium mb-1">Constatations du technicien</p>
                       <p className="text-gray-700">{device.service_findings}</p>
                     </div>
                   )}
@@ -8557,10 +8552,10 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b-2 border-gray-200">
-                          <th className="text-left py-2 text-gray-600 font-medium">{t('description')}</th>
-                          <th className="text-center py-2 text-gray-600 font-medium w-16">{lang === 'en' ? 'Qty' : 'Qté'}</th>
-                          <th className="text-right py-2 text-gray-600 font-medium w-24">{lang === 'en' ? 'Unit Price' : 'Prix Unit.'}</th>
-                          <th className="text-right py-2 text-gray-600 font-medium w-24">{t('total')}</th>
+                          <th className="text-left py-2 text-gray-600 font-medium">Description</th>
+                          <th className="text-center py-2 text-gray-600 font-medium w-16">Qté</th>
+                          <th className="text-right py-2 text-gray-600 font-medium w-24">Prix Unit.</th>
+                          <th className="text-right py-2 text-gray-600 font-medium w-24">Total</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -8568,11 +8563,11 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                           <tr key={idx} className={`border-b border-gray-100 ${item.warranty ? 'bg-blue-50' : ''}`}>
                             <td className="py-2">
                               {item.description}
-                              {item.warranty && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">🛡️ {lang === 'en' ? 'Warranty' : 'Garantie'}</span>}
+                              {item.warranty && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">🛡️ Garantie</span>}
                             </td>
                             <td className="py-2 text-center">{item.quantity}</td>
                             <td className="py-2 text-right whitespace-nowrap">{item.warranty ? '—' : `${(parseFloat(item.price) || 0).toFixed(2)} €`}</td>
-                            <td className="py-2 text-right font-medium whitespace-nowrap text-blue-600">{item.warranty ? (lang === 'en' ? 'Under warranty' : 'Sous garantie') : `${((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)} €`}</td>
+                            <td className="py-2 text-right font-medium whitespace-nowrap">{item.warranty ? <span className="text-blue-600">Sous garantie</span> : `${((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)} €`}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -8586,7 +8581,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           {/* Devices without additional work (RAS) */}
           {devicesRAS.length > 0 && (
             <div className="px-8 py-4 bg-green-50 border-t border-b">
-              <p className="text-sm text-green-800 font-medium mb-2">{lang === 'en' ? '✓ Devices without additional work:' : '✓ Appareils sans travaux supplémentaires:'}</p>
+              <p className="text-sm text-green-800 font-medium mb-2">✓ Appareils sans travaux supplémentaires:</p>
               <div className="space-y-1">
                 {devicesRAS.map(device => (
                   <p key={device.id} className="text-sm text-green-700">
@@ -8600,32 +8595,32 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           {/* Total Section */}
           <div className="px-8 py-4 bg-[#2D5A7B]">
             <div className="flex justify-between items-center text-white">
-              <span className="text-lg font-bold">{lang === 'en' ? 'TOTAL SUPPLEMENT excl. VAT' : 'TOTAL SUPPLÉMENT HT'}</span>
+              <span className="text-lg font-bold">TOTAL SUPPLÉMENT HT</span>
               <span className="text-3xl font-bold whitespace-nowrap">{totalAvenant.toFixed(2)} €</span>
             </div>
           </div>
 
           {/* Conditions */}
           <div className="px-8 py-4 border-b">
-            <p className="font-bold text-[#1a1a2e] text-sm mb-2">{lang === 'en' ? 'Terms:' : 'Conditions:'}</p>
+            <p className="font-bold text-[#1a1a2e] text-sm mb-2">Conditions:</p>
             <ul className="text-sm text-gray-600 space-y-1">
-              <li>{lang === 'en' ? '• This supplementary quote is valid for 30 days' : '• Ce devis complémentaire est valable 30 jours'}</li>
-              <li>{lang === 'en' ? '• Work will be performed after receiving your approval' : '• Les travaux seront effectués après réception de votre accord'}</li>
-              <li>{lang === 'en' ? '• Payment terms: 30 days end of month' : '• Conditions de règlement: 30 jours fin de mois'}</li>
+              <li>• Ce devis complémentaire est valable 30 jours</li>
+              <li>• Les travaux seront effectués après réception de votre accord</li>
+              <li>• Conditions de règlement: 30 jours fin de mois</li>
             </ul>
           </div>
 
           {/* Signature Section */}
           <div className="px-8 py-6 flex justify-between items-end">
             <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">{lang === 'en' ? 'Prepared by' : 'Établi par'}</p>
-              <p className="font-bold text-lg text-[#1a1a2e]">{lang === 'en' ? 'Technical Service' : 'Service Technique'}</p>
+              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Établi par</p>
+              <p className="font-bold text-lg text-[#1a1a2e]">Service Technique</p>
               <p className="text-gray-500">Lighthouse France</p>
             </div>
             <div className="text-center">
-              <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">{lang === 'en' ? 'Approved for agreement' : 'Bon pour accord'}</p>
+              <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Bon pour accord</p>
               <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
-                <span className="text-gray-300 text-xs">{lang === 'en' ? 'Signature and stamp' : 'Signature et cachet'}</span>
+                <span className="text-gray-300 text-xs">Signature et cachet</span>
               </div>
             </div>
           </div>
@@ -8648,7 +8643,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
               disabled={downloading}
               className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
             >
-              {downloading ? '...' : (lang === 'en' ? '📥 Download PDF' : '📥 Télécharger PDF')}
+              {downloading ? '...' : '📥 Télécharger PDF'}
             </button>
             {!alreadySent && (
               <button 
@@ -8656,7 +8651,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                 disabled={sending}
                 className="px-6 py-2 bg-[#00A651] hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50"
               >
-                {sending ? (lang === 'en' ? 'Generating & sending...' : 'Génération & envoi...') : (lang === 'en' ? '📧 Send to Client' : '📧 Envoyer au Client')}
+                {sending ? 'Génération & envoi...' : '📧 Envoyer au Client'}
               </button>
             )}
             {alreadySent && (
