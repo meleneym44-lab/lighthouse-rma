@@ -577,26 +577,25 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
       y += 4;
     });
   });
-  y += 3;
+  y += 1;
 
   // ===== SIGNATURE SECTION - ALWAYS ON LAST PAGE =====
-  // Signature block needs ~39mm of vertical space below sigY
-  const signatureNeeded = 42; // 3mm gap + 39mm content
-  const signatureLimit = pageHeight - footerHeight - 2; // 2mm padding before footer
+  // Signature content: line at sigY, text to sigY+35, total ~38mm from y
+  const signatureHeight = 38;
   const signatoryName = qs.signatory_name || biz.quote_signatory || 'M. Meleney';
   const signatoryCompany = qs.signatory_company || biz.company_name || 'Lighthouse France';
 
   // Check if there's enough room on this page for the signature block
-  // If not, add a new page so signature is cleanly at the bottom of the last page
-  if (y + signatureNeeded > signatureLimit) {
+  // Use actual footer position (pageHeight - footerHeight) rather than conservative getUsableHeight
+  const signatureLimit = pageHeight - footerHeight - 2;
+  if (y + signatureHeight > signatureLimit) {
     addFooter();
     pdf.addPage();
     y = margin;
   }
 
-  // Position signature: push to bottom only if there's lots of space, otherwise just below content
-  const sigBottomTarget = signatureLimit - 39;
-  const sigY = Math.max(y + 3, sigBottomTarget);
+  // Position signature: push to bottom only if there's lots of space
+  const sigY = Math.max(y + 3, signatureLimit - signatureHeight);
   
   pdf.setDrawColor(200, 200, 200);
   pdf.setLineWidth(0.3);
@@ -618,7 +617,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   if (capcertLogo) {
     try {
       const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
+      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 30, 30);
     } catch (e) {}
   }
 
@@ -630,9 +629,9 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.setDrawColor(180, 180, 180);
   pdf.setLineWidth(0.3);
   pdf.setLineDashPattern([2, 2], 0);
-  pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 22, 2, 2, 'D');
+  pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 20, 2, 2, 'D');
   pdf.setLineDashPattern([], 0);
-  pdf.text('Lu et approuve', sigBoxX + 18, sigY + 37);
+  pdf.text('Lu et approuve', sigBoxX + 18, sigY + 34);
 
   addFooter();
   
@@ -1182,7 +1181,8 @@ function TechTranslateModal({ isOpen, onClose, onInsert }) {
 }
 
 // Tech Translate Button - Opens the modal
-function TechTranslateButton({ onInsert }) {
+function TechTranslateButton({ onInsert, lang = 'fr' }) {
+  const t = k => k;
   const [isOpen, setIsOpen] = useState(false);
   
   return (
@@ -2712,6 +2712,169 @@ const generateReportPDFFromHTML = async (device, rma, technicianName, calType, r
 };
 
 
+// ============ RMA LABEL PRINTING (Brady M611 - PTL-37-351 1.9" x 3") ============
+const printDeviceLabels = (devicesToPrint, rma, lang = 'fr', totalDeviceCount = null) => {
+  const printWindow = window.open('', '_blank', 'width=500,height=700');
+  if (!printWindow) {
+    alert(lang === 'en' ? 'Please allow popups for label printing' : 'Veuillez autoriser les popups pour imprimer les étiquettes');
+    return;
+  }
+
+  const labels = devicesToPrint.map((device, idx) => {
+    const rmaNum = rma.request_number || 'N/A';
+    const client = rma.companies?.name || '';
+    const model = device.model_name || '';
+    const serial = device.serial_number || '';
+    const serviceType = device.service_type === 'repair' 
+      ? (lang === 'en' ? 'Repair' : 'Réparation')
+      : device.service_type === 'calibration_repair' 
+        ? (lang === 'en' ? 'Cal. + Repair' : 'Étal. + Rép.')
+        : (lang === 'en' ? 'Calibration' : 'Étalonnage');
+    const arrivalDate = new Date(device.received_at || rma.received_at || new Date())
+      .toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR');
+    const totalDevices = totalDeviceCount || rma.request_devices?.length || rma.device_count || devicesToPrint.length;
+
+    return `
+      <div class="label">
+        <div class="rma-number">RMA# ${rmaNum}</div>
+        <div class="divider"></div>
+        <div class="client">${client}</div>
+        <div class="model">${model}</div>
+        <div class="divider"></div>
+        <div class="serial-label">${lang === 'en' ? 'S/N' : 'N° Série'}</div>
+        <div class="serial">${serial}</div>
+        <div class="barcode-container">
+          <canvas id="barcode-${idx}"></canvas>
+        </div>
+        <div class="divider"></div>
+        <div class="service">${serviceType}</div>
+        <div class="date-qty">
+          <span>${lang === 'en' ? 'Received' : 'Arrivée'}: ${arrivalDate}</span>
+          <span>${lang === 'en' ? 'Devices' : 'Appareils'}: ${totalDevices}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>RMA Labels</title>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
+  <style>
+    @page {
+      size: 1.9in 3in;
+      margin: 0;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; }
+    .label {
+      width: 1.9in;
+      height: 3in;
+      padding: 0.1in 0.12in;
+      page-break-after: always;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      overflow: hidden;
+    }
+    .label:last-child { page-break-after: auto; }
+    .rma-number {
+      font-size: 14pt;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+    .divider {
+      width: 80%;
+      height: 1px;
+      background: #999;
+      margin: 3px 0;
+    }
+    .client {
+      font-size: 9pt;
+      font-weight: bold;
+      margin-top: 1px;
+    }
+    .model {
+      font-size: 8pt;
+      color: #444;
+      margin-bottom: 1px;
+    }
+    .serial-label {
+      font-size: 6pt;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 2px;
+    }
+    .serial {
+      font-size: 10pt;
+      font-weight: bold;
+      font-family: 'Courier New', monospace;
+      letter-spacing: 0.5px;
+    }
+    .barcode-container {
+      margin: 3px 0;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+    }
+    .barcode-container canvas {
+      max-width: 1.6in;
+      height: 35px;
+    }
+    .service {
+      font-size: 9pt;
+      font-weight: bold;
+      margin-top: 1px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .date-qty {
+      font-size: 7pt;
+      color: #555;
+      margin-top: 2px;
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+    }
+    @media screen {
+      body { background: #eee; display: flex; flex-wrap: wrap; gap: 20px; padding: 20px; justify-content: center; }
+      .label { background: white; border: 1px dashed #ccc; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    }
+  </style>
+</head>
+<body>
+  ${labels}
+  <script>
+    window.onload = function() {
+      ${devicesToPrint.map((device, idx) => `
+        try {
+          JsBarcode("#barcode-${idx}", "${(device.serial_number || '').replace(/"/g, '')}", {
+            format: "CODE128",
+            width: 1.5,
+            height: 30,
+            displayValue: false,
+            margin: 0
+          });
+        } catch(e) { console.error('Barcode error:', e); }
+      `).join('\n')}
+      
+      // Auto-print after short delay
+      setTimeout(function() {
+        window.print();
+      }, 500);
+    };
+  <\/script>
+</body>
+</html>`);
+  printWindow.document.close();
+};
+
+
 // ============ ADMIN TRANSLATIONS ============
 const AT = {
   fr: {
@@ -2719,6 +2882,7 @@ const AT = {
     dashboard: 'Tableau de Bord', messages: 'Messages', requests: 'Demandes',
     parts: 'Pièces Détachées', rentals: 'Locations', contracts: 'Contrats',
     invoices: 'Factures', clients: 'Clients', pricing: 'Tarifs & Pièces',
+    usaOrders: 'Commandes USA',
     kpis: 'KPIs', settings: 'Paramètres', admin: 'Admin',
     
     // Header
@@ -2854,6 +3018,7 @@ const AT = {
     dashboard: 'Dashboard', messages: 'Messages', requests: 'Requests',
     parts: 'Parts Orders', rentals: 'Rentals', contracts: 'Contracts',
     invoices: 'Invoices', clients: 'Clients', pricing: 'Pricing & Parts',
+    usaOrders: 'USA Orders',
     kpis: 'KPIs', settings: 'Settings', admin: 'Admin',
     
     // Header
@@ -3219,6 +3384,7 @@ export default function AdminPortal() {
     { id: 'rentals', label: t('rentals'), icon: '📅', badge: rentalActionCount > 0 ? rentalActionCount : null },
     { id: 'contracts', label: t('contracts'), icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
     { id: 'invoices', label: t('invoices'), icon: '📋' },
+    { id: 'usa_orders', label: t('usaOrders'), icon: '🇺🇸' },
     { id: 'clients', label: t('clients'), icon: '👥' },
     { id: 'pricing', label: t('pricing'), icon: '💰' },
     { id: 'kpi', label: t('kpis'), icon: '📈' },
@@ -3348,6 +3514,7 @@ export default function AdminPortal() {
             {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} t={t} lang={lang} />}
             {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} t={t} lang={lang} reloadMain={loadData} />}
             {activeSheet === 'invoices' && <InvoicesSheet requests={requests} clients={clients} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
+            {activeSheet === 'usa_orders' && <USAOrdersSheet clients={clients} notify={notify} reload={loadData} profile={profile} t={t} lang={lang} />}
             {activeSheet === 'rentals' && <RentalsSheet
               t={t} lang={lang} 
               rentals={rentalRequests} 
@@ -3367,6 +3534,8 @@ export default function AdminPortal() {
 }
 
 function LoginPage() {
+  const t = k => k;
+  const lang = 'fr';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -3913,7 +4082,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
   const stats = [
     { id: 'all', label: lang === 'en' ? 'Active RMAs' : 'RMAs Actifs', value: activeRMAs.length, color: 'bg-blue-500', icon: '📋' },
     { id: 'bc', label: lang === 'en' ? 'PO to Review' : 'BC à vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
-    { id: 'avenant', label: lang === 'en' ? 'Supplement pending' : 'Avenant en attente', value: avenantPending.length, color: 'bg-amber-500', icon: '📄' },
+    { id: 'avenant', label: lang === 'en' ? 'Supplement pending' : 'Supplément en attente', value: avenantPending.length, color: 'bg-amber-500', icon: '📄' },
     { id: 'waiting_bc', label: lang === 'en' ? 'Awaiting PO' : 'Attente BC', value: waitingBC.length, color: 'bg-orange-500', icon: '📝' },
     { id: 'waiting_device', label: lang === 'en' ? 'Awaiting Device' : 'Attente Appareil', value: waitingDevice.length, color: 'bg-cyan-500', icon: '📦' },
   ];
@@ -4247,6 +4416,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                 { id: 'bc_approved', label: t('stQuoteApproved') },
                 { id: 'waiting_device', label: lang === 'en' ? 'Pending' : 'Attente' },
                 { id: 'received', label: t('stReceived') },
+                { id: 'queue', label: lang === 'en' ? 'Queue' : 'File' },
                 { id: 'inspection', label: lang === 'en' ? 'Inspection' : 'Inspection' },
                 { id: 'customer_approval', label: lang === 'en' ? 'Client Appr.' : 'Appr. Client' },
                 { id: 'repair', label: lang === 'en' ? 'Repair' : 'Réparation' },
@@ -4265,35 +4435,35 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                 }
                 
                 if (isRepair) {
-                  // Repair: 11 steps (0-10)
+                  // Repair: 12 steps (0-11) - includes File d'attente
                   const map = {
                     'submitted': 0, 'pending': 0, 'waiting_approval': 0,
                     'approved': 1, 'rma_created': 1, 'quote_sent': 1,
                     'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
                     'waiting_device': 3, 'bc_approved': 3,
-                    'received': 4, 'in_queue': 4,
-                    'inspection': 5, 'inspection_complete': 5,
-                    'customer_approval': 6, 'quote_approved': 6, 'waiting_parts': 6,
-                    'repair': 7, 'repair_in_progress': 7, 'in_progress': 7,
-                    'final_qc': 8, 'qc': 8, 'quality_check': 8,
-                    'ready_to_ship': 9, 'ready': 9,
-                    'shipped': 10, 'delivered': 10, 'completed': 10
+                    'received': 4,
+                    'in_queue': 5, 'queue': 5, 'queued': 5,
+                    'inspection': 6, 'inspection_complete': 6,
+                    'customer_approval': 7, 'quote_approved': 7, 'waiting_parts': 7,
+                    'repair': 8, 'repair_in_progress': 8, 'in_progress': 8,
+                    'final_qc': 9, 'qc': 9, 'quality_check': 9,
+                    'ready_to_ship': 10, 'ready': 10,
+                    'shipped': 11, 'delivered': 11, 'completed': 11
                   };
                   return map[status] ?? 1;
                 } else {
-                  // Calibration: 11 steps (0-10)
+                  // Calibration: 10 steps (0-9)
                   const map = {
                     'submitted': 0, 'pending': 0, 'waiting_approval': 0,
                     'approved': 1, 'rma_created': 1, 'quote_sent': 1,
                     'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
                     'waiting_device': 3, 'bc_approved': 3,
-                    'received': 4, 'in_queue': 4,
-                    'queue': 5, 'queued': 5,
+                    'received': 4,
+                    'in_queue': 5, 'queue': 5, 'queued': 5,
                     'calibration': 6, 'calibration_in_progress': 6, 'in_progress': 6,
                     'final_qc': 7, 'qc': 7, 'quality_check': 7,
                     'ready_to_ship': 8, 'ready': 8,
-                    'shipping': 9,
-                    'shipped': 10, 'delivered': 10, 'completed': 10
+                    'shipped': 9, 'delivered': 9, 'completed': 9
                   };
                   return map[status] ?? 1;
                 }
@@ -4319,17 +4489,17 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               const currentIndex = getStepIndex(effectiveStatus);
               
               return (
-                <div className="flex">
+                <div className="flex w-full">
                   {steps.map((step, index) => {
                     const isCompleted = index < currentIndex;
                     const isCurrent = index === currentIndex;
                     const isLast = index === steps.length - 1;
                     
                     return (
-                      <div key={step.id} style={{ width: '58px', minWidth: '58px', maxWidth: '58px', flexShrink: 0 }}>
+                      <div key={step.id} className="flex-1" style={{ minWidth: '50px' }}>
                         <div 
                           className={`
-                            flex items-center justify-center h-8 px-1 text-[7px] font-medium text-center leading-tight
+                            flex items-center justify-center h-9 px-2 text-[10px] font-medium text-center leading-tight
                             ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
                             ${index === 0 ? 'rounded-l-sm' : ''}
                             ${isLast ? 'rounded-r-sm' : ''}
@@ -4446,13 +4616,14 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
       )}
       
       {/* BC Review Modal */}
-      {reviewingBC && <BCReviewModal rma={reviewingBC} onClose={() => setReviewingBC(null)} notify={notify} reload={reload} />}
+      {reviewingBC && <BCReviewModal rma={reviewingBC} onClose={() => setReviewingBC(null)} notify={notify} reload={reload} lang={lang} />}
     </div>
   );
 }
 
 // BC Review Modal - Full screen document review
-function BCReviewModal({ rma, onClose, notify, reload }) {
+function BCReviewModal({ rma, onClose, notify, reload, lang = 'fr' }) {
+  const t = k => k;
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -4611,11 +4782,11 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
         <div className={`px-6 py-3 ${isAvenantBC ? 'bg-gradient-to-r from-amber-500 to-amber-600' : 'bg-gradient-to-r from-red-500 to-red-600'} text-white flex justify-between items-center flex-shrink-0`}>
           <div>
             <h2 className="text-xl font-bold">
-              {isAvenantBC ? '📄 Vérification BC Avenant' : (lang === 'en' ? 'Purchase Order Verification' : 'Vérification du Bon de Commande')}
+              {isAvenantBC ? '📄 Vérification BC Supplément' : (lang === 'en' ? 'Purchase Order Verification' : 'Vérification du Bon de Commande')}
             </h2>
             <p className={isAvenantBC ? 'text-amber-100' : 'text-red-100'}>
               {rma.request_number} • {rma.companies?.name}
-              {isAvenantBC && ` • ${lang === 'en' ? 'Supplement' : 'Avenant'}: €${rma.avenant_total?.toFixed(2) || '0.00'}`}
+              {isAvenantBC && ` • ${lang === 'en' ? 'Supplement' : 'Supplément'}: €${rma.avenant_total?.toFixed(2) || '0.00'}`}
             </p>
           </div>
           <button onClick={onClose} className="text-white/70 hover:text-white text-3xl">&times;</button>
@@ -4626,19 +4797,19 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
           {/* Left: Document Preview - Takes most of the space */}
           <div className="flex-1 flex flex-col bg-gray-800 p-4">
             <div className="flex justify-between items-center mb-3">
-              <h3 className="font-bold text-white text-lg">{lang === 'en' ? `📄 PO Document ${isAvenantBC ? '(Supplement)' : ''}` : `📄 Document BC ${isAvenantBC ? '(Avenant)' : ''}`}</h3>
+              <h3 className="font-bold text-white text-lg">{lang === 'en' ? `📄 PO Document ${isAvenantBC ? '(Supplement)' : ''}` : `📄 Document BC ${isAvenantBC ? '(Supplément)' : ''}`}</h3>
               <div className="flex gap-2">
                 {isAvenantBC ? (
                   <>
                     {/* Avenant documents */}
                     {avenantSigneUrl && (
                       <a href={avenantSigneUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium">
-                        {lang === 'en' ? '✅ Signed Supplement ↗' : '✅ Avenant Signé ↗'}
+                        {lang === 'en' ? '✅ Signed Supplement ↗' : '✅ Supplément Signé ↗'}
                       </a>
                     )}
                     {avenantQuoteUrl && (
                       <a href={avenantQuoteUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium">
-                        📄 Avenant ↗
+                        📄 Supplément ↗
                       </a>
                     )}
                     {(rma.bc_file_url || avenantBcUrl) && (
@@ -4707,7 +4878,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
               } else {
                 return (
                   <div className="flex-1 border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center text-gray-400 text-lg">
-                    {isAvenantBC ? (lang === 'en' ? 'Loading supplement documents...' : 'Chargement des documents avenant...') : (lang === 'en' ? 'No PO file uploaded' : 'Aucun fichier BC uploadé')}
+                    {isAvenantBC ? (lang === 'en' ? 'Loading supplement documents...' : 'Chargement des documents supplément...') : (lang === 'en' ? 'No PO file uploaded' : 'Aucun fichier BC uploadé')}
                   </div>
                 );
               }
@@ -4767,7 +4938,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
             {/* Quote/Avenant Info */}
             {isAvenantBC ? (
               <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
-                <h4 className="font-medium text-orange-800 mb-1">{lang === 'en' ? '📄 Supplement' : '📄 Avenant'}</h4>
+                <h4 className="font-medium text-orange-800 mb-1">{lang === 'en' ? '📄 Supplement' : '📄 Supplément'}</h4>
                 {rma.avenant_total && <p className="text-xl font-bold text-orange-700">{rma.avenant_total.toFixed(2)} €</p>}
                 {avenantQuoteUrl && (
                   <a href={avenantQuoteUrl} target="_blank" rel="noopener noreferrer" className="text-orange-600 hover:underline text-sm">
@@ -4867,7 +5038,7 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
                 disabled={approving}
                 className={`w-full px-6 py-3 ${isAvenantBC ? 'bg-amber-500 hover:bg-amber-600' : 'bg-green-500 hover:bg-green-600'} text-white rounded-lg font-bold disabled:opacity-50`}
               >
-                {approving ? (lang === 'en' ? 'Approving...' : 'Approbation...') : isAvenantBC ? (lang === 'en' ? '✅ Approve Supplement' : '✅ Approuver Avenant') : (lang === 'en' ? '✅ Approve PO' : '✅ Approuver BC')}
+                {approving ? (lang === 'en' ? 'Approving...' : 'Approbation...') : isAvenantBC ? (lang === 'en' ? '✅ Approve Supplement' : '✅ Approuver Supplément') : (lang === 'en' ? '✅ Approve PO' : '✅ Approuver BC')}
               </button>
               <button
                 onClick={rejectBC}
@@ -4890,7 +5061,8 @@ function BCReviewModal({ rma, onClose, notify, reload }) {
 // ============================================
 // CONTRACT BC REVIEW MODAL - Copied from RMA BCReviewModal
 // ============================================
-function ContractBCReviewModal({ contract, onClose, notify, reload }) {
+function ContractBCReviewModal({ contract, onClose, notify, reload, lang = 'fr' }) {
+  const t = k => k;
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -5110,19 +5282,24 @@ function ContractBCReviewModal({ contract, onClose, notify, reload }) {
 // ============================================
 // RMA ACTIONS COMPONENT - RMA-level action buttons
 // ============================================
-function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenant, onStartService, saving, setSaving }) {
+function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenant, onStartService, saving, setSaving, lang = 'fr' }) {
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [selectedToReceive, setSelectedToReceive] = useState(new Set());
+  const [showQueueModal, setShowQueueModal] = useState(false);
+  const [selectedToQueue, setSelectedToQueue] = useState(new Set());
   
   // Devices that haven't been received yet
-  const unreceiveDevices = devices.filter(d => !d.received_at && d.status !== 'received' && !['calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped'].includes(d.status));
-  const receivedDevices = devices.filter(d => d.received_at || d.status === 'received' || ['calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped'].includes(d.status));
+  const unreceiveDevices = devices.filter(d => !d.received_at && d.status !== 'received' && !['in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped'].includes(d.status));
+  const receivedDevices = devices.filter(d => d.received_at || d.status === 'received' || ['in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped'].includes(d.status));
+  const receivedNotQueued = devices.filter(d => d.status === 'received');
+  const queuedDevices = devices.filter(d => ['in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped'].includes(d.status));
   
   // Determine what actions are available based on RMA/device state
   const isWaitingForDevice = ['approved', 'waiting_bc', 'waiting_device', 'waiting_po', 'bc_review', 'bc_approved'].includes(rma.status) && 
     unreceiveDevices.length > 0;
   
   const hasReceivedDevices = receivedDevices.length > 0;
+  const hasQueuedDevices = queuedDevices.length > 0;
   
   const allQCComplete = devices.length > 0 && devices.every(d => d.qc_complete);
   const allReadyToShip = devices.length > 0 && devices.every(d => d.status === 'ready_to_ship' || d.qc_complete);
@@ -5168,8 +5345,47 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
       }
       
       notify(lang === 'en' ? `✅ ${selectedToReceive.size} device(s) marked as received!` : `✅ ${selectedToReceive.size} appareil(s) marqué(s) comme reçu(s)!`);
+      
+      // Prompt to print labels for received devices
+      const receivedDevicesList = devices.filter(d => selectedToReceive.has(d.id));
+      if (receivedDevicesList.length > 0) {
+        const shouldPrint = confirm(
+          lang === 'en' 
+            ? `Print labels for ${receivedDevicesList.length} received device(s)?` 
+            : `Imprimer les étiquettes pour ${receivedDevicesList.length} appareil(s) reçu(s) ?`
+        );
+        if (shouldPrint) {
+          printDeviceLabels(receivedDevicesList, rma, lang);
+        }
+      }
+      
       setShowReceiveModal(false);
       setSelectedToReceive(new Set());
+      reload();
+    } catch (err) {
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+    }
+    setSaving(false);
+  };
+  
+  // Mark selected devices as queued
+  const markSelectedAsQueued = async () => {
+    if (selectedToQueue.size === 0) {
+      notify(lang === 'en' ? 'Select at least one device' : 'Sélectionnez au moins un appareil', 'error');
+      return;
+    }
+    
+    setSaving(true);
+    try {
+      for (const deviceId of selectedToQueue) {
+        await supabase.from('request_devices').update({ 
+          status: 'in_queue'
+        }).eq('id', deviceId);
+      }
+      
+      notify(lang === 'en' ? `✅ ${selectedToQueue.size} device(s) moved to queue!` : `✅ ${selectedToQueue.size} appareil(s) mis en file d'attente !`);
+      setShowQueueModal(false);
+      setSelectedToQueue(new Set());
       reload();
     } catch (err) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
@@ -5189,10 +5405,10 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
       notify(lang === 'en' ? '✅ Service started!' : '✅ Service démarré!');
       reload();
       
-      // Open service modal for first received device
-      const firstReceived = devices.find(d => d.status === 'received' || d.received_at);
-      if (firstReceived && onStartService) {
-        onStartService(firstReceived);
+      // Open service modal for first queued device
+      const firstQueued = devices.find(d => d.status === 'in_queue');
+      if (firstQueued && onStartService) {
+        onStartService(firstQueued);
       }
     } catch (err) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
@@ -5237,8 +5453,19 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
             </button>
           )}
           
-          {/* Received - show start service button */}
-          {hasReceivedDevices && !devices.some(d => d.service_findings || d.report_complete) && (
+          {/* Received but not queued - show queue button */}
+          {receivedNotQueued.length > 0 && (
+            <button
+              onClick={() => setShowQueueModal(true)}
+              disabled={saving}
+              className="px-4 py-2 bg-indigo-400 hover:bg-indigo-500 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
+            >
+              {saving ? '⏳' : '📋'} {lang === 'en' ? `Queue (${receivedNotQueued.length})` : `File d'attente (${receivedNotQueued.length})`}
+            </button>
+          )}
+          
+          {/* Received & queued - show start service button */}
+          {hasQueuedDevices && !devices.some(d => d.service_findings || d.report_complete) && (
             <button
               onClick={startService}
               disabled={saving}
@@ -5254,14 +5481,14 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
               onClick={onOpenAvenant}
               className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium flex items-center gap-2"
             >
-              {lang === 'en' ? `📄 Create Supplement (€${totalAdditionalWork.toFixed(2)})` : `📄 Créer Avenant (€${totalAdditionalWork.toFixed(2)})`}
+              {lang === 'en' ? `📄 Create Supplement (€${totalAdditionalWork.toFixed(2)})` : `📄 Créer Supplément (€${totalAdditionalWork.toFixed(2)})`}
             </button>
           )}
           
           {/* Avenant sent indicator */}
           {rma.avenant_sent_at && (
             <span className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium">
-              {lang === 'en' ? `📄 Supplement sent ${rma.avenant_approved_at ? '✓ Approved' : '⏳ Pending'}` : `📄 Avenant envoyé ${rma.avenant_approved_at ? '✓ Approuvé' : '⏳ En attente'}`}
+              {lang === 'en' ? `📄 Supplement sent ${rma.avenant_approved_at ? '✓ Approved' : '⏳ Pending'}` : `📄 Supplément envoyé ${rma.avenant_approved_at ? '✓ Approuvé' : '⏳ En attente'}`}
             </span>
           )}
           
@@ -5429,6 +5656,101 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
                 className="px-6 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-bold disabled:opacity-50 flex items-center gap-2"
               >
                 {saving ? (lang === 'en' ? '⏳ Saving...' : '⏳ Enregistrement...') : (lang === 'en' ? `📦 Receive (${selectedToReceive.size})` : `📦 Réceptionner (${selectedToReceive.size})`)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Queue Modal */}
+      {showQueueModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[80vh] overflow-hidden">
+            <div className="p-4 border-b bg-indigo-50">
+              <h3 className="text-lg font-bold text-gray-800">{lang === 'en' ? "📋 Move to Queue" : "📋 Mettre en file d'attente"}</h3>
+              <p className="text-sm text-gray-600 mt-1">{lang === 'en' ? 'Select the devices to move to the service queue' : "Sélectionnez les appareils à mettre en file d'attente"}</p>
+            </div>
+            
+            <div className="p-4 max-h-[50vh] overflow-y-auto">
+              <div className="space-y-2">
+                {/* Select all button */}
+                <button
+                  onClick={() => {
+                    if (selectedToQueue.size === receivedNotQueued.length) {
+                      setSelectedToQueue(new Set());
+                    } else {
+                      setSelectedToQueue(new Set(receivedNotQueued.map(d => d.id)));
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg text-left font-medium"
+                >
+                  {selectedToQueue.size === receivedNotQueued.length ? (lang === 'en' ? '☑️ Deselect all' : '☑️ Tout désélectionner') : (lang === 'en' ? '☐ Select all' : '☐ Tout sélectionner')}
+                </button>
+                
+                {receivedNotQueued.map(device => (
+                  <label 
+                    key={device.id}
+                    className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                      selectedToQueue.has(device.id) ? 'bg-indigo-50 border-indigo-300' : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedToQueue.has(device.id)}
+                      onChange={(e) => {
+                        const newSet = new Set(selectedToQueue);
+                        if (e.target.checked) {
+                          newSet.add(device.id);
+                        } else {
+                          newSet.delete(device.id);
+                        }
+                        setSelectedToQueue(newSet);
+                      }}
+                      className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-800">{device.model_name || (lang === 'en' ? 'Device' : 'Appareil')}</p>
+                      <p className="text-sm text-gray-500 font-mono">SN: {device.serial_number || '—'}</p>
+                    </div>
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      {device.service_type === 'repair' ? (lang === 'en' ? '🔧 Rep.' : '🔧 Rép.') : (lang === 'en' ? '🔬 Cal.' : '🔬 Étal.')}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              
+              {/* Already queued devices */}
+              {queuedDevices.length > 0 && (
+                <div className="mt-4 pt-4 border-t">
+                  <p className="text-sm text-gray-500 mb-2">{lang === 'en' ? 'Already in queue:' : 'Déjà en file :'}</p>
+                  <div className="space-y-1">
+                    {queuedDevices.map(device => (
+                      <div key={device.id} className="flex items-center gap-2 text-sm text-gray-400 bg-gray-50 p-2 rounded">
+                        <span>✓</span>
+                        <span>{device.model_name || (lang === 'en' ? 'Device' : 'Appareil')}</span>
+                        <span className="font-mono text-xs">SN: {device.serial_number}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t bg-gray-50 flex items-center justify-between">
+              <button
+                onClick={() => { setShowQueueModal(false); setSelectedToQueue(new Set()); }}
+                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium"
+              >
+                {lang === 'en' ? 'Cancel' : 'Annuler'}
+              </button>
+              <button
+                onClick={markSelectedAsQueued}
+                disabled={saving || selectedToQueue.size === 0}
+                className="px-6 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-bold disabled:opacity-50 flex items-center gap-2"
+              >
+                {saving ? '⏳...' : (lang === 'en' ? `📋 Queue (${selectedToQueue.size})` : `📋 File d'attente (${selectedToQueue.size})`)}
               </button>
             </div>
           </div>
@@ -5671,6 +5993,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     { id: 'bc_approved', label: t('stQuoteApproved') },
     { id: 'waiting_device', label: lang === 'en' ? 'Pending' : 'Attente' },
     { id: 'received', label: t('stReceived') },
+    { id: 'queue', label: lang === 'en' ? 'Queue' : 'File' },
     { id: 'inspection', label: lang === 'en' ? 'Inspection' : 'Inspection' },
     { id: 'customer_approval', label: lang === 'en' ? 'Client Appr.' : 'Appr. Client' },
     { id: 'repair', label: lang === 'en' ? 'Repair' : 'Réparation' },
@@ -5689,13 +6012,14 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         'approved': 1, 'rma_created': 1, 'quote_sent': 1,
         'waiting_bc': 2, 'bc_submitted': 2, 'bc_review': 2,
         'bc_approved': 3, 'waiting_device': 3, 'waiting_po': 3, 'waiting_reception': 3,
-        'received': 4, 'in_queue': 4,
-        'inspection': 5, 'inspection_complete': 5,
-        'customer_approval': 6, 'waiting_customer': 6,
-        'repair_in_progress': 7, 'repair': 7,
-        'final_qc': 8, 'qc_complete': 8, 'qc_rejected': 7,
-        'ready_to_ship': 9,
-        'shipped': 10, 'delivered': 10, 'completed': 10
+        'received': 4,
+        'in_queue': 5, 'queue': 5, 'queued': 5,
+        'inspection': 6, 'inspection_complete': 6,
+        'customer_approval': 7, 'waiting_customer': 7,
+        'repair_in_progress': 8, 'repair': 8,
+        'final_qc': 9, 'qc_complete': 9, 'qc_rejected': 8,
+        'ready_to_ship': 10,
+        'shipped': 11, 'delivered': 11, 'completed': 11
       };
       return repairMap[status] ?? 0;
     } else {
@@ -5728,17 +6052,17 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     const currentIndex = getStepIndex(effectiveStatus, isRepair);
     
     return (
-      <div className="flex">
+      <div className="flex w-full">
         {steps.map((step, index) => {
           const isCompleted = index < currentIndex;
           const isCurrent = index === currentIndex;
           const isLast = index === steps.length - 1;
           
           return (
-            <div key={step.id} style={{ width: '58px', minWidth: '58px', maxWidth: '58px', flexShrink: 0 }}>
+            <div key={step.id} className="flex-1" style={{ minWidth: '50px' }}>
               <div 
                 className={`
-                  flex items-center justify-center h-8 px-1 text-[7px] font-medium text-center leading-tight
+                  flex items-center justify-center h-9 px-2 text-[10px] font-medium text-center leading-tight
                   ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
                   ${index === 0 ? 'rounded-l-md' : ''}
                   ${isLast ? 'rounded-r-md' : ''}
@@ -5831,7 +6155,9 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     const needsQC = device.report_complete && !device.qc_complete;
     // Device must be received (have received_at or be in service status) before starting service
     const isDeviceReceived = device.received_at || ['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship'].includes(device.status);
-    const canStartService = isDeviceReceived && !device.report_complete && !isDeviceShipped;
+    const isDeviceInQueue = ['in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship'].includes(device.status);
+    const isReceivedNotQueued = isDeviceReceived && device.status === 'received';
+    const canStartService = isDeviceInQueue && !device.report_complete && !isDeviceShipped;
     
     return (
       <div className="space-y-6">
@@ -5842,6 +6168,12 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-gray-700 font-medium"
           >
             ← Retour au RMA
+          </button>
+          <button 
+            onClick={() => printDeviceLabels([device], rma, lang, devices.length)}
+            className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-medium text-sm flex items-center gap-1"
+          >
+            🏷️ {lang === 'en' ? 'Print Label' : 'Étiquette'}
           </button>
         </div>
         
@@ -5882,7 +6214,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     const { data: addrs } = await supabase.from('shipping_addresses').select('*').eq('company_id', rma.company_id).order('label');
                     if (!addrs || addrs.length === 0) { notify(lang === 'en' ? 'No address registered for this client' : 'Aucune adresse enregistrée pour ce client', 'error'); return; }
                     const labels = addrs.map((a, i) => `${i + 1}. ${a.label || a.company_name || '—'} — ${a.address_line1}, ${a.postal_code} ${a.city}`).join('\n');
-                    const choice = prompt(lang === 'en' ? `Choose return address (number):\n\n${labels}\n\n0 = Use default RMA address` : `Choisir adresse de retour (numero):\n\n${labels}\n\n0 = Utiliser l'adresse RMA par defaut`);
+                    const choice = prompt(lang === 'en' ? `Choose return address (number):\n\n${labels}\n\n0 = Use default RMA address` : `Choisir l'adresse de retour (numéro):\n\n${labels}\n\n0 = Utiliser l'adresse RMA par défaut`);
                     if (choice === null) return;
                     const idx = parseInt(choice);
                     if (idx === 0) {
@@ -5930,6 +6262,29 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 <span className="px-3 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium flex items-center gap-2">
                   {lang === 'en' ? '📦 Device not received - Mark as received to start service' : '📦 Appareil non réceptionné - Marquer comme reçu pour démarrer le service'}
                 </span>
+              )}
+              
+              {/* Queue button - received but not yet in queue */}
+              {isReceivedNotQueued && !device.report_complete && (
+                <button
+                  onClick={async () => {
+                    setSaving(true);
+                    try {
+                      await supabase.from('request_devices').update({ 
+                        status: 'in_queue'
+                      }).eq('id', device.id);
+                      notify(lang === 'en' ? "✅ Device moved to queue!" : "✅ Appareil mis en file d'attente !");
+                      reload();
+                    } catch (err) {
+                      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+                    }
+                    setSaving(false);
+                  }}
+                  disabled={saving}
+                  className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium flex items-center gap-2"
+                >
+                  📋 {saving ? '⏳...' : (lang === 'en' ? "Move to Queue" : "Mettre en file d'attente")}
+                </button>
               )}
               
               {/* Service button - Edit or Start */}
@@ -6258,7 +6613,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">🏷️</div>
                       <div>
                         <p className="font-medium text-gray-800">{lang === 'en' ? 'UPS Label' : 'Étiquette UPS'}</p>
-                        <p className="text-sm text-amber-600">{device.tracking_number || (lang === 'en' ? 'Shipping label' : "Label d'expedition")}</p>
+                        <p className="text-sm text-amber-600">{device.tracking_number || (lang === 'en' ? 'Shipping label' : "Label d'expédition")}</p>
                       </div>
                     </a>
                   )}
@@ -6623,7 +6978,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
 
       {/* RMA-Level Actions */}
       {!isRMAClosed && (
-        <RMAActions 
+        <RMAActions lang={lang} 
           rma={rma} 
           devices={devices} 
           notify={notify} 
@@ -6655,6 +7010,15 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             <div>
               <h2 className="font-bold text-gray-800">{t('devices')}</h2>
               <p className="text-sm text-gray-500">{devices.length} {lang === 'en' ? 'device(s) • Click to view details' : 'appareil(s) • Cliquez pour voir les détails'}</p>
+            </div>
+            <div className="ml-auto flex gap-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); printDeviceLabels(devices, rma, lang); }}
+                className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium flex items-center gap-1"
+                title={lang === 'en' ? 'Print all labels' : 'Imprimer toutes les étiquettes'}
+              >
+                🏷️ {lang === 'en' ? 'Print Labels' : 'Étiquettes'} ({devices.length})
+              </button>
             </div>
           </div>
         </div>
@@ -6689,6 +7053,11 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                        device.service_type === 'repair' ? (lang === 'en' ? '🔧 Repair' : '🔧 Réparation') : 
                        (lang === 'en' ? '🔬🔧 Cal. + Rep.' : '🔬🔧 Étal. + Rép.')}
                     </span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); printDeviceLabels([device], rma, lang, devices.length); }}
+                      className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                      title={lang === 'en' ? 'Print label' : 'Imprimer étiquette'}
+                    >🏷️</button>
                     <span className="text-gray-400 text-xl">→</span>
                   </div>
                 </div>
@@ -6748,6 +7117,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           reload={reload}
           alreadySent={!!rma.avenant_sent_at}
           businessSettings={businessSettings}
+          lang={lang}
         />
       )}
     </div>
@@ -6755,7 +7125,8 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
 }
 
 // Device Service Modal - For filling inspection/findings
-function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, businessSettings }) {
+function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   const [findings, setFindings] = useState(device.service_findings || '');
   const [additionalWorkNeeded, setAdditionalWorkNeeded] = useState(device.additional_work_needed || false);
   const [workItems, setWorkItems] = useState(device.additional_work_items || []);
@@ -6768,6 +7139,92 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
   
   // Lock work items if they were previously saved (have items in DB)
   const [workItemsLocked, setWorkItemsLocked] = useState((device.additional_work_items || []).length > 0);
+  
+  // Pre-approved quote items - pull from quote_data and allow toggling
+  const getQuotedItems = () => {
+    const quotedDevices = rma.quote_data?.devices || [];
+    const match = quotedDevices.find(qd => 
+      (qd.serial || '').trim().toLowerCase() === (device.serial_number || '').trim().toLowerCase()
+    );
+    if (!match) return [];
+    
+    const items = [];
+    if (match.needsCalibration && match.calibrationPrice > 0) {
+      items.push({
+        id: 'calibration',
+        type: 'calibration',
+        description: `Étalonnage ${match.model || device.model_name || ''} (SN: ${match.serial || device.serial_number})`,
+        part_number: match.calPartNumber || '',
+        quantity: 1,
+        unit_price: parseFloat(match.calibrationPrice) || 0,
+        included: true
+      });
+    }
+    if (match.needsNettoyage && match.nettoyagePrice > 0) {
+      items.push({
+        id: 'nettoyage',
+        type: 'nettoyage',
+        description: `Nettoyage cellule${match.nettoyageCellType ? ' - ' + match.nettoyageCellType : ''}`,
+        part_number: match.nettoyagePartNumber || '',
+        quantity: 1,
+        unit_price: parseFloat(match.nettoyagePrice) || 0,
+        included: true
+      });
+    }
+    if (match.needsRepair && match.repairPrice > 0) {
+      items.push({
+        id: 'repair',
+        type: 'repair',
+        description: `Réparation ${match.model || device.model_name || ''} (SN: ${match.serial || device.serial_number})`,
+        part_number: match.repairPartNumber || '',
+        quantity: 1,
+        unit_price: parseFloat(match.repairPrice) || 0,
+        included: true
+      });
+    }
+    if (match.additionalParts && match.additionalParts.length > 0) {
+      match.additionalParts.forEach((part, i) => {
+        items.push({
+          id: `part_${i}`,
+          type: 'part',
+          description: part.description || part.name || '',
+          part_number: part.partNumber || part.part_number || '',
+          quantity: parseInt(part.quantity) || 1,
+          unit_price: parseFloat(part.price || part.unit_price) || 0,
+          included: true
+        });
+      });
+    }
+    // Contract-covered: mark as included but zero price
+    if (match.isContractCovered) {
+      items.forEach(item => { item.contract_covered = true; });
+    }
+    return items;
+  };
+  
+  const [approvedItems, setApprovedItems] = useState(() => {
+    // Restore from device if previously saved, otherwise build from quote
+    const saved = device.approved_quote_items;
+    if (saved && Array.isArray(saved) && saved.length > 0) return saved;
+    return getQuotedItems();
+  });
+  
+  const toggleApprovedItem = (itemId) => {
+    setApprovedItems(prev => prev.map(item => 
+      item.id === itemId ? { ...item, included: !item.included } : item
+    ));
+  };
+  
+  const [editingApproved, setEditingApproved] = useState(false);
+  
+  const updateApprovedItem = (itemId, field, value) => {
+    setApprovedItems(prev => prev.map(item => 
+      item.id === itemId ? { ...item, [field]: value } : item
+    ));
+  };
+  
+  const approvedTotal = approvedItems.filter(i => i.included && !i.contract_covered).reduce((sum, i) => sum + (i.unit_price * i.quantity), 0);
+  const removedItems = approvedItems.filter(i => !i.included);
   
   // Report options - initialize from device data, empty string means not selected yet, 'none' means don't show
   const [calType, setCalType] = useState(device.cal_type || '');
@@ -6909,7 +7366,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     setPartsLoading(prev => ({ ...prev, [itemId]: false }));
   };
   
-  const totalAdditional = workItems.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0);
+  const totalAdditional = workItems.filter(i => !i.warranty).reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0);
   const canPreviewReport = findings.trim() && workCompleted.trim() && technicianName && calType && receptionResult && (!isCalibration || certificateUrl);
   
   const getValidationMessage = () => {
@@ -6939,6 +7396,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
       const updateData = {
         service_findings: findings, additional_work_needed: additionalWorkNeeded,
         additional_work_items: additionalWorkNeeded ? workItems : [],
+        approved_quote_items: approvedItems,
         work_completed: workCompleted, work_checklist: checklistObj,
         technician_name: technicianName,
         cal_type: calType,
@@ -6947,8 +7405,8 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
       
       // If device is still in queue/received, transition to in-progress status
       if (['received', 'in_queue', 'inspection'].includes(device.status)) {
-        const serviceType = device.service_type || 'calibration';
-        updateData.status = (serviceType === 'repair') ? 'repair_in_progress' : 'calibration_in_progress';
+        const svcType = device.service_type || 'calibration';
+        updateData.status = (svcType === 'repair') ? 'repair_in_progress' : 'calibration_in_progress';
         updateData.service_started_at = new Date().toISOString();
       }
       
@@ -6985,6 +7443,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
       const updateData = {
         service_findings: findings, additional_work_needed: additionalWorkNeeded,
         additional_work_items: additionalWorkNeeded ? workItems : [],
+        approved_quote_items: approvedItems,
         work_completed: workCompleted, work_checklist: checklistObj,
         technician_name: technicianName,
         cal_type: calType,
@@ -7018,13 +7477,16 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
   };
 
   if (showReportPreview) {
-    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} technicianName={technicianName} calType={calType} receptionResult={receptionResult} />;
+    const allWarranty = workItems.length > 0 && workItems.every(i => i.warranty);
+    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved || allWarranty} saving={saving} technicianName={technicianName} calType={calType} receptionResult={receptionResult} lang={lang} />;
   }
 
   const renderActionButtons = () => {
+    const allWarranty = additionalWorkNeeded && workItems.length > 0 && workItems.every(i => i.warranty);
     if (reportComplete) return <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">{lang === 'en' ? '✓ Report completed' : '✓ Rapport terminé'}</span>;
     if (!additionalWorkNeeded) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button></>);
-    if (additionalWorkNeeded && !avenantSent) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">{lang === 'en' ? '⚠️ Create supplement from RMA page' : '⚠️ Créer avenant depuis page RMA'}</span></>);
+    if (additionalWorkNeeded && allWarranty) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button></>);
+    if (additionalWorkNeeded && !avenantSent) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">{lang === 'en' ? '⚠️ Create supplement from RMA page' : '⚠️ Créer supplément depuis page RMA'}</span></>);
     if (additionalWorkNeeded && avenantSent && !avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><span className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg">{lang === 'en' ? '⏳ Awaiting approval' : '⏳ Attente approbation'}</span></>);
     if (additionalWorkNeeded && avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button></>);
     return null;
@@ -7040,13 +7502,23 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
         <div className="flex items-center gap-3">{renderActionButtons()}</div>
       </div>
 
-      {additionalWorkNeeded && (
-        <div className={`rounded-lg p-3 ${avenantApproved ? 'bg-green-100 border border-green-300' : avenantSent ? 'bg-purple-100 border border-purple-300' : 'bg-amber-100 border border-amber-300'}`}>
-          <span className={`font-medium ${avenantApproved ? 'text-green-800' : avenantSent ? 'text-purple-800' : 'text-amber-800'}`}>
-            {avenantApproved ? (lang === 'en' ? '✓ Supplement approved by client' : '✓ Avenant approuvé par le client') : avenantSent ? (lang === 'en' ? '📤 Supplement sent - Awaiting approval' : '📤 Avenant envoyé - En attente approbation') : (lang === 'en' ? '⚠️ Additional work detected - Supplement required' : '⚠️ Travaux supplémentaires détectés - Avenant requis')}
-          </span>
-        </div>
-      )}
+      {additionalWorkNeeded && (() => {
+        const allW = workItems.length > 0 && workItems.every(i => i.warranty);
+        if (allW) return (
+          <div className="rounded-lg p-3 bg-blue-100 border border-blue-300">
+            <span className="font-medium text-blue-800">
+              🛡️ {lang === 'en' ? 'All additional work covered under warranty — no supplement needed' : 'Tous les travaux supplémentaires sous garantie — pas de supplément requis'}
+            </span>
+          </div>
+        );
+        return (
+          <div className={`rounded-lg p-3 ${avenantApproved ? 'bg-green-100 border border-green-300' : avenantSent ? 'bg-purple-100 border border-purple-300' : 'bg-amber-100 border border-amber-300'}`}>
+            <span className={`font-medium ${avenantApproved ? 'text-green-800' : avenantSent ? 'text-purple-800' : 'text-amber-800'}`}>
+              {avenantApproved ? (lang === 'en' ? '✓ Supplement approved by client' : '✓ Supplément approuvé par le client') : avenantSent ? (lang === 'en' ? '📤 Supplement sent - Awaiting approval' : '📤 Supplément envoyé - En attente approbation') : (lang === 'en' ? '⚠️ Additional work detected - Supplement required' : '⚠️ Travaux supplémentaires détectés - Supplément requis')}
+            </span>
+          </div>
+        );
+      })()}
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="space-y-4">
@@ -7144,16 +7616,127 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-bold text-gray-700">{lang === 'en' ? '1. FINDINGS *' : '1. CONSTATATIONS *'}</h3>
-              <TechTranslateButton onInsert={(text) => setFindings(prev => prev ? prev + '\n' + text : text)} />
+              <TechTranslateButton onInsert={(text) => setFindings(prev => prev ? prev + '\n' + text : text)} lang={lang} />
             </div>
             <p className="text-sm text-gray-500 mb-3">{lang === 'en' ? "What you observed (appears on report and supplement)" : "Ce que vous avez observé (apparaît sur rapport et avenant)"}</p>
             <textarea value={findings} onChange={e => setFindings(e.target.value)} placeholder={lang === 'en' ? 'Ex: Calibration performed per specifications...' : 'Ex: Calibration effectuée selon les spécifications...'} className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
           </div>
 
+          {/* Pre-Approved Quoted Services */}
+          {approvedItems.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm border p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="font-bold text-gray-800">{lang === 'en' ? '2. Pre-Approved Services' : '2. Services pré-approuvés'}</h3>
+                  <p className="text-sm text-gray-500">{lang === 'en' ? 'Items from the approved quote — uncheck if not performed' : 'Articles du devis approuvé — décochez si non réalisé'}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-[#00A651]">
+                    {approvedItems.filter(i => i.included).length}/{approvedItems.length} {lang === 'en' ? 'active' : 'actifs'}
+                  </span>
+                  <button
+                    onClick={() => setEditingApproved(!editingApproved)}
+                    className={`px-3 py-1 rounded-lg text-sm font-medium ${editingApproved ? 'bg-blue-500 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
+                  >
+                    {editingApproved ? (lang === 'en' ? '✓ Done' : '✓ Terminé') : (lang === 'en' ? '✏️ Edit' : '✏️ Modifier')}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {approvedItems.map(item => (
+                  <div key={item.id} className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${item.included ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
+                    <input
+                      type="checkbox"
+                      checked={item.included}
+                      onChange={() => toggleApprovedItem(item.id)}
+                      className="w-5 h-5 rounded text-green-600 flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                          item.type === 'calibration' ? 'bg-blue-100 text-blue-700' :
+                          item.type === 'nettoyage' ? 'bg-cyan-100 text-cyan-700' :
+                          item.type === 'repair' ? 'bg-orange-100 text-orange-700' :
+                          'bg-gray-100 text-gray-700'
+                        }`}>
+                          {item.type === 'calibration' ? '🔬 Étal.' : item.type === 'nettoyage' ? '🧹 Nett.' : item.type === 'repair' ? '🔧 Rép.' : '📦 Pièce'}
+                        </span>
+                        {editingApproved ? (
+                          <input
+                            type="text"
+                            value={item.description}
+                            onChange={e => updateApprovedItem(item.id, 'description', e.target.value)}
+                            className="flex-1 px-2 py-1 border rounded text-sm font-medium"
+                          />
+                        ) : (
+                          <span className={`font-medium ${item.included ? 'text-gray-800' : 'text-gray-400 line-through'}`}>{item.description}</span>
+                        )}
+                      </div>
+                      {editingApproved ? (
+                        <input
+                          type="text"
+                          value={item.part_number || ''}
+                          onChange={e => updateApprovedItem(item.id, 'part_number', e.target.value)}
+                          placeholder={lang === 'en' ? 'Part #' : 'N° Pièce'}
+                          className="text-xs text-gray-400 font-mono mt-1 px-2 py-0.5 border rounded w-40"
+                        />
+                      ) : (
+                        item.part_number && <span className="text-xs text-gray-400 font-mono">{item.part_number}</span>
+                      )}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      {item.contract_covered ? (
+                        <span className="text-sm font-medium text-blue-600">{lang === 'en' ? 'Contract' : 'Contrat'}</span>
+                      ) : editingApproved ? (
+                        <div className="flex items-center gap-1">
+                          {item.quantity > 1 && (
+                            <input
+                              type="number"
+                              value={item.quantity}
+                              onChange={e => updateApprovedItem(item.id, 'quantity', parseInt(e.target.value) || 1)}
+                              className="w-14 px-1 py-1 border rounded text-sm text-center"
+                              min="1"
+                            />
+                          )}
+                          <span className="text-gray-400 text-sm">€</span>
+                          <input
+                            type="number"
+                            value={item.unit_price}
+                            onChange={e => updateApprovedItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
+                            className="w-24 px-2 py-1 border rounded text-sm text-right font-bold"
+                            step="0.01"
+                          />
+                        </div>
+                      ) : (
+                        <span className={`text-sm font-bold ${item.included ? 'text-green-700' : 'text-gray-400 line-through'}`}>
+                          {item.quantity > 1 ? `${item.quantity} × ` : ''}€{item.unit_price.toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Totals */}
+              <div className="mt-3 pt-3 border-t flex items-center justify-between">
+                <div className="text-sm text-gray-500">
+                  {removedItems.length > 0 && (
+                    <span className="text-amber-600">
+                      ⚠️ {removedItems.length} {lang === 'en' ? 'item(s) removed from quote' : 'article(s) retiré(s) du devis'}
+                    </span>
+                  )}
+                </div>
+                <div className="text-right">
+                  <span className="text-sm text-gray-500 mr-2">{lang === 'en' ? 'Quoted total:' : 'Total devis :'}</span>
+                  <span className="text-lg font-bold text-[#00A651]">€{approvedTotal.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="font-bold text-gray-800">{lang === 'en' ? '2. Additional work needed?' : '2. Travaux supplémentaires ?'}</h3>
+                <h3 className="font-bold text-gray-800">{lang === 'en' ? (approvedItems.length > 0 ? '3. Additional work needed?' : '2. Additional work needed?') : (approvedItems.length > 0 ? '3. Travaux supplémentaires ?' : '2. Travaux supplémentaires ?')}</h3>
                 <p className="text-sm text-gray-500">{lang === 'en' ? "Additional parts or labor" : "Pièces ou main d'œuvre en plus"}</p>
               </div>
               <div className="flex gap-3">
@@ -7163,6 +7746,12 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
             </div>
             {additionalWorkNeeded && (
               <div className="border-t pt-4">
+                {/* Warranty info banner */}
+                {workItems.some(i => i.warranty) && (
+                  <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
+                    <span className="text-blue-700 text-sm font-medium">🛡️ {lang === 'en' ? 'Warranty items bypass supplement approval' : 'Articles sous garantie — pas de supplément requis'}</span>
+                  </div>
+                )}
                 {/* Locked state - show read-only with edit button */}
                 {workItemsLocked ? (
                   <div>
@@ -7172,12 +7761,15 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                     </div>
                     <div className="space-y-2">
                       {workItems.map((item, idx) => (
-                        <div key={item.id} className="flex items-center gap-2 bg-gray-100 rounded-lg p-3">
+                        <div key={item.id} className={`flex items-center gap-2 rounded-lg p-3 ${item.warranty ? 'bg-blue-50 border border-blue-200' : 'bg-gray-100'}`}>
                           <span className="text-gray-400 w-6">{idx + 1}.</span>
+                          {item.warranty && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">🛡️ Garantie</span>}
                           <span className="text-gray-500 text-sm w-24">{item.part_number || '—'}</span>
                           <span className="flex-1 font-medium">{item.description}</span>
                           <span className="text-gray-600">×{item.quantity}</span>
-                          <span className="font-bold text-amber-700 w-24 text-right">€{(parseFloat(item.price) || 0).toFixed(2)}</span>
+                          <span className={`font-bold w-24 text-right ${item.warranty ? 'text-blue-600' : 'text-amber-700'}`}>
+                            {item.warranty ? (lang === 'en' ? 'Warranty' : 'Garantie') : `€${(parseFloat(item.price) || 0).toFixed(2)}`}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -7193,25 +7785,40 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                   <div>
                     <div className="space-y-2">
                       {workItems.map((item, idx) => (
-                        <div key={item.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                          <span className="text-gray-400 w-6">{idx + 1}.</span>
-                          <div className="relative">
-                            <input 
-                              type="text" 
-                              value={item.part_number || ''} 
-                              onChange={e => updateWorkItem(item.id, 'part_number', e.target.value)}
-                              onBlur={e => lookupPart(item.id, e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && lookupPart(item.id, e.target.value)}
-                              placeholder={lang === 'en' ? 'Part #' : 'N° Pièce'} 
-                              className="w-28 px-3 py-2 border rounded-lg text-sm"
-                            />
-                            {partsLoading[item.id] && <span className="absolute right-2 top-2 text-blue-500 text-sm">...</span>}
+                        <div key={item.id} className={`rounded-lg p-2 ${item.warranty ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'}`}>
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-400 w-6">{idx + 1}.</span>
+                            <div className="relative">
+                              <input 
+                                type="text" 
+                                value={item.part_number || ''} 
+                                onChange={e => updateWorkItem(item.id, 'part_number', e.target.value)}
+                                onBlur={e => lookupPart(item.id, e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && lookupPart(item.id, e.target.value)}
+                                placeholder={lang === 'en' ? 'Part #' : 'N° Pièce'} 
+                                className="w-28 px-3 py-2 border rounded-lg text-sm"
+                              />
+                              {partsLoading[item.id] && <span className="absolute right-2 top-2 text-blue-500 text-sm">...</span>}
+                            </div>
+                            <input type="text" value={item.description} onChange={e => updateWorkItem(item.id, 'description', e.target.value)} placeholder="Description" className="flex-1 px-3 py-2 border rounded-lg" />
+                            <input type="number" value={item.quantity} onChange={e => updateWorkItem(item.id, 'quantity', e.target.value)} className="w-16 px-3 py-2 border rounded-lg text-center" min="1" />
+                            <span className="text-gray-400">€</span>
+                            <input type="number" value={item.price} onChange={e => updateWorkItem(item.id, 'price', e.target.value)} className={`w-24 px-3 py-2 border rounded-lg text-right ${item.warranty ? 'opacity-50' : ''}`} step="0.01" disabled={item.warranty} />
+                            <button onClick={() => removeWorkItem(item.id)} className="p-2 text-red-500 hover:bg-red-100 rounded">✕</button>
                           </div>
-                          <input type="text" value={item.description} onChange={e => updateWorkItem(item.id, 'description', e.target.value)} placeholder="Description" className="flex-1 px-3 py-2 border rounded-lg" />
-                          <input type="number" value={item.quantity} onChange={e => updateWorkItem(item.id, 'quantity', e.target.value)} className="w-16 px-3 py-2 border rounded-lg text-center" min="1" />
-                          <span className="text-gray-400">€</span>
-                          <input type="number" value={item.price} onChange={e => updateWorkItem(item.id, 'price', e.target.value)} className="w-24 px-3 py-2 border rounded-lg text-right" step="0.01" />
-                          <button onClick={() => removeWorkItem(item.id)} className="p-2 text-red-500 hover:bg-red-100 rounded">✕</button>
+                          <div className="flex items-center gap-2 mt-2 ml-8">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={item.warranty || false}
+                                onChange={e => updateWorkItem(item.id, 'warranty', e.target.checked)}
+                                className="w-4 h-4 rounded text-blue-600"
+                              />
+                              <span className={`text-sm font-medium ${item.warranty ? 'text-blue-700' : 'text-gray-500'}`}>
+                                🛡️ {lang === 'en' ? 'Under warranty (no supplement needed)' : 'Sous garantie (pas de supplément requis)'}
+                              </span>
+                            </label>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -7230,8 +7837,8 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
 
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-bold text-gray-700">{lang === 'en' ? '3. WORK COMPLETED *' : '3. TRAVAUX RÉALISÉS *'}</h3>
-              <TechTranslateButton onInsert={(text) => setWorkCompleted(prev => prev ? prev + '\n' + text : text)} />
+              <h3 className="font-bold text-gray-700">{approvedItems.length > 0 ? (lang === 'en' ? '4. WORK COMPLETED *' : '4. TRAVAUX RÉALISÉS *') : (lang === 'en' ? '3. WORK COMPLETED *' : '3. TRAVAUX RÉALISÉS *')}</h3>
+              <TechTranslateButton onInsert={(text) => setWorkCompleted(prev => prev ? prev + '\n' + text : text)} lang={lang} />
             </div>
             <p className="text-sm text-gray-500 mb-4">{lang === 'en' ? 'Check and describe work performed' : 'Cochez et décrivez le travail effectué'}</p>
             <div className="bg-gray-50 rounded-lg p-4 mb-4">
@@ -7254,7 +7861,8 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
 }
 
 // Report Preview Modal - Exact replica of official Lighthouse France Rapport PDF
-function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving, technicianName, calType, receptionResult }) {
+function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving, technicianName, calType, receptionResult, lang = 'fr' }) {
+  const t = k => k;
   const today = new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR');
   const serviceTypeText = device.service_type === 'calibration' ? (lang === 'en' ? 'Calibration' : 'Étalonnage') : device.service_type === 'repair' ? (lang === 'en' ? 'Repair' : 'Réparation') : (lang === 'en' ? 'Calibration and Repair' : 'Étalonnage et Réparation');
   const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
@@ -7508,7 +8116,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...navy);
-  pdf.text((lang === 'en' ? 'QUOTE SUPPLEMENT' : 'SUPPLÉMENT AU DEVIS'), pageWidth - margin, y + 5, { align: 'right' });
+  pdf.text('SUPPLÉMENT AU DEVIS', pageWidth - margin, y + 5, { align: 'right' });
   
   // Document number (SUP-0226-001) - primary
   pdf.setFontSize(11);
@@ -7541,10 +8149,10 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  const qDate = new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR');
+  const qDate = new Date().toLocaleDateString('fr-FR');
   pdf.text(qDate, margin + 5, y + 12);
   pdf.text('30 jours', margin + 60, y + 12);
-  pdf.text((lang === 'en' ? 'Upon receipt of invoice' : 'A reception de facture'), margin + 115, y + 12);
+  pdf.text('A reception de facture', margin + 115, y + 12);
   y += 20;
 
   // ===== CLIENT =====
@@ -7621,7 +8229,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
-    const deviceHeader = `${device.model_name || (lang === 'en' ? 'Device' : 'Appareil')} (SN: ${device.serial_number || 'N/A'})`;
+    const deviceHeader = `${device.model_name || 'Appareil'} (SN: ${device.serial_number || 'N/A'})`;
     pdf.text(deviceHeader, colDesc, y + 5.5);
     y += 8;
     
@@ -7641,7 +8249,8 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
       checkPageBreak(rowH + 2);
       const qty = parseInt(item.quantity) || 1;
       const unitPrice = parseFloat(item.price) || 0;
-      const lineTotal = qty * unitPrice;
+      const isWarranty = item.warranty;
+      const lineTotal = isWarranty ? 0 : qty * unitPrice;
       grandTotal += lineTotal;
       
       pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
@@ -7654,9 +8263,16 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
       // Description with part number if available
       const desc = item.partNumber ? `[${item.partNumber}] ${item.description || 'Piece'}` : (item.description || 'Service');
       pdf.text(desc.substring(0, 55), colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      
+      if (isWarranty) {
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(41, 98, 255);
+        pdf.text('Sous garantie', colTotal, y + 5, { align: 'right' });
+      } else {
+        pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      }
       y += rowH;
       rowIndex++;
     });
@@ -7674,7 +8290,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setTextColor(...white);
   pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
-  pdf.text((lang === 'en' ? 'TOTAL SUPPLEMENT excl. VAT' : 'TOTAL SUPPLÉMENT HT'), margin + 10, y + 9);
+  pdf.text('TOTAL SUPPLÉMENT HT', margin + 10, y + 9);
   pdf.setFontSize(18);
   pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 10, { align: 'right' });
   y += 18;
@@ -7736,16 +8352,14 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   addFooter();
   return { blob: pdf.output('blob'), total: grandTotal };
 };
-
-// Avenant Preview Modal - Shows additional work quote to send to client
-function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySent, businessSettings }) {
+function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySent, businessSettings, lang = 'fr' }) {
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
   const devicesRAS = devices.filter(d => !d.additional_work_needed || !d.additional_work_items?.length);
   
   const totalAvenant = devicesWithWork.reduce((sum, device) => {
-    const deviceTotal = (device.additional_work_items || []).reduce((dSum, item) => 
+    const deviceTotal = (device.additional_work_items || []).filter(i => !i.warranty).reduce((dSum, item) => 
       dSum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
     );
     return sum + deviceTotal;
@@ -7762,9 +8376,9 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
       a.download = `Supplement_${rma.supplement_number || rma.request_number}_${Date.now()}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-      notify(lang === 'en' ? '📥 PDF downloaded!' : '📥 PDF téléchargé!');
+      notify('📥 PDF téléchargé!');
     } catch (err) {
-      notify(lang === 'en' ? 'Error generating PDF: ' : 'Erreur génération PDF: ' + err.message, 'error');
+      notify('Erreur génération PDF: ' + err.message, 'error');
     }
     setDownloading(false);
   };
@@ -7785,7 +8399,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
       }
       
       // 1. Generate PDF
-      notify(lang === 'en' ? '📄 Generating PDF...' : '📄 Génération du PDF...');
+      notify('📄 Génération du PDF...');
       const { blob, total } = await generateAvenantPDF(rma, devicesWithWork, { businessSettings, supNumber });
       
       // 2. Upload to storage
@@ -7834,12 +8448,12 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
         device_serial: devicesWithWork.map(d => d.serial_number).join(', ')
       });
       
-      notify(lang === 'en' ? '✅ Supplement sent to client!' : '✅ Avenant envoyé au client!');
+      notify('✅ Avenant envoyé au client!');
       reload();
       onClose();
     } catch (err) {
       console.error('Avenant send error:', err);
-      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+      notify('Erreur: ' + err.message, 'error');
     }
     setSending(false);
   };
@@ -7850,13 +8464,13 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
         {/* Modal Header - Like RMA Quote */}
         <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
           <div>
-            <h2 className="text-xl font-bold">{lang === 'en' ? 'Quote Supplement' : 'Avenant au Devis'}</h2>
+            <h2 className="text-xl font-bold">Avenant au Devis</h2>
             <p className="text-gray-400">{rma.request_number} • {rma.companies?.name}</p>
           </div>
           <div className="flex items-center gap-3">
             {alreadySent && (
               <span className="px-3 py-1 bg-green-500 rounded-full text-xs font-bold">
-                ✓ {lang === 'en' ? 'Sent on' : 'Envoyé le'} {new Date(rma.avenant_sent_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
+                ✓ Envoyé le {new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR')}
               </span>
             )}
             <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">✕</button>
@@ -7884,8 +8498,8 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-2xl font-bold text-[#2D5A7B]">{lang === 'en' ? 'QUOTE SUPPLEMENT' : 'SUPPLÉMENT AU DEVIS'}</p>
-                <p className="text-sm font-bold text-[#2D5A7B]">N° {rma.supplement_number || (lang === 'en' ? '(Generated on send)' : "(Genere a l'envoi)")}</p>
+                <p className="text-2xl font-bold text-[#2D5A7B]">SUPPLÉMENT AU DEVIS</p>
+                <p className="text-sm font-bold text-[#2D5A7B]">N° {rma.supplement_number || '(Généré à l\'envoi)'}</p>
                 <p className="text-xs text-gray-500">RMA: {rma.request_number}</p>
               </div>
             </div>
@@ -7894,22 +8508,22 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           {/* Info Bar */}
           <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
             <div>
-              <p className="text-xs text-gray-500 uppercase">{t('date')}</p>
-              <p className="font-medium">{alreadySent ? new Date(rma.avenant_sent_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
+              <p className="text-xs text-gray-500 uppercase">Date</p>
+              <p className="font-medium">{alreadySent ? new Date(rma.avenant_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'Validity' : 'Validité'}</p>
-              <p className="font-medium">{lang === 'en' ? '30 days' : '30 jours'}</p>
+              <p className="text-xs text-gray-500 uppercase">Validité</p>
+              <p className="font-medium">30 jours</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'Terms' : 'Conditions'}</p>
-              <p className="font-medium">{lang === 'en' ? 'Upon receipt of invoice' : 'À réception de facture'}</p>
+              <p className="text-xs text-gray-500 uppercase">Conditions</p>
+              <p className="font-medium">À réception de facture</p>
             </div>
           </div>
 
           {/* Client Info */}
           <div className="px-8 py-4 border-b">
-            <p className="text-xs text-gray-500 uppercase">{t('client')}</p>
+            <p className="text-xs text-gray-500 uppercase">Client</p>
             <p className="font-bold text-xl text-[#1a1a2e]">{rma.companies?.name}</p>
             {rma.companies?.billing_address && <p className="text-gray-600">{rma.companies?.billing_address}</p>}
             <p className="text-gray-600">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</p>
@@ -7918,7 +8532,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           {/* Introduction */}
           <div className="px-8 py-4 bg-green-50 border-b border-green-200">
             <p className="text-green-800">
-              <strong>{lang === 'en' ? 'Subject:' : 'Objet :'}</strong> Suite à l'inspection de vos appareils, notre équipe technique a identifié des travaux supplémentaires nécessaires. 
+              <strong>Objet :</strong> Suite à l'inspection de vos appareils, notre équipe technique a identifié des travaux supplémentaires nécessaires. 
               Veuillez trouver ci-dessous le détail des interventions recommandées.
             </p>
           </div>
@@ -7926,7 +8540,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           {/* Devices with additional work */}
           <div className="px-8 py-6 space-y-6">
             {devicesWithWork.map(device => {
-              const deviceTotal = (device.additional_work_items || []).reduce((sum, item) => 
+              const deviceTotal = (device.additional_work_items || []).filter(i => !i.warranty).reduce((sum, item) => 
                 sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
               );
               
@@ -7935,14 +8549,14 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <h3 className="font-bold text-lg text-[#1a1a2e]">{device.model_name}</h3>
-                      <p className="text-gray-500 text-sm">{lang === 'en' ? 'Serial #' : 'N° de série'}: {device.serial_number}</p>
+                      <p className="text-gray-500 text-sm">N° de série: {device.serial_number}</p>
                     </div>
                     <span className="text-xl font-bold text-[#2D5A7B] whitespace-nowrap">{deviceTotal.toFixed(2)} €</span>
                   </div>
                   
                   {device.service_findings && (
                     <div className="bg-gray-100 rounded-lg p-3 mb-3">
-                      <p className="text-xs text-gray-500 uppercase font-medium mb-1">{lang === 'en' ? 'Technician findings' : 'Constatations du technicien'}</p>
+                      <p className="text-xs text-gray-500 uppercase font-medium mb-1">Constatations du technicien</p>
                       <p className="text-gray-700">{device.service_findings}</p>
                     </div>
                   )}
@@ -7951,19 +8565,22 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b-2 border-gray-200">
-                          <th className="text-left py-2 text-gray-600 font-medium">{t('description')}</th>
-                          <th className="text-center py-2 text-gray-600 font-medium w-16">{lang === 'en' ? 'Qty' : 'Qté'}</th>
-                          <th className="text-right py-2 text-gray-600 font-medium w-24">{lang === 'en' ? 'Unit Price' : 'Prix Unit.'}</th>
-                          <th className="text-right py-2 text-gray-600 font-medium w-24">{t('total')}</th>
+                          <th className="text-left py-2 text-gray-600 font-medium">Description</th>
+                          <th className="text-center py-2 text-gray-600 font-medium w-16">Qté</th>
+                          <th className="text-right py-2 text-gray-600 font-medium w-24">Prix Unit.</th>
+                          <th className="text-right py-2 text-gray-600 font-medium w-24">Total</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(device.additional_work_items || []).map((item, idx) => (
-                          <tr key={idx} className="border-b border-gray-100">
-                            <td className="py-2">{item.description}</td>
+                          <tr key={idx} className={`border-b border-gray-100 ${item.warranty ? 'bg-blue-50' : ''}`}>
+                            <td className="py-2">
+                              {item.description}
+                              {item.warranty && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">🛡️ Garantie</span>}
+                            </td>
                             <td className="py-2 text-center">{item.quantity}</td>
-                            <td className="py-2 text-right whitespace-nowrap">{(parseFloat(item.price) || 0).toFixed(2)} €</td>
-                            <td className="py-2 text-right font-medium whitespace-nowrap">{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)} €</td>
+                            <td className="py-2 text-right whitespace-nowrap">{item.warranty ? '—' : `${(parseFloat(item.price) || 0).toFixed(2)} €`}</td>
+                            <td className="py-2 text-right font-medium whitespace-nowrap">{item.warranty ? <span className="text-blue-600">Sous garantie</span> : `${((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)} €`}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -7977,7 +8594,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           {/* Devices without additional work (RAS) */}
           {devicesRAS.length > 0 && (
             <div className="px-8 py-4 bg-green-50 border-t border-b">
-              <p className="text-sm text-green-800 font-medium mb-2">{lang === 'en' ? '✓ Devices without additional work:' : '✓ Appareils sans travaux supplémentaires:'}</p>
+              <p className="text-sm text-green-800 font-medium mb-2">✓ Appareils sans travaux supplémentaires:</p>
               <div className="space-y-1">
                 {devicesRAS.map(device => (
                   <p key={device.id} className="text-sm text-green-700">
@@ -7991,32 +8608,32 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           {/* Total Section */}
           <div className="px-8 py-4 bg-[#2D5A7B]">
             <div className="flex justify-between items-center text-white">
-              <span className="text-lg font-bold">{lang === 'en' ? 'TOTAL SUPPLEMENT excl. VAT' : 'TOTAL SUPPLÉMENT HT'}</span>
+              <span className="text-lg font-bold">TOTAL SUPPLÉMENT HT</span>
               <span className="text-3xl font-bold whitespace-nowrap">{totalAvenant.toFixed(2)} €</span>
             </div>
           </div>
 
           {/* Conditions */}
           <div className="px-8 py-4 border-b">
-            <p className="font-bold text-[#1a1a2e] text-sm mb-2">{lang === 'en' ? 'Terms:' : 'Conditions:'}</p>
+            <p className="font-bold text-[#1a1a2e] text-sm mb-2">Conditions:</p>
             <ul className="text-sm text-gray-600 space-y-1">
-              <li>{lang === 'en' ? '• This supplementary quote is valid for 30 days' : '• Ce devis complémentaire est valable 30 jours'}</li>
-              <li>{lang === 'en' ? '• Work will be performed after receiving your approval' : '• Les travaux seront effectués après réception de votre accord'}</li>
-              <li>{lang === 'en' ? '• Payment terms: 30 days end of month' : '• Conditions de règlement: 30 jours fin de mois'}</li>
+              <li>• Ce devis complémentaire est valable 30 jours</li>
+              <li>• Les travaux seront effectués après réception de votre accord</li>
+              <li>• Conditions de règlement: 30 jours fin de mois</li>
             </ul>
           </div>
 
           {/* Signature Section */}
           <div className="px-8 py-6 flex justify-between items-end">
             <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">{lang === 'en' ? 'Prepared by' : 'Établi par'}</p>
-              <p className="font-bold text-lg text-[#1a1a2e]">{lang === 'en' ? 'Technical Service' : 'Service Technique'}</p>
+              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Établi par</p>
+              <p className="font-bold text-lg text-[#1a1a2e]">Service Technique</p>
               <p className="text-gray-500">Lighthouse France</p>
             </div>
             <div className="text-center">
-              <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">{lang === 'en' ? 'Approved for agreement' : 'Bon pour accord'}</p>
+              <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Bon pour accord</p>
               <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
-                <span className="text-gray-300 text-xs">{lang === 'en' ? 'Signature and stamp' : 'Signature et cachet'}</span>
+                <span className="text-gray-300 text-xs">Signature et cachet</span>
               </div>
             </div>
           </div>
@@ -8039,7 +8656,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
               disabled={downloading}
               className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
             >
-              {downloading ? '...' : (lang === 'en' ? '📥 Download PDF' : '📥 Télécharger PDF')}
+              {downloading ? '...' : '📥 Télécharger PDF'}
             </button>
             {!alreadySent && (
               <button 
@@ -8047,7 +8664,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                 disabled={sending}
                 className="px-6 py-2 bg-[#00A651] hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50"
               >
-                {sending ? (lang === 'en' ? 'Generating & sending...' : 'Génération & envoi...') : (lang === 'en' ? '📧 Send to Client' : '📧 Envoyer au Client')}
+                {sending ? 'Génération & envoi...' : '📧 Envoyer au Client'}
               </button>
             )}
             {alreadySent && (
@@ -8164,13 +8781,14 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
           </tbody>
         </table>
       </div>
-      {selectedRequest && <RequestDetailModal request={selectedRequest} onClose={() => setSelectedRequest(null)} onCreateQuote={() => { setSelectedRequest(null); setQuoteRequest(selectedRequest); }} />}
-      {quoteRequest && <QuoteEditorModal request={quoteRequest} onClose={() => setQuoteRequest(null)} notify={notify} reload={reload} profile={profile} businessSettings={businessSettings} />}
+      {selectedRequest && <RequestDetailModal request={selectedRequest} onClose={() => setSelectedRequest(null)} onCreateQuote={() => { setSelectedRequest(null); setQuoteRequest(selectedRequest); }} lang={lang} />}
+      {quoteRequest && <QuoteEditorModal request={quoteRequest} onClose={() => setQuoteRequest(null)} notify={notify} reload={reload} profile={profile} businessSettings={businessSettings} lang={lang} />}
     </div>
   );
 }
 
-function RequestDetailModal({ request, onClose, onCreateQuote }) {
+function RequestDetailModal({ request, onClose, onCreateQuote, lang = 'fr' }) {
+  const t = k => k;
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
   const devices = request.request_devices || [];
   const isPending = request.status === 'submitted' && !request.request_number;
@@ -8749,7 +9367,7 @@ const STATUS_STYLES = {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none h-20"
                       />
                       <div className="flex justify-between items-center mt-2">
-                        <TechTranslateButton onInsert={(text) => setNewMessage(prev => prev ? prev + '\n' + text : text)} />
+                        <TechTranslateButton onInsert={(text) => setNewMessage(prev => prev ? prev + '\n' + text : text)} lang={lang} />
                         <button
                           onClick={sendMessage}
                           disabled={sendingMessage || !newMessage.trim()}
@@ -9464,14 +10082,14 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
       
       {/* Modals */}
       {selectedOrder && (
-        <PartsOrderDetailModal 
+        <PartsOrderDetailModal lang={lang} 
           order={selectedOrder} 
           onClose={() => setSelectedOrder(null)} 
           onCreateQuote={() => { setSelectedOrder(null); setQuoteOrder(selectedOrder); }} 
         />
       )}
       {quoteOrder && (
-        <PartsQuoteEditor 
+        <PartsQuoteEditor lang={lang} 
           order={quoteOrder} 
           onClose={() => setQuoteOrder(null)} 
           notify={notify} 
@@ -9502,7 +10120,8 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
 // ============================================
 // PARTS BC REVIEW MODAL (identical to RMA BCReviewModal)
 // ============================================
-function PartsBCReviewModal({ order, onClose, notify, reload }) {
+function PartsBCReviewModal({ order, onClose, notify, reload, lang = 'fr' }) {
+  const t = k => k;
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -9831,7 +10450,8 @@ function PartsBCReviewModal({ order, onClose, notify, reload }) {
 // ============================================
 // PARTS PROCESS MODAL (for approved orders)
 // ============================================
-function PartsProcessModal({ order, onClose, notify, reload, profile }) {
+function PartsProcessModal({ order, onClose, notify, reload, profile, lang = 'fr' }) {
+  const t = k => k;
   const [saving, setSaving] = useState(false);
   const [showShipping, setShowShipping] = useState(false);
   
@@ -10055,7 +10675,8 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
 }
 
 // Parts Order Detail Modal
-function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
+function PartsOrderDetailModal({ order, onClose, onCreateQuote, lang = 'fr' }) {
+  const t = k => k;
   const style = STATUS_STYLES[order.status] || STATUS_STYLES.submitted;
   const isPending = order.status === 'submitted' && !order.request_number;
   const needsRevision = order.status === 'quote_revision_requested';
@@ -10272,7 +10893,8 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote }) {
 // ============================================
 // PARTS QUOTE EDITOR - Build parts quote
 // ============================================
-function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
+function PartsQuoteEditor({ order, onClose, notify, reload, profile, lang = 'fr' }) {
+  const t = k => k;
   const [step, setStep] = useState(1); // 1=Edit Parts, 2=Preview, 3=Confirm
   const [quoteParts, setQuoteParts] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -10989,7 +11611,8 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile }) {
 // ============================================
 // PARTS ORDER SHIPPING MODAL - 3 Steps like RMA
 // ============================================
-function PartsShippingModal({ order, onClose, notify, reload, profile, businessSettings }) {
+function PartsShippingModal({ order, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [shipment, setShipment] = useState(null);
@@ -11110,7 +11733,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
           },
           packages: packagesList,
           serviceCode: '11', // UPS Standard
-          description: `${order.request_number} - ${parts.length} {lang === 'en' ? 'part(s)' : 'pièce(s)'}`,
+          description: `${order.request_number} - ${parts.length} ${lang === 'en' ? 'part(s)' : 'pièce(s)'}`,
           isReturn: false
         }
       });
@@ -11326,7 +11949,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       <div class="client-box">
         <div class="client-label">{lang === 'en' ? 'Recipient' : 'Destinataire'}</div>
         <div class="client-name">${bl.client.name}</div>
-        ${bl.client.attention ? `<div>{lang === 'en' ? "Attention: " : "À l'attention de: "}<strong>${bl.client.attention}</strong></div>` : ''}
+        ${bl.client.attention ? `<div>${lang === 'en' ? "Attention: " : "À l'attention de: "}<strong>${bl.client.attention}</strong></div>` : ''}
         <div>${bl.client.street}</div>
         <div>${bl.client.city}</div>
         <div>${bl.client.country}</div>
@@ -11927,7 +12550,8 @@ const LIGHTHOUSE_OFFICES = {
   }
 };
 
-function InternalShippingModal({ rma, devices, onClose, notify, reload, profile, businessSettings }) {
+function InternalShippingModal({ rma, devices, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   // Steps: 1=Config, 2=UPS Label Created + BL Preview, 3=Saved
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -12544,7 +13168,8 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
 // ============================================
 // SHIPPING MODAL - Full shipping workflow v26
 // ============================================
-function ShippingModal({ rma, devices, onClose, notify, reload, profile, businessSettings }) {
+function ShippingModal({ rma, devices, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [shipments, setShipments] = useState([]);
@@ -12811,7 +13436,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     })).filter(s => s.devices.length > 0); // Remove empty shipments
     
     if (updatedShipmentsWithDevices.length === 0) {
-      notify(lang === 'en' ? 'No devices selected in the shipping groups' : 'Aucun appareil selectionne dans les groupes d\'expedition', 'error');
+      notify(lang === 'en' ? 'No devices selected in the shipping groups' : 'Aucun appareil sélectionné dans les groupes d\'expédition', 'error');
       return;
     }
     
@@ -13073,7 +13698,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       <div class="client-box">
         <div class="client-label">{lang === 'en' ? 'Recipient' : 'Destinataire'}</div>
         <div class="client-name">${bl.client.name}</div>
-        ${bl.client.attention ? `<div>{lang === 'en' ? "Attention: " : "À l'attention de: "}<strong>${bl.client.attention}</strong></div>` : ''}
+        ${bl.client.attention ? `<div>${lang === 'en' ? "Attention: " : "À l'attention de: "}<strong>${bl.client.attention}</strong></div>` : ''}
         <div>${bl.client.street}</div>
         <div>${bl.client.city}</div>
         <div>${bl.client.country}</div>
@@ -14393,7 +15018,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
           {searchResults.rmas.filter(r => r.request_type !== 'parts').length > 0 && (
             <div className="bg-white rounded-xl shadow-sm">
               <div className="px-6 py-4 border-b border-gray-100 bg-blue-50">
-                <h2 className="font-bold text-blue-800">{lang === 'en' ? `📋 RMAs found (${searchResults.rmas` : `📋 RMAs trouvés (${searchResults.rmas`.filter(r => r.request_type !== 'parts').length})</h2>
+                <h2 className="font-bold text-blue-800">{lang === 'en' ? '📋 RMAs found' : '📋 RMAs trouvés'} ({searchResults.rmas.filter(r => r.request_type !== 'parts').length})</h2>
               </div>
               <div className="divide-y divide-gray-100">
                 {searchResults.rmas.filter(r => r.request_type !== 'parts').map(rma => {
@@ -14434,7 +15059,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
           {searchResults.rmas.filter(r => r.request_type === 'parts').length > 0 && (
             <div className="bg-white rounded-xl shadow-sm">
               <div className="px-6 py-4 border-b border-gray-100 bg-amber-50">
-                <h2 className="font-bold text-amber-800">{lang === 'en' ? `🔩 Parts Orders (${searchResults.rmas` : `🔩 Commandes Pièces (${searchResults.rmas`}.filter(r => r.request_type === 'parts').length})</h2>
+                <h2 className="font-bold text-amber-800">{lang === 'en' ? '🔩 Parts Orders' : '🔩 Commandes Pièces'} ({searchResults.rmas.filter(r => r.request_type === 'parts').length})</h2>
               </div>
               <div className="divide-y divide-gray-100">
                 {searchResults.rmas.filter(r => r.request_type === 'parts').map(po => {
@@ -14639,12 +15264,13 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
         </div>
       )}
       
-      {selectedClient && <ClientDetailModal client={selectedClient} requests={requests.filter(r => r.company_id === selectedClient.id && r.request_type !== 'parts')} partsOrders={requests.filter(r => r.company_id === selectedClient.id && r.request_type === 'parts')} equipment={equipment.filter(e => e.company_id === selectedClient.id)} onClose={() => setSelectedClient(null)} notify={notify} reload={reload} isAdmin={isAdmin} onSelectRMA={onSelectRMA} onSelectDevice={onSelectDevice} />}
+      {selectedClient && <ClientDetailModal client={selectedClient} requests={requests.filter(r => r.company_id === selectedClient.id && r.request_type !== 'parts')} partsOrders={requests.filter(r => r.company_id === selectedClient.id && r.request_type === 'parts')} equipment={equipment.filter(e => e.company_id === selectedClient.id)} onClose={() => setSelectedClient(null)} notify={notify} reload={reload} isAdmin={isAdmin} onSelectRMA={onSelectRMA} onSelectDevice={onSelectDevice} lang={lang} />}
     </div>
   );
 }
 
-function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, notify, reload, isAdmin, onSelectRMA, onSelectDevice }) {
+function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, notify, reload, isAdmin, onSelectRMA, onSelectDevice, lang = 'fr' }) {
+  const t = k => k;
   const [activeTab, setActiveTab] = useState('rmas');
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState({ name: client.name || '', billing_address: client.billing_address || '', billing_city: client.billing_city || '', billing_postal_code: client.billing_postal_code || '', siret: client.siret || '', vat_number: client.vat_number || '' });
@@ -14811,7 +15437,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           {activeTab === 'contracts' && selectedContract && (
             <div>
               <button onClick={() => setSelectedContract(null)} className="text-sm text-blue-600 hover:underline mb-4">{lang === 'en' ? '← Back to contracts' : '← Retour aux contrats'}</button>
-              <ContractDetailView 
+              <ContractDetailView lang={lang} 
                 contract={selectedContract}
                 clients={[client]}
                 notify={notify}
@@ -15103,7 +15729,8 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
 }
 
 // QC Review Modal - View report, certificate, then approve
-function QCReviewModal({ device, rma, onBack, notify, profile }) {
+function QCReviewModal({ device, rma, onBack, notify, profile, lang = 'fr' }) {
+  const t = k => k;
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState(1); // 1: Report, 2: Certificate, 3: Approve
   const [qcNotes, setQcNotes] = useState(device.qc_notes || '');
@@ -15694,7 +16321,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
   // Contract Detail View
   if (selectedContract) {
     return (
-      <ContractDetailView 
+      <ContractDetailView lang={lang} 
         contract={selectedContract}
         clients={clients}
         notify={notify}
@@ -15719,7 +16346,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
   
   // Contract BC Review Modal - render on top of main view
   const contractBCModal = reviewingContractBC && (
-    <ContractBCReviewModal 
+    <ContractBCReviewModal lang={lang} 
       contract={reviewingContractBC}
       onClose={() => setReviewingContractBC(null)}
       notify={notify}
@@ -15946,7 +16573,8 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
 // ============================================
 // CONTRACT QUOTE EDITOR - Matches RMA Quote Style
 // ============================================
-function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
+function ContractQuoteEditor({ contract, profile, notify, onClose, onSent, lang = 'fr' }) {
+  const t = k => k;
   const [step, setStep] = useState(1); // 1=Edit, 2=Preview, 3=Confirm
   const [saving, setSaving] = useState(false);
   const [quoteRef, setQuoteRef] = useState('');
@@ -16707,7 +17335,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
                 </div>
                 <div className="text-right">
                   <p className="text-lg font-bold text-[#00A651]">{lang === 'en' ? 'CONTRACT QUOTE' : 'DEVIS CONTRAT'}</p>
-                  <p className="text-sm font-bold text-[#2D5A7B]">N° {contract.contract_number || (lang === 'en' ? '(Generated on send)' : "(Genere a l'envoi)")}</p>
+                  <p className="text-sm font-bold text-[#2D5A7B]">N° {contract.contract_number || (lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)")}</p>
                 </div>
               </div>
               {pageNum === 1 && (
@@ -16952,7 +17580,8 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent }) {
 // ============================================
 // CONTRACT DETAIL VIEW
 // ============================================
-function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
+function ContractDetailView({ contract, clients, notify, onClose, onUpdate, lang = 'fr' }) {
+  const t = k => k;
   const [editMode, setEditMode] = useState(contract.status === 'requested');
   const [saving, setSaving] = useState(false);
   const [devices, setDevices] = useState(contract.contract_devices || []);
@@ -17622,7 +18251,8 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate }) {
 // ============================================
 // BC FILE UPLOADER (Admin side)
 // ============================================
-function BCFileUploader({ onUploaded, currentUrl }) {
+function BCFileUploader({ onUploaded, currentUrl, lang = 'fr' }) {
+  const t = k => k;
   const [uploading, setUploading] = useState(false);
   const [urlMode, setUrlMode] = useState(false);
   const [urlInput, setUrlInput] = useState(currentUrl || '');
@@ -17740,7 +18370,8 @@ function BCFileUploader({ onUploaded, currentUrl }) {
   );
 }
 
-function CreateContractModal({ clients, notify, onClose, onCreated }) {
+function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' }) {
+  const t = k => k;
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [contractData, setContractData] = useState({
@@ -17972,7 +18603,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'en' ? 'Purchase Order (optional)' : 'Bon de Commande (optionnel)'}</label>
-              <BCFileUploader 
+              <BCFileUploader lang={lang} 
                 onUploaded={(url) => setContractData({ ...contractData, bc_url: url })}
                 currentUrl={contractData.bc_url}
               />
@@ -18240,15 +18871,15 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
       for (const inv of toExport) {
         // Add to summary
         summaryData.push({
-          (lang === 'en' ? 'Invoice #' : 'N° Facture'): inv.invoice_number || '',
-          'Date Création': inv.created_at ? new Date(inv.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '',
-          'Date Facture': inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '',
-          'Client': inv.companies?.name || '',
-          'N° RMA': inv.service_requests?.request_number || '',
-          'Total HT': parseFloat(inv.total_ht || 0).toFixed(2),
-          'TVA': parseFloat(inv.total_tva || 0).toFixed(2),
-          'Total TTC': parseFloat(inv.total_ttc || 0).toFixed(2),
-          'Statut': inv.status || ''
+          [lang === 'en' ? 'Invoice #' : 'N° Facture']: inv.invoice_number || '',
+          [lang === 'en' ? 'Created Date' : 'Date Création']: inv.created_at ? new Date(inv.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '',
+          [lang === 'en' ? 'Invoice Date' : 'Date Facture']: inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '',
+          [lang === 'en' ? 'Client' : 'Client']: inv.companies?.name || '',
+          [lang === 'en' ? 'RMA #' : 'N° RMA']: inv.service_requests?.request_number || '',
+          [lang === 'en' ? 'Total excl. tax' : 'Total HT']: parseFloat(inv.total_ht || 0).toFixed(2),
+          [lang === 'en' ? 'VAT' : 'TVA']: parseFloat(inv.total_tva || 0).toFixed(2),
+          [lang === 'en' ? 'Total incl. tax' : 'Total TTC']: parseFloat(inv.total_ttc || 0).toFixed(2),
+          [lang === 'en' ? 'Status' : 'Statut']: inv.status || ''
         });
         
         // Try to fetch PDF
@@ -18533,13 +19164,13 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
 
       {/* Invoice Creation Modal */}
       {creatingFor && (
-        <InvoiceCreationModal rma={creatingFor} onClose={() => setCreatingFor(null)} notify={notify}
+        <InvoiceCreationModal lang={lang} rma={creatingFor} onClose={() => setCreatingFor(null)} notify={notify}
           reload={() => { loadInvoices(); if (reload) reload(); }} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />
       )}
 
       {/* Invoice Detail Modal */}
       {viewingInvoice && (
-        <InvoiceDetailModal invoice={viewingInvoice} onClose={() => { setViewingInvoice(null); loadInvoices(); }}
+        <InvoiceDetailModal lang={lang} invoice={viewingInvoice} onClose={() => { setViewingInvoice(null); loadInvoices(); }}
           notify={notify} reload={() => { loadInvoices(); if (reload) reload(); }} businessSettings={businessSettings} t={t} lang={lang} />
       )}
     </div>
@@ -18550,7 +19181,8 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
 // ============================================
 // INVOICE DETAIL MODAL - View/manage invoice
 // ============================================
-function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings }) {
+function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   const [inv, setInv] = useState(invoice);
   const [showPayment, setShowPayment] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -18784,7 +19416,8 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
 // ============================================
 // INVOICE CREATION MODAL
 // ============================================
-function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessSettings }) {
+function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   const [step, setStep] = useState(1); // 1=Edit lines, 2=Preview, 3=Saved
   const [lines, setLines] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -19954,7 +20587,7 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
       {/* Other admin cards */}
       
       {/* ===== QUOTE CONTENT SETTINGS ===== */}
-      <QuoteContentSettings businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} notify={notify} />
+      <QuoteContentSettings businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} notify={notify} lang={lang} />
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer">
@@ -20057,14 +20690,15 @@ const QUOTE_DEFAULTS = {
 };
 
 const CAL_TYPE_LABELS = {
-  particle_counter: { icon: '🔬', label: lang === 'en' ? 'Airborne Particle Counter' : 'Compteur de Particules Aéroportées' },
-  bio_collector: { icon: '🧫', label: lang === 'en' ? 'Bio Collector' : 'Bio Collecteur' },
-  liquid_counter: { icon: '💧', label: lang === 'en' ? 'Liquid Particle Counter' : 'Compteur Particules Liquide' },
-  temp_humidity: { icon: '🌡️', label: lang === 'en' ? 'Temp/Humidity Sensor' : 'Capteur Temp/Humidité' },
-  other: { icon: '⚙️', label: lang === 'en' ? 'Other Equipment' : 'Autre Équipement' }
+  particle_counter: { icon: '🔬', label: { en: 'Airborne Particle Counter', fr: 'Compteur de Particules Aéroportées' } },
+  bio_collector: { icon: '🧫', label: { en: 'Bio Collector', fr: 'Bio Collecteur' } },
+  liquid_counter: { icon: '💧', label: { en: 'Liquid Particle Counter', fr: 'Compteur Particules Liquide' } },
+  temp_humidity: { icon: '🌡️', label: { en: 'Temp/Humidity Sensor', fr: 'Capteur Temp/Humidité' } },
+  other: { icon: '⚙️', label: { en: 'Other Equipment', fr: 'Autre Équipement' } }
 };
 
-function QuoteContentSettings({ businessSettings, setBusinessSettings, notify }) {
+function QuoteContentSettings({ businessSettings, setBusinessSettings, notify, lang }) {
+  const t = k => k;
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedSection, setExpandedSection] = useState(null);
@@ -20254,7 +20888,7 @@ function QuoteContentSettings({ businessSettings, setBusinessSettings, notify })
                       onClick={() => toggleSection('cal_' + key)}
                       className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 text-left"
                     >
-                      <span className="font-medium text-sm">{icon} {label}</span>
+                      <span className="font-medium text-sm">{icon} {label[lang] || label.fr}</span>
                       <span className="text-gray-400 text-lg">{expandedSection === 'cal_' + key ? '▾' : '▸'}</span>
                     </button>
                     {expandedSection === 'cal_' + key && (
@@ -20357,7 +20991,7 @@ function QuoteContentSettings({ businessSettings, setBusinessSettings, notify })
                 const data = businessSettings.quote_settings?.calibration?.[key] || QUOTE_DEFAULTS.calibration[key];
                 return (
                   <div key={key} className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs font-medium text-gray-500 mb-1">{icon} {label}</p>
+                    <p className="text-xs font-medium text-gray-500 mb-1">{icon} {label[lang] || label.fr}</p>
                     <p className="text-xs text-gray-600">{data?.prestations?.length || 0} lignes de prestation</p>
                   </div>
                 );
@@ -20793,7 +21427,8 @@ const isFranceMetropolitan = (postalCode) => {
 // ============================================
 // QUOTE EDITOR MODAL
 // ============================================
-function QuoteEditorModal({ request, onClose, notify, reload, profile, businessSettings }) {
+function QuoteEditorModal({ request, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   const [step, setStep] = useState(1); // 1=Edit Pricing, 2=Preview, 3=Confirm
   const [devicePricing, setDevicePricing] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -22356,7 +22991,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-bold text-[#2D5A7B]">{lang === 'en' ? 'PRICE QUOTE' : 'OFFRE DE PRIX'}</p>
-                      <p className="text-sm font-bold text-[#2D5A7B]">N° {request.quote_number || (lang === 'en' ? '(Generated on send)' : "(Genere a l'envoi)")}</p>
+                      <p className="text-sm font-bold text-[#2D5A7B]">N° {request.quote_number || (lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)")}</p>
                       <p className="text-xs text-gray-500">RMA: {request.request_number}</p>
                     </div>
                   </div>
@@ -23266,7 +23901,7 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
 // ============================================
 // PART EDIT MODAL
 // ============================================
-function PartEditModal({ part, onSave, onClose }) {
+function PartEditModal({ part, onSave, onClose, lang = 'fr' }) {
   const [formData, setFormData] = useState({
     part_number: part?.part_number || '',
     description: part?.description || '',
@@ -23424,6 +24059,802 @@ function PartEditModal({ part, onSave, onClose }) {
 // ============================================
 // RENTALS SHEET - Admin Management
 // ============================================
+// ============================================
+// USA ORDERS SHEET - Commandes USA
+// ============================================
+function USAOrdersSheet({ clients = [], notify, reload, profile, t = k=>k, lang = 'fr' }) {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Load orders
+  const loadOrders = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('usa_orders')
+      .select('*')
+      .order('created_at', { ascending: false });
+    setOrders(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadOrders(); }, []);
+
+  const statusConfig = {
+    order_created: { label: lang === 'en' ? 'Order Created' : 'Commande créée', bg: 'bg-blue-100', text: 'text-blue-700', icon: '📦' },
+    received_france: { label: lang === 'en' ? 'Received at France' : 'Reçu en France', bg: 'bg-cyan-100', text: 'text-cyan-700', icon: '🏭' },
+    qc_complete: { label: lang === 'en' ? 'QC Complete' : 'QC Validé', bg: 'bg-purple-100', text: 'text-purple-700', icon: '✅' },
+    shipped: { label: lang === 'en' ? 'Shipped' : 'Expédié', bg: 'bg-green-100', text: 'text-green-700', icon: '🚚' }
+  };
+
+  const steps = [
+    { id: 'order_created', label: lang === 'en' ? 'Ordered' : 'Commandé' },
+    { id: 'received_france', label: lang === 'en' ? 'Received' : 'Reçu' },
+    { id: 'qc_complete', label: lang === 'en' ? 'QC' : 'QC' },
+    { id: 'shipped', label: lang === 'en' ? 'Shipped' : 'Expédié' }
+  ];
+
+  const getStepIndex = (status) => {
+    const map = { order_created: 0, received_france: 1, qc_complete: 2, shipped: 3 };
+    return map[status] ?? 0;
+  };
+
+  // Filter orders
+  const filtered = orders.filter(o => {
+    if (filter !== 'all' && o.status !== filter) return false;
+    if (search) {
+      const s = search.toLowerCase();
+      return (o.po_number || '').toLowerCase().includes(s) ||
+             (o.quote_number || '').toLowerCase().includes(s) ||
+             (o.customer_name || '').toLowerCase().includes(s) ||
+             (o.invoice_number || '').toLowerCase().includes(s);
+    }
+    return true;
+  });
+
+  // Status counts
+  const counts = {
+    all: orders.length,
+    order_created: orders.filter(o => o.status === 'order_created').length,
+    received_france: orders.filter(o => o.status === 'received_france').length,
+    qc_complete: orders.filter(o => o.status === 'qc_complete').length,
+    shipped: orders.filter(o => o.status === 'shipped').length
+  };
+
+  // Update order status
+  const updateStatus = async (orderId, newStatus) => {
+    setSaving(true);
+    const update = { status: newStatus };
+    const now = new Date().toISOString();
+    if (newStatus === 'received_france') update.received_france_at = now;
+    if (newStatus === 'qc_complete') update.qc_completed_at = now;
+    if (newStatus === 'shipped') update.shipped_at = now;
+
+    const { error } = await supabase.from('usa_orders').update(update).eq('id', orderId);
+    if (error) {
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
+    } else {
+      notify(lang === 'en' ? '✅ Status updated!' : '✅ Statut mis à jour !');
+      loadOrders();
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder(prev => ({ ...prev, ...update }));
+      }
+    }
+    setSaving(false);
+  };
+
+  // Delete order
+  const deleteOrder = async (orderId) => {
+    if (!confirm(lang === 'en' ? 'Delete this order?' : 'Supprimer cette commande ?')) return;
+    const { error } = await supabase.from('usa_orders').delete().eq('id', orderId);
+    if (error) {
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
+    } else {
+      notify(lang === 'en' ? '✅ Order deleted' : '✅ Commande supprimée');
+      setSelectedOrder(null);
+      loadOrders();
+    }
+  };
+
+  // ---- ORDER DETAIL VIEW ----
+  if (selectedOrder) {
+    const order = selectedOrder;
+    const sc = statusConfig[order.status] || statusConfig.order_created;
+    const currentStep = getStepIndex(order.status);
+    const items = Array.isArray(order.line_items) ? order.line_items : [];
+    const nextStatus = order.status === 'order_created' ? 'received_france' :
+                       order.status === 'received_france' ? 'qc_complete' :
+                       order.status === 'qc_complete' ? 'shipped' : null;
+
+    return (
+      <div className="space-y-6">
+        {/* Back + Header */}
+        <div className="flex items-center justify-between">
+          <button onClick={() => setSelectedOrder(null)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
+            ← {lang === 'en' ? 'Back to Orders' : 'Retour aux commandes'}
+          </button>
+          <div className="flex items-center gap-3">
+            {nextStatus && (
+              <button
+                onClick={() => updateStatus(order.id, nextStatus)}
+                disabled={saving}
+                className="px-4 py-2 bg-[#00A651] hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                {saving ? '⏳' : statusConfig[nextStatus]?.icon} {lang === 'en' ? `Mark as ${statusConfig[nextStatus]?.label}` : `Marquer ${statusConfig[nextStatus]?.label}`}
+              </button>
+            )}
+            <button onClick={() => deleteOrder(order.id)} className="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm">
+              🗑️
+            </button>
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="bg-white rounded-xl shadow-sm border p-4">
+          <div className="flex w-full">
+            {steps.map((step, i) => {
+              const isComplete = i < currentStep;
+              const isCurrent = i === currentStep;
+              return (
+                <div key={step.id} className="flex-1 flex flex-col items-center relative">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold z-10 ${
+                    isComplete ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'
+                  }`}>
+                    {isComplete ? '✓' : i + 1}
+                  </div>
+                  <span className={`text-xs mt-1 font-medium ${isComplete ? 'text-green-700' : isCurrent ? 'text-blue-700' : 'text-gray-400'}`}>{step.label}</span>
+                  {i < steps.length - 1 && (
+                    <div className={`absolute top-5 left-[55%] w-[90%] h-0.5 ${isComplete ? 'bg-[#00A651]' : 'bg-gray-200'}`} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex justify-between text-xs text-gray-400 mt-3 px-2">
+            <span>{order.order_created_at ? new Date(order.order_created_at).toLocaleDateString('fr-FR') : '—'}</span>
+            <span>{order.received_france_at ? new Date(order.received_france_at).toLocaleDateString('fr-FR') : '—'}</span>
+            <span>{order.qc_completed_at ? new Date(order.qc_completed_at).toLocaleDateString('fr-FR') : '—'}</span>
+            <span>{order.shipped_at ? new Date(order.shipped_at).toLocaleDateString('fr-FR') : '—'}</span>
+          </div>
+        </div>
+
+        {/* Order Info + Customer */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-white rounded-xl shadow-sm border p-5">
+            <h3 className="font-bold text-gray-800 mb-3">{lang === 'en' ? '📋 Order Details' : '📋 Détails Commande'}</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-gray-500">PO #</span><span className="font-mono font-medium">{order.po_number || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">{lang === 'en' ? 'Quote #' : 'Devis #'}</span><span className="font-mono font-medium">{order.quote_number || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">{lang === 'en' ? 'Status' : 'Statut'}</span><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${sc.bg} ${sc.text}`}>{sc.icon} {sc.label}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">{lang === 'en' ? 'Created' : 'Créé le'}</span><span>{new Date(order.created_at).toLocaleDateString('fr-FR')}</span></div>
+              {order.tracking_number && <div className="flex justify-between"><span className="text-gray-500">Tracking</span><span className="font-mono">{order.tracking_number}</span></div>}
+              {order.shipping_carrier && <div className="flex justify-between"><span className="text-gray-500">{lang === 'en' ? 'Carrier' : 'Transporteur'}</span><span>{order.shipping_carrier}</span></div>}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border p-5">
+            <h3 className="font-bold text-gray-800 mb-3">{lang === 'en' ? '👤 Customer' : '👤 Client'}</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-gray-500">{lang === 'en' ? 'Company' : 'Société'}</span><span className="font-medium">{order.customer_name || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Contact</span><span>{order.customer_contact || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Email</span><span>{order.customer_email || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">{lang === 'en' ? 'Phone' : 'Tél.'}</span><span>{order.customer_phone || '—'}</span></div>
+              {order.customer_address && <div><span className="text-gray-500">{lang === 'en' ? 'Address' : 'Adresse'}</span><p className="mt-1 text-gray-700">{order.customer_address}</p></div>}
+            </div>
+          </div>
+        </div>
+
+        {/* Line Items */}
+        <div className="bg-white rounded-xl shadow-sm border p-5">
+          <h3 className="font-bold text-gray-800 mb-3">{lang === 'en' ? '📦 Line Items' : '📦 Articles'}</h3>
+          {items.length === 0 ? (
+            <p className="text-gray-400 text-sm">{lang === 'en' ? 'No items' : 'Aucun article'}</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-gray-500">
+                  <th className="pb-2">{lang === 'en' ? 'Part #' : 'Réf.'}</th>
+                  <th className="pb-2">Description</th>
+                  <th className="pb-2 text-center">{lang === 'en' ? 'Qty' : 'Qté'}</th>
+                  <th className="pb-2 text-right">{lang === 'en' ? 'Unit Price' : 'Prix unit.'}</th>
+                  <th className="pb-2 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, i) => (
+                  <tr key={i} className="border-b last:border-0">
+                    <td className="py-2 font-mono text-xs">{item.part_number || '—'}</td>
+                    <td className="py-2">{item.description || '—'}</td>
+                    <td className="py-2 text-center">{item.quantity || 0}</td>
+                    <td className="py-2 text-right">€{(item.unit_price || 0).toFixed(2)}</td>
+                    <td className="py-2 text-right font-medium">€{(item.total || 0).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2"><td colSpan="4" className="py-2 text-right font-medium">{lang === 'en' ? 'Subtotal' : 'Sous-total'}</td><td className="py-2 text-right font-bold">€{(order.subtotal || 0).toFixed(2)}</td></tr>
+                <tr><td colSpan="4" className="py-1 text-right text-gray-500">TVA ({order.tax_rate || 20}%)</td><td className="py-1 text-right">€{(order.tax_amount || 0).toFixed(2)}</td></tr>
+                <tr className="border-t"><td colSpan="4" className="py-2 text-right font-bold text-lg">Total</td><td className="py-2 text-right font-bold text-lg text-[#00A651]">€{(order.total || 0).toFixed(2)}</td></tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+
+        {/* Shipping & Notes */}
+        {(order.status === 'qc_complete' || order.status === 'shipped') && (
+          <div className="bg-white rounded-xl shadow-sm border p-5">
+            <h3 className="font-bold text-gray-800 mb-3">🚚 {lang === 'en' ? 'Shipping Details' : 'Détails Expédition'}</h3>
+            <ShippingEditor order={order} onSave={async (updates) => {
+              const { error } = await supabase.from('usa_orders').update(updates).eq('id', order.id);
+              if (error) { notify('Erreur: ' + error.message, 'error'); }
+              else { notify('✅ Saved!'); setSelectedOrder(prev => ({ ...prev, ...updates })); loadOrders(); }
+            }} lang={lang} />
+          </div>
+        )}
+
+        {/* Notes */}
+        <div className="bg-white rounded-xl shadow-sm border p-5">
+          <h3 className="font-bold text-gray-800 mb-3">📝 Notes</h3>
+          <textarea
+            className="w-full border rounded-lg p-3 text-sm"
+            rows={3}
+            defaultValue={order.notes || ''}
+            onBlur={async (e) => {
+              if (e.target.value !== (order.notes || '')) {
+                await supabase.from('usa_orders').update({ notes: e.target.value }).eq('id', order.id);
+                setSelectedOrder(prev => ({ ...prev, notes: e.target.value }));
+              }
+            }}
+            placeholder={lang === 'en' ? 'Add notes...' : 'Ajouter des notes...'}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // ---- ORDER LIST VIEW ----
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">🇺🇸 {lang === 'en' ? 'USA Orders' : 'Commandes USA'}</h1>
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="px-4 py-2 bg-[#00A651] hover:bg-green-700 text-white rounded-lg font-bold flex items-center gap-2"
+        >
+          + {lang === 'en' ? 'New Order' : 'Nouvelle Commande'}
+        </button>
+      </div>
+
+      {/* Status Filter Tabs */}
+      <div className="flex flex-wrap gap-2">
+        {[
+          { id: 'all', label: lang === 'en' ? 'All' : 'Tout', count: counts.all },
+          { id: 'order_created', label: lang === 'en' ? 'Ordered' : 'Commandé', count: counts.order_created },
+          { id: 'received_france', label: lang === 'en' ? 'Received' : 'Reçu', count: counts.received_france },
+          { id: 'qc_complete', label: 'QC', count: counts.qc_complete },
+          { id: 'shipped', label: lang === 'en' ? 'Shipped' : 'Expédié', count: counts.shipped }
+        ].map(f => (
+          <button
+            key={f.id}
+            onClick={() => setFilter(f.id)}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              filter === f.id ? 'bg-[#00A651] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {f.label} ({f.count})
+          </button>
+        ))}
+      </div>
+
+      {/* Search */}
+      <input
+        type="text"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        placeholder={lang === 'en' ? '🔍 Search PO#, quote#, customer...' : '🔍 Rechercher PO#, devis#, client...'}
+        className="w-full px-4 py-2 border rounded-lg text-sm"
+      />
+
+      {/* Orders List */}
+      {loading ? (
+        <div className="text-center py-12 text-gray-400">{lang === 'en' ? 'Loading...' : 'Chargement...'}</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12 text-gray-400">
+          <p className="text-4xl mb-2">📦</p>
+          <p>{lang === 'en' ? 'No orders found' : 'Aucune commande trouvée'}</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(order => {
+            const sc = statusConfig[order.status] || statusConfig.order_created;
+            const items = Array.isArray(order.line_items) ? order.line_items : [];
+            const currentStep = getStepIndex(order.status);
+            return (
+              <div
+                key={order.id}
+                onClick={() => setSelectedOrder(order)}
+                className="bg-white rounded-xl shadow-sm border p-4 hover:shadow-md cursor-pointer transition-shadow"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-gray-800">{order.po_number || order.quote_number || 'N/A'}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${sc.bg} ${sc.text}`}>{sc.icon} {sc.label}</span>
+                  </div>
+                  <div className="text-right text-sm text-gray-500">
+                    <span className="font-bold text-[#00A651]">€{(order.total || 0).toFixed(2)}</span>
+                    <span className="ml-3">{new Date(order.created_at).toLocaleDateString('fr-FR')}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-600">
+                    <span className="font-medium">{order.customer_name || (lang === 'en' ? 'No customer' : 'Pas de client')}</span>
+                    {items.length > 0 && <span className="ml-2 text-gray-400">• {items.length} {lang === 'en' ? 'item(s)' : 'article(s)'}</span>}
+                  </div>
+
+                  {/* Mini progress */}
+                  <div className="flex items-center gap-1">
+                    {steps.map((step, i) => (
+                      <div key={step.id} className={`w-6 h-1.5 rounded-full ${i <= currentStep ? 'bg-[#00A651]' : 'bg-gray-200'}`} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Create Order Modal */}
+      {showCreateModal && (
+        <CreateUSAOrderModal
+          onClose={() => setShowCreateModal(false)}
+          onSaved={() => { setShowCreateModal(false); loadOrders(); }}
+          clients={clients}
+          notify={notify}
+          profile={profile}
+          lang={lang}
+        />
+      )}
+    </div>
+  );
+}
+
+// Shipping editor sub-component
+function ShippingEditor({ order, onSave, lang = 'fr' }) {
+  const [carrier, setCarrier] = useState(order.shipping_carrier || '');
+  const [tracking, setTracking] = useState(order.tracking_number || '');
+  const [address, setAddress] = useState(order.shipping_address || '');
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-gray-500 font-medium">{lang === 'en' ? 'Carrier' : 'Transporteur'}</label>
+          <input value={carrier} onChange={e => setCarrier(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm mt-1" placeholder="UPS, DHL, FedEx..." />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 font-medium">{lang === 'en' ? 'Tracking #' : 'N° Suivi'}</label>
+          <input value={tracking} onChange={e => setTracking(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm mt-1 font-mono" placeholder="1Z..." />
+        </div>
+      </div>
+      <div>
+        <label className="text-xs text-gray-500 font-medium">{lang === 'en' ? 'Shipping Address' : 'Adresse de livraison'}</label>
+        <textarea value={address} onChange={e => setAddress(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm mt-1" rows={2} />
+      </div>
+      <button
+        onClick={() => onSave({ shipping_carrier: carrier, tracking_number: tracking, shipping_address: address })}
+        className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium"
+      >
+        💾 {lang === 'en' ? 'Save Shipping' : 'Enregistrer'}
+      </button>
+    </div>
+  );
+}
+
+// Create USA Order Modal with PDF Upload + OCR
+function CreateUSAOrderModal({ onClose, onSaved, clients = [], notify, profile, lang = 'fr' }) {
+  const [step, setStep] = useState('input'); // input | review
+  const [pdfText, setPdfText] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Form state
+  const [form, setForm] = useState({
+    po_number: '',
+    quote_number: '',
+    customer_name: '',
+    customer_contact: '',
+    customer_email: '',
+    customer_phone: '',
+    customer_address: '',
+    notes: ''
+  });
+
+  const [lineItems, setLineItems] = useState([
+    { part_number: '', description: '', quantity: 1, unit_price: 0, total: 0 }
+  ]);
+
+  // Calculate totals
+  const subtotal = lineItems.reduce((sum, item) => sum + (item.total || 0), 0);
+  const taxRate = 20;
+  const taxAmount = subtotal * (taxRate / 100);
+  const total = subtotal + taxAmount;
+
+  // Update line item
+  const updateItem = (index, field, value) => {
+    const newItems = [...lineItems];
+    newItems[index] = { ...newItems[index], [field]: value };
+    if (field === 'quantity' || field === 'unit_price') {
+      newItems[index].total = (parseFloat(newItems[index].quantity) || 0) * (parseFloat(newItems[index].unit_price) || 0);
+    }
+    setLineItems(newItems);
+  };
+
+  const addItem = () => setLineItems([...lineItems, { part_number: '', description: '', quantity: 1, unit_price: 0, total: 0 }]);
+  const removeItem = (i) => setLineItems(lineItems.filter((_, idx) => idx !== i));
+
+  // PDF Upload & Extract Text
+  const handlePDFUpload = async (file) => {
+    if (!file || !file.name.endsWith('.pdf')) {
+      notify(lang === 'en' ? 'Please upload a PDF file' : 'Veuillez télécharger un fichier PDF', 'error');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      // Load pdf.js from CDN
+      if (!window.pdfjsLib) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
+
+      // Read PDF
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        fullText += pageText + '\n';
+      }
+
+      setPdfText(fullText);
+
+      // Try to auto-extract data from text
+      const extracted = parseQuotePDF(fullText);
+      if (extracted) {
+        setForm(prev => ({
+          ...prev,
+          ...extracted.form
+        }));
+        if (extracted.items && extracted.items.length > 0) {
+          setLineItems(extracted.items);
+        }
+        notify(lang === 'en' ? '✅ Data extracted from PDF! Please review.' : '✅ Données extraites du PDF ! Veuillez vérifier.');
+      } else {
+        notify(lang === 'en' ? 'PDF text extracted. Please fill in details manually.' : 'Texte PDF extrait. Veuillez remplir les détails manuellement.');
+      }
+
+      // Upload PDF to storage
+      const fileName = `usa-orders/${Date.now()}_${file.name}`;
+      await supabase.storage.from('documents').upload(fileName, file);
+      setForm(prev => ({ ...prev, source_pdf_path: fileName }));
+
+    } catch (err) {
+      console.error('PDF extraction error:', err);
+      notify((lang === 'en' ? 'PDF extraction failed: ' : 'Erreur extraction PDF: ') + err.message, 'error');
+    }
+    setUploading(false);
+  };
+
+  // Simple PDF text parser for Salesforce quotes
+  const parseQuotePDF = (text) => {
+    try {
+      const result = { form: {}, items: [] };
+
+      // === ORDER / REFERENCE NUMBERS ===
+      // Lighthouse format: "Order N° 4104"
+      const orderMatch = text.match(/Order\s+N[°o]\s*(\d+)/i);
+      if (orderMatch) result.form.po_number = orderMatch[1].trim();
+
+      // Quote number patterns
+      const quoteMatch = text.match(/(?:Quote|Quotation|Devis|QU-|V\.\s*réf\.?\s*:)\s*([A-Z0-9-]+)/i);
+      if (quoteMatch && quoteMatch[1].trim().length > 1) result.form.quote_number = quoteMatch[1].trim();
+
+      // Customer reference: "Ref. cust : C3018 -C3084"
+      const custRefMatch = text.match(/Ref\.?\s*cust\.?\s*:\s*([A-Z0-9][A-Z0-9\s-]*[A-Z0-9])/i);
+      if (custRefMatch) result.form.notes = 'Ref. cust: ' + custRefMatch[1].trim();
+
+      // PO / Purchase Order
+      const poMatch = text.match(/(?:PO|Purchase Order|P\.O\.?)[\s#:]*([A-Z0-9-]+)/i);
+      if (poMatch && !result.form.po_number) result.form.po_number = poMatch[1].trim();
+
+      // === CUSTOMER INFO ===
+      // "Invoice and dispatch to:" followed by customer info
+      const dispatchMatch = text.match(/(?:Invoice and dispatch to|Ship To|Bill To|Dispatch to)\s*:\s*(.+?)(?:Tél|Tel|SIRET|Page)/is);
+      if (dispatchMatch) {
+        const dispatchText = dispatchMatch[1].trim();
+        // Try to extract name from dispatch section
+        const nameMatch = dispatchText.match(/^([A-Za-zÀ-ÿ\s'-]+?)(?:\d|$)/);
+        if (nameMatch) result.form.customer_contact = nameMatch[1].trim();
+      }
+
+      // Contact name: look for name pattern before "Invoice and dispatch"
+      const contactMatch = text.match(/(\d{2}\/\d{2}\/\d{4})\s+([A-Za-zÀ-ÿ]+\s+[A-Za-zÀ-ÿ]+)\s+(?:Invoice|Facture)/i);
+      if (contactMatch) result.form.customer_contact = contactMatch[2].trim();
+
+      // Company name patterns
+      const companyPatterns = [
+        /(?:Bill To|Ship To|Customer|Client|Sold To)[\s:]*\n?\s*([A-Z][A-Za-zÀ-ÿ\s&.,'-]+)/i,
+        /(?:Company|Société|Organisation)[\s:]*([A-Z][A-Za-zÀ-ÿ\s&.,'-]+)/i
+      ];
+      for (const pattern of companyPatterns) {
+        const m = text.match(pattern);
+        if (m) { result.form.customer_name = m[1].trim(); break; }
+      }
+
+      // Email (skip lighthouse internal emails)
+      const emails = text.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g) || [];
+      const customerEmail = emails.find(e => !e.includes('golighthouse') && !e.includes('lighthouse'));
+      if (customerEmail) result.form.customer_email = customerEmail;
+
+      // Phone: look for customer phone (not Lighthouse's own number)
+      const phoneMatch = text.match(/(?:Tél|Tel|Phone)[\s.:]*([+0-9\s()-]{8,})/i);
+      if (phoneMatch) result.form.customer_phone = phoneMatch[1].trim();
+
+      // === LINE ITEMS ===
+      // Lighthouse Salesforce format: "$ QTY DESCRIPTION UNIT_PRICE $ TOTAL PART_NUMBER"
+      // Example: "$ 1  Gas Sampler Valve Stem - AC 100  33,99  $  33,99  211317177-1"
+      const itemPattern = /\$\s*(\d+)\s+(.+?)\s+(\d+[.,]\d{2})\s+\$\s+(\d+[.,]\d{2})\s+(\d{5,}-\d+)/g;
+      let match;
+      while ((match = itemPattern.exec(text)) !== null) {
+        const qty = parseInt(match[1]) || 1;
+        const desc = match[2].trim();
+        const unitPrice = parseFloat(match[3].replace(',', '.')) || 0;
+        const totalPrice = parseFloat(match[4].replace(',', '.')) || 0;
+        const partNum = match[5].trim();
+
+        result.items.push({
+          part_number: partNum,
+          description: desc,
+          quantity: qty,
+          unit_price: unitPrice,
+          total: totalPrice
+        });
+      }
+
+      // Fallback: try generic line item pattern if Lighthouse format didn't match
+      if (result.items.length === 0) {
+        const genericPattern = /([A-Z0-9]{2,}[-][A-Z0-9-]+)\s+(.+?)\s+(\d+)\s+[\$€£]?([\d,]+\.?\d*)\s+[\$€£]?([\d,]+\.?\d*)/g;
+        while ((match = genericPattern.exec(text)) !== null) {
+          result.items.push({
+            part_number: match[1],
+            description: match[2].trim(),
+            quantity: parseInt(match[3]) || 1,
+            unit_price: parseFloat(match[4].replace(',', '.')) || 0,
+            total: parseFloat(match[5].replace(',', '.')) || 0
+          });
+        }
+      }
+
+      return (result.form.po_number || result.form.quote_number || result.form.customer_name || result.form.customer_contact || result.items.length > 0) ? result : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Save order
+  const saveOrder = async () => {
+    if (!form.customer_name && !form.po_number) {
+      notify(lang === 'en' ? 'Please enter a customer name or PO number' : 'Veuillez entrer un nom de client ou un numéro PO', 'error');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const validItems = lineItems.filter(item => item.part_number || item.description);
+
+      const orderData = {
+        ...form,
+        line_items: validItems,
+        subtotal: subtotal,
+        tax_rate: taxRate,
+        tax_amount: taxAmount,
+        total: total,
+        status: 'order_created',
+        order_created_at: new Date().toISOString(),
+        created_by: profile?.id
+      };
+
+      // Try to link to existing client
+      if (form.customer_name) {
+        const matchedClient = clients.find(c =>
+          c.company_name?.toLowerCase().includes(form.customer_name.toLowerCase()) ||
+          form.customer_name.toLowerCase().includes(c.company_name?.toLowerCase() || '')
+        );
+        if (matchedClient) orderData.client_id = matchedClient.id;
+      }
+
+      const { error } = await supabase.from('usa_orders').insert(orderData);
+      if (error) throw error;
+
+      notify(lang === 'en' ? '✅ Order created!' : '✅ Commande créée !');
+      onSaved();
+    } catch (err) {
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="p-4 border-b bg-blue-50 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-gray-800">🇺🇸 {lang === 'en' ? 'New USA Order' : 'Nouvelle Commande USA'}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {/* PDF Upload Section */}
+          <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center bg-gray-50">
+            <p className="text-gray-600 mb-3">{lang === 'en' ? '📄 Upload Salesforce Quote/PO PDF to auto-extract data' : '📄 Télécharger le PDF Devis/PO Salesforce pour extraction automatique'}</p>
+            <label className="inline-block px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium cursor-pointer">
+              {uploading ? '⏳ Extracting...' : (lang === 'en' ? '📤 Upload PDF' : '📤 Télécharger PDF')}
+              <input
+                type="file"
+                accept=".pdf"
+                className="hidden"
+                disabled={uploading}
+                onChange={e => e.target.files[0] && handlePDFUpload(e.target.files[0])}
+              />
+            </label>
+            {pdfText && (
+              <details className="mt-3 text-left">
+                <summary className="text-sm text-gray-500 cursor-pointer">{lang === 'en' ? 'View extracted text' : 'Voir le texte extrait'}</summary>
+                <pre className="mt-2 p-3 bg-white border rounded text-xs max-h-40 overflow-y-auto whitespace-pre-wrap">{pdfText}</pre>
+              </details>
+            )}
+          </div>
+
+          {/* Customer Info */}
+          <div>
+            <h4 className="font-bold text-gray-700 mb-2">{lang === 'en' ? '👤 Customer Info' : '👤 Info Client'}</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-500">{lang === 'en' ? 'Company' : 'Société'} *</label>
+                <input value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm mt-1" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Contact</label>
+                <input value={form.customer_contact} onChange={e => setForm({ ...form, customer_contact: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm mt-1" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Email</label>
+                <input value={form.customer_email} onChange={e => setForm({ ...form, customer_email: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm mt-1" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">{lang === 'en' ? 'Phone' : 'Tél.'}</label>
+                <input value={form.customer_phone} onChange={e => setForm({ ...form, customer_phone: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm mt-1" />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs text-gray-500">{lang === 'en' ? 'Address' : 'Adresse'}</label>
+                <input value={form.customer_address} onChange={e => setForm({ ...form, customer_address: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm mt-1" />
+              </div>
+            </div>
+          </div>
+
+          {/* Order Reference */}
+          <div>
+            <h4 className="font-bold text-gray-700 mb-2">{lang === 'en' ? '📋 Order Reference' : '📋 Référence Commande'}</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-500">PO #</label>
+                <input value={form.po_number} onChange={e => setForm({ ...form, po_number: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm mt-1 font-mono" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">{lang === 'en' ? 'Quote #' : 'Devis #'}</label>
+                <input value={form.quote_number} onChange={e => setForm({ ...form, quote_number: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm mt-1 font-mono" />
+              </div>
+            </div>
+          </div>
+
+          {/* Line Items */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-bold text-gray-700">{lang === 'en' ? '📦 Line Items' : '📦 Articles'}</h4>
+              <button onClick={addItem} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm font-medium">+ {lang === 'en' ? 'Add Item' : 'Ajouter'}</button>
+            </div>
+            <div className="space-y-2">
+              {lineItems.map((item, i) => (
+                <div key={i} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg">
+                  <input
+                    value={item.part_number}
+                    onChange={e => updateItem(i, 'part_number', e.target.value)}
+                    placeholder={lang === 'en' ? 'Part #' : 'Réf.'}
+                    className="w-32 border rounded px-2 py-1.5 text-sm font-mono"
+                  />
+                  <input
+                    value={item.description}
+                    onChange={e => updateItem(i, 'description', e.target.value)}
+                    placeholder="Description"
+                    className="flex-1 border rounded px-2 py-1.5 text-sm"
+                  />
+                  <input
+                    type="number"
+                    value={item.quantity}
+                    onChange={e => updateItem(i, 'quantity', parseInt(e.target.value) || 0)}
+                    className="w-16 border rounded px-2 py-1.5 text-sm text-center"
+                    min="1"
+                  />
+                  <input
+                    type="number"
+                    value={item.unit_price}
+                    onChange={e => updateItem(i, 'unit_price', parseFloat(e.target.value) || 0)}
+                    className="w-24 border rounded px-2 py-1.5 text-sm text-right"
+                    step="0.01"
+                    placeholder="€"
+                  />
+                  <span className="w-24 text-right text-sm font-medium">€{(item.total || 0).toFixed(2)}</span>
+                  {lineItems.length > 1 && (
+                    <button onClick={() => removeItem(i)} className="text-red-400 hover:text-red-600 text-lg px-1">&times;</button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Totals */}
+            <div className="mt-3 border-t pt-3 text-right space-y-1">
+              <p className="text-sm text-gray-500">{lang === 'en' ? 'Subtotal' : 'Sous-total'}: <span className="font-medium text-gray-800">€{subtotal.toFixed(2)}</span></p>
+              <p className="text-sm text-gray-500">TVA ({taxRate}%): <span className="font-medium text-gray-800">€{taxAmount.toFixed(2)}</span></p>
+              <p className="text-lg font-bold text-[#00A651]">Total: €{total.toFixed(2)}</p>
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="text-xs text-gray-500 font-medium">Notes</label>
+            <textarea
+              value={form.notes}
+              onChange={e => setForm({ ...form, notes: e.target.value })}
+              className="w-full border rounded-lg px-3 py-2 text-sm mt-1"
+              rows={2}
+              placeholder={lang === 'en' ? 'Optional notes...' : 'Notes optionnelles...'}
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t bg-gray-50 flex items-center justify-between">
+          <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
+            {lang === 'en' ? 'Cancel' : 'Annuler'}
+          </button>
+          <button
+            onClick={saveOrder}
+            disabled={saving}
+            className="px-6 py-2 bg-[#00A651] hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving ? '⏳...' : '✅'} {lang === 'en' ? 'Create Order' : 'Créer la Commande'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RentalsSheet({ rentals = [], clients, notify, reload, profile, businessSettings, t = k=>k, lang = 'fr' }) {
   const [activeTab, setActiveTab] = useState('requests'); // 'requests', 'inventory', 'bundles', 'calendar'
   const [selectedRental, setSelectedRental] = useState(null);
@@ -23659,22 +25090,23 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
       )}
 
       {/* Calendar Tab */}
-      {activeTab === 'calendar' && <RentalCalendarView bookings={bookings} inventory={inventory} />}
+      {activeTab === 'calendar' && <RentalCalendarView bookings={bookings} inventory={inventory} lang={lang} />}
 
       {/* Add/Edit Device Modal */}
-      {showAddDevice && <RentalDeviceModal device={editingDevice} onSave={saveDevice} onClose={() => { setShowAddDevice(false); setEditingDevice(null); }} />}
+      {showAddDevice && <RentalDeviceModal device={editingDevice} onSave={saveDevice} onClose={() => { setShowAddDevice(false); setEditingDevice(null); }} lang={lang} />}
 
       {/* Add/Edit Bundle Modal */}
-      {showAddBundle && <RentalBundleModal bundle={editingBundle} inventory={inventory} onSave={saveBundle} onClose={() => { setShowAddBundle(false); setEditingBundle(null); }} />}
+      {showAddBundle && <RentalBundleModal bundle={editingBundle} inventory={inventory} onSave={saveBundle} onClose={() => { setShowAddBundle(false); setEditingBundle(null); }} lang={lang} />}
 
       {/* Rental Detail Modal */}
-      {selectedRental && <RentalAdminModal rental={selectedRental} onClose={() => setSelectedRental(null)} notify={notify} reload={reload} businessSettings={businessSettings} />}
+      {selectedRental && <RentalAdminModal rental={selectedRental} onClose={() => setSelectedRental(null)} notify={notify} reload={reload} businessSettings={businessSettings} lang={lang} />}
     </div>
   );
 }
 
 // Rental Device Modal
-function RentalDeviceModal({ device, onSave, onClose }) {
+function RentalDeviceModal({ device, onSave, onClose, lang = 'fr' }) {
+  const t = k => k;
   const [formData, setFormData] = useState({
     serial_number: device?.serial_number || '',
     model_name: device?.model_name || '',
@@ -23783,7 +25215,8 @@ function RentalDeviceModal({ device, onSave, onClose }) {
 }
 
 // Rental Bundle Modal
-function RentalBundleModal({ bundle, inventory, onSave, onClose }) {
+function RentalBundleModal({ bundle, inventory, onSave, onClose, lang = 'fr' }) {
+  const t = k => k;
   const [formData, setFormData] = useState({
     bundle_name: bundle?.bundle_name || '',
     bundle_code: bundle?.bundle_code || '',
@@ -23862,7 +25295,7 @@ function RentalBundleModal({ bundle, inventory, onSave, onClose }) {
 }
 
 // Rental Calendar View
-function RentalCalendarView({ bookings, inventory }) {
+function RentalCalendarView({ bookings, inventory, lang = 'fr' }) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
@@ -23881,7 +25314,7 @@ function RentalCalendarView({ bookings, inventory }) {
         <button onClick={() => setCurrentMonth(new Date(year, month + 1, 1))} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">→</button>
       </div>
       <div className="grid grid-cols-7 gap-1 mb-2">
-        {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map(d => <div key={d} className="text-center text-sm font-medium text-gray-500 py-2">{d}</div>)}
+        {(lang === 'en' ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] : ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']).map(d => <div key={d} className="text-center text-sm font-medium text-gray-500 py-2">{d}</div>)}
       </div>
       <div className="grid grid-cols-7 gap-1">
         {Array.from({ length: (new Date(year, month, 1).getDay() + 6) % 7 }, (_, i) => <div key={`pad-${i}`} className="h-24" />)}
@@ -23909,7 +25342,8 @@ function RentalCalendarView({ bookings, inventory }) {
 }
 
 // Rental Admin Modal - Full management
-function RentalAdminModal({ rental, onClose, notify, reload, businessSettings }) {
+function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, lang = 'fr' }) {
+  const t = k => k;
   const [status, setStatus] = useState(rental.status);
   const [saving, setSaving] = useState(false);
   const [quoteShipping, setQuoteShipping] = useState(rental.quote_shipping || 0);
