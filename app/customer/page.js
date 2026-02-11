@@ -9862,8 +9862,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                            className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors border-blue-200">
                           <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
                           <div>
-                            <p className="font-medium text-gray-800">Devis{request.quote_revision_count > 0 ? ` Rev-${request.quote_revision_count}` : ''}</p>
-                            <p className="text-sm text-blue-600">{request.quote_number ? `N° ${request.quote_number}` : request.request_number}</p>
+                            <p className="font-medium text-gray-800">
+                              Devis{request.quote_revision_count > 0 ? ` Rev-${request.quote_revision_count}` : ''} (actuel)
+                            </p>
+                            <p className="text-sm text-blue-600">N° {request.quote_number || request.request_number}</p>
                           </div>
                         </a>
                       )}
@@ -9874,8 +9876,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                            className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
                           <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
                           <div>
-                            <p className="font-medium text-gray-800">Devis Signé / BC</p>
-                            <p className="text-sm text-green-600">{request.bc_signed_by ? `Signé par ${request.bc_signed_by}` : 'Signé'}</p>
+                            <p className="font-medium text-gray-800">
+                              Devis Signé{request.quote_revision_count > 0 ? ` Rev-${request.quote_revision_count}` : ''} / BC
+                            </p>
+                            <p className="text-sm text-green-600">N° {request.bc_number || request.quote_number || request.request_number}</p>
                           </div>
                         </a>
                       )}
@@ -9887,7 +9891,43 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                           <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
                           <div>
                             <p className="font-medium text-gray-800">Bon de Commande</p>
-                            <p className="text-sm text-purple-600">{request.bc_number ? `N° ${request.bc_number}` : 'BC'}</p>
+                            <p className="text-sm text-purple-600">N° {request.bc_number || request.quote_number || request.request_number}</p>
+                          </div>
+                        </a>
+                      )}
+                      
+                      {/* Supplement Quote (avenant_quote) */}
+                      {attachments.find(a => a.category === 'avenant_quote' && a.file_url) && (
+                        <a href={attachments.find(a => a.category === 'avenant_quote').file_url} target="_blank" rel="noopener noreferrer"
+                           className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors border-amber-200">
+                          <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
+                          <div>
+                            <p className="font-medium text-gray-800">Supplément au Devis</p>
+                            <p className="text-sm text-amber-600">{request.supplement_number ? `N° ${request.supplement_number}` : 'Supplément'}</p>
+                          </div>
+                        </a>
+                      )}
+                      
+                      {/* Signed Supplement (avenant_signe) */}
+                      {attachments.find(a => a.category === 'avenant_signe' && a.file_url) && (
+                        <a href={attachments.find(a => a.category === 'avenant_signe').file_url} target="_blank" rel="noopener noreferrer"
+                           className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
+                          <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
+                          <div>
+                            <p className="font-medium text-gray-800">Supplément Signé</p>
+                            <p className="text-sm text-green-600">{request.supplement_number ? `N° ${request.supplement_number}` : 'Signé'}</p>
+                          </div>
+                        </a>
+                      )}
+                      
+                      {/* Supplement BC (avenant_bc) */}
+                      {attachments.find(a => a.category === 'avenant_bc' && a.file_url) && (
+                        <a href={attachments.find(a => a.category === 'avenant_bc').file_url} target="_blank" rel="noopener noreferrer"
+                           className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors border-amber-200">
+                          <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
+                          <div>
+                            <p className="font-medium text-gray-800">BC Supplément</p>
+                            <p className="text-sm text-amber-600">{request.supplement_bc_number ? `N° ${request.supplement_bc_number}` : 'BC Supplément'}</p>
                           </div>
                         </a>
                       )}
@@ -9929,7 +9969,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                       )}
                       
                       {/* Per-device attachments */}
-                      {deviceAtts.filter(a => !a.file_type?.startsWith('image/')).map(att => (
+                      {deviceAtts.filter(a => !a.file_type?.startsWith('image/') && !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category)).map(att => (
                         <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
                            className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
                           <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-sm font-bold text-gray-600">
@@ -9946,7 +9986,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     {/* No docs */}
                     {!request.quote_url && !request.signed_quote_url && !request.bc_file_url && 
                      !device.report_url && !device.calibration_certificate_url && !device.bl_url && 
-                     deviceAtts.filter(a => !a.file_type?.startsWith('image/')).length === 0 && (
+                     !attachments.find(a => ['avenant_quote', 'avenant_signe', 'avenant_bc'].includes(a.category)) &&
+                     deviceAtts.filter(a => !a.file_type?.startsWith('image/') && !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category)).length === 0 && (
                       <div className="text-center py-8 bg-gray-50 rounded-lg">
                         <p className="text-3xl mb-2">📄</p>
                         <p className="text-gray-500">Aucun document disponible pour le moment</p>
@@ -10148,8 +10189,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                                  className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 border-blue-200">
                                 <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
                                 <div>
-                                  <p className="font-medium text-gray-800">Devis{request.quote_revision_count > 0 ? ` Rev-${request.quote_revision_count}` : ''}</p>
-                                  <p className="text-sm text-blue-600">{request.quote_number ? `N° ${request.quote_number}` : request.request_number}</p>
+                                  <p className="font-medium text-gray-800">
+                                    Devis{request.quote_revision_count > 0 ? ` Rev-${request.quote_revision_count}` : ''} (actuel)
+                                  </p>
+                                  <p className="text-sm text-blue-600">N° {request.quote_number || request.request_number}</p>
                                 </div>
                               </a>
                             )}
@@ -10158,8 +10201,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                                  className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 border-green-200">
                                 <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
                                 <div>
-                                  <p className="font-medium text-gray-800">Devis Signé / BC</p>
-                                  <p className="text-sm text-green-600">{request.bc_signed_by ? `Signé par ${request.bc_signed_by}` : 'Signé'}</p>
+                                  <p className="font-medium text-gray-800">
+                                    Devis Signé{request.quote_revision_count > 0 ? ` Rev-${request.quote_revision_count}` : ''} / BC
+                                  </p>
+                                  <p className="text-sm text-green-600">N° {request.bc_number || request.quote_number || request.request_number}</p>
                                 </div>
                               </a>
                             )}
@@ -10169,7 +10214,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                                 <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
                                 <div>
                                   <p className="font-medium text-gray-800">Bon de Commande</p>
-                                  <p className="text-sm text-purple-600">{request.bc_number ? `N° ${request.bc_number}` : 'BC'}</p>
+                                  <p className="text-sm text-purple-600">N° {request.bc_number || request.quote_number || request.request_number}</p>
                                 </div>
                               </a>
                             )}
