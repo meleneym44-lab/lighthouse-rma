@@ -6936,15 +6936,33 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     const checklistObj = {};
     checklist.forEach(item => { checklistObj[item.id] = item.checked; });
     try {
-      const { error } = await supabase.from('request_devices').update({
+      const updateData = {
         service_findings: findings, additional_work_needed: additionalWorkNeeded,
         additional_work_items: additionalWorkNeeded ? workItems : [],
         work_completed: workCompleted, work_checklist: checklistObj,
         technician_name: technicianName,
         cal_type: calType,
         reception_result: receptionResult
-      }).eq('id', device.id);
+      };
+      
+      // If device is still in queue/received, transition to in-progress status
+      if (['received', 'in_queue', 'inspection'].includes(device.status)) {
+        const serviceType = device.service_type || 'calibration';
+        updateData.status = (serviceType === 'repair') ? 'repair_in_progress' : 'calibration_in_progress';
+        updateData.service_started_at = new Date().toISOString();
+      }
+      
+      const { error } = await supabase.from('request_devices').update(updateData).eq('id', device.id);
       if (error) throw error;
+      
+      // If device just transitioned to in-progress, also update RMA status if needed
+      if (updateData.status && ['received', 'in_queue', 'calibration_in_progress'].includes(rma.status)) {
+        await supabase.from('service_requests').update({
+          status: 'calibration_in_progress',
+          updated_at: new Date().toISOString()
+        }).eq('id', rma.id);
+      }
+      
       notify(lang === 'en' ? '✓ Saved' : '✓ Enregistré');
       // Lock work items after successful save if there are any
       if (additionalWorkNeeded && workItems.length > 0) {
