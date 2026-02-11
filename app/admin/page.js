@@ -7122,6 +7122,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           reload={reload}
           alreadySent={!!rma.avenant_sent_at}
           businessSettings={businessSettings}
+          lang={lang}
         />
       )}
     </div>
