@@ -4081,7 +4081,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
   const stats = [
     { id: 'all', label: lang === 'en' ? 'Active RMAs' : 'RMAs Actifs', value: activeRMAs.length, color: 'bg-blue-500', icon: '📋' },
     { id: 'bc', label: lang === 'en' ? 'PO to Review' : 'BC à vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
-    { id: 'avenant', label: lang === 'en' ? 'Supplement pending' : 'Avenant en attente', value: avenantPending.length, color: 'bg-amber-500', icon: '📄' },
+    { id: 'avenant', label: lang === 'en' ? 'Supplement pending' : 'Supplément en attente', value: avenantPending.length, color: 'bg-amber-500', icon: '📄' },
     { id: 'waiting_bc', label: lang === 'en' ? 'Awaiting PO' : 'Attente BC', value: waitingBC.length, color: 'bg-orange-500', icon: '📝' },
     { id: 'waiting_device', label: lang === 'en' ? 'Awaiting Device' : 'Attente Appareil', value: waitingDevice.length, color: 'bg-cyan-500', icon: '📦' },
   ];
@@ -4781,11 +4781,11 @@ function BCReviewModal({ rma, onClose, notify, reload, lang = 'fr' }) {
         <div className={`px-6 py-3 ${isAvenantBC ? 'bg-gradient-to-r from-amber-500 to-amber-600' : 'bg-gradient-to-r from-red-500 to-red-600'} text-white flex justify-between items-center flex-shrink-0`}>
           <div>
             <h2 className="text-xl font-bold">
-              {isAvenantBC ? '📄 Vérification BC Avenant' : (lang === 'en' ? 'Purchase Order Verification' : 'Vérification du Bon de Commande')}
+              {isAvenantBC ? '📄 Vérification BC Supplément' : (lang === 'en' ? 'Purchase Order Verification' : 'Vérification du Bon de Commande')}
             </h2>
             <p className={isAvenantBC ? 'text-amber-100' : 'text-red-100'}>
               {rma.request_number} • {rma.companies?.name}
-              {isAvenantBC && ` • ${lang === 'en' ? 'Supplement' : 'Avenant'}: €${rma.avenant_total?.toFixed(2) || '0.00'}`}
+              {isAvenantBC && ` • ${lang === 'en' ? 'Supplement' : 'Supplément'}: €${rma.avenant_total?.toFixed(2) || '0.00'}`}
             </p>
           </div>
           <button onClick={onClose} className="text-white/70 hover:text-white text-3xl">&times;</button>
@@ -4796,19 +4796,19 @@ function BCReviewModal({ rma, onClose, notify, reload, lang = 'fr' }) {
           {/* Left: Document Preview - Takes most of the space */}
           <div className="flex-1 flex flex-col bg-gray-800 p-4">
             <div className="flex justify-between items-center mb-3">
-              <h3 className="font-bold text-white text-lg">{lang === 'en' ? `📄 PO Document ${isAvenantBC ? '(Supplement)' : ''}` : `📄 Document BC ${isAvenantBC ? '(Avenant)' : ''}`}</h3>
+              <h3 className="font-bold text-white text-lg">{lang === 'en' ? `📄 PO Document ${isAvenantBC ? '(Supplement)' : ''}` : `📄 Document BC ${isAvenantBC ? '(Supplément)' : ''}`}</h3>
               <div className="flex gap-2">
                 {isAvenantBC ? (
                   <>
                     {/* Avenant documents */}
                     {avenantSigneUrl && (
                       <a href={avenantSigneUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium">
-                        {lang === 'en' ? '✅ Signed Supplement ↗' : '✅ Avenant Signé ↗'}
+                        {lang === 'en' ? '✅ Signed Supplement ↗' : '✅ Supplément Signé ↗'}
                       </a>
                     )}
                     {avenantQuoteUrl && (
                       <a href={avenantQuoteUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium">
-                        📄 Avenant ↗
+                        📄 Supplément ↗
                       </a>
                     )}
                     {(rma.bc_file_url || avenantBcUrl) && (
@@ -4937,7 +4937,7 @@ function BCReviewModal({ rma, onClose, notify, reload, lang = 'fr' }) {
             {/* Quote/Avenant Info */}
             {isAvenantBC ? (
               <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
-                <h4 className="font-medium text-orange-800 mb-1">{lang === 'en' ? '📄 Supplement' : '📄 Avenant'}</h4>
+                <h4 className="font-medium text-orange-800 mb-1">{lang === 'en' ? '📄 Supplement' : '📄 Supplément'}</h4>
                 {rma.avenant_total && <p className="text-xl font-bold text-orange-700">{rma.avenant_total.toFixed(2)} €</p>}
                 {avenantQuoteUrl && (
                   <a href={avenantQuoteUrl} target="_blank" rel="noopener noreferrer" className="text-orange-600 hover:underline text-sm">
@@ -5037,7 +5037,7 @@ function BCReviewModal({ rma, onClose, notify, reload, lang = 'fr' }) {
                 disabled={approving}
                 className={`w-full px-6 py-3 ${isAvenantBC ? 'bg-amber-500 hover:bg-amber-600' : 'bg-green-500 hover:bg-green-600'} text-white rounded-lg font-bold disabled:opacity-50`}
               >
-                {approving ? (lang === 'en' ? 'Approving...' : 'Approbation...') : isAvenantBC ? (lang === 'en' ? '✅ Approve Supplement' : '✅ Approuver Avenant') : (lang === 'en' ? '✅ Approve PO' : '✅ Approuver BC')}
+                {approving ? (lang === 'en' ? 'Approving...' : 'Approbation...') : isAvenantBC ? (lang === 'en' ? '✅ Approve Supplement' : '✅ Approuver Supplément') : (lang === 'en' ? '✅ Approve PO' : '✅ Approuver BC')}
               </button>
               <button
                 onClick={rejectBC}
@@ -5304,10 +5304,16 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
   const allReadyToShip = devices.length > 0 && devices.every(d => d.status === 'ready_to_ship' || d.qc_complete);
   const isReadyToShip = allQCComplete && allReadyToShip;
   
-  const hasAdditionalWork = devices.some(d => d.additional_work_needed && !rma.avenant_sent_at);
+  const hasAdditionalWork = devices.some(d => {
+    if (!d.additional_work_needed || rma.avenant_sent_at) return false;
+    const items = d.additional_work_items || [];
+    if (items.length === 0) return true; // flagged but no items yet
+    const allWarranty = items.every(i => i.warranty);
+    return !allWarranty; // only show if NOT all warranty
+  });
   const totalAdditionalWork = devices.reduce((sum, d) => {
     if (!d.additional_work_needed || !d.additional_work_items) return sum;
-    return sum + d.additional_work_items.reduce((s, item) => s + (parseFloat(item.price) || 0), 0);
+    return sum + d.additional_work_items.filter(i => !i.warranty).reduce((s, item) => s + ((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)), 0);
   }, 0);
   
   // Mark selected devices as received
@@ -5480,7 +5486,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
               onClick={onOpenAvenant}
               className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium flex items-center gap-2"
             >
-              {lang === 'en' ? `📄 Create Supplement (€${totalAdditionalWork.toFixed(2)})` : `📄 Créer Avenant (€${totalAdditionalWork.toFixed(2)})`}
+              {lang === 'en' ? `📄 Create Supplement (€${totalAdditionalWork.toFixed(2)})` : `📄 Créer Supplément (€${totalAdditionalWork.toFixed(2)})`}
             </button>
           )}
           
@@ -7466,7 +7472,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     if (reportComplete) return <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">{lang === 'en' ? '✓ Report completed' : '✓ Rapport terminé'}</span>;
     if (!additionalWorkNeeded) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button></>);
     if (additionalWorkNeeded && allWarranty) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button></>);
-    if (additionalWorkNeeded && !avenantSent) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">{lang === 'en' ? '⚠️ Create supplement from RMA page' : '⚠️ Créer avenant depuis page RMA'}</span></>);
+    if (additionalWorkNeeded && !avenantSent) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">{lang === 'en' ? '⚠️ Create supplement from RMA page' : '⚠️ Créer supplément depuis page RMA'}</span></>);
     if (additionalWorkNeeded && avenantSent && !avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><span className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg">{lang === 'en' ? '⏳ Awaiting approval' : '⏳ Attente approbation'}</span></>);
     if (additionalWorkNeeded && avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button></>);
     return null;
@@ -7494,7 +7500,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
         return (
           <div className={`rounded-lg p-3 ${avenantApproved ? 'bg-green-100 border border-green-300' : avenantSent ? 'bg-purple-100 border border-purple-300' : 'bg-amber-100 border border-amber-300'}`}>
             <span className={`font-medium ${avenantApproved ? 'text-green-800' : avenantSent ? 'text-purple-800' : 'text-amber-800'}`}>
-              {avenantApproved ? (lang === 'en' ? '✓ Supplement approved by client' : '✓ Avenant approuvé par le client') : avenantSent ? (lang === 'en' ? '📤 Supplement sent - Awaiting approval' : '📤 Avenant envoyé - En attente approbation') : (lang === 'en' ? '⚠️ Additional work detected - Supplement required' : '⚠️ Travaux supplémentaires détectés - Avenant requis')}
+              {avenantApproved ? (lang === 'en' ? '✓ Supplement approved by client' : '✓ Supplément approuvé par le client') : avenantSent ? (lang === 'en' ? '📤 Supplement sent - Awaiting approval' : '📤 Supplément envoyé - En attente approbation') : (lang === 'en' ? '⚠️ Additional work detected - Supplement required' : '⚠️ Travaux supplémentaires détectés - Supplément requis')}
             </span>
           </div>
         );
@@ -8423,7 +8429,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
         device_serial: devicesWithWork.map(d => d.serial_number).join(', ')
       });
       
-      notify(lang === 'en' ? '✅ Supplement sent to client!' : '✅ Avenant envoyé au client!');
+      notify(lang === 'en' ? '✅ Supplement sent to client!' : '✅ Supplément envoyé au client!');
       reload();
       onClose();
     } catch (err) {
@@ -8439,7 +8445,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
         {/* Modal Header - Like RMA Quote */}
         <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
           <div>
-            <h2 className="text-xl font-bold">{lang === 'en' ? 'Quote Supplement' : 'Avenant au Devis'}</h2>
+            <h2 className="text-xl font-bold">{lang === 'en' ? 'Quote Supplement' : 'Supplément au Devis'}</h2>
             <p className="text-gray-400">{rma.request_number} • {rma.companies?.name}</p>
           </div>
           <div className="flex items-center gap-3">
