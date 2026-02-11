@@ -4501,7 +4501,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                         <div 
                           className={`
                             flex items-center justify-center h-9 px-2 text-[10px] font-medium text-center leading-tight
-                            ${isShipped ? 'bg-[#00A651] text-white' : isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
+                            ${isShipped && isLast ? 'bg-[#00A651] text-white' : isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
                             ${index === 0 ? 'rounded-l-sm' : ''}
                             ${isLast ? 'rounded-r-sm' : ''}
                           `}
@@ -4513,7 +4513,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                                 : 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%)'
                           }}
                         >
-                          <span className="break-words hyphens-auto">{isShipped && isLast ? (lang === 'en' ? '✓ Shipped' : '✓ Expédié') : isShipped ? '✓' : step.label}</span>
+                          <span className="break-words hyphens-auto">{isShipped && isLast ? (lang === 'en' ? '✓ Shipped' : '✓ Expédié') : step.label}</span>
                         </div>
                       </div>
                     );
@@ -6049,7 +6049,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     const deviceSpecificStatuses = ['received', 'in_queue', 'inspection', 'calibration', 'calibration_in_progress', 
       'repair', 'repair_in_progress', 'final_qc', 'qc_complete', 'qc_rejected', 'ready_to_ship', 'shipped', 'completed'];
     const effectiveStatus = deviceSpecificStatuses.includes(device.status) ? device.status : rma.status;
-    const currentIndex = isShipped ? steps.length : getStepIndex(effectiveStatus, isRepair);
+    const currentIndex = getStepIndex(effectiveStatus, isRepair);
     
     return (
       <div className="flex w-full">
@@ -6063,7 +6063,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
               <div 
                 className={`
                   flex items-center justify-center h-9 px-2 text-[10px] font-medium text-center leading-tight
-                  ${isShipped ? 'bg-green-500 text-white' : isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
+                  ${isShipped && isLast ? 'bg-green-500 text-white' : isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
                   ${index === 0 ? 'rounded-l-md' : ''}
                   ${isLast ? 'rounded-r-md' : ''}
                 `}
@@ -6075,7 +6075,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       : 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%)'
                 }}
               >
-                <span className="break-words hyphens-auto">{isShipped && isLast ? (lang === 'en' ? '✓ Shipped' : '✓ Expédié') : isShipped ? '✓' : step.label}</span>
+                <span className="break-words hyphens-auto">{isShipped && isLast ? (lang === 'en' ? '✓ Shipped' : '✓ Expédié') : step.label}</span>
               </div>
             </div>
           );
