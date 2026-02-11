@@ -5304,16 +5304,10 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
   const allReadyToShip = devices.length > 0 && devices.every(d => d.status === 'ready_to_ship' || d.qc_complete);
   const isReadyToShip = allQCComplete && allReadyToShip;
   
-  const hasAdditionalWork = devices.some(d => {
-    if (!d.additional_work_needed || rma.avenant_sent_at) return false;
-    const items = d.additional_work_items || [];
-    if (items.length === 0) return true; // flagged but no items yet
-    const allWarranty = items.every(i => i.warranty);
-    return !allWarranty; // only show if NOT all warranty
-  });
+  const hasAdditionalWork = devices.some(d => d.additional_work_needed && !rma.avenant_sent_at);
   const totalAdditionalWork = devices.reduce((sum, d) => {
     if (!d.additional_work_needed || !d.additional_work_items) return sum;
-    return sum + d.additional_work_items.filter(i => !i.warranty).reduce((s, item) => s + ((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)), 0);
+    return sum + d.additional_work_items.reduce((s, item) => s + (parseFloat(item.price) || 0), 0);
   }, 0);
   
   // Mark selected devices as received
@@ -8435,7 +8429,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
         device_serial: devicesWithWork.map(d => d.serial_number).join(', ')
       });
       
-      notify('✅ Supplément envoyé au client!');
+      notify('✅ Avenant envoyé au client!');
       reload();
       onClose();
     } catch (err) {
@@ -8451,7 +8445,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
         {/* Modal Header - Like RMA Quote */}
         <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
           <div>
-            <h2 className="text-xl font-bold">Supplément au Devis</h2>
+            <h2 className="text-xl font-bold">Avenant au Devis</h2>
             <p className="text-gray-400">{rma.request_number} • {rma.companies?.name}</p>
           </div>
           <div className="flex items-center gap-3">
