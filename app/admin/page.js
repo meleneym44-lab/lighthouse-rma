@@ -7376,9 +7376,9 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
   const deviceStarted = !['received', 'in_queue', 'inspection'].includes(device.status);
   const [serviceStarted, setServiceStarted] = useState(deviceStarted);
   
-  // Inspection lock — after completing inspection, form is locked until "Edit" clicked
+  // Inspection lock — after completing inspection, form is locked UNTIL supplement is approved
   const isInspectionDone = !!device.inspection_completed_at;
-  const [inspectionLocked, setInspectionLocked] = useState(isInspectionDone && additionalWorkNeeded);
+  const [inspectionLocked, setInspectionLocked] = useState(isInspectionDone && additionalWorkNeeded && !rma.avenant_approved_at);
   
   // Whether the form is editable
   const formLocked = !serviceStarted || inspectionLocked;
