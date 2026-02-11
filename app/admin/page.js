@@ -5914,11 +5914,44 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   // Delete document
   const handleDocDelete = async (docId) => {
     try {
-      const { error } = await supabase.from('request_attachments').delete().eq('id', docId);
+      const { error } = await supabase.from('request_attachments').update({
+        archived_at: new Date().toISOString()
+      }).eq('id', docId);
       if (error) throw error;
-      notify(lang === 'en' ? '🗑️ Document deleted' : '🗑️ Document supprimé');
+      notify(lang === 'en' ? '📦 Document archived' : '📦 Document archivé');
       setDocToDelete(null);
       await refreshAttachments();
+    } catch (err) {
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+    }
+  };
+  
+  // Archive a main document (report, BL, UPS, cert, etc.) — soft delete + clear URL
+  const [mainDocToArchive, setMainDocToArchive] = useState(null);
+  const archiveMainDoc = async (docInfo) => {
+    // docInfo = { label, url, table, field, id }
+    try {
+      // Save old URL as archived attachment
+      await supabase.from('request_attachments').insert({
+        request_id: rma.id,
+        file_name: `[Archivé] ${docInfo.label}`,
+        file_url: docInfo.url,
+        file_type: 'archived',
+        category: 'internal_archived',
+        uploaded_by: profile?.id || null,
+        archived_at: new Date().toISOString(),
+        notes: `Archived on ${new Date().toLocaleDateString('fr-FR')} by ${profile?.full_name || 'Admin'}`
+      });
+      
+      // Clear URL field on device/rma
+      const { error } = await supabase.from(docInfo.table).update({
+        [docInfo.field]: null
+      }).eq('id', docInfo.id);
+      if (error) throw error;
+      
+      notify(lang === 'en' ? `📦 ${docInfo.label} archived` : `📦 ${docInfo.label} archivé`);
+      setMainDocToArchive(null);
+      reload();
     } catch (err) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
@@ -6588,50 +6621,66 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                   
                   {/* === 4. RAPPORT DE SERVICE === */}
                   {device.report_url && (
-                    <a href={device.report_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
-                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
-                      <div>
-                        <p className="font-medium text-gray-800">{t('serviceReport')}</p>
-                        <p className="text-sm text-blue-600">{device.serial_number}</p>
-                      </div>
-                    </a>
+                    <div className="flex items-center gap-2 p-4 border rounded-lg hover:bg-blue-50 transition-colors group">
+                      <a href={device.report_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📋</div>
+                        <div>
+                          <p className="font-medium text-gray-800">{lang === 'en' ? 'Service Report' : 'Rapport de Service'}</p>
+                          <p className="text-sm text-blue-600">{device.serial_number}</p>
+                        </div>
+                      </a>
+                      <button onClick={() => setMainDocToArchive({ label: 'Rapport de Service', url: device.report_url, table: 'request_devices', field: 'report_url', id: device.id })} className="p-1.5 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                      </button>
+                    </div>
                   )}
                   
                   {/* === 5. BON DE LIVRAISON === */}
                   {device.bl_url && (
-                    <a href={device.bl_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-cyan-50 transition-colors">
-                      <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
-                      <div>
-                        <p className="font-medium text-gray-800">{t('deliveryNote')}</p>
-                        <p className="text-sm text-cyan-600">{device.bl_number ? `N° ${device.bl_number}` : 'BL'}</p>
-                      </div>
-                    </a>
+                    <div className="flex items-center gap-2 p-4 border rounded-lg hover:bg-cyan-50 transition-colors group">
+                      <a href={device.bl_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📄</div>
+                        <div>
+                          <p className="font-medium text-gray-800">{lang === 'en' ? 'Delivery Note' : 'Bon de Livraison'}</p>
+                          <p className="text-sm text-cyan-600">{device.bl_number ? `N° ${device.bl_number}` : 'BL'}</p>
+                        </div>
+                      </a>
+                      <button onClick={() => setMainDocToArchive({ label: 'Bon de Livraison', url: device.bl_url, table: 'request_devices', field: 'bl_url', id: device.id })} className="p-1.5 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                      </button>
+                    </div>
                   )}
                   
                   {/* === 6. UPS LABEL === */}
                   {device.ups_label_url && (
-                    <a href={device.ups_label_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors">
-                      <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">🏷️</div>
-                      <div>
-                        <p className="font-medium text-gray-800">{lang === 'en' ? 'UPS Label' : 'Étiquette UPS'}</p>
-                        <p className="text-sm text-amber-600">{device.tracking_number || (lang === 'en' ? 'Shipping label' : "Label d'expédition")}</p>
-                      </div>
-                    </a>
+                    <div className="flex items-center gap-2 p-4 border rounded-lg hover:bg-amber-50 transition-colors group">
+                      <a href={device.ups_label_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🏷️</div>
+                        <div>
+                          <p className="font-medium text-gray-800">{lang === 'en' ? 'UPS Label' : 'Étiquette UPS'}</p>
+                          <p className="text-sm text-amber-600">{device.tracking_number || (lang === 'en' ? 'Shipping label' : "Label d'expédition")}</p>
+                        </div>
+                      </a>
+                      <button onClick={() => setMainDocToArchive({ label: 'Étiquette UPS', url: device.ups_label_url, table: 'request_devices', field: 'ups_label_url', id: device.id })} className="p-1.5 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                      </button>
+                    </div>
                   )}
                   
                   {/* === 7. CALIBRATION CERTIFICATE === */}
                   {device.calibration_certificate_url && (
-                    <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-300">
-                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">🏆</div>
-                      <div>
-                        <p className="font-medium text-gray-800">{t('calCertificate')}</p>
-                        <p className="text-sm text-green-600">{device.certificate_number || device.serial_number}</p>
-                      </div>
-                    </a>
+                    <div className="flex items-center gap-2 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-300 group">
+                      <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🏆</div>
+                        <div>
+                          <p className="font-medium text-gray-800">{lang === 'en' ? 'Calibration Certificate' : "Certificat d'Étalonnage"}</p>
+                          <p className="text-sm text-green-600">{device.certificate_number || device.serial_number}</p>
+                        </div>
+                      </a>
+                      <button onClick={() => setMainDocToArchive({ label: "Certificat d'Étalonnage", url: device.calibration_certificate_url, table: 'request_devices', field: 'calibration_certificate_url', id: device.id })} className="p-1.5 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                      </button>
+                    </div>
                   )}
                   
                   {/* === 8. SUPPLÉMENT (not signed yet) === */}
@@ -6698,6 +6747,8 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                   !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category) &&
                   !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category?.replace('internal_', '')) &&
                   a.category !== 'internal_devis_revision' &&
+                  !['ups_label', 'bl'].includes(a.file_type) &&
+                  !a.archived_at &&
                   a.file_url
                 ).length > 0 && (
                   <div className="mt-4">
@@ -6707,6 +6758,8 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                         !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category) &&
                         !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category?.replace('internal_', '')) &&
                         a.category !== 'internal_devis_revision' &&
+                        !['ups_label', 'bl'].includes(a.file_type) &&
+                        !a.archived_at &&
                         a.file_url
                       ).map(doc => {
                         const isInternal = doc.category?.startsWith('internal_');
@@ -6743,7 +6796,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                               <button 
                                 onClick={() => setDocToDelete(doc)} 
                                 className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                title={lang === "en" ? "Delete" : "Supprimer"}
+                                title={lang === "en" ? "Archive & remove" : "Archiver & retirer"}
                               >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                               </button>
@@ -6768,19 +6821,38 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                   </button>
                 </div>
                 
-                {/* Delete Confirmation Modal */}
+                {/* Archive Confirmation Modal */}
                 {docToDelete && (
                   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl max-w-sm w-full p-6">
-                      <h3 className="text-lg font-bold text-gray-800 mb-2">{lang === 'en' ? 'Delete this document?' : 'Supprimer le document?'}</h3>
+                      <h3 className="text-lg font-bold text-gray-800 mb-2">{lang === 'en' ? 'Archive this document?' : 'Archiver ce document ?'}</h3>
                       <p className="text-gray-600 text-sm mb-1">{docToDelete.file_name}</p>
-                      <p className="text-red-500 text-xs mb-4">{lang === 'en' ? 'This action is irreversible.' : 'Cette action est irréversible.'}</p>
+                      <p className="text-amber-600 text-xs mb-4">{lang === 'en' ? 'The document will be hidden but preserved in the archive.' : 'Le document sera masqué mais conservé dans les archives.'}</p>
                       <div className="flex gap-3">
                         <button onClick={() => setDocToDelete(null)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
-                          Annuler
+                          {lang === 'en' ? 'Cancel' : 'Annuler'}
                         </button>
-                        <button onClick={() => handleDocDelete(docToDelete.id)} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
-                          🗑️ Supprimer
+                        <button onClick={() => handleDocDelete(docToDelete.id)} className="flex-1 px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600">
+                          📦 {lang === 'en' ? 'Archive' : 'Archiver'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Main Document Archive Confirmation Modal */}
+                {mainDocToArchive && (
+                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl max-w-sm w-full p-6">
+                      <h3 className="text-lg font-bold text-gray-800 mb-2">{lang === 'en' ? 'Archive this document?' : 'Archiver ce document ?'}</h3>
+                      <p className="text-gray-600 text-sm mb-1 font-medium">{mainDocToArchive.label}</p>
+                      <p className="text-amber-600 text-xs mb-4">{lang === 'en' ? 'The document will be archived (preserved but removed from the client view). You can then upload a replacement.' : 'Le document sera archivé (conservé mais retiré de la vue client). Vous pourrez ensuite télécharger un remplacement.'}</p>
+                      <div className="flex gap-3">
+                        <button onClick={() => setMainDocToArchive(null)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                          {lang === 'en' ? 'Cancel' : 'Annuler'}
+                        </button>
+                        <button onClick={() => archiveMainDoc(mainDocToArchive)} className="flex-1 px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600">
+                          📦 {lang === 'en' ? 'Archive & Remove' : 'Archiver & Retirer'}
                         </button>
                       </div>
                     </div>
@@ -9198,12 +9270,14 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
     setDocUploading(false);
   };
   
-  // Delete document
+  // Archive document (soft delete)
   const handleDocDelete = async (docId) => {
     try {
-      const { error } = await supabase.from('request_attachments').delete().eq('id', docId);
+      const { error } = await supabase.from('request_attachments').update({
+        archived_at: new Date().toISOString()
+      }).eq('id', docId);
       if (error) throw error;
-      notify(lang === 'en' ? '🗑️ Document deleted' : '🗑️ Document supprimé');
+      notify(lang === 'en' ? '📦 Document archived' : '📦 Document archivé');
       await refreshAttachments();
     } catch (err) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
@@ -14135,28 +14209,6 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
             bl_url: blUrl || null,
             ups_label_url: upsLabelUrl || null
           }).eq('id', d.id);
-        }
-        
-        // Also save PDF URLs as attachments for backup/history
-        if (blUrl) {
-          const { error: blAttErr } = await supabase.from('request_attachments').insert({
-            request_id: rma.id,
-            file_name: `BL-${bl.blNumber}.pdf`,
-            file_url: blUrl,
-            file_type: 'bl',
-            device_serial: s.devices.map(d => d.serial_number).join(', ')
-          });
-          if (blAttErr) console.error('BL attachment error:', blAttErr);
-        }
-        if (upsLabelUrl) {
-          const { error: upsAttErr } = await supabase.from('request_attachments').insert({
-            request_id: rma.id,
-            file_name: `UPS-Label-${s.trackingNumber}.pdf`,
-            file_url: upsLabelUrl,
-            file_type: 'ups_label',
-            device_serial: s.devices.map(d => d.serial_number).join(', ')
-          });
-          if (upsAttErr) console.error('UPS label attachment error:', upsAttErr);
         }
       }
       
