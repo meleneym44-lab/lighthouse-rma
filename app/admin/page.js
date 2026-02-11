@@ -8041,6 +8041,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   const company = rma.companies || {};
   const biz = options.businessSettings || {};
   const supNumber = options.supNumber || null; // SUP-0226-001 format
+  const lang = options.lang || 'fr';
   
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
@@ -8336,7 +8337,12 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
   const t = k => k;
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
+  const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0)
+    .map(d => ({
+      ...d,
+      additional_work_items: (d.additional_work_items || []).filter(item => !item.warranty)
+    }))
+    .filter(d => d.additional_work_items.length > 0); // Only include devices that have non-warranty items
   const devicesRAS = devices.filter(d => !d.additional_work_needed || !d.additional_work_items?.length);
   
   const totalAvenant = devicesWithWork.reduce((sum, device) => {
@@ -8350,7 +8356,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
   const downloadPDF = async () => {
     setDownloading(true);
     try {
-      const { blob } = await generateAvenantPDF(rma, devicesWithWork, { businessSettings });
+      const { blob } = await generateAvenantPDF(rma, devicesWithWork, { businessSettings, lang });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -8381,7 +8387,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
       
       // 1. Generate PDF
       notify(lang === 'en' ? '📄 Generating PDF...' : '📄 Génération du PDF...');
-      const { blob, total } = await generateAvenantPDF(rma, devicesWithWork, { businessSettings, supNumber });
+      const { blob, total } = await generateAvenantPDF(rma, devicesWithWork, { businessSettings, supNumber, lang });
       
       // 2. Upload to storage
       const fileName = `supplement_${supNumber || rma.request_number}_${Date.now()}.pdf`;
