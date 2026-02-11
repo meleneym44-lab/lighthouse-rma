@@ -5783,6 +5783,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   
   // Document management state
   const [showDocUploadModal, setShowDocUploadModal] = useState(false);
+  const [showArchivedDocs, setShowArchivedDocs] = useState(false);
   const [docUploadFile, setDocUploadFile] = useState(null);
   const [docUploadName, setDocUploadName] = useState('');
   const [docUploadCategory, setDocUploadCategory] = useState('general');
@@ -5951,6 +5952,40 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
       
       notify(lang === 'en' ? `📦 ${docInfo.label} archived` : `📦 ${docInfo.label} archivé`);
       setMainDocToArchive(null);
+      reload();
+    } catch (err) {
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+    }
+  };
+  
+  // Unarchive a document (restore it)
+  const unarchiveDoc = async (doc) => {
+    try {
+      if (doc.category === 'internal_archived' && doc.file_url) {
+        // Main doc archive — restore URL to original field
+        const label = (doc.file_name || '').replace('[Archivé] ', '');
+        const fieldMap = {
+          'Rapport de Service': { table: 'request_devices', field: 'report_url', id: selectedDevice?.id },
+          'Bon de Livraison': { table: 'request_devices', field: 'bl_url', id: selectedDevice?.id },
+          'Étiquette UPS': { table: 'request_devices', field: 'ups_label_url', id: selectedDevice?.id },
+          "Certificat d'Étalonnage": { table: 'request_devices', field: 'calibration_certificate_url', id: selectedDevice?.id },
+          'Devis': { table: 'service_requests', field: 'quote_url', id: rma.id },
+          'Devis Signé / BC': { table: 'service_requests', field: 'signed_quote_url', id: rma.id },
+          'Bon de Commande': { table: 'service_requests', field: 'bc_file_url', id: rma.id },
+          'Supplément Signé / BC': { table: 'service_requests', field: 'supplement_signed_quote_url', id: rma.id },
+          'BC Supplément': { table: 'service_requests', field: 'supplement_bc_file_url', id: rma.id },
+        };
+        const mapping = fieldMap[label];
+        if (mapping && mapping.id) {
+          await supabase.from(mapping.table).update({ [mapping.field]: doc.file_url }).eq('id', mapping.id);
+        }
+        await supabase.from('request_attachments').delete().eq('id', doc.id);
+      } else {
+        // Regular attachment — clear archived_at
+        await supabase.from('request_attachments').update({ archived_at: null }).eq('id', doc.id);
+      }
+      notify(lang === 'en' ? '✅ Document restored' : '✅ Document restauré');
+      await refreshAttachments();
       reload();
     } catch (err) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
@@ -6548,20 +6583,24 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                   
                   {/* === 1. DEVIS (QUOTE) === */}
                   {rma.quote_url && (
-                    <a href={rma.quote_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
-                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
-                      <div>
-                        <p className="font-medium text-gray-800">
-                          Devis{rma.quote_revision_count > 0 ? ` Rev-${rma.quote_revision_count}` : ''} (actuel)
-                        </p>
-                        <p className="text-sm text-blue-600">{rma.quote_number ? `N° ${rma.quote_number}` : rma.request_number}</p>
-                      </div>
-                    </a>
+                    <div className="flex items-center gap-2 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
+                      <a href={rma.quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl shrink-0">💰</div>
+                        <div>
+                          <p className="font-medium text-gray-800">
+                            Devis{rma.quote_revision_count > 0 ? ` Rev-${rma.quote_revision_count}` : ''} (actuel)
+                          </p>
+                          <p className="text-sm text-blue-600">{rma.quote_number ? `N° ${rma.quote_number}` : rma.request_number}</p>
+                        </div>
+                      </a>
+                      <button onClick={() => setMainDocToArchive({ label: 'Devis', url: rma.quote_url, table: 'service_requests', field: 'quote_url', id: rma.id })} className="p-1.5 rounded-lg text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                      </button>
+                    </div>
                   )}
                   
                   {/* === 1b. ARCHIVED QUOTE REVISIONS (admin-only) === */}
-                  {attachments.filter(a => a.category === 'internal_devis_revision' && a.file_url).map(att => (
+                  {attachments.filter(a => a.category === 'internal_devis_revision' && a.file_url && !a.archived_at).map(att => (
                     <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors border-gray-200 opacity-75">
                       <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-2xl">📂</div>
@@ -6574,17 +6613,21 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                   
                   {/* === 2. DEVIS SIGNÉ / BON DE COMMANDE (signed quote = BC) === */}
                   {rma.signed_quote_url && (
-                    <a href={rma.signed_quote_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
-                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
-                      <div>
-                        <p className="font-medium text-gray-800">{lang === 'en' ? 'Signed Quote / PO' : 'Devis Signé / BC'}</p>
-                        <p className="text-sm text-green-600">{rma.bc_number ? `N° ${rma.bc_number}` : (lang === 'en' ? 'Signed' : 'Signé')}</p>
-                      </div>
-                    </a>
+                    <div className="flex items-center gap-2 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
+                      <a href={rma.signed_quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl shrink-0">✅</div>
+                        <div>
+                          <p className="font-medium text-gray-800">{lang === 'en' ? 'Signed Quote / PO' : 'Devis Signé / BC'}</p>
+                          <p className="text-sm text-green-600">{rma.bc_number ? `N° ${rma.bc_number}` : (lang === 'en' ? 'Signed' : 'Signé')}</p>
+                        </div>
+                      </a>
+                      <button onClick={() => setMainDocToArchive({ label: 'Devis Signé / BC', url: rma.signed_quote_url, table: 'service_requests', field: 'signed_quote_url', id: rma.id })} className="p-1.5 rounded-lg text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                      </button>
+                    </div>
                   )}
                   {/* Also show devis_signe from attachments if no signed_quote_url */}
-                  {!rma.signed_quote_url && attachments.filter(a => a.category === 'devis_signe' && a.file_url).map(att => (
+                  {!rma.signed_quote_url && attachments.filter(a => a.category === 'devis_signe' && a.file_url && !a.archived_at).map(att => (
                     <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
                       <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
@@ -6598,17 +6641,21 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                   {/* === 3. BON DE COMMANDE (BC file uploaded separately by customer) === */}
                   {/* Show from bc_file_url if different from signed_quote_url */}
                   {rma.bc_file_url && rma.bc_file_url !== rma.signed_quote_url && (
-                    <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
-                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
-                      <div>
-                        <p className="font-medium text-gray-800">{lang === 'en' ? 'Client Purchase Order' : 'Bon de Commande Client'}</p>
-                        <p className="text-sm text-purple-600">{rma.bc_number ? `N° ${rma.bc_number}` : 'BC client'}</p>
-                      </div>
-                    </a>
+                    <div className="flex items-center gap-2 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                      <a href={rma.bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📝</div>
+                        <div>
+                          <p className="font-medium text-gray-800">{lang === 'en' ? 'Client Purchase Order' : 'Bon de Commande Client'}</p>
+                          <p className="text-sm text-purple-600">{rma.bc_number ? `N° ${rma.bc_number}` : 'BC client'}</p>
+                        </div>
+                      </a>
+                      <button onClick={() => setMainDocToArchive({ label: 'Bon de Commande', url: rma.bc_file_url, table: 'service_requests', field: 'bc_file_url', id: rma.id })} className="p-1.5 rounded-lg text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                      </button>
+                    </div>
                   )}
                   {/* Also show bon_commande from attachments if no bc_file_url or it was overwritten */}
-                  {(!rma.bc_file_url || rma.bc_file_url === rma.signed_quote_url) && attachments.filter(a => a.category === 'bon_commande' && a.file_url).map(att => (
+                  {(!rma.bc_file_url || rma.bc_file_url === rma.signed_quote_url) && attachments.filter(a => a.category === 'bon_commande' && a.file_url && !a.archived_at).map(att => (
                     <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
                       <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
@@ -6629,7 +6676,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                           <p className="text-sm text-blue-600">{device.serial_number}</p>
                         </div>
                       </a>
-                      <button onClick={() => setMainDocToArchive({ label: 'Rapport de Service', url: device.report_url, table: 'request_devices', field: 'report_url', id: device.id })} className="p-1.5 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
+                      <button onClick={() => setMainDocToArchive({ label: 'Rapport de Service', url: device.report_url, table: 'request_devices', field: 'report_url', id: device.id })} className="p-1.5 rounded-lg text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
                       </button>
                     </div>
@@ -6645,7 +6692,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                           <p className="text-sm text-cyan-600">{device.bl_number ? `N° ${device.bl_number}` : 'BL'}</p>
                         </div>
                       </a>
-                      <button onClick={() => setMainDocToArchive({ label: 'Bon de Livraison', url: device.bl_url, table: 'request_devices', field: 'bl_url', id: device.id })} className="p-1.5 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
+                      <button onClick={() => setMainDocToArchive({ label: 'Bon de Livraison', url: device.bl_url, table: 'request_devices', field: 'bl_url', id: device.id })} className="p-1.5 rounded-lg text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
                       </button>
                     </div>
@@ -6661,7 +6708,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                           <p className="text-sm text-amber-600">{device.tracking_number || (lang === 'en' ? 'Shipping label' : "Label d'expédition")}</p>
                         </div>
                       </a>
-                      <button onClick={() => setMainDocToArchive({ label: 'Étiquette UPS', url: device.ups_label_url, table: 'request_devices', field: 'ups_label_url', id: device.id })} className="p-1.5 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
+                      <button onClick={() => setMainDocToArchive({ label: 'Étiquette UPS', url: device.ups_label_url, table: 'request_devices', field: 'ups_label_url', id: device.id })} className="p-1.5 rounded-lg text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
                       </button>
                     </div>
@@ -6677,68 +6724,88 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                           <p className="text-sm text-green-600">{device.certificate_number || device.serial_number}</p>
                         </div>
                       </a>
-                      <button onClick={() => setMainDocToArchive({ label: "Certificat d'Étalonnage", url: device.calibration_certificate_url, table: 'request_devices', field: 'calibration_certificate_url', id: device.id })} className="p-1.5 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
+                      <button onClick={() => setMainDocToArchive({ label: "Certificat d'Étalonnage", url: device.calibration_certificate_url, table: 'request_devices', field: 'calibration_certificate_url', id: device.id })} className="p-1.5 rounded-lg text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
                       </button>
                     </div>
                   )}
                   
                   {/* === 8. SUPPLÉMENT (not signed yet) === */}
-                  {attachments.filter(a => a.category === 'avenant_quote' && a.file_url).map(att => (
-                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-300">
-                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
-                      <div>
-                        <p className="font-medium text-gray-800">{lang === 'en' ? 'Supplement' : 'Supplément'}</p>
-                        <p className="text-sm text-green-600">{rma.supplement_number ? `N° ${rma.supplement_number}` : `€${(rma.avenant_total || 0).toFixed(2)}`}</p>
-                      </div>
-                    </a>
+                  {attachments.filter(a => a.category === 'avenant_quote' && a.file_url && !a.archived_at).map(att => (
+                    <div key={att.id} className="flex items-center gap-2 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-300">
+                      <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📄</div>
+                        <div>
+                          <p className="font-medium text-gray-800">{lang === 'en' ? 'Supplement' : 'Supplément'}</p>
+                          <p className="text-sm text-green-600">{rma.supplement_number ? `N° ${rma.supplement_number}` : `€${(rma.avenant_total || 0).toFixed(2)}`}</p>
+                        </div>
+                      </a>
+                      <button onClick={() => setDocToDelete(att)} className="p-1.5 rounded-lg text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-all shrink-0" title={lang === 'en' ? 'Archive' : 'Archiver'}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                      </button>
+                    </div>
                   ))}
                   
                   {/* === 9. SUPPLÉMENT SIGNÉ (from supplement_signed_quote_url or avenant_signe attachment) === */}
                   {rma.supplement_signed_quote_url && (
-                    <a href={rma.supplement_signed_quote_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-300">
-                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
-                      <div>
-                        <p className="font-medium text-gray-800">{lang === 'en' ? 'Signed Supplement / PO' : 'Supplément Signé / BC'}</p>
-                        <p className="text-sm text-green-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : (rma.supplement_number ? `N° ${rma.supplement_number}` : (lang === 'en' ? 'Approved' : 'Approuvé'))}</p>
-                      </div>
-                    </a>
+                    <div className="flex items-center gap-2 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-300">
+                      <a href={rma.supplement_signed_quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl shrink-0">✅</div>
+                        <div>
+                          <p className="font-medium text-gray-800">{lang === 'en' ? 'Signed Supplement / PO' : 'Supplément Signé / BC'}</p>
+                          <p className="text-sm text-green-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : (rma.supplement_number ? `N° ${rma.supplement_number}` : (lang === 'en' ? 'Approved' : 'Approuvé'))}</p>
+                        </div>
+                      </a>
+                      <button onClick={() => setMainDocToArchive({ label: 'Supplément Signé / BC', url: rma.supplement_signed_quote_url, table: 'service_requests', field: 'supplement_signed_quote_url', id: rma.id })} className="p-1.5 rounded-lg text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                      </button>
+                    </div>
                   )}
                   {/* Fallback to attachment if no URL field */}
-                  {!rma.supplement_signed_quote_url && attachments.filter(a => a.category === 'avenant_signe' && a.file_url).map(att => (
-                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-300">
-                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
-                      <div>
-                        <p className="font-medium text-gray-800">{lang === 'en' ? 'Signed Supplement / PO' : 'Supplément Signé / BC'}</p>
-                        <p className="text-sm text-green-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : (rma.supplement_number ? `N° ${rma.supplement_number}` : (lang === 'en' ? 'Approved' : 'Approuvé'))}</p>
-                      </div>
-                    </a>
+                  {!rma.supplement_signed_quote_url && attachments.filter(a => a.category === 'avenant_signe' && a.file_url && !a.archived_at).map(att => (
+                    <div key={att.id} className="flex items-center gap-2 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-300">
+                      <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl shrink-0">✅</div>
+                        <div>
+                          <p className="font-medium text-gray-800">{lang === 'en' ? 'Signed Supplement / PO' : 'Supplément Signé / BC'}</p>
+                          <p className="text-sm text-green-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : (rma.supplement_number ? `N° ${rma.supplement_number}` : (lang === 'en' ? 'Approved' : 'Approuvé'))}</p>
+                        </div>
+                      </a>
+                      <button onClick={() => setDocToDelete(att)} className="p-1.5 rounded-lg text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-all shrink-0" title={lang === 'en' ? 'Archive' : 'Archiver'}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                      </button>
+                    </div>
                   ))}
                   
                   {/* === 10. BC SUPPLÉMENT (customer uploaded BC for supplement, different from signed supplement) === */}
                   {rma.supplement_bc_file_url && rma.supplement_bc_file_url !== rma.supplement_signed_quote_url && (
-                    <a href={rma.supplement_bc_file_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
-                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
-                      <div>
-                        <p className="font-medium text-gray-800">{lang === 'en' ? 'Supplementary PO (Client)' : 'BC Supplément (Client)'}</p>
-                        <p className="text-sm text-purple-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : 'BC client'}</p>
-                      </div>
-                    </a>
+                    <div className="flex items-center gap-2 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                      <a href={rma.supplement_bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📝</div>
+                        <div>
+                          <p className="font-medium text-gray-800">{lang === 'en' ? 'Supplementary PO (Client)' : 'BC Supplément (Client)'}</p>
+                          <p className="text-sm text-purple-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : 'BC client'}</p>
+                        </div>
+                      </a>
+                      <button onClick={() => setMainDocToArchive({ label: 'BC Supplément', url: rma.supplement_bc_file_url, table: 'service_requests', field: 'supplement_bc_file_url', id: rma.id })} className="p-1.5 rounded-lg text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                      </button>
+                    </div>
                   )}
                   {/* Fallback to attachment */}
-                  {!rma.supplement_bc_file_url && attachments.filter(a => a.category === 'avenant_bc' && a.file_url).map(att => (
-                    <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
-                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📝</div>
-                      <div>
-                        <p className="font-medium text-gray-800">{lang === 'en' ? 'Supplementary PO (Client)' : 'BC Supplément (Client)'}</p>
-                        <p className="text-sm text-purple-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : att.file_name}</p>
-                      </div>
-                    </a>
+                  {!rma.supplement_bc_file_url && attachments.filter(a => a.category === 'avenant_bc' && a.file_url && !a.archived_at).map(att => (
+                    <div key={att.id} className="flex items-center gap-2 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                      <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📝</div>
+                        <div>
+                          <p className="font-medium text-gray-800">{lang === 'en' ? 'Supplementary PO (Client)' : 'BC Supplément (Client)'}</p>
+                          <p className="text-sm text-purple-600">{rma.supplement_bc_number ? `N° ${rma.supplement_bc_number}` : att.file_name}</p>
+                        </div>
+                      </a>
+                      <button onClick={() => setDocToDelete(att)} className="p-1.5 rounded-lg text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-all shrink-0" title={lang === 'en' ? 'Archive' : 'Archiver'}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                      </button>
+                    </div>
                   ))}
                 </div>
                 
@@ -6747,7 +6814,8 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                   !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category) &&
                   !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category?.replace('internal_', '')) &&
                   a.category !== 'internal_devis_revision' &&
-                  !['ups_label', 'bl'].includes(a.file_type) &&
+                  a.category !== 'internal_archived' &&
+                  !['ups_label', 'bl', 'archived'].includes(a.file_type) &&
                   !a.archived_at &&
                   a.file_url
                 ).length > 0 && (
@@ -6758,7 +6826,8 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                         !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category) &&
                         !['avenant_quote', 'avenant_signe', 'avenant_bc', 'bon_commande', 'devis_signe'].includes(a.category?.replace('internal_', '')) &&
                         a.category !== 'internal_devis_revision' &&
-                        !['ups_label', 'bl'].includes(a.file_type) &&
+                        a.category !== 'internal_archived' &&
+                        !['ups_label', 'bl', 'archived'].includes(a.file_type) &&
                         !a.archived_at &&
                         a.file_url
                       ).map(doc => {
@@ -6795,10 +6864,10 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                               </button>
                               <button 
                                 onClick={() => setDocToDelete(doc)} 
-                                className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                className="p-1.5 rounded-lg text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
                                 title={lang === "en" ? "Archive & remove" : "Archiver & retirer"}
                               >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
                               </button>
                             </div>
                           </div>
@@ -6807,6 +6876,47 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     </div>
                   </div>
                 )}
+                
+                {/* === ARCHIVED DOCUMENTS === */}
+                {(() => {
+                  const archivedDocs = attachments.filter(a => a.archived_at || a.category === 'internal_archived');
+                  if (archivedDocs.length === 0) return null;
+                  return (
+                    <div className="mt-4">
+                      <button 
+                        onClick={() => setShowArchivedDocs(!showArchivedDocs)}
+                        className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 transition-colors"
+                      >
+                        <svg className={`w-3 h-3 transition-transform ${showArchivedDocs ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                        </svg>
+                        📦 {lang === 'en' ? `Archives (${archivedDocs.length})` : `Archives (${archivedDocs.length})`}
+                      </button>
+                      {showArchivedDocs && (
+                        <div className="mt-2 space-y-2">
+                          {archivedDocs.map(doc => (
+                            <div key={doc.id} className="flex items-center gap-3 p-3 border border-dashed border-gray-300 rounded-lg bg-gray-50/50">
+                              <div className="w-8 h-8 rounded-lg bg-gray-200 flex items-center justify-center text-sm">📦</div>
+                              <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 hover:opacity-80">
+                                <p className="text-sm font-medium text-gray-500 truncate">{(doc.file_name || 'Document').replace('[Archivé] ', '')}</p>
+                                <p className="text-xs text-gray-400">
+                                  {lang === 'en' ? 'Archived' : 'Archivé'} {doc.archived_at ? new Date(doc.archived_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : ''}
+                                  {doc.notes ? ` • ${doc.notes}` : ''}
+                                </p>
+                              </a>
+                              <button 
+                                onClick={() => unarchiveDoc(doc)}
+                                className="px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors shrink-0"
+                              >
+                                ↩ {lang === 'en' ? 'Restore' : 'Restaurer'}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 
                 {/* Add Document Button */}
                 <div className="mt-4 pt-4 border-t border-gray-200">
