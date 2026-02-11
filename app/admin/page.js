@@ -23026,7 +23026,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                   
                   {/* Calibration Sections - One per device type */}
                   {requiredSections.calibrationTypes.map(type => {
-                    const template = CALIBRATION_TEMPLATES[type];
+                    const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.other;
                     return (
                       <div key={type} className="border-l-4 border-blue-500 pl-4">
                         <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
