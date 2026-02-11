@@ -7651,13 +7651,13 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
         : !avenantSent && <span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">{lang === 'en' ? `⏳ ${inspectionStats.inspectedWithWork}/${inspectionStats.totalWithWork} inspected` : `⏳ ${inspectionStats.inspectedWithWork}/${inspectionStats.totalWithWork} inspectés`}</span>
       }
       {avenantSent && !avenantApproved && <span className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm">{lang === 'en' ? '⏳ Supplement sent' : '⏳ Supplément envoyé'}</span>}
-      {avenantApproved && <button onClick={handlePreviewClick} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report →' : '📄 Rapport →'}</button>}
+      {avenantApproved && <button onClick={handlePreviewClick} disabled={!canPreviewReport} className={`px-5 py-2 rounded-lg font-medium ${canPreviewReport ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-200 text-blue-400 cursor-not-allowed'}`}>{lang === 'en' ? '📄 Report →' : '📄 Rapport →'}</button>}
     </>);
     
     // No additional work → normal flow: Save + Report Preview
     if (!additionalWorkNeeded || allWarranty) return (<>
       <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
-      <button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button>
+      <button onClick={handlePreviewClick} disabled={!canPreviewReport} className={`px-6 py-2 rounded-lg font-medium ${canPreviewReport ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-200 text-blue-400 cursor-not-allowed'}`}>{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button>
     </>);
     
     // Additional work needed, NOT yet inspected → Save + Complete Inspection
@@ -7677,7 +7677,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     // Supplement approved → can complete report
     if (additionalWorkNeeded && avenantApproved) return (<>
       <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
-      <button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button>
+      <button onClick={handlePreviewClick} disabled={!canPreviewReport} className={`px-6 py-2 rounded-lg font-medium ${canPreviewReport ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-200 text-blue-400 cursor-not-allowed'}`}>{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button>
     </>);
     
     return null;
@@ -7739,22 +7739,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
         );
       })()}
 
-      <div className="relative">
-        {/* Blur overlay when form is locked */}
-        {formLocked && (
-          <div className="absolute inset-0 z-10 flex items-start justify-center pt-24" style={{background: 'rgba(255,255,255,0.3)', backdropFilter: 'blur(2px)'}}>
-            <div className="bg-white rounded-xl shadow-lg border-2 border-indigo-200 p-6 text-center max-w-sm">
-              {!serviceStarted ? (<>
-                <p className="text-lg font-bold text-gray-800 mb-2">{lang === 'en' ? '▶️ Start Service to begin' : '▶️ Démarrer Service pour commencer'}</p>
-                <p className="text-sm text-gray-500 mb-4">{lang === 'en' ? 'Click the button in the top right to unlock editing' : 'Cliquez le bouton en haut à droite pour débloquer'}</p>
-              </>) : (<>
-                <p className="text-lg font-bold text-green-700 mb-2">{lang === 'en' ? '✅ Inspection Complete' : '✅ Inspection Terminée'}</p>
-                <p className="text-sm text-gray-500 mb-1">{lang === 'en' ? 'Form is locked. Click Edit in top right to make changes.' : 'Formulaire verrouillé. Cliquez Modifier en haut à droite.'}</p>
-              </>)}
-            </div>
-          </div>
-        )}
-        <div className={`grid lg:grid-cols-3 gap-6 ${formLocked ? 'pointer-events-none select-none' : ''}`}>
+      <div className="grid lg:grid-cols-3 gap-6">
         <div className="space-y-4">
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <h3 className="font-bold text-gray-700 mb-3">{t('device')}</h3>
@@ -7776,8 +7761,8 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
           </div>
           
           {/* Report Options Section */}
-          <div className="bg-blue-50 rounded-xl border border-blue-200 p-4 space-y-3">
-            <h3 className="font-bold text-blue-800">{lang === 'en' ? 'Report Options' : 'Options du Rapport'}</h3>
+          <div className={`rounded-xl border p-4 space-y-3 ${serviceStarted && (!technicianName || !calType || !receptionResult) ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
+            <h3 className={`font-bold ${serviceStarted && (!technicianName || !calType || !receptionResult) ? 'text-red-800' : 'text-blue-800'}`}>{lang === 'en' ? 'Report Options' : 'Options du Rapport'} {serviceStarted && (!technicianName || !calType || !receptionResult) ? '*' : '✓'}</h3>
             
             {/* Technician */}
             <div>
@@ -7785,7 +7770,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
               <select 
                 value={technicianName} 
                 onChange={e => setTechnicianName(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm"
+                className={`w-full px-3 py-2 border rounded-lg text-sm ${serviceStarted && !technicianName ? 'border-red-300 bg-red-50' : ''}`}
               >
                 <option value="">{lang === 'en' ? '— Select —' : '— Sélectionner —'}</option>
                 {staffMembers.map(s => (
@@ -7797,7 +7782,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
             {/* Calibration Type */}
             <div>
               <label className="text-sm text-gray-600 block mb-1">{lang === 'en' ? 'Calibration performed *' : 'Étalonnage effectué *'}</label>
-              <select value={calType} onChange={e => setCalType(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+              <select value={calType} onChange={e => setCalType(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm ${serviceStarted && !calType ? 'border-red-300 bg-red-50' : ''}`}>
                 <option value="">{lang === 'en' ? '— Select —' : '— Sélectionner —'}</option>
                 {calTypeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
               </select>
@@ -7806,7 +7791,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
             {/* Reception Result */}
             <div>
               <label className="text-sm text-gray-600 block mb-1">{lang === 'en' ? 'Reception results *' : 'Résultats à la réception *'}</label>
-              <select value={receptionResult} onChange={e => setReceptionResult(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+              <select value={receptionResult} onChange={e => setReceptionResult(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm ${serviceStarted && !receptionResult ? 'border-red-300 bg-red-50' : ''}`}>
                 <option value="">{lang === 'en' ? '— Select —' : '— Sélectionner —'}</option>
                 {receptionOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
               </select>
@@ -7815,8 +7800,8 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
           
           {/* Certificate Upload - Only for calibrations */}
           {isCalibration && (
-            <div className={`rounded-xl border p-4 ${certificateUrl ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
-              <h3 className={`font-bold mb-2 ${certificateUrl ? 'text-green-800' : 'text-amber-800'}`}>
+            <div className={`rounded-xl border p-4 ${certificateUrl ? 'bg-green-50 border-green-200' : serviceStarted ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-200'}`}>
+              <h3 className={`font-bold mb-2 ${certificateUrl ? 'text-green-800' : serviceStarted ? 'text-red-800' : 'text-amber-800'}`}>
                 {lang === 'en' ? '📜 Calibration Certificate' : "📜 Certificat d'Étalonnage"} {certificateUrl ? '✓' : '*'}
               </h3>
               
@@ -7846,14 +7831,29 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
           )}
         </div>
 
-        <div className="lg:col-span-2 space-y-4">
+        <div className="lg:col-span-2 space-y-4 relative">
+          {/* Blur overlay on report area when locked */}
+          {formLocked && (
+            <div className="absolute inset-0 z-10 rounded-xl flex items-start justify-center pt-16" style={{background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(2px)'}}>
+              <div className="bg-white rounded-xl shadow-lg border-2 border-indigo-200 p-5 text-center max-w-sm">
+                {!serviceStarted ? (<>
+                  <p className="text-lg font-bold text-gray-800 mb-1">{lang === 'en' ? '▶️ Start Service to begin' : '▶️ Démarrer Service pour commencer'}</p>
+                  <p className="text-sm text-gray-500">{lang === 'en' ? 'Click the button above to unlock' : 'Cliquez le bouton ci-dessus pour débloquer'}</p>
+                </>) : (<>
+                  <p className="text-lg font-bold text-green-700 mb-1">{lang === 'en' ? '✅ Inspection Complete' : '✅ Inspection Terminée'}</p>
+                  <p className="text-sm text-gray-500">{lang === 'en' ? 'Click Edit above to make changes' : 'Cliquez Modifier ci-dessus pour modifier'}</p>
+                </>)}
+              </div>
+            </div>
+          )}
+          <div className={formLocked ? 'pointer-events-none select-none' : ''}>
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-bold text-gray-700">{lang === 'en' ? '1. FINDINGS *' : '1. CONSTATATIONS *'}</h3>
               <TechTranslateButton onInsert={(text) => setFindings(prev => prev ? prev + '\n' + text : text)} lang={lang} />
             </div>
             <p className="text-sm text-gray-500 mb-3">{lang === 'en' ? "What you observed (appears on report and supplement)" : "Ce que vous avez observé (apparaît sur rapport et avenant)"}</p>
-            <textarea value={findings} onChange={e => setFindings(e.target.value)} placeholder={lang === 'en' ? 'Ex: Calibration performed per specifications...' : 'Ex: Calibration effectuée selon les spécifications...'} className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
+            <textarea value={findings} onChange={e => setFindings(e.target.value)} placeholder={lang === 'en' ? 'Ex: Calibration performed per specifications...' : 'Ex: Calibration effectuée selon les spécifications...'} className={`w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500 ${serviceStarted && !findings ? 'border-red-300 bg-red-50' : ''}`} />
           </div>
 
           {/* Pre-Approved Quoted Services */}
@@ -8086,10 +8086,10 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                 ))}
               </div>
             </div>
-            <textarea value={workCompleted} onChange={e => setWorkCompleted(e.target.value)} placeholder={lang === 'en' ? 'Describe the work performed...' : 'Décrivez les travaux réalisés...'} className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
+            <textarea value={workCompleted} onChange={e => setWorkCompleted(e.target.value)} placeholder={lang === 'en' ? 'Describe the work performed...' : 'Décrivez les travaux réalisés...'} className={`w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500 ${serviceStarted && !workCompleted.trim() ? 'border-red-300 bg-red-50' : ''}`} />
           </div>
         </div>
-      </div>
+        </div>
       </div>
     </div>
   );
