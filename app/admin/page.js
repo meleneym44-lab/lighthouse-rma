@@ -14189,7 +14189,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       
       notify(lang === 'en' ? '🚚 RMA marked as shipped and closed!' : '🚚 RMA marqué comme expédié et fermé!');
       reload();
-      onBack(); // Go back to dashboard since RMA is now closed
+      onClose(); // Close modal, reload will update the view
     } catch (err) { 
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + (err.message || 'Error'), 'error'); 
     }
