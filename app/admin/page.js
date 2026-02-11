@@ -5770,6 +5770,16 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   const [showInternalShipping, setShowInternalShipping] = useState(false);
   const [showServiceModal, setShowServiceModal] = useState(null); // Device to show service modal for
   
+  // Keep service modal device in sync with fresh data after reload
+  useEffect(() => {
+    if (showServiceModal && rma.request_devices) {
+      const fresh = rma.request_devices.find(d => d.id === showServiceModal.id);
+      if (fresh && JSON.stringify(fresh) !== JSON.stringify(showServiceModal)) {
+        setShowServiceModal(fresh);
+      }
+    }
+  }, [rma.request_devices]);
+  
   // Document management state
   const [showDocUploadModal, setShowDocUploadModal] = useState(false);
   const [docUploadFile, setDocUploadFile] = useState(null);
@@ -6109,6 +6119,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   if (showServiceModal) {
     return (
       <DeviceServiceModal
+        key={showServiceModal.id}
         device={showServiceModal}
         rma={rma}
         onBack={() => { setShowServiceModal(null); reload(); }}
@@ -7365,8 +7376,13 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
   const deviceStarted = !['received', 'in_queue', 'inspection'].includes(device.status);
   const [serviceStarted, setServiceStarted] = useState(deviceStarted);
   
-  // Inspection progress tracking
+  // Inspection lock — after completing inspection, form is locked until "Edit" clicked
   const isInspectionDone = !!device.inspection_completed_at;
+  const [inspectionLocked, setInspectionLocked] = useState(isInspectionDone && additionalWorkNeeded);
+  
+  // Whether the form is editable
+  const formLocked = !serviceStarted || inspectionLocked;
+  
   const inspectionStats = useMemo(() => {
     const total = allDevices.length;
     const withWork = allDevices.filter(d => d.additional_work_needed);
@@ -7484,7 +7500,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
       if (additionalWorkNeeded && workItems.length > 0) {
         setWorkItemsLocked(true);
       }
-      reload();
+      await reload();
     } catch (err) { notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error'); }
     setSaving(false);
   };
@@ -7546,8 +7562,22 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
       
       await reload();
       notify(lang === 'en' ? '✅ Inspection complete' : '✅ Inspection terminée');
+      setInspectionLocked(true);
     } catch (err) { notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error'); }
     setSaving(false);
+  };
+  
+  const unlockInspection = async () => {
+    // Clear inspection timestamp so it can be re-done with updated data
+    try {
+      await supabase.from('request_devices').update({
+        inspection_completed_at: null
+      }).eq('id', device.id);
+      setInspectionLocked(false);
+      setWorkItemsLocked(false);
+      notify(lang === 'en' ? '✏️ Editing unlocked' : '✏️ Édition déverrouillée');
+      reload();
+    } catch (err) { notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error'); }
   };
   
   const completeReport = async () => {
@@ -7601,20 +7631,31 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
   }
 
   const renderActionButtons = () => {
-    if (!serviceStarted) return null; // gate handles this
+    // Not started — just show start button in header
+    if (!serviceStarted) return (
+      <button onClick={startService} disabled={saving} className="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-bold disabled:opacity-50">
+        {saving ? '⏳...' : (lang === 'en' ? '▶️ Start Service' : '▶️ Démarrer Service')}
+      </button>
+    );
     
     const allWarranty = additionalWorkNeeded && workItems.length > 0 && workItems.every(i => i.warranty);
     
     if (reportComplete) return <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">{lang === 'en' ? '✓ Report completed' : '✓ Rapport terminé'}</span>;
     
-    // No additional work → normal flow: Save + Report Preview
-    if (!additionalWorkNeeded) return (<>
-      <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
-      <button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button>
+    // Inspection locked — show unlock button
+    if (inspectionLocked) return (<>
+      <span className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium">{lang === 'en' ? '✅ Inspection done' : '✅ Inspection terminée'}</span>
+      <button onClick={unlockInspection} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium">{lang === 'en' ? '✏️ Edit' : '✏️ Modifier'}</button>
+      {inspectionStats.allWorkInspected && onOpenSupplement && !avenantSent
+        ? <button onClick={onOpenSupplement} className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Create Supplement' : '📄 Créer Supplément'}</button>
+        : !avenantSent && <span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">{lang === 'en' ? `⏳ ${inspectionStats.inspectedWithWork}/${inspectionStats.totalWithWork} inspected` : `⏳ ${inspectionStats.inspectedWithWork}/${inspectionStats.totalWithWork} inspectés`}</span>
+      }
+      {avenantSent && !avenantApproved && <span className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm">{lang === 'en' ? '⏳ Supplement sent' : '⏳ Supplément envoyé'}</span>}
+      {avenantApproved && <button onClick={handlePreviewClick} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report →' : '📄 Rapport →'}</button>}
     </>);
     
-    // Additional work, all warranty → same as no additional work
-    if (allWarranty) return (<>
+    // No additional work → normal flow: Save + Report Preview
+    if (!additionalWorkNeeded || allWarranty) return (<>
       <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
       <button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button>
     </>);
@@ -7625,15 +7666,6 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
       <button onClick={completeInspection} disabled={saving || !findings} className="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50">
         {saving ? '...' : (lang === 'en' ? '✅ Complete Inspection' : '✅ Terminer Inspection')}
       </button>
-    </>);
-    
-    // Inspected, supplement not sent → show status + create supplement if all ready
-    if (additionalWorkNeeded && isInspectionDone && !avenantSent) return (<>
-      <span className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium">{lang === 'en' ? '✅ Inspection done' : '✅ Inspection terminée'}</span>
-      {inspectionStats.allWorkInspected && onOpenSupplement
-        ? <button onClick={onOpenSupplement} className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Create Supplement' : '📄 Créer Supplément'}</button>
-        : <span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">{lang === 'en' ? `⏳ ${inspectionStats.inspectedWithWork}/${inspectionStats.totalWithWork} inspected` : `⏳ ${inspectionStats.inspectedWithWork}/${inspectionStats.totalWithWork} inspectés`}</span>
-      }
     </>);
     
     // Supplement sent, waiting approval
@@ -7650,43 +7682,6 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     
     return null;
   };
-
-  // Service not started — show gate
-  if (!serviceStarted) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">{lang === 'en' ? '← Back' : '← Retour'}</button>
-          <div><h1 className="text-2xl font-bold text-gray-800">SERVICE - {device.model_name}</h1><p className="text-gray-500">SN: {device.serial_number} • RMA: {rma.request_number}</p></div>
-        </div>
-        
-        <div className="max-w-lg mx-auto text-center py-16 space-y-6">
-          <div className="w-20 h-20 bg-indigo-100 rounded-2xl flex items-center justify-center text-4xl mx-auto">
-            {device.service_type === 'repair' ? '🔧' : '🔬'}
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-gray-800">{device.model_name}</h2>
-            <p className="text-gray-500 font-mono">{device.serial_number}</p>
-            <p className="text-sm text-gray-400 mt-1">{device.service_type === 'calibration' ? (lang === 'en' ? 'Calibration' : 'Étalonnage') : (lang === 'en' ? 'Repair' : 'Réparation')}</p>
-          </div>
-          {device.notes && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-left">
-              <p className="text-xs text-amber-600 font-medium mb-1">{lang === 'en' ? 'Client notes:' : 'Notes client:'}</p>
-              <p className="text-amber-900 text-sm">"{device.notes}"</p>
-            </div>
-          )}
-          <button
-            onClick={startService}
-            disabled={saving}
-            className="px-8 py-4 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all disabled:opacity-50"
-          >
-            {saving ? '⏳...' : (lang === 'en' ? '▶️ Start Service' : '▶️ Démarrer Service')}
-          </button>
-          <p className="text-xs text-gray-400">{lang === 'en' ? 'This will change the device status to "In Progress"' : 'Ceci changera le statut de l\'appareil en "En cours"'}</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -7744,7 +7739,22 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
         );
       })()}
 
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="relative">
+        {/* Blur overlay when form is locked */}
+        {formLocked && (
+          <div className="absolute inset-0 z-10 flex items-start justify-center pt-24" style={{background: 'rgba(255,255,255,0.3)', backdropFilter: 'blur(2px)'}}>
+            <div className="bg-white rounded-xl shadow-lg border-2 border-indigo-200 p-6 text-center max-w-sm">
+              {!serviceStarted ? (<>
+                <p className="text-lg font-bold text-gray-800 mb-2">{lang === 'en' ? '▶️ Start Service to begin' : '▶️ Démarrer Service pour commencer'}</p>
+                <p className="text-sm text-gray-500 mb-4">{lang === 'en' ? 'Click the button in the top right to unlock editing' : 'Cliquez le bouton en haut à droite pour débloquer'}</p>
+              </>) : (<>
+                <p className="text-lg font-bold text-green-700 mb-2">{lang === 'en' ? '✅ Inspection Complete' : '✅ Inspection Terminée'}</p>
+                <p className="text-sm text-gray-500 mb-1">{lang === 'en' ? 'Form is locked. Click Edit in top right to make changes.' : 'Formulaire verrouillé. Cliquez Modifier en haut à droite.'}</p>
+              </>)}
+            </div>
+          </div>
+        )}
+        <div className={`grid lg:grid-cols-3 gap-6 ${formLocked ? 'pointer-events-none select-none' : ''}`}>
         <div className="space-y-4">
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <h3 className="font-bold text-gray-700 mb-3">{t('device')}</h3>
@@ -8079,6 +8089,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
             <textarea value={workCompleted} onChange={e => setWorkCompleted(e.target.value)} placeholder={lang === 'en' ? 'Describe the work performed...' : 'Décrivez les travaux réalisés...'} className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
