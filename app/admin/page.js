@@ -7138,6 +7138,84 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
   // Lock work items if they were previously saved (have items in DB)
   const [workItemsLocked, setWorkItemsLocked] = useState((device.additional_work_items || []).length > 0);
   
+  // Pre-approved quote items - pull from quote_data and allow toggling
+  const getQuotedItems = () => {
+    const quotedDevices = rma.quote_data?.devices || [];
+    const match = quotedDevices.find(qd => 
+      (qd.serial || '').trim().toLowerCase() === (device.serial_number || '').trim().toLowerCase()
+    );
+    if (!match) return [];
+    
+    const items = [];
+    if (match.needsCalibration && match.calibrationPrice > 0) {
+      items.push({
+        id: 'calibration',
+        type: 'calibration',
+        description: `Étalonnage ${match.model || device.model_name || ''} (SN: ${match.serial || device.serial_number})`,
+        part_number: match.calPartNumber || '',
+        quantity: 1,
+        unit_price: parseFloat(match.calibrationPrice) || 0,
+        included: true
+      });
+    }
+    if (match.needsNettoyage && match.nettoyagePrice > 0) {
+      items.push({
+        id: 'nettoyage',
+        type: 'nettoyage',
+        description: `Nettoyage cellule${match.nettoyageCellType ? ' - ' + match.nettoyageCellType : ''}`,
+        part_number: match.nettoyagePartNumber || '',
+        quantity: 1,
+        unit_price: parseFloat(match.nettoyagePrice) || 0,
+        included: true
+      });
+    }
+    if (match.needsRepair && match.repairPrice > 0) {
+      items.push({
+        id: 'repair',
+        type: 'repair',
+        description: `Réparation ${match.model || device.model_name || ''} (SN: ${match.serial || device.serial_number})`,
+        part_number: match.repairPartNumber || '',
+        quantity: 1,
+        unit_price: parseFloat(match.repairPrice) || 0,
+        included: true
+      });
+    }
+    if (match.additionalParts && match.additionalParts.length > 0) {
+      match.additionalParts.forEach((part, i) => {
+        items.push({
+          id: `part_${i}`,
+          type: 'part',
+          description: part.description || part.name || '',
+          part_number: part.partNumber || part.part_number || '',
+          quantity: parseInt(part.quantity) || 1,
+          unit_price: parseFloat(part.price || part.unit_price) || 0,
+          included: true
+        });
+      });
+    }
+    // Contract-covered: mark as included but zero price
+    if (match.isContractCovered) {
+      items.forEach(item => { item.contract_covered = true; });
+    }
+    return items;
+  };
+  
+  const [approvedItems, setApprovedItems] = useState(() => {
+    // Restore from device if previously saved, otherwise build from quote
+    const saved = device.approved_quote_items;
+    if (saved && Array.isArray(saved) && saved.length > 0) return saved;
+    return getQuotedItems();
+  });
+  
+  const toggleApprovedItem = (itemId) => {
+    setApprovedItems(prev => prev.map(item => 
+      item.id === itemId ? { ...item, included: !item.included } : item
+    ));
+  };
+  
+  const approvedTotal = approvedItems.filter(i => i.included && !i.contract_covered).reduce((sum, i) => sum + (i.unit_price * i.quantity), 0);
+  const removedItems = approvedItems.filter(i => !i.included);
+  
   // Report options - initialize from device data, empty string means not selected yet, 'none' means don't show
   const [calType, setCalType] = useState(device.cal_type || '');
   const [receptionResult, setReceptionResult] = useState(device.reception_result || '');
@@ -7308,6 +7386,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
       const { error } = await supabase.from('request_devices').update({
         service_findings: findings, additional_work_needed: additionalWorkNeeded,
         additional_work_items: additionalWorkNeeded ? workItems : [],
+        approved_quote_items: approvedItems,
         work_completed: workCompleted, work_checklist: checklistObj,
         technician_name: technicianName,
         cal_type: calType,
@@ -7336,6 +7415,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
       const updateData = {
         service_findings: findings, additional_work_needed: additionalWorkNeeded,
         additional_work_items: additionalWorkNeeded ? workItems : [],
+        approved_quote_items: approvedItems,
         work_completed: workCompleted, work_checklist: checklistObj,
         technician_name: technicianName,
         cal_type: calType,
@@ -7501,10 +7581,74 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
             <textarea value={findings} onChange={e => setFindings(e.target.value)} placeholder={lang === 'en' ? 'Ex: Calibration performed per specifications...' : 'Ex: Calibration effectuée selon les spécifications...'} className="w-full px-4 py-3 border rounded-xl h-28 resize-none focus:ring-2 focus:ring-blue-500" />
           </div>
 
+          {/* Pre-Approved Quoted Services */}
+          {approvedItems.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm border p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="font-bold text-gray-800">{lang === 'en' ? '2. Pre-Approved Services' : '2. Services pré-approuvés'}</h3>
+                  <p className="text-sm text-gray-500">{lang === 'en' ? 'Items from the approved quote — uncheck if not performed' : 'Articles du devis approuvé — décochez si non réalisé'}</p>
+                </div>
+                <span className="text-sm font-bold text-[#00A651]">
+                  {approvedItems.filter(i => i.included).length}/{approvedItems.length} {lang === 'en' ? 'active' : 'actifs'}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {approvedItems.map(item => (
+                  <div key={item.id} className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${item.included ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
+                    <input
+                      type="checkbox"
+                      checked={item.included}
+                      onChange={() => toggleApprovedItem(item.id)}
+                      className="w-5 h-5 rounded text-green-600 flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                          item.type === 'calibration' ? 'bg-blue-100 text-blue-700' :
+                          item.type === 'nettoyage' ? 'bg-cyan-100 text-cyan-700' :
+                          item.type === 'repair' ? 'bg-orange-100 text-orange-700' :
+                          'bg-gray-100 text-gray-700'
+                        }`}>
+                          {item.type === 'calibration' ? '🔬 Étal.' : item.type === 'nettoyage' ? '🧹 Nett.' : item.type === 'repair' ? '🔧 Rép.' : '📦 Pièce'}
+                        </span>
+                        <span className={`font-medium ${item.included ? 'text-gray-800' : 'text-gray-400 line-through'}`}>{item.description}</span>
+                      </div>
+                      {item.part_number && <span className="text-xs text-gray-400 font-mono">{item.part_number}</span>}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      {item.contract_covered ? (
+                        <span className="text-sm font-medium text-blue-600">{lang === 'en' ? 'Contract' : 'Contrat'}</span>
+                      ) : (
+                        <span className={`text-sm font-bold ${item.included ? 'text-green-700' : 'text-gray-400 line-through'}`}>
+                          {item.quantity > 1 ? `${item.quantity} × ` : ''}€{item.unit_price.toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Totals */}
+              <div className="mt-3 pt-3 border-t flex items-center justify-between">
+                <div className="text-sm text-gray-500">
+                  {removedItems.length > 0 && (
+                    <span className="text-amber-600">
+                      ⚠️ {removedItems.length} {lang === 'en' ? 'item(s) removed from quote' : 'article(s) retiré(s) du devis'}
+                    </span>
+                  )}
+                </div>
+                <div className="text-right">
+                  <span className="text-sm text-gray-500 mr-2">{lang === 'en' ? 'Quoted total:' : 'Total devis :'}</span>
+                  <span className="text-lg font-bold text-[#00A651]">€{approvedTotal.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="font-bold text-gray-800">{lang === 'en' ? '2. Additional work needed?' : '2. Travaux supplémentaires ?'}</h3>
+                <h3 className="font-bold text-gray-800">{lang === 'en' ? (approvedItems.length > 0 ? '3. Additional work needed?' : '2. Additional work needed?') : (approvedItems.length > 0 ? '3. Travaux supplémentaires ?' : '2. Travaux supplémentaires ?')}</h3>
                 <p className="text-sm text-gray-500">{lang === 'en' ? "Additional parts or labor" : "Pièces ou main d'œuvre en plus"}</p>
               </div>
               <div className="flex gap-3">
@@ -7581,7 +7725,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
 
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-bold text-gray-700">{lang === 'en' ? '3. WORK COMPLETED *' : '3. TRAVAUX RÉALISÉS *'}</h3>
+              <h3 className="font-bold text-gray-700">{approvedItems.length > 0 ? (lang === 'en' ? '4. WORK COMPLETED *' : '4. TRAVAUX RÉALISÉS *') : (lang === 'en' ? '3. WORK COMPLETED *' : '3. TRAVAUX RÉALISÉS *')}</h3>
               <TechTranslateButton onInsert={(text) => setWorkCompleted(prev => prev ? prev + '\n' + text : text)} lang={lang} />
             </div>
             <p className="text-sm text-gray-500 mb-4">{lang === 'en' ? 'Check and describe work performed' : 'Cochez et décrivez le travail effectué'}</p>
