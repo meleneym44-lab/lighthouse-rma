@@ -960,13 +960,19 @@ async function generateQuotePDF(options) {
   y += 3;
 
   // ===== SIGNATURE SECTION - ALWAYS ON LAST PAGE =====
-  const signatureHeight = 45;
-  if (y + signatureHeight > getUsableHeight()) {
+  // Signature box extends ~39mm below sigY. Footer starts at pageHeight-footerHeight=281.
+  // So we need sigY + 39 < 281, meaning y + 3 + 39 < 281, meaning y < 239.
+  // Use tighter check against footer rather than conservative usableHeight.
+  const signatureNeeded = 42; // 3mm gap + 39mm content
+  const signatureLimit = pageHeight - footerHeight - 2; // 2mm padding before footer
+  if (y + signatureNeeded > signatureLimit) {
     addFooter();
     pdf.addPage();
     y = margin;
   }
-  const sigY = Math.max(y + 5, getUsableHeight() - signatureHeight);
+  // Position signature: push to bottom only if there's lots of space, otherwise just below content
+  const sigBottomTarget = signatureLimit - 39; // where sigY should be to sit near bottom
+  const sigY = Math.max(y + 3, sigBottomTarget);
   
   pdf.setDrawColor(200, 200, 200);
   pdf.setLineWidth(0.3);
