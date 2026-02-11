@@ -2770,8 +2770,9 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
       {/* Overview Tab */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* ACTION REQUIRED - Combined RMA, Parts Orders, and Contracts */}
+          {/* ACTION REQUIRED - Combined RMA, Parts Orders, Contracts, and Supplements */}
           {(serviceRequests.filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at).length > 0 || 
+            serviceRequests.filter(r => r.avenant_sent_at && !r.avenant_approved_at && !r.avenant_bc_submitted_at).length > 0 ||
             partsNeedingAction.length > 0 ||
             (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0)) && (
             <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4">
@@ -2838,6 +2839,25 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                       </span>
                     </div>
                     <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
+                      Agir →
+                    </span>
+                  </div>
+                ))}
+                {/* Supplement Quotes needing BC */}
+                {serviceRequests
+                  .filter(r => r.avenant_sent_at && !r.avenant_approved_at && !r.avenant_bc_submitted_at)
+                  .map(req => (
+                  <div 
+                    key={`sup-${req.id}`}
+                    onClick={() => viewRequest(req)}
+                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-orange-100 border border-orange-200"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-orange-500">📄</span>
+                      <span className="font-mono font-bold text-orange-700">{req.request_number}</span>
+                      <span className="text-sm text-orange-600">Supplément au devis - Soumettre BC</span>
+                    </div>
+                    <span className="px-3 py-1 bg-orange-500 text-white text-xs font-bold rounded-full">
                       Agir →
                     </span>
                   </div>
@@ -7328,6 +7348,12 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   const needsQuoteAction = isQuoteSent && !request.bc_submitted_at;
   const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
   
+  // Supplement detection - when admin sends additional work quote during service
+  const needsSupplementAction = !!request.avenant_sent_at && !request.avenant_approved_at && !request.avenant_bc_submitted_at;
+  const [showSupplementBCModal, setShowSupplementBCModal] = useState(false);
+  const [supplementBcFile, setSupplementBcFile] = useState(null);
+  const [submittingSupplementBC, setSubmittingSupplementBC] = useState(false);
+  
   // Check if submission is valid - need EITHER file OR signature (not both required)
   const hasFile = bcFile !== null;
   const hasSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
@@ -7378,6 +7404,64 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       refresh();
     }
     setApprovingQuote(false);
+  };
+
+  // Submit BC for supplement (additional work found during service)
+  const supplementPdfUrl = attachments.find(a => a.category === 'avenant_quote' && a.file_url)?.file_url;
+  
+  const handleSubmitSupplementBC = async () => {
+    setSubmittingSupplementBC(true);
+    try {
+      let fileUrl = null;
+      if (supplementBcFile) {
+        try {
+          const fileName = `avenant_bc_${request.id}_${Date.now()}.${supplementBcFile.name.split('.').pop()}`;
+          const { error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(fileName, supplementBcFile);
+          if (!uploadError) {
+            const { data: publicUrl } = supabase.storage
+              .from('documents')
+              .getPublicUrl(fileName);
+            fileUrl = publicUrl?.publicUrl;
+          }
+        } catch (e) {
+          console.log('Supplement BC file upload skipped:', e);
+        }
+      }
+      
+      const { error: updateError } = await supabase
+        .from('service_requests')
+        .update({
+          avenant_bc_submitted_at: new Date().toISOString(),
+          bc_submitted_at: new Date().toISOString(),
+          bc_file_url: fileUrl,
+          bc_signed_by: profile?.full_name || 'Client'
+        })
+        .eq('id', request.id);
+      
+      if (updateError) throw updateError;
+      
+      if (fileUrl) {
+        await supabase.from('request_attachments').insert({
+          request_id: request.id,
+          file_name: supplementBcFile?.name || 'BC_Supplement.pdf',
+          file_url: fileUrl,
+          file_type: supplementBcFile?.type || 'application/pdf',
+          file_size: supplementBcFile?.size || 0,
+          uploaded_by: profile.id,
+          category: 'avenant_bc'
+        });
+      }
+      
+      notify('✅ Bon de commande pour le supplément soumis avec succès!');
+      setShowSupplementBCModal(false);
+      setSupplementBcFile(null);
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSubmittingSupplementBC(false);
   };
 
   // Signature pad functions
@@ -7817,6 +7901,84 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           </div>
         )}
 
+        {/* Supplement Action Required - Additional work quote during service */}
+        {needsSupplementAction && (
+          <div className="bg-orange-50 border-b border-orange-300 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-orange-500 flex items-center justify-center">
+                  <span className="text-white text-2xl">📄</span>
+                </div>
+                <div>
+                  <p className="font-bold text-orange-800 text-lg">Supplément au devis - Action requise</p>
+                  <p className="text-sm text-orange-600">
+                    Suite à l'inspection, des travaux supplémentaires ont été identifiés. 
+                    Veuillez examiner le supplément et soumettre votre bon de commande.
+                  </p>
+                  {request.avenant_total && (
+                    <p className="text-sm font-bold text-orange-800 mt-1">
+                      Montant: {parseFloat(request.avenant_total).toFixed(2)} € HT
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                {supplementPdfUrl && (
+                  <a
+                    href={supplementPdfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 bg-white border border-orange-300 text-orange-700 rounded-lg font-medium hover:bg-orange-50 transition-colors"
+                  >
+                    👁️ Voir le Supplément
+                  </a>
+                )}
+                <button
+                  onClick={() => setShowSupplementBCModal(true)}
+                  className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors"
+                >
+                  ✅ Approuver et soumettre BC
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Supplement BC Submitted - Waiting for admin approval */}
+        {request.avenant_sent_at && !request.avenant_approved_at && request.avenant_bc_submitted_at && (
+          <div className="bg-purple-50 border-b border-purple-200 px-6 py-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+                <span className="text-purple-600 text-lg">📄</span>
+              </div>
+              <div>
+                <p className="font-medium text-purple-800">Supplément - BC soumis ✓</p>
+                <p className="text-sm text-purple-600">
+                  Votre bon de commande a été soumis le {new Date(request.avenant_bc_submitted_at).toLocaleDateString('fr-FR')}. En attente de validation.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Supplement Approved */}
+        {request.avenant_sent_at && request.avenant_approved_at && (
+          <div className="bg-green-50 border-b border-green-200 px-6 py-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                <span className="text-green-600 text-lg">✅</span>
+              </div>
+              <div>
+                <p className="font-medium text-green-800">Supplément approuvé ✓</p>
+                <p className="text-sm text-green-600">
+                  Le supplément de {parseFloat(request.avenant_total || 0).toFixed(2)} € HT a été approuvé.
+                  {request.supplement_bc_number && ` BC N° ${request.supplement_bc_number}`}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Quote Revision Requested */}
         {request.status === 'quote_revision_requested' && (
           <div className="bg-orange-50 border-b border-orange-300 px-6 py-4">
@@ -7939,6 +8101,68 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     Soumis le {new Date(request.bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(request.bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                   </p>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Supplement BC Submission Modal */}
+        {showSupplementBCModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+              <div className="bg-orange-500 text-white px-6 py-4 rounded-t-xl">
+                <h3 className="text-lg font-bold">📄 Bon de commande - Supplément</h3>
+                <p className="text-orange-100 text-sm">
+                  Supplément N° {request.supplement_number || '—'} • {parseFloat(request.avenant_total || 0).toFixed(2)} € HT
+                </p>
+              </div>
+              
+              <div className="p-6 space-y-4">
+                {supplementPdfUrl && (
+                  <a
+                    href={supplementPdfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-3 bg-orange-50 border border-orange-200 rounded-lg text-orange-700 font-medium hover:bg-orange-100"
+                  >
+                    📄 Voir le supplément au devis ↗
+                  </a>
+                )}
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Bon de commande (PDF, image...)
+                  </label>
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                    onChange={(e) => setSupplementBcFile(e.target.files[0])}
+                    className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
+                  />
+                  {supplementBcFile && (
+                    <p className="text-sm text-green-600 mt-1">✓ {supplementBcFile.name}</p>
+                  )}
+                </div>
+                
+                <p className="text-xs text-gray-500">
+                  En soumettant votre bon de commande, vous approuvez le supplément au devis pour les travaux supplémentaires identifiés.
+                </p>
+              </div>
+              
+              <div className="px-6 py-4 border-t flex justify-between">
+                <button
+                  onClick={() => { setShowSupplementBCModal(false); setSupplementBcFile(null); }}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleSubmitSupplementBC}
+                  disabled={submittingSupplementBC || !supplementBcFile}
+                  className="px-6 py-2 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] disabled:opacity-50"
+                >
+                  {submittingSupplementBC ? 'Envoi en cours...' : '✅ Soumettre BC'}
+                </button>
               </div>
             </div>
           </div>
