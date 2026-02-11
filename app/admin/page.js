@@ -6258,7 +6258,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">🏷️</div>
                       <div>
                         <p className="font-medium text-gray-800">{lang === 'en' ? 'UPS Label' : 'Étiquette UPS'}</p>
-                        <p className="text-sm text-amber-600">{device.tracking_number || 'lang === 'en' ? 'Shipping label' : "Label d'expédition"'}</p>
+                        <p className="text-sm text-amber-600">{device.tracking_number || (lang === 'en' ? 'Shipping label' : "Label d'expedition")}</p>
                       </div>
                     </a>
                   )}
