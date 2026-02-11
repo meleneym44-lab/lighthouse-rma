@@ -4044,6 +4044,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         .from('equipment')
         .select('*')
         .eq('company_id', profile.company_id)
+        .or('hidden_by_customer.is.null,hidden_by_customer.eq.false')
         .order('created_at', { ascending: false });
       if (data) setSavedEquipment(data);
     };
@@ -4802,6 +4803,7 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
         .from('equipment')
         .select('*')
         .eq('company_id', profile.company_id)
+        .or('hidden_by_customer.is.null,hidden_by_customer.eq.false')
         .order('created_at', { ascending: false });
       if (data) setSavedEquipment(data);
     };
@@ -7060,6 +7062,7 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
         .from('equipment')
         .select('*')
         .eq('company_id', profile.company_id)
+        .or('hidden_by_customer.is.null,hidden_by_customer.eq.false')
         .order('created_at', { ascending: false });
       if (data) setEquipment(data);
       setLoading(false);
@@ -7109,6 +7112,7 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
       .from('equipment')
       .select('*')
       .eq('company_id', profile.company_id)
+      .or('hidden_by_customer.is.null,hidden_by_customer.eq.false')
       .order('created_at', { ascending: false });
     if (data) setEquipment(data);
   };
@@ -7161,11 +7165,12 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
 
   const deleteEquipment = async (id) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer cet équipement?')) return;
-    const { error } = await supabase.from('equipment').delete().eq('id', id);
+    const { error } = await supabase.from('equipment').update({ hidden_by_customer: true }).eq('id', id);
     if (error) {
       notify(`Erreur: ${error.message}`, 'error');
     } else {
       notify('Équipement supprimé');
+      setSelectedDevice(null);
       await reloadEquipment();
     }
   };
