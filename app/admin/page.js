@@ -7213,6 +7213,14 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     ));
   };
   
+  const [editingApproved, setEditingApproved] = useState(false);
+  
+  const updateApprovedItem = (itemId, field, value) => {
+    setApprovedItems(prev => prev.map(item => 
+      item.id === itemId ? { ...item, [field]: value } : item
+    ));
+  };
+  
   const approvedTotal = approvedItems.filter(i => i.included && !i.contract_covered).reduce((sum, i) => sum + (i.unit_price * i.quantity), 0);
   const removedItems = approvedItems.filter(i => !i.included);
   
@@ -7356,7 +7364,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     setPartsLoading(prev => ({ ...prev, [itemId]: false }));
   };
   
-  const totalAdditional = workItems.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0);
+  const totalAdditional = workItems.filter(i => !i.warranty).reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0);
   const canPreviewReport = findings.trim() && workCompleted.trim() && technicianName && calType && receptionResult && (!isCalibration || certificateUrl);
   
   const getValidationMessage = () => {
@@ -7449,12 +7457,15 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
   };
 
   if (showReportPreview) {
-    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved} saving={saving} technicianName={technicianName} calType={calType} receptionResult={receptionResult} lang={lang} />;
+    const allWarranty = workItems.length > 0 && workItems.every(i => i.warranty);
+    return <ReportPreviewModal device={device} rma={rma} findings={findings} workCompleted={workCompleted} checklist={checklist} additionalWorkNeeded={additionalWorkNeeded} workItems={workItems} onClose={() => setShowReportPreview(false)} onComplete={completeReport} canComplete={!additionalWorkNeeded || avenantApproved || allWarranty} saving={saving} technicianName={technicianName} calType={calType} receptionResult={receptionResult} lang={lang} />;
   }
 
   const renderActionButtons = () => {
+    const allWarranty = additionalWorkNeeded && workItems.length > 0 && workItems.every(i => i.warranty);
     if (reportComplete) return <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">{lang === 'en' ? '✓ Report completed' : '✓ Rapport terminé'}</span>;
     if (!additionalWorkNeeded) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button></>);
+    if (additionalWorkNeeded && allWarranty) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button></>);
     if (additionalWorkNeeded && !avenantSent) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">{lang === 'en' ? '⚠️ Create supplement from RMA page' : '⚠️ Créer avenant depuis page RMA'}</span></>);
     if (additionalWorkNeeded && avenantSent && !avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><span className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg">{lang === 'en' ? '⏳ Awaiting approval' : '⏳ Attente approbation'}</span></>);
     if (additionalWorkNeeded && avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button></>);
@@ -7471,13 +7482,23 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
         <div className="flex items-center gap-3">{renderActionButtons()}</div>
       </div>
 
-      {additionalWorkNeeded && (
-        <div className={`rounded-lg p-3 ${avenantApproved ? 'bg-green-100 border border-green-300' : avenantSent ? 'bg-purple-100 border border-purple-300' : 'bg-amber-100 border border-amber-300'}`}>
-          <span className={`font-medium ${avenantApproved ? 'text-green-800' : avenantSent ? 'text-purple-800' : 'text-amber-800'}`}>
-            {avenantApproved ? (lang === 'en' ? '✓ Supplement approved by client' : '✓ Avenant approuvé par le client') : avenantSent ? (lang === 'en' ? '📤 Supplement sent - Awaiting approval' : '📤 Avenant envoyé - En attente approbation') : (lang === 'en' ? '⚠️ Additional work detected - Supplement required' : '⚠️ Travaux supplémentaires détectés - Avenant requis')}
-          </span>
-        </div>
-      )}
+      {additionalWorkNeeded && (() => {
+        const allW = workItems.length > 0 && workItems.every(i => i.warranty);
+        if (allW) return (
+          <div className="rounded-lg p-3 bg-blue-100 border border-blue-300">
+            <span className="font-medium text-blue-800">
+              🛡️ {lang === 'en' ? 'All additional work covered under warranty — no supplement needed' : 'Tous les travaux supplémentaires sous garantie — pas d\'avenant requis'}
+            </span>
+          </div>
+        );
+        return (
+          <div className={`rounded-lg p-3 ${avenantApproved ? 'bg-green-100 border border-green-300' : avenantSent ? 'bg-purple-100 border border-purple-300' : 'bg-amber-100 border border-amber-300'}`}>
+            <span className={`font-medium ${avenantApproved ? 'text-green-800' : avenantSent ? 'text-purple-800' : 'text-amber-800'}`}>
+              {avenantApproved ? (lang === 'en' ? '✓ Supplement approved by client' : '✓ Avenant approuvé par le client') : avenantSent ? (lang === 'en' ? '📤 Supplement sent - Awaiting approval' : '📤 Avenant envoyé - En attente approbation') : (lang === 'en' ? '⚠️ Additional work detected - Supplement required' : '⚠️ Travaux supplémentaires détectés - Avenant requis')}
+            </span>
+          </div>
+        );
+      })()}
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="space-y-4">
@@ -7589,9 +7610,17 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                   <h3 className="font-bold text-gray-800">{lang === 'en' ? '2. Pre-Approved Services' : '2. Services pré-approuvés'}</h3>
                   <p className="text-sm text-gray-500">{lang === 'en' ? 'Items from the approved quote — uncheck if not performed' : 'Articles du devis approuvé — décochez si non réalisé'}</p>
                 </div>
-                <span className="text-sm font-bold text-[#00A651]">
-                  {approvedItems.filter(i => i.included).length}/{approvedItems.length} {lang === 'en' ? 'active' : 'actifs'}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-[#00A651]">
+                    {approvedItems.filter(i => i.included).length}/{approvedItems.length} {lang === 'en' ? 'active' : 'actifs'}
+                  </span>
+                  <button
+                    onClick={() => setEditingApproved(!editingApproved)}
+                    className={`px-3 py-1 rounded-lg text-sm font-medium ${editingApproved ? 'bg-blue-500 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
+                  >
+                    {editingApproved ? (lang === 'en' ? '✓ Done' : '✓ Terminé') : (lang === 'en' ? '✏️ Edit' : '✏️ Modifier')}
+                  </button>
+                </div>
               </div>
               <div className="space-y-2">
                 {approvedItems.map(item => (
@@ -7612,13 +7641,52 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                         }`}>
                           {item.type === 'calibration' ? '🔬 Étal.' : item.type === 'nettoyage' ? '🧹 Nett.' : item.type === 'repair' ? '🔧 Rép.' : '📦 Pièce'}
                         </span>
-                        <span className={`font-medium ${item.included ? 'text-gray-800' : 'text-gray-400 line-through'}`}>{item.description}</span>
+                        {editingApproved ? (
+                          <input
+                            type="text"
+                            value={item.description}
+                            onChange={e => updateApprovedItem(item.id, 'description', e.target.value)}
+                            className="flex-1 px-2 py-1 border rounded text-sm font-medium"
+                          />
+                        ) : (
+                          <span className={`font-medium ${item.included ? 'text-gray-800' : 'text-gray-400 line-through'}`}>{item.description}</span>
+                        )}
                       </div>
-                      {item.part_number && <span className="text-xs text-gray-400 font-mono">{item.part_number}</span>}
+                      {editingApproved ? (
+                        <input
+                          type="text"
+                          value={item.part_number || ''}
+                          onChange={e => updateApprovedItem(item.id, 'part_number', e.target.value)}
+                          placeholder={lang === 'en' ? 'Part #' : 'N° Pièce'}
+                          className="text-xs text-gray-400 font-mono mt-1 px-2 py-0.5 border rounded w-40"
+                        />
+                      ) : (
+                        item.part_number && <span className="text-xs text-gray-400 font-mono">{item.part_number}</span>
+                      )}
                     </div>
                     <div className="text-right flex-shrink-0">
                       {item.contract_covered ? (
                         <span className="text-sm font-medium text-blue-600">{lang === 'en' ? 'Contract' : 'Contrat'}</span>
+                      ) : editingApproved ? (
+                        <div className="flex items-center gap-1">
+                          {item.quantity > 1 && (
+                            <input
+                              type="number"
+                              value={item.quantity}
+                              onChange={e => updateApprovedItem(item.id, 'quantity', parseInt(e.target.value) || 1)}
+                              className="w-14 px-1 py-1 border rounded text-sm text-center"
+                              min="1"
+                            />
+                          )}
+                          <span className="text-gray-400 text-sm">€</span>
+                          <input
+                            type="number"
+                            value={item.unit_price}
+                            onChange={e => updateApprovedItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
+                            className="w-24 px-2 py-1 border rounded text-sm text-right font-bold"
+                            step="0.01"
+                          />
+                        </div>
                       ) : (
                         <span className={`text-sm font-bold ${item.included ? 'text-green-700' : 'text-gray-400 line-through'}`}>
                           {item.quantity > 1 ? `${item.quantity} × ` : ''}€{item.unit_price.toFixed(2)}
@@ -7658,6 +7726,12 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
             </div>
             {additionalWorkNeeded && (
               <div className="border-t pt-4">
+                {/* Warranty info banner */}
+                {workItems.some(i => i.warranty) && (
+                  <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
+                    <span className="text-blue-700 text-sm font-medium">🛡️ {lang === 'en' ? 'Warranty items bypass supplement approval' : 'Articles sous garantie — pas d\'avenant requis'}</span>
+                  </div>
+                )}
                 {/* Locked state - show read-only with edit button */}
                 {workItemsLocked ? (
                   <div>
@@ -7667,12 +7741,15 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                     </div>
                     <div className="space-y-2">
                       {workItems.map((item, idx) => (
-                        <div key={item.id} className="flex items-center gap-2 bg-gray-100 rounded-lg p-3">
+                        <div key={item.id} className={`flex items-center gap-2 rounded-lg p-3 ${item.warranty ? 'bg-blue-50 border border-blue-200' : 'bg-gray-100'}`}>
                           <span className="text-gray-400 w-6">{idx + 1}.</span>
+                          {item.warranty && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">🛡️ Garantie</span>}
                           <span className="text-gray-500 text-sm w-24">{item.part_number || '—'}</span>
                           <span className="flex-1 font-medium">{item.description}</span>
                           <span className="text-gray-600">×{item.quantity}</span>
-                          <span className="font-bold text-amber-700 w-24 text-right">€{(parseFloat(item.price) || 0).toFixed(2)}</span>
+                          <span className={`font-bold w-24 text-right ${item.warranty ? 'text-blue-600' : 'text-amber-700'}`}>
+                            {item.warranty ? (lang === 'en' ? 'Warranty' : 'Garantie') : `€${(parseFloat(item.price) || 0).toFixed(2)}`}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -7688,25 +7765,40 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                   <div>
                     <div className="space-y-2">
                       {workItems.map((item, idx) => (
-                        <div key={item.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                          <span className="text-gray-400 w-6">{idx + 1}.</span>
-                          <div className="relative">
-                            <input 
-                              type="text" 
-                              value={item.part_number || ''} 
-                              onChange={e => updateWorkItem(item.id, 'part_number', e.target.value)}
-                              onBlur={e => lookupPart(item.id, e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && lookupPart(item.id, e.target.value)}
-                              placeholder={lang === 'en' ? 'Part #' : 'N° Pièce'} 
-                              className="w-28 px-3 py-2 border rounded-lg text-sm"
-                            />
-                            {partsLoading[item.id] && <span className="absolute right-2 top-2 text-blue-500 text-sm">...</span>}
+                        <div key={item.id} className={`rounded-lg p-2 ${item.warranty ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'}`}>
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-400 w-6">{idx + 1}.</span>
+                            <div className="relative">
+                              <input 
+                                type="text" 
+                                value={item.part_number || ''} 
+                                onChange={e => updateWorkItem(item.id, 'part_number', e.target.value)}
+                                onBlur={e => lookupPart(item.id, e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && lookupPart(item.id, e.target.value)}
+                                placeholder={lang === 'en' ? 'Part #' : 'N° Pièce'} 
+                                className="w-28 px-3 py-2 border rounded-lg text-sm"
+                              />
+                              {partsLoading[item.id] && <span className="absolute right-2 top-2 text-blue-500 text-sm">...</span>}
+                            </div>
+                            <input type="text" value={item.description} onChange={e => updateWorkItem(item.id, 'description', e.target.value)} placeholder="Description" className="flex-1 px-3 py-2 border rounded-lg" />
+                            <input type="number" value={item.quantity} onChange={e => updateWorkItem(item.id, 'quantity', e.target.value)} className="w-16 px-3 py-2 border rounded-lg text-center" min="1" />
+                            <span className="text-gray-400">€</span>
+                            <input type="number" value={item.price} onChange={e => updateWorkItem(item.id, 'price', e.target.value)} className={`w-24 px-3 py-2 border rounded-lg text-right ${item.warranty ? 'opacity-50' : ''}`} step="0.01" disabled={item.warranty} />
+                            <button onClick={() => removeWorkItem(item.id)} className="p-2 text-red-500 hover:bg-red-100 rounded">✕</button>
                           </div>
-                          <input type="text" value={item.description} onChange={e => updateWorkItem(item.id, 'description', e.target.value)} placeholder="Description" className="flex-1 px-3 py-2 border rounded-lg" />
-                          <input type="number" value={item.quantity} onChange={e => updateWorkItem(item.id, 'quantity', e.target.value)} className="w-16 px-3 py-2 border rounded-lg text-center" min="1" />
-                          <span className="text-gray-400">€</span>
-                          <input type="number" value={item.price} onChange={e => updateWorkItem(item.id, 'price', e.target.value)} className="w-24 px-3 py-2 border rounded-lg text-right" step="0.01" />
-                          <button onClick={() => removeWorkItem(item.id)} className="p-2 text-red-500 hover:bg-red-100 rounded">✕</button>
+                          <div className="flex items-center gap-2 mt-2 ml-8">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={item.warranty || false}
+                                onChange={e => updateWorkItem(item.id, 'warranty', e.target.checked)}
+                                className="w-4 h-4 rounded text-blue-600"
+                              />
+                              <span className={`text-sm font-medium ${item.warranty ? 'text-blue-700' : 'text-gray-500'}`}>
+                                🛡️ {lang === 'en' ? 'Under warranty (no supplement needed)' : 'Sous garantie (pas d\'avenant requis)'}
+                              </span>
+                            </label>
+                          </div>
                         </div>
                       ))}
                     </div>
