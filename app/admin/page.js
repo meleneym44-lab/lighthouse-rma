@@ -5882,7 +5882,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     const { data: addrs } = await supabase.from('shipping_addresses').select('*').eq('company_id', rma.company_id).order('label');
                     if (!addrs || addrs.length === 0) { notify(lang === 'en' ? 'No address registered for this client' : 'Aucune adresse enregistrée pour ce client', 'error'); return; }
                     const labels = addrs.map((a, i) => `${i + 1}. ${a.label || a.company_name || '—'} — ${a.address_line1}, ${a.postal_code} ${a.city}`).join('\n');
-                    const choice = prompt(lang === 'en' ? `Choose return address (numéro):\n\n${labels}\n\n0 = Utiliser l'adresse RMA par défaut`);
+                    const choice = prompt(lang === 'en' ? `Choose return address (number):\n\n${labels}\n\n0 = Use default RMA address` : `Choisir adresse de retour (numero):\n\n${labels}\n\n0 = Utiliser l'adresse RMA par defaut`);
                     if (choice === null) return;
                     const idx = parseInt(choice);
                     if (idx === 0) {
