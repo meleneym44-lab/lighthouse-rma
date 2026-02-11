@@ -1908,6 +1908,249 @@ async function generateContractQuotePDF(options) {
   return pdf.output('blob');
 }
 
+// ============================================
+// SIGNED AVENANT/SUPPLEMENT PDF GENERATOR
+// ============================================
+async function generateSignedAvenantPDF(options) {
+  const {
+    request, isSigned = false,
+    signatureName = '', signatureDate = '', signatureImage = null
+  } = options;
+
+  await new Promise((resolve, reject) => {
+    if (window.jspdf) { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  
+  const company = request.companies || {};
+  const devices = (request.request_devices || []).filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
+  
+  const pageWidth = 210, pageHeight = 297, margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  const footerHeight = 16;
+  
+  const amber = [245, 158, 11];
+  const darkBlue = [26, 26, 46];
+  const gray = [80, 80, 80];
+  const lightGray = [130, 130, 130];
+  const white = [255, 255, 255];
+  
+  let y = margin;
+  
+  const loadImageAsBase64 = async (url) => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) { return null; }
+  };
+  
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/lighthouse-logo.png');
+  
+  const addFooter = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+    pdf.setTextColor(...white);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(180, 180, 180);
+    pdf.setFontSize(8);
+    pdf.text('16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 41 94 94 66', pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+  };
+  
+  // Header
+  pdf.setFillColor(...darkBlue);
+  pdf.rect(0, 0, pageWidth, 35, 'F');
+  pdf.setFillColor(...amber);
+  pdf.rect(0, 35, pageWidth, 2, 'F');
+  
+  if (lighthouseLogo) {
+    try { pdf.addImage(lighthouseLogo, 'PNG', margin, 5, 50, 25); } catch(e) {}
+  }
+  
+  pdf.setTextColor(...white);
+  pdf.setFontSize(16);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(isSigned ? 'AVENANT SIGNE' : 'SUPPLEMENT AU DEVIS', pageWidth - margin, 18, { align: 'right' });
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text('N° ' + (request.supplement_number || request.request_number || ''), pageWidth - margin, 27, { align: 'right' });
+  
+  y = 45;
+  
+  // Date & client info
+  pdf.setFontSize(9);
+  pdf.setTextColor(...gray);
+  pdf.text('Date: ' + new Date().toLocaleDateString('fr-FR'), margin, y);
+  y += 8;
+  
+  // Client box
+  pdf.setFillColor(248, 248, 248);
+  pdf.roundedRect(margin, y, contentWidth, 22, 2, 2, 'F');
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(company.name || 'Client', margin + 4, y + 7);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.setFontSize(8);
+  if (company.address) pdf.text(company.address, margin + 4, y + 13);
+  if (company.city) pdf.text(`${company.postal_code || ''} ${company.city}`, margin + 4, y + 18);
+  y += 28;
+  
+  // Intro
+  pdf.setFontSize(9);
+  pdf.setTextColor(...gray);
+  const introText = `Suite a l'inspection de vos appareils (RMA ${request.request_number || ''}), des travaux supplementaires ont ete identifies. Veuillez trouver ci-dessous le detail des prestations complementaires proposees.`;
+  const introLines = pdf.splitTextToSize(introText, contentWidth);
+  introLines.forEach(line => { pdf.text(line, margin, y); y += 4.5; });
+  y += 5;
+  
+  // Devices with work
+  let grandTotal = 0;
+  devices.forEach((device, di) => {
+    // Device header
+    pdf.setFillColor(...amber);
+    pdf.rect(margin, y, contentWidth, 8, 'F');
+    pdf.setTextColor(...white);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(`${device.brand || ''} ${device.model || ''} - S/N: ${device.serial_number || ''}`, margin + 3, y + 5.5);
+    y += 10;
+    
+    // Findings
+    if (device.additional_work_findings) {
+      pdf.setFontSize(8);
+      pdf.setTextColor(...gray);
+      pdf.setFont('helvetica', 'italic');
+      const findings = pdf.splitTextToSize('Constatation: ' + device.additional_work_findings, contentWidth - 6);
+      findings.forEach(line => { pdf.text(line, margin + 3, y); y += 4; });
+      y += 2;
+    }
+    
+    // Items table header
+    pdf.setFillColor(240, 240, 240);
+    pdf.rect(margin, y, contentWidth, 6, 'F');
+    pdf.setFontSize(7);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('Description', margin + 3, y + 4);
+    pdf.text('Qte', margin + contentWidth * 0.65, y + 4);
+    pdf.text('Prix Unit.', margin + contentWidth * 0.75, y + 4);
+    pdf.text('Total', margin + contentWidth - 3, y + 4, { align: 'right' });
+    y += 8;
+    
+    // Items
+    const items = device.additional_work_items || [];
+    let deviceTotal = 0;
+    items.forEach((item, ii) => {
+      const qty = parseInt(item.quantity) || 1;
+      const price = parseFloat(item.price) || 0;
+      const isWarranty = item.warranty;
+      const lineTotal = isWarranty ? 0 : qty * price;
+      deviceTotal += lineTotal;
+      
+      if (ii % 2 === 0) {
+        pdf.setFillColor(252, 252, 252);
+        pdf.rect(margin, y - 1, contentWidth, 5, 'F');
+      }
+      
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...gray);
+      pdf.text((item.description || '').substring(0, 50), margin + 3, y + 2.5);
+      pdf.text(String(qty), margin + contentWidth * 0.65, y + 2.5);
+      
+      if (isWarranty) {
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(41, 98, 255);
+        pdf.text('Sous garantie', margin + contentWidth - 3, y + 2.5, { align: 'right' });
+      } else {
+        pdf.text(price.toFixed(2) + ' EUR', margin + contentWidth * 0.75, y + 2.5);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(lineTotal.toFixed(2) + ' EUR', margin + contentWidth - 3, y + 2.5, { align: 'right' });
+      }
+      y += 5.5;
+    });
+    
+    grandTotal += deviceTotal;
+    
+    // Device subtotal
+    pdf.setFillColor(245, 245, 245);
+    pdf.rect(margin, y, contentWidth, 6, 'F');
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('Sous-total:', margin + contentWidth * 0.65, y + 4);
+    pdf.text(deviceTotal.toFixed(2) + ' EUR', margin + contentWidth - 3, y + 4, { align: 'right' });
+    y += 10;
+  });
+  
+  // Grand total
+  pdf.setFillColor(...amber);
+  pdf.rect(margin, y, contentWidth, 10, 'F');
+  pdf.setTextColor(...white);
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('TOTAL HT:', margin + contentWidth * 0.6, y + 7);
+  pdf.text(grandTotal.toFixed(2) + ' EUR', margin + contentWidth - 3, y + 7, { align: 'right' });
+  y += 16;
+  
+  // Signature section
+  if (isSigned && signatureName) {
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('Bon pour accord', margin, y);
+    y += 6;
+    
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Nom: ' + signatureName, margin, y); y += 5;
+    pdf.text('Date: ' + signatureDate, margin, y); y += 5;
+    pdf.text('Mention: Lu et approuve', margin, y); y += 8;
+    
+    if (signatureImage) {
+      try { pdf.addImage(signatureImage, 'PNG', margin, y, 50, 20); } catch(e) {}
+      y += 25;
+    }
+  } else {
+    // Unsigned - signature placeholder
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('Bon pour accord', margin, y);
+    y += 6;
+    pdf.setDrawColor(180, 180, 180);
+    pdf.setLineWidth(0.3);
+    pdf.setLineDashPattern([2, 2], 0);
+    pdf.roundedRect(margin, y, 60, 25, 2, 2, 'D');
+    pdf.setLineDashPattern([], 0);
+    pdf.setFontSize(7);
+    pdf.setTextColor(...lightGray);
+    pdf.text('Signature client', margin + 18, y + 10);
+    pdf.text('Lu et approuve', margin + 18, y + 15);
+  }
+  
+  addFooter();
+  return pdf.output('blob');
+}
+
 
 // Translations
 const T = {
@@ -2850,14 +3093,14 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                   <div 
                     key={`sup-${req.id}`}
                     onClick={() => viewRequest(req)}
-                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-orange-100 border border-orange-200"
+                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-amber-100 border border-amber-200"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="text-orange-500">📄</span>
-                      <span className="font-mono font-bold text-orange-700">{req.request_number}</span>
-                      <span className="text-sm text-orange-600">Supplément au devis - Soumettre BC</span>
+                      <span className="text-amber-500">📄</span>
+                      <span className="font-mono font-bold text-amber-700">{req.request_number}</span>
+                      <span className="text-sm text-amber-600">Supplément à approuver ({(req.avenant_total || 0).toFixed(2)} €)</span>
                     </div>
-                    <span className="px-3 py-1 bg-orange-500 text-white text-xs font-bold rounded-full">
+                    <span className="px-3 py-1 bg-amber-500 text-white text-xs font-bold rounded-full">
                       Agir →
                     </span>
                   </div>
@@ -7345,14 +7588,15 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   const style = STATUS_STYLES[request.status] || STATUS_STYLES.submitted;
   const isPartsOrder = request.request_type === 'parts';
   const isQuoteSent = request.status === 'quote_sent' || request.status === 'quote_revision_declined';
-  const needsQuoteAction = isQuoteSent && !request.bc_submitted_at;
-  const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
   
-  // Supplement detection - when admin sends additional work quote during service
-  const needsSupplementAction = !!request.avenant_sent_at && !request.avenant_approved_at && !request.avenant_bc_submitted_at;
-  const [showSupplementBCModal, setShowSupplementBCModal] = useState(false);
-  const [supplementBcFile, setSupplementBcFile] = useState(null);
-  const [submittingSupplementBC, setSubmittingSupplementBC] = useState(false);
+  // Avenant detection - independent of RMA status (device keeps working while avenant pending)
+  const isAvenantQuote = !!request.avenant_sent_at && !request.avenant_approved_at && !request.avenant_bc_submitted_at;
+  const isAvenantBCPending = !!request.avenant_sent_at && !request.avenant_approved_at && !!request.avenant_bc_submitted_at;
+  const isAvenantApproved = !!request.avenant_sent_at && !!request.avenant_approved_at;
+  
+  // Regular quote action needed (NOT avenant - avenant has its own flow)
+  const needsQuoteAction = isQuoteSent && !request.bc_submitted_at && !isAvenantQuote && !isAvenantBCPending;
+  const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
   
   // Check if submission is valid - need EITHER file OR signature (not both required)
   const hasFile = bcFile !== null;
@@ -7404,64 +7648,6 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       refresh();
     }
     setApprovingQuote(false);
-  };
-
-  // Submit BC for supplement (additional work found during service)
-  const supplementPdfUrl = attachments.find(a => a.category === 'avenant_quote' && a.file_url)?.file_url;
-  
-  const handleSubmitSupplementBC = async () => {
-    setSubmittingSupplementBC(true);
-    try {
-      let fileUrl = null;
-      if (supplementBcFile) {
-        try {
-          const fileName = `avenant_bc_${request.id}_${Date.now()}.${supplementBcFile.name.split('.').pop()}`;
-          const { error: uploadError } = await supabase.storage
-            .from('documents')
-            .upload(fileName, supplementBcFile);
-          if (!uploadError) {
-            const { data: publicUrl } = supabase.storage
-              .from('documents')
-              .getPublicUrl(fileName);
-            fileUrl = publicUrl?.publicUrl;
-          }
-        } catch (e) {
-          console.log('Supplement BC file upload skipped:', e);
-        }
-      }
-      
-      const { error: updateError } = await supabase
-        .from('service_requests')
-        .update({
-          avenant_bc_submitted_at: new Date().toISOString(),
-          bc_submitted_at: new Date().toISOString(),
-          bc_file_url: fileUrl,
-          bc_signed_by: profile?.full_name || 'Client'
-        })
-        .eq('id', request.id);
-      
-      if (updateError) throw updateError;
-      
-      if (fileUrl) {
-        await supabase.from('request_attachments').insert({
-          request_id: request.id,
-          file_name: supplementBcFile?.name || 'BC_Supplement.pdf',
-          file_url: fileUrl,
-          file_type: supplementBcFile?.type || 'application/pdf',
-          file_size: supplementBcFile?.size || 0,
-          uploaded_by: profile.id,
-          category: 'avenant_bc'
-        });
-      }
-      
-      notify('✅ Bon de commande pour le supplément soumis avec succès!');
-      setShowSupplementBCModal(false);
-      setSupplementBcFile(null);
-      setTimeout(() => window.location.reload(), 1500);
-    } catch (err) {
-      notify('Erreur: ' + err.message, 'error');
-    }
-    setSubmittingSupplementBC(false);
   };
 
   // Signature pad functions
@@ -7647,33 +7833,46 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       }
       
       // Generate signed quote PDF - use correct generator based on request type
+      // For avenant: use generateSignedAvenantPDF, different categories, don't change status
+      const isSupplementBC = isAvenantQuote; // Are we submitting BC for a supplement?
       let signedQuotePdfUrl = null;
       if (hasValidSignature) {
         try {
-          console.log('📄 Generating signed quote PDF...');
+          console.log('📄 Generating signed PDF...', isSupplementBC ? '(SUPPLEMENT)' : '(regular)');
           
-          // Check if this is a parts order
-          const isPartsRequest = request.request_type === 'parts';
-          
-          const pdfBlob = isPartsRequest 
-            ? await generatePartsQuotePDF({
-                request,
-                isSigned: true,
-                signatureName: signatureName,
-                signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
-                signatureImage: signatureData
-              })
-            : await generateQuotePDF({
-                request,
-                isSigned: true,
-                signatureName: signatureName,
-                signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
-                signatureImage: signatureData
-              });
+          let pdfBlob;
+          if (isSupplementBC) {
+            pdfBlob = await generateSignedAvenantPDF({
+              request,
+              isSigned: true,
+              signatureName: signatureName,
+              signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+              signatureImage: signatureData
+            });
+          } else {
+            const isPartsRequest = request.request_type === 'parts';
+            pdfBlob = isPartsRequest 
+              ? await generatePartsQuotePDF({
+                  request,
+                  isSigned: true,
+                  signatureName: signatureName,
+                  signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+                  signatureImage: signatureData
+                })
+              : await generateQuotePDF({
+                  request,
+                  isSigned: true,
+                  signatureName: signatureName,
+                  signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+                  signatureImage: signatureData
+                });
+          }
           
           console.log('📄 PDF blob generated, size:', pdfBlob?.size);
           
-          const pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
+          const pdfFileName = isSupplementBC
+            ? `avenant_signe_${request.request_number}_${Date.now()}.pdf`
+            : `devis_signe_${request.request_number}_${Date.now()}.pdf`;
           const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
             .from('documents')
             .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
@@ -7685,68 +7884,87 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               .from('documents')
               .getPublicUrl(pdfFileName);
             signedQuotePdfUrl = pdfUrl?.publicUrl;
-            console.log('📄 Signed quote PDF URL:', signedQuotePdfUrl);
+            console.log('📄 Signed PDF URL:', signedQuotePdfUrl);
           } else {
             console.error('📄 PDF upload error:', pdfUploadError);
           }
         } catch (e) {
-          console.error('📄 Signed quote PDF generation error:', e);
+          console.error('📄 Signed PDF generation error:', e);
         }
       } else {
         console.log('📄 No valid signature, skipping signed PDF generation');
       }
       
-      // Update request status - set to bc_review so admin can verify
-      // Also record quote approval if coming from quote_sent status
-      const updatePayload = { 
-        status: 'bc_review',
-        bc_submitted_at: new Date().toISOString(),
-        bc_signed_by: signatureName,
-        bc_signature_date: signatureDateISO,
-        bc_file_url: fileUrl,
-        bc_signature_url: signatureUrl,
-        signed_quote_url: signedQuotePdfUrl,
-        quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
-      };
-      
-      console.log('📝 Updating service_request with:', updatePayload);
-      
-      const { error: updateError } = await supabase
-        .from('service_requests')
-        .update(updatePayload)
-        .eq('id', request.id);
-      
-      if (updateError) {
-        console.error('📝 Update error:', updateError);
-        throw updateError;
+      // Update request - DIFFERENT for avenant vs regular
+      if (isSupplementBC) {
+        // AVENANT: Don't change status, don't overwrite original BC fields
+        const updatePayload = {
+          avenant_bc_submitted_at: new Date().toISOString(),
+          avenant_signed_quote_url: signedQuotePdfUrl,
+          bc_submitted_at: new Date().toISOString(), // admin checks this too
+          bc_signed_by: signatureName,
+          bc_signature_date: signatureDateISO,
+          bc_file_url: fileUrl,
+          bc_signature_url: signatureUrl
+        };
+        
+        console.log('📝 Updating service_request (SUPPLEMENT BC):', updatePayload);
+        
+        const { error: updateError } = await supabase
+          .from('service_requests')
+          .update(updatePayload)
+          .eq('id', request.id);
+        
+        if (updateError) { console.error('📝 Update error:', updateError); throw updateError; }
+      } else {
+        // REGULAR: Set status to bc_review
+        const updatePayload = { 
+          status: 'bc_review',
+          bc_submitted_at: new Date().toISOString(),
+          bc_signed_by: signatureName,
+          bc_signature_date: signatureDateISO,
+          bc_file_url: fileUrl,
+          bc_signature_url: signatureUrl,
+          signed_quote_url: signedQuotePdfUrl,
+          quote_approved_at: request.status === 'quote_sent' ? new Date().toISOString() : request.quote_approved_at
+        };
+        
+        console.log('📝 Updating service_request with:', updatePayload);
+        
+        const { error: updateError } = await supabase
+          .from('service_requests')
+          .update(updatePayload)
+          .eq('id', request.id);
+        
+        if (updateError) { console.error('📝 Update error:', updateError); throw updateError; }
       }
       
       console.log('✅ Service request updated successfully');
       
-      // Save documents to request_attachments
+      // Save documents to request_attachments - use correct categories
       if (fileUrl) {
         const { error: bcAttachError } = await supabase.from('request_attachments').insert({
           request_id: request.id,
-          file_name: bcFile?.name || 'Bon de Commande.pdf',
+          file_name: isSupplementBC ? (bcFile?.name || 'BC_Supplement.pdf') : (bcFile?.name || 'Bon de Commande.pdf'),
           file_url: fileUrl,
           file_type: bcFile?.type || 'application/pdf',
           file_size: bcFile?.size || 0,
           uploaded_by: profile.id,
-          category: 'bon_commande'
+          category: isSupplementBC ? 'avenant_bc' : 'bon_commande'
         });
         console.log('📎 BC attachment saved:', { fileUrl, error: bcAttachError });
       }
       
-      // Save signed quote PDF to attachments (this is the main document)
+      // Save signed PDF to attachments
       if (signedQuotePdfUrl) {
         const { error: pdfAttachError } = await supabase.from('request_attachments').insert({
           request_id: request.id,
-          file_name: `Devis_Signé_${request.request_number}.pdf`,
+          file_name: isSupplementBC ? `Avenant_Signé_${request.request_number}.pdf` : `Devis_Signé_${request.request_number}.pdf`,
           file_url: signedQuotePdfUrl,
           file_type: 'application/pdf',
           file_size: 0,
           uploaded_by: profile.id,
-          category: 'devis_signe'
+          category: isSupplementBC ? 'avenant_signe' : 'devis_signe'
         });
         console.log('📎 Signed PDF attachment saved:', { signedQuotePdfUrl, error: pdfAttachError });
       } else {
@@ -7755,7 +7973,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       
       console.log('🎉 BC submission complete! Signature URL:', signatureUrl, 'Signed PDF URL:', signedQuotePdfUrl);
       
-      notify('Bon de commande soumis avec succès!');
+      notify(isSupplementBC ? '✅ Supplément approuvé et BC soumis!' : 'Bon de commande soumis avec succès!');
       setShowBCModal(false);
       
       // Delay reload so we can see console logs
@@ -7901,40 +8119,34 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           </div>
         )}
 
-        {/* Supplement Action Required - Additional work quote during service */}
-        {needsSupplementAction && (
-          <div className="bg-orange-50 border-b border-orange-300 px-6 py-4">
+        {/* AVENANT/SUPPLEMENT - Action Required (BC not yet submitted) */}
+        {isAvenantQuote && (
+          <div className="bg-amber-50 border-b border-amber-300 px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-orange-500 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-full bg-amber-500 flex items-center justify-center">
                   <span className="text-white text-2xl">📄</span>
                 </div>
                 <div>
-                  <p className="font-bold text-orange-800 text-lg">Supplément au devis - Action requise</p>
-                  <p className="text-sm text-orange-600">
-                    Suite à l'inspection, des travaux supplémentaires ont été identifiés. 
-                    Veuillez examiner le supplément et soumettre votre bon de commande.
+                  <p className="font-bold text-amber-800 text-lg">Supplément au devis - Action requise</p>
+                  <p className="text-sm text-amber-600">
+                    Des travaux supplémentaires ont été identifiés ({(request.avenant_total || 0).toFixed(2)} € HT). Veuillez approuver et soumettre votre bon de commande.
                   </p>
-                  {request.avenant_total && (
-                    <p className="text-sm font-bold text-orange-800 mt-1">
-                      Montant: {parseFloat(request.avenant_total).toFixed(2)} € HT
-                    </p>
-                  )}
                 </div>
               </div>
               <div className="flex gap-2">
-                {supplementPdfUrl && (
+                {attachments.find(a => a.category === 'avenant_quote')?.file_url && (
                   <a
-                    href={supplementPdfUrl}
+                    href={attachments.find(a => a.category === 'avenant_quote').file_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-4 py-2 bg-white border border-orange-300 text-orange-700 rounded-lg font-medium hover:bg-orange-50 transition-colors"
+                    className="px-4 py-2 bg-white border border-amber-300 text-amber-700 rounded-lg font-medium hover:bg-amber-50 transition-colors"
                   >
                     👁️ Voir le Supplément
                   </a>
                 )}
                 <button
-                  onClick={() => setShowSupplementBCModal(true)}
+                  onClick={() => setShowBCModal(true)}
                   className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors"
                 >
                   ✅ Approuver et soumettre BC
@@ -7944,25 +8156,25 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           </div>
         )}
 
-        {/* Supplement BC Submitted - Waiting for admin approval */}
-        {request.avenant_sent_at && !request.avenant_approved_at && request.avenant_bc_submitted_at && (
-          <div className="bg-purple-50 border-b border-purple-200 px-6 py-3">
+        {/* AVENANT BC Submitted - Waiting admin approval */}
+        {isAvenantBCPending && (
+          <div className="bg-blue-50 border-b border-blue-200 px-6 py-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-                <span className="text-purple-600 text-lg">📄</span>
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                <span className="text-blue-600 text-lg">📄</span>
               </div>
               <div>
-                <p className="font-medium text-purple-800">Supplément - BC soumis ✓</p>
-                <p className="text-sm text-purple-600">
-                  Votre bon de commande a été soumis le {new Date(request.avenant_bc_submitted_at).toLocaleDateString('fr-FR')}. En attente de validation.
+                <p className="font-semibold text-blue-800">BC Supplément soumis - En vérification</p>
+                <p className="text-sm text-blue-600">
+                  Votre bon de commande pour les travaux supplémentaires ({(request.avenant_total || 0).toFixed(2)} € HT) est en cours de vérification.
                 </p>
               </div>
             </div>
           </div>
         )}
 
-        {/* Supplement Approved */}
-        {request.avenant_sent_at && request.avenant_approved_at && (
+        {/* AVENANT Approved */}
+        {isAvenantApproved && (
           <div className="bg-green-50 border-b border-green-200 px-6 py-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
@@ -7971,7 +8183,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               <div>
                 <p className="font-medium text-green-800">Supplément approuvé ✓</p>
                 <p className="text-sm text-green-600">
-                  Le supplément de {parseFloat(request.avenant_total || 0).toFixed(2)} € HT a été approuvé.
+                  Le supplément de {(request.avenant_total || 0).toFixed(2)} € HT a été approuvé.
                   {request.supplement_bc_number && ` BC N° ${request.supplement_bc_number}`}
                 </p>
               </div>
@@ -8106,75 +8318,13 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           </div>
         )}
 
-        {/* Supplement BC Submission Modal */}
-        {showSupplementBCModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-              <div className="bg-orange-500 text-white px-6 py-4 rounded-t-xl">
-                <h3 className="text-lg font-bold">📄 Bon de commande - Supplément</h3>
-                <p className="text-orange-100 text-sm">
-                  Supplément N° {request.supplement_number || '—'} • {parseFloat(request.avenant_total || 0).toFixed(2)} € HT
-                </p>
-              </div>
-              
-              <div className="p-6 space-y-4">
-                {supplementPdfUrl && (
-                  <a
-                    href={supplementPdfUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-3 bg-orange-50 border border-orange-200 rounded-lg text-orange-700 font-medium hover:bg-orange-100"
-                  >
-                    📄 Voir le supplément au devis ↗
-                  </a>
-                )}
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Bon de commande (PDF, image...)
-                  </label>
-                  <input
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                    onChange={(e) => setSupplementBcFile(e.target.files[0])}
-                    className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
-                  />
-                  {supplementBcFile && (
-                    <p className="text-sm text-green-600 mt-1">✓ {supplementBcFile.name}</p>
-                  )}
-                </div>
-                
-                <p className="text-xs text-gray-500">
-                  En soumettant votre bon de commande, vous approuvez le supplément au devis pour les travaux supplémentaires identifiés.
-                </p>
-              </div>
-              
-              <div className="px-6 py-4 border-t flex justify-between">
-                <button
-                  onClick={() => { setShowSupplementBCModal(false); setSupplementBcFile(null); }}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-                >
-                  Annuler
-                </button>
-                <button
-                  onClick={handleSubmitSupplementBC}
-                  disabled={submittingSupplementBC || !supplementBcFile}
-                  className="px-6 py-2 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] disabled:opacity-50"
-                >
-                  {submittingSupplementBC ? 'Envoi en cours...' : '✅ Soumettre BC'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* BC Submission Modal */}
         {showBCModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
               <div className="p-6 border-b border-gray-200">
                 <div className="flex justify-between items-center">
-                  <h2 className="text-xl font-bold text-[#1E3A5F]">Soumettre Bon de Commande</h2>
+                  <h2 className="text-xl font-bold text-[#1E3A5F]">{isAvenantQuote ? "📄 BC Supplément au Devis" : "Soumettre Bon de Commande"}</h2>
                   <button onClick={() => setShowBCModal(false)} className="text-gray-400 hover:text-gray-600">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
