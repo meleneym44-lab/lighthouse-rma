@@ -2600,11 +2600,11 @@ const generateReportPDFFromHTML = async (device, rma, technicianName, calType, r
         <td style="padding: 4px 0;"><span style="font-weight: bold; color: #003366;">RMA # </span><span style="color: #333;">${rma.request_number}</span></td>
       </tr>
       <tr>
-        <td style="padding: 4px 0; font-weight: bold; color: #003366;">{t('client')}</td>
+        <td style="padding: 4px 0; font-weight: bold; color: #003366;">Client</td>
         <td style="padding: 4px 0; color: #333;" colspan="2">${rma.companies?.name || ''}</td>
       </tr>
       <tr>
-        <td style="padding: 4px 0; font-weight: bold; color: #003366;">{t('address')}</td>
+        <td style="padding: 4px 0; font-weight: bold; color: #003366;">Adresse</td>
         <td style="padding: 4px 0; color: #333;" colspan="2">${rma.companies?.billing_address || '—'}</td>
       </tr>
       <tr>
@@ -2613,7 +2613,7 @@ const generateReportPDFFromHTML = async (device, rma, technicianName, calType, r
         <td style="padding: 4px 0;"><span style="font-weight: bold; color: #003366;">Contact </span><span style="color: #333;">${rma.companies?.contact_name || '—'}</span></td>
       </tr>
       <tr>
-        <td style="padding: 4px 0; font-weight: bold; color: #003366;">{t('phone')}</td>
+        <td style="padding: 4px 0; font-weight: bold; color: #003366;">Téléphone</td>
         <td style="padding: 4px 0; color: #333;">${rma.companies?.phone || '—'}</td>
         <td style="padding: 4px 0; font-weight: bold; color: #003366;">Technicien(ne) de service</td>
       </tr>
@@ -2648,7 +2648,7 @@ const generateReportPDFFromHTML = async (device, rma, technicianName, calType, r
         </tr>
         ` : ''}
         <tr>
-          <td style="padding: 20px 0 8px; font-weight: bold; color: #003366; vertical-align: top;">{t('findings')}</td>
+          <td style="padding: 20px 0 8px; font-weight: bold; color: #003366; vertical-align: top;">Constatations</td>
           <td style="padding: 20px 0 8px; color: #333; white-space: pre-wrap;">${findings || '—'}</td>
         </tr>
         <tr>
@@ -4487,6 +4487,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                 return rmaIsEarly ? rma.status : (device.status || rma.status);
               })();
               const currentIndex = getStepIndex(effectiveStatus);
+              const isShipped = effectiveStatus === 'shipped' || effectiveStatus === 'delivered' || effectiveStatus === 'completed';
               
               return (
                 <div className="flex w-full">
@@ -4500,7 +4501,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                         <div 
                           className={`
                             flex items-center justify-center h-9 px-2 text-[10px] font-medium text-center leading-tight
-                            ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
+                            ${isShipped ? 'bg-[#00A651] text-white' : isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
                             ${index === 0 ? 'rounded-l-sm' : ''}
                             ${isLast ? 'rounded-r-sm' : ''}
                           `}
@@ -4512,7 +4513,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                                 : 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%)'
                           }}
                         >
-                          <span className="break-words hyphens-auto">{step.label}</span>
+                          <span className="break-words hyphens-auto">{isShipped && isLast ? (lang === 'en' ? '✓ Shipped' : '✓ Expédié') : isShipped ? '✓' : step.label}</span>
                         </div>
                       </div>
                     );
@@ -6042,12 +6043,13 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     const isRepair = deviceServiceType === 'repair';
     const steps = isRepair ? repairSteps : calibrationSteps;
     
+    const isShipped = device.status === 'shipped' || !!device.shipped_at;
+    
     // Smart status: use device.status only if it's a "real" device status (received onwards)
-    // For early stages (before device arrives), use RMA status
     const deviceSpecificStatuses = ['received', 'in_queue', 'inspection', 'calibration', 'calibration_in_progress', 
       'repair', 'repair_in_progress', 'final_qc', 'qc_complete', 'qc_rejected', 'ready_to_ship', 'shipped', 'completed'];
     const effectiveStatus = deviceSpecificStatuses.includes(device.status) ? device.status : rma.status;
-    const currentIndex = getStepIndex(effectiveStatus, isRepair);
+    const currentIndex = isShipped ? steps.length : getStepIndex(effectiveStatus, isRepair);
     
     return (
       <div className="flex w-full">
@@ -6061,7 +6063,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
               <div 
                 className={`
                   flex items-center justify-center h-9 px-2 text-[10px] font-medium text-center leading-tight
-                  ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
+                  ${isShipped ? 'bg-green-500 text-white' : isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
                   ${index === 0 ? 'rounded-l-md' : ''}
                   ${isLast ? 'rounded-r-md' : ''}
                 `}
@@ -6073,7 +6075,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       : 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%)'
                 }}
               >
-                <span className="break-words hyphens-auto">{step.label}</span>
+                <span className="break-words hyphens-auto">{isShipped && isLast ? (lang === 'en' ? '✓ Shipped' : '✓ Expédié') : isShipped ? '✓' : step.label}</span>
               </div>
             </div>
           );
@@ -7656,13 +7658,13 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     
     // No additional work → normal flow: Save + Report Preview
     if (!additionalWorkNeeded || allWarranty) return (<>
-      <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
+      <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : lang === 'en' ? 'Save' : 'Enregistrer'}</button>
       <button onClick={handlePreviewClick} disabled={!canPreviewReport} className={`px-6 py-2 rounded-lg font-medium ${canPreviewReport ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-200 text-blue-400 cursor-not-allowed'}`}>{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button>
     </>);
     
     // Additional work needed, NOT yet inspected → Save + Complete Inspection
     if (additionalWorkNeeded && !isInspectionDone) return (<>
-      <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
+      <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : lang === 'en' ? 'Save' : 'Enregistrer'}</button>
       <button onClick={completeInspection} disabled={saving || !findings} className="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50">
         {saving ? '...' : (lang === 'en' ? '✅ Complete Inspection' : '✅ Terminer Inspection')}
       </button>
@@ -7670,13 +7672,13 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     
     // Supplement sent, waiting approval
     if (additionalWorkNeeded && avenantSent && !avenantApproved) return (<>
-      <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
+      <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : lang === 'en' ? 'Save' : 'Enregistrer'}</button>
       <span className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg">{lang === 'en' ? '⏳ Awaiting supplement approval' : '⏳ Attente approbation supplément'}</span>
     </>);
     
     // Supplement approved → can complete report
     if (additionalWorkNeeded && avenantApproved) return (<>
-      <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
+      <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : lang === 'en' ? 'Save' : 'Enregistrer'}</button>
       <button onClick={handlePreviewClick} disabled={!canPreviewReport} className={`px-6 py-2 rounded-lg font-medium ${canPreviewReport ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-200 text-blue-400 cursor-not-allowed'}`}>{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button>
     </>);
     
@@ -7742,9 +7744,9 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="space-y-4">
           <div className="bg-white rounded-xl shadow-sm border p-4">
-            <h3 className="font-bold text-gray-700 mb-3">{t('device')}</h3>
+            <h3 className="font-bold text-gray-700 mb-3">{lang === 'en' ? 'Device' : 'Appareil'}</h3>
             <div className="space-y-2">
-              <div><p className="text-xs text-gray-500">{t('model')}</p><p className="font-bold text-gray-800">{device.model_name}</p></div>
+              <div><p className="text-xs text-gray-500">{lang === 'en' ? 'Model' : 'Modèle'}</p><p className="font-bold text-gray-800">{device.model_name}</p></div>
               <div><p className="text-xs text-gray-500">{lang === 'en' ? 'Serial #' : 'N° série'}</p><p className="font-medium text-gray-800">{device.serial_number}</p></div>
               <div><p className="text-xs text-gray-500">{lang === 'en' ? 'Service' : 'Service'}</p><p className="font-medium">{device.service_type === 'calibration' ? (lang === 'en' ? '🔬 Calibration' : '🔬 Étalonnage') : '🔧 Réparation'}</p></div>
             </div>
@@ -7756,7 +7758,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
             </div>
           )}
           <div className="bg-gray-50 rounded-xl border p-4">
-            <h3 className="font-bold text-gray-700 mb-2">{t('client')}</h3>
+            <h3 className="font-bold text-gray-700 mb-2">Client</h3>
             <p className="font-medium text-gray-800">{rma.companies?.name}</p>
           </div>
           
@@ -8097,9 +8099,9 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
 
 // Report Preview Modal - Exact replica of official Lighthouse France Rapport PDF
 function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, additionalWorkNeeded, workItems, onClose, onComplete, canComplete, saving, technicianName, calType, receptionResult, lang = 'fr' }) {
-  const t = k => k;
-  const today = new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR');
-  const serviceTypeText = device.service_type === 'calibration' ? (lang === 'en' ? 'Calibration' : 'Étalonnage') : device.service_type === 'repair' ? (lang === 'en' ? 'Repair' : 'Réparation') : (lang === 'en' ? 'Calibration and Repair' : 'Étalonnage et Réparation');
+  // Document content is ALWAYS in French regardless of admin language
+  const today = new Date().toLocaleDateString('fr-FR');
+  const serviceTypeText = device.service_type === 'calibration' ? 'Étalonnage' : device.service_type === 'repair' ? 'Réparation' : 'Étalonnage et Réparation';
   const motifText = device.notes ? `${serviceTypeText} - ${device.notes}` : serviceTypeText;
   
   const showCalType = calType && calType !== 'none';
@@ -8160,53 +8162,53 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
               <tbody>
                 {/* Row 1: Date + RMA */}
                 <tr>
-                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">{lang === 'en' ? "Completion date" : "Date d'achèvement"}</td>
+                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Date d'achèvement</td>
                   <td className="py-1 text-gray-800">{today}</td>
                   <td className="py-1 text-gray-800">
-                    <span className="font-bold text-[#003366]">{lang === 'en' ? 'RMA # ' : 'RMA # '}</span>{rma.request_number}
+                    <span className="font-bold text-[#003366]">RMA # </span>{rma.request_number}
                   </td>
                 </tr>
                 
                 {/* Row 2: Client */}
                 <tr>
-                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">{t('client')}</td>
+                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Client</td>
                   <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.name}</td>
                 </tr>
                 
                 {/* Row 3: Adresse */}
                 <tr>
-                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">{t('address')}</td>
+                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Adresse</td>
                   <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.billing_address || '—'}</td>
                 </tr>
                 
                 {/* Row 4: Code postal + Contact */}
                 <tr>
-                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">{lang === 'en' ? 'Postal code / City' : 'Code postal / Ville'}</td>
+                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Code postal / Ville</td>
                   <td className="py-1 text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
                   <td className="py-1 text-gray-800">
-                    <span className="font-bold text-[#003366]">{lang === 'en' ? 'Contact ' : 'Contact '}</span>{rma.companies?.contact_name || '—'}
+                    <span className="font-bold text-[#003366]">Contact </span>{rma.companies?.contact_name || '—'}
                   </td>
                 </tr>
                 
                 {/* Row 5: Téléphone + Technicien label */}
                 <tr>
-                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">{t('phone')}</td>
+                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Téléphone</td>
                   <td className="py-1 text-gray-800">{rma.companies?.phone || '—'}</td>
                   <td className="py-1 text-gray-800 align-top">
-                    <span className="font-bold text-[#003366]">{lang === 'en' ? 'Service technician' : 'Technicien(ne) de service'}</span>
+                    <span className="font-bold text-[#003366]">Technicien(ne) de service</span>
                   </td>
                 </tr>
                 
                 {/* Row 6: Modèle + Technicien name */}
                 <tr>
-                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">{lang === 'en' ? 'Model#' : 'Modèle#'}</td>
+                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Modèle#</td>
                   <td className="py-1 text-gray-800">{device.model_name}</td>
                   <td className="py-1 text-gray-800">{technicianName || 'Lighthouse France'}</td>
                 </tr>
                 
                 {/* Row 7: Numéro de série */}
                 <tr>
-                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">{lang === 'en' ? 'Serial number' : 'Numéro de série'}</td>
+                  <td className="py-1 font-bold text-[#003366] align-top whitespace-nowrap">Numéro de série</td>
                   <td className="py-1 text-gray-800" colSpan="2">{device.serial_number}</td>
                 </tr>
               </tbody>
@@ -8221,14 +8223,14 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
               <tbody>
                 {/* Motif de retour = Service type + Customer notes */}
                 <tr>
-                  <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">{lang === 'en' ? 'Return reason' : 'Motif de retour'}</td>
+                  <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Motif de retour</td>
                   <td className="pt-6 pb-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word' }}>{motifText}</td>
                 </tr>
                 
                 {/* Étalonnage effectué - only if not 'none' */}
                 {showCalType && (
                   <tr>
-                    <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">{lang === 'en' ? 'Calibration performed' : 'Étalonnage effectué'}</td>
+                    <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Étalonnage effectué</td>
                     <td className="py-2 text-gray-800">{calType}</td>
                   </tr>
                 )}
@@ -8236,26 +8238,26 @@ function ReportPreviewModal({ device, rma, findings, workCompleted, checklist, a
                 {/* Résultats à la réception - only if not 'none' */}
                 {showReceptionResult && (
                   <tr>
-                    <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">{lang === 'en' ? 'Reception results' : 'Résultats à la réception'}</td>
+                    <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Résultats à la réception</td>
                     <td className="py-2 text-gray-800">{receptionResult}</td>
                   </tr>
                 )}
                 
                 {/* Constatations (Tech findings) */}
                 <tr>
-                  <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">{t('findings')}</td>
+                  <td className="pt-6 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Constatations</td>
                   <td className="pt-6 pb-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{findings || '—'}</td>
                 </tr>
                 
                 {/* Actions effectuées (Work description) */}
                 <tr>
-                  <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">{lang === 'en' ? 'Actions completed' : 'Actions effectuées'}</td>
+                  <td className="py-2 font-bold text-[#003366] align-top whitespace-nowrap">Actions effectuées</td>
                   <td className="py-2 text-gray-800" style={{ wordWrap: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{workCompleted || '—'}</td>
                 </tr>
                 
                 {/* Travaux réalisés (Checklist) - more space above */}
                 <tr>
-                  <td className="pt-10 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">{lang === 'en' ? 'Work performed' : 'Travaux réalisés'}</td>
+                  <td className="pt-10 pb-2 font-bold text-[#003366] align-top whitespace-nowrap">Travaux réalisés</td>
                   <td className="pt-10 pb-2">
                     <div className="space-y-1">
                       {checklist.filter(item => item.checked).map(item => (
@@ -16183,35 +16185,35 @@ function QCReviewModal({ device, rma, onBack, notify, profile, lang = 'fr' }) {
                 </colgroup>
                 <tbody>
                   <tr>
-                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">{lang === 'en' ? "Completion date" : "Date d'achèvement"}</td>
-                    <td className="py-1 text-gray-800">{device.report_completed_at ? new Date(device.report_completed_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : today}</td>
-                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">{lang === 'en' ? 'RMA # ' : 'RMA # '}</span>{rma.request_number}</td>
+                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Date d'achèvement</td>
+                    <td className="py-1 text-gray-800">{device.report_completed_at ? new Date(device.report_completed_at).toLocaleDateString('fr-FR') : today}</td>
+                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">RMA # </span>{rma.request_number}</td>
                   </tr>
                   <tr>
-                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">{t('client')}</td>
+                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Client</td>
                     <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.name}</td>
                   </tr>
                   <tr>
-                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">{t('address')}</td>
+                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Adresse</td>
                     <td className="py-1 text-gray-800" colSpan="2">{rma.companies?.billing_address || '—'}</td>
                   </tr>
                   <tr>
-                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">{lang === 'en' ? 'Postal code / City' : 'Code postal / Ville'}</td>
+                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Code postal / Ville</td>
                     <td className="py-1 text-gray-800">{rma.companies?.billing_postal_code} {rma.companies?.billing_city}</td>
-                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">{lang === 'en' ? 'Contact ' : 'Contact '}</span>{rma.companies?.contact_name || '—'}</td>
+                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">Contact </span>{rma.companies?.contact_name || '—'}</td>
                   </tr>
                   <tr>
-                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">{t('phone')}</td>
+                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Téléphone</td>
                     <td className="py-1 text-gray-800">{rma.companies?.phone || '—'}</td>
-                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">{lang === 'en' ? 'Service technician' : 'Technicien(ne) de service'}</span></td>
+                    <td className="py-1 text-gray-800"><span className="font-bold text-[#003366]">Technicien(ne) de service</span></td>
                   </tr>
                   <tr>
-                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">{lang === 'en' ? 'Model#' : 'Modèle#'}</td>
+                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Modèle#</td>
                     <td className="py-1 text-gray-800">{device.model_name}</td>
                     <td className="py-1 text-gray-800">{device.technician_name || 'Lighthouse France'}</td>
                   </tr>
                   <tr>
-                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">{lang === 'en' ? 'Serial number' : 'Numéro de série'}</td>
+                    <td className="py-1 font-bold text-[#003366] whitespace-nowrap">Numéro de série</td>
                     <td className="py-1 text-gray-800" colSpan="2">{device.serial_number}</td>
                   </tr>
                 </tbody>
@@ -16226,31 +16228,31 @@ function QCReviewModal({ device, rma, onBack, notify, profile, lang = 'fr' }) {
                   </colgroup>
                   <tbody>
                     <tr>
-                      <td className="pt-6 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">{lang === 'en' ? 'Return reason' : 'Motif de retour'}</td>
+                      <td className="pt-6 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Motif de retour</td>
                       <td className="pt-6 pb-2 text-gray-800">{motifText}</td>
                     </tr>
                     {showCalType && (
                       <tr>
-                        <td className="py-2 font-bold text-[#003366] whitespace-nowrap align-top">{lang === 'en' ? 'Calibration performed' : 'Étalonnage effectué'}</td>
+                        <td className="py-2 font-bold text-[#003366] whitespace-nowrap align-top">Étalonnage effectué</td>
                         <td className="py-2 text-gray-800">{device.cal_type}</td>
                       </tr>
                     )}
                     {showReceptionResult && (
                       <tr>
-                        <td className="py-2 font-bold text-[#003366] whitespace-nowrap align-top">{lang === 'en' ? 'Reception results' : 'Résultats à la réception'}</td>
+                        <td className="py-2 font-bold text-[#003366] whitespace-nowrap align-top">Résultats à la réception</td>
                         <td className="py-2 text-gray-800">{device.reception_result}</td>
                       </tr>
                     )}
                     <tr>
-                      <td className="pt-10 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">{t('findings')}</td>
+                      <td className="pt-10 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Constatations</td>
                       <td className="pt-10 pb-2 text-gray-800 whitespace-pre-wrap">{device.service_findings || '—'}</td>
                     </tr>
                     <tr>
-                      <td className="pt-8 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">{lang === 'en' ? 'Actions completed' : 'Actions effectuées'}</td>
+                      <td className="pt-8 pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Actions effectuées</td>
                       <td className="pt-8 pb-2 text-gray-800 whitespace-pre-wrap">{device.work_completed || '—'}</td>
                     </tr>
                     <tr>
-                      <td style={{ paddingTop: '150px' }} className="pb-2 font-bold text-[#003366] whitespace-nowrap align-top">{lang === 'en' ? 'Work performed' : 'Travaux réalisés'}</td>
+                      <td style={{ paddingTop: '150px' }} className="pb-2 font-bold text-[#003366] whitespace-nowrap align-top">Travaux réalisés</td>
                       <td style={{ paddingTop: '150px' }} className="pb-2">
                         <div className="space-y-1">
                           {defaultChecklist.filter(item => item.checked).map(item => (
