@@ -9947,7 +9947,7 @@ function PartsProcessModal({ order, onClose, notify, reload, profile }) {
                   disabled={saving}
                   className="w-full px-4 py-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-bold disabled:opacity-50"
                 >
-                  {saving ? '...' : (lang === 'en' ? '🚚 Mark Ready to Ship' : '{lang === 'en' ? '🚚 Mark Ready to Ship' : '🚚 Marquer Prêt à Expédier'}')}
+                  {saving ? '...' : (lang === 'en' ? '🚚 Mark Ready to Ship' : '🚚 Marquer Prêt à Expédier')}
                 </button>
               </>
             )}
