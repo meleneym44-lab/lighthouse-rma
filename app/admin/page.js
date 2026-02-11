@@ -4877,7 +4877,7 @@ function BCReviewModal({ rma, onClose, notify, reload, lang = 'fr' }) {
               } else {
                 return (
                   <div className="flex-1 border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center text-gray-400 text-lg">
-                    {isAvenantBC ? (lang === 'en' ? 'Loading supplement documents...' : 'Chargement des documents avenant...') : (lang === 'en' ? 'No PO file uploaded' : 'Aucun fichier BC uploadé')}
+                    {isAvenantBC ? (lang === 'en' ? 'Loading supplement documents...' : 'Chargement des documents supplément...') : (lang === 'en' ? 'No PO file uploaded' : 'Aucun fichier BC uploadé')}
                   </div>
                 );
               }
@@ -5493,7 +5493,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
           {/* Avenant sent indicator */}
           {rma.avenant_sent_at && (
             <span className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium">
-              {lang === 'en' ? `📄 Supplement sent ${rma.avenant_approved_at ? '✓ Approved' : '⏳ Pending'}` : `📄 Avenant envoyé ${rma.avenant_approved_at ? '✓ Approuvé' : '⏳ En attente'}`}
+              {lang === 'en' ? `📄 Supplement sent ${rma.avenant_approved_at ? '✓ Approved' : '⏳ Pending'}` : `📄 Supplément envoyé ${rma.avenant_approved_at ? '✓ Approuvé' : '⏳ En attente'}`}
             </span>
           )}
           
@@ -7493,7 +7493,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
         if (allW) return (
           <div className="rounded-lg p-3 bg-blue-100 border border-blue-300">
             <span className="font-medium text-blue-800">
-              🛡️ {lang === 'en' ? 'All additional work covered under warranty — no supplement needed' : 'Tous les travaux supplémentaires sous garantie — pas d\'avenant requis'}
+              🛡️ {lang === 'en' ? 'All additional work covered under warranty — no supplement needed' : 'Tous les travaux supplémentaires sous garantie — pas de supplément requis'}
             </span>
           </div>
         );
@@ -7735,7 +7735,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                 {/* Warranty info banner */}
                 {workItems.some(i => i.warranty) && (
                   <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
-                    <span className="text-blue-700 text-sm font-medium">🛡️ {lang === 'en' ? 'Warranty items bypass supplement approval' : 'Articles sous garantie — pas d\'avenant requis'}</span>
+                    <span className="text-blue-700 text-sm font-medium">🛡️ {lang === 'en' ? 'Warranty items bypass supplement approval' : 'Articles sous garantie — pas de supplément requis'}</span>
                   </div>
                 )}
                 {/* Locked state - show read-only with edit button */}
@@ -7801,7 +7801,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
                                 className="w-4 h-4 rounded text-blue-600"
                               />
                               <span className={`text-sm font-medium ${item.warranty ? 'text-blue-700' : 'text-gray-500'}`}>
-                                🛡️ {lang === 'en' ? 'Under warranty (no supplement needed)' : 'Sous garantie (pas d\'avenant requis)'}
+                                🛡️ {lang === 'en' ? 'Under warranty (no supplement needed)' : 'Sous garantie (pas de supplément requis)'}
                               </span>
                             </label>
                           </div>
@@ -8236,7 +8236,8 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
       checkPageBreak(rowH + 2);
       const qty = parseInt(item.quantity) || 1;
       const unitPrice = parseFloat(item.price) || 0;
-      const lineTotal = qty * unitPrice;
+      const isWarranty = item.warranty;
+      const lineTotal = isWarranty ? 0 : qty * unitPrice;
       grandTotal += lineTotal;
       
       pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
@@ -8249,9 +8250,16 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
       // Description with part number if available
       const desc = item.partNumber ? `[${item.partNumber}] ${item.description || 'Piece'}` : (item.description || 'Service');
       pdf.text(desc.substring(0, 55), colDesc, y + 5);
-      pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      
+      if (isWarranty) {
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(41, 98, 255); // blue
+        pdf.text('Sous garantie', colTotal, y + 5, { align: 'right' });
+      } else {
+        pdf.text(unitPrice.toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+      }
       y += rowH;
       rowIndex++;
     });
@@ -8337,16 +8345,11 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
   const t = k => k;
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0)
-    .map(d => ({
-      ...d,
-      additional_work_items: (d.additional_work_items || []).filter(item => !item.warranty)
-    }))
-    .filter(d => d.additional_work_items.length > 0); // Only include devices that have non-warranty items
+  const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
   const devicesRAS = devices.filter(d => !d.additional_work_needed || !d.additional_work_items?.length);
   
   const totalAvenant = devicesWithWork.reduce((sum, device) => {
-    const deviceTotal = (device.additional_work_items || []).reduce((dSum, item) => 
+    const deviceTotal = (device.additional_work_items || []).filter(i => !i.warranty).reduce((dSum, item) => 
       dSum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
     );
     return sum + deviceTotal;
@@ -8527,9 +8530,10 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           {/* Devices with additional work */}
           <div className="px-8 py-6 space-y-6">
             {devicesWithWork.map(device => {
-              const deviceTotal = (device.additional_work_items || []).reduce((sum, item) => 
+              const deviceTotal = (device.additional_work_items || []).filter(i => !i.warranty).reduce((sum, item) => 
                 sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
               );
+              const hasWarranty = (device.additional_work_items || []).some(i => i.warranty);
               
               return (
                 <div key={device.id} className="border-l-4 border-blue-500 pl-4">
@@ -8560,11 +8564,14 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                       </thead>
                       <tbody>
                         {(device.additional_work_items || []).map((item, idx) => (
-                          <tr key={idx} className="border-b border-gray-100">
-                            <td className="py-2">{item.description}</td>
+                          <tr key={idx} className={`border-b border-gray-100 ${item.warranty ? 'bg-blue-50' : ''}`}>
+                            <td className="py-2">
+                              {item.description}
+                              {item.warranty && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">🛡️ {lang === 'en' ? 'Warranty' : 'Garantie'}</span>}
+                            </td>
                             <td className="py-2 text-center">{item.quantity}</td>
-                            <td className="py-2 text-right whitespace-nowrap">{(parseFloat(item.price) || 0).toFixed(2)} €</td>
-                            <td className="py-2 text-right font-medium whitespace-nowrap">{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)} €</td>
+                            <td className="py-2 text-right whitespace-nowrap">{item.warranty ? '—' : `${(parseFloat(item.price) || 0).toFixed(2)} €`}</td>
+                            <td className="py-2 text-right font-medium whitespace-nowrap text-blue-600">{item.warranty ? (lang === 'en' ? 'Under warranty' : 'Sous garantie') : `${((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)} €`}</td>
                           </tr>
                         ))}
                       </tbody>
