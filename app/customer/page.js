@@ -8851,6 +8851,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             </div>
           </div>
           );
+        })()}
 
         {/* Quote Review Modal */}
         {showQuoteModal && (() => {
