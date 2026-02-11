@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback, Fragment } from 'react';
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { supabase } from '@/lib/supabase';
 
 // Expose supabase to window for debugging
@@ -6128,6 +6128,9 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         reload={reload}
         profile={profile}
         businessSettings={businessSettings}
+        allDevices={devices}
+        onNextDevice={(nextDev) => { setShowServiceModal(nextDev); }}
+        onOpenSupplement={() => { setShowServiceModal(null); setShowAvenantPreview(true); reload(); }}
       />
     );
   }
@@ -7023,6 +7026,68 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           </div>
         </div>
         
+        {/* Inspection Progress & Supplement Readiness Banner */}
+        {(() => {
+          const inspected = devices.filter(d => d.inspection_completed_at || d.report_complete).length;
+          const needWork = devices.filter(d => d.additional_work_needed && (d.inspection_completed_at || d.report_complete)).length;
+          const allInspected = devices.length > 0 && inspected === devices.length;
+          const supplementNeeded = needWork > 0 && !rma.avenant_sent_at;
+          const supplementSent = !!rma.avenant_sent_at && !rma.avenant_approved_at;
+          const supplementApproved = !!rma.avenant_approved_at;
+          
+          if (inspected === 0) return null;
+          
+          return (
+            <div className={`mx-4 mt-2 rounded-lg p-3 flex items-center justify-between ${
+              supplementApproved ? 'bg-green-50 border border-green-200' :
+              supplementSent ? 'bg-purple-50 border border-purple-200' :
+              allInspected && supplementNeeded ? 'bg-amber-50 border border-amber-300' :
+              'bg-blue-50 border border-blue-200'
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1">
+                  {devices.map(d => (
+                    <span key={d.id} className={`w-2.5 h-2.5 rounded-full ${
+                      d.report_complete ? 'bg-green-500' :
+                      d.inspection_completed_at ? (d.additional_work_needed ? 'bg-amber-400' : 'bg-green-400') :
+                      'bg-gray-300'
+                    }`} title={`${d.serial_number}: ${d.inspection_completed_at ? '✅' : '⬜'}`} />
+                  ))}
+                </div>
+                <span className="text-sm font-medium">
+                  {lang === 'en' 
+                    ? `${inspected}/${devices.length} inspected`
+                    : `${inspected}/${devices.length} inspectés`}
+                  {needWork > 0 && (
+                    <span className="text-amber-600 ml-1">
+                      • {needWork} {lang === 'en' ? 'need additional work' : 'travaux supp.'}
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div>
+                {supplementApproved && (
+                  <span className="text-sm font-medium text-green-700">✅ {lang === 'en' ? 'Supplement approved' : 'Supplément approuvé'}</span>
+                )}
+                {supplementSent && (
+                  <span className="text-sm font-medium text-purple-700">⏳ {lang === 'en' ? 'Supplement sent — awaiting approval' : 'Supplément envoyé — attente approbation'}</span>
+                )}
+                {allInspected && supplementNeeded && (
+                  <button
+                    onClick={() => setShowAvenantPreview(true)}
+                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium"
+                  >
+                    📄 {lang === 'en' ? 'Create Supplement' : 'Créer Supplément'}
+                  </button>
+                )}
+                {!allInspected && !supplementNeeded && (
+                  <span className="text-sm text-blue-600">{lang === 'en' ? 'Inspections in progress...' : 'Inspections en cours...'}</span>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+        
         <div className="divide-y">
           {devices.length === 0 ? (
             <p className="text-gray-400 text-center py-8">{lang === 'en' ? 'No devices registered' : 'Aucun appareil enregistré'}</p>
@@ -7035,8 +7100,12 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-lg font-bold text-gray-400">
-                      {idx + 1}
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold ${
+                      device.report_complete ? 'bg-green-100 text-green-600' :
+                      device.inspection_completed_at ? (device.additional_work_needed ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-500') :
+                      'bg-gray-100 text-gray-400'
+                    }`}>
+                      {device.report_complete ? '✓' : device.inspection_completed_at ? (device.additional_work_needed ? '⚠' : '✓') : idx + 1}
                     </div>
                     <div>
                       <p className="font-bold text-gray-800">{device.model_name}</p>
@@ -7125,7 +7194,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
 }
 
 // Device Service Modal - For filling inspection/findings
-function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, businessSettings, lang = 'fr' }) {
+function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, businessSettings, lang = 'fr', allDevices = [], onNextDevice, onOpenSupplement }) {
   const t = k => k;
   const [findings, setFindings] = useState(device.service_findings || '');
   const [additionalWorkNeeded, setAdditionalWorkNeeded] = useState(device.additional_work_needed || false);
@@ -7302,6 +7371,17 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
   const avenantApproved = rma.avenant_approved_at;
   const reportComplete = device.report_complete;
   
+  // Inspection progress tracking
+  const [showInspectionPrompt, setShowInspectionPrompt] = useState(false);
+  const inspectionStats = useMemo(() => {
+    const total = allDevices.length;
+    const inspected = allDevices.filter(d => d.inspection_completed_at || d.report_complete).length;
+    const needWork = allDevices.filter(d => d.additional_work_needed && (d.inspection_completed_at || d.report_complete)).length;
+    const nextDevice = allDevices.find(d => d.id !== device.id && !d.inspection_completed_at && !d.report_complete);
+    const allInspected = total > 0 && inspected >= total;
+    return { total, inspected, needWork, nextDevice, allInspected };
+  }, [allDevices, device.id]);
+  
   const getDefaultChecklist = () => {
     if (device.service_type === 'calibration') {
       return [
@@ -7431,6 +7511,49 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     setSaving(false);
   };
   
+  const completeInspection = async () => {
+    setSaving(true);
+    const checklistObj = {};
+    checklist.forEach(item => { checklistObj[item.id] = item.checked; });
+    try {
+      const updateData = {
+        service_findings: findings, additional_work_needed: additionalWorkNeeded,
+        additional_work_items: additionalWorkNeeded ? workItems : [],
+        approved_quote_items: approvedItems,
+        work_completed: workCompleted, work_checklist: checklistObj,
+        technician_name: technicianName,
+        cal_type: calType,
+        reception_result: receptionResult,
+        inspection_completed_at: new Date().toISOString()
+      };
+      
+      if (['received', 'in_queue', 'inspection'].includes(device.status)) {
+        const svcType = device.service_type || 'calibration';
+        updateData.status = (svcType === 'repair') ? 'repair_in_progress' : 'calibration_in_progress';
+        updateData.service_started_at = updateData.service_started_at || new Date().toISOString();
+      }
+      
+      const { error } = await supabase.from('request_devices').update(updateData).eq('id', device.id);
+      if (error) throw error;
+      
+      if (updateData.status && ['received', 'in_queue', 'calibration_in_progress'].includes(rma.status)) {
+        await supabase.from('service_requests').update({
+          status: 'calibration_in_progress',
+          updated_at: new Date().toISOString()
+        }).eq('id', rma.id);
+      }
+      
+      if (additionalWorkNeeded && workItems.length > 0) {
+        setWorkItemsLocked(true);
+      }
+      
+      await reload();
+      notify(lang === 'en' ? '✅ Inspection complete' : '✅ Inspection terminée');
+      setShowInspectionPrompt(true);
+    } catch (err) { notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error'); }
+    setSaving(false);
+  };
+  
   const completeReport = async () => {
     setSaving(true);
     const checklistObj = {};
@@ -7483,17 +7606,103 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
 
   const renderActionButtons = () => {
     const allWarranty = additionalWorkNeeded && workItems.length > 0 && workItems.every(i => i.warranty);
+    const isInspectionDone = !!device.inspection_completed_at;
+    
     if (reportComplete) return <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">{lang === 'en' ? '✓ Report completed' : '✓ Rapport terminé'}</span>;
-    if (!additionalWorkNeeded) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button></>);
-    if (additionalWorkNeeded && allWarranty) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button></>);
-    if (additionalWorkNeeded && !avenantSent) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">{lang === 'en' ? '⚠️ Create supplement from RMA page' : '⚠️ Créer supplément depuis page RMA'}</span></>);
-    if (additionalWorkNeeded && avenantSent && !avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><span className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg">{lang === 'en' ? '⏳ Awaiting approval' : '⏳ Attente approbation'}</span></>);
-    if (additionalWorkNeeded && avenantApproved) return (<><button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button><button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button></>);
+    
+    // Not yet inspected — show Save + Complete Inspection
+    if (!isInspectionDone && !reportComplete) {
+      return (<>
+        <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
+        <button onClick={completeInspection} disabled={saving || !findings} className="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50">
+          {saving ? '...' : (lang === 'en' ? '✅ Complete Inspection' : '✅ Terminer Inspection')}
+        </button>
+        {!findings && <span className="text-xs text-gray-400">{lang === 'en' ? 'Add findings to complete' : 'Ajoutez des constats pour terminer'}</span>}
+      </>);
+    }
+    
+    // Inspection done, no additional work or all warranty → can proceed to report
+    if (!additionalWorkNeeded || allWarranty) return (<>
+      <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
+      <button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button>
+    </>);
+    
+    // Additional work needed, supplement not sent yet
+    if (additionalWorkNeeded && !avenantSent) return (<>
+      <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
+      {inspectionStats.allInspected && onOpenSupplement
+        ? <button onClick={onOpenSupplement} className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Create Supplement' : '📄 Créer Supplément'}</button>
+        : <span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">{lang === 'en' ? `⚠️ ${inspectionStats.inspected}/${inspectionStats.total} inspected — finish all to create supplement` : `⚠️ ${inspectionStats.inspected}/${inspectionStats.total} inspectés — terminez tous pour créer supplément`}</span>
+      }
+    </>);
+    
+    // Supplement sent, waiting approval
+    if (additionalWorkNeeded && avenantSent && !avenantApproved) return (<>
+      <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
+      <span className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg">{lang === 'en' ? '⏳ Awaiting supplement approval' : '⏳ Attente approbation supplément'}</span>
+    </>);
+    
+    // Supplement approved → can proceed
+    if (additionalWorkNeeded && avenantApproved) return (<>
+      <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
+      <button onClick={handlePreviewClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Report Preview →' : '📄 Aperçu Rapport →'}</button>
+    </>);
+    
     return null;
   };
 
   return (
     <div className="space-y-6">
+      {/* Inspection Complete Prompt Overlay */}
+      {showInspectionPrompt && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 space-y-6">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center text-3xl mx-auto mb-3">✅</div>
+              <h2 className="text-xl font-bold text-gray-800">{lang === 'en' ? 'Inspection Complete' : 'Inspection Terminée'}</h2>
+              <p className="text-gray-500 mt-1">{device.model_name} — {device.serial_number}</p>
+              {additionalWorkNeeded && <p className="mt-2 text-amber-600 font-medium">{lang === 'en' ? '⚠️ Additional work needed' : '⚠️ Travaux supplémentaires requis'}</p>}
+            </div>
+            
+            <div className="bg-gray-50 rounded-lg p-3 text-center text-sm text-gray-600">
+              {lang === 'en' 
+                ? `${inspectionStats.inspected + 1}/${inspectionStats.total} devices inspected`
+                : `${inspectionStats.inspected + 1}/${inspectionStats.total} appareils inspectés`}
+              {inspectionStats.needWork + (additionalWorkNeeded ? 1 : 0) > 0 && (
+                <span className="text-amber-600 ml-1">
+                  • {inspectionStats.needWork + (additionalWorkNeeded ? 1 : 0)} {lang === 'en' ? 'need additional work' : 'nécessitent des travaux'}
+                </span>
+              )}
+            </div>
+            
+            <div className="space-y-2">
+              {inspectionStats.nextDevice && (
+                <button
+                  onClick={() => { setShowInspectionPrompt(false); if (onNextDevice) onNextDevice(inspectionStats.nextDevice); }}
+                  className="w-full py-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-bold text-lg"
+                >
+                  → {lang === 'en' ? 'Next Device' : 'Appareil Suivant'}: {inspectionStats.nextDevice.model_name} ({inspectionStats.nextDevice.serial_number})
+                </button>
+              )}
+              {!inspectionStats.nextDevice && inspectionStats.needWork + (additionalWorkNeeded ? 1 : 0) > 0 && !avenantSent && onOpenSupplement && (
+                <button
+                  onClick={() => { setShowInspectionPrompt(false); onOpenSupplement(); }}
+                  className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold text-lg"
+                >
+                  📄 {lang === 'en' ? 'All Inspected — Create Supplement' : 'Tout Inspecté — Créer Supplément'}
+                </button>
+              )}
+              <button
+                onClick={() => { setShowInspectionPrompt(false); onBack(); }}
+                className="w-full py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium"
+              >
+                ← {lang === 'en' ? 'Back to Device List' : 'Retour à la Liste'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">{lang === 'en' ? '← Back' : '← Retour'}</button>
@@ -7501,6 +7710,32 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
         </div>
         <div className="flex items-center gap-3">{renderActionButtons()}</div>
       </div>
+      
+      {/* Device Progress Strip */}
+      {allDevices.length > 1 && (
+        <div className="flex items-center gap-1.5 bg-white rounded-lg border p-3">
+          <span className="text-xs text-gray-500 mr-2 font-medium">{lang === 'en' ? 'Devices:' : 'Appareils:'}</span>
+          {allDevices.map(d => {
+            const isCurrent = d.id === device.id;
+            const isInspected = d.inspection_completed_at || d.report_complete;
+            const hasWork = d.additional_work_needed;
+            return (
+              <button
+                key={d.id}
+                onClick={() => { if (!isCurrent && onNextDevice) onNextDevice(d); }}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  isCurrent ? 'bg-indigo-500 text-white ring-2 ring-indigo-300' :
+                  isInspected ? (hasWork ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-green-100 text-green-700 hover:bg-green-200') :
+                  'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+                title={`${d.model_name} (${d.serial_number})${isInspected ? ' ✅' : ''}${hasWork ? ' ⚠️' : ''}`}
+              >
+                {isInspected ? (hasWork ? '⚠️' : '✅') : '⬜'} {d.serial_number?.slice(-6) || d.model_name}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {additionalWorkNeeded && (() => {
         const allW = workItems.length > 0 && workItems.every(i => i.warranty);
