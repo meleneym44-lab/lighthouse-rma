@@ -12811,7 +12811,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     })).filter(s => s.devices.length > 0); // Remove empty shipments
     
     if (updatedShipmentsWithDevices.length === 0) {
-      notify(lang === 'en' ? 'No devices selected in the shipping groups' : (lang === 'en' ? 'No devices selected in groups' : 'Aucun appareil sélectionné dans les groupes d\'expédition', 'error');
+      notify(lang === 'en' ? 'No devices selected in the shipping groups' : 'Aucun appareil selectionne dans les groupes d\'expedition', 'error');
       return;
     }
     
