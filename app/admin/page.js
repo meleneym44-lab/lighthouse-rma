@@ -59,6 +59,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   const company = rma.companies || {};
   const biz = options.businessSettings || {};
   const shippingInfo = options.shipping || { parcels: 1, unitPrice: 45, total: 45 };
+  const discountInfo = options.discount && options.discount.enabled ? options.discount : null;
   const quoteNumber = options.quoteNumber || rma.quote_number || null; // DEV-0226-001 format
   const revisionNumber = options.revisionNumber || 0;
   const quoteNumberDisplay = quoteNumber ? (revisionNumber > 0 ? `${quoteNumber} Rev-${revisionNumber}` : quoteNumber) : null;
@@ -437,8 +438,9 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     totalRowCount += (device.additionalParts || []).length;
   });
   totalRowCount += 1; // shipping row
+  if (discountInfo) totalRowCount += 1; // discount row
   
-  // Total table height: title(7) + header(9) + data rows + shipping row + total bar(11) + padding(4)
+  // Total table height: title(7) + header(9) + data rows + shipping row + discount row + total bar(11) + padding(4)
   const totalTableHeight = 7 + 9 + (totalRowCount * rowH) + 11 + 4;
   const spaceRemaining = getUsableHeight() - y;
   const freshPageSpace = getUsableHeight() - margin;
@@ -514,8 +516,9 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   console.log('PDF Gen - isContractRMA:', options.isContractRMA, 'isFullyContractCovered:', isFullyContractCovered);
   console.log('PDF Gen - devicePricing coverage:', devicePricing.map(d => ({ model: d.model, isContractCovered: d.isContractCovered })));
   
-  // Shipping row - keep with total (check for both shipping + total row together)
-  checkTablePageBreak(rowH + 11 + 4); // shipping row + total row + padding
+  // Shipping row - keep with total (check for shipping + discount? + total row together)
+  const extraRows = (discountInfo && discountInfo.amount > 0) ? rowH : 0;
+  checkTablePageBreak(rowH + extraRows + 11 + 4); // shipping row + optional discount + total row + padding
   pdf.setFillColor(245, 245, 245);
   pdf.rect(margin, y, contentWidth, rowH, 'F');
   pdf.setFontSize(9);
@@ -532,6 +535,25 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   const shippingTotalDisplay = isFullyContractCovered ? 'Contrat' : shippingTotal.toFixed(2) + ' EUR';
   pdf.text(shippingTotalDisplay, colTotal, y + 5, { align: 'right' });
   y += rowH;
+
+  // Discount row (if applicable)
+  if (discountInfo && discountInfo.amount > 0) {
+    checkTablePageBreak(rowH);
+    pdf.setFillColor(255, 251, 235); // amber-50
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(180, 30, 30);
+    pdf.text('1', colQty + 3, y + 5);
+    let discDesc = 'Remise';
+    if (discountInfo.type === 'percentage') discDesc += ` (${discountInfo.value}%)`;
+    if (discountInfo.note) discDesc += ` — ${discountInfo.note}`;
+    pdf.text(discDesc, colDesc, y + 5);
+    pdf.text('', colUnit, y + 5, { align: 'right' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('-' + discountInfo.amount.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+    y += rowH;
+  }
 
   // Total row
   const grandTotal = isFullyContractCovered ? 0 : (options.grandTotal || (servicesSubtotal + shippingTotal));
@@ -21856,6 +21878,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
     total: 45 * parcelsCount
   });
 
+  // Discount state
+  const [discountData, setDiscountData] = useState({
+    enabled: false,
+    type: 'fixed', // 'fixed' or 'percentage'
+    value: 0,
+    note: ''
+  });
+
   const devices = request?.request_devices || [];
   const signatory = profile?.full_name || 'Lighthouse France';
   const today = new Date();
@@ -22201,6 +22231,10 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           total: savedShipping.total || prev.total
         }));
       }
+      // Restore discount data if saved
+      if (existingQuoteData?.discount) {
+        setDiscountData(existingQuoteData.discount);
+      }
     }
   }, [loadingContract, loadingParts, contractInfo, partsCache]);
 
@@ -22353,7 +22387,13 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
   // Calculate totals - shipping is 0 when fully contract covered
   const servicesSubtotal = devicePricing.reduce((sum, d) => sum + getDeviceServiceTotal(d), 0);
   const shippingTotal = isFullyContractCovered ? 0 : shippingData.total;
-  const grandTotal = servicesSubtotal + shippingTotal;
+  const subtotalBeforeDiscount = servicesSubtotal + shippingTotal;
+  const discountAmount = discountData.enabled 
+    ? (discountData.type === 'percentage' 
+        ? Math.round((subtotalBeforeDiscount * (parseFloat(discountData.value) || 0) / 100) * 100) / 100
+        : (parseFloat(discountData.value) || 0))
+    : 0;
+  const grandTotal = Math.max(0, subtotalBeforeDiscount - discountAmount);
 
   // Send quote (or auto-approve for contract)
   const sendQuote = async () => {
@@ -22431,9 +22471,17 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
         unitPrice: shippingData.unitPrice,
         total: shippingData.total
       },
+      discount: discountData.enabled ? {
+        enabled: true,
+        type: discountData.type,
+        value: parseFloat(discountData.value) || 0,
+        note: discountData.note,
+        amount: discountAmount
+      } : { enabled: false },
       requiredSections,
       servicesSubtotal,
       shippingTotal,
+      discountAmount,
       grandTotal,
       isMetro,
       isContractRMA: hasContractCoveredDevices,
@@ -22478,6 +22526,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           devicePricing: devicePricing,
           servicesSubtotal: servicesSubtotal,
           shippingTotal: shippingTotal,
+          discount: discountData.enabled ? { ...discountData, amount: discountAmount } : null,
           grandTotal: grandTotal,
           isContractRMA: hasContractCoveredDevices,
           isFullyContractCovered: isFullyContractCovered,
@@ -22520,6 +22569,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
         quote_total: grandTotal,
         quote_subtotal: servicesSubtotal,
         quote_shipping: shippingTotal,
+        quote_discount: discountAmount,
         quote_data: quoteData,
         quote_revision_notes: null,
         // Contract fields
@@ -23298,6 +23348,80 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     <p className="text-xs text-green-600 mt-2">{lang === 'en' ? '✓ Price loaded from database' : '✓ Prix chargé depuis la base de données'}</p>
                   )}
                 </div>
+                
+                {/* DISCOUNT SECTION */}
+                <div className="mt-4">
+                  {!discountData.enabled ? (
+                    <button 
+                      onClick={() => setDiscountData(prev => ({ ...prev, enabled: true }))}
+                      className="flex items-center gap-2 text-sm text-[#2D5A7B] font-medium hover:underline"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
+                      {lang === 'en' ? '+ Add discount' : '+ Ajouter une remise'}
+                    </button>
+                  ) : (
+                    <div className="p-4 bg-amber-50 rounded-lg border-2 border-amber-300">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="font-bold text-amber-800 flex items-center gap-2">
+                          🏷️ {lang === 'en' ? 'Discount' : 'Remise'}
+                        </h4>
+                        <button 
+                          onClick={() => setDiscountData({ enabled: false, type: 'fixed', value: 0, note: '' })}
+                          className="text-amber-400 hover:text-red-500 text-lg"
+                        >×</button>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {/* Type toggle */}
+                        <div className="flex border border-amber-300 rounded-lg overflow-hidden shrink-0">
+                          <button 
+                            onClick={() => setDiscountData(prev => ({ ...prev, type: 'fixed', value: prev.type === 'percentage' ? 0 : prev.value }))}
+                            className={`px-3 py-2 text-sm font-medium transition-colors ${discountData.type === 'fixed' ? 'bg-amber-600 text-white' : 'bg-white text-amber-700 hover:bg-amber-100'}`}
+                          >€</button>
+                          <button 
+                            onClick={() => setDiscountData(prev => ({ ...prev, type: 'percentage', value: prev.type === 'fixed' ? 0 : prev.value }))}
+                            className={`px-3 py-2 text-sm font-medium transition-colors ${discountData.type === 'percentage' ? 'bg-amber-600 text-white' : 'bg-white text-amber-700 hover:bg-amber-100'}`}
+                          >%</button>
+                        </div>
+                        {/* Value */}
+                        <div className="w-28">
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min="0"
+                              step={discountData.type === 'percentage' ? '1' : '0.01'}
+                              max={discountData.type === 'percentage' ? '100' : undefined}
+                              value={discountData.value || ''}
+                              onChange={e => setDiscountData(prev => ({ ...prev, value: e.target.value }))}
+                              placeholder="0"
+                              className="w-full px-2 py-2 border border-amber-300 rounded-lg text-sm text-right bg-white"
+                            />
+                            <span className="text-amber-700 font-medium">{discountData.type === 'percentage' ? '%' : '€'}</span>
+                          </div>
+                        </div>
+                        {/* Computed amount */}
+                        <div className="flex-1 text-right">
+                          <p className="text-xs text-amber-600 mb-0.5">{lang === 'en' ? 'Discount' : 'Remise'}</p>
+                          <p className="text-lg font-bold text-red-600">-{discountAmount.toFixed(2)} €</p>
+                        </div>
+                      </div>
+                      {/* Note */}
+                      <div className="mt-3">
+                        <input
+                          type="text"
+                          value={discountData.note}
+                          onChange={e => setDiscountData(prev => ({ ...prev, note: e.target.value }))}
+                          placeholder={lang === 'en' ? 'Discount reason (shown on quote)...' : 'Motif de la remise (affiché sur le devis)...'}
+                          className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white placeholder:text-amber-300"
+                        />
+                      </div>
+                      {discountData.type === 'percentage' && discountData.value > 0 && (
+                        <p className="text-xs text-amber-600 mt-2">
+                          {discountData.value}% {lang === 'en' ? 'of' : 'de'} {subtotalBeforeDiscount.toFixed(2)}€ = -{discountAmount.toFixed(2)}€
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* RIGHT SIDE - Pricing Summary */}
@@ -23350,6 +23474,15 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     <span className="text-gray-600">{lang === 'en' ? 'Total shipping fees' : 'Frais de port total'}</span>
                     <span className="font-medium">{shippingTotal.toFixed(2)} €</span>
                   </div>
+                  {discountAmount > 0 && (
+                    <div className="flex justify-between text-sm mt-1">
+                      <span className="text-red-600">
+                        🏷️ {lang === 'en' ? 'Discount' : 'Remise'}
+                        {discountData.type === 'percentage' ? ` (${discountData.value}%)` : ''}
+                      </span>
+                      <span className="font-medium text-red-600">-{discountAmount.toFixed(2)} €</span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center bg-[#00A651] text-white px-4 py-3 rounded-lg mt-4">
                     <span className="font-bold">{lang === 'en' ? 'TOTAL excl. VAT' : 'TOTAL HT'}</span>
                     <span className="font-bold text-xl">{grandTotal.toFixed(2)} €</span>
@@ -23562,6 +23695,19 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                           {isFullyContractCovered ? <span className="text-emerald-600">{lang === 'en' ? 'Contract' : 'Contrat'}</span> : `${shippingTotal.toFixed(2)} €`}
                         </td>
                       </tr>
+                      {/* Discount row */}
+                      {discountAmount > 0 && (
+                        <tr className="border-b bg-amber-50">
+                          <td className="px-4 py-3 text-center">1</td>
+                          <td className="px-4 py-3">
+                            <span className="font-medium text-red-700">{lang === 'en' ? 'Discount' : 'Remise'}</span>
+                            {discountData.type === 'percentage' && <span className="text-red-500 ml-1">({discountData.value}%)</span>}
+                            {discountData.note && <span className="text-gray-500 ml-2 text-sm">— {discountData.note}</span>}
+                          </td>
+                          <td className="px-4 py-3 text-right whitespace-nowrap text-red-600"></td>
+                          <td className="px-4 py-3 text-right font-medium whitespace-nowrap text-red-600">-{discountAmount.toFixed(2)} €</td>
+                        </tr>
+                      )}
                     </tbody>
                     <tfoot>
                       <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#2D5A7B] text-white"}>
