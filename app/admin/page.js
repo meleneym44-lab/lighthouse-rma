@@ -2909,6 +2909,7 @@ const AT = {
     // Nav tabs
     dashboard: 'Tableau de Bord', messages: 'Messages', requests: 'Demandes',
     parts: 'Pièces Détachées', rentals: 'Locations', contracts: 'Contrats',
+    pendingArrivals: 'Réceptions',
     invoices: 'Factures', clients: 'Clients', pricing: 'Tarifs & Pièces',
     usaOrders: 'Commandes USA',
     kpis: 'KPIs', settings: 'Paramètres', admin: 'Admin',
@@ -3045,6 +3046,7 @@ const AT = {
     // Nav tabs
     dashboard: 'Dashboard', messages: 'Messages', requests: 'Requests',
     parts: 'Parts Orders', rentals: 'Rentals', contracts: 'Contracts',
+    pendingArrivals: 'Pending Arrivals',
     invoices: 'Invoices', clients: 'Clients', pricing: 'Pricing & Parts',
     usaOrders: 'USA Orders',
     kpis: 'KPIs', settings: 'Settings', admin: 'Admin',
@@ -3273,6 +3275,7 @@ export default function AdminPortal() {
   const [staffMembers, setStaffMembers] = useState([]);
   const [equipment, setEquipment] = useState([]);
   const [contracts, setContracts] = useState([]);
+  const [pendingArrivalsCount, setPendingArrivalsCount] = useState(0);
   const [selectedRMA, setSelectedRMA] = useState(null); // Full-page RMA view
   const [lang, setLang] = useState('fr');
   const t = useCallback((k) => AT[lang]?.[k] || AT.fr?.[k] || k, [lang]);
@@ -3325,6 +3328,10 @@ export default function AdminPortal() {
 
     const { data: contractsData } = await supabase.from('contracts').select('id, status').order('created_at', { ascending: false });
     if (contractsData) setContracts(contractsData);
+    
+    // Load pending arrivals count (unresolved)
+    const { count: paCount } = await supabase.from('pending_arrivals').select('id', { count: 'exact', head: true }).not('status', 'eq', 'resolved');
+    setPendingArrivalsCount(paCount || 0);
     
     // Load rental requests
     const { data: rentalsData, error: rentalsError } = await supabase.from('rental_requests')
@@ -3419,6 +3426,7 @@ export default function AdminPortal() {
     { id: 'parts', label: t('parts'), icon: '🔩', badge: partsOrdersActionCount > 0 ? partsOrdersActionCount : null },
     { id: 'rentals', label: t('rentals'), icon: '📅', badge: rentalActionCount > 0 ? rentalActionCount : null },
     { id: 'contracts', label: t('contracts'), icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
+    { id: 'pending_arrivals', label: t('pendingArrivals'), icon: '⚠️', badge: pendingArrivalsCount > 0 ? pendingArrivalsCount : null },
     { id: 'invoices', label: t('invoices'), icon: '📋' },
     { id: 'usa_orders', label: t('usaOrders'), icon: '🇺🇸' },
     { id: 'clients', label: t('clients'), icon: '👥' },
@@ -3549,6 +3557,7 @@ export default function AdminPortal() {
             />}
             {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} t={t} lang={lang} />}
             {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} t={t} lang={lang} reloadMain={loadData} />}
+            {activeSheet === 'pending_arrivals' && <PendingArrivalsSheet clients={clients} requests={requests} notify={notify} reload={loadData} profile={profile} t={t} lang={lang} />}
             {activeSheet === 'invoices' && <InvoicesSheet requests={requests} clients={clients} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
             {activeSheet === 'usa_orders' && <USAOrdersSheet clients={clients} notify={notify} reload={loadData} profile={profile} t={t} lang={lang} />}
             {activeSheet === 'rentals' && <RentalsSheet
@@ -4525,19 +4534,24 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               const currentIndex = getStepIndex(effectiveStatus);
               const isShipped = effectiveStatus === 'shipped' || effectiveStatus === 'delivered' || effectiveStatus === 'completed';
               
+              // Detect: device received but quote not approved
+              const quotePhaseStatuses = ['quote_sent', 'waiting_bc', 'bc_review', 'bc_submitted', 'rma_created', 'approved'];
+              const deviceReceivedEarly = (rma.received_at || device.status === 'received') && quotePhaseStatuses.includes(rma.status);
+              
               return (
                 <div className="flex w-full">
                   {steps.map((step, index) => {
                     const isCompleted = index < currentIndex;
                     const isCurrent = index === currentIndex;
                     const isLast = index === steps.length - 1;
+                    const isQuoteStepRed = deviceReceivedEarly && index === 1;
                     
                     return (
                       <div key={step.id} className="flex-1" style={{ minWidth: '50px' }}>
                         <div 
                           className={`
                             flex items-center justify-center h-9 px-2 text-[10px] font-medium text-center leading-tight
-                            ${isShipped && isLast ? 'bg-[#00A651] text-white' : isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
+                            ${isQuoteStepRed ? 'bg-red-500 text-white animate-pulse' : isShipped && isLast ? 'bg-[#00A651] text-white' : isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
                             ${index === 0 ? 'rounded-l-sm' : ''}
                             ${isLast ? 'rounded-r-sm' : ''}
                           `}
@@ -4549,7 +4563,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                                 : 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%)'
                           }}
                         >
-                          <span className="break-words hyphens-auto">{isShipped && isLast ? (lang === 'en' ? '✓ Shipped' : '✓ Expédié') : step.label}</span>
+                          <span className="break-words hyphens-auto">{isQuoteStepRed ? (lang === 'en' ? '⚠️ Quote!' : '⚠️ Devis!') : isShipped && isLast ? (lang === 'en' ? '✓ Shipped' : '✓ Expédié') : step.label}</span>
                         </div>
                       </div>
                     );
@@ -6149,6 +6163,11 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     
     const isShipped = device.status === 'shipped' || !!device.shipped_at;
     
+    // Detect: device physically received but quote not yet approved
+    // RMA has received_at OR device status is 'received' BUT RMA is still in quote/BC phase
+    const quotePhaseStatuses = ['quote_sent', 'waiting_bc', 'bc_review', 'bc_submitted', 'rma_created', 'approved'];
+    const deviceReceivedEarly = (rma.received_at || device.status === 'received') && quotePhaseStatuses.includes(rma.status);
+    
     // Smart status: use device.status only if it's a "real" device status (received onwards)
     const deviceSpecificStatuses = ['received', 'in_queue', 'inspection', 'calibration', 'calibration_in_progress', 
       'repair', 'repair_in_progress', 'final_qc', 'qc_complete', 'qc_rejected', 'ready_to_ship', 'shipped', 'completed'];
@@ -6162,12 +6181,15 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           const isCurrent = index === currentIndex;
           const isLast = index === steps.length - 1;
           
+          // Red highlight on quote step (index 1) when device received but quote not approved
+          const isQuoteStepRed = deviceReceivedEarly && index === 1;
+          
           return (
             <div key={step.id} className="flex-1" style={{ minWidth: '50px' }}>
               <div 
                 className={`
                   flex items-center justify-center h-9 px-2 text-[10px] font-medium text-center leading-tight
-                  ${isShipped && isLast ? 'bg-green-500 text-white' : isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
+                  ${isQuoteStepRed ? 'bg-red-500 text-white animate-pulse' : isShipped && isLast ? 'bg-green-500 text-white' : isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}
                   ${index === 0 ? 'rounded-l-md' : ''}
                   ${isLast ? 'rounded-r-md' : ''}
                 `}
@@ -6179,7 +6201,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       : 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%)'
                 }}
               >
-                <span className="break-words hyphens-auto">{isShipped && isLast ? (lang === 'en' ? '✓ Shipped' : '✓ Expédié') : step.label}</span>
+                <span className="break-words hyphens-auto">{isQuoteStepRed ? (lang === 'en' ? '⚠️ Quote!' : '⚠️ Devis!') : isShipped && isLast ? (lang === 'en' ? '✓ Shipped' : '✓ Expédié') : step.label}</span>
               </div>
             </div>
           );
@@ -19278,6 +19300,707 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ============================================
+// PENDING ARRIVALS SHEET - Scanner-first device reception tracking
+// ============================================
+function PendingArrivalsSheet({ clients = [], requests = [], notify, reload, profile, t = k=>k, lang = 'fr' }) {
+  const [arrivals, setArrivals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('active');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [expandedId, setExpandedId] = useState(null);
+  
+  // Scanner input mode
+  const [scanInput, setScanInput] = useState('');
+  const [scanResult, setScanResult] = useState(null); // { type: 'no_rma' | 'awaiting_approval' | 'normal', rma, device, company }
+  const [scanning, setScanning] = useState(false);
+  const [scanProcessed, setScanProcessed] = useState(false);
+  
+  // Follow-up editing
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  
+  // RMA linking
+  const [showRMALinker, setShowRMALinker] = useState(null);
+  const [rmaSearch, setRmaSearch] = useState('');
+  
+  // Notes editing
+  const [editingNotes, setEditingNotes] = useState(null);
+  const [notesText, setNotesText] = useState('');
+  
+  // Status config
+  const statusConfig = {
+    no_rma: { label: lang === 'en' ? 'No RMA' : 'Pas de RMA', color: 'bg-red-100 text-red-700', icon: '⚠️' },
+    needs_contact: { label: lang === 'en' ? 'Needs contact info' : 'Info contact requise', color: 'bg-amber-100 text-amber-700', icon: '📝' },
+    followup_active: { label: lang === 'en' ? 'Follow-up active' : 'Suivi en cours', color: 'bg-orange-100 text-orange-700', icon: '📧' },
+    awaiting_rma: { label: lang === 'en' ? 'Awaiting RMA creation' : 'Attente création RMA', color: 'bg-blue-100 text-blue-700', icon: '⏳' },
+    awaiting_approval: { label: lang === 'en' ? 'Awaiting quote approval' : 'Attente approbation devis', color: 'bg-purple-100 text-purple-700', icon: '🔴' },
+    resolved: { label: lang === 'en' ? 'Resolved' : 'Résolu', color: 'bg-green-100 text-green-700', icon: '✅' }
+  };
+  
+  // Reminder frequency options
+  const reminderOptions = [
+    { value: 'daily', label: lang === 'en' ? 'Daily' : 'Quotidien' },
+    { value: 'every_3_days', label: lang === 'en' ? 'Every 3 days' : 'Tous les 3 jours' },
+    { value: 'weekly', label: lang === 'en' ? 'Weekly' : 'Hebdomadaire' }
+  ];
+  
+  // Load arrivals
+  const loadArrivals = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('pending_arrivals')
+        .select('*, companies(id, name, email)')
+        .order('arrived_at', { ascending: false });
+      if (error) throw error;
+      setArrivals(data || []);
+    } catch (err) {
+      console.error('Error loading pending arrivals:', err);
+    }
+    setLoading(false);
+  };
+  
+  useEffect(() => { loadArrivals(); }, []);
+  
+  // Auto-check for resolved tickets (RMA created or quote approved)
+  useEffect(() => {
+    if (arrivals.length === 0 || requests.length === 0) return;
+    const unresolvedWithRMA = arrivals.filter(a => a.status !== 'resolved' && a.linked_rma_id);
+    unresolvedWithRMA.forEach(a => {
+      const rma = requests.find(r => r.id === a.linked_rma_id);
+      if (!rma) return;
+      // If RMA quote is approved, resolve this ticket
+      if (['quote_approved', 'waiting_device', 'received', 'in_service', 'calibration', 'repair', 'qc_check', 'ready_to_ship', 'shipped', 'completed'].includes(rma.status)) {
+        supabase.from('pending_arrivals').update({ 
+          status: 'resolved', 
+          resolved_at: new Date().toISOString(),
+          notes: (a.notes || '') + '\n[Auto-resolved: RMA ' + rma.request_number + ' approved]'
+        }).eq('id', a.id).then(() => loadArrivals());
+      }
+    });
+    // Also check unlinked tickets — if serial now matches an approved RMA
+    const unresolvedNoRMA = arrivals.filter(a => a.status !== 'resolved' && !a.linked_rma_id && a.serial_number);
+    unresolvedNoRMA.forEach(a => {
+      const matchingRMA = requests.find(r => 
+        r.request_type !== 'parts' && 
+        r.request_devices?.some(d => d.serial_number?.toLowerCase() === a.serial_number?.toLowerCase()) &&
+        !['cancelled', 'archived'].includes(r.status)
+      );
+      if (matchingRMA) {
+        const isApproved = ['quote_approved', 'waiting_device', 'received', 'in_service', 'calibration', 'repair', 'qc_check', 'ready_to_ship', 'shipped', 'completed'].includes(matchingRMA.status);
+        supabase.from('pending_arrivals').update({ 
+          linked_rma_id: matchingRMA.id,
+          status: isApproved ? 'resolved' : 'awaiting_approval',
+          ...(isApproved ? { resolved_at: new Date().toISOString() } : {}),
+          notes: (a.notes || '') + '\n[Auto-linked to ' + matchingRMA.request_number + ']'
+        }).eq('id', a.id).then(() => loadArrivals());
+      }
+    });
+  }, [arrivals.length, requests]);
+  
+  // ==================== SCANNER FLOW ====================
+  const processScan = async (serial) => {
+    if (!serial || serial.trim().length < 2) return;
+    const cleanSerial = serial.trim();
+    setScanning(true);
+    setScanResult(null);
+    setScanProcessed(false);
+    
+    try {
+      // Check request_devices for active RMAs
+      const { data: deviceMatches } = await supabase
+        .from('request_devices')
+        .select('*, service_requests!inner(id, request_number, status, quote_total, quote_number, companies(id, name, email))')
+        .ilike('serial_number', cleanSerial)
+        .order('created_at', { ascending: false });
+      
+      // Filter to active RMAs only
+      const activeMatches = (deviceMatches || []).filter(d => 
+        !['completed', 'cancelled', 'archived', 'shipped'].includes(d.service_requests?.status)
+      );
+      
+      if (activeMatches.length > 0) {
+        const match = activeMatches[0];
+        const rma = match.service_requests;
+        const rmaStatus = rma.status;
+        
+        // Is quote approved?
+        const approvedStatuses = ['quote_approved', 'waiting_device', 'received', 'in_service', 'calibration', 'repair', 'qc_check', 'ready_to_ship'];
+        
+        if (approvedStatuses.includes(rmaStatus)) {
+          // Result C: Normal flow — just mark received
+          setScanResult({ 
+            type: 'normal', 
+            rma, 
+            device: match, 
+            company: rma.companies,
+            message: lang === 'en' 
+              ? `✅ RMA ${rma.request_number} found — quote approved. Device marked as received.`
+              : `✅ RMA ${rma.request_number} trouvé — devis approuvé. Appareil marqué comme reçu.`
+          });
+          // Auto-update received_at on RMA
+          await supabase.from('service_requests').update({ 
+            received_at: new Date().toISOString(),
+            status: rmaStatus === 'waiting_device' ? 'received' : rmaStatus
+          }).eq('id', rma.id);
+          // Update device status
+          await supabase.from('request_devices').update({ 
+            status: 'received'
+          }).eq('id', match.id).eq('status', 'pending');
+          setScanProcessed(true);
+          
+        } else {
+          // Result B: RMA exists but quote not approved
+          setScanResult({ 
+            type: 'awaiting_approval', 
+            rma, 
+            device: match, 
+            company: rma.companies,
+            message: lang === 'en'
+              ? `🔴 RMA ${rma.request_number} found but quote NOT approved (status: ${rmaStatus}). Ticket created.`
+              : `🔴 RMA ${rma.request_number} trouvé mais devis NON approuvé (statut: ${rmaStatus}). Ticket créé.`
+          });
+          // Create pending arrival ticket
+          await supabase.from('pending_arrivals').insert({
+            arrived_at: new Date().toISOString().split('T')[0],
+            company_id: rma.companies?.id || null,
+            serial_number: cleanSerial,
+            model_name: match.model_name || null,
+            linked_rma_id: rma.id,
+            status: 'awaiting_approval',
+            logged_by: profile?.id || null,
+            notes: 'Scanned: RMA ' + rma.request_number + ' exists, awaiting quote approval'
+          });
+          // Mark device as received on the RMA
+          await supabase.from('service_requests').update({ 
+            received_at: new Date().toISOString()
+          }).eq('id', rma.id).is('received_at', null);
+          await supabase.from('request_devices').update({ 
+            status: 'received'
+          }).eq('id', match.id);
+          setScanProcessed(true);
+          loadArrivals();
+          if (reload) reload();
+        }
+      } else {
+        // Also check equipment table for company info
+        let companyInfo = null;
+        const { data: equipMatch } = await supabase
+          .from('equipment')
+          .select('*, companies(id, name, email)')
+          .ilike('serial_number', `%${cleanSerial}%`)
+          .limit(1);
+        if (equipMatch?.[0]?.companies) {
+          companyInfo = equipMatch[0].companies;
+        }
+        
+        // Result A: No active RMA
+        setScanResult({ 
+          type: 'no_rma', 
+          company: companyInfo,
+          message: lang === 'en'
+            ? `⚠️ No active RMA found for SN: ${cleanSerial}. Ticket created — add contact info to start follow-up.`
+            : `⚠️ Aucun RMA actif trouvé pour SN : ${cleanSerial}. Ticket créé — ajoutez les coordonnées pour démarrer le suivi.`
+        });
+        // Create pending arrival ticket
+        await supabase.from('pending_arrivals').insert({
+          arrived_at: new Date().toISOString().split('T')[0],
+          company_id: companyInfo?.id || null,
+          serial_number: cleanSerial,
+          status: companyInfo ? 'needs_contact' : 'no_rma',
+          logged_by: profile?.id || null,
+          notes: 'Scanned: No active RMA found' + (companyInfo ? ' (company identified: ' + companyInfo.name + ')' : '')
+        });
+        setScanProcessed(true);
+        loadArrivals();
+        if (reload) reload();
+      }
+    } catch (err) {
+      console.error('Scan error:', err);
+      notify('❌ ' + (err.message || 'Scan error'), 'error');
+    }
+    setScanning(false);
+  };
+  
+  // Handle scan input (Enter key or button)
+  const handleScanSubmit = (e) => {
+    if (e) e.preventDefault();
+    processScan(scanInput);
+  };
+  
+  // ==================== FOLLOW-UP ACTIONS ====================
+  
+  // Start follow-up (from computer — after adding email)
+  const startFollowUp = async (arrival) => {
+    const company = arrival.companies;
+    const email = editForm.followup_email || company?.email || '';
+    if (!email) { notify(lang === 'en' ? '⚠️ Email address required' : '⚠️ Adresse email requise', 'error'); return; }
+    
+    // Update the ticket
+    await supabase.from('pending_arrivals').update({ 
+      status: 'followup_active',
+      followup_email: email,
+      reminder_frequency: editForm.reminder_frequency || 'weekly',
+      last_reminder_at: new Date().toISOString(),
+      reminder_count: 1,
+      notes: (arrival.notes || '') + '\nFollow-up started ' + new Date().toLocaleDateString('fr-FR') + ' → ' + email
+    }).eq('id', arrival.id);
+    
+    // Compose and open the first email
+    const serial = arrival.serial_number ? ` (SN: ${arrival.serial_number})` : '';
+    const model = arrival.model_name ? ` ${arrival.model_name}` : '';
+    
+    if (arrival.status === 'awaiting_approval' || arrival.linked_rma_id) {
+      const linkedRMA = requests.find(r => r.id === arrival.linked_rma_id);
+      const rmaNum = linkedRMA?.request_number || 'N/A';
+      const subject = encodeURIComponent(`Lighthouse France - En attente de votre approbation - ${rmaNum}`);
+      const body = encodeURIComponent(
+`Bonjour,
+
+Nous avons réceptionné votre équipement${model}${serial} le ${new Date(arrival.arrived_at).toLocaleDateString('fr-FR')} dans nos locaux de Créteil.
+
+Un devis vous a été transmis sous la référence ${rmaNum}. Nous sommes en attente de votre approbation pour pouvoir débuter l'intervention.
+
+Vous pouvez approuver le devis directement via votre espace client ou nous retourner un bon de commande.
+
+Cordialement,
+Service France
+Lighthouse France`
+      );
+      window.open(`mailto:${email}?subject=${subject}&body=${body}`, '_blank');
+    } else {
+      const subject = encodeURIComponent(`Lighthouse France - Réception de votre équipement${serial}`);
+      const body = encodeURIComponent(
+`Bonjour,
+
+Nous avons réceptionné le ${new Date(arrival.arrived_at).toLocaleDateString('fr-FR')} un équipement${model}${serial} dans nos locaux de Créteil.
+
+Cependant, nous n'avons pas de demande de service (RMA) associée à cet envoi.
+
+Pourriez-vous nous confirmer la nature de l'intervention souhaitée en créant une demande sur notre portail client, ou en nous contactant directement ?
+
+Dans l'attente de votre retour, votre équipement est conservé en sécurité dans nos installations.
+
+Cordialement,
+Service France
+Lighthouse France`
+      );
+      window.open(`mailto:${email}?subject=${subject}&body=${body}`, '_blank');
+    }
+    
+    setEditingId(null);
+    setEditForm({});
+    notify(lang === 'en' ? '✅ Follow-up started!' : '✅ Suivi démarré !');
+    loadArrivals();
+  };
+  
+  // Send reminder
+  const sendReminder = async (arrival) => {
+    const email = arrival.followup_email || arrival.companies?.email;
+    if (!email) return;
+    
+    const count = (arrival.reminder_count || 0) + 1;
+    const serial = arrival.serial_number ? ` (SN: ${arrival.serial_number})` : '';
+    const model = arrival.model_name ? ` ${arrival.model_name}` : '';
+    
+    const subject = encodeURIComponent(`[Rappel ${count}] Lighthouse France - Votre équipement${serial} en attente`);
+    const body = encodeURIComponent(
+`Bonjour,
+
+Ceci est un rappel concernant votre équipement${model}${serial} réceptionné le ${new Date(arrival.arrived_at).toLocaleDateString('fr-FR')} dans nos locaux.
+
+${arrival.linked_rma_id ? 'Nous sommes toujours en attente de votre approbation du devis pour pouvoir démarrer l'intervention.' : 'Nous n'avons toujours pas reçu de demande de service (RMA) pour cet équipement.'}
+
+Merci de nous contacter ou de vous connecter sur votre espace client dès que possible.
+
+Cordialement,
+Service France
+Lighthouse France`
+    );
+    window.open(`mailto:${email}?subject=${subject}&body=${body}`, '_blank');
+    
+    await supabase.from('pending_arrivals').update({
+      last_reminder_at: new Date().toISOString(),
+      reminder_count: count,
+      notes: (arrival.notes || '') + '\nReminder #' + count + ' sent ' + new Date().toLocaleDateString('fr-FR')
+    }).eq('id', arrival.id);
+    
+    notify(`📧 Rappel #${count} envoyé`);
+    loadArrivals();
+  };
+  
+  // Update status
+  const updateStatus = async (id, newStatus) => {
+    const updates = { status: newStatus, updated_at: new Date().toISOString() };
+    if (newStatus === 'resolved') updates.resolved_at = new Date().toISOString();
+    await supabase.from('pending_arrivals').update(updates).eq('id', id);
+    notify('✅ ' + (lang === 'en' ? 'Updated' : 'Mis à jour'));
+    loadArrivals();
+    if (reload) reload();
+  };
+  
+  // Link to RMA
+  const linkToRMA = async (arrivalId, rmaId) => {
+    const arrival = arrivals.find(a => a.id === arrivalId);
+    const rma = requests.find(r => r.id === rmaId);
+    const isApproved = rma && ['quote_approved', 'received', 'in_service', 'calibration', 'repair', 'qc_check', 'ready_to_ship', 'shipped', 'completed'].includes(rma.status);
+    
+    await supabase.from('pending_arrivals').update({ 
+      linked_rma_id: rmaId,
+      status: isApproved ? 'resolved' : 'awaiting_approval',
+      ...(isApproved ? { resolved_at: new Date().toISOString() } : {}),
+      notes: (arrival?.notes || '') + '\nLinked to ' + (rma?.request_number || rmaId)
+    }).eq('id', arrivalId);
+    
+    // Copy arrived_at to RMA
+    if (arrival?.arrived_at) {
+      await supabase.from('service_requests').update({ received_at: arrival.arrived_at }).eq('id', rmaId).is('received_at', null);
+    }
+    
+    notify(lang === 'en' ? '✅ Linked!' : '✅ Lié !');
+    setShowRMALinker(null);
+    setRmaSearch('');
+    loadArrivals();
+    if (reload) reload();
+  };
+  
+  // Delete
+  const deleteArrival = async (id) => {
+    if (!window.confirm(lang === 'en' ? 'Delete this record?' : 'Supprimer cet enregistrement ?')) return;
+    await supabase.from('pending_arrivals').delete().eq('id', id);
+    notify(lang === 'en' ? '🗑️ Deleted' : '🗑️ Supprimé');
+    loadArrivals();
+    if (reload) reload();
+  };
+  
+  // Save notes
+  const saveNotes = async (id) => {
+    await supabase.from('pending_arrivals').update({ notes: notesText }).eq('id', id);
+    setEditingNotes(null);
+    loadArrivals();
+  };
+  
+  // Days since
+  const daysSince = (dateStr) => {
+    if (!dateStr) return 0;
+    return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
+  };
+  
+  // Days since last reminder
+  const daysSinceReminder = (arrival) => {
+    if (!arrival.last_reminder_at) return Infinity;
+    return Math.floor((Date.now() - new Date(arrival.last_reminder_at).getTime()) / (1000 * 60 * 60 * 24));
+  };
+  
+  // Check if reminder is due
+  const isReminderDue = (arrival) => {
+    if (arrival.status !== 'followup_active') return false;
+    const days = daysSinceReminder(arrival);
+    const freq = arrival.reminder_frequency || 'weekly';
+    if (freq === 'daily') return days >= 1;
+    if (freq === 'every_3_days') return days >= 3;
+    if (freq === 'weekly') return days >= 7;
+    return false;
+  };
+  
+  // Filter
+  const filtered = arrivals.filter(a => {
+    if (filter === 'active' && a.status === 'resolved') return false;
+    if (filter === 'resolved' && a.status !== 'resolved') return false;
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      return (a.serial_number?.toLowerCase().includes(term) || a.model_name?.toLowerCase().includes(term) || a.companies?.name?.toLowerCase().includes(term) || a.contact_info?.toLowerCase().includes(term));
+    }
+    return true;
+  });
+  
+  // Active RMAs for linking
+  const activeRMAs = requests.filter(r => r.request_type !== 'parts' && !['completed', 'cancelled', 'archived'].includes(r.status));
+  const filteredRMAs = rmaSearch.length >= 2 
+    ? activeRMAs.filter(r => r.request_number?.toLowerCase().includes(rmaSearch.toLowerCase()) || r.companies?.name?.toLowerCase().includes(rmaSearch.toLowerCase()) || r.request_devices?.some(d => d.serial_number?.toLowerCase().includes(rmaSearch.toLowerCase()))).slice(0, 10)
+    : activeRMAs.slice(0, 10);
+  
+  // Count reminders due
+  const remindersDueCount = arrivals.filter(a => isReminderDue(a)).length;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800">⚠️ {lang === 'en' ? 'Pending Arrivals' : 'Réceptions en attente'}</h2>
+          <p className="text-sm text-gray-500">{lang === 'en' ? 'Track devices received without RMA or awaiting quote approval' : 'Suivi des appareils reçus sans RMA ou en attente d\'approbation de devis'}</p>
+        </div>
+        {remindersDueCount > 0 && (
+          <div className="px-4 py-2 bg-orange-100 border border-orange-300 rounded-lg text-sm font-medium text-orange-700">
+            📧 {remindersDueCount} {lang === 'en' ? 'reminder(s) due' : 'rappel(s) à envoyer'}
+          </div>
+        )}
+      </div>
+      
+      {/* ==================== SERIAL NUMBER ENTRY ==================== */}
+      <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
+        <form onSubmit={handleScanSubmit} className="flex items-center gap-3">
+          <span className="text-xl">🔍</span>
+          <input
+            type="text"
+            value={scanInput}
+            onChange={e => { setScanInput(e.target.value); setScanResult(null); setScanProcessed(false); }}
+            placeholder={lang === 'en' ? 'Enter serial number...' : 'Entrer N° de série...'}
+            className="flex-1 px-4 py-2.5 border rounded-lg font-mono text-base focus:border-[#00A651] focus:ring-1 focus:ring-[#00A651] outline-none"
+          />
+          <button 
+            type="submit"
+            disabled={scanning || !scanInput.trim()}
+            className="px-5 py-2.5 bg-[#00A651] hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50 shrink-0"
+          >
+            {scanning ? '⏳...' : (lang === 'en' ? 'Check' : 'Vérifier')}
+          </button>
+        </form>
+        
+        {/* Result */}
+        {scanResult && (
+          <div className={`mt-3 p-3 rounded-lg ${
+            scanResult.type === 'normal' ? 'bg-green-50 border border-green-300 text-green-800' :
+            scanResult.type === 'awaiting_approval' ? 'bg-purple-50 border border-purple-300 text-purple-800' :
+            'bg-red-50 border border-red-300 text-red-800'
+          }`}>
+            <p className="font-medium text-sm">{scanResult.message}</p>
+            {scanResult.company && (
+              <p className="text-xs mt-1 opacity-75">{lang === 'en' ? 'Company:' : 'Société :'} {scanResult.company.name}</p>
+            )}
+            {scanProcessed && (
+              <button 
+                onClick={() => { setScanInput(''); setScanResult(null); setScanProcessed(false); }}
+                className="mt-2 text-xs underline opacity-75 hover:opacity-100"
+              >
+                {lang === 'en' ? '+ Enter another' : '+ Entrer un autre'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      
+      {/* ==================== FILTERS ==================== */}
+      <div className="flex items-center gap-3">
+        <div className="flex bg-gray-100 rounded-lg p-1">
+          {[
+            { id: 'active', label: lang === 'en' ? 'Active' : 'Actifs', count: arrivals.filter(a => a.status !== 'resolved').length },
+            { id: 'resolved', label: lang === 'en' ? 'Resolved' : 'Résolus' },
+            { id: 'all', label: lang === 'en' ? 'All' : 'Tous' }
+          ].map(f => (
+            <button key={f.id} onClick={() => setFilter(f.id)} className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${filter === f.id ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
+              {f.label} {f.count ? `(${f.count})` : ''}
+            </button>
+          ))}
+        </div>
+        <input 
+          type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+          placeholder={`🔍 ${lang === 'en' ? 'Search...' : 'Rechercher...'}`}
+          className="flex-1 px-3 py-2 border rounded-lg text-sm"
+        />
+      </div>
+      
+      {/* ==================== LOADING ==================== */}
+      {loading && (
+        <div className="flex items-center justify-center py-12">
+          <div className="w-8 h-8 border-2 border-[#00A651] border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+      
+      {/* ==================== EMPTY STATE ==================== */}
+      {!loading && filtered.length === 0 && (
+        <div className="text-center py-12 bg-white rounded-xl border">
+          <p className="text-4xl mb-3">{filter === 'resolved' ? '✅' : '📦'}</p>
+          <p className="text-gray-500">{filter === 'resolved' ? (lang === 'en' ? 'No resolved arrivals' : 'Aucune réception résolue') : (lang === 'en' ? 'No pending arrivals — all clear!' : 'Aucune réception en attente !')}</p>
+        </div>
+      )}
+      
+      {/* ==================== ARRIVALS LIST ==================== */}
+      {!loading && filtered.length > 0 && (
+        <div className="space-y-3">
+          {filtered.map(arrival => {
+            const sc = statusConfig[arrival.status] || statusConfig.no_rma;
+            const days = daysSince(arrival.arrived_at);
+            const isUrgent = days > 7 && arrival.status !== 'resolved';
+            const isExpanded = expandedId === arrival.id;
+            const linkedRMA = arrival.linked_rma_id ? requests.find(r => r.id === arrival.linked_rma_id) : null;
+            const reminderDue = isReminderDue(arrival);
+            const isEditing = editingId === arrival.id;
+            
+            return (
+              <div key={arrival.id} className={`bg-white rounded-xl border-2 overflow-hidden transition-all ${reminderDue ? 'border-orange-400 shadow-orange-100 shadow-md' : isUrgent ? 'border-red-300' : 'border-gray-200'}`}>
+                {/* Main Row */}
+                <div className="p-4 flex items-center gap-4 cursor-pointer hover:bg-gray-50" onClick={() => setExpandedId(isExpanded ? null : arrival.id)}>
+                  {/* Urgency */}
+                  {(isUrgent || reminderDue) && <div className={`w-2 h-12 rounded-full shrink-0 ${reminderDue ? 'bg-orange-500 animate-pulse' : 'bg-red-500'}`} />}
+                  
+                  {/* Date */}
+                  <div className="w-24 shrink-0 text-center">
+                    <p className="text-lg font-bold text-gray-800">{new Date(arrival.arrived_at).toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR', { day: '2-digit', month: 'short' })}</p>
+                    <p className="text-xs text-gray-400">{days === 0 ? (lang === 'en' ? 'Today' : "Aujourd'hui") : days === 1 ? (lang === 'en' ? 'Yesterday' : 'Hier') : `${days}j`}</p>
+                  </div>
+                  
+                  {/* Device */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      {arrival.serial_number && <span className="font-mono font-bold text-gray-800">{arrival.serial_number}</span>}
+                      {arrival.model_name && <span className="text-sm text-gray-500">{arrival.model_name}</span>}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      {arrival.companies?.name ? (
+                        <span className="text-sm text-[#2D5A7B] font-medium">{arrival.companies.name}</span>
+                      ) : (
+                        <span className="text-sm text-red-500 italic">{lang === 'en' ? 'Unknown sender' : 'Expéditeur inconnu'}</span>
+                      )}
+                      {linkedRMA && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-mono">→ {linkedRMA.request_number}</span>}
+                      {arrival.followup_email && <span className="text-xs text-gray-400">📧 {arrival.followup_email}</span>}
+                      {arrival.reminder_count > 0 && <span className="text-xs text-orange-500">{arrival.reminder_count} rappel(s)</span>}
+                    </div>
+                  </div>
+                  
+                  {/* Reminder due badge */}
+                  {reminderDue && (
+                    <span className="px-2 py-1 bg-orange-500 text-white rounded-full text-xs font-bold animate-pulse shrink-0">
+                      📧 {lang === 'en' ? 'REMINDER DUE' : 'RAPPEL À ENVOYER'}
+                    </span>
+                  )}
+                  
+                  {/* Status */}
+                  <span className={`px-3 py-1 rounded-full text-xs font-medium shrink-0 ${sc.color}`}>{sc.icon} {sc.label}</span>
+                  
+                  <svg className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </div>
+                
+                {/* ==================== EXPANDED ==================== */}
+                {isExpanded && (
+                  <div className="border-t bg-gray-50 p-4">
+                    {/* Info grid */}
+                    <div className="grid grid-cols-4 gap-3 mb-4 text-sm">
+                      <div><p className="text-xs text-gray-500">{lang === 'en' ? 'Arrived' : 'Arrivé'}</p><p className="font-medium">{new Date(arrival.arrived_at).toLocaleDateString('fr-FR')}</p></div>
+                      <div><p className="text-xs text-gray-500">{lang === 'en' ? 'Logged' : 'Enregistré'}</p><p>{new Date(arrival.created_at).toLocaleDateString('fr-FR')}</p></div>
+                      {arrival.last_reminder_at && <div><p className="text-xs text-gray-500">{lang === 'en' ? 'Last reminder' : 'Dernier rappel'}</p><p>{new Date(arrival.last_reminder_at).toLocaleDateString('fr-FR')} ({daysSinceReminder(arrival)}j)</p></div>}
+                      {arrival.reminder_frequency && <div><p className="text-xs text-gray-500">{lang === 'en' ? 'Frequency' : 'Fréquence'}</p><p>{reminderOptions.find(o => o.value === arrival.reminder_frequency)?.label || arrival.reminder_frequency}</p></div>}
+                    </div>
+                    
+                    {/* Notes */}
+                    <div className="mb-4">
+                      <p className="text-xs text-gray-500 mb-1">Notes</p>
+                      {editingNotes === arrival.id ? (
+                        <div className="flex gap-2">
+                          <textarea value={notesText} onChange={e => setNotesText(e.target.value)} className="flex-1 px-3 py-2 border rounded-lg text-sm" rows={3} />
+                          <div className="flex flex-col gap-1">
+                            <button onClick={() => saveNotes(arrival.id)} className="px-3 py-1 bg-green-500 text-white rounded text-xs">✓</button>
+                            <button onClick={() => setEditingNotes(null)} className="px-3 py-1 bg-gray-200 rounded text-xs">✕</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-600 cursor-pointer hover:bg-white p-2 rounded whitespace-pre-wrap" onClick={() => { setEditingNotes(arrival.id); setNotesText(arrival.notes || ''); }}>
+                          {arrival.notes || <span className="italic text-gray-400">{lang === 'en' ? 'Click to add notes...' : 'Cliquer pour ajouter...'}</span>}
+                        </p>
+                      )}
+                    </div>
+                    
+                    {/* ===== FOLLOW-UP SETUP (Phase 2 — from computer) ===== */}
+                    {arrival.status !== 'resolved' && arrival.status !== 'followup_active' && (
+                      <div className="mb-4 p-4 bg-white rounded-lg border border-dashed border-gray-300">
+                        {isEditing ? (
+                          <div>
+                            <h4 className="font-bold text-sm text-gray-700 mb-3">📧 {lang === 'en' ? 'Setup Follow-up' : 'Configurer le suivi'}</h4>
+                            <div className="flex items-end gap-3">
+                              <div className="flex-1">
+                                <label className="block text-xs text-gray-500 mb-1">{lang === 'en' ? 'Email address *' : 'Adresse email *'}</label>
+                                <input 
+                                  type="email" 
+                                  value={editForm.followup_email || arrival.companies?.email || ''} 
+                                  onChange={e => setEditForm(prev => ({ ...prev, followup_email: e.target.value }))}
+                                  placeholder="client@example.com"
+                                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                                />
+                              </div>
+                              <div className="w-44">
+                                <label className="block text-xs text-gray-500 mb-1">{lang === 'en' ? 'Reminder frequency' : 'Fréquence rappels'}</label>
+                                <select 
+                                  value={editForm.reminder_frequency || 'weekly'} 
+                                  onChange={e => setEditForm(prev => ({ ...prev, reminder_frequency: e.target.value }))}
+                                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                                >
+                                  {reminderOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                </select>
+                              </div>
+                              <button onClick={() => startFollowUp(arrival)} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-bold shrink-0">
+                                🚀 {lang === 'en' ? 'Start Follow-up' : 'Démarrer le suivi'}
+                              </button>
+                              <button onClick={() => { setEditingId(null); setEditForm({}); }} className="px-3 py-2 bg-gray-200 rounded-lg text-sm">✕</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button onClick={() => { setEditingId(arrival.id); setEditForm({ followup_email: arrival.companies?.email || '', reminder_frequency: 'weekly' }); }} className="w-full text-center py-2 text-sm text-gray-500 hover:text-orange-600 font-medium">
+                            📧 {lang === 'en' ? 'Click to add contact info & start follow-up' : 'Cliquer pour ajouter les coordonnées & démarrer le suivi'}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* ===== ACTIONS ===== */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Send reminder (when follow-up is active) */}
+                      {arrival.status === 'followup_active' && (
+                        <button onClick={() => sendReminder(arrival)} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${reminderDue ? 'bg-orange-500 text-white hover:bg-orange-600 animate-pulse' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
+                          📧 {lang === 'en' ? `Send Reminder #${(arrival.reminder_count || 0) + 1}` : `Envoyer Rappel #${(arrival.reminder_count || 0) + 1}`}
+                        </button>
+                      )}
+                      
+                      {/* Link to RMA */}
+                      {arrival.status !== 'resolved' && !arrival.linked_rma_id && (
+                        <>
+                          {showRMALinker === arrival.id ? (
+                            <div className="flex-1 min-w-64">
+                              <div className="flex items-center gap-2 bg-white p-2 rounded-lg border">
+                                <input type="text" value={rmaSearch} onChange={e => setRmaSearch(e.target.value)} placeholder={lang === 'en' ? 'Search RMA...' : 'Rechercher RMA...'} className="flex-1 px-2 py-1 border rounded text-sm" autoFocus />
+                                <button onClick={() => { setShowRMALinker(null); setRmaSearch(''); }} className="text-gray-400 hover:text-gray-600">✕</button>
+                              </div>
+                              {filteredRMAs.length > 0 && (
+                                <div className="mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                  {filteredRMAs.map(r => (
+                                    <button key={r.id} onClick={() => linkToRMA(arrival.id, r.id)} className="w-full text-left px-3 py-2 hover:bg-green-50 text-sm border-b last:border-b-0">
+                                      <span className="font-mono font-bold text-[#2D5A7B]">{r.request_number}</span>
+                                      <span className="text-gray-500 ml-2">{r.companies?.name}</span>
+                                      <span className="text-xs text-gray-400 float-right">{r.status}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <button onClick={() => setShowRMALinker(arrival.id)} className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200">🔗 {lang === 'en' ? 'Link to RMA' : 'Lier à un RMA'}</button>
+                          )}
+                        </>
+                      )}
+                      
+                      {/* Resolve */}
+                      {arrival.status !== 'resolved' && (
+                        <button onClick={() => updateStatus(arrival.id, 'resolved')} className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200">✅ {lang === 'en' ? 'Resolve' : 'Résoudre'}</button>
+                      )}
+                      {arrival.status === 'resolved' && (
+                        <button onClick={() => updateStatus(arrival.id, 'no_rma')} className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-200">↩ {lang === 'en' ? 'Reopen' : 'Rouvrir'}</button>
+                      )}
+                      
+                      {/* Delete */}
+                      <button onClick={() => deleteArrival(arrival.id)} className="px-3 py-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg text-sm ml-auto">🗑️</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
