@@ -2662,7 +2662,12 @@ export default function CustomerPortal() {
   }, [loadData]);
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    if (error) { 
+      console.warn('Sign out error, clearing manually:', error);
+      localStorage.clear(); 
+      sessionStorage.clear(); 
+    }
     window.location.href = '/';
   };
 
