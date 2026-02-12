@@ -19614,7 +19614,7 @@ Lighthouse France`
 
 Ceci est un rappel concernant votre équipement${model}${serial} réceptionné le ${new Date(arrival.arrived_at).toLocaleDateString('fr-FR')} dans nos locaux.
 
-${arrival.linked_rma_id ? 'Nous sommes toujours en attente de votre approbation du devis pour pouvoir démarrer l'intervention.' : 'Nous n'avons toujours pas reçu de demande de service (RMA) pour cet équipement.'}
+${arrival.linked_rma_id ? "Nous sommes toujours en attente de votre approbation du devis pour pouvoir démarrer le service." : "Nous attendons toujours une demande de service (RMA) pour cet équipement."}
 
 Merci de nous contacter ou de vous connecter sur votre espace client dès que possible.
 
