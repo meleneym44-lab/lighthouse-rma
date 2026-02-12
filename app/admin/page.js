@@ -3368,7 +3368,15 @@ export default function AdminPortal() {
     checkAuth();
   }, [loadData]);
 
-  const logout = async () => { await supabase.auth.signOut(); window.location.href = '/'; };
+  const logout = async () => { 
+    const { error } = await supabase.auth.signOut({ scope: 'local' }); 
+    if (error) { 
+      console.warn('Sign out error, clearing manually:', error); 
+      localStorage.clear(); 
+      sessionStorage.clear(); 
+    } 
+    window.location.href = '/'; 
+  };
   const isAdmin = profile?.role === 'lh_admin';
   
   // Count pending requests and modification requests - EXCLUDE parts orders
@@ -3578,7 +3586,7 @@ function LoginPage() {
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).single();
     if (profile?.role !== 'lh_admin' && profile?.role !== 'lh_employee') {
       setError('Accès non autorisé. Ce portail est réservé au personnel Lighthouse.');
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: 'local' });
       setLoading(false);
       return;
     }
