@@ -9160,6 +9160,20 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [quoteRequest, setQuoteRequest] = useState(null);
   const [filter, setFilter] = useState('pending');
+  const pendingReloadRef = React.useRef(false);
+  
+  // When quote modal closes and reload was requested, do reload after unmount is complete
+  React.useEffect(() => {
+    if (!quoteRequest && pendingReloadRef.current) {
+      pendingReloadRef.current = false;
+      reload();
+    }
+  }, [quoteRequest]);
+  
+  const closeQuoteAndReload = React.useCallback(() => {
+    pendingReloadRef.current = true;
+    setQuoteRequest(null);
+  }, []);
   
   const pendingRequests = requests.filter(r => r.status === 'submitted' && !r.request_number);
   const modificationRequests = requests.filter(r => r.status === 'quote_revision_requested');
@@ -9259,7 +9273,7 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
         </table>
       </div>
       {selectedRequest && <RequestDetailModal request={selectedRequest} onClose={() => setSelectedRequest(null)} onCreateQuote={() => { setSelectedRequest(null); setQuoteRequest(selectedRequest); }} lang={lang} />}
-      {quoteRequest && <QuoteEditorModal request={quoteRequest} onClose={() => setQuoteRequest(null)} notify={notify} reload={reload} profile={profile} businessSettings={businessSettings} lang={lang} />}
+      {quoteRequest && <QuoteEditorModal request={quoteRequest} onClose={() => setQuoteRequest(null)} onCloseAndReload={closeQuoteAndReload} notify={notify} reload={reload} profile={profile} businessSettings={businessSettings} lang={lang} />}
     </div>
   );
 }
@@ -22689,7 +22703,7 @@ const isFranceMetropolitan = (postalCode) => {
 // ============================================
 // QUOTE EDITOR MODAL
 // ============================================
-function QuoteEditorModal({ request, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
+function QuoteEditorModal({ request, onClose, onCloseAndReload, notify, reload, profile, businessSettings, lang = 'fr' }) {
   const t = k => k;
   const [step, setStep] = useState(1); // 1=Edit Pricing, 2=Preview, 3=Confirm
   const [devicePricing, setDevicePricing] = useState([]);
@@ -23484,7 +23498,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       }
       
       setSaving(false);
-      setTimeout(() => { onClose(); reload(); }, 50);
+      if (onCloseAndReload) onCloseAndReload(); else { onClose(); reload(); }
       return;
     } catch (err) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
@@ -23510,7 +23524,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       if (error) throw error;
       notify(lang === 'en' ? `❌ Modification declined - ${request.companies?.name || 'Client'} will be notified` : `❌ Modification refusée - ${request.companies?.name || 'Client'} sera notifié`);
       setSaving(false);
-      setTimeout(() => { onClose(); reload(); }, 50);
+      if (onCloseAndReload) onCloseAndReload(); else { onClose(); reload(); }
       return;
     } catch (err) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
