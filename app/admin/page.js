@@ -23483,8 +23483,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
         notify(lang === 'en' ? '✅ Quote sent! RMA: ' : '✅ Devis envoyé! RMA: ' + rmaNumber);
       }
       
-      onClose();
-      reload();
+      setSaving(false);
+      setTimeout(() => { onClose(); reload(); }, 50);
+      return;
     } catch (err) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
@@ -23508,8 +23509,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       
       if (error) throw error;
       notify(lang === 'en' ? `❌ Modification declined - ${request.companies?.name || 'Client'} will be notified` : `❌ Modification refusée - ${request.companies?.name || 'Client'} sera notifié`);
-      onClose();
-      reload();
+      setSaving(false);
+      setTimeout(() => { onClose(); reload(); }, 50);
+      return;
     } catch (err) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
