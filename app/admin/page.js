@@ -2029,18 +2029,12 @@ const generateBLPDF = async (rma, devices, shipment, blNumber, businessSettings,
   
   pdf.text('Transporteur:', margin, y);
   pdf.setFont('helvetica', 'bold');
-  pdf.text(shipment.carrier || 'UPS', margin + 30, y);
+  pdf.text('UPS', margin + 30, y);
   
   pdf.setFont('helvetica', 'normal');
-  if (shipment.carrier === 'Client') {
-    pdf.text('Mode:', margin + 60, y);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Enlevement client', margin + 75, y);
-  } else {
-    pdf.text('N° de suivi:', margin + 60, y);
-    pdf.setFont('courier', 'bold');
-    pdf.text(shipment.trackingNumber || 'N/A', margin + 85, y);
-  }
+  pdf.text('N° de suivi:', margin + 60, y);
+  pdf.setFont('courier', 'bold');
+  pdf.text(shipment.trackingNumber || 'N/A', margin + 85, y);
   
   y += 8;
   
@@ -3368,15 +3362,7 @@ export default function AdminPortal() {
     checkAuth();
   }, [loadData]);
 
-  const logout = async () => { 
-    const { error } = await supabase.auth.signOut({ scope: 'local' }); 
-    if (error) { 
-      console.warn('Sign out error, clearing manually:', error); 
-      localStorage.clear(); 
-      sessionStorage.clear(); 
-    } 
-    window.location.href = '/'; 
-  };
+  const logout = async () => { await supabase.auth.signOut(); window.location.href = '/'; };
   const isAdmin = profile?.role === 'lh_admin';
   
   // Count pending requests and modification requests - EXCLUDE parts orders
@@ -3586,7 +3572,7 @@ function LoginPage() {
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).single();
     if (profile?.role !== 'lh_admin' && profile?.role !== 'lh_employee') {
       setError('Accès non autorisé. Ce portail est réservé au personnel Lighthouse.');
-      await supabase.auth.signOut({ scope: 'local' });
+      await supabase.auth.signOut();
       setLoading(false);
       return;
     }
@@ -13878,45 +13864,6 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
   const [upsLoading, setUpsLoading] = useState(false);
   const [upsLabels, setUpsLabels] = useState({}); // Store PDF labels by "shipmentIndex-packageIndex"
   
-  // Non-metro shipping mode
-  const [shippingMode, setShippingMode] = useState('ups'); // 'ups' or 'bl_only'
-  const [upsOverrideText, setUpsOverrideText] = useState('');
-  const upsOverrideConfirmed = upsOverrideText.toUpperCase() === 'OVERRIDE';
-  
-  // Detect if any shipment is non-metro
-  const hasNonMetroShipment = shipments.some(s => {
-    const pc = s.address?.postal_code || '';
-    const country = (s.address?.country || '').toLowerCase();
-    // Non-metro if: not a valid French metro postal code, or country is not France
-    if (country && country !== 'france' && country !== 'fr') return true;
-    return pc && !isFranceMetropolitan(pc);
-  });
-  
-  // Auto-set mode when shipments change
-  useEffect(() => {
-    if (hasNonMetroShipment) {
-      setShippingMode('bl_only');
-    }
-  }, [hasNonMetroShipment]);
-  
-  // BL-only flow: skip UPS, go straight to BL preview
-  const proceedBLOnly = () => {
-    // Filter shipments to only include selected devices
-    const selectedDevices = devices.filter(d => selectedDeviceIds.has(d.id));
-    if (selectedDevices.length === 0) {
-      notify(lang === 'en' ? '⚠️ Select at least one device' : '⚠️ Sélectionnez au moins un appareil', 'error');
-      return;
-    }
-    // Update shipments to only contain selected devices
-    const updatedShipments = shipments.map(s => ({
-      ...s,
-      devices: s.devices.filter(d => selectedDeviceIds.has(d.id)),
-      trackingNumber: shippingMode === 'bl_only' ? 'N/A - Client' : s.trackingNumber
-    })).filter(s => s.devices.length > 0);
-    setShipments(updatedShipments);
-    setStep(3); // Skip UPS step, go to BL
-  };
-  
   // Create REAL UPS Labels via Edge Function
   const createUPSLabels = async () => {
     // First, validate that at least one device is selected
@@ -14040,7 +13987,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     rmaNumber: rma.request_number,
     client: { name: shipment.address.company_name, attention: shipment.address.attention, street: shipment.address.address_line1, city: `${shipment.address.postal_code} ${shipment.address.city}`, country: shipment.address.country || 'France' },
     devices: shipment.devices.map(d => ({ model: d.model_name, serial: d.serial_number, service: d.service_type === 'repair' ? (lang === 'en' ? 'Repair' : 'Réparation') : (lang === 'en' ? 'Calibration' : 'Étalonnage') })),
-    shipping: { carrier: shippingMode === 'bl_only' ? 'Client' : 'UPS', tracking: shipment.trackingNumber || (shippingMode === 'bl_only' ? 'N/A - Enlèvement client' : 'N/A'), parcels: shipment.parcels, weight: shipment.weight }
+    shipping: { carrier: 'UPS', tracking: shipment.trackingNumber, parcels: shipment.parcels, weight: shipment.weight }
   });
   
   const printLabel = (index) => {
@@ -14225,9 +14172,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
         <div class="shipping-title">{lang === 'en' ? 'Shipping Information' : "Informations d'expédition"}</div>
         <div class="shipping-grid">
           <div class="shipping-item"><span class="shipping-label">{lang === 'en' ? 'Carrier:' : 'Transporteur:'}</span><span class="shipping-value">${bl.shipping.carrier}</span></div>
-          ${bl.shipping.carrier !== 'Client' 
-            ? `<div class="shipping-item"><span class="shipping-label">{lang === 'en' ? 'Tracking #:' : 'N° de suivi:'}</span><span class="shipping-value" style="font-family:monospace">${bl.shipping.tracking}</span></div>`
-            : `<div class="shipping-item"><span class="shipping-label">Mode:</span><span class="shipping-value" style="color:#2563eb">{lang === 'en' ? 'Client pickup' : 'Enlèvement client'}</span></div>`}
+          <div class="shipping-item"><span class="shipping-label">{lang === 'en' ? 'Tracking #:' : 'N° de suivi:'}</span><span class="shipping-value" style="font-family:monospace">${bl.shipping.tracking}</span></div>
           <div class="shipping-item"><span class="shipping-label">{lang === 'en' ? 'Number of parcels:' : 'Nombre de colis:'}</span><span class="shipping-value">${bl.shipping.parcels}</span></div>
           <div class="shipping-item"><span class="shipping-label">{lang === 'en' ? 'Weight:' : 'Poids:'}</span><span class="shipping-value">${bl.shipping.weight} kg</span></div>
         </div>
@@ -14309,7 +14254,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
             serial: d.serial_number,
             calType: d.calibration_type || d.device_type
           })),
-          shipping: { carrier: shippingMode === 'bl_only' ? 'Client' : 'UPS', tracking: s.trackingNumber || 'N/A', parcels: s.parcels, weight: s.weight }
+          shipping: { carrier: 'UPS', tracking: s.trackingNumber, parcels: s.parcels, weight: s.weight }
         };
         
         blData.push(bl);
@@ -14351,39 +14296,47 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           console.error('BL PDF generation error:', pdfErr);
         }
         
-        // Generate UPS Label PDF - only in UPS mode
+        // Generate UPS Label PDF - use REAL label from UPS API if available
         let upsLabelUrl = null;
-        if (shippingMode !== 'bl_only') {
-          try {
-            console.log('Saving UPS label for shipment:', i, s.trackingNumber);
-            const realLabelData = upsLabels[i];
-            
-            if (realLabelData) {
-              const byteCharacters = atob(realLabelData);
-              const byteNumbers = new Array(byteCharacters.length);
-              for (let j = 0; j < byteCharacters.length; j++) {
-                byteNumbers[j] = byteCharacters.charCodeAt(j);
-              }
-              const byteArray = new Uint8Array(byteNumbers);
-              const upsPdfBlob = new Blob([byteArray], { type: 'application/pdf' });
-              const safeTracking = (s.trackingNumber || String(i)).replace(/[^a-zA-Z0-9-_]/g, '');
-              const upsFileName = `${rma.request_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
-              upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
-            } else {
-              const upsPdfBlob = await generateUPSLabelPDF(rma, s);
-              const safeTracking = (s.trackingNumber || String(i)).replace(/[^a-zA-Z0-9-_]/g, '');
-              const upsFileName = `${rma.request_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
-              upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
+        try {
+          console.log('Saving UPS label for shipment:', i, s.trackingNumber);
+          
+          // Check if we have real UPS label data
+          const realLabelData = upsLabels[i];
+          
+          if (realLabelData) {
+            // Convert base64 to blob
+            const byteCharacters = atob(realLabelData);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let j = 0; j < byteCharacters.length; j++) {
+              byteNumbers[j] = byteCharacters.charCodeAt(j);
             }
-          } catch (pdfErr) {
-            console.error('UPS Label PDF save error:', pdfErr);
+            const byteArray = new Uint8Array(byteNumbers);
+            const upsPdfBlob = new Blob([byteArray], { type: 'application/pdf' });
+            
+            console.log('Real UPS PDF blob size:', upsPdfBlob?.size);
+            const safeTracking = (s.trackingNumber || String(i)).replace(/[^a-zA-Z0-9-_]/g, '');
+            const upsFileName = `${rma.request_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
+            upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
+            console.log('Real UPS label uploaded:', upsLabelUrl);
+          } else {
+            // Fallback to generated label if no real one
+            console.log('No real UPS label, generating fake one');
+            const upsPdfBlob = await generateUPSLabelPDF(rma, s);
+            console.log('Fake UPS PDF blob generated:', upsPdfBlob?.size);
+            const safeTracking = (s.trackingNumber || String(i)).replace(/[^a-zA-Z0-9-_]/g, '');
+            const upsFileName = `${rma.request_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
+            upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
+            console.log('Fake UPS label uploaded:', upsLabelUrl);
           }
+        } catch (pdfErr) {
+          console.error('UPS Label PDF save error:', pdfErr);
         }
         
         // Update devices with tracking info AND PDF URLs
         for (const d of s.devices) {
           await supabase.from('request_devices').update({ 
-            tracking_number: shippingMode === 'bl_only' ? 'Client pickup' : (s.trackingNumber || null), 
+            tracking_number: s.trackingNumber || null, 
             bl_number: bl.blNumber,
             bl_url: blUrl || null,
             ups_label_url: upsLabelUrl || null
@@ -14429,11 +14382,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     setSaving(false);
   };
   
-  const stepLabels = shippingMode === 'bl_only' 
-    ? [(lang === 'en' ? 'Verification' : 'Vérification'), (lang === 'en' ? 'Delivery Note' : 'Bon de Livraison'), (lang === 'en' ? 'Ship' : 'Expédier')]
-    : [(lang === 'en' ? 'Verification' : 'Vérification'), (lang === 'en' ? 'UPS Label' : 'Étiquette UPS'), (lang === 'en' ? 'Delivery Note' : 'Bon de Livraison'), (lang === 'en' ? 'Ship' : 'Expédier')];
-  // Map internal steps to display for bl_only mode
-  const displayStep = shippingMode === 'bl_only' ? (step === 1 ? 1 : step === 3 ? 2 : step === 4 ? 3 : step) : step;
+  const stepLabels = [(lang === 'en' ? 'Verification' : 'Vérification'), (lang === 'en' ? 'UPS Label' : 'Étiquette UPS'), (lang === 'en' ? 'Delivery Note' : 'Bon de Livraison'), 'Expédier'];
   
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
@@ -14450,11 +14399,11 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           <div className="flex items-center gap-1 mt-4">
             {stepLabels.map((label, idx) => (
               <div key={idx} className="flex items-center flex-1">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${displayStep > idx + 1 ? 'bg-white text-green-600' : displayStep === idx + 1 ? 'bg-white text-green-600' : 'bg-green-500 text-green-200'}`}>
-                  {displayStep > idx + 1 ? '✓' : idx + 1}
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${step > idx + 1 ? 'bg-white text-green-600' : step === idx + 1 ? 'bg-white text-green-600' : 'bg-green-500 text-green-200'}`}>
+                  {step > idx + 1 ? '✓' : idx + 1}
                 </div>
-                <span className={`ml-2 text-xs hidden sm:inline ${displayStep === idx + 1 ? 'text-white font-medium' : 'text-green-200'}`}>{label}</span>
-                {idx < stepLabels.length - 1 && <div className="flex-1 h-0.5 bg-green-500 mx-2" />}
+                <span className={`ml-2 text-xs hidden sm:inline ${step === idx + 1 ? 'text-white font-medium' : 'text-green-200'}`}>{label}</span>
+                {idx < 3 && <div className="flex-1 h-0.5 bg-green-500 mx-2" />}
               </div>
             ))}
           </div>
@@ -14475,59 +14424,6 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           {/* Step 1: Review */}
           {!loading && step === 1 && (
             <div className="space-y-6">
-              {/* Non-Metro Shipping Mode Banner */}
-              {hasNonMetroShipment && (
-                <div className={`border-2 rounded-xl p-4 ${shippingMode === 'bl_only' ? 'bg-blue-50 border-blue-300' : 'bg-amber-50 border-amber-300'}`}>
-                  <div className="flex items-start gap-3">
-                    <span className="text-2xl">{shippingMode === 'bl_only' ? '🌍' : '📦'}</span>
-                    <div className="flex-1">
-                      <h4 className="font-bold text-gray-800">
-                        {lang === 'en' ? 'Destination outside France Metropolitan' : 'Destination hors France métropolitaine'}
-                      </h4>
-                      <p className="text-sm text-gray-600 mt-1">
-                        {shippingMode === 'bl_only' 
-                          ? (lang === 'en' 
-                            ? 'BL-only mode: A delivery note will be generated without UPS shipping. The client manages their own transport.'
-                            : 'Mode BL uniquement : Un bon de livraison sera créé sans expédition UPS. Le client gère son propre transport.')
-                          : (lang === 'en'
-                            ? 'UPS override active — shipping will be created via UPS.'
-                            : 'Dérogation UPS active — l\'expédition sera créée via UPS.')}
-                      </p>
-                      
-                      {shippingMode === 'bl_only' ? (
-                        <div className="mt-3 p-3 bg-white rounded-lg border border-gray-200">
-                          <p className="text-xs text-gray-500 mb-2">{lang === 'en' ? 'Need to ship via UPS anyway? Type OVERRIDE to unlock:' : 'Besoin d\'expédier via UPS quand même ? Tapez OVERRIDE pour débloquer :'}</p>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={upsOverrideText}
-                              onChange={e => setUpsOverrideText(e.target.value)}
-                              placeholder="OVERRIDE"
-                              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-mono w-36"
-                            />
-                            {upsOverrideConfirmed && (
-                              <button 
-                                onClick={() => { setShippingMode('ups'); setUpsOverrideText(''); }}
-                                className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600"
-                              >
-                                🔓 {lang === 'en' ? 'Switch to UPS' : 'Passer en UPS'}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <button 
-                          onClick={() => setShippingMode('bl_only')}
-                          className="mt-2 text-sm text-blue-600 hover:underline"
-                        >
-                          ← {lang === 'en' ? 'Switch back to BL-only mode' : 'Revenir en mode BL uniquement'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-              
               {/* Multi-address banner */}
               {shipments.length > 1 && (
                 <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
@@ -14936,11 +14832,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                         <div style={{ fontWeight: 'bold', fontSize: '11pt', marginBottom: '10px', borderBottom: '1px solid #333', paddingBottom: '5px' }}>{lang === 'en' ? 'Shipping Information' : "Informations d'expédition"}</div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                           <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>{lang === 'en' ? 'Carrier:' : 'Transporteur:'}</span><span style={{ fontWeight: '600' }}>{bl.shipping.carrier}</span></div>
-                          {bl.shipping.carrier !== 'Client' ? (
-                            <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>{lang === 'en' ? 'Tracking #:' : 'N° de suivi:'}</span><span style={{ fontWeight: '600', fontFamily: 'monospace' }}>{bl.shipping.tracking}</span></div>
-                          ) : (
-                            <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Mode:</span><span style={{ fontWeight: '600', color: '#2563eb' }}>{lang === 'en' ? 'Client pickup' : 'Enlèvement client'}</span></div>
-                          )}
+                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>{lang === 'en' ? 'Tracking #:' : 'N° de suivi:'}</span><span style={{ fontWeight: '600', fontFamily: 'monospace' }}>{bl.shipping.tracking}</span></div>
                           <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>{lang === 'en' ? 'Number of parcels:' : 'Nombre de colis:'}</span><span style={{ fontWeight: '600' }}>{bl.shipping.parcels}</span></div>
                           <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>{lang === 'en' ? 'Weight:' : 'Poids:'}</span><span style={{ fontWeight: '600' }}>{bl.shipping.weight} kg</span></div>
                         </div>
@@ -14995,30 +14887,20 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
         <div className="px-6 py-4 border-t bg-gray-50 flex justify-between">
           {step === 1 && (
             <>
-              <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">{lang === 'en' ? 'Cancel' : 'Annuler'}</button>
-              {shippingMode === 'bl_only' ? (
-                <button 
-                  onClick={proceedBLOnly} 
-                  disabled={selectedDeviceIds.size === 0}
-                  className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
-                >
-                  {lang === 'en' ? `📄 Create Delivery Note (${selectedDeviceIds.size} device${selectedDeviceIds.size > 1 ? 's' : ''}) →` : `📄 Créer Bon de Livraison (${selectedDeviceIds.size} appareil${selectedDeviceIds.size > 1 ? 's' : ''}) →`}
-                </button>
-              ) : (
-                <button 
-                  onClick={createUPSLabels} 
-                  disabled={upsLoading || selectedDeviceIds.size === 0 || !shipments[0]?.address?.company_name || !shipments[0]?.address?.address_line1}
-                  className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
-                >
-                  {upsLoading ? (
-                    <>
-                      <span className="animate-spin">⏳</span> {lang === 'en' ? 'Creating UPS label...' : 'Création étiquette UPS...'}
-                    </>
-                  ) : (
-                    <>{lang === 'en' ? `📦 Create UPS Label (${selectedDeviceIds.size} device${selectedDeviceIds.size > 1 ? 's' : ''}) →` : `📦 Créer Étiquette UPS (${selectedDeviceIds.size} appareil${selectedDeviceIds.size > 1 ? 's' : ''}) →`}</>
-                  )}
-                </button>
-              )}
+              <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">{t('cancel')}</button>
+              <button 
+                onClick={createUPSLabels} 
+                disabled={upsLoading || selectedDeviceIds.size === 0 || !shipments[0]?.address?.company_name || !shipments[0]?.address?.address_line1}
+                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
+              >
+                {upsLoading ? (
+                  <>
+                    <span className="animate-spin">⏳</span> {lang === 'en' ? 'Creating UPS label...' : 'Création étiquette UPS...'}
+                  </>
+                ) : (
+                  <>{lang === 'en' ? `📦 Create UPS Label (${selectedDeviceIds.size} device${selectedDeviceIds.size > 1 ? 's' : ''}) →` : `📦 Créer Étiquette UPS (${selectedDeviceIds.size} appareil${selectedDeviceIds.size > 1 ? 's' : ''}) →`}</>
+                )}
+              </button>
             </>
           )}
           {step === 2 && (
@@ -15029,7 +14911,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           )}
           {step === 3 && (
             <>
-              <button onClick={() => setStep(shippingMode === 'bl_only' ? 1 : 2)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">{lang === 'en' ? '← Back' : '← Retour'}</button>
+              <button onClick={() => setStep(2)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">{lang === 'en' ? '← Back' : '← Retour'}</button>
               <button onClick={saveShippingDocs} disabled={saving} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">{saving ? (lang === 'en' ? '⏳ Processing...' : '⏳ Traitement...') : (lang === 'en' ? '💾 Save Documents' : '💾 Enregistrer Documents')}</button>
             </>
           )}
