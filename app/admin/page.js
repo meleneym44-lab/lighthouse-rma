@@ -5819,6 +5819,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   const [showQCReview, setShowQCReview] = useState(null);
   const [showShippingModal, setShowShippingModal] = useState(false);
   const [showInternalShipping, setShowInternalShipping] = useState(false);
+  const [showStandaloneCI, setShowStandaloneCI] = useState(false);
   const [showServiceModal, setShowServiceModal] = useState(null); // Device to show service modal for
   
   // Keep service modal device in sync with fresh data after reload
@@ -7194,9 +7195,15 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
               </button>
               <button
                 onClick={() => setShowInternalShipping(true)}
-                className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg flex items-center gap-2 border-t"
+                className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 border-t"
               >
                 🌍 Expédition inter-site
+              </button>
+              <button
+                onClick={() => setShowStandaloneCI(true)}
+                className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg flex items-center gap-2 border-t"
+              >
+                🧾 {lang === 'en' ? 'Commercial Invoice' : 'Facture Proforma'}
               </button>
             </div>
           </div>
@@ -7437,6 +7444,192 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           businessSettings={businessSettings}
         />
       )}
+
+      {/* Standalone Commercial Invoice Modal */}
+      {showStandaloneCI && (() => {
+        const biz = businessSettings || {};
+        const lang2 = lang || 'fr';
+        const getFrenchDateCI = () => { const d = new Date(); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; };
+        const ciDevices = devices.map(d => ({
+          model: d.model_name || 'N/A',
+          serial: d.serial_number || 'N/A',
+          service: d.service_type === 'repair' ? 'Repair / Réparation' : 'Calibration / Étalonnage',
+          hsCode: '9027.50.00',
+          origin: 'USA',
+          weight: d.weight || '5.0',
+          value: parseFloat(d.quoted_price) || parseFloat(d.unit_price) || 0
+        }));
+        const totalValue = ciDevices.reduce((sum, d) => sum + d.value, 0);
+        const totalWeight = ciDevices.reduce((sum, d) => sum + (parseFloat(d.weight) || 5), 0);
+        const ciNumber = `CI-${rma.request_number}`;
+        const ciDate = getFrenchDateCI();
+        const clientAddr = rma.companies || {};
+        
+        const handlePrintCI = () => {
+          const w = window.open('', '_blank');
+          if (!w) return;
+          w.document.write(`<!DOCTYPE html>
+<html><head><title>Commercial Invoice - ${ciNumber}</title>
+<style>
+  @page { margin: 12mm; size: A4; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 10pt; color: #333; padding: 15px 25px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 15px; }
+  .header img { height: 50px; }
+  .doc-title { font-size: 16pt; font-weight: bold; color: #2D5A7B; }
+  .doc-subtitle { font-size: 12pt; color: #666; }
+  .doc-number { font-size: 11pt; font-weight: bold; color: #2D5A7B; margin-top: 3px; }
+  .parties { display: flex; gap: 20px; margin-bottom: 15px; }
+  .party-box { flex: 1; border: 1px solid #ddd; padding: 12px; background: #f9f9f9; }
+  .party-label { font-size: 8pt; text-transform: uppercase; color: #666; font-weight: bold; margin-bottom: 5px; }
+  .party-name { font-weight: bold; font-size: 11pt; }
+  .ref-row { display: flex; gap: 15px; margin-bottom: 15px; font-size: 9pt; }
+  .ref-item { background: #f0f4f8; padding: 6px 12px; border-radius: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+  th { background: #2D5A7B; color: white; padding: 8px 6px; font-size: 8pt; text-transform: uppercase; text-align: left; }
+  td { padding: 7px 6px; border-bottom: 1px solid #ddd; font-size: 9pt; }
+  tr:nth-child(even) { background: #f9f9f9; }
+  .grand-total { font-size: 13pt; font-weight: bold; color: #2D5A7B; border-top: 2px solid #2D5A7B; padding-top: 5px; margin-top: 5px; }
+  .declaration { border: 2px solid #c00; padding: 12px; margin-bottom: 15px; background: #fff5f5; }
+  .declaration-title { font-weight: bold; color: #c00; font-size: 10pt; margin-bottom: 5px; }
+  .declaration-text { font-size: 9pt; line-height: 1.4; }
+  .footer-info { display: flex; gap: 20px; margin-bottom: 15px; font-size: 9pt; }
+  .footer-box { flex: 1; border: 1px solid #ddd; padding: 10px; }
+  .footer-box-title { font-weight: bold; font-size: 8pt; text-transform: uppercase; color: #555; margin-bottom: 4px; }
+  .signature { margin-top: 20px; display: flex; justify-content: space-between; }
+  .sig-block { width: 45%; border-top: 1px solid #333; padding-top: 5px; font-size: 8pt; color: #666; }
+</style></head><body>
+  <div class="header">
+    <div><img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" onerror="this.outerHTML='<div style=\\'font-size:20px;font-weight:bold;color:#333\\'>LIGHTHOUSE<div style=\\'font-size:9px;color:#666\\'>FRANCE</div></div>'"></div>
+    <div style="text-align:right">
+      <div class="doc-title">COMMERCIAL INVOICE</div>
+      <div class="doc-subtitle">FACTURE PROFORMA</div>
+      <div class="doc-number">N° ${ciNumber}</div>
+    </div>
+  </div>
+  <div class="parties">
+    <div class="party-box">
+      <div class="party-label">Exporter / Expéditeur</div>
+      <div class="party-name">${biz.company_name || 'LIGHTHOUSE FRANCE SAS'}</div>
+      <div>${biz.address || '16 Rue Paul Séjourné'}</div>
+      <div>${biz.city || '94000 Créteil, France'}</div>
+      ${biz.siret ? `<div style="margin-top:4px;font-size:8pt;color:#666">SIRET: ${biz.siret}</div>` : ''}
+      ${biz.tva_number || biz.vat_number ? `<div style="font-size:8pt;color:#666">TVA: ${biz.tva_number || biz.vat_number}</div>` : ''}
+    </div>
+    <div class="party-box">
+      <div class="party-label">Consignee / Destinataire</div>
+      <div class="party-name">${clientAddr.name || ''}</div>
+      <div>${clientAddr.address || ''}</div>
+      <div>${clientAddr.postal_code || ''} ${clientAddr.city || ''}</div>
+      <div style="font-weight:bold">${clientAddr.country || ''}</div>
+    </div>
+  </div>
+  <div class="ref-row">
+    <div class="ref-item"><strong>Date:</strong> ${ciDate}</div>
+    <div class="ref-item"><strong>RMA:</strong> ${rma.request_number}</div>
+    <div class="ref-item"><strong>Incoterm:</strong> EXW Créteil</div>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Model / Modèle</th><th>Serial / N° Série</th><th>Description</th>
+      <th>HS Code</th><th>Origin</th><th>Weight (kg)</th><th style="text-align:right">Value (€)</th>
+    </tr></thead>
+    <tbody>${ciDevices.map(d => `<tr>
+      <td>${d.model}</td><td style="font-family:monospace">${d.serial}</td><td>${d.service}</td>
+      <td>${d.hsCode}</td><td>${d.origin}</td><td>${d.weight} kg</td><td style="text-align:right">${d.value.toFixed(2)} €</td>
+    </tr>`).join('')}</tbody>
+  </table>
+  <div style="text-align:right;margin-bottom:15px;">
+    <div style="font-size:10pt;margin:3px 0;">Total weight: <strong>${totalWeight.toFixed(1)} kg</strong></div>
+    <div class="grand-total">Total declared value: ${totalValue.toFixed(2)} €</div>
+  </div>
+  <div class="declaration">
+    <div class="declaration-title">CUSTOMS DECLARATION / DÉCLARATION DOUANIÈRE</div>
+    <div class="declaration-text">
+      These goods are the property of the consignee and are being returned after calibration and/or repair service.
+      <strong>No commercial transaction. No change of ownership.</strong><br><br>
+      Ces marchandises sont la propriété du destinataire et sont retournées après un service d'étalonnage et/ou de réparation.
+      <strong>Aucune transaction commerciale. Aucun transfert de propriété.</strong><br><br>
+      The declared value represents the cost of services performed only. / La valeur déclarée représente uniquement le coût des services effectués.
+    </div>
+  </div>
+  <div class="footer-info">
+    <div class="footer-box"><div class="footer-box-title">Reason for Export / Motif</div><div>Return after service / Retour après service</div></div>
+    <div class="footer-box"><div class="footer-box-title">Country of Origin / Pays d'origine</div><div>United States of America (USA)</div></div>
+    <div class="footer-box"><div class="footer-box-title">Currency / Devise</div><div>EUR (€)</div></div>
+  </div>
+  <div class="signature">
+    <div class="sig-block">Authorized signature / Signature autorisée<br><br><br><strong>${profile?.full_name || 'Lighthouse France'}</strong><br>${biz.company_name || 'LIGHTHOUSE FRANCE SAS'}</div>
+    <div class="sig-block">Date & stamp / Date et cachet<br><br><br>${ciDate}</div>
+  </div>
+  <script>window.print()</script>
+</body></html>`);
+          w.document.close();
+        };
+        
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-800">🧾 {lang2 === 'en' ? 'Commercial Invoice' : 'Facture Proforma'}</h2>
+                  <p className="text-sm text-gray-500 mt-1">{rma.request_number} — {rma.companies?.name}</p>
+                </div>
+                <button onClick={() => setShowStandaloneCI(false)} className="p-2 hover:bg-gray-100 rounded-lg">✕</button>
+              </div>
+              <div className="p-6">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                  <p className="text-sm text-amber-800">
+                    <strong>{lang2 === 'en' ? 'Customs document' : 'Document douanier'}</strong> — {lang2 === 'en' ? 'Declares service value for goods returned after calibration/repair. No commercial transaction.' : 'Déclare la valeur du service pour les marchandises retournées après étalonnage/réparation. Aucune transaction commerciale.'}
+                  </p>
+                </div>
+                
+                <table className="w-full text-sm mb-4">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="px-3 py-2 text-left font-medium text-gray-600">{lang2 === 'en' ? 'Device' : 'Appareil'}</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-600">{lang2 === 'en' ? 'Serial' : 'N° Série'}</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-600">Service</th>
+                      <th className="px-3 py-2 text-right font-medium text-gray-600">{lang2 === 'en' ? 'Value' : 'Valeur'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ciDevices.map((d, i) => (
+                      <tr key={i} className="border-t">
+                        <td className="px-3 py-2">{d.model}</td>
+                        <td className="px-3 py-2 font-mono text-xs">{d.serial}</td>
+                        <td className="px-3 py-2">{d.service}</td>
+                        <td className="px-3 py-2 text-right">{d.value.toFixed(2)} €</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 font-bold">
+                      <td colSpan={3} className="px-3 py-2">Total</td>
+                      <td className="px-3 py-2 text-right text-blue-700">{totalValue.toFixed(2)} €</td>
+                    </tr>
+                  </tfoot>
+                </table>
+                
+                <div className="grid grid-cols-3 gap-3 text-xs text-gray-500 mb-6">
+                  <div className="bg-gray-50 rounded p-2"><strong>HS Code:</strong> 9027.50.00</div>
+                  <div className="bg-gray-50 rounded p-2"><strong>Origin:</strong> USA</div>
+                  <div className="bg-gray-50 rounded p-2"><strong>Incoterm:</strong> EXW Créteil</div>
+                </div>
+                
+                <div className="flex gap-3">
+                  <button onClick={handlePrintCI} className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-lg transition-colors">
+                    🧾 {lang2 === 'en' ? 'Print / Download' : 'Imprimer / Télécharger'}
+                  </button>
+                  <button onClick={() => setShowStandaloneCI(false)} className="px-6 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium">
+                    {lang2 === 'en' ? 'Close' : 'Fermer'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {showAvenantPreview && (
         <AvenantPreviewModal
