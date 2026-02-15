@@ -6095,20 +6095,28 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
   // Save company billing/address info
   const saveCompany = async () => {
     setSaving(true);
-    const { error } = await supabase
-      .from('companies')
-      .update({
-        name: companyData.name,
-        billing_address: companyData.billing_address,
-        billing_city: companyData.billing_city,
-        billing_postal_code: companyData.billing_postal_code,
-        country: companyData.billing_country
-      })
-      .eq('id', profile.company_id);
+    const updateData = {
+      name: companyData.name,
+      billing_address: companyData.billing_address,
+      billing_city: companyData.billing_city,
+      billing_postal_code: companyData.billing_postal_code,
+      country: companyData.billing_country
+    };
+    console.log('Saving company:', updateData, 'for company:', profile.company_id);
     
+    const { data, error } = await supabase
+      .from('companies')
+      .update(updateData)
+      .eq('id', profile.company_id)
+      .select();
+    
+    console.log('Update result:', { data, error });
     setSaving(false);
+    
     if (error) {
       notify(`Erreur: ${error.message}`, 'error');
+    } else if (!data || data.length === 0) {
+      notify('Erreur: mise à jour refusée. Vérifiez vos permissions (RLS).', 'error');
     } else {
       notify('Entreprise mise à jour!');
       setEditingCompany(false);
@@ -6119,17 +6127,25 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
   // Save identifiers (SIRET/TVA) - separate locked action
   const saveIdentifiers = async () => {
     setSaving(true);
-    const { error } = await supabase
-      .from('companies')
-      .update({
-        siret: companyData.siret || null,
-        tva_number: companyData.vat_number || null
-      })
-      .eq('id', profile.company_id);
+    const updateData = {
+      siret: companyData.siret || null,
+      tva_number: companyData.vat_number || null
+    };
+    console.log('Saving identifiers:', updateData, 'for company:', profile.company_id);
     
+    const { data, error } = await supabase
+      .from('companies')
+      .update(updateData)
+      .eq('id', profile.company_id)
+      .select();
+    
+    console.log('Update result:', { data, error });
     setSaving(false);
+    
     if (error) {
       notify(`Erreur: ${error.message}`, 'error');
+    } else if (!data || data.length === 0) {
+      notify('Erreur: mise à jour refusée. Vérifiez vos permissions dans Supabase (RLS).', 'error');
     } else {
       notify('Identifiants mis à jour!');
       setEditingIdentifiers(false);
