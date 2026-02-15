@@ -6959,43 +6959,6 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
       )}
 
 
-                        </div>
-                        {addr.attention && <p className="text-sm text-gray-600">À l'attention de: {addr.attention}</p>}
-                        <p className="text-sm text-gray-700">{addr.address_line1}</p>
-                        {addr.address_line2 && <p className="text-sm text-gray-700">{addr.address_line2}</p>}
-                        <p className="text-sm text-gray-700">{addr.postal_code} {addr.city}, {addr.country || 'France'}</p>
-                        {addr.phone && <p className="text-sm text-gray-500 mt-1">📞 {addr.phone}</p>}
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <button
-                          onClick={() => openEditAddress(addr)}
-                          className="px-3 py-1.5 text-sm text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]"
-                        >
-                          ✏️ Modifier
-                        </button>
-                        {!addr.is_default && (
-                          <button
-                            onClick={() => setDefault(addr.id)}
-                            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
-                          >
-                            ⭐ Par défaut
-                          </button>
-                        )}
-                        <button
-                          onClick={() => deleteAddress(addr.id)}
-                          className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
-                        >
-                          🗑️ Supprimer
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Language Section */}
       {activeSection === 'language' && (
