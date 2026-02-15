@@ -6487,8 +6487,8 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
       notify('Les mots de passe ne correspondent pas', 'error');
       return;
     }
-    if (passwordData.new.length < 6) {
-      notify('Le mot de passe doit contenir au moins 6 caractères', 'error');
+    if (passwordData.new.length < 8 || !/[A-Z]/.test(passwordData.new) || !/[0-9]/.test(passwordData.new) || !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(passwordData.new)) {
+      notify('Le mot de passe doit contenir au moins 8 caractères, une majuscule, un chiffre et un caractère spécial', 'error');
       return;
     }
     
@@ -7652,9 +7652,9 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                   onChange={e => setPasswordData({ ...passwordData, new: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
                   required
-                  minLength={6}
+                  minLength={8}
                 />
-                <p className="text-xs text-gray-400 mt-1">Minimum 6 caractères</p>
+                <p className="text-xs text-gray-400 mt-1">Min. 8 caractères, 1 majuscule, 1 chiffre, 1 caractère spécial</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Confirmer le mot de passe *</label>
@@ -14269,15 +14269,19 @@ function PasswordRecoveryPage({ supabase, notify, onComplete }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const hasMinLength = newPassword.length >= 8;
+  const hasUppercase = /[A-Z]/.test(newPassword);
+  const hasNumber = /[0-9]/.test(newPassword);
+  const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(newPassword);
+  const passwordsMatch = newPassword === confirmPassword && confirmPassword.length > 0;
+  const allValid = hasMinLength && hasUppercase && hasNumber && hasSpecial && passwordsMatch;
 
   const handleReset = async (e) => {
     e.preventDefault();
-    if (newPassword !== confirmPassword) {
-      notify('Les mots de passe ne correspondent pas', 'error');
-      return;
-    }
-    if (newPassword.length < 6) {
-      notify('Le mot de passe doit contenir au moins 6 caractères', 'error');
+    if (!allValid) {
+      notify('Le mot de passe ne respecte pas les exigences', 'error');
       return;
     }
     setLoading(true);
@@ -14290,68 +14294,145 @@ function PasswordRecoveryPage({ supabase, notify, onComplete }) {
     }
   };
 
+  const Check = ({ ok, text }) => (
+    <div className={`flex items-center gap-2 text-xs ${ok ? 'text-green-400' : 'text-white/40'}`}>
+      <span>{ok ? '✓' : '○'}</span><span>{text}</span>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#1a1a2e] to-[#16213e] flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-          <div className="px-6 py-8 text-center border-b bg-[#1E3A5F]">
-            <h1 className="text-xl font-bold text-white">Réinitialisation du mot de passe</h1>
-            <p className="text-white/60 mt-1 text-sm">Choisissez un nouveau mot de passe</p>
-          </div>
-          {done ? (
-            <div className="p-6 text-center">
-              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                </svg>
+    <div className="min-h-screen">
+      {/* Fixed Background — same as login */}
+      <div className="fixed inset-0 z-0">
+        <img 
+          src="/images/products/hero-background.png" 
+          alt="" 
+          className="w-full h-full object-cover"
+          onError={(e) => { e.target.style.display = 'none'; }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e]/90 via-[#1a1a2e]/85 to-[#1a1a2e]/80"></div>
+      </div>
+
+      {/* Content */}
+      <div className="relative z-10">
+        {/* Header */}
+        <header className="bg-[#1a1a2e]/50 backdrop-blur-md border-b border-white/10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="flex justify-between items-center h-16">
+              <div className="flex items-center gap-3">
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-10 w-auto invert brightness-0 invert"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+                <div className="items-center gap-2 hidden text-white">
+                  <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                  <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
+                </div>
               </div>
-              <h2 className="text-lg font-bold text-[#1E3A5F] mb-2">Mot de passe modifié</h2>
-              <p className="text-sm text-gray-500 mb-6">Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.</p>
-              <button
-                onClick={onComplete}
-                className="w-full py-3 bg-[#3B7AB4] text-white rounded-lg font-semibold hover:bg-[#1E3A5F]"
-              >
-                Se connecter
-              </button>
             </div>
-          ) : (
-            <form onSubmit={handleReset} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nouveau mot de passe *</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                  placeholder="Minimum 6 caractères"
-                  required
-                  minLength={6}
+          </div>
+        </header>
+
+        {/* Reset Form */}
+        <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
+          <div className="w-full max-w-md">
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden">
+              <div className="px-6 py-8 text-center border-b border-white/10">
+                <img 
+                  src="/images/logos/lighthouse-logo.png" 
+                  alt="Lighthouse France" 
+                  className="h-14 w-auto mx-auto mb-3 invert brightness-0 invert"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'block';
+                  }}
                 />
+                <h1 className="text-2xl font-bold text-white hidden">LIGHTHOUSE FRANCE</h1>
+                <p className="text-white/60 mt-2">Réinitialisation du mot de passe</p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Confirmer *</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-[#3B7AB4] ${
-                    confirmPassword && newPassword !== confirmPassword ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                  }`}
-                  required
-                />
-                {confirmPassword && newPassword !== confirmPassword && (
-                  <p className="text-xs text-red-500 mt-1">Les mots de passe ne correspondent pas</p>
-                )}
-              </div>
-              <button
-                type="submit"
-                disabled={loading || newPassword !== confirmPassword}
-                className="w-full py-3 bg-[#3B7AB4] text-white rounded-lg font-semibold hover:bg-[#1E3A5F] disabled:opacity-50"
-              >
-                {loading ? 'Modification...' : 'Réinitialiser le mot de passe'}
-              </button>
-            </form>
-          )}
+
+              {done ? (
+                <div className="p-6 text-center">
+                  <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <h2 className="text-lg font-bold text-white mb-2">Mot de passe modifié !</h2>
+                  <p className="text-white/60 text-sm mb-6">Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.</p>
+                  <button
+                    onClick={onComplete}
+                    className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors"
+                  >
+                    Se connecter
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleReset} className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-white/80 mb-1">Nouveau mot de passe *</label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={newPassword}
+                        onChange={e => setNewPassword(e.target.value)}
+                        className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="••••••••"
+                        required
+                      />
+                      <button 
+                        type="button" 
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70 text-sm"
+                      >
+                        {showPassword ? 'Cacher' : 'Voir'}
+                      </button>
+                    </div>
+                    {/* Password requirements */}
+                    {newPassword.length > 0 && (
+                      <div className="mt-3 space-y-1 bg-white/5 rounded-lg p-3">
+                        <Check ok={hasMinLength} text="8 caractères minimum" />
+                        <Check ok={hasUppercase} text="Une lettre majuscule" />
+                        <Check ok={hasNumber} text="Un chiffre" />
+                        <Check ok={hasSpecial} text="Un caractère spécial (!@#$...)" />
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-white/80 mb-1">Confirmer *</label>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                      className={`w-full px-4 py-3 bg-white/10 border rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent ${
+                        confirmPassword && !passwordsMatch ? 'border-red-400/50' : 'border-white/20'
+                      }`}
+                      placeholder="••••••••"
+                      required
+                    />
+                    {confirmPassword && !passwordsMatch && (
+                      <p className="text-xs text-red-400 mt-1">Les mots de passe ne correspondent pas</p>
+                    )}
+                    {passwordsMatch && (
+                      <p className="text-xs text-green-400 mt-1">✓ Les mots de passe correspondent</p>
+                    )}
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading || !allValid}
+                    className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? 'Modification...' : 'Réinitialiser le mot de passe'}
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -14610,8 +14691,8 @@ function RegisterPage({ t, register, setPage, supabase, notify }) {
       return;
     }
     
-    if (formData.password.length < 6) {
-      setError('Le mot de passe doit contenir au moins 6 caractères');
+    if (formData.password.length < 8 || !/[A-Z]/.test(formData.password) || !/[0-9]/.test(formData.password) || !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(formData.password)) {
+      setError('Le mot de passe doit contenir au moins 8 caractères, une majuscule, un chiffre et un caractère spécial');
       return;
     }
     
@@ -14849,7 +14930,7 @@ function RegisterPage({ t, register, setPage, supabase, notify }) {
                         value={formData.password}
                         onChange={(e) => updateField('password', e.target.value)}
                         className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        placeholder="Minimum 6 caractères"
+                        placeholder="Min. 8 car., 1 majuscule, 1 chiffre, 1 spécial"
                         required
                       />
                     </div>
