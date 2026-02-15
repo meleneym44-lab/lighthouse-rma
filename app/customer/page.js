@@ -2643,6 +2643,43 @@ export default function CustomerPortal() {
   // Auth check
   useEffect(() => {
     const checkAuth = async () => {
+      // Handle PKCE recovery/magic link code exchange
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      if (code) {
+        try {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (!error && data?.session) {
+            // Clean URL
+            window.history.replaceState({}, '', window.location.pathname);
+            // The onAuthStateChange listener will fire PASSWORD_RECOVERY if applicable
+            // Safety timeout: if event doesn't fire in 3s, check session manually
+            setTimeout(async () => {
+              if (!recoveryMode) {
+                const { data: { session: s } } = await supabase.auth.getSession();
+                if (s) {
+                  setRecoveryMode(true);
+                  setUser(s.user);
+                }
+                setLoading(false);
+              }
+            }, 3000);
+            return; // Let the listener handle it
+          }
+        } catch (e) {
+          console.warn('Code exchange failed:', e);
+        }
+        // Clean URL even on failure
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+
+      // Handle hash fragment tokens (older Supabase implicit flow)
+      const hash = window.location.hash;
+      if (hash && hash.includes('type=recovery')) {
+        // Supabase JS will pick this up automatically via onAuthStateChange
+        return; // Let the listener handle it
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         const { data: p } = await supabase.from('profiles')
@@ -2675,10 +2712,11 @@ export default function CustomerPortal() {
     checkAuth();
 
     // Listen for auth events (password recovery, etc.)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         setRecoveryMode(true);
         setUser(session?.user || null);
+        setLoading(false);
       }
     });
 
@@ -14345,7 +14383,7 @@ function LoginPage({ t, login, setPage, supabase, notify }) {
     setLoading(true);
     setError('');
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin + window.location.pathname
+      redirectTo: window.location.origin + '/customer'
     });
     setLoading(false);
     if (error) {
