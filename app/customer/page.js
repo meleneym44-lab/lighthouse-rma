@@ -4037,13 +4037,15 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
   const [devices, setDevices] = useState([createNewDevice(1)]);
   const [savedEquipment, setSavedEquipment] = useState([]);
   const [shipping, setShipping] = useState({ 
-    address_id: addresses.find(a => a.is_default)?.id || '',
+    address_id: addresses.find(a => a.is_default && !a.is_billing)?.id || '',
     showNewForm: false,
     newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' },
     parcels: 0
   });
   const [billingChoice, setBillingChoice] = useState(''); // '', 'same', 'company', or 'other'
   const [billingAddressId, setBillingAddressId] = useState('');
+  const [showNewBillingForm, setShowNewBillingForm] = useState(false);
+  const [newBillingAddress, setNewBillingAddress] = useState({ label: '', address_line1: '', city: '', postal_code: '', country: 'France', attention: '' });
   const [saving, setSaving] = useState(false);
   const [formStep, setFormStep] = useState('form'); // 'form' or 'success'
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -4190,7 +4192,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       notify('Veuillez indiquer le nombre de colis', 'error');
       return false;
     }
-    if (!billingChoice) {
+    if (!billingChoice && !showNewBillingForm) {
       notify('Veuillez sélectionner une adresse de facturation', 'error');
       return false;
     }
@@ -4245,6 +4247,28 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     try {
       // No number assigned yet - will get FR-XXXXX after approval
       // Contract detection happens on admin side when creating quote
+      // Save new billing address if creating one inline
+      let finalBillingAddressId = billingChoice === 'same' ? addressId : billingChoice === 'other' ? (billingAddressId || null) : null;
+      if (showNewBillingForm) {
+        const ba = newBillingAddress;
+        if (!ba.label || !ba.address_line1 || !ba.postal_code || !ba.city) {
+          notify('Veuillez remplir les champs obligatoires de la nouvelle adresse de facturation', 'error');
+          setSaving(false);
+          return;
+        }
+        const { data: baData, error: baErr } = await supabase.from('shipping_addresses').insert({
+          label: ba.label, address_line1: ba.address_line1, attention: ba.attention || null,
+          city: ba.city, postal_code: ba.postal_code, country: ba.country || 'France',
+          company_id: profile.company_id, is_billing: true, is_default: false
+        }).select().single();
+        if (baErr || !baData) {
+          notify('Erreur lors de la création de l\'adresse de facturation', 'error');
+          setSaving(false);
+          return;
+        }
+        finalBillingAddressId = baData.id;
+      }
+
       const { data: request, error: reqErr } = await supabase
         .from('service_requests')
         .insert({
@@ -4258,7 +4282,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           problem_description: devices.map(d => `[${d.brand === 'other' ? d.brand_other : 'Lighthouse'}] ${d.model} - ${d.serial_number}\nService: ${d.service_type === 'other' ? d.service_other : d.service_type}\nAccessoires: ${d.accessories.join(', ') || 'Aucun'}\nNotes: ${d.notes}`).join('\n\n---\n\n'),
           urgency: 'normal',
           shipping_address_id: addressId,
-          billing_address_id: billingChoice === 'same' ? addressId : billingChoice === 'other' ? (billingAddressId || null) : null,
+          billing_address_id: finalBillingAddressId,
           billing_siret: profile?.companies?.siret || null,
           billing_tva: profile?.companies?.tva_number || null,
           parcels_count: shipping.parcels || 1,
@@ -4402,25 +4426,26 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           refresh={refresh}
         />
 
-        {/* Billing Address - dropdown */}
+        {/* Billing Address - dropdown + new address */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mt-6">
           <h2 className="text-lg font-bold text-[#1E3A5F] mb-3 pb-3 border-b border-gray-100">💳 Adresse de facturation</h2>
           <select
-            value={billingChoice === 'company' ? 'company' : billingChoice === 'same' ? 'same' : billingChoice === 'other' ? billingAddressId : ''}
+            value={showNewBillingForm ? '__new__' : billingChoice === 'company' ? 'company' : billingChoice === 'same' ? 'same' : billingChoice === 'other' ? billingAddressId : ''}
             onChange={e => {
-              if (e.target.value === '') { setBillingChoice(''); setBillingAddressId(''); }
-              else if (e.target.value === 'company') { setBillingChoice('company'); setBillingAddressId(''); }
-              else if (e.target.value === 'same') { setBillingChoice('same'); setBillingAddressId(''); }
-              else { setBillingChoice('other'); setBillingAddressId(e.target.value); }
+              if (e.target.value === '__new__') { setShowNewBillingForm(true); setBillingChoice(''); setBillingAddressId(''); }
+              else if (e.target.value === '') { setBillingChoice(''); setBillingAddressId(''); setShowNewBillingForm(false); }
+              else if (e.target.value === 'company') { setBillingChoice('company'); setBillingAddressId(''); setShowNewBillingForm(false); }
+              else if (e.target.value === 'same') { setBillingChoice('same'); setBillingAddressId(''); setShowNewBillingForm(false); }
+              else { setBillingChoice('other'); setBillingAddressId(e.target.value); setShowNewBillingForm(false); }
             }}
-            className={`w-full px-3 py-2.5 border rounded-lg text-sm ${!billingChoice ? 'border-gray-300 text-gray-400' : 'border-gray-300'}`}
+            className={`w-full px-3 py-2.5 border rounded-lg text-sm ${!billingChoice && !showNewBillingForm ? 'border-gray-300 text-gray-400' : 'border-gray-300'}`}
           >
             <option value="">{"Sélectionner une adresse de facturation..."}</option>
             <option value="same">{"Identique à l'adresse de retour"}</option>
             <option value="company">{profile?.companies?.name} — {profile?.companies?.billing_address}, {profile?.companies?.billing_postal_code} {profile?.companies?.billing_city} (Siège)</option>
             {addresses.filter(a => a.is_billing).map(a => (
               <option key={a.id} value={a.id}>
-                💳 {a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}
+                {a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}
               </option>
             ))}
             {addresses.filter(a => !a.is_billing && a.id !== shipping.address_id).map(a => (
@@ -4428,7 +4453,36 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                 {a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}
               </option>
             ))}
+            <option value="__new__">+ Nouvelle adresse de facturation...</option>
           </select>
+
+          {/* Inline new billing address form */}
+          {showNewBillingForm && (
+            <div className="mt-4 p-4 bg-gray-50 rounded-lg border-l-4 border-[#3B7AB4]">
+              <h3 className="font-bold text-[#1E3A5F] mb-3 text-sm">Nouvelle adresse de facturation</h3>
+              <div className="grid md:grid-cols-2 gap-3">
+                <div className="md:col-span-2">
+                  <input type="text" value={newBillingAddress.label} onChange={e => setNewBillingAddress({ ...newBillingAddress, label: e.target.value })} placeholder="Nom (ex: Siège social, Comptabilité) *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div className="md:col-span-2">
+                  <input type="text" value={newBillingAddress.address_line1} onChange={e => setNewBillingAddress({ ...newBillingAddress, address_line1: e.target.value })} placeholder="Adresse *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <input type="text" value={newBillingAddress.attention} onChange={e => setNewBillingAddress({ ...newBillingAddress, attention: e.target.value })} placeholder="Attn: destinataire" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <input type="text" value={newBillingAddress.country} onChange={e => setNewBillingAddress({ ...newBillingAddress, country: e.target.value })} placeholder="Pays" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <input type="text" value={newBillingAddress.postal_code} onChange={e => setNewBillingAddress({ ...newBillingAddress, postal_code: e.target.value })} placeholder="Code postal *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <input type="text" value={newBillingAddress.city} onChange={e => setNewBillingAddress({ ...newBillingAddress, city: e.target.value })} placeholder="Ville *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* SIRET/TVA status */}
           <div className="mt-3 flex items-center gap-4 text-xs">
             <span className={profile?.companies?.siret ? 'text-green-600' : 'text-amber-500'}>
@@ -4466,6 +4520,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         const retAddr = shipping.showNewForm ? shipping.newAddress : addresses.find(a => a.id === shipping.address_id);
         const co = profile?.companies || {};
         const getBillingAddr = () => {
+          if (showNewBillingForm) return `${newBillingAddress.label}, ${newBillingAddress.address_line1}, ${newBillingAddress.postal_code} ${newBillingAddress.city}`;
           if (billingChoice === 'same') return retAddr ? `${retAddr.company_name || retAddr.label || co.name}, ${retAddr.address_line1}, ${retAddr.postal_code} ${retAddr.city}` : '—';
           if (billingChoice === 'company') return `${co.name}, ${co.billing_address}, ${co.billing_postal_code} ${co.billing_city}`;
           const a = addresses.find(x => x.id === billingAddressId);
@@ -4574,7 +4629,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
 function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBack }) {
   const [parts, setParts] = useState([createNewPart(1)]);
   const [shipping, setShipping] = useState({ 
-    address_id: addresses.find(a => a.is_default)?.id || '',
+    address_id: addresses.find(a => a.is_default && !a.is_billing)?.id || '',
     showNewForm: false,
     newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' }
   });
@@ -4904,9 +4959,9 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
           </p>
 
           {/* Existing Addresses */}
-          {addresses.length > 0 ? (
+          {addresses.filter(a => !a.is_billing).length > 0 ? (
             <div className="space-y-2 mb-4">
-              {addresses.map(addr => (
+              {addresses.filter(a => !a.is_billing).map(addr => (
                 <label 
                   key={addr.id}
                   className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
@@ -4945,7 +5000,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
           {/* Add New Address Toggle */}
           <button
             type="button"
-            onClick={() => setShipping({ ...shipping, showNewForm: !shipping.showNewForm, address_id: shipping.showNewForm ? (addresses.find(a => a.is_default)?.id || '') : '' })}
+            onClick={() => setShipping({ ...shipping, showNewForm: !shipping.showNewForm, address_id: shipping.showNewForm ? (addresses.find(a => a.is_default && !a.is_billing)?.id || '') : '' })}
             className="text-[#3B7AB4] font-medium hover:underline mb-4"
           >
             {shipping.showNewForm ? '← Utiliser une adresse existante' : '+ Ajouter une nouvelle adresse'}
@@ -5421,7 +5476,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
         {/* Return Address Dropdown */}
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-2">Adresse de retour *</label>
-          {addresses.length > 0 ? (
+          {addresses.filter(a => !a.is_billing).length > 0 ? (
             <select
               value={shipping.showNewForm ? '__new__' : (shipping.address_id || '')}
               onChange={e => {
@@ -6098,14 +6153,11 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
     }
   };
 
-  // Save company billing/address info
+  // Save company info (name + country only)
   const saveCompany = async () => {
     setSaving(true);
     const updateData = {
       name: companyData.name,
-      billing_address: companyData.billing_address,
-      billing_city: companyData.billing_city,
-      billing_postal_code: companyData.billing_postal_code,
       country: companyData.billing_country
     };
     console.log('Saving company:', updateData, 'for company:', profile.company_id);
@@ -6391,17 +6443,16 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
       {/* Company Section */}
       {activeSection === 'company' && (
         <div className="space-y-6">
-          {/* Billing Address - Easy to edit */}
+          {/* Company Info */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100">
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
               <div>
-                <h2 className="text-lg font-bold text-[#1E3A5F]">💳 Adresse de facturation</h2>
-                <p className="text-xs text-gray-400 mt-0.5">Utilisée pour les devis et factures</p>
+                <h2 className="text-lg font-bold text-[#1E3A5F]">🏢 Informations de la société</h2>
               </div>
               {!editingCompany && (
                 <button
                   onClick={() => setEditingCompany(true)}
-                  className="px-4 py-2 text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]"
+                  className="px-4 py-2 text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8] text-sm"
                 >
                   ✏️ Modifier
                 </button>
@@ -6411,74 +6462,21 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
               {editingCompany ? (
                 <div className="space-y-4 max-w-lg">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nom de l'entreprise *</label>
-                    <input
-                      type="text"
-                      value={companyData.name}
-                      onChange={e => setCompanyData({ ...companyData, name: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                    />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{"Nom de l'entreprise *"}</label>
+                    <input type="text" value={companyData.name} onChange={e => setCompanyData({ ...companyData, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Adresse</label>
-                    <input
-                      type="text"
-                      value={companyData.billing_address}
-                      onChange={e => setCompanyData({ ...companyData, billing_address: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                    />
-                  </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Code postal</label>
-                      <input
-                        type="text"
-                        value={companyData.billing_postal_code}
-                        onChange={e => setCompanyData({ ...companyData, billing_postal_code: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Ville</label>
-                      <input
-                        type="text"
-                        value={companyData.billing_city}
-                        onChange={e => setCompanyData({ ...companyData, billing_city: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Pays</label>
-                      <input
-                        type="text"
-                        value={companyData.billing_country}
-                        onChange={e => setCompanyData({ ...companyData, billing_country: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                      />
-                    </div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Pays</label>
+                    <input type="text" value={companyData.billing_country} onChange={e => setCompanyData({ ...companyData, billing_country: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]" />
                   </div>
                   <div className="flex gap-3 pt-2">
                     <button
-                      onClick={() => {
-                        setEditingCompany(false);
-                        setCompanyData(prev => ({
-                          ...prev,
-                          name: profile?.companies?.name || '',
-                          billing_address: profile?.companies?.billing_address || '',
-                          billing_city: profile?.companies?.billing_city || '',
-                          billing_postal_code: profile?.companies?.billing_postal_code || '',
-                          billing_country: profile?.companies?.country || 'France'
-                        }));
-                      }}
+                      onClick={() => { setEditingCompany(false); setCompanyData(prev => ({ ...prev, name: profile?.companies?.name || '', billing_country: profile?.companies?.country || 'France' })); }}
                       className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
                     >
                       Annuler
                     </button>
-                    <button
-                      onClick={saveCompany}
-                      disabled={saving}
-                      className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
-                    >
+                    <button onClick={saveCompany} disabled={saving} className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50">
                       {saving ? 'Enregistrement...' : 'Enregistrer'}
                     </button>
                   </div>
@@ -6486,16 +6484,8 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
               ) : (
                 <div className="grid md:grid-cols-2 gap-6">
                   <div>
-                    <p className="text-sm text-gray-500">Nom de l'entreprise</p>
+                    <p className="text-sm text-gray-500">{"Nom de l'entreprise"}</p>
                     <p className="font-medium text-[#1E3A5F]">{profile?.companies?.name || '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Adresse de facturation</p>
-                    <p className="font-medium text-[#1E3A5F]">
-                      {profile?.companies?.billing_address || '—'}
-                      {profile?.companies?.billing_postal_code && `, ${profile?.companies?.billing_postal_code}`}
-                      {profile?.companies?.billing_city && ` ${profile?.companies?.billing_city}`}
-                    </p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-500">Pays</p>
@@ -12847,7 +12837,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedItems, setSelectedItems] = useState([]);
   const [step, setStep] = useState(1); // 1: dates, 2: equipment, 3: confirm
-  const [shippingAddressId, setShippingAddressId] = useState(addresses.find(a => a.is_default)?.id || '');
+  const [shippingAddressId, setShippingAddressId] = useState(addresses.find(a => a.is_default && !a.is_billing)?.id || '');
   const [customerNotes, setCustomerNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -13345,7 +13335,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
               <div className="p-6 border-b">
                 <h4 className="font-bold text-gray-700 mb-4">Adresse de livraison</h4>
                 <div className="space-y-2">
-                  {addresses.map(addr => (
+                  {addresses.filter(a => !a.is_billing).map(addr => (
                     <label key={addr.id} className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer ${shippingAddressId === addr.id ? 'border-[#8B5CF6] bg-[#8B5CF6]/5' : 'border-gray-200'}`}>
                       <input type="radio" checked={shippingAddressId === addr.id} onChange={() => setShippingAddressId(addr.id)} />
                       <div>
