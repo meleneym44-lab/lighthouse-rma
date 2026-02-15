@@ -6417,9 +6417,8 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
 
   const sections = [
     { id: 'profile', label: lang === 'en' ? 'Profile' : 'Profil', icon: '👤' },
-    { id: 'company', label: lang === 'en' ? 'Company' : 'Entreprise', icon: '🏢' },
+    { id: 'company', label: lang === 'en' ? 'Company & Addresses' : 'Entreprise & Adresses', icon: '🏢' },
     ...(isAdmin ? [{ id: 'team', label: lang === 'en' ? 'Team' : 'Équipe', icon: '👥' }] : []),
-    { id: 'addresses', label: lang === 'en' ? 'Addresses' : 'Adresses', icon: '📍' },
     { id: 'language', label: lang === 'en' ? 'Language' : 'Langue', icon: '🌐' },
     { id: 'notifications', label: 'Notifications', icon: '🔔' },
     { id: 'security', label: lang === 'en' ? 'Security' : 'Sécurité', icon: '🔒' }
@@ -6548,7 +6547,10 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
           {/* Billing Address - Easy to edit */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100">
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <h2 className="text-lg font-bold text-[#1E3A5F]">📍 Adresse de facturation</h2>
+              <div>
+                <h2 className="text-lg font-bold text-[#1E3A5F]">💳 Adresse de facturation</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Utilisée pour les devis et factures</p>
+              </div>
               {!editingCompany && (
                 <button
                   onClick={() => setEditingCompany(true)}
@@ -6652,6 +6654,60 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
                     <p className="text-sm text-gray-500">Pays</p>
                     <p className="font-medium text-[#1E3A5F]">{profile?.companies?.country || 'France'}</p>
                   </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Shipping Addresses */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-bold text-[#1E3A5F]">📦 Adresses de livraison / retour</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Adresses pour la réception et le retour des équipements</p>
+              </div>
+              <button
+                onClick={() => {
+                  setEditingAddress(null);
+                  setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false });
+                  setShowAddAddress(true);
+                }}
+                className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
+              >
+                + Ajouter
+              </button>
+            </div>
+            <div className="p-6">
+              {addresses.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  <p className="text-4xl mb-2">📍</p>
+                  <p>Aucune adresse enregistrée</p>
+                  <p className="text-sm">Ajoutez une adresse pour vos livraisons</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {addresses.map(addr => (
+                    <div key={addr.id} className={`p-4 rounded-xl border-2 ${addr.is_default ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 bg-gray-50'}`}>
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-bold text-[#1E3A5F]">{addr.label}</h3>
+                            {addr.is_default && <span className="px-2 py-0.5 bg-[#3B7AB4] text-white text-xs rounded-full">Par défaut</span>}
+                          </div>
+                          {addr.attention && <p className="text-sm text-gray-600">Attn: {addr.attention}</p>}
+                          <p className="text-sm text-gray-700">{addr.address_line1}</p>
+                          {addr.address_line2 && <p className="text-sm text-gray-700">{addr.address_line2}</p>}
+                          <p className="text-sm text-gray-700">{addr.postal_code} {addr.city}, {addr.country || 'France'}</p>
+                          {addr.phone && <p className="text-sm text-gray-500 mt-1">📞 {addr.phone}</p>}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <button onClick={() => openEditAddress(addr)} className="px-3 py-1.5 text-sm text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]">✏️</button>
+                          {!addr.is_default && <button onClick={() => setDefault(addr.id)} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100">⭐</button>}
+                          <button onClick={() => deleteAddress(addr.id)} className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50">🗑️</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -6902,49 +6958,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
         </div>
       )}
 
-      {/* Addresses Section */}
-      {activeSection === 'addresses' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-            <div>
-              <h2 className="text-lg font-bold text-[#1E3A5F]">Adresses de livraison</h2>
-              <p className="text-sm text-gray-500">Gérez vos adresses pour la réception et le retour des équipements</p>
-            </div>
-            <button
-              onClick={() => {
-                setEditingAddress(null);
-                setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false });
-                setShowAddAddress(true);
-              }}
-              className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
-            >
-              + Ajouter une adresse
-            </button>
-          </div>
-          
-          <div className="p-6">
-            {addresses.length === 0 ? (
-              <div className="text-center py-8 text-gray-400">
-                <p className="text-4xl mb-2">📍</p>
-                <p>Aucune adresse enregistrée</p>
-                <p className="text-sm">Ajoutez une adresse pour vos livraisons</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {addresses.map(addr => (
-                  <div 
-                    key={addr.id}
-                    className={`p-4 rounded-xl border-2 ${addr.is_default ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 bg-gray-50'}`}
-                  >
-                    <div className="flex justify-between items-start gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-bold text-[#1E3A5F]">{addr.label}</h3>
-                          {addr.is_default && (
-                            <span className="px-2 py-0.5 bg-[#3B7AB4] text-white text-xs rounded-full">
-                              Par défaut
-                            </span>
-                          )}
+
                         </div>
                         {addr.attention && <p className="text-sm text-gray-600">À l'attention de: {addr.attention}</p>}
                         <p className="text-sm text-gray-700">{addr.address_line1}</p>
