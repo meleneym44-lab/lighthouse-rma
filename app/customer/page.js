@@ -2643,43 +2643,50 @@ export default function CustomerPortal() {
   // Auth check
   useEffect(() => {
     const checkAuth = async () => {
-      // Handle PKCE recovery/magic link code exchange
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
+      const recoveryParam = urlParams.get('recovery') === '1';
+      const recoveryFlag = (() => { try { return localStorage.getItem('lhf_password_recovery') === 'pending'; } catch { return false; } })();
+      const isRecoveryHint = recoveryParam || recoveryFlag;
+
+      // 1. Handle PKCE code exchange (?code=xxx in URL)
       if (code) {
         try {
           const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          window.history.replaceState({}, '', window.location.pathname);
           if (!error && data?.session) {
-            // Clean URL
-            window.history.replaceState({}, '', window.location.pathname);
-            // The onAuthStateChange listener will fire PASSWORD_RECOVERY if applicable
-            // Safety timeout: if event doesn't fire in 3s, check session manually
-            setTimeout(async () => {
-              if (!recoveryMode) {
-                const { data: { session: s } } = await supabase.auth.getSession();
-                if (s) {
-                  setRecoveryMode(true);
-                  setUser(s.user);
-                }
-                setLoading(false);
-              }
-            }, 3000);
-            return; // Let the listener handle it
+            if (isRecoveryHint) {
+              try { localStorage.removeItem('lhf_password_recovery'); } catch {}
+              setRecoveryMode(true);
+              setUser(data.session.user);
+              setLoading(false);
+              return;
+            }
           }
         } catch (e) {
           console.warn('Code exchange failed:', e);
+          window.history.replaceState({}, '', window.location.pathname);
         }
-        // Clean URL even on failure
-        window.history.replaceState({}, '', window.location.pathname);
       }
 
-      // Handle hash fragment tokens (older Supabase implicit flow)
+      // 2. Handle hash fragment tokens (#access_token=xxx&type=recovery)
       const hash = window.location.hash;
-      if (hash && hash.includes('type=recovery')) {
-        // Supabase JS will pick this up automatically via onAuthStateChange
-        return; // Let the listener handle it
+      if (hash && hash.includes('access_token')) {
+        // Give Supabase JS a moment to process the hash
+        await new Promise(r => setTimeout(r, 500));
+        const { data: { session: hashSession } } = await supabase.auth.getSession();
+        const isHashRecovery = hash.includes('type=recovery') || isRecoveryHint;
+        window.history.replaceState({}, '', window.location.pathname);
+        if (hashSession && isHashRecovery) {
+          try { localStorage.removeItem('lhf_password_recovery'); } catch {}
+          setRecoveryMode(true);
+          setUser(hashSession.user);
+          setLoading(false);
+          return;
+        }
       }
 
+      // 3. Normal auth flow
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         const { data: p } = await supabase.from('profiles')
@@ -2687,12 +2694,10 @@ export default function CustomerPortal() {
           .eq('id', session.user.id)
           .single();
         if (p) {
-          // Redirect Lighthouse staff to admin portal
           if (p.role === 'lh_admin' || p.role === 'lh_employee') {
             window.location.href = '/admin';
             return;
           }
-          // Block deactivated or GDPR-erased users
           if (p.invitation_status === 'deactivated' || p.invitation_status === 'gdpr_erased') {
             await supabase.auth.signOut({ scope: 'local' });
             setLoading(false);
@@ -2703,11 +2708,11 @@ export default function CustomerPortal() {
           if (p.preferred_language) setLang(p.preferred_language);
           await loadData(p);
         } else {
-          // Auth exists but no profile — sign out to avoid ghost state
           await supabase.auth.signOut({ scope: 'local' });
         }
       }
       setLoading(false);
+    };
     };
     checkAuth();
 
@@ -14383,12 +14388,14 @@ function LoginPage({ t, login, setPage, supabase, notify }) {
     setLoading(true);
     setError('');
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin + '/customer'
+      redirectTo: window.location.origin + '/customer?recovery=1'
     });
     setLoading(false);
     if (error) {
       setError(error.message);
     } else {
+      // Set flag so we know this is a recovery when we come back
+      try { localStorage.setItem('lhf_password_recovery', 'pending'); } catch {}
       setResetSent(true);
     }
   };
