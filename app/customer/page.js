@@ -6075,11 +6075,14 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
   
   // Company editing
   const [editingCompany, setEditingCompany] = useState(false);
+  const [editingIdentifiers, setEditingIdentifiers] = useState(false);
+  const [identifierConfirmText, setIdentifierConfirmText] = useState('');
   const [companyData, setCompanyData] = useState({
     name: profile?.companies?.name || '',
     billing_address: profile?.companies?.billing_address || '',
     billing_city: profile?.companies?.billing_city || '',
     billing_postal_code: profile?.companies?.billing_postal_code || '',
+    billing_country: profile?.companies?.country || 'France',
     siret: profile?.companies?.siret || '',
     vat_number: profile?.companies?.vat_number || ''
   });
@@ -6267,12 +6270,18 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
     }
   };
 
-  // Save company
+  // Save company billing/address info
   const saveCompany = async () => {
     setSaving(true);
     const { error } = await supabase
       .from('companies')
-      .update(companyData)
+      .update({
+        name: companyData.name,
+        billing_address: companyData.billing_address,
+        billing_city: companyData.billing_city,
+        billing_postal_code: companyData.billing_postal_code,
+        country: companyData.billing_country
+      })
       .eq('id', profile.company_id);
     
     setSaving(false);
@@ -6281,6 +6290,28 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
     } else {
       notify('Entreprise mise à jour!');
       setEditingCompany(false);
+      refresh();
+    }
+  };
+
+  // Save identifiers (SIRET/TVA) - separate locked action
+  const saveIdentifiers = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from('companies')
+      .update({
+        siret: companyData.siret || null,
+        tva_number: companyData.vat_number || null
+      })
+      .eq('id', profile.company_id);
+    
+    setSaving(false);
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Identifiants mis à jour!');
+      setEditingIdentifiers(false);
+      setIdentifierConfirmText('');
       refresh();
     }
   };
@@ -6513,131 +6544,215 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
 
       {/* Company Section */}
       {activeSection === 'company' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-            <h2 className="text-lg font-bold text-[#1E3A5F]">Informations entreprise</h2>
-            {!editingCompany && (
-              <button
-                onClick={() => setEditingCompany(true)}
-                className="px-4 py-2 text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]"
-              >
-                ✏️ Modifier
-              </button>
-            )}
+        <div className="space-y-6">
+          {/* Billing Address - Easy to edit */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+              <h2 className="text-lg font-bold text-[#1E3A5F]">📍 Adresse de facturation</h2>
+              {!editingCompany && (
+                <button
+                  onClick={() => setEditingCompany(true)}
+                  className="px-4 py-2 text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]"
+                >
+                  ✏️ Modifier
+                </button>
+              )}
+            </div>
+            <div className="p-6">
+              {editingCompany ? (
+                <div className="space-y-4 max-w-lg">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nom de l'entreprise *</label>
+                    <input
+                      type="text"
+                      value={companyData.name}
+                      onChange={e => setCompanyData({ ...companyData, name: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Adresse</label>
+                    <input
+                      type="text"
+                      value={companyData.billing_address}
+                      onChange={e => setCompanyData({ ...companyData, billing_address: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Code postal</label>
+                      <input
+                        type="text"
+                        value={companyData.billing_postal_code}
+                        onChange={e => setCompanyData({ ...companyData, billing_postal_code: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Ville</label>
+                      <input
+                        type="text"
+                        value={companyData.billing_city}
+                        onChange={e => setCompanyData({ ...companyData, billing_city: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Pays</label>
+                      <input
+                        type="text"
+                        value={companyData.billing_country}
+                        onChange={e => setCompanyData({ ...companyData, billing_country: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => {
+                        setEditingCompany(false);
+                        setCompanyData(prev => ({
+                          ...prev,
+                          name: profile?.companies?.name || '',
+                          billing_address: profile?.companies?.billing_address || '',
+                          billing_city: profile?.companies?.billing_city || '',
+                          billing_postal_code: profile?.companies?.billing_postal_code || '',
+                          billing_country: profile?.companies?.country || 'France'
+                        }));
+                      }}
+                      className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      onClick={saveCompany}
+                      disabled={saving}
+                      className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                    >
+                      {saving ? 'Enregistrement...' : 'Enregistrer'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <p className="text-sm text-gray-500">Nom de l'entreprise</p>
+                    <p className="font-medium text-[#1E3A5F]">{profile?.companies?.name || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Adresse de facturation</p>
+                    <p className="font-medium text-[#1E3A5F]">
+                      {profile?.companies?.billing_address || '—'}
+                      {profile?.companies?.billing_postal_code && `, ${profile?.companies?.billing_postal_code}`}
+                      {profile?.companies?.billing_city && ` ${profile?.companies?.billing_city}`}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Pays</p>
+                    <p className="font-medium text-[#1E3A5F]">{profile?.companies?.country || 'France'}</p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="p-6">
-            {editingCompany ? (
-              <div className="space-y-4 max-w-lg">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nom de l'entreprise *</label>
-                  <input
-                    type="text"
-                    value={companyData.name}
-                    onChange={e => setCompanyData({ ...companyData, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Adresse de facturation</label>
-                  <input
-                    type="text"
-                    value={companyData.billing_address}
-                    onChange={e => setCompanyData({ ...companyData, billing_address: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Code postal</label>
-                    <input
-                      type="text"
-                      value={companyData.billing_postal_code}
-                      onChange={e => setCompanyData({ ...companyData, billing_postal_code: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Ville</label>
-                    <input
-                      type="text"
-                      value={companyData.billing_city}
-                      onChange={e => setCompanyData({ ...companyData, billing_city: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label>
-                    <input
-                      type="text"
-                      value={companyData.siret}
-                      onChange={e => setCompanyData({ ...companyData, siret: e.target.value })}
-                      placeholder="123 456 789 00012"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">N° TVA</label>
-                    <input
-                      type="text"
-                      value={companyData.vat_number}
-                      onChange={e => setCompanyData({ ...companyData, vat_number: e.target.value })}
-                      placeholder="FR12345678901"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={() => {
-                      setEditingCompany(false);
-                      setCompanyData({
-                        name: profile?.companies?.name || '',
-                        billing_address: profile?.companies?.billing_address || '',
-                        billing_city: profile?.companies?.billing_city || '',
-                        billing_postal_code: profile?.companies?.billing_postal_code || '',
-                        siret: profile?.companies?.siret || '',
-                        vat_number: profile?.companies?.vat_number || ''
-                      });
-                    }}
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    onClick={saveCompany}
-                    disabled={saving}
-                    className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
-                  >
-                    {saving ? 'Enregistrement...' : 'Enregistrer'}
-                  </button>
-                </div>
+
+          {/* Company Identifiers - Hard to edit */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-bold text-[#1E3A5F]">🔒 Identifiants légaux</h2>
+                <p className="text-xs text-gray-400 mt-0.5">SIRET, TVA — modification protégée</p>
               </div>
-            ) : (
-              <div className="grid md:grid-cols-2 gap-6">
-                <div>
-                  <p className="text-sm text-gray-500">Nom de l'entreprise</p>
-                  <p className="font-medium text-[#1E3A5F]">{profile?.companies?.name || '—'}</p>
+              {!editingIdentifiers && (
+                <button
+                  onClick={() => setEditingIdentifiers(true)}
+                  className="px-4 py-2 text-gray-400 border border-gray-200 rounded-lg hover:bg-gray-50 text-sm"
+                >
+                  🔒 Modifier
+                </button>
+              )}
+            </div>
+            <div className="p-6">
+              {editingIdentifiers ? (
+                <div className="space-y-4 max-w-lg">
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                    <p className="text-sm text-red-700">
+                      <strong>⚠️ Attention :</strong> La modification des identifiants légaux peut affecter votre facturation. 
+                      Veuillez vous assurer que les informations sont correctes.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label>
+                      <input
+                        type="text"
+                        value={companyData.siret}
+                        onChange={e => setCompanyData({ ...companyData, siret: e.target.value })}
+                        placeholder="123 456 789 00012"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-300"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">N° TVA</label>
+                      <input
+                        type="text"
+                        value={companyData.vat_number}
+                        onChange={e => setCompanyData({ ...companyData, vat_number: e.target.value })}
+                        placeholder="FR12345678901"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-300"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Tapez <span className="font-bold text-red-600">CONFIRMER</span> pour valider la modification
+                    </label>
+                    <input
+                      type="text"
+                      value={identifierConfirmText}
+                      onChange={e => setIdentifierConfirmText(e.target.value)}
+                      placeholder="CONFIRMER"
+                      className="w-full px-3 py-2 border border-red-300 rounded-lg bg-red-50 focus:ring-2 focus:ring-red-300 font-mono"
+                    />
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => {
+                        setEditingIdentifiers(false);
+                        setIdentifierConfirmText('');
+                        setCompanyData(prev => ({
+                          ...prev,
+                          siret: profile?.companies?.siret || '',
+                          vat_number: profile?.companies?.vat_number || ''
+                        }));
+                      }}
+                      className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      onClick={saveIdentifiers}
+                      disabled={saving || identifierConfirmText !== 'CONFIRMER'}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      {saving ? 'Enregistrement...' : '🔒 Mettre à jour les identifiants'}
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-500">Adresse de facturation</p>
-                  <p className="font-medium text-[#1E3A5F]">
-                    {profile?.companies?.billing_address || '—'}
-                    {profile?.companies?.billing_postal_code && `, ${profile?.companies?.billing_postal_code}`}
-                    {profile?.companies?.billing_city && ` ${profile?.companies?.billing_city}`}
-                  </p>
+              ) : (
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <p className="text-sm text-gray-500">SIRET</p>
+                    <p className="font-medium text-[#1E3A5F] font-mono">{profile?.companies?.siret || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">N° TVA</p>
+                    <p className="font-medium text-[#1E3A5F] font-mono">{profile?.companies?.vat_number || '—'}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-500">SIRET</p>
-                  <p className="font-medium text-[#1E3A5F]">{profile?.companies?.siret || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">N° TVA</p>
-                  <p className="font-medium text-[#1E3A5F]">{profile?.companies?.vat_number || '—'}</p>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
