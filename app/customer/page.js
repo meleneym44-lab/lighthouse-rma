@@ -4046,6 +4046,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
   const [billingAddressId, setBillingAddressId] = useState('');
   const [saving, setSaving] = useState(false);
   const [formStep, setFormStep] = useState('form'); // 'form' or 'success'
+  const [showReviewModal, setShowReviewModal] = useState(false);
 
   // Load saved equipment on mount
   useEffect(() => {
@@ -4345,7 +4346,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         <h1 className="text-2xl font-bold text-[#1E3A5F]">Demande Étalonnage / Réparation</h1>
       </div>
       
-      <form onSubmit={(e) => { e.preventDefault(); if (validateForm()) handleSubmit(e); }}>
+      <form onSubmit={(e) => { e.preventDefault(); if (validateForm()) setShowReviewModal(true); }}>
         {/* Devices */}
         <div className="space-y-6 mb-8">
           {devices.map((device) => (
@@ -4384,39 +4385,26 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           refresh={refresh}
         />
 
-        {/* Billing Address - compact */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mt-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-[#1E3A5F]">💳 Adresse de facturation</h2>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={billingChoice === 'same'}
-                onChange={e => setBillingChoice(e.target.checked ? 'same' : 'other')}
-                className="rounded text-[#3B7AB4] focus:ring-[#3B7AB4]"
-              />
-              <span className="text-sm text-gray-600">Identique au retour</span>
-            </label>
-          </div>
-          {billingChoice !== 'same' && (
-            <select
-              value={billingChoice === 'company' ? 'company' : billingAddressId}
-              onChange={e => {
-                if (e.target.value === 'company') { setBillingChoice('company'); setBillingAddressId(''); }
-                else { setBillingChoice('other'); setBillingAddressId(e.target.value); }
-              }}
-              className="mt-3 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            >
-              <option value="company">
-                {profile?.companies?.name} — {profile?.companies?.billing_address}, {profile?.companies?.billing_postal_code} {profile?.companies?.billing_city} (Siège)
+        {/* Billing Address - dropdown */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mt-6">
+          <h2 className="text-lg font-bold text-[#1E3A5F] mb-3 pb-3 border-b border-gray-100">💳 Adresse de facturation</h2>
+          <select
+            value={billingChoice === 'company' ? 'company' : billingChoice === 'same' ? 'same' : billingAddressId}
+            onChange={e => {
+              if (e.target.value === 'company') { setBillingChoice('company'); setBillingAddressId(''); }
+              else if (e.target.value === 'same') { setBillingChoice('same'); setBillingAddressId(''); }
+              else { setBillingChoice('other'); setBillingAddressId(e.target.value); }
+            }}
+            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+          >
+            <option value="same">{"📦 Identique à l'adresse de retour"}</option>
+            <option value="company">🏢 {profile?.companies?.name} — {profile?.companies?.billing_address}, {profile?.companies?.billing_postal_code} {profile?.companies?.billing_city}</option>
+            {addresses.filter(a => a.id !== shipping.address_id).map(a => (
+              <option key={a.id} value={a.id}>
+                📍 {a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}
               </option>
-              {addresses.map(a => (
-                <option key={a.id} value={a.id}>
-                  {a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}
-                </option>
-              ))}
-            </select>
-          )}
+            ))}
+          </select>
         </div>
 
         {/* Submit Buttons */}
@@ -4430,13 +4418,99 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           </button>
           <button
             type="submit"
-            disabled={saving}
-            className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors disabled:opacity-50"
+            className="flex-1 py-3 bg-[#1E3A5F] text-white rounded-lg font-bold hover:bg-[#2a4f7a] transition-colors text-lg"
           >
-            {saving ? 'Envoi en cours...' : 'Soumettre la demande'}
+            Vérifier et soumettre →
           </button>
         </div>
       </form>
+
+      {/* ========== REVIEW MODAL OVERLAY ========== */}
+      {showReviewModal && (() => {
+        const retAddr = shipping.showNewForm ? shipping.newAddress : addresses.find(a => a.id === shipping.address_id);
+        const co = profile?.companies || {};
+        const billingDisplay = billingChoice === 'same' 
+          ? (retAddr ? `${retAddr.company_name || retAddr.label || co.name}, ${retAddr.address_line1}, ${retAddr.postal_code} ${retAddr.city}` : '—')
+          : billingChoice === 'company' 
+            ? `${co.name}, ${co.billing_address}, ${co.billing_postal_code} ${co.billing_city}`
+            : (() => { const a = addresses.find(a => a.id === billingAddressId); return a ? `${a.label || a.company_name}, ${a.address_line1}, ${a.postal_code} ${a.city}` : '—'; })();
+        const serviceLabels = { calibration: 'Étalonnage', repair: 'Réparation', calibration_repair: 'Étalonnage + Réparation', other: 'Autre' };
+
+        return (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowReviewModal(false)}>
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="bg-[#1E3A5F] px-6 py-5 rounded-t-2xl">
+                <h2 className="text-xl font-bold text-white">Vérification de votre demande</h2>
+                <p className="text-white/60 text-sm mt-1">Veuillez vérifier les informations avant envoi</p>
+              </div>
+
+              <div className="p-6 space-y-5">
+                {/* Devices */}
+                <div>
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Appareils ({devices.length})</h3>
+                  <div className="space-y-2">
+                    {devices.map((d, i) => (
+                      <div key={d.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                        <div className="w-7 h-7 bg-[#3B7AB4] text-white rounded-full flex items-center justify-center font-bold text-xs shrink-0">{i + 1}</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-[#1E3A5F] text-sm">{d.brand === 'other' ? d.brand_other : 'Lighthouse'} {d.model}</p>
+                          <p className="text-xs text-gray-500">SN: <span className="font-mono">{d.serial_number}</span> · {serviceLabels[d.service_type] || d.service_other || d.service_type}</p>
+                        </div>
+                        {d.notes && <span className="text-xs text-gray-400 max-w-[120px] truncate" title={d.notes}>💬 {d.notes}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <hr className="border-gray-100" />
+
+                {/* Shipping & Billing side by side */}
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">📦 Retour</h3>
+                    {retAddr && (
+                      <div className="p-3 bg-blue-50 rounded-lg text-sm">
+                        <p className="font-semibold text-[#1E3A5F]">{retAddr.company_name || retAddr.label || co.name}</p>
+                        {retAddr.attention && <p className="text-gray-600 text-xs">Attn: {retAddr.attention}</p>}
+                        <p className="text-gray-600">{retAddr.address_line1}</p>
+                        <p className="text-gray-600">{retAddr.postal_code} {retAddr.city}, {retAddr.country || 'France'}</p>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-400 mt-2">{shipping.parcels} colis</p>
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">💳 Facturation</h3>
+                    <div className="p-3 bg-gray-50 rounded-lg text-sm">
+                      <p className="text-gray-700">{billingDisplay}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 bg-gray-50 rounded-b-2xl flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowReviewModal(false)}
+                  className="flex-1 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-100 transition-colors"
+                >
+                  ← Modifier
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => { setShowReviewModal(false); handleSubmit(e); }}
+                  disabled={saving}
+                  className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors disabled:opacity-50 text-lg"
+                >
+                  {saving ? 'Envoi...' : '✅ Confirmer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
