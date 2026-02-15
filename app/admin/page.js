@@ -15737,9 +15737,12 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
               </div>
               <div className="divide-y divide-gray-100">
                 {searchResults.equipment.map(eq => (
-                  <div key={eq.id} className="p-4 flex justify-between items-center">
+                  <div key={eq.id} className={`p-4 flex justify-between items-center ${eq.hidden_by_customer ? 'bg-orange-50' : ''}`}>
                     <div>
-                      <p className="font-medium">{eq.model_name}</p>
+                      <p className="font-medium">
+                        {eq.model_name}
+                        {eq.hidden_by_customer && <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">{lang === 'en' ? '📦 Archived' : '📦 Archivé'}</span>}
+                      </p>
                       <p className="font-mono text-sm text-gray-600">SN: {eq.serial_number}</p>
                     </div>
                     <div className="text-right">
@@ -15837,7 +15840,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
   const t = k => k;
   const [activeTab, setActiveTab] = useState('rmas');
   const [editing, setEditing] = useState(false);
-  const [editData, setEditData] = useState({ name: client.name || '', billing_address: client.billing_address || '', billing_city: client.billing_city || '', billing_postal_code: client.billing_postal_code || '', siret: client.siret || '', vat_number: client.vat_number || '' });
+  const [editData, setEditData] = useState({ name: client.name || '', billing_address: client.billing_address || '', billing_city: client.billing_city || '', billing_postal_code: client.billing_postal_code || '', siret: client.siret || '', tva_number: client.tva_number || '' });
   const [saving, setSaving] = useState(false);
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [clientContracts, setClientContracts] = useState([]);
@@ -15892,7 +15895,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
     { id: 'parts', label: lang === 'en' ? 'Parts' : 'Pièces', icon: '🔩', count: partsOrdersList.length },
     { id: 'rentals', label: lang === 'en' ? 'Rentals' : 'Locations', icon: '📅' },
     { id: 'contracts', label: lang === 'en' ? 'Contracts' : 'Contrats', icon: '📑' },
-    { id: 'devices', label: lang === 'en' ? 'Devices' : 'Appareils', icon: '🔧', count: equipment.length },
+    { id: 'devices', label: lang === 'en' ? 'Devices' : 'Appareils', icon: '🔧', count: equipment.length, badge: equipment.filter(e => e.hidden_by_customer).length > 0 ? equipment.filter(e => e.hidden_by_customer).length + ' 📦' : null },
     { id: 'sites', label: lang === 'en' ? 'Sites' : 'Sites', icon: '📍' },
     { id: 'info', label: 'Info', icon: 'ℹ️' },
     { id: 'contacts', label: lang === 'en' ? 'Contacts' : 'Contacts', icon: '👤', count: client.profiles?.filter(p => p.invitation_status !== 'gdpr_erased').length || 0 }
@@ -15921,6 +15924,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
               <span>{tab.icon}</span>
               {tab.label}
               {tab.count > 0 ? <span className="px-1.5 py-0.5 bg-gray-200 rounded-full text-xs">{tab.count}</span> : null}
+              {tab.badge && <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs">{tab.badge}</span>}
             </button>
           ))}
         </div>
@@ -16178,13 +16182,61 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           
           {/* === Sites (Shipping Addresses) === */}
           {activeTab === 'sites' && (
-            <div className="space-y-3">
-              {clientLocations.length === 0 ? <p className="text-center text-gray-400 py-8">{lang === 'en' ? 'No sites' : 'Aucun site'}</p> : clientLocations.map(loc => (
-                <div key={loc.id} className="bg-gray-50 rounded-lg p-4">
-                  <p className="font-medium">{loc.label || loc.company_name || 'Site'}</p>
-                  <p className="text-sm text-gray-500">{loc.address_line1}, {loc.postal_code} {loc.city}</p>
+            <div className="space-y-6">
+              {/* Billing Addresses */}
+              <div>
+                <h3 className="font-medium text-[#1E3A5F] mb-3 flex items-center gap-2">💳 {lang === 'en' ? 'Billing Addresses' : 'Adresses de facturation'}</h3>
+                <div className="space-y-2">
+                  {/* Company billing address */}
+                  {(client.billing_address || client.billing_city) && (
+                    <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-medium">{lang === 'en' ? 'Primary' : 'Principale'}</span>
+                      </div>
+                      <p className="font-medium">{client.name}</p>
+                      <p className="text-sm text-gray-600">{client.billing_address || '—'}</p>
+                      <p className="text-sm text-gray-600">{client.billing_postal_code} {client.billing_city}</p>
+                    </div>
+                  )}
+                  {/* Additional billing addresses from shipping_addresses where is_billing = true */}
+                  {clientLocations.filter(loc => loc.is_billing).map(loc => (
+                    <div key={loc.id} className="bg-amber-50/50 rounded-lg p-4 border border-amber-100">
+                      <p className="font-medium">{loc.label || loc.attention || (lang === 'en' ? 'Billing address' : 'Adresse de facturation')}</p>
+                      {loc.attention && loc.label && <p className="text-sm text-gray-500">{loc.attention}</p>}
+                      <p className="text-sm text-gray-600">{loc.address_line1}</p>
+                      {loc.address_line2 && <p className="text-sm text-gray-600">{loc.address_line2}</p>}
+                      <p className="text-sm text-gray-600">{loc.postal_code} {loc.city}</p>
+                      {loc.country && loc.country !== 'France' && <p className="text-sm text-gray-500">{loc.country}</p>}
+                    </div>
+                  ))}
+                  {!client.billing_address && !client.billing_city && clientLocations.filter(l => l.is_billing).length === 0 && (
+                    <p className="text-gray-400 text-sm py-2">{lang === 'en' ? 'No billing address' : 'Aucune adresse de facturation'}</p>
+                  )}
                 </div>
-              ))}
+              </div>
+
+              {/* Shipping Addresses */}
+              <div>
+                <h3 className="font-medium text-[#1E3A5F] mb-3 flex items-center gap-2">📦 {lang === 'en' ? 'Shipping Addresses' : 'Adresses de livraison'}</h3>
+                <div className="space-y-2">
+                  {clientLocations.filter(loc => !loc.is_billing).length === 0 ? (
+                    <p className="text-gray-400 text-sm py-2">{lang === 'en' ? 'No shipping addresses' : 'Aucune adresse de livraison'}</p>
+                  ) : clientLocations.filter(loc => !loc.is_billing).map(loc => (
+                    <div key={loc.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-medium">{loc.label || (lang === 'en' ? 'Site' : 'Site')}</p>
+                        {loc.is_default && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{lang === 'en' ? 'Default' : 'Par défaut'}</span>}
+                      </div>
+                      {loc.attention && <p className="text-sm text-gray-500">À l'att. de: {loc.attention}</p>}
+                      <p className="text-sm text-gray-600">{loc.address_line1}</p>
+                      {loc.address_line2 && <p className="text-sm text-gray-600">{loc.address_line2}</p>}
+                      <p className="text-sm text-gray-600">{loc.postal_code} {loc.city}</p>
+                      {loc.country && loc.country !== 'France' && <p className="text-sm text-gray-500">{loc.country}</p>}
+                      {loc.phone && <p className="text-sm text-gray-400 mt-1">📞 {loc.phone}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
           
@@ -16193,10 +16245,14 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
             <div className="space-y-3">
               {equipment.length === 0 ? <p className="text-center text-gray-400 py-8">{lang === 'en' ? 'No devices' : 'Aucun appareil'}</p> : equipment.map(eq => { 
                 const rmaCount = getDeviceRMAHistory(eq.serial_number).length;
+                const isArchived = eq.hidden_by_customer === true;
                 return (
-                  <div key={eq.id} onClick={() => setSelectedEquipment(eq)} className="bg-gray-50 rounded-lg p-4 flex justify-between items-center hover:bg-gray-100 cursor-pointer transition-colors">
+                  <div key={eq.id} onClick={() => setSelectedEquipment(eq)} className={`rounded-lg p-4 flex justify-between items-center hover:bg-gray-100 cursor-pointer transition-colors ${isArchived ? 'bg-orange-50 border border-orange-200' : 'bg-gray-50'}`}>
                     <div>
-                      <p className="font-medium">{eq.model_name}</p>
+                      <p className="font-medium">
+                        {eq.model_name}
+                        {isArchived && <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">{lang === 'en' ? '📦 Archived by client' : '📦 Archivé par le client'}</span>}
+                      </p>
                       <p className="text-sm text-gray-500">SN: {eq.serial_number}</p>
                     </div>
                     <div className="text-right">
@@ -16212,9 +16268,13 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           {activeTab === 'devices' && selectedEquipment && (
             <div className="space-y-4">
               <button onClick={() => setSelectedEquipment(null)} className="text-sm text-blue-600 hover:underline">{lang === 'en' ? '← Back' : '← Retour'}</button>
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <h3 className="font-bold text-blue-800">{selectedEquipment.model_name}</h3>
-                <p className="text-sm text-blue-600">SN: {selectedEquipment.serial_number}</p>
+              <div className={`rounded-lg p-4 border ${selectedEquipment.hidden_by_customer ? 'bg-orange-50 border-orange-200' : 'bg-blue-50 border-blue-200'}`}>
+                <div className="flex items-center gap-2">
+                  <h3 className={`font-bold ${selectedEquipment.hidden_by_customer ? 'text-orange-800' : 'text-blue-800'}`}>{selectedEquipment.model_name}</h3>
+                  {selectedEquipment.hidden_by_customer && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">{lang === 'en' ? '📦 Archived by client' : '📦 Archivé par le client'}</span>}
+                </div>
+                <p className={`text-sm ${selectedEquipment.hidden_by_customer ? 'text-orange-600' : 'text-blue-600'}`}>SN: {selectedEquipment.serial_number}</p>
+                {selectedEquipment.brand && <p className="text-sm text-gray-500 mt-1">{selectedEquipment.brand}</p>}
               </div>
               <h4 className="font-medium text-gray-700">{lang === 'en' ? 'RMA History:' : 'Historique RMAs:'}</h4>
               <div className="space-y-3">
@@ -16246,7 +16306,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'SIRET' : 'SIRET'}</label><input type="text" value={editData.siret} onChange={e => setEditData({...editData, siret: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'VAT #' : 'N° TVA'}</label><input type="text" value={editData.vat_number} onChange={e => setEditData({...editData, vat_number: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'VAT #' : 'N° TVA'}</label><input type="text" value={editData.tva_number} onChange={e => setEditData({...editData, tva_number: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
                   </div>
                   <div className="flex gap-2 pt-2">
                     <button onClick={() => setEditing(false)} className="px-4 py-2 bg-gray-200 rounded-lg">{t('cancel')}</button>
@@ -16260,7 +16320,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                     <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">{lang === 'en' ? 'Name' : 'Nom'}</p><p className="font-medium">{client.name}</p></div>
                     <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">{t('address')}</p><p className="font-medium">{client.billing_address || '—'}</p><p className="text-sm text-gray-600">{client.billing_postal_code} {client.billing_city}</p></div>
                     <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">{lang === 'en' ? 'SIRET' : 'SIRET'}</p><p className="font-medium">{client.siret || '—'}</p></div>
-                    <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">{lang === 'en' ? 'VAT #' : 'N° TVA'}</p><p className="font-medium">{client.vat_number || '—'}</p></div>
+                    <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">{lang === 'en' ? 'VAT #' : 'N° TVA'}</p><p className="font-medium">{client.tva_number || '—'}</p></div>
                   </div>
                 </div>
               )}
