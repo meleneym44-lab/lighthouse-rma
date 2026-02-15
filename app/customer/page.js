@@ -2879,6 +2879,17 @@ export default function CustomerPortal() {
     );
   }
 
+  // Check if user is admin
+  const isAdmin = profile?.role === 'admin';
+  
+  // Permission flags (admin always has all)
+  const perms = {
+    canView: isAdmin || profile?.can_view !== false,
+    canRequest: isAdmin || !!profile?.can_request,
+    canInvoice: isAdmin || !!profile?.can_invoice,
+    isAdmin
+  };
+
   return (
     <div className="min-h-screen bg-[#f0f2f5]">
       {/* Toast */}
@@ -6148,14 +6159,6 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
   
   // Check if user is admin
   const isAdmin = profile?.role === 'admin';
-  
-  // Permission flags (admin always has all)
-  const perms = {
-    canView: isAdmin || profile?.can_view !== false, // default true
-    canRequest: isAdmin || !!profile?.can_request,
-    canInvoice: isAdmin || !!profile?.can_invoice,
-    isAdmin
-  };
   
   // Load team members
   useEffect(() => {
