@@ -2713,7 +2713,6 @@ export default function CustomerPortal() {
       }
       setLoading(false);
     };
-    };
     checkAuth();
 
     // Listen for auth events (password recovery, etc.)
