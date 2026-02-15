@@ -6018,6 +6018,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           'Rapport de Service': { table: 'request_devices', field: 'report_url', id: selectedDevice?.id },
           'Bon de Livraison': { table: 'request_devices', field: 'bl_url', id: selectedDevice?.id },
           'Étiquette UPS': { table: 'request_devices', field: 'ups_label_url', id: selectedDevice?.id },
+          'Facture Proforma': { table: 'request_devices', field: 'commercial_invoice_url', id: selectedDevice?.id },
           "Certificat d'Étalonnage": { table: 'request_devices', field: 'calibration_certificate_url', id: selectedDevice?.id },
           'Devis': { table: 'service_requests', field: 'quote_url', id: rma.id },
           'Devis Signé / BC': { table: 'service_requests', field: 'signed_quote_url', id: rma.id },
@@ -6773,6 +6774,23 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                   )}
                   
                   {/* === 7. CALIBRATION CERTIFICATE === */}
+                  
+                  {/* === COMMERCIAL INVOICE (non-metro shipments) === */}
+                  {device.commercial_invoice_url && (
+                    <div className="flex items-center gap-2 p-4 border rounded-lg hover:bg-amber-50 transition-colors group">
+                      <a href={device.commercial_invoice_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🧾</div>
+                        <div>
+                          <p className="font-medium text-gray-800">{lang === 'en' ? 'Commercial Invoice' : 'Facture Proforma'}</p>
+                          <p className="text-sm text-orange-600">{lang === 'en' ? 'Customs declaration' : 'Déclaration douanière'}</p>
+                        </div>
+                      </a>
+                      <button onClick={() => setMainDocToArchive({ label: 'Facture Proforma', url: device.commercial_invoice_url, table: 'request_devices', field: 'commercial_invoice_url', id: device.id })} className="p-1.5 rounded-lg text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-all shrink-0" title={lang === 'en' ? 'Archive & replace' : 'Archiver & remplacer'}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                      </button>
+                    </div>
+                  )}
+                  
                   {device.calibration_certificate_url && (
                     <div className="flex items-center gap-2 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-300 group">
                       <a href={device.calibration_certificate_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
@@ -7122,7 +7140,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 )}
                 
                 {/* No documents message */}
-                {!device.calibration_certificate_url && !device.report_url && !rma.quote_url && !rma.bc_file_url && !rma.signed_quote_url && !device.bl_url && !device.ups_label_url && attachments.filter(a => a.file_url).length === 0 && (
+                {!device.calibration_certificate_url && !device.report_url && !rma.quote_url && !rma.bc_file_url && !rma.signed_quote_url && !device.bl_url && !device.ups_label_url && !device.commercial_invoice_url && attachments.filter(a => a.file_url).length === 0 && (
                   <p className="text-gray-400 text-center py-8">{lang === 'en' ? 'No documents available' : 'Aucun document disponible'}</p>
                 )}
               </div>
@@ -14065,6 +14083,205 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     shipping: { carrier: shippingMode === 'bl_only' ? 'Client' : 'UPS', tracking: shipment.trackingNumber || (shippingMode === 'bl_only' ? 'N/A - Enlèvement client' : 'N/A'), parcels: shipment.parcels, weight: shipment.weight }
   });
   
+  // === COMMERCIAL INVOICE for non-metro/international shipments ===
+  const generateCINumber = (index) => `CI-${rma.request_number}-${index + 1}`;
+  
+  const generateCIContent = (shipment, index) => {
+    const biz = businessSettings || {};
+    const devicesWithPricing = shipment.devices.map(d => ({
+      model: d.model_name || 'N/A',
+      serial: d.serial_number || 'N/A',
+      service: d.service_type === 'repair' ? 'Repair / Réparation' : 'Calibration / Étalonnage',
+      hsCode: '9027.50.00',
+      origin: 'USA',
+      weight: d.weight || '5.0',
+      value: parseFloat(d.quoted_price) || parseFloat(d.unit_price) || 0
+    }));
+    return {
+      ciNumber: generateCINumber(index),
+      date: getFrenchDate(),
+      rmaNumber: rma.request_number,
+      exporter: {
+        name: biz.company_name || 'LIGHTHOUSE FRANCE SAS',
+        address: biz.address || '16 Rue Paul Séjourné',
+        city: biz.city || '94000 Créteil, France',
+        siret: biz.siret || '',
+        tva: biz.tva_number || biz.vat_number || '',
+        eori: biz.eori || ''
+      },
+      consignee: {
+        name: shipment.address.company_name,
+        attention: shipment.address.attention,
+        street: shipment.address.address_line1,
+        city: `${shipment.address.postal_code} ${shipment.address.city}`,
+        country: shipment.address.country || ''
+      },
+      devices: devicesWithPricing,
+      totalValue: devicesWithPricing.reduce((sum, d) => sum + d.value, 0),
+      totalWeight: devicesWithPricing.reduce((sum, d) => sum + (parseFloat(d.weight) || 5), 0),
+      parcels: shipment.parcels || 1,
+      incoterm: 'EXW Créteil'
+    };
+  };
+  
+  const printCI = (index) => {
+    const s = shipments[index];
+    const ci = generateCIContent(s, index);
+    const w = window.open('', '_blank');
+    if (!w) { notify(lang === 'en' ? 'Popup blocked' : 'Popup bloqué', 'error'); return; }
+    w.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Commercial Invoice - ${ci.ciNumber}</title>
+  <style>
+    @page { margin: 12mm; size: A4; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 10pt; color: #333; padding: 15px 25px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 15px; }
+    .header img { height: 50px; }
+    .header-right { text-align: right; }
+    .doc-title { font-size: 16pt; font-weight: bold; color: #2D5A7B; }
+    .doc-subtitle { font-size: 12pt; color: #666; }
+    .doc-number { font-size: 11pt; font-weight: bold; color: #2D5A7B; margin-top: 3px; }
+    .parties { display: flex; gap: 20px; margin-bottom: 15px; }
+    .party-box { flex: 1; border: 1px solid #ddd; padding: 12px; background: #f9f9f9; }
+    .party-label { font-size: 8pt; text-transform: uppercase; color: #666; font-weight: bold; margin-bottom: 5px; letter-spacing: 0.5px; }
+    .party-name { font-weight: bold; font-size: 11pt; }
+    .ref-row { display: flex; gap: 15px; margin-bottom: 15px; font-size: 9pt; }
+    .ref-item { background: #f0f4f8; padding: 6px 12px; border-radius: 4px; }
+    .ref-label { font-weight: bold; color: #555; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+    th { background: #2D5A7B; color: white; padding: 8px 6px; font-size: 8pt; text-transform: uppercase; text-align: left; }
+    td { padding: 7px 6px; border-bottom: 1px solid #ddd; font-size: 9pt; }
+    tr:nth-child(even) { background: #f9f9f9; }
+    .totals { text-align: right; margin-bottom: 15px; }
+    .total-line { font-size: 10pt; margin: 3px 0; }
+    .grand-total { font-size: 13pt; font-weight: bold; color: #2D5A7B; border-top: 2px solid #2D5A7B; padding-top: 5px; margin-top: 5px; }
+    .declaration { border: 2px solid #c00; padding: 12px; margin-bottom: 15px; background: #fff5f5; }
+    .declaration-title { font-weight: bold; color: #c00; font-size: 10pt; margin-bottom: 5px; }
+    .declaration-text { font-size: 9pt; line-height: 1.4; }
+    .footer-info { display: flex; gap: 20px; margin-bottom: 15px; font-size: 9pt; }
+    .footer-box { flex: 1; border: 1px solid #ddd; padding: 10px; }
+    .footer-box-title { font-weight: bold; font-size: 8pt; text-transform: uppercase; color: #555; margin-bottom: 4px; }
+    .signature { margin-top: 20px; display: flex; justify-content: space-between; }
+    .sig-block { width: 45%; border-top: 1px solid #333; padding-top: 5px; font-size: 8pt; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" onerror="this.outerHTML='<div style=\\'font-size:20px;font-weight:bold;color:#333\\'>LIGHTHOUSE<div style=\\'font-size:9px;color:#666\\'>FRANCE</div></div>'">
+    </div>
+    <div class="header-right">
+      <div class="doc-title">COMMERCIAL INVOICE</div>
+      <div class="doc-subtitle">FACTURE PROFORMA</div>
+      <div class="doc-number">N° ${ci.ciNumber}</div>
+    </div>
+  </div>
+  
+  <div class="parties">
+    <div class="party-box">
+      <div class="party-label">Exporter / Expéditeur</div>
+      <div class="party-name">${ci.exporter.name}</div>
+      <div>${ci.exporter.address}</div>
+      <div>${ci.exporter.city}</div>
+      ${ci.exporter.siret ? `<div style="margin-top:4px;font-size:8pt;color:#666">SIRET: ${ci.exporter.siret}</div>` : ''}
+      ${ci.exporter.tva ? `<div style="font-size:8pt;color:#666">TVA: ${ci.exporter.tva}</div>` : ''}
+      ${ci.exporter.eori ? `<div style="font-size:8pt;color:#666">EORI: ${ci.exporter.eori}</div>` : ''}
+    </div>
+    <div class="party-box">
+      <div class="party-label">Consignee / Destinataire</div>
+      <div class="party-name">${ci.consignee.name}</div>
+      ${ci.consignee.attention ? `<div>Attn: ${ci.consignee.attention}</div>` : ''}
+      <div>${ci.consignee.street}</div>
+      <div>${ci.consignee.city}</div>
+      <div style="font-weight:bold">${ci.consignee.country}</div>
+    </div>
+  </div>
+  
+  <div class="ref-row">
+    <div class="ref-item"><span class="ref-label">Date:</span> ${ci.date}</div>
+    <div class="ref-item"><span class="ref-label">RMA:</span> ${ci.rmaNumber}</div>
+    <div class="ref-item"><span class="ref-label">Incoterm:</span> ${ci.incoterm}</div>
+    <div class="ref-item"><span class="ref-label">Colis:</span> ${ci.parcels}</div>
+  </div>
+  
+  <table>
+    <thead>
+      <tr>
+        <th>Model / Modèle</th>
+        <th>Serial / N° Série</th>
+        <th>Description</th>
+        <th>HS Code</th>
+        <th>Origin</th>
+        <th>Weight (kg)</th>
+        <th style="text-align:right">Value (€)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${ci.devices.map(d => `
+      <tr>
+        <td>${d.model}</td>
+        <td style="font-family:monospace">${d.serial}</td>
+        <td>${d.service}</td>
+        <td>${d.hsCode}</td>
+        <td>${d.origin}</td>
+        <td>${d.weight} kg</td>
+        <td style="text-align:right">${d.value.toFixed(2)} €</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+  
+  <div class="totals">
+    <div class="total-line">Total net weight / Poids net total: <strong>${ci.totalWeight.toFixed(1)} kg</strong></div>
+    <div class="grand-total">Total declared value / Valeur déclarée: ${ci.totalValue.toFixed(2)} €</div>
+  </div>
+  
+  <div class="declaration">
+    <div class="declaration-title">CUSTOMS DECLARATION / DÉCLARATION DOUANIÈRE</div>
+    <div class="declaration-text">
+      These goods are the property of the consignee and are being returned after calibration and/or repair service.
+      <strong>No commercial transaction. No change of ownership.</strong><br><br>
+      Ces marchandises sont la propriété du destinataire et sont retournées après un service d'étalonnage et/ou de réparation.
+      <strong>Aucune transaction commerciale. Aucun transfert de propriété.</strong><br><br>
+      The declared value represents the cost of services performed only. /
+      La valeur déclarée représente uniquement le coût des services effectués.
+    </div>
+  </div>
+  
+  <div class="footer-info">
+    <div class="footer-box">
+      <div class="footer-box-title">Reason for Export / Motif</div>
+      <div>Return after service / Retour après service</div>
+    </div>
+    <div class="footer-box">
+      <div class="footer-box-title">Country of Origin / Pays d'origine</div>
+      <div>United States of America (USA)</div>
+    </div>
+    <div class="footer-box">
+      <div class="footer-box-title">Currency / Devise</div>
+      <div>EUR (€)</div>
+    </div>
+  </div>
+  
+  <div class="signature">
+    <div class="sig-block">
+      Authorized signature / Signature autorisée<br><br><br>
+      <strong>${profile?.full_name || 'Lighthouse France'}</strong><br>
+      ${ci.exporter.name}
+    </div>
+    <div class="sig-block">
+      Date & stamp / Date et cachet<br><br><br>
+      ${ci.date}
+    </div>
+  </div>
+  
+  <script>window.print()</script>
+</body>
+</html>`);
+    w.document.close();
+  };
+  
   const printLabel = (index) => {
     const s = shipments[index];
     const labelData = upsLabels[index];
@@ -14375,6 +14592,104 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
         
         // Generate UPS Label PDF - only in UPS mode
         let upsLabelUrl = null;
+        let ciUrl = null;
+        
+        // Generate Commercial Invoice PDF - only in BL-only (non-metro) mode
+        if (shippingMode === 'bl_only') {
+          try {
+            const ci = generateCIContent(s, i);
+            const ciElement = document.createElement('div');
+            ciElement.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;min-height:1123px;background:white;padding:30px;font-family:Arial,sans-serif;font-size:10pt;color:#333;';
+            ciElement.innerHTML = `
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #333;padding-bottom:10px;margin-bottom:15px;">
+                <div><img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style="height:50px;" onerror="this.outerHTML='<div style=\\'font-size:20px;font-weight:bold;color:#333\\'>LIGHTHOUSE<div style=\\'font-size:9px;color:#666\\'>FRANCE</div></div>'"></div>
+                <div style="text-align:right;">
+                  <div style="font-size:16pt;font-weight:bold;color:#2D5A7B;">COMMERCIAL INVOICE</div>
+                  <div style="font-size:12pt;color:#666;">FACTURE PROFORMA</div>
+                  <div style="font-size:11pt;font-weight:bold;color:#2D5A7B;margin-top:3px;">N° ${ci.ciNumber}</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:20px;margin-bottom:15px;">
+                <div style="flex:1;border:1px solid #ddd;padding:12px;background:#f9f9f9;">
+                  <div style="font-size:8pt;text-transform:uppercase;color:#666;font-weight:bold;margin-bottom:5px;">Exporter / Expéditeur</div>
+                  <div style="font-weight:bold;font-size:11pt;">${ci.exporter.name}</div>
+                  <div>${ci.exporter.address}</div><div>${ci.exporter.city}</div>
+                  ${ci.exporter.siret ? `<div style="margin-top:4px;font-size:8pt;color:#666;">SIRET: ${ci.exporter.siret}</div>` : ''}
+                  ${ci.exporter.tva ? `<div style="font-size:8pt;color:#666;">TVA: ${ci.exporter.tva}</div>` : ''}
+                </div>
+                <div style="flex:1;border:1px solid #ddd;padding:12px;background:#f9f9f9;">
+                  <div style="font-size:8pt;text-transform:uppercase;color:#666;font-weight:bold;margin-bottom:5px;">Consignee / Destinataire</div>
+                  <div style="font-weight:bold;font-size:11pt;">${ci.consignee.name}</div>
+                  ${ci.consignee.attention ? `<div>Attn: ${ci.consignee.attention}</div>` : ''}
+                  <div>${ci.consignee.street}</div><div>${ci.consignee.city}</div>
+                  <div style="font-weight:bold;">${ci.consignee.country}</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:15px;margin-bottom:15px;font-size:9pt;">
+                <div style="background:#f0f4f8;padding:6px 12px;border-radius:4px;"><strong>Date:</strong> ${ci.date}</div>
+                <div style="background:#f0f4f8;padding:6px 12px;border-radius:4px;"><strong>RMA:</strong> ${ci.rmaNumber}</div>
+                <div style="background:#f0f4f8;padding:6px 12px;border-radius:4px;"><strong>Incoterm:</strong> ${ci.incoterm}</div>
+                <div style="background:#f0f4f8;padding:6px 12px;border-radius:4px;"><strong>Colis:</strong> ${ci.parcels}</div>
+              </div>
+              <table style="width:100%;border-collapse:collapse;margin-bottom:15px;">
+                <thead><tr>
+                  <th style="background:#2D5A7B;color:white;padding:8px 6px;font-size:8pt;text-transform:uppercase;text-align:left;">Model</th>
+                  <th style="background:#2D5A7B;color:white;padding:8px 6px;font-size:8pt;text-transform:uppercase;text-align:left;">Serial</th>
+                  <th style="background:#2D5A7B;color:white;padding:8px 6px;font-size:8pt;text-transform:uppercase;text-align:left;">Description</th>
+                  <th style="background:#2D5A7B;color:white;padding:8px 6px;font-size:8pt;text-transform:uppercase;text-align:left;">HS Code</th>
+                  <th style="background:#2D5A7B;color:white;padding:8px 6px;font-size:8pt;text-transform:uppercase;text-align:left;">Origin</th>
+                  <th style="background:#2D5A7B;color:white;padding:8px 6px;font-size:8pt;text-transform:uppercase;text-align:left;">Weight</th>
+                  <th style="background:#2D5A7B;color:white;padding:8px 6px;font-size:8pt;text-transform:uppercase;text-align:right;">Value (€)</th>
+                </tr></thead>
+                <tbody>${ci.devices.map((d, idx) => `<tr style="${idx % 2 === 1 ? 'background:#f9f9f9;' : ''}">
+                  <td style="padding:7px 6px;border-bottom:1px solid #ddd;font-size:9pt;">${d.model}</td>
+                  <td style="padding:7px 6px;border-bottom:1px solid #ddd;font-size:9pt;font-family:monospace;">${d.serial}</td>
+                  <td style="padding:7px 6px;border-bottom:1px solid #ddd;font-size:9pt;">${d.service}</td>
+                  <td style="padding:7px 6px;border-bottom:1px solid #ddd;font-size:9pt;">${d.hsCode}</td>
+                  <td style="padding:7px 6px;border-bottom:1px solid #ddd;font-size:9pt;">${d.origin}</td>
+                  <td style="padding:7px 6px;border-bottom:1px solid #ddd;font-size:9pt;">${d.weight} kg</td>
+                  <td style="padding:7px 6px;border-bottom:1px solid #ddd;font-size:9pt;text-align:right;">${d.value.toFixed(2)} €</td>
+                </tr>`).join('')}</tbody>
+              </table>
+              <div style="text-align:right;margin-bottom:15px;">
+                <div style="font-size:10pt;margin:3px 0;">Total weight: <strong>${ci.totalWeight.toFixed(1)} kg</strong></div>
+                <div style="font-size:13pt;font-weight:bold;color:#2D5A7B;border-top:2px solid #2D5A7B;padding-top:5px;margin-top:5px;display:inline-block;">Total: ${ci.totalValue.toFixed(2)} €</div>
+              </div>
+              <div style="border:2px solid #c00;padding:12px;margin-bottom:15px;background:#fff5f5;">
+                <div style="font-weight:bold;color:#c00;font-size:10pt;margin-bottom:5px;">CUSTOMS DECLARATION / DÉCLARATION DOUANIÈRE</div>
+                <div style="font-size:9pt;line-height:1.4;">
+                  These goods are the property of the consignee and are being returned after calibration and/or repair service.
+                  <strong>No commercial transaction. No change of ownership.</strong><br><br>
+                  Ces marchandises sont la propriété du destinataire et sont retournées après service.
+                  <strong>Aucune transaction commerciale. Aucun transfert de propriété.</strong><br><br>
+                  The declared value represents the cost of services performed only.
+                </div>
+              </div>
+              <div style="display:flex;gap:20px;margin-bottom:15px;font-size:9pt;">
+                <div style="flex:1;border:1px solid #ddd;padding:10px;"><div style="font-weight:bold;font-size:8pt;text-transform:uppercase;color:#555;margin-bottom:4px;">Reason for Export</div><div>Return after service</div></div>
+                <div style="flex:1;border:1px solid #ddd;padding:10px;"><div style="font-weight:bold;font-size:8pt;text-transform:uppercase;color:#555;margin-bottom:4px;">Country of Origin</div><div>USA</div></div>
+                <div style="flex:1;border:1px solid #ddd;padding:10px;"><div style="font-weight:bold;font-size:8pt;text-transform:uppercase;color:#555;margin-bottom:4px;">Currency</div><div>EUR (€)</div></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-top:20px;">
+                <div style="width:45%;border-top:1px solid #333;padding-top:5px;font-size:8pt;color:#666;">Authorized signature<br><br><br><strong>${profile?.full_name || 'Lighthouse France'}</strong><br>${ci.exporter.name}</div>
+                <div style="width:45%;border-top:1px solid #333;padding-top:5px;font-size:8pt;color:#666;">Date & stamp<br><br><br>${ci.date}</div>
+              </div>`;
+            document.body.appendChild(ciElement);
+            await new Promise(r => setTimeout(r, 300));
+            const ciCanvas = await window.html2canvas(ciElement, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+            document.body.removeChild(ciElement);
+            const jsPDF = await loadJsPDF();
+            const ciPdf = new jsPDF('p', 'mm', 'a4');
+            ciPdf.addImage(ciCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 210, 297);
+            const ciPdfBlob = ciPdf.output('blob');
+            const ciFileName = `${rma.request_number}_CI_${ci.ciNumber.replace(/[^a-zA-Z0-9-_]/g, '')}_${Date.now()}.pdf`;
+            ciUrl = await uploadPDFToStorage(ciPdfBlob, `shipping/${rma.request_number}`, ciFileName);
+            console.log('Commercial Invoice PDF saved:', ciUrl);
+          } catch (ciErr) {
+            console.error('Commercial Invoice PDF error:', ciErr);
+          }
+        }
+        
         if (shippingMode !== 'bl_only') {
           try {
             console.log('Saving UPS label for shipment:', i, s.trackingNumber);
@@ -14408,7 +14723,8 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
             tracking_number: shippingMode === 'bl_only' ? 'Client pickup' : (s.trackingNumber || null), 
             bl_number: bl.blNumber,
             bl_url: blUrl || null,
-            ups_label_url: upsLabelUrl || null
+            ups_label_url: upsLabelUrl || null,
+            commercial_invoice_url: ciUrl || null
           }).eq('id', d.id);
         }
       }
@@ -14879,6 +15195,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                     <span className={blsPrinted[idx] ? 'text-green-600 font-medium' : 'text-gray-400'}>{blsPrinted[idx] ? (lang === 'en' ? '✓ Printed' : '✓ Imprimé') : ''}</span>
                     <button onClick={() => setStep(1)} className="px-3 py-1 bg-white hover:bg-gray-50 border rounded text-sm">{lang === 'en' ? '✏️ Edit' : '✏️ Modifier'}</button>
                     <button onClick={() => printBL(idx)} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">{lang === 'en' ? '🖨️ Print DN' : '🖨️ Imprimer BL'}</button>
+                    {shippingMode === 'bl_only' && <button onClick={() => printCI(idx)} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium">{lang === 'en' ? '🧾 Print CI' : '🧾 Imprimer Facture Proforma'}</button>}
                   </div>
                 </div>
                 
