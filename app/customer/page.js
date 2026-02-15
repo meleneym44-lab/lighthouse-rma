@@ -4259,6 +4259,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           urgency: 'normal',
           shipping_address_id: addressId,
           billing_address_id: billingChoice === 'same' ? addressId : billingChoice === 'other' ? (billingAddressId || null) : null,
+          billing_siret: profile?.companies?.siret || null,
+          billing_tva: profile?.companies?.tva_number || null,
           parcels_count: shipping.parcels || 1,
           status: 'submitted',
           submitted_at: new Date().toISOString()
@@ -4422,6 +4424,18 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
               </option>
             ))}
           </select>
+          {/* SIRET/TVA status */}
+          <div className="mt-3 flex items-center gap-4 text-xs">
+            <span className={profile?.companies?.siret ? 'text-green-600' : 'text-amber-500'}>
+              SIRET: {profile?.companies?.siret ? <span className="font-mono">{profile.companies.siret}</span> : 'Non renseigné'}
+            </span>
+            <span className={profile?.companies?.tva_number ? 'text-green-600' : 'text-amber-500'}>
+              TVA: {profile?.companies?.tva_number ? <span className="font-mono">{profile.companies.tva_number}</span> : 'Non renseigné'}
+            </span>
+            {(!profile?.companies?.siret || !profile?.companies?.tva_number) && (
+              <button type="button" onClick={() => setPage('settings')} className="text-[#3B7AB4] underline ml-auto">Compléter</button>
+            )}
+          </div>
         </div>
 
         {/* Submit Buttons */}
