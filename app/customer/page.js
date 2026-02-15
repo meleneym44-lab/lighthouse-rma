@@ -4415,10 +4415,15 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
             }}
             className={`w-full px-3 py-2.5 border rounded-lg text-sm ${!billingChoice ? 'border-gray-300 text-gray-400' : 'border-gray-300'}`}
           >
-            <option value="">Sélectionner une adresse de facturation...</option>
+            <option value="">{"Sélectionner une adresse de facturation..."}</option>
             <option value="same">{"Identique à l'adresse de retour"}</option>
-            <option value="company">{profile?.companies?.name} — {profile?.companies?.billing_address}, {profile?.companies?.billing_postal_code} {profile?.companies?.billing_city}</option>
-            {addresses.filter(a => a.id !== shipping.address_id).map(a => (
+            <option value="company">{profile?.companies?.name} — {profile?.companies?.billing_address}, {profile?.companies?.billing_postal_code} {profile?.companies?.billing_city} (Siège)</option>
+            {addresses.filter(a => a.is_billing).map(a => (
+              <option key={a.id} value={a.id}>
+                💳 {a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}
+              </option>
+            ))}
+            {addresses.filter(a => !a.is_billing && a.id !== shipping.address_id).map(a => (
               <option key={a.id} value={a.id}>
                 {a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}
               </option>
@@ -5429,7 +5434,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
               className={`w-full px-3 py-2 border rounded-lg text-sm ${!shipping.address_id && !shipping.showNewForm ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
             >
               <option value="">-- Sélectionner --</option>
-              {addresses.map(addr => (
+              {addresses.filter(a => !a.is_billing).map(addr => (
                 <option key={addr.id} value={addr.id}>
                   {addr.label || addr.company_name}{addr.is_default ? ' ⭐' : ''} — {addr.address_line1}, {addr.postal_code} {addr.city}
                 </option>
@@ -5840,7 +5845,7 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
         )}
 
         {/* Per-Device Shipping Address */}
-        {addresses && addresses.length > 1 && (
+        {addresses && addresses.filter(a => !a.is_billing).length > 1 && (
           <div className="md:col-span-2 mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
             <label className="flex items-center gap-3 cursor-pointer mb-2">
               <input
@@ -5867,7 +5872,7 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
                 className="w-full px-3 py-2 border border-amber-300 rounded-lg bg-white mt-2"
               >
                 <option value="">-- Sélectionner une adresse --</option>
-                {addresses.map(addr => (
+                {addresses.filter(a => !a.is_billing).map(addr => (
                   <option key={addr.id} value={addr.id}>
                     {addr.label} - {addr.city} {addr.is_default ? '(Par défaut)' : ''}
                   </option>
@@ -5918,8 +5923,9 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
   // Address management
   const [showAddAddress, setShowAddAddress] = useState(false);
   const [editingAddress, setEditingAddress] = useState(null);
+  const [addingBillingAddress, setAddingBillingAddress] = useState(false);
   const [newAddress, setNewAddress] = useState({
-    label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false
+    label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: false
   });
   
   // Notification preferences
@@ -6219,7 +6225,8 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
     notify(editingAddress ? 'Adresse modifiée!' : 'Adresse ajoutée!');
     setShowAddAddress(false);
     setEditingAddress(null);
-    setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false });
+    setAddingBillingAddress(false);
+    setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: false });
     refresh();
   };
 
@@ -6248,8 +6255,10 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
       postal_code: addr.postal_code || '',
       country: addr.country || 'France',
       phone: addr.phone || '',
-      is_default: addr.is_default || false
+      is_default: addr.is_default || false,
+      is_billing: addr.is_billing || false
     });
+    setAddingBillingAddress(!!addr.is_billing);
     setShowAddAddress(true);
   };
 
@@ -6507,7 +6516,8 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
               <button
                 onClick={() => {
                   setEditingAddress(null);
-                  setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false });
+                  setAddingBillingAddress(false);
+                  setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: false });
                   setShowAddAddress(true);
                 }}
                 className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
@@ -6516,15 +6526,13 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
               </button>
             </div>
             <div className="p-6">
-              {addresses.length === 0 ? (
-                <div className="text-center py-8 text-gray-400">
-                  <p className="text-4xl mb-2">📍</p>
-                  <p>Aucune adresse enregistrée</p>
-                  <p className="text-sm">Ajoutez une adresse pour vos livraisons</p>
+              {addresses.filter(a => !a.is_billing).length === 0 ? (
+                <div className="text-center py-6 text-gray-400">
+                  <p>Aucune adresse de livraison</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {addresses.map(addr => (
+                  {addresses.filter(a => !a.is_billing).map(addr => (
                     <div key={addr.id} className={`p-4 rounded-xl border-2 ${addr.is_default ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 bg-gray-50'}`}>
                       <div className="flex justify-between items-start gap-4">
                         <div className="flex-1">
@@ -6541,6 +6549,55 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
                         <div className="flex flex-col gap-2">
                           <button onClick={() => openEditAddress(addr)} className="px-3 py-1.5 text-sm text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]">✏️</button>
                           {!addr.is_default && <button onClick={() => setDefault(addr.id)} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100">⭐</button>}
+                          <button onClick={() => deleteAddress(addr.id)} className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50">🗑️</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Billing Addresses */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-bold text-[#1E3A5F]">💳 Adresses de facturation</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Adresses utilisées pour les devis et factures</p>
+              </div>
+              <button
+                onClick={() => {
+                  setEditingAddress(null);
+                  setAddingBillingAddress(true);
+                  setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: true });
+                  setShowAddAddress(true);
+                }}
+                className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
+              >
+                + Ajouter
+              </button>
+            </div>
+            <div className="p-6">
+              {addresses.filter(a => a.is_billing).length === 0 ? (
+                <div className="text-center py-6 text-gray-400">
+                  <p>Aucune adresse de facturation</p>
+                  <p className="text-xs mt-1">{"L'adresse du siège sera utilisée par défaut"}</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {addresses.filter(a => a.is_billing).map(addr => (
+                    <div key={addr.id} className="p-4 rounded-xl border-2 border-gray-200 bg-gray-50">
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="flex-1">
+                          <h3 className="font-bold text-[#1E3A5F] mb-1">{addr.label}</h3>
+                          {addr.attention && <p className="text-sm text-gray-600">Attn: {addr.attention}</p>}
+                          <p className="text-sm text-gray-700">{addr.address_line1}</p>
+                          {addr.address_line2 && <p className="text-sm text-gray-700">{addr.address_line2}</p>}
+                          <p className="text-sm text-gray-700">{addr.postal_code} {addr.city}, {addr.country || 'France'}</p>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <button onClick={() => openEditAddress(addr)} className="px-3 py-1.5 text-sm text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]">✏️</button>
                           <button onClick={() => deleteAddress(addr.id)} className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50">🗑️</button>
                         </div>
                       </div>
@@ -6995,7 +7052,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
           <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="px-6 py-4 border-b sticky top-0 bg-white">
               <h3 className="font-bold text-lg text-[#1E3A5F]">
-                {editingAddress ? 'Modifier l\'adresse' : 'Ajouter une adresse'}
+                {editingAddress ? 'Modifier' : 'Ajouter'} {addingBillingAddress ? 'adresse de facturation' : 'adresse de livraison'}
               </h3>
             </div>
             <form onSubmit={saveAddress} className="p-6 space-y-4">
@@ -7091,21 +7148,24 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
                 />
               </div>
-              <label className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                <input
-                  type="checkbox"
-                  checked={newAddress.is_default}
-                  onChange={e => setNewAddress({ ...newAddress, is_default: e.target.checked })}
-                  className="w-4 h-4 text-[#3B7AB4]"
-                />
-                <span className="text-sm">Définir comme adresse par défaut</span>
-              </label>
+              {!addingBillingAddress && (
+                <label className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                  <input
+                    type="checkbox"
+                    checked={newAddress.is_default}
+                    onChange={e => setNewAddress({ ...newAddress, is_default: e.target.checked })}
+                    className="w-4 h-4 text-[#3B7AB4]"
+                  />
+                  <span className="text-sm">Définir comme adresse par défaut</span>
+                </label>
+              )}
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => {
                     setShowAddAddress(false);
                     setEditingAddress(null);
+                    setAddingBillingAddress(false);
                   }}
                   className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
                 >
