@@ -13071,7 +13071,7 @@ function StandaloneCIModal({ rma, devices, onClose, profile, businessSettings, l
   const clientAddr = rma.companies || {};
   const getFrenchDateCI = () => { const d = new Date(); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; };
   
-  // Get price from quote_data for a device
+  // Get price from quote_data for a device - mirrors InvoiceCreationModal logic
   const getDevicePrice = (device) => {
     const quotedDevices = rma.quote_data?.devices || [];
     const match = quotedDevices.find(qd => 
@@ -13079,9 +13079,14 @@ function StandaloneCIModal({ rma, devices, onClose, profile, businessSettings, l
     );
     if (match) {
       let total = 0;
-      if (match.calibrationPrice) total += parseFloat(match.calibrationPrice) || 0;
-      if (match.nettoyagePrice) total += parseFloat(match.nettoyagePrice) || 0;
-      if (match.repairParts) match.repairParts.forEach(p => { total += (parseFloat(p.unitPrice) || 0) * (parseInt(p.quantity) || 1); });
+      if (match.needsCalibration) total += parseFloat(match.calibrationPrice) || 0;
+      if (match.needsRepair) total += parseFloat(match.repairPrice) || 0;
+      if (match.needsNettoyage) total += parseFloat(match.nettoyagePrice) || 0;
+      if (match.additionalParts) match.additionalParts.forEach(p => { total += (parseFloat(p.price) || 0) * (parseInt(p.quantity) || 1); });
+      // Supplement / additional work items
+      if (device.additional_work_needed && device.additional_work_items) {
+        device.additional_work_items.forEach(item => { total += (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1); });
+      }
       return total;
     }
     return parseFloat(device.quoted_price) || parseFloat(device.unit_price) || 0;
@@ -14354,13 +14359,18 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     const biz = businessSettings || {};
     const quotedDevices = rma.quote_data?.devices || [];
     const devicesWithPricing = shipment.devices.map(d => {
-      // Try to get price from quote_data first
+      // Try to get price from quote_data first - mirrors InvoiceCreationModal logic
       const match = quotedDevices.find(qd => (qd.serial || '').trim().toLowerCase() === (d.serial_number || '').trim().toLowerCase());
       let value = 0;
       if (match) {
-        if (match.calibrationPrice) value += parseFloat(match.calibrationPrice) || 0;
-        if (match.nettoyagePrice) value += parseFloat(match.nettoyagePrice) || 0;
-        if (match.repairParts) match.repairParts.forEach(p => { value += (parseFloat(p.unitPrice) || 0) * (parseInt(p.quantity) || 1); });
+        if (match.needsCalibration) value += parseFloat(match.calibrationPrice) || 0;
+        if (match.needsRepair) value += parseFloat(match.repairPrice) || 0;
+        if (match.needsNettoyage) value += parseFloat(match.nettoyagePrice) || 0;
+        if (match.additionalParts) match.additionalParts.forEach(p => { value += (parseFloat(p.price) || 0) * (parseInt(p.quantity) || 1); });
+      }
+      // Supplement / additional work items
+      if (d.additional_work_needed && d.additional_work_items) {
+        d.additional_work_items.forEach(item => { value += (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1); });
       }
       if (!value) value = parseFloat(d.quoted_price) || parseFloat(d.unit_price) || 0;
       return {
