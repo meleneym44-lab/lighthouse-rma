@@ -4042,10 +4042,10 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' },
     parcels: 0
   });
-  const [billingChoice, setBillingChoice] = useState('company'); // 'company' or 'same' or 'other'
+  const [billingChoice, setBillingChoice] = useState('same'); // 'same', 'company', or 'other'
   const [billingAddressId, setBillingAddressId] = useState('');
   const [saving, setSaving] = useState(false);
-  const [formStep, setFormStep] = useState('form'); // 'form', 'review', 'success'
+  const [formStep, setFormStep] = useState('form'); // 'form' or 'success'
 
   // Load saved equipment on mount
   useEffect(() => {
@@ -4160,6 +4160,38 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     return data.id;
   };
 
+  // Validate form before submission
+  const validateForm = () => {
+    for (const d of devices) {
+      if (!d.device_type || !d.model || !d.serial_number || !d.service_type) {
+        notify('Veuillez remplir tous les champs obligatoires pour chaque appareil (type, modèle, n° série, service)', 'error');
+        return false;
+      }
+      const needsNotes = d.service_type === 'repair' || d.service_type === 'calibration_repair' || d.service_type === 'other';
+      if (needsNotes && !d.notes) {
+        notify('Veuillez décrire le problème ou la demande dans les notes pour les réparations', 'error');
+        return false;
+      }
+      if (d.brand === 'other' && !d.brand_other) {
+        notify('Veuillez préciser la marque', 'error');
+        return false;
+      }
+      if (d.service_type === 'other' && !d.service_other) {
+        notify('Veuillez préciser le type de service', 'error');
+        return false;
+      }
+    }
+    if (!shipping.address_id && !shipping.showNewForm) {
+      notify('Veuillez sélectionner ou ajouter une adresse de retour', 'error');
+      return false;
+    }
+    if (!shipping.parcels || shipping.parcels < 1) {
+      notify('Veuillez indiquer le nombre de colis', 'error');
+      return false;
+    }
+    return true;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -4269,72 +4301,20 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     setSaving(false);
   };
 
-  // Helper: get selected return address details
-  const getReturnAddress = () => {
-    if (shipping.showNewForm) return shipping.newAddress;
-    return addresses.find(a => a.id === shipping.address_id);
-  };
-  
-  // Helper: get billing address display
-  const getBillingDisplay = () => {
-    const co = profile?.companies || {};
-    if (billingChoice === 'company') return `${co.name || ''}, ${co.billing_address || ''}, ${co.billing_postal_code || ''} ${co.billing_city || ''}`;
-    if (billingChoice === 'same') { const a = getReturnAddress(); return a ? `${a.company_name || a.label || ''}, ${a.address_line1 || ''}, ${a.postal_code || ''} ${a.city || ''}` : '—'; }
-    if (billingChoice === 'other') { const a = addresses.find(a => a.id === billingAddressId); return a ? `${a.company_name || a.label || ''}, ${a.address_line1 || ''}, ${a.postal_code || ''} ${a.city || ''}` : '—'; }
-    return '—';
-  };
-
-  // Validate before showing review
-  const goToReview = () => {
-    for (const d of devices) {
-      if (!d.device_type || !d.model || !d.serial_number || !d.service_type) {
-        notify('Veuillez remplir tous les champs obligatoires pour chaque appareil (type, modèle, n° série, service)', 'error');
-        return;
-      }
-      const needsNotes = d.service_type === 'repair' || d.service_type === 'calibration_repair' || d.service_type === 'other';
-      if (needsNotes && !d.notes) {
-        notify('Veuillez décrire le problème ou la demande dans les notes pour les réparations', 'error');
-        return;
-      }
-      if (d.brand === 'other' && !d.brand_other) {
-        notify('Veuillez préciser la marque', 'error');
-        return;
-      }
-      if (d.service_type === 'other' && !d.service_other) {
-        notify('Veuillez préciser le type de service', 'error');
-        return;
-      }
-    }
-    if (!shipping.address_id && !shipping.showNewForm) {
-      notify('Veuillez sélectionner ou ajouter une adresse de retour', 'error');
-      return;
-    }
-    if (!shipping.parcels || shipping.parcels < 1) {
-      notify('Veuillez indiquer le nombre de colis', 'error');
-      return;
-    }
-    setFormStep('review');
-    window.scrollTo(0, 0);
-  };
 
   // === SUCCESS SCREEN ===
   if (formStep === 'success') {
     return (
       <div className="max-w-2xl mx-auto">
         <div className="bg-white rounded-2xl shadow-lg border overflow-hidden">
-          {/* Green success header */}
           <div className="bg-gradient-to-r from-[#00A651] to-[#008f45] p-8 text-center text-white">
             <div className="text-5xl mb-4">✅</div>
             <h1 className="text-2xl font-bold">Demande soumise avec succès!</h1>
             <p className="text-white/80 mt-2">Un numéro FR sera attribué après validation par notre équipe.</p>
           </div>
-          
-          {/* Shipping Instructions */}
           <div className="p-6">
             <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-6 mb-6">
-              <h2 className="text-lg font-bold text-blue-900 mb-3 flex items-center gap-2">
-                📦 Envoyez vos appareils à :
-              </h2>
+              <h2 className="text-lg font-bold text-blue-900 mb-3">📦 Envoyez vos appareils à :</h2>
               <div className="bg-white rounded-lg p-4 border border-blue-200">
                 <p className="font-bold text-lg text-[#1E3A5F]">LIGHTHOUSE FRANCE SAS</p>
                 <p className="text-gray-700 mt-1">16 Rue Paul Séjourné</p>
@@ -4343,23 +4323,12 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                 <p className="text-gray-500 mt-2 text-sm">Tél: 01 43 77 28 07</p>
               </div>
             </div>
-            
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
               <p className="text-sm text-amber-800">
-                <strong>📝 Important :</strong> Veuillez indiquer votre nom de société et le numéro de série des appareils sur chaque colis. 
-                Vous recevrez un email de confirmation avec les détails de votre demande.
+                <strong>📝 Important :</strong> Veuillez indiquer votre nom de société et le numéro de série des appareils sur chaque colis.
               </p>
             </div>
-
-            <div className="text-sm text-gray-500 space-y-1 mb-6">
-              <p><strong>Appareils :</strong> {devices.length} appareil{devices.length > 1 ? 's' : ''}</p>
-              <p><strong>Colis :</strong> {shipping.parcels}</p>
-            </div>
-            
-            <button
-              onClick={() => setPage('dashboard')}
-              className="w-full py-3 bg-[#1E3A5F] text-white rounded-lg font-medium hover:bg-[#2a4f7a] transition-colors"
-            >
+            <button onClick={() => setPage('dashboard')} className="w-full py-3 bg-[#1E3A5F] text-white rounded-lg font-medium hover:bg-[#2a4f7a] transition-colors">
               Retour au tableau de bord
             </button>
           </div>
@@ -4368,107 +4337,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     );
   }
 
-  // === REVIEW SCREEN ===
-  if (formStep === 'review') {
-    const retAddr = getReturnAddress();
-    const serviceTypeLabels = {
-      calibration: 'Étalonnage',
-      repair: 'Réparation',
-      calibration_repair: 'Étalonnage + Réparation',
-      other: 'Autre'
-    };
-    
-    return (
-      <div>
-        <div className="flex items-center gap-4 mb-6">
-          <button onClick={() => setFormStep('form')} className="text-gray-500 hover:text-gray-700">←</button>
-          <h1 className="text-2xl font-bold text-[#1E3A5F]">Vérification de votre demande</h1>
-        </div>
-        
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
-          <p className="text-sm text-amber-800">
-            <strong>Veuillez vérifier les informations ci-dessous avant de soumettre votre demande.</strong>
-          </p>
-        </div>
-        
-        {/* Devices summary */}
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-4">
-          <h2 className="text-lg font-bold text-[#1E3A5F] mb-4 pb-3 border-b">
-            📱 Appareils ({devices.length})
-          </h2>
-          <div className="space-y-3">
-            {devices.map((d, i) => (
-              <div key={d.id} className="flex items-start gap-4 p-3 bg-gray-50 rounded-lg">
-                <div className="w-8 h-8 bg-[#3B7AB4] text-white rounded-full flex items-center justify-center font-bold text-sm shrink-0">{i + 1}</div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-[#1E3A5F]">{d.brand === 'other' ? d.brand_other : 'Lighthouse'} {d.model}</p>
-                  <p className="text-sm text-gray-600">SN: <span className="font-mono">{d.serial_number}</span></p>
-                  <p className="text-sm text-gray-600">Service: {serviceTypeLabels[d.service_type] || d.service_other || d.service_type}</p>
-                  {d.notes && <p className="text-sm text-gray-500 mt-1 italic">"{d.notes}"</p>}
-                  {d.accessories.length > 0 && <p className="text-xs text-gray-400 mt-1">Accessoires: {d.accessories.join(', ')}</p>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        
-        {/* Shipping summary */}
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-4">
-          <h2 className="text-lg font-bold text-[#1E3A5F] mb-4 pb-3 border-b">
-            🚚 Expédition
-          </h2>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase mb-1">Adresse de retour</p>
-              {retAddr && (
-                <div className="text-sm text-gray-700">
-                  <p className="font-medium">{retAddr.company_name || retAddr.label || profile?.companies?.name}</p>
-                  {retAddr.attention && <p>Attn: {retAddr.attention}</p>}
-                  <p>{retAddr.address_line1}</p>
-                  <p>{retAddr.postal_code} {retAddr.city}</p>
-                  <p>{retAddr.country || 'France'}</p>
-                </div>
-              )}
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase mb-1">Nombre de colis</p>
-              <p className="text-2xl font-bold text-[#1E3A5F]">{shipping.parcels}</p>
-            </div>
-          </div>
-        </div>
-        
-        {/* Billing summary */}
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-          <h2 className="text-lg font-bold text-[#1E3A5F] mb-4 pb-3 border-b">
-            💳 Adresse de facturation
-          </h2>
-          <p className="text-sm text-gray-700">{getBillingDisplay()}</p>
-        </div>
-        
-        {/* Action buttons */}
-        <div className="flex gap-4">
-          <button
-            type="button"
-            onClick={() => setFormStep('form')}
-            className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-          >
-            ← Modifier
-          </button>
-          <form onSubmit={handleSubmit} className="flex-1">
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors disabled:opacity-50 text-lg"
-            >
-              {saving ? 'Envoi en cours...' : '✅ Confirmer et soumettre'}
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
-  // === MAIN FORM (formStep === 'form') ===
+  // === MAIN FORM ===
   return (
     <div>
       <div className="flex items-center gap-4 mb-6">
@@ -4476,7 +4345,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         <h1 className="text-2xl font-bold text-[#1E3A5F]">Demande Étalonnage / Réparation</h1>
       </div>
       
-      <form onSubmit={(e) => { e.preventDefault(); goToReview(); }}>
+      <form onSubmit={(e) => { e.preventDefault(); if (validateForm()) handleSubmit(e); }}>
         {/* Devices */}
         <div className="space-y-6 mb-8">
           {devices.map((device) => (
@@ -4515,77 +4384,39 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           refresh={refresh}
         />
 
-        {/* Billing Address Section */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mt-6">
-          <h2 className="text-xl font-bold text-[#1E3A5F] mb-4 pb-4 border-b-2 border-[#E8F2F8]">
-            💳 Adresse de Facturation
-          </h2>
-          
-          <div className="space-y-3">
-            {/* Option 1: Company billing address */}
-            <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${billingChoice === 'company' ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 hover:border-gray-300'}`}>
+        {/* Billing Address - compact */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mt-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-[#1E3A5F]">💳 Adresse de facturation</h2>
+            <label className="flex items-center gap-2 cursor-pointer">
               <input
-                type="radio"
-                name="billing"
-                value="company"
-                checked={billingChoice === 'company'}
-                onChange={() => setBillingChoice('company')}
-                className="mt-1 text-[#3B7AB4]"
-              />
-              <div>
-                <p className="font-medium text-[#1E3A5F]">Adresse de la société</p>
-                <p className="text-sm text-gray-500">
-                  {profile?.companies?.name} — {profile?.companies?.billing_address}, {profile?.companies?.billing_postal_code} {profile?.companies?.billing_city}
-                </p>
-              </div>
-            </label>
-            
-            {/* Option 2: Same as return address */}
-            <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${billingChoice === 'same' ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 hover:border-gray-300'}`}>
-              <input
-                type="radio"
-                name="billing"
-                value="same"
+                type="checkbox"
                 checked={billingChoice === 'same'}
-                onChange={() => setBillingChoice('same')}
-                className="mt-1 text-[#3B7AB4]"
+                onChange={e => setBillingChoice(e.target.checked ? 'same' : 'other')}
+                className="rounded text-[#3B7AB4] focus:ring-[#3B7AB4]"
               />
-              <div>
-                <p className="font-medium text-[#1E3A5F]">Même que l'adresse de retour</p>
-              </div>
+              <span className="text-sm text-gray-600">Identique au retour</span>
             </label>
-            
-            {/* Option 3: Other address */}
-            {addresses.length > 1 && (
-              <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${billingChoice === 'other' ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 hover:border-gray-300'}`}>
-                <input
-                  type="radio"
-                  name="billing"
-                  value="other"
-                  checked={billingChoice === 'other'}
-                  onChange={() => setBillingChoice('other')}
-                  className="mt-1 text-[#3B7AB4]"
-                />
-                <div className="flex-1">
-                  <p className="font-medium text-[#1E3A5F]">Autre adresse</p>
-                  {billingChoice === 'other' && (
-                    <select
-                      value={billingAddressId}
-                      onChange={e => setBillingAddressId(e.target.value)}
-                      className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    >
-                      <option value="">Sélectionner une adresse...</option>
-                      {addresses.map(a => (
-                        <option key={a.id} value={a.id}>
-                          {a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              </label>
-            )}
           </div>
+          {billingChoice !== 'same' && (
+            <select
+              value={billingChoice === 'company' ? 'company' : billingAddressId}
+              onChange={e => {
+                if (e.target.value === 'company') { setBillingChoice('company'); setBillingAddressId(''); }
+                else { setBillingChoice('other'); setBillingAddressId(e.target.value); }
+              }}
+              className="mt-3 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            >
+              <option value="company">
+                {profile?.companies?.name} — {profile?.companies?.billing_address}, {profile?.companies?.billing_postal_code} {profile?.companies?.billing_city} (Siège)
+              </option>
+              {addresses.map(a => (
+                <option key={a.id} value={a.id}>
+                  {a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Submit Buttons */}
@@ -4599,9 +4430,10 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           </button>
           <button
             type="submit"
-            className="flex-1 py-3 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F] transition-colors"
+            disabled={saving}
+            className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors disabled:opacity-50"
           >
-            Vérifier la demande →
+            {saving ? 'Envoi en cours...' : 'Soumettre la demande'}
           </button>
         </div>
       </form>
@@ -5454,240 +5286,108 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
       <h2 className="text-xl font-bold text-[#1E3A5F] mb-4 pb-4 border-b-2 border-[#E8F2F8]">
-        Information de Livraison
+        📦 Expédition
       </h2>
 
-      {/* Number of Parcels - FIRST */}
-      <div className="mb-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
-        <label className="block text-sm font-bold text-[#1E3A5F] mb-2">
-          📦 Nombre de colis *
-        </label>
-        <p className="text-sm text-gray-600 mb-3">
-          Indiquez le nombre de colis/boîtes dans lesquels vous enverrez vos appareils.
-        </p>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setShipping({ ...shipping, parcels: Math.max(0, (shipping.parcels || 0) - 1) })}
-            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
-          >
-            −
-          </button>
-          <input
-            type="number"
-            min="0"
-            value={shipping.parcels || 0}
-            onChange={e => setShipping({ ...shipping, parcels: Math.max(0, parseInt(e.target.value) || 0) })}
-            className={`w-20 px-3 py-2 text-center border rounded-lg font-bold text-lg ${
-              (shipping.parcels || 0) === 0 ? 'border-red-400 bg-red-50' : 'border-gray-300'
-            }`}
-          />
-          <button
-            type="button"
-            onClick={() => setShipping({ ...shipping, parcels: (shipping.parcels || 0) + 1 })}
-            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
-          >
-            +
-          </button>
-          <span className="text-gray-600 ml-2">colis</span>
+      {/* Parcels + Return Address in grid */}
+      <div className="grid md:grid-cols-2 gap-4 mb-4">
+        {/* Return Address Dropdown */}
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-2">Adresse de retour *</label>
+          {addresses.length > 0 ? (
+            <select
+              value={shipping.showNewForm ? '__new__' : (shipping.address_id || '')}
+              onChange={e => {
+                if (e.target.value === '__new__') {
+                  setShipping({ ...shipping, showNewForm: true, address_id: '' });
+                } else {
+                  setShipping({ ...shipping, address_id: e.target.value, showNewForm: false });
+                }
+              }}
+              className={`w-full px-3 py-2 border rounded-lg text-sm ${!shipping.address_id && !shipping.showNewForm ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
+            >
+              <option value="">-- Sélectionner --</option>
+              {addresses.map(addr => (
+                <option key={addr.id} value={addr.id}>
+                  {addr.label || addr.company_name}{addr.is_default ? ' ⭐' : ''} — {addr.address_line1}, {addr.postal_code} {addr.city}
+                </option>
+              ))}
+              <option value="__new__">+ Nouvelle adresse...</option>
+            </select>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShipping({ ...shipping, showNewForm: true })}
+              className="w-full px-3 py-2 border-2 border-dashed border-[#3B7AB4] text-[#3B7AB4] rounded-lg text-sm font-medium hover:bg-[#E8F2F8]"
+            >
+              + Ajouter une adresse
+            </button>
+          )}
+          {/* Show selected address details */}
+          {selectedAddress && !shipping.showNewForm && (
+            <div className="mt-2 p-2 bg-gray-50 rounded text-xs text-gray-600">
+              <p className="font-medium">{selectedAddress.company_name || selectedAddress.label}</p>
+              {selectedAddress.attention && <p>Attn: {selectedAddress.attention}</p>}
+              <p>{selectedAddress.address_line1}, {selectedAddress.postal_code} {selectedAddress.city}, {selectedAddress.country || 'France'}</p>
+            </div>
+          )}
         </div>
-        {(shipping.parcels || 0) === 0 && (
-          <p className="text-red-600 text-sm mt-2 font-medium">⚠️ Veuillez indiquer le nombre de colis</p>
-        )}
+
+        {/* Number of Parcels */}
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-2">Nombre de colis *</label>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => setShipping({ ...shipping, parcels: Math.max(0, (shipping.parcels || 0) - 1) })} className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50">−</button>
+            <input
+              type="number" min="0" value={shipping.parcels || 0}
+              onChange={e => setShipping({ ...shipping, parcels: Math.max(0, parseInt(e.target.value) || 0) })}
+              className={`w-20 px-3 py-2 text-center border rounded-lg font-bold text-lg ${(shipping.parcels || 0) === 0 ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
+            />
+            <button type="button" onClick={() => setShipping({ ...shipping, parcels: (shipping.parcels || 0) + 1 })} className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50">+</button>
+            <span className="text-gray-500 text-sm">colis</span>
+          </div>
+          {(shipping.parcels || 0) === 0 && <p className="text-red-600 text-xs mt-1">⚠️ Requis</p>}
+        </div>
       </div>
 
-      {/* Existing Addresses */}
-      <div className="mb-4">
-        <label className="block text-sm font-bold text-gray-700 mb-2">Adresse de Retour *</label>
-        
-        {addresses.length > 0 ? (
-          <div className="space-y-2 mb-4">
-            {addresses.map(addr => {
-              const addrIsOutsideMetro = isOutsideFranceMetropolitan(addr.postal_code);
-              return (
-                <label 
-                  key={addr.id}
-                  className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                    shipping.address_id === addr.id && !shipping.showNewForm
-                      ? 'border-[#3B7AB4] bg-[#E8F2F8]' 
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="shipping_address"
-                    checked={shipping.address_id === addr.id && !shipping.showNewForm}
-                    onChange={() => setShipping({ ...shipping, address_id: addr.id, showNewForm: false })}
-                    className="mt-1"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-[#1E3A5F]">
-                      {addr.company_name || addr.label}
-                      {addr.is_default && (
-                        <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
-                          Par défaut
-                        </span>
-                      )}
-                      {addrIsOutsideMetro && (
-                        <span className="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full">
-                          Hors France métropolitaine
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-sm text-gray-600">
-                      {addr.address_line1}
-                    </div>
-                    {addr.attention && (
-                      <div className="text-sm text-gray-500">
-                        À l'attention de: {addr.attention}
-                      </div>
-                    )}
-                    <div className="text-sm text-gray-600">
-                      {addr.postal_code} {addr.city}, {addr.country || 'France'}
-                    </div>
-                  </div>
-                </label>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-gray-500 mb-4">Aucune adresse enregistrée</p>
-        )}
-
-        {/* Add New Address Option */}
-        <label 
-          className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-            shipping.showNewForm
-              ? 'border-[#3B7AB4] bg-[#E8F2F8]' 
-              : 'border-dashed border-gray-300 hover:border-gray-400'
-          }`}
-        >
-          <input
-            type="radio"
-            name="shipping_address"
-            checked={shipping.showNewForm}
-            onChange={() => setShipping({ ...shipping, showNewForm: true, address_id: '' })}
-            className="mt-1"
-          />
-          <div className="flex-1">
-            <div className="font-medium text-[#3B7AB4]">+ Ajouter une nouvelle adresse</div>
-            <div className="text-sm text-gray-500">Cette adresse sera enregistrée pour vos futures demandes</div>
-          </div>
-        </label>
-      </div>
-
-      {/* New Address Form */}
+      {/* New Address Form (collapsible) */}
       {shipping.showNewForm && (
-        <div className="mt-4 p-4 bg-[#F5F5F5] rounded-lg border-l-4 border-[#3B7AB4]">
-          <h3 className="font-bold text-[#1E3A5F] mb-4">Nouvelle Adresse</h3>
-          <div className="grid md:grid-cols-2 gap-4">
+        <div className="p-4 bg-gray-50 rounded-lg border-l-4 border-[#3B7AB4] mb-4">
+          <h3 className="font-bold text-[#1E3A5F] mb-3 text-sm">Nouvelle adresse</h3>
+          <div className="grid md:grid-cols-2 gap-3">
             <div className="md:col-span-2">
-              <label className="block text-sm font-bold text-gray-700 mb-1">Nom de la Société *</label>
-              <input
-                type="text"
-                value={shipping.newAddress.company_name || ''}
-                onChange={e => setShipping({
-                  ...shipping,
-                  newAddress: { ...shipping.newAddress, company_name: e.target.value }
-                })}
-                placeholder="ex: Lighthouse France"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
+              <input type="text" value={shipping.newAddress.company_name || ''} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, company_name: e.target.value } })} placeholder="Nom de la société *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm font-bold text-gray-700 mb-1">Adresse *</label>
-              <input
-                type="text"
-                value={shipping.newAddress.address_line1}
-                onChange={e => setShipping({
-                  ...shipping,
-                  newAddress: { ...shipping.newAddress, address_line1: e.target.value }
-                })}
-                placeholder="ex: 16 Rue Paul Séjourne"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-bold text-gray-700 mb-1">À l'attention de *</label>
-              <input
-                type="text"
-                value={shipping.newAddress.attention || ''}
-                onChange={e => setShipping({
-                  ...shipping,
-                  newAddress: { ...shipping.newAddress, attention: e.target.value }
-                })}
-                placeholder="Nom du destinataire"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
+              <input type="text" value={shipping.newAddress.address_line1} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, address_line1: e.target.value } })} placeholder="Adresse *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Code Postal *</label>
-              <input
-                type="text"
-                value={shipping.newAddress.postal_code}
-                onChange={e => setShipping({
-                  ...shipping,
-                  newAddress: { ...shipping.newAddress, postal_code: e.target.value }
-                })}
-                placeholder="ex: 94000"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
+              <input type="text" value={shipping.newAddress.attention || ''} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, attention: e.target.value } })} placeholder="Attn: destinataire *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Ville *</label>
-              <input
-                type="text"
-                value={shipping.newAddress.city}
-                onChange={e => setShipping({
-                  ...shipping,
-                  newAddress: { ...shipping.newAddress, city: e.target.value }
-                })}
-                placeholder="ex: Créteil"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
+              <input type="text" value={shipping.newAddress.label} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, label: e.target.value } })} placeholder="Nom (ex: Bureau, Labo 2)" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
             </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-bold text-gray-700 mb-1">Nom de l'adresse (pour référence)</label>
-              <input
-                type="text"
-                value={shipping.newAddress.label}
-                onChange={e => setShipping({
-                  ...shipping,
-                  newAddress: { ...shipping.newAddress, label: e.target.value }
-                })}
-                placeholder="ex: Bureau Principal, Labo 2, etc."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
+            <div>
+              <input type="text" value={shipping.newAddress.postal_code} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, postal_code: e.target.value } })} placeholder="Code postal *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
             </div>
-
-            {/* Warning for outside France Metropolitan in new address form */}
-            {newAddressIsOutsideMetro && (
-              <div className="md:col-span-2 p-3 bg-amber-50 border border-amber-300 rounded-lg">
-                <p className="text-amber-800 font-medium text-sm">⚠️ Adresse hors France métropolitaine</p>
-                <p className="text-amber-700 text-xs mt-1">
-                  Pour les adresses situées en dehors de la France métropolitaine, 
-                  les frais d'expédition sont à la charge du client. Vous serez contacté pour 
-                  organiser le transport.
-                </p>
-              </div>
-            )}
+            <div>
+              <input type="text" value={shipping.newAddress.city} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, city: e.target.value } })} placeholder="Ville *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            </div>
           </div>
+          {newAddressIsOutsideMetro && (
+            <div className="mt-3 p-2 bg-amber-50 border border-amber-300 rounded text-xs text-amber-700">
+              ⚠️ Hors France métropolitaine — frais de transport à votre charge.
+            </div>
+          )}
         </div>
       )}
 
-      {/* Warning for address outside France Metropolitan */}
+      {/* Warning for outside France Metropolitan */}
       {(isOutsideMetro || newAddressIsOutsideMetro) && (
-        <div className="mt-4 p-4 bg-amber-50 border-2 border-amber-300 rounded-lg">
-          <div className="flex gap-3">
-            <span className="text-2xl">🚢</span>
-            <div>
-              <p className="text-amber-800 font-bold">Expédition hors France métropolitaine</p>
-              <p className="text-amber-700 text-sm mt-1">
-                L'adresse sélectionnée est située en dehors de la France métropolitaine. 
-                Les frais d'expédition pour le retour de vos équipements seront à votre charge. 
-                Notre équipe vous contactera pour organiser le transport et vous communiquer les options disponibles.
-              </p>
-            </div>
+        <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex gap-2 items-start">
+          <span>🚢</span>
+          <div className="text-xs text-amber-700">
+            <strong>Hors France métropolitaine</strong> — Les frais de retour seront à votre charge. Notre équipe vous contactera pour organiser le transport.
           </div>
         </div>
       )}
@@ -6084,7 +5784,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
     billing_postal_code: profile?.companies?.billing_postal_code || '',
     billing_country: profile?.companies?.country || 'France',
     siret: profile?.companies?.siret || '',
-    vat_number: profile?.companies?.vat_number || ''
+    vat_number: profile?.companies?.tva_number || ''
   });
   
   // Password change
@@ -6780,7 +6480,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
                         setCompanyData(prev => ({
                           ...prev,
                           siret: profile?.companies?.siret || '',
-                          vat_number: profile?.companies?.vat_number || ''
+                          vat_number: profile?.companies?.tva_number || ''
                         }));
                       }}
                       className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
@@ -6804,7 +6504,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
                   </div>
                   <div>
                     <p className="text-sm text-gray-500">N° TVA</p>
-                    <p className="font-medium text-[#1E3A5F] font-mono">{profile?.companies?.vat_number || '—'}</p>
+                    <p className="font-medium text-[#1E3A5F] font-mono">{profile?.companies?.tva_number || '—'}</p>
                   </div>
                 </div>
               )}
