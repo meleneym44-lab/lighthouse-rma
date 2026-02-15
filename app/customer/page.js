@@ -14059,26 +14059,35 @@ function RegisterPage({ t, register, setPage }) {
                   </h2>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-white/80 mb-1">N° SIRET</label>
+                      <label className="block text-sm font-medium text-white/80 mb-1">
+                        {(formData.country || 'France').toLowerCase() === 'france' ? 'N° SIRET' : 'Company Registration Number'}
+                      </label>
                       <input
                         type="text"
                         value={formData.siret}
                         onChange={(e) => updateField('siret', e.target.value)}
                         className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        placeholder="XXX XXX XXX XXXXX"
+                        placeholder={(formData.country || 'France').toLowerCase() === 'france' ? 'XXX XXX XXX XXXXX' : 'Optional'}
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-white/80 mb-1">N° TVA Intracommunautaire</label>
+                      <label className="block text-sm font-medium text-white/80 mb-1">
+                        {(formData.country || 'France').toLowerCase() === 'france' ? 'N° TVA Intracommunautaire' : 'VAT Number'}
+                      </label>
                       <input
                         type="text"
                         value={formData.vatNumber}
                         onChange={(e) => updateField('vatNumber', e.target.value)}
                         className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        placeholder="FR XX XXXXXXXXX"
+                        placeholder={(formData.country || 'France').toLowerCase() === 'france' ? 'FR XX XXXXXXXXX' : 'e.g. DE123456789'}
                       />
                     </div>
                   </div>
+                  <p className="text-white/40 text-xs mt-2">
+                    {(formData.country || 'France').toLowerCase() === 'france' 
+                      ? 'Ces informations seront utilisées pour la facturation.' 
+                      : 'These details will be used for invoicing. Leave blank if not applicable.'}
+                  </p>
                 </div>
 
                 {/* Account Section */}
