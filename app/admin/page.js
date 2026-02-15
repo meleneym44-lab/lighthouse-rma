@@ -3361,13 +3361,16 @@ export default function AdminPortal() {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        setUser(session.user);
         const { data: p } = await supabase.from('profiles').select('*, companies(*)').eq('id', session.user.id).single();
         if (p) {
           if (p.role !== 'lh_admin' && p.role !== 'lh_employee') { window.location.href = '/'; return; }
+          setUser(session.user);
           setProfile(p);
           if (p.preferred_language) setLang(p.preferred_language);
           await loadData();
+        } else {
+          // No profile found - redirect to customer portal
+          window.location.href = '/';
         }
       }
       setLoading(false);
