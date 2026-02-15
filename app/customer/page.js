@@ -2592,10 +2592,15 @@ export default function CustomerPortal() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [recoveryMode, setRecoveryMode] = useState(false);
   const [lang, setLang] = useState('fr');
   const [page, setPage] = useState('dashboard');
   const [previousPage, setPreviousPage] = useState('dashboard');
   const [toast, setToast] = useState(null);
+  const [cookieConsent, setCookieConsent] = useState(() => {
+    try { return localStorage.getItem('lhf_cookie_consent') === 'accepted'; } catch { return false; }
+  });
+  const [showLegalPage, setShowLegalPage] = useState(null); // 'privacy' | 'mentions' | null
   
   // Data
   const [requests, setRequests] = useState([]);
@@ -2651,6 +2656,12 @@ export default function CustomerPortal() {
             window.location.href = '/admin';
             return;
           }
+          // Block deactivated or GDPR-erased users
+          if (p.invitation_status === 'deactivated' || p.invitation_status === 'gdpr_erased') {
+            await supabase.auth.signOut({ scope: 'local' });
+            setLoading(false);
+            return;
+          }
           setProfile(p);
           if (p.preferred_language) setLang(p.preferred_language);
           await loadData(p);
@@ -2659,6 +2670,22 @@ export default function CustomerPortal() {
       setLoading(false);
     };
     checkAuth();
+
+    // Listen for auth events (password recovery, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setRecoveryMode(true);
+        setUser(session?.user || null);
+      }
+    });
+
+    // Check URL for invite token
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('invite')) {
+      setPage('register');
+    }
+
+    return () => subscription?.unsubscribe();
   }, [loadData]);
 
   const logout = async () => {
@@ -2695,6 +2722,12 @@ export default function CustomerPortal() {
         window.location.href = '/admin';
         return null;
       }
+      if (p.invitation_status === 'deactivated' || p.invitation_status === 'gdpr_erased') {
+        await supabase.auth.signOut({ scope: 'local' });
+        return p.invitation_status === 'gdpr_erased' 
+          ? 'Ce compte a été supprimé suite à une demande RGPD.'
+          : 'Compte désactivé. Veuillez contacter votre administrateur.';
+      }
       setUser(data.user);
       setProfile(p);
       if (p.preferred_language) setLang(p.preferred_language);
@@ -2711,8 +2744,47 @@ export default function CustomerPortal() {
       password: formData.password
     });
     if (authError) return authError.message;
+
+    // Check for invite token - join existing company
+    if (formData.inviteToken) {
+      const { data: invite } = await supabase
+        .from('team_invitations')
+        .select('*')
+        .eq('token', formData.inviteToken)
+        .eq('email', formData.email.toLowerCase())
+        .is('accepted_at', null)
+        .gt('expires_at', new Date().toISOString())
+        .single();
+
+      if (invite) {
+        // Create profile linked to existing company with invite permissions
+        await supabase.from('profiles').insert({
+          id: authData.user.id,
+          email: formData.email,
+          full_name: formData.contactName,
+          role: 'customer',
+          company_id: invite.company_id,
+          phone: formData.phone || null,
+          invitation_status: 'active',
+          can_view: invite.can_view !== false,
+          can_request: !!invite.can_request,
+          can_invoice: !!invite.can_invoice
+        });
+
+        // Mark invite as accepted
+        await supabase.from('team_invitations')
+          .update({ accepted_at: new Date().toISOString(), accepted_by: authData.user.id })
+          .eq('id', invite.id);
+
+        notify('Compte créé! Vous avez rejoint l\'équipe.');
+        setPage('login');
+        return null;
+      } else {
+        return 'Invitation invalide, expirée, ou email incorrect.';
+      }
+    }
     
-    // Create company
+    // Normal registration - create new company
     const { data: company, error: companyError } = await supabase.from('companies').insert({
       name: formData.companyName,
       billing_address: formData.address,
@@ -2726,14 +2798,18 @@ export default function CustomerPortal() {
     }).select().single();
     if (companyError) return companyError.message;
     
-    // Create profile
+    // Create profile as admin of new company
     await supabase.from('profiles').insert({
       id: authData.user.id,
       email: formData.email,
       full_name: formData.contactName,
-      role: 'customer',
+      role: 'admin',
       company_id: company.id,
-      phone: formData.phone
+      phone: formData.phone,
+      invitation_status: 'active',
+      can_view: true,
+      can_request: true,
+      can_invoice: true
     });
     
     // Create default shipping address
@@ -2747,12 +2823,35 @@ export default function CustomerPortal() {
       is_default: true
     });
     
-    notify(t('saved'));
+    notify('Compte créé! Vous êtes administrateur de votre entreprise.');
     setPage('login');
     return null;
   };
 
   // Show login/register if not authenticated
+  // Password recovery mode - show reset form
+  if (recoveryMode) {
+    return (
+      <>
+        {toast && (
+          <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white font-medium ${
+            toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'
+          }`}>
+            {toast.msg}
+          </div>
+        )}
+        <PasswordRecoveryPage
+          supabase={supabase}
+          notify={notify}
+          onComplete={() => {
+            setRecoveryMode(false);
+            window.location.href = window.location.pathname;
+          }}
+        />
+      </>
+    );
+  }
+
   if (!user) {
     return (
       <div className="min-h-screen bg-[#F9F9F9]">
@@ -2765,9 +2864,17 @@ export default function CustomerPortal() {
           </div>
         )}
         
-        {page === 'login' && <LoginPage t={t} login={login} setPage={setPage} />}
-        {page === 'register' && <RegisterPage t={t} register={register} setPage={setPage} />}
-        {(page !== 'login' && page !== 'register') && <HomePage t={t} setPage={setPage} />}
+        {page === 'login' && <LoginPage t={t} login={login} setPage={setPage} supabase={supabase} notify={notify} />}
+        {page === 'register' && <RegisterPage t={t} register={register} setPage={setPage} supabase={supabase} notify={notify} />}
+        {(page !== 'login' && page !== 'register') && <HomePage t={t} setPage={setPage} setShowLegalPage={setShowLegalPage} />}
+        
+        {/* Cookie Banner */}
+        {!cookieConsent && (
+          <CookieBanner onAccept={() => { setCookieConsent(true); try { localStorage.setItem('lhf_cookie_consent', 'accepted'); } catch {} }} onShowPolicy={() => setShowLegalPage('privacy')} />
+        )}
+        
+        {/* Legal Pages Overlay */}
+        {showLegalPage && <LegalPageModal page={showLegalPage} onClose={() => setShowLegalPage(null)} />}
       </div>
     );
   }
@@ -2809,12 +2916,16 @@ export default function CustomerPortal() {
               <button onClick={() => setPage('dashboard')} className={`font-medium ${page === 'dashboard' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('dashboard')}
               </button>
-              <button onClick={() => setPage('new-request')} className={`font-medium ${page === 'new-request' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
-                {t('newRequest')}
-              </button>
-              <button onClick={() => setPage('contracts')} className={`font-medium ${page === 'contracts' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
-                Contrats
-              </button>
+              {perms.canRequest && (
+                <button onClick={() => setPage('new-request')} className={`font-medium ${page === 'new-request' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+                  {t('newRequest')}
+                </button>
+              )}
+              {perms.canInvoice && (
+                <button onClick={() => setPage('contracts')} className={`font-medium ${page === 'contracts' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+                  Contrats
+                </button>
+              )}
               <button onClick={() => setPage('rentals')} className={`font-medium ${page === 'rentals' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 Locations
               </button>
@@ -2848,7 +2959,14 @@ export default function CustomerPortal() {
 
           {/* Mobile nav */}
           <nav className="md:hidden flex gap-2 pb-3 overflow-x-auto">
-            {['dashboard', 'new-request', 'contracts', 'rentals', 'equipment', 'settings'].map(p => (
+            {[
+              'dashboard',
+              ...(perms.canRequest ? ['new-request'] : []),
+              ...(perms.canInvoice ? ['contracts'] : []),
+              'rentals',
+              'equipment',
+              'settings'
+            ].map(p => (
               <button
                 key={p}
                 onClick={() => setPage(p)}
@@ -2874,10 +2992,11 @@ export default function CustomerPortal() {
             setPage={setPage}
             setSelectedRequest={setSelectedRequest}
             setPreviousPage={setPreviousPage}
+            perms={perms}
           />
         )}
         
-        {page === 'new-request' && (
+        {page === 'new-request' && perms.canRequest && (
           <NewRequestForm 
             profile={profile}
             addresses={addresses}
@@ -2892,11 +3011,14 @@ export default function CustomerPortal() {
           <SettingsPage 
             profile={profile}
             addresses={addresses}
+            requests={requests}
             t={t}
             notify={notify}
             refresh={refresh}
             lang={lang}
             setLang={setLang}
+            perms={perms}
+            setShowLegalPage={setShowLegalPage}
           />
         )}
         
@@ -2921,6 +3043,7 @@ export default function CustomerPortal() {
             setPage={setPage}
             notify={notify}
             previousPage={previousPage}
+            perms={perms}
           />
         )}
         
@@ -2934,12 +3057,13 @@ export default function CustomerPortal() {
           />
         )}
         
-        {page === 'contracts' && (
+        {page === 'contracts' && perms.canInvoice && (
           <ContractsPage 
             profile={profile}
             t={t}
             notify={notify}
             setPage={setPage}
+            perms={perms}
           />
         )}
         
@@ -2960,10 +3084,23 @@ export default function CustomerPortal() {
         <div className="max-w-7xl mx-auto px-6 text-center">
           <div className="font-bold text-xl mb-2">LIGHTHOUSE FRANCE</div>
           <p className="text-white/60 text-sm">
-            16 Rue Paul Sejourne, 94000 Creteil - France@golighthouse.com
+            16 Rue Paul Sejourne, 94000 Créteil — france@golighthouse.com
           </p>
+          <div className="flex justify-center gap-4 mt-3">
+            <button onClick={() => setShowLegalPage('mentions')} className="text-white/40 text-xs hover:text-white/70">Mentions légales</button>
+            <span className="text-white/20">|</span>
+            <button onClick={() => setShowLegalPage('privacy')} className="text-white/40 text-xs hover:text-white/70">Politique de confidentialité</button>
+          </div>
         </div>
       </footer>
+
+      {/* Cookie Banner */}
+      {!cookieConsent && (
+        <CookieBanner onAccept={() => { setCookieConsent(true); try { localStorage.setItem('lhf_cookie_consent', 'accepted'); } catch {} }} onShowPolicy={() => setShowLegalPage('privacy')} />
+      )}
+
+      {/* Legal Pages Overlay */}
+      {showLegalPage && <LegalPageModal page={showLegalPage} onClose={() => setShowLegalPage(null)} />}
     </div>
   );
 }
@@ -2971,7 +3108,7 @@ export default function CustomerPortal() {
 // ============================================
 // DASHBOARD COMPONENT (Enhanced)
 // ============================================
-function Dashboard({ profile, requests, contracts, t, setPage, setSelectedRequest, setPreviousPage }) {
+function Dashboard({ profile, requests, contracts, t, setPage, setSelectedRequest, setPreviousPage, perms }) {
   const [messages, setMessages] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'service', 'parts', 'messages'
@@ -3078,12 +3215,14 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
           <h1 className="text-2xl font-bold text-[#1E3A5F]">Bonjour, {profile?.full_name?.split(' ')[0] || 'Client'}</h1>
           <p className="text-gray-600">Bienvenue sur votre espace client Lighthouse France</p>
         </div>
-        <button 
-          onClick={() => setPage('new-request')}
-          className="px-6 py-3 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F] transition-colors"
-        >
-          + Nouvelle Demande
-        </button>
+        {perms.canRequest && (
+          <button 
+            onClick={() => setPage('new-request')}
+            className="px-6 py-3 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F] transition-colors"
+          >
+            + Nouvelle Demande
+          </button>
+        )}
       </div>
 
       {/* Stats Cards */}
@@ -3215,8 +3354,8 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                     </span>
                   </div>
                 ))}
-                {/* Contract Quotes */}
-                {contracts && contracts
+                {/* Contract Quotes - only for canInvoice users */}
+                {perms.canInvoice && contracts && contracts
                   .filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected')
                   .map(contract => (
                   <div 
@@ -3413,12 +3552,14 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
             <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-12 text-center">
               <p className="text-4xl mb-3">📋</p>
               <p className="text-gray-500 mb-4">Aucune demande pour le moment</p>
+              {perms.canRequest && (
               <button 
                 onClick={() => setPage('new-request')}
                 className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
               >
                 Soumettre votre première demande
               </button>
+              )}
             </div>
           )}
         </div>
@@ -3436,12 +3577,14 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
             <div className="p-12 text-center">
               <p className="text-4xl mb-3">🔧</p>
               <p className="text-gray-500 mb-4">Aucune demande de service</p>
+              {perms.canRequest && (
               <button 
                 onClick={() => setPage('new-request')}
                 className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
               >
                 Soumettre une demande
               </button>
+              )}
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
@@ -3492,12 +3635,14 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
             <div className="p-12 text-center">
               <p className="text-4xl mb-3">📦</p>
               <p className="text-gray-500 mb-4">Aucune commande de pièces</p>
+              {perms.canRequest && (
               <button 
                 onClick={() => setPage('new-request')}
                 className="px-6 py-2 bg-amber-500 text-white rounded-lg font-medium"
               >
                 Commander des pièces
               </button>
+              )}
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
@@ -5944,7 +6089,7 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
 // ============================================
 // SETTINGS PAGE
 // ============================================
-function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang }) {
+function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, setLang, perms, setShowLegalPage }) {
   const [activeSection, setActiveSection] = useState('profile');
   
   // Profile editing
@@ -5995,13 +6140,22 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
   const [teamMembers, setTeamMembers] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [inviteData, setInviteData] = useState({ email: '', role: 'customer' });
+  const [inviteData, setInviteData] = useState({ email: '', can_view: true, can_request: false, can_invoice: false });
+  const [lastInviteLink, setLastInviteLink] = useState('');
   const [loadingTeam, setLoadingTeam] = useState(false);
   
   const [saving, setSaving] = useState(false);
   
   // Check if user is admin
   const isAdmin = profile?.role === 'admin';
+  
+  // Permission flags (admin always has all)
+  const perms = {
+    canView: isAdmin || profile?.can_view !== false, // default true
+    canRequest: isAdmin || !!profile?.can_request,
+    canInvoice: isAdmin || !!profile?.can_invoice,
+    isAdmin
+  };
   
   // Load team members
   useEffect(() => {
@@ -6012,7 +6166,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
       // Load team members
       const { data: members } = await supabase
         .from('profiles')
-        .select('id, full_name, email, role, invitation_status, created_at')
+        .select('id, full_name, email, role, invitation_status, can_view, can_request, can_invoice, created_at, gdpr_erased_at')
         .eq('company_id', profile.company_id)
         .order('created_at', { ascending: true });
       
@@ -6050,7 +6204,10 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
     const { error } = await supabase.from('team_invitations').insert({
       company_id: profile.company_id,
       email: inviteData.email.toLowerCase(),
-      role: inviteData.role,
+      role: 'customer',
+      can_view: inviteData.can_view,
+      can_request: inviteData.can_request,
+      can_invoice: inviteData.can_invoice,
       invited_by: profile.id,
       token,
       expires_at: expiresAt.toISOString()
@@ -6067,9 +6224,14 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
       return;
     }
     
-    notify(`Invitation envoyée à ${inviteData.email}!`);
-    setShowInviteModal(false);
-    setInviteData({ email: '', role: 'customer' });
+    notify(`Invitation créée pour ${inviteData.email}!`);
+    
+    // Generate invite link
+    const baseUrl = window.location.origin + window.location.pathname;
+    const inviteLink = `${baseUrl}?invite=${token}&email=${encodeURIComponent(inviteData.email.toLowerCase())}`;
+    setLastInviteLink(inviteLink);
+    
+    setInviteData({ email: '', can_view: true, can_request: false, can_invoice: false });
     
     // Reload invites
     const { data: invites } = await supabase
@@ -6080,23 +6242,64 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
     if (invites) setPendingInvites(invites);
   };
 
-  // Change team member role
-  const changeRole = async (memberId, newRole) => {
+  // Toggle member permission
+  const togglePermission = async (memberId, permKey, newValue) => {
     if (memberId === profile.id) {
-      notify('Vous ne pouvez pas modifier votre propre rôle', 'error');
+      notify('Vous ne pouvez pas modifier vos propres permissions', 'error');
       return;
     }
     
     const { error } = await supabase
       .from('profiles')
-      .update({ role: newRole })
+      .update({ [permKey]: newValue })
       .eq('id', memberId);
     
     if (error) {
       notify(`Erreur: ${error.message}`, 'error');
     } else {
-      notify('Rôle modifié!');
-      setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, role: newRole } : m));
+      notify('Permission modifiée!');
+      setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, [permKey]: newValue } : m));
+    }
+  };
+
+  // Promote to admin
+  const promoteToAdmin = async (memberId) => {
+    if (!confirm('Promouvoir cet utilisateur en administrateur? Il aura un accès complet incluant la gestion de l\'équipe.')) return;
+    
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: 'admin', can_view: true, can_request: true, can_invoice: true })
+      .eq('id', memberId);
+    
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Utilisateur promu administrateur!');
+      setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, role: 'admin', can_view: true, can_request: true, can_invoice: true } : m));
+    }
+  };
+
+  // Demote from admin
+  const demoteFromAdmin = async (memberId) => {
+    // Check there's at least one other admin
+    const otherAdmins = teamMembers.filter(m => m.role === 'admin' && m.id !== memberId && m.invitation_status === 'active');
+    if (otherAdmins.length === 0) {
+      notify('Impossible: il doit rester au moins un administrateur', 'error');
+      return;
+    }
+    
+    if (!confirm('Rétrograder cet administrateur? Il gardera ses permissions actuelles mais ne pourra plus gérer l\'équipe.')) return;
+    
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: 'customer' })
+      .eq('id', memberId);
+    
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      notify('Administrateur rétrogradé');
+      setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, role: 'customer' } : m));
     }
   };
 
@@ -6108,6 +6311,18 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
     }
     
     const newStatus = currentStatus === 'active' ? 'deactivated' : 'active';
+    const member = teamMembers.find(m => m.id === memberId);
+    
+    // Prevent deactivating the last admin
+    if (newStatus === 'deactivated' && member?.role === 'admin') {
+      const otherActiveAdmins = teamMembers.filter(m => m.role === 'admin' && m.id !== memberId && m.invitation_status === 'active');
+      if (otherActiveAdmins.length === 0) {
+        notify('Impossible: il doit rester au moins un administrateur actif', 'error');
+        return;
+      }
+      if (!confirm(`${member.full_name} est administrateur. Voulez-vous vraiment désactiver ce compte?`)) return;
+    }
+    
     const { error } = await supabase
       .from('profiles')
       .update({ invitation_status: newStatus })
@@ -6449,7 +6664,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
               <div>
                 <h2 className="text-lg font-bold text-[#1E3A5F]">🏢 Informations de la société</h2>
               </div>
-              {!editingCompany && (
+              {!editingCompany && isAdmin && (
                 <button
                   onClick={() => setEditingCompany(true)}
                   className="px-4 py-2 text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8] text-sm"
@@ -6503,6 +6718,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
                 <h2 className="text-lg font-bold text-[#1E3A5F]">📦 Adresses de livraison / retour</h2>
                 <p className="text-xs text-gray-400 mt-0.5">Adresses pour la réception et le retour des équipements</p>
               </div>
+              {isAdmin && (
               <button
                 onClick={() => {
                   setEditingAddress(null);
@@ -6514,6 +6730,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
               >
                 + Ajouter
               </button>
+              )}
             </div>
             <div className="p-6">
               {addresses.filter(a => !a.is_billing).length === 0 ? (
@@ -6549,7 +6766,8 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
             </div>
           </div>
 
-          {/* Billing Addresses */}
+          {/* Billing Addresses - admin/canInvoice only */}
+          {(perms.isAdmin || perms.canInvoice) && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100">
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
               <div>
@@ -6597,15 +6815,17 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
               )}
             </div>
           </div>
+          )}
 
-          {/* Company Identifiers - Hard to edit */}
+          {/* Company Identifiers - admin/canInvoice only */}
+          {(perms.isAdmin || perms.canInvoice) && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100">
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
               <div>
                 <h2 className="text-lg font-bold text-[#1E3A5F]">🔒 Identifiants légaux</h2>
                 <p className="text-xs text-gray-400 mt-0.5">SIRET, TVA — modification protégée</p>
               </div>
-              {!editingIdentifiers && (
+              {!editingIdentifiers && isAdmin && (
                 <button
                   onClick={() => setEditingIdentifiers(true)}
                   className="px-4 py-2 text-gray-400 border border-gray-200 rounded-lg hover:bg-gray-50 text-sm"
@@ -6695,6 +6915,7 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
               )}
             </div>
           </div>
+          )}
         </div>
       )}
 
@@ -6723,9 +6944,9 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
               <div className="space-y-6">
                 {/* Current Team Members */}
                 <div>
-                  <h3 className="font-medium text-[#1E3A5F] mb-3">Membres actifs ({teamMembers.filter(m => m.invitation_status !== 'deactivated').length})</h3>
+                  <h3 className="font-medium text-[#1E3A5F] mb-3">Membres actifs ({teamMembers.filter(m => m.invitation_status === 'active').length})</h3>
                   <div className="space-y-3">
-                    {teamMembers.filter(m => m.invitation_status !== 'deactivated').map(member => (
+                    {teamMembers.filter(m => m.invitation_status === 'active').map(member => (
                       <div key={member.id} className={`p-4 rounded-xl border-2 ${member.id === profile.id ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 bg-gray-50'}`}>
                         <div className="flex flex-wrap items-center justify-between gap-4">
                           <div className="flex items-center gap-3">
@@ -6736,35 +6957,57 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
                               <p className="font-medium text-[#1E3A5F]">
                                 {member.full_name}
                                 {member.id === profile.id && <span className="ml-2 text-xs text-gray-400">(vous)</span>}
+                                {member.role === 'admin' && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Admin</span>}
                               </p>
                               <p className="text-sm text-gray-500">{member.email}</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <select
-                              value={member.role || 'customer'}
-                              onChange={e => changeRole(member.id, e.target.value)}
-                              disabled={member.id === profile.id}
-                              className={`px-3 py-1.5 border rounded-lg text-sm ${
-                                member.role === 'admin' ? 'bg-purple-50 border-purple-300 text-purple-700' :
-                                member.role === 'technician' ? 'bg-blue-50 border-blue-300 text-blue-700' :
-                                'bg-gray-50 border-gray-300 text-gray-700'
-                              } ${member.id === profile.id ? 'opacity-50' : ''}`}
+                          {member.id !== profile.id && (
+                            <button
+                              onClick={() => toggleMemberStatus(member.id, member.invitation_status)}
+                              className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
                             >
-                              <option value="admin">👑 Admin</option>
-                              <option value="technician">📋 Technicien</option>
-                              <option value="customer">👤 Utilisateur</option>
-                            </select>
-                            {member.id !== profile.id && (
-                              <button
-                                onClick={() => toggleMemberStatus(member.id, member.invitation_status)}
-                                className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
-                              >
-                                Désactiver
-                              </button>
-                            )}
-                          </div>
+                              Désactiver
+                            </button>
+                          )}
                         </div>
+                        {/* Permission toggles */}
+                        {member.id !== profile.id && member.role !== 'admin' && (
+                          <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-200">
+                            {[
+                              { key: 'can_view', label: '👁️ Consulter', on: 'bg-blue-100 border-blue-300 text-blue-700', off: 'bg-gray-100 border-gray-200 text-gray-400' },
+                              { key: 'can_request', label: '📋 Demandes', on: 'bg-green-100 border-green-300 text-green-700', off: 'bg-gray-100 border-gray-200 text-gray-400' },
+                              { key: 'can_invoice', label: '💳 Facturation', on: 'bg-amber-100 border-amber-300 text-amber-700', off: 'bg-gray-100 border-gray-200 text-gray-400' }
+                            ].map(perm => (
+                              <button
+                                key={perm.key}
+                                onClick={() => togglePermission(member.id, perm.key, !member[perm.key])}
+                                className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                                  member[perm.key] ? perm.on : perm.off
+                                }`}
+                              >
+                                {perm.label} {member[perm.key] ? '✓' : ''}
+                              </button>
+                            ))}
+                            <button
+                              onClick={() => promoteToAdmin(member.id)}
+                              className="px-3 py-1 rounded-full text-xs font-medium border border-purple-300 bg-purple-50 text-purple-600 hover:bg-purple-100"
+                            >
+                              👑 Promouvoir admin
+                            </button>
+                          </div>
+                        )}
+                        {member.role === 'admin' && member.id !== profile.id && (
+                          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200">
+                            <p className="text-xs text-purple-500">Admin — accès complet</p>
+                            <button
+                              onClick={() => demoteFromAdmin(member.id)}
+                              className="px-2 py-0.5 rounded text-xs text-red-500 hover:bg-red-50 border border-red-200"
+                            >
+                              Rétrograder
+                            </button>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -6793,6 +7036,24 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
                   </div>
                 )}
 
+                {/* GDPR Erased - no reactivation possible */}
+                {teamMembers.filter(m => m.invitation_status === 'gdpr_erased').length > 0 && (
+                  <div>
+                    <h3 className="font-medium text-gray-400 mb-3">Comptes supprimés (RGPD)</h3>
+                    <div className="space-y-2">
+                      {teamMembers.filter(m => m.invitation_status === 'gdpr_erased').map(member => (
+                        <div key={member.id} className="p-3 rounded-lg bg-gray-50 border border-gray-100 flex justify-between items-center">
+                          <div>
+                            <p className="font-medium text-gray-400">{member.full_name}</p>
+                            <p className="text-xs text-gray-300">Données anonymisées — {member.gdpr_erased_at ? new Date(member.gdpr_erased_at).toLocaleDateString('fr-FR') : ''}</p>
+                          </div>
+                          <span className="text-xs text-gray-300 bg-gray-100 px-2 py-1 rounded">Irréversible</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Pending Invitations */}
                 {pendingInvites.length > 0 && (
                   <div>
@@ -6803,7 +7064,11 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
                           <div>
                             <p className="font-medium text-amber-800">{invite.email}</p>
                             <p className="text-xs text-amber-600">
-                              Rôle: {invite.role === 'admin' ? 'Admin' : invite.role === 'technician' ? 'Technicien' : 'Utilisateur'}
+                              {[
+                                invite.can_view && '👁️ Consulter',
+                                invite.can_request && '📋 Demandes',
+                                invite.can_invoice && '💳 Facturation'
+                              ].filter(Boolean).join(' • ') || 'Aucune permission'}
                               {' • '}Expire: {new Date(invite.expires_at).toLocaleDateString('fr-FR')}
                             </p>
                           </div>
@@ -6821,21 +7086,22 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
 
                 {/* Role Explanation */}
                 <div className="p-4 bg-gray-50 rounded-lg">
-                  <h4 className="font-medium text-gray-700 mb-2">Niveaux d'accès</h4>
+                  <h4 className="font-medium text-gray-700 mb-2">Permissions disponibles</h4>
                   <div className="grid md:grid-cols-3 gap-4 text-sm">
                     <div>
-                      <p className="font-medium text-purple-700">👑 Admin</p>
-                      <p className="text-gray-500">Accès complet, gestion des utilisateurs et paramètres</p>
+                      <p className="font-medium text-blue-700">👁️ Consulter</p>
+                      <p className="text-gray-500">Voir le tableau de bord, les demandes et les équipements</p>
                     </div>
                     <div>
-                      <p className="font-medium text-blue-700">📋 Technicien</p>
-                      <p className="text-gray-500">Voir toutes les demandes, créer des demandes</p>
+                      <p className="font-medium text-green-700">📋 Demandes</p>
+                      <p className="text-gray-500">Créer des demandes RMA, approuver les devis, commander des pièces</p>
                     </div>
                     <div>
-                      <p className="font-medium text-gray-700">👤 Utilisateur</p>
-                      <p className="text-gray-500">Voir uniquement ses propres demandes</p>
+                      <p className="font-medium text-amber-700">💳 Facturation</p>
+                      <p className="text-gray-500">Voir les factures, contrats, adresses de facturation, SIRET/TVA</p>
                     </div>
                   </div>
+                  <p className="text-xs text-gray-400 mt-3">Les administrateurs ont automatiquement toutes les permissions + gestion de l{"'"}équipe et des paramètres.</p>
                 </div>
               </div>
             )}
@@ -7020,15 +7286,158 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
                 {new Date().toLocaleDateString('fr-FR')} à {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
               </p>
             </div>
+
+            {/* GDPR / Data Rights */}
+            <div className="border-t border-gray-200 pt-6">
+              <h3 className="font-medium text-[#1E3A5F] mb-4">🔐 Données personnelles (RGPD)</h3>
+              
+              {/* Data Export */}
+              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg mb-3">
+                <div>
+                  <p className="font-medium text-[#1E3A5F]">Exporter mes données</p>
+                  <p className="text-sm text-gray-500">Téléchargez une copie de toutes vos données personnelles (Article 20 RGPD)</p>
+                </div>
+                <button
+                  onClick={async () => {
+                    notify('Préparation de l\'export...');
+                    const exportData = {
+                      exported_at: new Date().toISOString(),
+                      profile: {
+                        name: profile?.full_name,
+                        email: profile?.email,
+                        phone: profile?.phone,
+                        role: profile?.role,
+                        created_at: profile?.created_at
+                      },
+                      company: profile?.companies ? {
+                        name: profile.companies.name,
+                        country: profile.companies.country,
+                        siret: profile.companies.siret,
+                        tva: profile.companies.tva_number
+                      } : null,
+                      addresses: addresses?.map(a => ({
+                        label: a.label, address: a.address_line1, city: a.city,
+                        postal_code: a.postal_code, country: a.country, type: a.is_billing ? 'billing' : 'shipping'
+                      })) || [],
+                      service_requests: requests?.map(r => ({
+                        id: r.id, number: r.request_number, status: r.status,
+                        created_at: r.created_at, devices: r.request_devices?.length || 0
+                      })) || []
+                    };
+                    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `lighthouse-france-donnees-${new Date().toISOString().split('T')[0]}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    notify('Export téléchargé!');
+                  }}
+                  className="px-4 py-2 text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8] whitespace-nowrap"
+                >
+                  Télécharger
+                </button>
+              </div>
+
+              {/* Legal Links */}
+              <div className="flex flex-wrap gap-3">
+                <button onClick={() => setShowLegalPage('privacy')} className="text-sm text-[#3B7AB4] hover:underline">
+                  📄 Politique de confidentialité
+                </button>
+                <button onClick={() => setShowLegalPage('mentions')} className="text-sm text-[#3B7AB4] hover:underline">
+                  📋 Mentions légales
+                </button>
+              </div>
+            </div>
             
             {/* Danger Zone */}
             <div className="border-t border-gray-200 pt-6">
               <h3 className="font-medium text-red-600 mb-4">Zone de danger</h3>
               <div className="p-4 bg-red-50 rounded-lg border border-red-200">
-                <p className="font-medium text-red-700">Supprimer le compte</p>
-                <p className="text-sm text-red-600 mb-3">Cette action est irréversible. Toutes vos données seront supprimées.</p>
-                <button className="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-100">
-                  Supprimer mon compte
+                <p className="font-medium text-red-700">Désactiver le compte</p>
+                <p className="text-sm text-red-600 mb-3">Votre compte sera désactivé et vous ne pourrez plus vous connecter. {"L'historique"} de vos demandes et données sera conservé. Contactez votre administrateur pour réactiver votre accès.</p>
+                <button 
+                  onClick={async () => {
+                    if (!confirm('Êtes-vous sûr de vouloir désactiver votre compte? Vous ne pourrez plus vous connecter.')) return;
+                    if (!confirm('Dernière confirmation: votre accès sera coupé immédiatement.')) return;
+                    
+                    // If admin, check not the last one
+                    if (profile?.role === 'admin') {
+                      const { data: otherAdmins } = await supabase
+                        .from('profiles')
+                        .select('id')
+                        .eq('company_id', profile.company_id)
+                        .eq('role', 'admin')
+                        .eq('invitation_status', 'active')
+                        .neq('id', profile.id);
+                      if (!otherAdmins || otherAdmins.length === 0) {
+                        notify('Impossible: vous êtes le seul administrateur. Promouvez un autre membre avant de désactiver votre compte.', 'error');
+                        return;
+                      }
+                    }
+                    
+                    // Soft-delete: mark profile as deactivated
+                    await supabase.from('profiles').update({ invitation_status: 'deactivated' }).eq('id', profile.id);
+                    
+                    // Sign out
+                    await supabase.auth.signOut({ scope: 'local' });
+                    window.location.href = '/';
+                  }}
+                  className="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-100"
+                >
+                  Désactiver mon compte
+                </button>
+              </div>
+
+              {/* GDPR Data Erasure */}
+              <div className="p-4 bg-red-50 rounded-lg border border-red-200 mt-3">
+                <p className="font-medium text-red-700">Suppression des données personnelles (RGPD Art. 17)</p>
+                <p className="text-sm text-red-600 mb-3">
+                  Vos données personnelles (nom, email, téléphone) seront anonymisées. {"L'historique"} des demandes de service, certificats {"d'étalonnage"}, factures et données de traçabilité sera conservé conformément à nos obligations légales (Code de Commerce — 10 ans, ISO 17025).
+                </p>
+                <button 
+                  onClick={async () => {
+                    if (!confirm('Êtes-vous sûr? Vos données personnelles seront anonymisées de façon irréversible. Les données liées à vos demandes de service, certificats et factures seront conservées conformément à la loi.')) return;
+                    if (!confirm('Dernière confirmation: cette action est IRRÉVERSIBLE. Votre nom, email et téléphone seront supprimés.')) return;
+                    
+                    // Admin check
+                    if (profile?.role === 'admin') {
+                      const { data: otherAdmins } = await supabase
+                        .from('profiles')
+                        .select('id')
+                        .eq('company_id', profile.company_id)
+                        .eq('role', 'admin')
+                        .eq('invitation_status', 'active')
+                        .neq('id', profile.id);
+                      if (!otherAdmins || otherAdmins.length === 0) {
+                        notify('Impossible: vous êtes le seul administrateur. Promouvez un autre membre avant de supprimer vos données.', 'error');
+                        return;
+                      }
+                    }
+                    
+                    const anonId = profile.id.slice(0, 8);
+                    
+                    // 1. Anonymize profile — keep company_id, role structure for record integrity
+                    await supabase.from('profiles').update({
+                      full_name: 'Utilisateur supprimé',
+                      email: `supprime_${anonId}@anonymise.local`,
+                      phone: null,
+                      invitation_status: 'gdpr_erased',
+                      gdpr_erased_at: new Date().toISOString()
+                    }).eq('id', profile.id);
+                    
+                    // 2. Anonymize message sender names (keep message content for service record)
+                    await supabase.from('request_messages').update({
+                      sender_name: 'Utilisateur supprimé'
+                    }).eq('sender_id', profile.id);
+                    
+                    // 3. Sign out
+                    await supabase.auth.signOut({ scope: 'local' });
+                    window.location.href = '/';
+                  }}
+                  className="px-4 py-2 text-red-700 border border-red-400 rounded-lg hover:bg-red-100 font-medium"
+                >
+                  Supprimer mes données personnelles
                 </button>
               </div>
             </div>
@@ -7237,63 +7646,112 @@ function SettingsPage({ profile, addresses, t, notify, refresh, lang, setLang })
 
       {/* Invite Team Member Modal */}
       {showInviteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowInviteModal(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => { setShowInviteModal(false); setLastInviteLink(''); }}>
           <div className="bg-white rounded-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
             <div className="px-6 py-4 border-b">
               <h3 className="font-bold text-lg text-[#1E3A5F]">Inviter un membre</h3>
             </div>
-            <form onSubmit={inviteTeamMember} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Adresse email *</label>
-                <input
-                  type="email"
-                  value={inviteData.email}
-                  onChange={e => setInviteData({ ...inviteData, email: e.target.value })}
-                  placeholder="collegue@entreprise.com"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                  required
-                />
-                <p className="text-xs text-gray-400 mt-1">Un email d'invitation sera envoyé à cette adresse</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Rôle *</label>
-                <select
-                  value={inviteData.role}
-                  onChange={e => setInviteData({ ...inviteData, role: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                >
-                  <option value="customer">👤 Utilisateur - Voir ses propres demandes</option>
-                  <option value="technician">📋 Technicien - Voir toutes les demandes</option>
-                  <option value="admin">👑 Admin - Accès complet</option>
-                </select>
-              </div>
-              
-              <div className="p-3 bg-blue-50 rounded-lg">
-                <p className="text-sm text-blue-700">
-                  <strong>Note:</strong> L'utilisateur recevra un email avec un lien pour créer son compte et rejoindre votre entreprise.
-                </p>
-              </div>
-              
-              <div className="flex gap-3 pt-2">
+            
+            {lastInviteLink ? (
+              <div className="p-6 space-y-4">
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="font-medium text-green-800 mb-2">Invitation créée!</p>
+                  <p className="text-sm text-green-700 mb-3">Partagez ce lien avec votre collègue pour qu{"'"}il puisse créer son compte:</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={lastInviteLink}
+                      readOnly
+                      className="flex-1 px-3 py-2 text-xs bg-white border border-green-300 rounded-lg font-mono select-all"
+                      onClick={e => e.target.select()}
+                    />
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(lastInviteLink);
+                        notify('Lien copié!');
+                      }}
+                      className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 whitespace-nowrap"
+                    >
+                      Copier
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500">{"L'invitation expire dans 7 jours. Le lien contient un code unique — ne le partagez qu'avec la personne concernée."}</p>
                 <button
-                  type="button"
-                  onClick={() => {
-                    setShowInviteModal(false);
-                    setInviteData({ email: '', role: 'customer' });
-                  }}
-                  className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                  onClick={() => { setShowInviteModal(false); setLastInviteLink(''); }}
+                  className="w-full py-2 bg-gray-100 text-gray-700 rounded-lg"
                 >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
-                >
-                  {saving ? 'Envoi...' : 'Envoyer l\'invitation'}
+                  Fermer
                 </button>
               </div>
-            </form>
+            ) : (
+              <form onSubmit={inviteTeamMember} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Adresse email *</label>
+                  <input
+                    type="email"
+                    value={inviteData.email}
+                    onChange={e => setInviteData({ ...inviteData, email: e.target.value })}
+                    placeholder="collegue@entreprise.com"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Permissions *</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer">
+                      <input type="checkbox" checked={inviteData.can_view} onChange={e => setInviteData({ ...inviteData, can_view: e.target.checked })} className="w-4 h-4 text-[#3B7AB4]" />
+                      <div>
+                        <p className="font-medium text-sm text-gray-700">👁️ Consulter</p>
+                        <p className="text-xs text-gray-500">Voir le tableau de bord, les demandes, les équipements</p>
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer">
+                      <input type="checkbox" checked={inviteData.can_request} onChange={e => setInviteData({ ...inviteData, can_request: e.target.checked })} className="w-4 h-4 text-[#3B7AB4]" />
+                      <div>
+                        <p className="font-medium text-sm text-gray-700">📋 Demandes</p>
+                        <p className="text-xs text-gray-500">Créer des demandes RMA, approuver les devis</p>
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer">
+                      <input type="checkbox" checked={inviteData.can_invoice} onChange={e => setInviteData({ ...inviteData, can_invoice: e.target.checked })} className="w-4 h-4 text-[#3B7AB4]" />
+                      <div>
+                        <p className="font-medium text-sm text-gray-700">💳 Facturation</p>
+                        <p className="text-xs text-gray-500">Voir les factures, contrats, adresses de facturation, SIRET/TVA</p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+                
+                <div className="p-3 bg-blue-50 rounded-lg">
+                  <p className="text-sm text-blue-700">
+                    Un lien {"d'inscription"} sera généré. Partagez-le avec votre collègue pour {"qu'il"} puisse créer son compte et rejoindre votre entreprise avec les permissions sélectionnées.
+                  </p>
+                </div>
+                
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowInviteModal(false);
+                      setInviteData({ email: '', can_view: true, can_request: false, can_invoice: false });
+                      setLastInviteLink('');
+                    }}
+                    className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                  >
+                    {saving ? 'Création...' : 'Créer l\'invitation'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
@@ -7959,7 +8417,7 @@ function EquipmentPage({ profile, t, notify, refresh, setPage, setSelectedReques
 // ============================================
 // REQUEST DETAIL PAGE (Enhanced)
 // ============================================
-function RequestDetail({ request, profile, t, setPage, notify, refresh, previousPage = 'dashboard' }) {
+function RequestDetail({ request, profile, t, setPage, notify, refresh, previousPage = 'dashboard', perms }) {
   const [messages, setMessages] = useState([]);
   const [history, setHistory] = useState([]);
   const [newMessage, setNewMessage] = useState('');
@@ -8012,6 +8470,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
 
   // Quote approval/revision handlers
   const handleApproveQuote = async () => {
+    if (!perms.canRequest) {
+      notify('Vous n\'avez pas la permission d\'effectuer cette action', 'error');
+      return;
+    }
     setApprovingQuote(true);
     const { error } = await supabase.from('service_requests').update({
       status: 'waiting_bc',
@@ -8169,6 +8631,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
 
   // Submit BC / Approval
   const submitBonCommande = async () => {
+    if (!perms.canRequest) {
+      notify('Vous n\'avez pas la permission d\'effectuer cette action', 'error');
+      return;
+    }
     if (!acceptTerms) {
       notify('Veuillez accepter les conditions générales', 'error');
       return;
@@ -8510,7 +8976,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         </div>
 
         {/* Quote Sent - Review Required */}
-        {needsQuoteAction && (
+        {needsQuoteAction && perms?.canRequest && (
           <div className="bg-blue-50 border-b border-blue-300 px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -8547,9 +9013,14 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             </div>
           </div>
         )}
+        {needsQuoteAction && !perms?.canRequest && (
+          <div className="bg-amber-50 border-b border-amber-200 px-6 py-3">
+            <p className="text-sm text-amber-700">⚠️ Ce devis nécessite une approbation. Contactez un utilisateur ayant la permission <strong>Demandes</strong> pour approuver.</p>
+          </div>
+        )}
 
         {/* Supplement Pending - Customer Action Required */}
-        {needsSupplementAction && (
+        {needsSupplementAction && perms?.canRequest && (
           <div className="bg-red-50 border-b border-red-300 px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -11108,7 +11579,7 @@ function EditContractModal({ contract, notify, onClose, onSaved }) {
 // ============================================
 // CONTRACTS PAGE (Customer View)
 // ============================================
-function ContractsPage({ profile, t, notify, setPage }) {
+function ContractsPage({ profile, t, notify, setPage, perms }) {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedContract, setSelectedContract] = useState(null);
@@ -11228,6 +11699,10 @@ function ContractsPage({ profile, t, notify, setPage }) {
 
   // Submit BC - COPIED FROM RMA (working version)
   const submitBonCommande = async () => {
+    if (!perms.canRequest) {
+      notify('Vous n\'avez pas la permission d\'effectuer cette action', 'error');
+      return;
+    }
     // Validation first - exactly like RMA
     if (!acceptTerms) {
       notify('Veuillez accepter les conditions générales', 'error');
@@ -11435,7 +11910,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
           </div>
           
           {/* QUOTE ACTION BANNER - Single button to review and approve */}
-          {needsQuoteAction && (
+          {needsQuoteAction && perms?.canRequest && (
             <div className="bg-blue-50 border-b border-blue-300 px-6 py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -11734,7 +12209,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
                 </div>
                 
                 {/* Actions */}
-                {isActive && (
+                {isActive && perms?.canRequest && (
                   <div className="flex justify-center">
                     <button
                       onClick={() => setPage('new-request')}
@@ -12726,12 +13201,14 @@ function ContractsPage({ profile, t, notify, setPage }) {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-[#1E3A5F]">Mes Contrats</h1>
+        {perms.canRequest && (
         <button 
           onClick={() => setPage('new-request')}
           className="px-4 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008c44]"
         >
           + Nouveau Contrat
         </button>
+        )}
       </div>
       
       {/* Pending Quotes Alert - IDENTICAL styling to RMA */}
@@ -12754,12 +13231,14 @@ function ContractsPage({ profile, t, notify, setPage }) {
           <p className="text-gray-600 mb-4">
             Vous n'avez pas encore de contrat d'étalonnage. Demandez un devis pour bénéficier de tarifs préférentiels.
           </p>
+          {perms.canRequest && (
           <button 
             onClick={() => setPage('new-request')}
             className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008c44]"
           >
             Demander un devis contrat
           </button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
@@ -13422,7 +13901,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
 // ============================================
 // HOME PAGE (Public Landing)
 // ============================================
-function HomePage({ t, setPage }) {
+function HomePage({ t, setPage, setShowLegalPage }) {
   return (
     <div className="min-h-screen">
       {/* Fixed Background - stays in place while content scrolls */}
@@ -13712,7 +14191,12 @@ function HomePage({ t, setPage }) {
               </div>
             </div>
             <div className="border-t border-white/10 pt-8 text-center">
-              <p className="text-white/40 text-sm">© 2025 Lighthouse France SAS. Tous droits reserves.</p>
+              <p className="text-white/40 text-sm">© 2025 Lighthouse France SAS. Tous droits réservés.</p>
+              <div className="flex justify-center gap-4 mt-2">
+                <button onClick={() => setShowLegalPage('mentions')} className="text-white/30 text-xs hover:text-white/60">Mentions légales</button>
+                <span className="text-white/20">|</span>
+                <button onClick={() => setShowLegalPage('privacy')} className="text-white/30 text-xs hover:text-white/60">Politique de confidentialité</button>
+              </div>
             </div>
           </div>
         </footer>
@@ -13724,11 +14208,113 @@ function HomePage({ t, setPage }) {
 // ============================================
 // LOGIN PAGE
 // ============================================
-function LoginPage({ t, login, setPage }) {
+// ============================================
+// PASSWORD RECOVERY PAGE
+// ============================================
+function PasswordRecoveryPage({ supabase, notify, onComplete }) {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const handleReset = async (e) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      notify('Les mots de passe ne correspondent pas', 'error');
+      return;
+    }
+    if (newPassword.length < 6) {
+      notify('Le mot de passe doit contenir au moins 6 caractères', 'error');
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setLoading(false);
+    if (error) {
+      notify(`Erreur: ${error.message}`, 'error');
+    } else {
+      setDone(true);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#1a1a2e] to-[#16213e] flex items-center justify-center px-4">
+      <div className="w-full max-w-md">
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+          <div className="px-6 py-8 text-center border-b bg-[#1E3A5F]">
+            <h1 className="text-xl font-bold text-white">Réinitialisation du mot de passe</h1>
+            <p className="text-white/60 mt-1 text-sm">Choisissez un nouveau mot de passe</p>
+          </div>
+          {done ? (
+            <div className="p-6 text-center">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h2 className="text-lg font-bold text-[#1E3A5F] mb-2">Mot de passe modifié</h2>
+              <p className="text-sm text-gray-500 mb-6">Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.</p>
+              <button
+                onClick={onComplete}
+                className="w-full py-3 bg-[#3B7AB4] text-white rounded-lg font-semibold hover:bg-[#1E3A5F]"
+              >
+                Se connecter
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleReset} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nouveau mot de passe *</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  placeholder="Minimum 6 caractères"
+                  required
+                  minLength={6}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Confirmer *</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-[#3B7AB4] ${
+                    confirmPassword && newPassword !== confirmPassword ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                  }`}
+                  required
+                />
+                {confirmPassword && newPassword !== confirmPassword && (
+                  <p className="text-xs text-red-500 mt-1">Les mots de passe ne correspondent pas</p>
+                )}
+              </div>
+              <button
+                type="submit"
+                disabled={loading || newPassword !== confirmPassword}
+                className="w-full py-3 bg-[#3B7AB4] text-white rounded-lg font-semibold hover:bg-[#1E3A5F] disabled:opacity-50"
+              >
+                {loading ? 'Modification...' : 'Réinitialiser le mot de passe'}
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// LOGIN PAGE
+// ============================================
+function LoginPage({ t, login, setPage, supabase, notify }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [forgotMode, setForgotMode] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -13737,6 +14323,25 @@ function LoginPage({ t, login, setPage }) {
     const result = await login(email, password);
     if (result) setError(result);
     setLoading(false);
+  };
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    if (!email) {
+      setError('Veuillez entrer votre adresse email');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    setLoading(false);
+    if (error) {
+      setError(error.message);
+    } else {
+      setResetSent(true);
+    }
   };
 
   return (
@@ -13798,45 +14403,106 @@ function LoginPage({ t, login, setPage }) {
                 <p className="text-white/60 mt-2">Portail de Service</p>
               </div>
               
-              <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-white/80 mb-1">Email</label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                    placeholder="votre@email.com"
-                    required
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-white/80 mb-1">Mot de passe</label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                    placeholder="••••••••"
-                    required
-                  />
-                </div>
-                
-                {error && (
-                  <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
-                    {error}
+              {forgotMode ? (
+                resetSent ? (
+                  <div className="p-6 text-center">
+                    <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-2">Email envoyé</h3>
+                    <p className="text-white/60 text-sm mb-6">
+                      Si un compte existe pour <span className="text-white font-medium">{email}</span>, vous recevrez un lien de réinitialisation.
+                    </p>
+                    <button
+                      onClick={() => { setForgotMode(false); setResetSent(false); setError(''); }}
+                      className="text-[#00A651] font-semibold hover:text-[#00c564]"
+                    >
+                      Retour à la connexion
+                    </button>
                   </div>
-                )}
-                
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50"
-                >
-                  {loading ? 'Connexion...' : 'Se connecter'}
-                </button>
-              </form>
+                ) : (
+                  <form onSubmit={handleForgotPassword} className="p-6 space-y-4">
+                    <p className="text-white/60 text-sm mb-2">Entrez votre adresse email pour recevoir un lien de réinitialisation.</p>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Email</label>
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="votre@email.com"
+                        required
+                      />
+                    </div>
+                    {error && (
+                      <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
+                        {error}
+                      </div>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50"
+                    >
+                      {loading ? 'Envoi...' : 'Envoyer le lien'}
+                    </button>
+                    <div className="text-center">
+                      <button type="button" onClick={() => { setForgotMode(false); setError(''); }} className="text-white/60 hover:text-white text-sm">
+                        Retour à la connexion
+                      </button>
+                    </div>
+                  </form>
+                )
+              ) : (
+                <>
+                  <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Email</label>
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="votre@email.com"
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="block text-sm font-medium text-white/80">Mot de passe</label>
+                        <button type="button" onClick={() => { setForgotMode(true); setError(''); }} className="text-xs text-[#00A651] hover:text-[#00c564]">
+                          Mot de passe oublié?
+                        </button>
+                      </div>
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="••••••••"
+                        required
+                      />
+                    </div>
+                    
+                    {error && (
+                      <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
+                        {error}
+                      </div>
+                    )}
+                    
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50"
+                    >
+                      {loading ? 'Connexion...' : 'Se connecter'}
+                    </button>
+                  </form>
+                </>
+              )}
               
               <div className="px-6 pb-6 text-center">
                 <p className="text-white/60">
@@ -13857,20 +14523,32 @@ function LoginPage({ t, login, setPage }) {
 // ============================================
 // REGISTER PAGE
 // ============================================
-function RegisterPage({ t, register, setPage }) {
+function RegisterPage({ t, register, setPage, supabase, notify }) {
+  // Check for invite token in URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const inviteToken = urlParams.get('invite') || '';
+  const inviteEmail = urlParams.get('email') || '';
+
   const [formData, setFormData] = useState({
-    email: '', password: '', confirmPassword: '',
+    email: inviteEmail, password: '', confirmPassword: '',
     companyName: '', contactName: '', phone: '',
     address: '', city: '', postalCode: '', country: 'France',
-    siret: '', vatNumber: ''
+    siret: '', vatNumber: '', inviteToken: inviteToken
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [inviteMode] = useState(!!inviteToken);
+  const [gdprConsent, setGdprConsent] = useState(false);
 
   const updateField = (field, value) => setFormData({ ...formData, [field]: value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    if (!gdprConsent) {
+      setError('Veuillez accepter la politique de confidentialité pour continuer');
+      return;
+    }
     
     if (formData.password !== formData.confirmPassword) {
       setError('Les mots de passe ne correspondent pas');
@@ -13935,12 +14613,13 @@ function RegisterPage({ t, register, setPage }) {
           <div className="max-w-2xl mx-auto">
             <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden">
               <div className="bg-[#00A651]/20 backdrop-blur-sm px-6 py-6 border-b border-white/10">
-                <h1 className="text-xl font-bold text-white">Créer un compte</h1>
-                <p className="text-white/60 text-sm mt-1">Enregistrez votre société pour accéder au portail</p>
+                <h1 className="text-xl font-bold text-white">{inviteMode ? 'Rejoindre une équipe' : 'Créer un compte'}</h1>
+                <p className="text-white/60 text-sm mt-1">{inviteMode ? 'Vous avez été invité à rejoindre une équipe existante' : 'Enregistrez votre société pour accéder au portail'}</p>
               </div>
               
               <form onSubmit={handleSubmit} className="p-6 space-y-6">
-                {/* Company Section */}
+                {/* Company/Address/ID Sections - hide for invite mode */}
+                {!inviteMode && (<>
                 <div>
                   <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
                     Information Société
@@ -13953,7 +14632,7 @@ function RegisterPage({ t, register, setPage }) {
                         value={formData.companyName}
                         onChange={(e) => updateField('companyName', e.target.value)}
                         className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        required
+                        required={!inviteMode}
                       />
                     </div>
                     <div>
@@ -14069,6 +14748,26 @@ function RegisterPage({ t, register, setPage }) {
                       : 'These details will be used for invoicing. Leave blank if not applicable.'}
                   </p>
                 </div>
+                </>)} {/* end !inviteMode */}
+
+                {/* Contact info for invite mode */}
+                {inviteMode && (
+                  <div>
+                    <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
+                      Vos informations
+                    </h2>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-white/80 mb-1">Votre nom complet *</label>
+                        <input type="text" value={formData.contactName} onChange={(e) => updateField('contactName', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" required />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-white/80 mb-1">Téléphone</label>
+                        <input type="tel" value={formData.phone} onChange={(e) => updateField('phone', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder="+33 1 23 45 67 89" />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Account Section */}
                 <div>
@@ -14082,9 +14781,11 @@ function RegisterPage({ t, register, setPage }) {
                         type="email"
                         value={formData.email}
                         onChange={(e) => updateField('email', e.target.value)}
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        className={`w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent ${inviteMode ? 'opacity-70' : ''}`}
                         required
+                        readOnly={inviteMode}
                       />
+                      {inviteMode && <p className="text-xs text-white/40 mt-1">{"L'email doit correspondre à celui de l'invitation"}</p>}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-white/80 mb-1">Mot de passe *</label>
@@ -14109,6 +14810,20 @@ function RegisterPage({ t, register, setPage }) {
                     </div>
                   </div>
                 </div>
+                
+                {/* GDPR Consent */}
+                <label className="flex items-start gap-3 p-3 bg-white/5 border border-white/10 rounded-lg cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={gdprConsent}
+                    onChange={e => setGdprConsent(e.target.checked)}
+                    className="mt-1 w-4 h-4"
+                    required
+                  />
+                  <span className="text-sm text-white/70">
+                    {"J'accepte"} que Lighthouse France collecte et traite mes données personnelles conformément à sa politique de confidentialité. Mes données seront utilisées uniquement pour la gestion de mon compte et le suivi des demandes de service. *
+                  </span>
+                </label>
                 
                 {error && (
                   <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
@@ -14146,6 +14861,207 @@ function RegisterPage({ t, register, setPage }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ============================================
+// COOKIE CONSENT BANNER (CNIL/RGPD)
+// ============================================
+function CookieBanner({ onAccept, onShowPolicy }) {
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-[90] bg-[#1E3A5F] border-t border-white/20 shadow-2xl">
+      <div className="max-w-5xl mx-auto px-4 py-4 sm:px-6 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        <div className="flex-1">
+          <p className="text-white text-sm font-medium mb-1">🍪 Ce site utilise des cookies</p>
+          <p className="text-white/70 text-xs">
+            Nous utilisons uniquement des cookies essentiels au fonctionnement du service (authentification, session).
+            Aucun cookie publicitaire ou de suivi n{"'"}est utilisé.{' '}
+            <button onClick={onShowPolicy} className="text-[#00A651] underline hover:text-[#00c564]">
+              En savoir plus
+            </button>
+          </p>
+        </div>
+        <button
+          onClick={onAccept}
+          className="px-6 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008f45] whitespace-nowrap text-sm"
+        >
+          Accepter
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// LEGAL PAGE MODAL (Privacy + Mentions Légales)
+// ============================================
+function LegalPageModal({ page, onClose }) {
+  return (
+    <div className="fixed inset-0 z-[95] bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b flex justify-between items-center bg-[#1E3A5F] text-white">
+          <h2 className="font-bold text-lg">
+            {page === 'privacy' ? 'Politique de confidentialité' : 'Mentions légales'}
+          </h2>
+          <button onClick={onClose} className="text-white/70 hover:text-white text-xl">✕</button>
+        </div>
+        <div className="p-6 overflow-y-auto prose prose-sm max-w-none">
+          {page === 'privacy' ? <PrivacyContent /> : <MentionsContent />}
+        </div>
+        <div className="px-6 py-3 border-t bg-gray-50 text-right">
+          <button onClick={onClose} className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg text-sm">Fermer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PrivacyContent() {
+  return (
+    <div className="space-y-4 text-gray-700 text-sm">
+      <p className="text-xs text-gray-400">Dernière mise à jour : février 2025</p>
+      
+      <h3 className="font-bold text-[#1E3A5F] text-base">1. Responsable du traitement</h3>
+      <p>
+        Lighthouse France (Lighthouse Worldwide Solutions)<br />
+        16 Rue Paul Séjourné, 94000 Créteil, France<br />
+        Email : france@golighthouse.com
+      </p>
+
+      <h3 className="font-bold text-[#1E3A5F] text-base">2. Données collectées</h3>
+      <p>Dans le cadre de nos services, nous collectons les données suivantes :</p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li><strong>Données {"d'identification"} :</strong> nom, prénom, adresse email, numéro de téléphone</li>
+        <li><strong>Données professionnelles :</strong> nom de la société, adresse, SIRET, numéro de TVA</li>
+        <li><strong>Données de service :</strong> demandes de service (RMA), historique des équipements, correspondances</li>
+        <li><strong>Données techniques :</strong> adresse IP, données de connexion (logs de sécurité)</li>
+      </ul>
+
+      <h3 className="font-bold text-[#1E3A5F] text-base">3. Finalités du traitement</h3>
+      <p>Vos données sont traitées pour :</p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li>La gestion de votre compte client et {"l'authentification"}</li>
+        <li>Le suivi de vos demandes de service (étalonnage, réparation)</li>
+        <li>{"L'établissement"} de devis et la facturation</li>
+        <li>La gestion des contrats {"d'étalonnage"}</li>
+        <li>La communication relative à vos commandes</li>
+      </ul>
+
+      <h3 className="font-bold text-[#1E3A5F] text-base">4. Base légale</h3>
+      <p>
+        Le traitement de vos données repose sur : {"l'exécution"} du contrat de service (Article 6.1.b du RGPD),
+        votre consentement (Article 6.1.a), et nos obligations légales (Article 6.1.c), notamment en matière de facturation et de traçabilité métrologique.
+      </p>
+
+      <h3 className="font-bold text-[#1E3A5F] text-base">5. Durée de conservation</h3>
+      <ul className="list-disc pl-5 space-y-1">
+        <li><strong>Données {"d'identification"} (nom, email, téléphone) :</strong> durée de la relation commerciale. Anonymisées sur demande via le portail.</li>
+        <li><strong>Données de facturation :</strong> 10 ans (Article L123-22 du Code de Commerce)</li>
+        <li><strong>Données {"d'étalonnage"} et certificats :</strong> 10 ans minimum (traçabilité métrologique ISO 17025)</li>
+        <li><strong>Historique des demandes de service :</strong> 10 ans (obligations contractuelles et qualité)</li>
+        <li><strong>Logs de connexion :</strong> 1 an</li>
+      </ul>
+      <p>
+        En cas de demande {"d'effacement"} (Article 17 RGPD), vos données personnelles sont anonymisées. Les enregistrements liés aux obligations légales, comptables et de traçabilité métrologique sont conservés sous forme anonymisée conformément à {"l'Article"} 17(3)(b) et (e) du RGPD.
+      </p>
+
+      <h3 className="font-bold text-[#1E3A5F] text-base">6. Vos droits</h3>
+      <p>Conformément au RGPD, vous disposez des droits suivants :</p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li><strong>Droit {"d'accès"} :</strong> obtenir une copie de vos données personnelles</li>
+        <li><strong>Droit de rectification :</strong> corriger vos données inexactes</li>
+        <li><strong>Droit à {"l'effacement"} :</strong> demander {"l'anonymisation"} de vos données personnelles (nom, email, téléphone). Note importante : conformément à {"l'Article"} 17(3)(b) et (e) du RGPD, les données liées aux obligations légales et à la traçabilité métrologique sont conservées (factures : 10 ans — Code de Commerce Art. L123-22 ; certificats {"d'étalonnage"} : 10 ans — ISO 17025 ; historique des demandes de service). {"L'anonymisation"} est disponible dans Paramètres {">"} Sécurité.</li>
+        <li><strong>Droit à la portabilité :</strong> recevoir vos données dans un format structuré (disponible dans Paramètres {">"} Sécurité)</li>
+        <li><strong>Droit {"d'opposition"} :</strong> vous opposer au traitement de vos données</li>
+        <li><strong>Droit de limitation :</strong> demander la restriction du traitement</li>
+      </ul>
+      <p>
+        Pour exercer vos droits, contactez-nous à : <strong>france@golighthouse.com</strong>
+      </p>
+      <p>
+        Vous pouvez également déposer une réclamation auprès de la CNIL (Commission Nationale de {"l'Informatique"} et des Libertés) : <strong>www.cnil.fr</strong>
+      </p>
+
+      <h3 className="font-bold text-[#1E3A5F] text-base">7. Cookies</h3>
+      <p>
+        Ce site utilise uniquement des <strong>cookies essentiels</strong> nécessaires au fonctionnement du service :
+      </p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li><strong>Cookie {"d'authentification"} Supabase :</strong> maintien de votre session de connexion (durée : session)</li>
+        <li><strong>Préférence cookies :</strong> enregistrement de votre choix concernant les cookies (durée : 1 an)</li>
+      </ul>
+      <p>Aucun cookie publicitaire, analytique ou de suivi {"n'est"} utilisé.</p>
+
+      <h3 className="font-bold text-[#1E3A5F] text-base">8. Transferts de données</h3>
+      <p>
+        Vos données sont hébergées au sein de {"l'Union"} Européenne. Dans le cadre de notre activité au sein du groupe
+        Lighthouse Worldwide Solutions, certaines données peuvent être partagées avec notre siège (États-Unis)
+        dans le respect des garanties appropriées (clauses contractuelles types de la Commission européenne).
+      </p>
+
+      <h3 className="font-bold text-[#1E3A5F] text-base">9. Sécurité</h3>
+      <p>
+        Nous mettons en œuvre des mesures techniques et organisationnelles appropriées pour protéger vos données :
+        chiffrement des communications (TLS), authentification sécurisée, contrôle {"d'accès"} basé sur les rôles,
+        et sauvegardes régulières.
+      </p>
+    </div>
+  );
+}
+
+function MentionsContent() {
+  return (
+    <div className="space-y-4 text-gray-700 text-sm">
+      <h3 className="font-bold text-[#1E3A5F] text-base">1. Éditeur du site</h3>
+      <p>
+        <strong>Lighthouse France</strong> (filiale de Lighthouse Worldwide Solutions, Inc.)<br />
+        16 Rue Paul Séjourné<br />
+        94000 Créteil, France<br />
+        Email : france@golighthouse.com<br />
+        Téléphone : +33 (0)1 XX XX XX XX
+      </p>
+      <p>
+        Directeur de la publication : Marshall Meleney<br />
+        SIRET : disponible sur demande<br />
+        N° TVA Intracommunautaire : disponible sur demande
+      </p>
+
+      <h3 className="font-bold text-[#1E3A5F] text-base">2. Hébergeur</h3>
+      <p>
+        Ce site est hébergé par :<br />
+        <strong>Vercel Inc.</strong><br />
+        340 S Lemon Ave #4133, Walnut, CA 91789, USA<br />
+        Les données sont stockées par <strong>Supabase Inc.</strong> (infrastructure cloud UE).
+      </p>
+
+      <h3 className="font-bold text-[#1E3A5F] text-base">3. Propriété intellectuelle</h3>
+      <p>
+        {"L'ensemble"} du contenu de ce site (textes, images, logos, logiciels) est la propriété de
+        Lighthouse Worldwide Solutions ou de ses partenaires. Toute reproduction, même partielle,
+        est interdite sans autorisation préalable écrite.
+      </p>
+
+      <h3 className="font-bold text-[#1E3A5F] text-base">4. Limitation de responsabilité</h3>
+      <p>
+        Lighthouse France {"s'efforce"} de fournir des informations aussi précises que possible sur ce portail.
+        Toutefois, la société ne saurait être tenue responsable des omissions, inexactitudes ou carences
+        dans la mise à jour des informations.
+      </p>
+
+      <h3 className="font-bold text-[#1E3A5F] text-base">5. Loi applicable</h3>
+      <p>
+        Le présent site est soumis au droit français. En cas de litige, les tribunaux français seront
+        seuls compétents. Conformément à la loi n° 2004-575 du 21 juin 2004 pour la confiance dans
+        {"l'économie"} numérique, ces mentions légales sont accessibles à tout moment sur ce site.
+      </p>
+
+      <h3 className="font-bold text-[#1E3A5F] text-base">6. Contact DPO</h3>
+      <p>
+        Pour toute question relative à la protection de vos données personnelles :<br />
+        Email : <strong>france@golighthouse.com</strong><br />
+        Objet : « Protection des données personnelles »
+      </p>
     </div>
   );
 }
