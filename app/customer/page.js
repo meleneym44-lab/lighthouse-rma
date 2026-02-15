@@ -4042,7 +4042,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' },
     parcels: 0
   });
-  const [billingChoice, setBillingChoice] = useState('same'); // 'same', 'company', or 'other'
+  const [billingChoice, setBillingChoice] = useState(''); // '', 'same', 'company', or 'other'
   const [billingAddressId, setBillingAddressId] = useState('');
   const [saving, setSaving] = useState(false);
   const [formStep, setFormStep] = useState('form'); // 'form' or 'success'
@@ -4190,6 +4190,10 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       notify('Veuillez indiquer le nombre de colis', 'error');
       return false;
     }
+    if (!billingChoice) {
+      notify('Veuillez sélectionner une adresse de facturation', 'error');
+      return false;
+    }
     return true;
   };
 
@@ -4306,30 +4310,41 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
   // === SUCCESS SCREEN ===
   if (formStep === 'success') {
     return (
-      <div className="max-w-2xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-lg border overflow-hidden">
-          <div className="bg-gradient-to-r from-[#00A651] to-[#008f45] p-8 text-center text-white">
-            <div className="text-5xl mb-4">✅</div>
-            <h1 className="text-2xl font-bold">Demande soumise avec succès!</h1>
-            <p className="text-white/80 mt-2">Un numéro FR sera attribué après validation par notre équipe.</p>
-          </div>
-          <div className="p-6">
-            <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-6 mb-6">
-              <h2 className="text-lg font-bold text-blue-900 mb-3">📦 Envoyez vos appareils à :</h2>
-              <div className="bg-white rounded-lg p-4 border border-blue-200">
-                <p className="font-bold text-lg text-[#1E3A5F]">LIGHTHOUSE FRANCE SAS</p>
-                <p className="text-gray-700 mt-1">16 Rue Paul Séjourné</p>
-                <p className="text-gray-700">94000 Créteil</p>
-                <p className="text-gray-700">France</p>
-                <p className="text-gray-500 mt-2 text-sm">Tél: 01 43 77 28 07</p>
+      <div className="max-w-lg mx-auto mt-8">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-6 py-5 border-b border-gray-100">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-[#1E3A5F]">Demande enregistrée</h1>
+                <p className="text-sm text-gray-500">{devices.length} appareil{devices.length > 1 ? 's' : ''} · {shipping.parcels} colis</p>
               </div>
             </div>
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
-              <p className="text-sm text-amber-800">
-                <strong>📝 Important :</strong> Veuillez indiquer votre nom de société et le numéro de série des appareils sur chaque colis.
-              </p>
+          </div>
+
+          <div className="px-6 py-5">
+            <p className="text-sm text-gray-600 mb-4">
+              Votre demande sera traitée sous 24h ouvrées. Vous recevrez un email de confirmation avec votre numéro de dossier.
+            </p>
+
+            <div className="bg-gray-50 rounded-lg p-4 mb-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">{"Adresse d'envoi"}</p>
+              <p className="font-semibold text-[#1E3A5F]">Lighthouse France SAS</p>
+              <p className="text-sm text-gray-600">16 Rue Paul Séjourné</p>
+              <p className="text-sm text-gray-600">94000 Créteil, France</p>
+              <p className="text-sm text-gray-400 mt-1">01 43 77 28 07</p>
             </div>
-            <button onClick={() => setPage('dashboard')} className="w-full py-3 bg-[#1E3A5F] text-white rounded-lg font-medium hover:bg-[#2a4f7a] transition-colors">
+
+            <p className="text-xs text-gray-400 mb-5">
+              Merci d'indiquer le nom de votre société et les numéros de série sur chaque colis.
+            </p>
+
+            <button 
+              onClick={() => setPage('dashboard')} 
+              className="w-full py-2.5 bg-[#1E3A5F] text-white rounded-lg font-medium hover:bg-[#2a4f7a] text-sm"
+            >
               Retour au tableau de bord
             </button>
           </div>
@@ -4389,19 +4404,21 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mt-6">
           <h2 className="text-lg font-bold text-[#1E3A5F] mb-3 pb-3 border-b border-gray-100">💳 Adresse de facturation</h2>
           <select
-            value={billingChoice === 'company' ? 'company' : billingChoice === 'same' ? 'same' : billingAddressId}
+            value={billingChoice === 'company' ? 'company' : billingChoice === 'same' ? 'same' : billingChoice === 'other' ? billingAddressId : ''}
             onChange={e => {
-              if (e.target.value === 'company') { setBillingChoice('company'); setBillingAddressId(''); }
+              if (e.target.value === '') { setBillingChoice(''); setBillingAddressId(''); }
+              else if (e.target.value === 'company') { setBillingChoice('company'); setBillingAddressId(''); }
               else if (e.target.value === 'same') { setBillingChoice('same'); setBillingAddressId(''); }
               else { setBillingChoice('other'); setBillingAddressId(e.target.value); }
             }}
-            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+            className={`w-full px-3 py-2.5 border rounded-lg text-sm ${!billingChoice ? 'border-gray-300 text-gray-400' : 'border-gray-300'}`}
           >
-            <option value="same">{"📦 Identique à l'adresse de retour"}</option>
-            <option value="company">🏢 {profile?.companies?.name} — {profile?.companies?.billing_address}, {profile?.companies?.billing_postal_code} {profile?.companies?.billing_city}</option>
+            <option value="">Sélectionner une adresse de facturation...</option>
+            <option value="same">{"Identique à l'adresse de retour"}</option>
+            <option value="company">{profile?.companies?.name} — {profile?.companies?.billing_address}, {profile?.companies?.billing_postal_code} {profile?.companies?.billing_city}</option>
             {addresses.filter(a => a.id !== shipping.address_id).map(a => (
               <option key={a.id} value={a.id}>
-                📍 {a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}
+                {a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}
               </option>
             ))}
           </select>
@@ -4429,82 +4446,99 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       {showReviewModal && (() => {
         const retAddr = shipping.showNewForm ? shipping.newAddress : addresses.find(a => a.id === shipping.address_id);
         const co = profile?.companies || {};
-        const billingDisplay = billingChoice === 'same' 
-          ? (retAddr ? `${retAddr.company_name || retAddr.label || co.name}, ${retAddr.address_line1}, ${retAddr.postal_code} ${retAddr.city}` : '—')
-          : billingChoice === 'company' 
-            ? `${co.name}, ${co.billing_address}, ${co.billing_postal_code} ${co.billing_city}`
-            : (() => { const a = addresses.find(a => a.id === billingAddressId); return a ? `${a.label || a.company_name}, ${a.address_line1}, ${a.postal_code} ${a.city}` : '—'; })();
+        const getBillingAddr = () => {
+          if (billingChoice === 'same') return retAddr ? `${retAddr.company_name || retAddr.label || co.name}, ${retAddr.address_line1}, ${retAddr.postal_code} ${retAddr.city}` : '—';
+          if (billingChoice === 'company') return `${co.name}, ${co.billing_address}, ${co.billing_postal_code} ${co.billing_city}`;
+          const a = addresses.find(x => x.id === billingAddressId);
+          return a ? `${a.label || a.company_name}, ${a.address_line1}, ${a.postal_code} ${a.city}` : '—';
+        };
         const serviceLabels = { calibration: 'Étalonnage', repair: 'Réparation', calibration_repair: 'Étalonnage + Réparation', other: 'Autre' };
 
         return (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowReviewModal(false)}>
-            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-              {/* Modal Header */}
-              <div className="bg-[#1E3A5F] px-6 py-5 rounded-t-2xl">
-                <h2 className="text-xl font-bold text-white">Vérification de votre demande</h2>
-                <p className="text-white/60 text-sm mt-1">Veuillez vérifier les informations avant envoi</p>
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowReviewModal(false)}>
+            <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-gray-200 shrink-0">
+                <h2 className="text-lg font-bold text-[#1E3A5F]">Récapitulatif de la demande</h2>
               </div>
 
-              <div className="p-6 space-y-5">
-                {/* Devices */}
+              {/* Scrollable body */}
+              <div className="p-6 overflow-y-auto space-y-4 flex-1">
+                {/* Devices table */}
                 <div>
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Appareils ({devices.length})</h3>
-                  <div className="space-y-2">
-                    {devices.map((d, i) => (
-                      <div key={d.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                        <div className="w-7 h-7 bg-[#3B7AB4] text-white rounded-full flex items-center justify-center font-bold text-xs shrink-0">{i + 1}</div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-[#1E3A5F] text-sm">{d.brand === 'other' ? d.brand_other : 'Lighthouse'} {d.model}</p>
-                          <p className="text-xs text-gray-500">SN: <span className="font-mono">{d.serial_number}</span> · {serviceLabels[d.service_type] || d.service_other || d.service_type}</p>
-                        </div>
-                        {d.notes && <span className="text-xs text-gray-400 max-w-[120px] truncate" title={d.notes}>💬 {d.notes}</span>}
-                      </div>
-                    ))}
-                  </div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Appareils ({devices.length})</p>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200 text-left text-xs text-gray-400">
+                        <th className="pb-2 font-medium">#</th>
+                        <th className="pb-2 font-medium">Appareil</th>
+                        <th className="pb-2 font-medium">N° Série</th>
+                        <th className="pb-2 font-medium">Service</th>
+                        <th className="pb-2 font-medium">Retour</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {devices.map((d, i) => {
+                        const devAddr = d.shipping_address_id ? addresses.find(a => a.id === d.shipping_address_id) : null;
+                        return (
+                          <tr key={d.id}>
+                            <td className="py-2 text-gray-400">{i + 1}</td>
+                            <td className="py-2 font-medium text-[#1E3A5F]">{d.brand === 'other' ? d.brand_other : 'Lighthouse'} {d.model}</td>
+                            <td className="py-2 font-mono text-xs">{d.serial_number}</td>
+                            <td className="py-2 text-xs">{serviceLabels[d.service_type] || d.service_other || '—'}</td>
+                            <td className="py-2 text-xs text-gray-500">
+                              {devAddr ? <span className="text-amber-600" title={`${devAddr.label || devAddr.company_name}, ${devAddr.city}`}>{devAddr.label || devAddr.city}</span> : 'Standard'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
 
-                {/* Divider */}
                 <hr className="border-gray-100" />
 
-                {/* Shipping & Billing side by side */}
+                {/* Addresses */}
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
-                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">📦 Retour</h3>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Adresse de retour</p>
                     {retAddr && (
-                      <div className="p-3 bg-blue-50 rounded-lg text-sm">
-                        <p className="font-semibold text-[#1E3A5F]">{retAddr.company_name || retAddr.label || co.name}</p>
-                        {retAddr.attention && <p className="text-gray-600 text-xs">Attn: {retAddr.attention}</p>}
-                        <p className="text-gray-600">{retAddr.address_line1}</p>
-                        <p className="text-gray-600">{retAddr.postal_code} {retAddr.city}, {retAddr.country || 'France'}</p>
+                      <div className="text-sm text-gray-700 leading-relaxed">
+                        <p className="font-medium text-[#1E3A5F]">{retAddr.company_name || retAddr.label || co.name}</p>
+                        {retAddr.attention && <p>Attn: {retAddr.attention}</p>}
+                        <p>{retAddr.address_line1}</p>
+                        <p>{retAddr.postal_code} {retAddr.city}, {retAddr.country || 'France'}</p>
                       </div>
                     )}
-                    <p className="text-xs text-gray-400 mt-2">{shipping.parcels} colis</p>
+                    <p className="text-xs text-gray-400 mt-1">{shipping.parcels} colis</p>
                   </div>
                   <div>
-                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">💳 Facturation</h3>
-                    <div className="p-3 bg-gray-50 rounded-lg text-sm">
-                      <p className="text-gray-700">{billingDisplay}</p>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Facturation</p>
+                    <div className="text-sm text-gray-700 leading-relaxed">
+                      <p>{getBillingAddr()}</p>
                     </div>
+                    {(co.siret || co.tva_number) && (
+                      <div className="mt-2 pt-2 border-t border-gray-100 text-xs text-gray-500 space-y-0.5">
+                        {co.siret && <p>SIRET: <span className="font-mono">{co.siret}</span></p>}
+                        {co.tva_number && <p>TVA: <span className="font-mono">{co.tva_number}</span></p>}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Modal Footer */}
-              <div className="px-6 py-4 bg-gray-50 rounded-b-2xl flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowReviewModal(false)}
-                  className="flex-1 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-100 transition-colors"
-                >
-                  ← Modifier
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-gray-200 flex gap-3 shrink-0">
+                <button type="button" onClick={() => setShowReviewModal(false)} className="flex-1 py-2.5 bg-white border border-gray-300 text-gray-600 rounded-lg font-medium hover:bg-gray-50">
+                  Modifier
                 </button>
                 <button
                   type="button"
                   onClick={(e) => { setShowReviewModal(false); handleSubmit(e); }}
                   disabled={saving}
-                  className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors disabled:opacity-50 text-lg"
+                  className="flex-1 py-2.5 bg-[#1E3A5F] text-white rounded-lg font-semibold hover:bg-[#2a4f7a] disabled:opacity-50"
                 >
-                  {saving ? 'Envoi...' : '✅ Confirmer'}
+                  {saving ? 'Envoi...' : 'Confirmer et envoyer'}
                 </button>
               </div>
             </div>
