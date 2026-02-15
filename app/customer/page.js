@@ -2718,6 +2718,9 @@ export default function CustomerPortal() {
       billing_address: formData.address,
       billing_city: formData.city,
       billing_postal_code: formData.postalCode,
+      country: formData.country || 'France',
+      siret: formData.siret || null,
+      tva_number: formData.vatNumber || null,
       phone: formData.phone,
       email: formData.email
     }).select().single();
@@ -2740,7 +2743,7 @@ export default function CustomerPortal() {
       address_line1: formData.address,
       city: formData.city,
       postal_code: formData.postalCode,
-      country: 'France',
+      country: formData.country || 'France',
       is_default: true
     });
     
@@ -4039,7 +4042,10 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' },
     parcels: 0
   });
+  const [billingChoice, setBillingChoice] = useState('company'); // 'company' or 'same' or 'other'
+  const [billingAddressId, setBillingAddressId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [formStep, setFormStep] = useState('form'); // 'form', 'review', 'success'
 
   // Load saved equipment on mount
   useEffect(() => {
@@ -4215,6 +4221,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           problem_description: devices.map(d => `[${d.brand === 'other' ? d.brand_other : 'Lighthouse'}] ${d.model} - ${d.serial_number}\nService: ${d.service_type === 'other' ? d.service_other : d.service_type}\nAccessoires: ${d.accessories.join(', ') || 'Aucun'}\nNotes: ${d.notes}`).join('\n\n---\n\n'),
           urgency: 'normal',
           shipping_address_id: addressId,
+          billing_address_id: billingChoice === 'same' ? addressId : billingChoice === 'other' ? (billingAddressId || null) : null,
           parcels_count: shipping.parcels || 1,
           status: 'submitted',
           submitted_at: new Date().toISOString()
@@ -4254,7 +4261,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
 
       notify('Demande soumise avec succès! Numéro FR attribué après validation.');
       refresh();
-      setPage('dashboard');
+      setFormStep('success');
     } catch (err) {
       notify(`Erreur: ${err.message}`, 'error');
     }
@@ -4262,6 +4269,206 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     setSaving(false);
   };
 
+  // Helper: get selected return address details
+  const getReturnAddress = () => {
+    if (shipping.showNewForm) return shipping.newAddress;
+    return addresses.find(a => a.id === shipping.address_id);
+  };
+  
+  // Helper: get billing address display
+  const getBillingDisplay = () => {
+    const co = profile?.companies || {};
+    if (billingChoice === 'company') return `${co.name || ''}, ${co.billing_address || ''}, ${co.billing_postal_code || ''} ${co.billing_city || ''}`;
+    if (billingChoice === 'same') { const a = getReturnAddress(); return a ? `${a.company_name || a.label || ''}, ${a.address_line1 || ''}, ${a.postal_code || ''} ${a.city || ''}` : '—'; }
+    if (billingChoice === 'other') { const a = addresses.find(a => a.id === billingAddressId); return a ? `${a.company_name || a.label || ''}, ${a.address_line1 || ''}, ${a.postal_code || ''} ${a.city || ''}` : '—'; }
+    return '—';
+  };
+
+  // Validate before showing review
+  const goToReview = () => {
+    for (const d of devices) {
+      if (!d.device_type || !d.model || !d.serial_number || !d.service_type) {
+        notify('Veuillez remplir tous les champs obligatoires pour chaque appareil (type, modèle, n° série, service)', 'error');
+        return;
+      }
+      const needsNotes = d.service_type === 'repair' || d.service_type === 'calibration_repair' || d.service_type === 'other';
+      if (needsNotes && !d.notes) {
+        notify('Veuillez décrire le problème ou la demande dans les notes pour les réparations', 'error');
+        return;
+      }
+      if (d.brand === 'other' && !d.brand_other) {
+        notify('Veuillez préciser la marque', 'error');
+        return;
+      }
+      if (d.service_type === 'other' && !d.service_other) {
+        notify('Veuillez préciser le type de service', 'error');
+        return;
+      }
+    }
+    if (!shipping.address_id && !shipping.showNewForm) {
+      notify('Veuillez sélectionner ou ajouter une adresse de retour', 'error');
+      return;
+    }
+    if (!shipping.parcels || shipping.parcels < 1) {
+      notify('Veuillez indiquer le nombre de colis', 'error');
+      return;
+    }
+    setFormStep('review');
+    window.scrollTo(0, 0);
+  };
+
+  // === SUCCESS SCREEN ===
+  if (formStep === 'success') {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-white rounded-2xl shadow-lg border overflow-hidden">
+          {/* Green success header */}
+          <div className="bg-gradient-to-r from-[#00A651] to-[#008f45] p-8 text-center text-white">
+            <div className="text-5xl mb-4">✅</div>
+            <h1 className="text-2xl font-bold">Demande soumise avec succès!</h1>
+            <p className="text-white/80 mt-2">Un numéro FR sera attribué après validation par notre équipe.</p>
+          </div>
+          
+          {/* Shipping Instructions */}
+          <div className="p-6">
+            <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-6 mb-6">
+              <h2 className="text-lg font-bold text-blue-900 mb-3 flex items-center gap-2">
+                📦 Envoyez vos appareils à :
+              </h2>
+              <div className="bg-white rounded-lg p-4 border border-blue-200">
+                <p className="font-bold text-lg text-[#1E3A5F]">LIGHTHOUSE FRANCE SAS</p>
+                <p className="text-gray-700 mt-1">16 Rue Paul Séjourné</p>
+                <p className="text-gray-700">94000 Créteil</p>
+                <p className="text-gray-700">France</p>
+                <p className="text-gray-500 mt-2 text-sm">Tél: 01 43 77 28 07</p>
+              </div>
+            </div>
+            
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+              <p className="text-sm text-amber-800">
+                <strong>📝 Important :</strong> Veuillez indiquer votre nom de société et le numéro de série des appareils sur chaque colis. 
+                Vous recevrez un email de confirmation avec les détails de votre demande.
+              </p>
+            </div>
+
+            <div className="text-sm text-gray-500 space-y-1 mb-6">
+              <p><strong>Appareils :</strong> {devices.length} appareil{devices.length > 1 ? 's' : ''}</p>
+              <p><strong>Colis :</strong> {shipping.parcels}</p>
+            </div>
+            
+            <button
+              onClick={() => setPage('dashboard')}
+              className="w-full py-3 bg-[#1E3A5F] text-white rounded-lg font-medium hover:bg-[#2a4f7a] transition-colors"
+            >
+              Retour au tableau de bord
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // === REVIEW SCREEN ===
+  if (formStep === 'review') {
+    const retAddr = getReturnAddress();
+    const serviceTypeLabels = {
+      calibration: 'Étalonnage',
+      repair: 'Réparation',
+      calibration_repair: 'Étalonnage + Réparation',
+      other: 'Autre'
+    };
+    
+    return (
+      <div>
+        <div className="flex items-center gap-4 mb-6">
+          <button onClick={() => setFormStep('form')} className="text-gray-500 hover:text-gray-700">←</button>
+          <h1 className="text-2xl font-bold text-[#1E3A5F]">Vérification de votre demande</h1>
+        </div>
+        
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+          <p className="text-sm text-amber-800">
+            <strong>Veuillez vérifier les informations ci-dessous avant de soumettre votre demande.</strong>
+          </p>
+        </div>
+        
+        {/* Devices summary */}
+        <div className="bg-white rounded-lg shadow-sm border p-6 mb-4">
+          <h2 className="text-lg font-bold text-[#1E3A5F] mb-4 pb-3 border-b">
+            📱 Appareils ({devices.length})
+          </h2>
+          <div className="space-y-3">
+            {devices.map((d, i) => (
+              <div key={d.id} className="flex items-start gap-4 p-3 bg-gray-50 rounded-lg">
+                <div className="w-8 h-8 bg-[#3B7AB4] text-white rounded-full flex items-center justify-center font-bold text-sm shrink-0">{i + 1}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-[#1E3A5F]">{d.brand === 'other' ? d.brand_other : 'Lighthouse'} {d.model}</p>
+                  <p className="text-sm text-gray-600">SN: <span className="font-mono">{d.serial_number}</span></p>
+                  <p className="text-sm text-gray-600">Service: {serviceTypeLabels[d.service_type] || d.service_other || d.service_type}</p>
+                  {d.notes && <p className="text-sm text-gray-500 mt-1 italic">"{d.notes}"</p>}
+                  {d.accessories.length > 0 && <p className="text-xs text-gray-400 mt-1">Accessoires: {d.accessories.join(', ')}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        {/* Shipping summary */}
+        <div className="bg-white rounded-lg shadow-sm border p-6 mb-4">
+          <h2 className="text-lg font-bold text-[#1E3A5F] mb-4 pb-3 border-b">
+            🚚 Expédition
+          </h2>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-bold text-gray-400 uppercase mb-1">Adresse de retour</p>
+              {retAddr && (
+                <div className="text-sm text-gray-700">
+                  <p className="font-medium">{retAddr.company_name || retAddr.label || profile?.companies?.name}</p>
+                  {retAddr.attention && <p>Attn: {retAddr.attention}</p>}
+                  <p>{retAddr.address_line1}</p>
+                  <p>{retAddr.postal_code} {retAddr.city}</p>
+                  <p>{retAddr.country || 'France'}</p>
+                </div>
+              )}
+            </div>
+            <div>
+              <p className="text-xs font-bold text-gray-400 uppercase mb-1">Nombre de colis</p>
+              <p className="text-2xl font-bold text-[#1E3A5F]">{shipping.parcels}</p>
+            </div>
+          </div>
+        </div>
+        
+        {/* Billing summary */}
+        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
+          <h2 className="text-lg font-bold text-[#1E3A5F] mb-4 pb-3 border-b">
+            💳 Adresse de facturation
+          </h2>
+          <p className="text-sm text-gray-700">{getBillingDisplay()}</p>
+        </div>
+        
+        {/* Action buttons */}
+        <div className="flex gap-4">
+          <button
+            type="button"
+            onClick={() => setFormStep('form')}
+            className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+          >
+            ← Modifier
+          </button>
+          <form onSubmit={handleSubmit} className="flex-1">
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition-colors disabled:opacity-50 text-lg"
+            >
+              {saving ? 'Envoi en cours...' : '✅ Confirmer et soumettre'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // === MAIN FORM (formStep === 'form') ===
   return (
     <div>
       <div className="flex items-center gap-4 mb-6">
@@ -4269,7 +4476,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         <h1 className="text-2xl font-bold text-[#1E3A5F]">Demande Étalonnage / Réparation</h1>
       </div>
       
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={(e) => { e.preventDefault(); goToReview(); }}>
         {/* Devices */}
         <div className="space-y-6 mb-8">
           {devices.map((device) => (
@@ -4308,6 +4515,79 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           refresh={refresh}
         />
 
+        {/* Billing Address Section */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mt-6">
+          <h2 className="text-xl font-bold text-[#1E3A5F] mb-4 pb-4 border-b-2 border-[#E8F2F8]">
+            💳 Adresse de Facturation
+          </h2>
+          
+          <div className="space-y-3">
+            {/* Option 1: Company billing address */}
+            <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${billingChoice === 'company' ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 hover:border-gray-300'}`}>
+              <input
+                type="radio"
+                name="billing"
+                value="company"
+                checked={billingChoice === 'company'}
+                onChange={() => setBillingChoice('company')}
+                className="mt-1 text-[#3B7AB4]"
+              />
+              <div>
+                <p className="font-medium text-[#1E3A5F]">Adresse de la société</p>
+                <p className="text-sm text-gray-500">
+                  {profile?.companies?.name} — {profile?.companies?.billing_address}, {profile?.companies?.billing_postal_code} {profile?.companies?.billing_city}
+                </p>
+              </div>
+            </label>
+            
+            {/* Option 2: Same as return address */}
+            <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${billingChoice === 'same' ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 hover:border-gray-300'}`}>
+              <input
+                type="radio"
+                name="billing"
+                value="same"
+                checked={billingChoice === 'same'}
+                onChange={() => setBillingChoice('same')}
+                className="mt-1 text-[#3B7AB4]"
+              />
+              <div>
+                <p className="font-medium text-[#1E3A5F]">Même que l'adresse de retour</p>
+              </div>
+            </label>
+            
+            {/* Option 3: Other address */}
+            {addresses.length > 1 && (
+              <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${billingChoice === 'other' ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 hover:border-gray-300'}`}>
+                <input
+                  type="radio"
+                  name="billing"
+                  value="other"
+                  checked={billingChoice === 'other'}
+                  onChange={() => setBillingChoice('other')}
+                  className="mt-1 text-[#3B7AB4]"
+                />
+                <div className="flex-1">
+                  <p className="font-medium text-[#1E3A5F]">Autre adresse</p>
+                  {billingChoice === 'other' && (
+                    <select
+                      value={billingAddressId}
+                      onChange={e => setBillingAddressId(e.target.value)}
+                      className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    >
+                      <option value="">Sélectionner une adresse...</option>
+                      {addresses.map(a => (
+                        <option key={a.id} value={a.id}>
+                          {a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </label>
+            )}
+          </div>
+        </div>
+
         {/* Submit Buttons */}
         <div className="flex gap-4 mt-8">
           <button
@@ -4319,10 +4599,9 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           </button>
           <button
             type="submit"
-            disabled={saving}
-            className="flex-1 py-3 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F] transition-colors disabled:opacity-50"
+            className="flex-1 py-3 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F] transition-colors"
           >
-            {saving ? 'Envoi en cours...' : 'Soumettre la Demande'}
+            Vérifier la demande →
           </button>
         </div>
       </form>
@@ -13602,7 +13881,8 @@ function RegisterPage({ t, register, setPage }) {
   const [formData, setFormData] = useState({
     email: '', password: '', confirmPassword: '',
     companyName: '', contactName: '', phone: '',
-    address: '', city: '', postalCode: ''
+    address: '', city: '', postalCode: '', country: 'France',
+    siret: '', vatNumber: ''
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13756,6 +14036,46 @@ function RegisterPage({ t, register, setPage }) {
                         className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
                         placeholder="Paris"
                         required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">Pays *</label>
+                      <input
+                        type="text"
+                        value={formData.country}
+                        onChange={(e) => updateField('country', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="France"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Company Identification */}
+                <div>
+                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
+                    Identification Société
+                  </h2>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">N° SIRET</label>
+                      <input
+                        type="text"
+                        value={formData.siret}
+                        onChange={(e) => updateField('siret', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="XXX XXX XXX XXXXX"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-1">N° TVA Intracommunautaire</label>
+                      <input
+                        type="text"
+                        value={formData.vatNumber}
+                        onChange={(e) => updateField('vatNumber', e.target.value)}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                        placeholder="FR XX XXXXXXXXX"
                       />
                     </div>
                   </div>
