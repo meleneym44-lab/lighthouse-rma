@@ -2645,7 +2645,6 @@ export default function CustomerPortal() {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        setUser(session.user);
         const { data: p } = await supabase.from('profiles')
           .select('*, companies(*)')
           .eq('id', session.user.id)
@@ -2662,9 +2661,13 @@ export default function CustomerPortal() {
             setLoading(false);
             return;
           }
+          setUser(session.user);
           setProfile(p);
           if (p.preferred_language) setLang(p.preferred_language);
           await loadData(p);
+        } else {
+          // Auth exists but no profile — sign out to avoid ghost state
+          await supabase.auth.signOut({ scope: 'local' });
         }
       }
       setLoading(false);
@@ -2733,6 +2736,10 @@ export default function CustomerPortal() {
       if (p.preferred_language) setLang(p.preferred_language);
       setPage('dashboard');
       await loadData(p);
+    } else {
+      // Auth succeeded but no profile exists — sign out
+      await supabase.auth.signOut({ scope: 'local' });
+      return 'Aucun profil trouvé pour ce compte. Veuillez contacter Lighthouse France.';
     }
     return null;
   };
@@ -3053,6 +3060,7 @@ export default function CustomerPortal() {
             t={t}
             setPage={setPage}
             notify={notify}
+            refresh={refresh}
             previousPage={previousPage}
             perms={perms}
           />
