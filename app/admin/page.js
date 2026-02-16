@@ -7,6 +7,21 @@ if (typeof window !== 'undefined') {
   window.supabase = supabase;
 }
 
+// Product emoji image mapping — maps model names to custom product images
+const getDeviceImageUrl = (modelName) => {
+  if (!modelName) return null;
+  const m = modelName.toLowerCase();
+  if (m.startsWith('apexp') || m === 'apex p3' || m === 'apex p5') return '/images/products/ApexP-Emoji.png';
+  if (m.startsWith('apexr') || m.startsWith('apex r') || m === 'apexbcrp') return '/images/products/ApexR-Emoji.png';
+  if (m.startsWith('apexz') || m === 'apex z' || m === 'apex 1100') return '/images/products/ApexZ-Emoji.png';
+  if (m.startsWith('solair')) return '/images/products/Solair-Emoji.png';
+  if (m.startsWith('ls-') || m === 'ls20' || m === 'ls60') return '/images/products/LS-Emoji.png';
+  if (m.startsWith('vertex')) return '/images/products/Vertex-Emoji.png';
+  if (m.startsWith('handheld') || m.startsWith('iaq handheld')) return '/images/products/HandHeld-Emoji.png';
+  if (m.startsWith('activecount') || m.includes('active count')) return '/images/products/ActiveCount-Emoji.png';
+  return null;
+};
+
 // ============================================
 // PDF GENERATION UTILITIES - PROFESSIONAL STYLE
 // Matches the customer portal quote PDF format exactly
@@ -3997,7 +4012,7 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
                       <tr key={i} className="hover:bg-gray-50">
                         <td className="px-4 py-2 font-mono text-green-600 text-xs">{d.rma?.request_number || '—'}</td>
                         <td className="px-4 py-2 truncate max-w-32">{d.rma?.companies?.name || '—'}</td>
-                        <td className="px-4 py-2">{d.model_name || d.model || '—'}</td>
+                        <td className="px-4 py-2"><div className="flex items-center gap-1.5">{getDeviceImageUrl(d.model_name || d.model) && <img src={getDeviceImageUrl(d.model_name || d.model)} alt="" className="w-4 h-4 object-contain" />}{d.model_name || d.model || '—'}</div></td>
                         <td className="px-4 py-2 font-mono text-gray-500 text-xs">{d.serial_number || '—'}</td>
                         <td className="px-4 py-2">{d.technician_name || '—'}</td>
                         <td className="px-4 py-2">
@@ -4608,7 +4623,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                             <p className="text-xs text-gray-400">{device.rma.companies?.name}</p>
                           </td>
                           <td className="px-4 py-3">
-                            <span className="font-medium text-gray-800">{device.model_name || '—'}</span>
+                            <span className="font-medium text-gray-800 flex items-center gap-1.5">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-4 h-4 object-contain" />}{device.model_name || '—'}</span>
                           </td>
                           <td className="px-4 py-3">
                             <span className="font-mono text-sm text-gray-600">{device.serial_number || '—'}</span>
@@ -4982,7 +4997,7 @@ function BCReviewModal({ rma, onClose, notify, reload, lang = 'fr' }) {
               <div className="space-y-2 max-h-40 overflow-y-auto">
                 {devices.map((d, i) => (
                   <div key={i} className="bg-gray-50 rounded p-2 text-sm">
-                    <p className="font-medium">{d.model_name}</p>
+                    <p className="font-medium flex items-center gap-2">{getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" className="w-4 h-4 object-contain" />}{d.model_name}</p>
                     <p className="text-gray-500">SN: {d.serial_number}</p>
                   </div>
                 ))}
@@ -5285,7 +5300,7 @@ function ContractBCReviewModal({ contract, onClose, notify, reload, lang = 'fr' 
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {devices.map((d, i) => (
                   <div key={i} className="bg-gray-50 rounded p-3 border text-sm">
-                    <p className="font-medium">{d.model_name || (lang === 'en' ? 'Device' : 'Appareil')}</p>
+                    <p className="font-medium flex items-center gap-2">{getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" className="w-4 h-4 object-contain" />}{d.model_name || (lang === 'en' ? 'Device' : 'Appareil')}</p>
                     <p className="text-gray-500">SN: {d.serial_number}</p>
                     <p className="text-gray-500">{d.tokens_total || 1} {lang === 'en' ? 'cal./yr' : 'étal./an'} • {(d.unit_price || 0).toFixed(2)} €</p>
                   </div>
@@ -5655,7 +5670,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
                         className="w-5 h-5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
                       />
                       <div className="flex-1">
-                        <p className="font-medium text-gray-800">{device.model_name || (lang === 'en' ? 'Device' : 'Appareil')}</p>
+                        <p className="font-medium text-gray-800 flex items-center gap-2">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-5 h-5 object-contain" />}{device.model_name || (lang === 'en' ? 'Device' : 'Appareil')}</p>
                         <p className="text-sm text-gray-500 font-mono">SN: {device.serial_number || '—'}</p>
                       </div>
                       <span className={`px-2 py-1 rounded text-xs font-medium ${
@@ -5751,7 +5766,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
                       className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                     />
                     <div className="flex-1">
-                      <p className="font-medium text-gray-800">{device.model_name || (lang === 'en' ? 'Device' : 'Appareil')}</p>
+                      <p className="font-medium text-gray-800 flex items-center gap-2">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-5 h-5 object-contain" />}{device.model_name || (lang === 'en' ? 'Device' : 'Appareil')}</p>
                       <p className="text-sm text-gray-500 font-mono">SN: {device.serial_number || '—'}</p>
                     </div>
                     <span className={`px-2 py-1 rounded text-xs font-medium ${
@@ -6314,7 +6329,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <div className="flex items-start justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-800">{device.model_name}</h1>
+              <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-8 h-8 object-contain" />}{device.model_name}</h1>
               <p className="text-lg text-gray-500 font-mono">SN: {device.serial_number}</p>
             </div>
             <div className="text-right">
@@ -7354,7 +7369,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       {device.report_complete ? '✓' : device.inspection_completed_at ? (device.additional_work_needed ? '⚠' : '✓') : idx + 1}
                     </div>
                     <div>
-                      <p className="font-bold text-gray-800">{device.model_name}</p>
+                      <p className="font-bold text-gray-800 flex items-center gap-2">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-5 h-5 object-contain" />}{device.model_name}</p>
                       <p className="text-sm text-gray-500 font-mono">SN: {device.serial_number}</p>
                     </div>
                   </div>
@@ -7933,7 +7948,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">{lang === 'en' ? '← Back' : '← Retour'}</button>
-          <div><h1 className="text-2xl font-bold text-gray-800">SERVICE - {device.model_name}</h1><p className="text-gray-500">SN: {device.serial_number} • RMA: {rma.request_number}</p></div>
+          <div><h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-8 h-8 object-contain" />}SERVICE - {device.model_name}</h1><p className="text-gray-500">SN: {device.serial_number} • RMA: {rma.request_number}</p></div>
         </div>
         <div className="flex items-center gap-3">{renderActionButtons()}</div>
       </div>
@@ -7989,7 +8004,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <h3 className="font-bold text-gray-700 mb-3">{lang === 'en' ? 'Device' : 'Appareil'}</h3>
             <div className="space-y-2">
-              <div><p className="text-xs text-gray-500">{lang === 'en' ? 'Model' : 'Modèle'}</p><p className="font-bold text-gray-800">{device.model_name}</p></div>
+              <div><p className="text-xs text-gray-500">{lang === 'en' ? 'Model' : 'Modèle'}</p><p className="font-bold text-gray-800 flex items-center gap-2">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-5 h-5 object-contain" />}{device.model_name}</p></div>
               <div><p className="text-xs text-gray-500">{lang === 'en' ? 'Serial #' : 'N° série'}</p><p className="font-medium text-gray-800">{device.serial_number}</p></div>
               <div><p className="text-xs text-gray-500">{lang === 'en' ? 'Service' : 'Service'}</p><p className="font-medium">{device.service_type === 'calibration' ? (lang === 'en' ? '🔬 Calibration' : '🔬 Étalonnage') : '🔧 Réparation'}</p></div>
             </div>
@@ -9028,7 +9043,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                 <div key={device.id} className="border-l-4 border-blue-500 pl-4">
                   <div className="flex justify-between items-start mb-3">
                     <div>
-                      <h3 className="font-bold text-lg text-[#1a1a2e]">{device.model_name}</h3>
+                      <h3 className="font-bold text-lg text-[#1a1a2e] flex items-center gap-2">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-6 h-6 object-contain" />}{device.model_name}</h3>
                       <p className="text-gray-500 text-sm">N° de série: {device.serial_number}</p>
                     </div>
                     <span className="text-xl font-bold text-[#2D5A7B] whitespace-nowrap">{deviceTotal.toFixed(2)} €</span>
@@ -9298,7 +9313,7 @@ function RequestDetailModal({ request, onClose, onCreateQuote, lang = 'fr' }) {
                 {devices.map((d, i) => (
                   <div key={i} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
                     <div>
-                      <p className="font-medium">{d.model_name}</p>
+                      <p className="font-medium flex items-center gap-2">{getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" className="w-4 h-4 object-contain" />}{d.model_name}</p>
                       <p className="text-sm text-gray-500">SN: {d.serial_number}</p>
                       {d.service_type && <p className="text-xs text-gray-400">{d.service_type}</p>}
                     </div>
@@ -13348,7 +13363,7 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
                           className="w-5 h-5 text-indigo-600 rounded cursor-pointer"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium">{d.model_name || d.model || 'Device'}</p>
+                          <p className="font-medium flex items-center gap-2">{getDeviceImageUrl(d.model_name || d.model) && <img src={getDeviceImageUrl(d.model_name || d.model)} alt="" className="w-4 h-4 object-contain" />}{d.model_name || d.model || 'Device'}</p>
                           <p className="text-sm text-gray-500 font-mono">SN: {d.serial_number}</p>
                         </div>
                         {selectedDeviceIds.has(d.id) && (
@@ -14755,7 +14770,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                                 className="w-5 h-5 text-green-600 rounded"
                               />
                               <div className="flex-1">
-                                <div className="font-medium">{device.model_name}</div>
+                                <div className="font-medium flex items-center gap-2">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-4 h-4 object-contain" />}{device.model_name}</div>
                                 <div className="text-sm text-gray-500 font-mono">{device.serial_number}</div>
                               </div>
                               <span className={`px-2 py-1 rounded text-xs font-medium ${device.service_type === 'repair' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
@@ -15412,7 +15427,7 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
                         <span className="text-gray-500 text-xs">Devices ({selectedRMA.request_devices?.length || 0})</span>
                         {selectedRMA.request_devices?.map((d, i) => (
                           <div key={i} className="mt-1 pt-1 border-t text-xs">
-                            <p className="font-medium">{d.model_name}</p>
+                            <p className="font-medium flex items-center gap-2">{getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" className="w-4 h-4 object-contain" />}{d.model_name}</p>
                             <p className="text-gray-400">SN: {d.serial_number}</p>
                           </div>
                         ))}
@@ -15739,7 +15754,8 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
                 {searchResults.equipment.map(eq => (
                   <div key={eq.id} className={`p-4 flex justify-between items-center ${eq.hidden_by_customer ? 'bg-orange-50' : ''}`}>
                     <div>
-                      <p className="font-medium">
+                      <p className="font-medium flex items-center gap-2">
+                        {getDeviceImageUrl(eq.model_name) && <img src={getDeviceImageUrl(eq.model_name)} alt="" className="w-5 h-5 object-contain" />}
                         {eq.model_name}
                         {eq.hidden_by_customer && <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">{lang === 'en' ? '📦 Archived' : '📦 Archivé'}</span>}
                       </p>
@@ -16249,7 +16265,8 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                 return (
                   <div key={eq.id} onClick={() => setSelectedEquipment(eq)} className={`rounded-lg p-4 flex justify-between items-center hover:bg-gray-100 cursor-pointer transition-colors ${isArchived ? 'bg-orange-50 border border-orange-200' : 'bg-gray-50'}`}>
                     <div>
-                      <p className="font-medium">
+                      <p className="font-medium flex items-center gap-2">
+                        {getDeviceImageUrl(eq.model_name) && <img src={getDeviceImageUrl(eq.model_name)} alt="" className="w-5 h-5 object-contain" />}
                         {eq.model_name}
                         {isArchived && <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">{lang === 'en' ? '📦 Archived by client' : '📦 Archivé par le client'}</span>}
                       </p>
@@ -16270,7 +16287,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
               <button onClick={() => setSelectedEquipment(null)} className="text-sm text-blue-600 hover:underline">{lang === 'en' ? '← Back' : '← Retour'}</button>
               <div className={`rounded-lg p-4 border ${selectedEquipment.hidden_by_customer ? 'bg-orange-50 border-orange-200' : 'bg-blue-50 border-blue-200'}`}>
                 <div className="flex items-center gap-2">
-                  <h3 className={`font-bold ${selectedEquipment.hidden_by_customer ? 'text-orange-800' : 'text-blue-800'}`}>{selectedEquipment.model_name}</h3>
+                  <h3 className={`font-bold flex items-center gap-2 ${selectedEquipment.hidden_by_customer ? 'text-orange-800' : 'text-blue-800'}`}>{getDeviceImageUrl(selectedEquipment.model_name) && <img src={getDeviceImageUrl(selectedEquipment.model_name)} alt="" className="w-6 h-6 object-contain" />}{selectedEquipment.model_name}</h3>
                   {selectedEquipment.hidden_by_customer && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">{lang === 'en' ? '📦 Archived by client' : '📦 Archivé par le client'}</span>}
                 </div>
                 <p className={`text-sm ${selectedEquipment.hidden_by_customer ? 'text-orange-600' : 'text-blue-600'}`}>SN: {selectedEquipment.serial_number}</p>
@@ -18609,7 +18626,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate, lang
                   <td className="px-4 py-3 text-sm text-gray-500">{idx + 1}</td>
                   <td className="px-4 py-3 text-sm">{device.nickname || '—'}</td>
                   <td className="px-4 py-3 text-sm font-mono">{device.serial_number}</td>
-                  <td className="px-4 py-3 text-sm font-medium">{device.model_name}</td>
+                  <td className="px-4 py-3 text-sm font-medium"><div className="flex items-center gap-2">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-5 h-5 object-contain" />}{device.model_name}</div></td>
                   <td className="px-4 py-3 text-sm">
                     {device.device_type === 'particle_counter' && (lang === 'en' ? '🔬 Air Counter' : '🔬 Compteur Air')}
                     {device.device_type === 'bio_collector' && (lang === 'en' ? '🧫 Bio Collector' : '🧫 Bio Collecteur')}
