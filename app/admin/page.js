@@ -10313,7 +10313,12 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
                   </td>
                   <td className="px-4 py-3"><span className="text-sm">{req.request_type === 'service' ? '🔧 Service' : (lang === 'en' ? '📦 Parts' : '📦 Pièces')}</span></td>
                   <td className="px-4 py-3"><span className="text-sm text-gray-600">{devices.length > 0 ? devices.length + ' appareil(s)' : '1 appareil'}</span></td>
-                  <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span></td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span>
+                    {needsQuoteCorrection && (
+                      <p className="text-xs text-amber-600 mt-1 max-w-[200px] truncate" title={req.quote_rejection_notes}>✏️ {req.quote_rejection_notes}</p>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-500">{new Date(req.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
@@ -12787,6 +12792,19 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile, lang = 'fr'
                 <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
                   <h3 className="font-bold text-red-800 mb-2">{lang === 'en' ? '🔴 Client requested modifications' : '🔴 Modifications demandées par le client'}</h3>
                   <p className="text-red-700 whitespace-pre-wrap">{order.revision_notes}</p>
+                </div>
+              )}
+              
+              {/* Admin modification request */}
+              {order.quote_rejection_notes && (
+                <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="text-lg">✏️</span>
+                    <span className="font-bold text-amber-800">{lang === 'en' ? 'Admin requested modification' : 'Modification demandée par l\'admin'}</span>
+                  </div>
+                  <div className="ml-9 bg-white rounded-lg p-3 border border-amber-200">
+                    <p className="text-amber-900">{order.quote_rejection_notes}</p>
+                  </div>
                 </div>
               )}
               
@@ -24810,7 +24828,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           <div className="flex items-center gap-6">
             <div>
               <h2 className="text-xl font-bold flex items-center gap-2">
-                {step === 1 && (isRevision ? (lang === 'en' ? '🔴 Revise Quote' : '🔴 Réviser le Devis') : (lang === 'en' ? 'Create Quote' : 'Créer le Devis'))}
+                {step === 1 && (request.quote_rejection_notes ? (lang === 'en' ? '✏️ Correct Quote' : '✏️ Corriger le Devis') : isRevision ? (lang === 'en' ? '🔴 Revise Quote' : '🔴 Réviser le Devis') : (lang === 'en' ? 'Create Quote' : 'Créer le Devis'))}
                 {step === 2 && (lang === 'en' ? 'Quote Preview' : 'Aperçu du Devis')}
                 {step === 3 && (isFullyContractCovered ? (lang === 'en' ? 'Confirm Contract RMA' : 'Confirmer RMA Contrat') : (lang === 'en' ? "Confirm send" : "Confirmer l'envoi"))}
               </h2>
@@ -24837,6 +24855,19 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
           
+          {/* Modification requested banner */}
+          {request.quote_rejection_notes && (
+            <div className="mx-6 mt-4 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="text-lg">✏️</span>
+                <span className="font-bold text-amber-800">{lang === 'en' ? 'Admin requested modification' : 'Modification demandée par l\'admin'}</span>
+              </div>
+              <div className="ml-9 bg-white rounded-lg p-3 border border-amber-200">
+                <p className="text-amber-900">{request.quote_rejection_notes}</p>
+              </div>
+            </div>
+          )}
+
           {/* Loading Contract & Parts Check */}
           {(loadingContract || loadingParts) && (
             <div className="flex items-center justify-center py-12">
