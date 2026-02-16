@@ -3469,7 +3469,8 @@ export default function AdminPortal() {
   const rmaRequests = requests.filter(r => r.request_type !== 'parts');
   const pendingCount = rmaRequests.filter(r => r.status === 'submitted' && !r.request_number).length;
   const modificationCount = rmaRequests.filter(r => r.status === 'quote_revision_requested').length;
-  const totalBadge = pendingCount + modificationCount;
+  const quoteRejectionCount = rmaRequests.filter(r => r.quote_rejection_notes && r.status === 'rma_created').length;
+  const totalBadge = pendingCount + modificationCount + quoteRejectionCount;
   // Contract badge: new requests, BC pending review, OR quote revision requested
   const contractActionCount = contracts.filter(c => 
     c.status === 'requested' || 
@@ -3990,18 +3991,18 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
     }
     setProcessing(true);
     try {
-      // Restore previous status on the source record
-      const restoreStatus = review.previous_status || 'submitted';
+      // Set status to rma_created (quote needs to be redone) instead of restoring old status
+      const restoreStatus = 'rma_created';
       
       if (review.contract_id) {
         await supabase.from('contracts').update({
-          status: restoreStatus,
+          status: 'requested',
           quote_review_id: null,
           quote_rejection_notes: rejectionNotes.trim()
         }).eq('id', review.contract_id);
       } else if (review.rental_request_id) {
         await supabase.from('rental_requests').update({
-          status: restoreStatus,
+          status: 'requested',
           quote_review_id: null,
           quote_rejection_notes: rejectionNotes.trim()
         }).eq('id', review.rental_request_id);
@@ -10228,7 +10229,8 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
   
   const pendingRequests = requests.filter(r => r.status === 'submitted' && !r.request_number);
   const modificationRequests = requests.filter(r => r.status === 'quote_revision_requested');
-  const allPending = [...modificationRequests, ...pendingRequests];
+  const quoteModificationRequests = requests.filter(r => r.quote_rejection_notes && r.status === 'rma_created');
+  const allPending = [...quoteModificationRequests, ...modificationRequests, ...pendingRequests];
   const displayRequests = filter === 'pending' ? allPending : requests;
 
   return (
@@ -10280,10 +10282,11 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
               const devices = req.request_devices || [];
               const isPending = req.status === 'submitted' && !req.request_number;
               const needsRevision = req.status === 'quote_revision_requested';
+              const needsQuoteCorrection = req.quote_rejection_notes && req.status === 'rma_created';
               const isContractRMA = req.is_contract_rma || req.contract_id;
               
               return (
-                <tr key={req.id} className={`hover:bg-gray-50 ${needsRevision ? 'bg-red-50' : isPending ? 'bg-amber-50/50' : ''}`}>
+                <tr key={req.id} className={`hover:bg-gray-50 ${needsQuoteCorrection ? 'bg-amber-50' : needsRevision ? 'bg-red-50' : isPending ? 'bg-amber-50/50' : ''}`}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       {req.request_number ? (
@@ -10294,6 +10297,11 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
                       {isContractRMA && (
                         <span className="px-1.5 py-0.5 text-xs font-bold rounded bg-emerald-100 text-emerald-700">
                           📋
+                        </span>
+                      )}
+                      {needsQuoteCorrection && (
+                        <span className="px-1.5 py-0.5 text-xs font-bold rounded bg-amber-100 text-amber-700">
+                          ✏️
                         </span>
                       )}
                     </div>
@@ -10309,9 +10317,9 @@ function RequestsSheet({ requests, notify, reload, profile, businessSettings, t 
                   <td className="px-4 py-3 text-sm text-gray-500">{new Date(req.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
-                      {(isPending || needsRevision) && (
-                        <button onClick={() => setQuoteRequest(req)} className={`px-3 py-1 text-sm text-white rounded font-medium ${needsRevision ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}>
-                          {needsRevision ? (lang === 'en' ? '🔴 Revise Quote' : '🔴 Réviser Devis') : (lang === 'en' ? '💰 Create Quote' : '💰 Créer Devis')}
+                      {(isPending || needsRevision || needsQuoteCorrection) && (
+                        <button onClick={() => setQuoteRequest(req)} className={`px-3 py-1 text-sm text-white rounded font-medium ${needsQuoteCorrection ? 'bg-amber-500 hover:bg-amber-600' : needsRevision ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}>
+                          {needsQuoteCorrection ? (lang === 'en' ? '✏️ Correct Quote' : '✏️ Corriger Devis') : needsRevision ? (lang === 'en' ? '🔴 Revise Quote' : '🔴 Réviser Devis') : (lang === 'en' ? '💰 Create Quote' : '💰 Créer Devis')}
                         </button>
                       )}
                       <button onClick={() => setSelectedRequest(req)} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">{t('view')}</button>
@@ -10694,7 +10702,7 @@ const STATUS_STYLES = {
             
             {/* Actions */}
             <div className="flex items-center gap-3">
-              {(order.status === 'submitted' || order.status === 'quote_revision_requested') && (
+              {(order.status === 'submitted' || order.status === 'quote_revision_requested' || (order.quote_rejection_notes && order.status === 'rma_created')) && (
                 <button
                   onClick={() => onOpenQuoteEditor(order)}
                   className={`px-4 py-2 ${order.status === 'quote_revision_requested' ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'} text-white rounded-lg font-medium`}
@@ -11240,7 +11248,7 @@ const STATUS_STYLES = {
                 <h3 className="font-bold text-white">{lang === 'en' ? '⚡ Quick actions' : '⚡ Actions rapides'}</h3>
               </div>
               <div className="p-4 space-y-2">
-                {(order.status === 'submitted' || order.status === 'quote_revision_requested') && (
+                {(order.status === 'submitted' || order.status === 'quote_revision_requested' || (order.quote_rejection_notes && order.status === 'rma_created')) && (
                   <button
                     onClick={() => onOpenQuoteEditor(order)}
                     className="w-full px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium"
@@ -11553,7 +11561,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
                   const quoteData = order.quote_data || {};
                   const partsCount = quoteData.parts?.length || 0;
                   const hasBCToReview = order.status === 'bc_review';
-                  const needsQuote = order.status === 'submitted' || order.status === 'quote_revision_requested';
+                  const needsQuote = order.status === 'submitted' || order.status === 'quote_revision_requested' || (order.quote_rejection_notes && order.status === 'rma_created');
                   
                   return (
                     <tr 
