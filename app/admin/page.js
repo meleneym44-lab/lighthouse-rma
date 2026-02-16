@@ -4103,7 +4103,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
   const waitingBC = activeRMAs.filter(r => ['quote_sent', 'waiting_bc'].includes(r.status) && !r.bc_submitted_at && r.request_type !== 'parts');
   
   // Service statuses: File d'attente, Inspection, Approbation, Étalonnage, Réparation
-  const serviceStatuses = ['received', 'in_queue', 'inspection', 'approbation', 'calibration', 'repair', 'calibration_in_progress', 'repair_in_progress'];
+  const serviceStatuses = ['in_queue', 'queue', 'inspection', 'approbation', 'calibration', 'repair', 'calibration_in_progress', 'repair_in_progress'];
   // QC statuses
   const qcStatuses = ['qc', 'final_qc'];
   // Ready statuses
@@ -4115,16 +4115,21 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
     
     // Check device statuses first (more accurate for multi-device RMAs)
     if (devices.length > 0) {
-      const anyInService = devices.some(d => serviceStatuses.includes(d.status));
+      // A device is "in service" only if it's in queue, calibration, repair, etc. — NOT just received
+      const anyInService = devices.some(d => 
+        serviceStatuses.includes(d.status)
+      );
       const anyInQC = devices.some(d => qcStatuses.includes(d.status) || (d.report_complete && !d.qc_complete));
       const allReady = devices.every(d => readyStatuses.includes(d.status) || d.qc_complete);
+      const allWaiting = devices.every(d => !serviceStatuses.includes(d.status) && !qcStatuses.includes(d.status) && !readyStatuses.includes(d.status) && !d.qc_complete);
       
       if (allReady && devices.some(d => d.qc_complete)) return 'ready';
       if (anyInQC) return 'qc';
       if (anyInService) return 'service';
+      if (allWaiting) return 'other'; // Don't fall through to RMA status
     }
     
-    // Fall back to RMA status
+    // Fall back to RMA status only if no devices exist
     if (serviceStatuses.includes(rma.status)) return 'service';
     if (qcStatuses.includes(rma.status)) return 'qc';
     if (readyStatuses.includes(rma.status)) return 'ready';
@@ -4402,8 +4407,8 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
             );
             
             // Define status categories for filtering
-            const waitingStatuses = ['waiting_device', 'bc_approved'];
-            const serviceStatuses = ['received', 'in_queue', 'queue', 'calibration', 'calibration_in_progress', 
+            const waitingStatuses = ['waiting_device', 'bc_approved', 'received'];
+            const serviceStatuses = ['in_queue', 'queue', 'calibration', 'calibration_in_progress', 
                                      'inspection', 'inspection_complete', 'customer_approval', 'repair', 'repair_in_progress'];
             const qcStatuses = ['final_qc', 'qc', 'quality_check'];
             const readyStatuses = ['ready_to_ship', 'ready'];
