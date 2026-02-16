@@ -3741,6 +3741,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
       const { data, error } = await supabase
         .from('quote_reviews')
         .select('*, service_requests:service_request_id(id, request_number, status, companies(name, email)), contracts:contract_id(id, contract_number, status, companies(name, email)), rental_requests:rental_request_id(id, rental_number, status, companies(name, email))')
+        .neq('status', 'rejected')
         .order('submitted_at', { ascending: false });
       
       if (error) throw error;
@@ -3984,7 +3985,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
   // ========================
   const rejectQuote = async (review) => {
     if (!rejectionNotes.trim()) {
-      notify(lang === 'en' ? 'Please provide rejection notes' : 'Veuillez indiquer la raison du rejet', 'error');
+      notify(lang === 'en' ? 'Please describe what needs to be changed' : 'Veuillez décrire ce qui doit être modifié', 'error');
       return;
     }
     setProcessing(true);
@@ -4021,7 +4022,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
         reviewed_at: new Date().toISOString()
       }).eq('id', review.id);
       
-      notify(lang === 'en' ? '❌ Quote rejected — sent back for correction' : '❌ Devis rejeté — renvoyé pour correction');
+      notify(lang === 'en' ? '✏️ Modification requested — sent back for correction' : '✏️ Modification demandée — renvoyé pour correction');
       setRejecting(null);
       setRejectionNotes('');
       setSelectedReview(null);
@@ -4506,8 +4507,7 @@ const renderQuotePreview = (review) => {
       <div className="flex gap-2">
         {[
           { id: 'pending', label: lang === 'en' ? 'Pending Review' : 'En attente', icon: '⏳', count: reviews.filter(r => r.status === 'pending').length, color: 'amber' },
-          { id: 'approved', label: lang === 'en' ? 'Approved' : 'Approuvés', icon: '✅', count: reviews.filter(r => r.status === 'approved').length, color: 'green' },
-          { id: 'rejected', label: lang === 'en' ? 'Rejected' : 'Rejetés', icon: '❌', count: reviews.filter(r => r.status === 'rejected').length, color: 'red' }
+          { id: 'approved', label: lang === 'en' ? 'Approved' : 'Approuvés', icon: '✅', count: reviews.filter(r => r.status === 'approved').length, color: 'green' }
         ].map(tab => (
           <button
             key={tab.id}
@@ -4537,9 +4537,7 @@ const renderQuotePreview = (review) => {
         <div className="bg-white rounded-xl p-12 text-center text-gray-400">
           {filter === 'pending' 
             ? (lang === 'en' ? 'No quotes pending review' : 'Aucun devis en attente de vérification') 
-            : filter === 'approved'
-            ? (lang === 'en' ? 'No approved quotes yet' : 'Aucun devis approuvé')
-            : (lang === 'en' ? 'No rejected quotes' : 'Aucun devis rejeté')}
+            : (lang === 'en' ? 'No approved quotes yet' : 'Aucun devis approuvé')}
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
@@ -4553,7 +4551,6 @@ const renderQuotePreview = (review) => {
                 <th className="px-4 py-3 text-right text-xs font-bold text-gray-600">Total</th>
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{lang === 'en' ? 'Submitted by' : 'Soumis par'}</th>
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">Date</th>
-                {filter === 'rejected' && <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{lang === 'en' ? 'Reason' : 'Raison'}</th>}
                 <th className="px-4 py-3 text-right text-xs font-bold text-gray-600">Actions</th>
               </tr>
             </thead>
@@ -4574,7 +4571,6 @@ const renderQuotePreview = (review) => {
                   <td className="px-4 py-3 text-right font-bold">{(review.total_amount || 0).toFixed(2)} €</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{review.submitted_by_name || '—'}</td>
                   <td className="px-4 py-3 text-sm text-gray-500">{review.submitted_at ? new Date(review.submitted_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '—'}</td>
-                  {filter === 'rejected' && <td className="px-4 py-3 text-sm text-red-600 max-w-[200px] truncate">{review.rejection_notes || '—'}</td>}
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => setSelectedReview(review)}
@@ -4635,25 +4631,25 @@ const renderQuotePreview = (review) => {
               {/* Quote preview */}
               {renderQuotePreview(selectedReview)}
               
-              {/* Rejection notes input */}
+              {/* Modification request input */}
               {rejecting === selectedReview.id && (
-                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg space-y-3">
-                  <p className="font-medium text-red-800">❌ {lang === 'en' ? 'Rejection reason:' : 'Raison du rejet :'}</p>
+                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-3">
+                  <p className="font-medium text-amber-800">✏️ {lang === 'en' ? 'What needs to be changed?' : 'Que faut-il modifier ?'}</p>
                   <textarea
                     value={rejectionNotes}
                     onChange={e => setRejectionNotes(e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-400"
-                    placeholder={lang === 'en' ? 'Describe the issue...' : 'Décrivez le problème...'}
+                    className="w-full px-3 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-400"
+                    placeholder={lang === 'en' ? 'Describe what needs to be corrected...' : 'Décrivez ce qui doit être corrigé...'}
                     autoFocus
                   />
                   <div className="flex gap-2">
                     <button
                       onClick={() => rejectQuote(selectedReview)}
                       disabled={processing || !rejectionNotes.trim()}
-                      className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50"
+                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
                     >
-                      {processing ? '...' : (lang === 'en' ? '❌ Confirm Rejection' : '❌ Confirmer le Rejet')}
+                      {processing ? '...' : (lang === 'en' ? '✏️ Send Back for Correction' : '✏️ Renvoyer pour Correction')}
                     </button>
                     <button onClick={() => { setRejecting(null); setRejectionNotes(''); }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
                       {lang === 'en' ? 'Cancel' : 'Annuler'}
@@ -4669,9 +4665,9 @@ const renderQuotePreview = (review) => {
                 <button
                   onClick={() => setRejecting(selectedReview.id)}
                   disabled={processing}
-                  className="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50"
+                  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
                 >
-                  ❌ {lang === 'en' ? 'Reject' : 'Rejeter'}
+                  ✏️ {lang === 'en' ? 'Request Modification' : 'Demander Modification'}
                 </button>
                 <button
                   onClick={() => approveQuote(selectedReview)}
@@ -8303,10 +8299,12 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
       {rma.quote_rejection_notes && rma.status !== 'pending_quote_review' && rma.status !== 'quote_sent' && (
         <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4">
           <div className="flex items-center gap-3 mb-2">
-            <span className="text-lg">❌</span>
-            <span className="font-bold text-red-800">{lang === 'en' ? 'Quote rejected — please correct and resubmit' : 'Devis rejeté — veuillez corriger et resoumettre'}</span>
+            <span className="text-lg">✏️</span>
+            <span className="font-bold text-red-800">{lang === 'en' ? 'Admin requested modification — correct and resubmit' : 'Modification demandée par l\'admin — corriger et resoumettre'}</span>
           </div>
-          <p className="text-red-700 ml-9">{rma.quote_rejection_notes}</p>
+          <div className="ml-9 bg-white rounded-lg p-3 border border-red-200">
+            <p className="text-red-700">{rma.quote_rejection_notes}</p>
+          </div>
         </div>
       )}
 
