@@ -2438,6 +2438,59 @@ const uploadPDFToStorage = async (blob, folder, filename) => {
 };
 
 // ============================================
+// QUOTE REVIEW SYSTEM - Submit for review helper
+// ============================================
+const submitForQuoteReview = async ({
+  serviceRequestId,
+  quoteType, // 'initial', 'revision', 'supplement', 'parts', 'contract', 'rental'
+  quoteData,
+  quoteNumber,
+  rmaNumber,
+  clientName,
+  totalAmount,
+  deviceSummary,
+  previousStatus,
+  serviceRequestUpdate, // partial update for service_request (quote_data, totals, etc. but NOT status)
+  profile
+}) => {
+  // 1. Insert review record
+  const { data: review, error: reviewError } = await supabase
+    .from('quote_reviews')
+    .insert({
+      service_request_id: serviceRequestId,
+      quote_type: quoteType,
+      quote_data: quoteData,
+      quote_number: quoteNumber,
+      rma_number: rmaNumber,
+      client_name: clientName,
+      total_amount: totalAmount,
+      device_summary: deviceSummary || '',
+      submitted_by: profile?.id,
+      submitted_by_name: profile?.full_name || profile?.email || 'Unknown',
+      previous_status: previousStatus
+    })
+    .select()
+    .single();
+  
+  if (reviewError) throw reviewError;
+  
+  // 2. Update service_request with quote data + pending review status
+  const srUpdate = {
+    ...serviceRequestUpdate,
+    status: 'pending_quote_review',
+    quote_review_id: review.id,
+    quote_rejection_notes: null // Clear any previous rejection notes
+  };
+  
+  const { error: updateError } = await supabase
+    .from('service_requests')
+    .update(srUpdate)
+    .eq('id', serviceRequestId);
+  
+  if (updateError) throw updateError;
+  
+  return review;
+};
 // BL and REPORT PDF GENERATION - Using same jsPDF approach as Quote
 // ============================================
 
@@ -3199,7 +3252,7 @@ const AT = {
 // Status label lookup by language
 const STATUS_LABELS = {
   fr: {
-    submitted: 'Soumis', rma_created: 'RMA/Devis Créé', quote_sent: 'Devis envoyé',
+    submitted: 'Soumis', rma_created: 'RMA/Devis Créé', quote_sent: 'Devis envoyé', pending_quote_review: 'Devis en vérification',
     waiting_bc: 'Attente BC', bc_review: '⚠️ BC à vérifier', bc_rejected: '❌ BC Rejeté',
     quote_approved: 'Devis Approuvé', waiting_reception: 'En attente réception',
     received: 'Reçu', in_queue: "File d'attente", inspection: 'Inspection',
@@ -3215,7 +3268,7 @@ const STATUS_LABELS = {
     quote_declined: 'Devis refusé', waiting_customer: 'Action client requise'
   },
   en: {
-    submitted: 'Submitted', rma_created: 'RMA/Quote Created', quote_sent: 'Quote Sent',
+    submitted: 'Submitted', rma_created: 'RMA/Quote Created', quote_sent: 'Quote Sent', pending_quote_review: 'Quote Under Review',
     waiting_bc: 'Awaiting PO', bc_review: '⚠️ PO Under Review', bc_rejected: '❌ PO Rejected',
     quote_approved: 'Quote Approved', waiting_reception: 'Awaiting Reception',
     received: 'Received', in_queue: 'In Queue', inspection: 'Inspection',
@@ -3241,6 +3294,7 @@ const STATUS_STYLES = {
   submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Soumis', en: 'Submitted' },
   rma_created: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'RMA/Devis Créé', en: 'RMA/Quote Created' },
   quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Devis envoyé', en: 'Quote Sent' },
+  pending_quote_review: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Devis en vérification', en: 'Quote Under Review' },
   waiting_bc: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Attente BC', en: 'Awaiting PO' },
   bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: '⚠️ BC à vérifier', en: '⚠️ PO to Review' },
   bc_rejected: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ BC Rejeté', en: '❌ PO Rejected' },
@@ -3291,6 +3345,7 @@ export default function AdminPortal() {
   const [equipment, setEquipment] = useState([]);
   const [contracts, setContracts] = useState([]);
   const [pendingArrivalsCount, setPendingArrivalsCount] = useState(0);
+  const [pendingQuoteReviewCount, setPendingQuoteReviewCount] = useState(0);
   const [selectedRMA, setSelectedRMA] = useState(null); // Full-page RMA view
   const [lang, setLang] = useState('fr');
   const t = useCallback((k) => AT[lang]?.[k] || AT.fr?.[k] || k, [lang]);
@@ -3347,6 +3402,12 @@ export default function AdminPortal() {
     // Load pending arrivals count (unresolved)
     const { count: paCount } = await supabase.from('pending_arrivals').select('id', { count: 'exact', head: true }).not('status', 'eq', 'resolved');
     setPendingArrivalsCount(paCount || 0);
+    
+    // Load pending quote reviews count
+    try {
+      const { count: qrCount } = await supabase.from('quote_reviews').select('id', { count: 'exact', head: true }).eq('status', 'pending');
+      setPendingQuoteReviewCount(qrCount || 0);
+    } catch { setPendingQuoteReviewCount(0); }
     
     // Load rental requests
     const { data: rentalsData, error: rentalsError } = await supabase.from('rental_requests')
@@ -3437,9 +3498,13 @@ export default function AdminPortal() {
     r.status === 'bc_review'
   ).length;
   
+  // Quote review count - RMAs pending quote review
+  const quoteReviewCount = pendingQuoteReviewCount || requests.filter(r => r.status === 'pending_quote_review').length;
+  
   const sheets = [
     { id: 'dashboard', label: t('dashboard'), icon: '📊' },
     { id: 'messages', label: t('messages'), icon: '💬', badge: totalUnreadMessages > 0 ? totalUnreadMessages : (openChatsCount > 0 ? openChatsCount : null) },
+    { id: 'quote_review', label: lang === 'en' ? 'Quote Review' : 'Vérif. Devis', icon: '✅', badge: quoteReviewCount > 0 ? quoteReviewCount : null },
     { id: 'requests', label: t('requests'), icon: '📋', badge: totalBadge > 0 ? totalBadge : null },
     { id: 'parts', label: t('parts'), icon: '🔩', badge: partsOrdersActionCount > 0 ? partsOrdersActionCount : null },
     { id: 'rentals', label: t('rentals'), icon: '📅', badge: rentalActionCount > 0 ? rentalActionCount : null },
@@ -3549,6 +3614,7 @@ export default function AdminPortal() {
               filter={dashboardFilter} 
               setFilter={setDashboardFilter} 
             />}
+            {activeSheet === 'quote_review' && <QuoteReviewSheet requests={requests} clients={clients} notify={notify} reload={loadData} profile={profile} t={t} lang={lang} />}
             {activeSheet === 'kpi' && <KPISheet requests={requests} clients={clients} t={t} lang={lang} />}
             {activeSheet === 'requests' && <RequestsSheet requests={requests.filter(r => r.request_type !== 'parts')} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
             {activeSheet === 'parts' && <PartsOrdersSheet requests={partsOrders} notify={notify} reload={loadData} profile={profile} t={t} lang={lang} />}
@@ -3657,6 +3723,687 @@ function LoginPage() {
 }
 
 // ============================================
+// ============================================
+// QUOTE REVIEW SHEET
+// ============================================
+function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile, t = k=>k, lang = 'fr' }) {
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('pending');
+  const [selectedReview, setSelectedReview] = useState(null);
+  const [rejecting, setRejecting] = useState(null);
+  const [rejectionNotes, setRejectionNotes] = useState('');
+  const [processing, setProcessing] = useState(false);
+
+  const loadReviews = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('quote_reviews')
+        .select('*, service_requests:service_request_id(id, request_number, status, companies(name, email)), contracts:contract_id(id, contract_number, status, companies(name, email)), rental_requests:rental_request_id(id, rental_number, status, companies(name, email))')
+        .order('submitted_at', { ascending: false });
+      
+      if (error) throw error;
+      setReviews(data || []);
+    } catch (err) {
+      console.error('Load reviews error:', err);
+      // If table doesn't exist yet, show empty
+      setReviews([]);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadReviews(); }, [loadReviews]);
+
+  const filtered = reviews.filter(r => r.status === filter);
+  const pendingCount = reviews.filter(r => r.status === 'pending').length;
+
+  const getTypeLabel = (type) => {
+    const labels = {
+      initial: lang === 'en' ? '📋 Initial Quote' : '📋 Devis Initial',
+      revision: lang === 'en' ? '🔄 Revised Quote' : '🔄 Devis Révisé',
+      supplement: lang === 'en' ? '📄 Supplement' : '📄 Supplément',
+      parts: lang === 'en' ? '🔩 Parts Quote' : '🔩 Devis Pièces',
+      contract: lang === 'en' ? '📄 Contract Quote' : '📄 Devis Contrat',
+      rental: lang === 'en' ? '📅 Rental Quote' : '📅 Devis Location'
+    };
+    return labels[type] || type;
+  };
+
+  const getTypeColor = (type) => {
+    const colors = {
+      initial: 'bg-blue-100 text-blue-700',
+      revision: 'bg-amber-100 text-amber-700',
+      supplement: 'bg-purple-100 text-purple-700',
+      parts: 'bg-orange-100 text-orange-700',
+      contract: 'bg-green-100 text-green-700',
+      rental: 'bg-cyan-100 text-cyan-700'
+    };
+    return colors[type] || 'bg-gray-100 text-gray-700';
+  };
+
+  // ========================
+  // APPROVE QUOTE
+  // ========================
+  const approveQuote = async (review) => {
+    if (review.submitted_by === profile?.id) {
+      notify(lang === 'en' ? 'You cannot approve your own quote' : 'Vous ne pouvez pas approuver votre propre devis', 'error');
+      return;
+    }
+    setProcessing(true);
+    try {
+      // Load the full service_request
+      const { data: sr, error: srError } = await supabase
+        .from('service_requests')
+        .select('*, companies(*), request_devices(*)')
+        .eq('id', review.service_request_id)
+        .single();
+      
+      if (srError) throw srError;
+      
+      const qd = review.quote_data;
+
+      if (review.quote_type === 'initial' || review.quote_type === 'revision') {
+        // === INITIAL/REVISION QUOTE: Generate PDF and send ===
+        let quoteUrl = null;
+        try {
+          const rmaForPDF = { ...sr, request_number: qd.rmaNumber, companies: sr.companies };
+          const pdfBlob = await generateQuotePDF(rmaForPDF, qd.devices, {
+            shipping: qd.shipping,
+            devicePricing: qd.devices,
+            servicesSubtotal: qd.servicesSubtotal,
+            shippingTotal: qd.shippingTotal,
+            discount: qd.discount?.enabled ? qd.discount : null,
+            grandTotal: qd.grandTotal,
+            isContractRMA: qd.isContractRMA,
+            isFullyContractCovered: false,
+            quoteNumber: qd.quoteNumber,
+            revisionNumber: qd.newRevisionCount || 0,
+            businessSettings: qd.businessSettings || {},
+            quoteSettings: qd.businessSettings?.quote_settings || null
+          });
+          const revSuffix = qd.newRevisionCount > 0 ? `_rev${qd.newRevisionCount}` : '';
+          const fileName = `${qd.rmaNumber}_devis${revSuffix}_${Date.now()}.pdf`;
+          quoteUrl = await uploadPDFToStorage(pdfBlob, `quotes/${qd.rmaNumber}`, fileName);
+        } catch (pdfErr) {
+          console.error('PDF generation error:', pdfErr);
+        }
+        
+        // Archive old quote if revision
+        if (review.quote_type === 'revision' && sr.quote_url) {
+          try {
+            const revLabel = (qd.newRevisionCount || 1) > 1 ? `Rev-${(qd.newRevisionCount || 1) - 1}` : 'Original';
+            await supabase.from('request_attachments').insert({
+              request_id: sr.id,
+              file_url: sr.quote_url,
+              file_name: `${qd.rmaNumber}_devis_${revLabel}.pdf`,
+              category: 'internal_devis_revision',
+              notes: `Devis ${revLabel} - archivé`
+            });
+          } catch (e) { console.error('Archive error:', e); }
+        }
+        
+        const updateData = {
+          status: 'quote_sent',
+          quote_sent_at: new Date().toISOString(),
+          quote_review_id: null,
+          quote_rejection_notes: null
+        };
+        if (quoteUrl) updateData.quote_url = quoteUrl;
+        
+        await supabase.from('service_requests').update(updateData).eq('id', sr.id);
+        
+        // Update contract device flags if applicable
+        if (qd.devices) {
+          for (const d of qd.devices) {
+            if (d.id && d.isContractCovered) {
+              await supabase.from('request_devices').update({
+                contract_device_id: d.contractDeviceId,
+                contract_covered: true
+              }).eq('id', d.id);
+            }
+          }
+        }
+
+      } else if (review.quote_type === 'parts') {
+        // === PARTS QUOTE: Generate PDF and send ===
+        let quoteUrl = null;
+        try {
+          const pdfBlob = await generatePartsQuotePDF(sr, { ...qd, quoteRef: qd.quoteNumber || qd.quoteRef });
+          const fileName = `devis_pieces_${qd.poNumber || sr.request_number}_${Date.now()}.pdf`;
+          
+          const { error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(fileName, pdfBlob, { contentType: 'application/pdf' });
+          
+          if (!uploadError) {
+            const { data: urlData } = supabase.storage.from('documents').getPublicUrl(fileName);
+            quoteUrl = urlData?.publicUrl;
+          }
+        } catch (pdfErr) {
+          console.error('Parts PDF error:', pdfErr);
+        }
+        
+        const updateData = {
+          status: 'quote_sent',
+          quote_sent_at: new Date().toISOString(),
+          quote_url: quoteUrl,
+          quote_review_id: null,
+          quote_rejection_notes: null
+        };
+        await supabase.from('service_requests').update(updateData).eq('id', sr.id);
+
+      } else if (review.quote_type === 'supplement') {
+        // === SUPPLEMENT: Generate PDF and send ===
+        try {
+          notify(lang === 'en' ? '📄 Generating supplement PDF...' : '📄 Génération du PDF supplément...');
+          const { blob, total } = await generateAvenantPDF(sr, qd.devices, { 
+            businessSettings: qd.businessSettings, 
+            supNumber: qd.supNumber 
+          });
+          
+          const fileName = `supplement_${qd.supNumber || sr.request_number}_${Date.now()}.pdf`;
+          const { error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(`avenants/${fileName}`, blob, { contentType: 'application/pdf' });
+          
+          if (uploadError) throw uploadError;
+          
+          const { data: urlData } = supabase.storage.from('documents').getPublicUrl(`avenants/${fileName}`);
+          const avenantQuoteUrl = urlData?.publicUrl;
+          
+          await supabase.from('service_requests').update({
+            avenant_total: total,
+            avenant_sent_at: new Date().toISOString(),
+            supplement_number: qd.supNumber,
+            status: sr.status === 'pending_quote_review' ? (review.previous_status || sr.status) : sr.status,
+            quote_review_id: null,
+            bc_submitted_at: null,
+            bc_file_url: null,
+            bc_signature_url: null,
+            bc_signed_by: null,
+            bc_signature_date: null
+          }).eq('id', sr.id);
+          
+          await supabase.from('request_attachments').insert({
+            request_id: sr.id,
+            file_name: `Supplément_${qd.supNumber || sr.request_number}.pdf`,
+            file_url: avenantQuoteUrl,
+            file_type: 'application/pdf',
+            category: 'avenant_quote',
+            device_serial: (qd.devices || []).map(d => d.serial_number).join(', ')
+          });
+        } catch (pdfErr) {
+          throw pdfErr;
+        }
+      } else if (review.quote_type === 'contract') {
+        // === CONTRACT QUOTE: Set status to quote_sent ===
+        const qd = review.quote_data;
+        const contractId = review.contract_id || qd.contractId;
+        if (contractId) {
+          await supabase.from('contracts').update({
+            status: 'quote_sent',
+            quote_sent_at: new Date().toISOString(),
+            quote_review_id: null,
+            quote_rejection_notes: null
+          }).eq('id', contractId);
+        }
+      } else if (review.quote_type === 'rental') {
+        // === RENTAL QUOTE: Set status to quote_sent ===
+        const rentalId = review.rental_request_id || review.quote_data?.rentalId;
+        if (rentalId) {
+          await supabase.from('rental_requests').update({
+            status: 'quote_sent',
+            quote_review_id: null,
+            quote_rejection_notes: null
+          }).eq('id', rentalId);
+        }
+      }
+      
+      // Mark review as approved
+      await supabase.from('quote_reviews').update({
+        status: 'approved',
+        reviewed_by: profile?.id,
+        reviewed_by_name: profile?.full_name || profile?.email || 'Admin',
+        reviewed_at: new Date().toISOString()
+      }).eq('id', review.id);
+      
+      notify(lang === 'en' ? '✅ Quote approved and sent!' : '✅ Devis approuvé et envoyé !');
+      setSelectedReview(null);
+      loadReviews();
+      reload();
+    } catch (err) {
+      console.error('Approve error:', err);
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+    }
+    setProcessing(false);
+  };
+
+  // ========================
+  // REJECT QUOTE
+  // ========================
+  const rejectQuote = async (review) => {
+    if (!rejectionNotes.trim()) {
+      notify(lang === 'en' ? 'Please provide rejection notes' : 'Veuillez indiquer la raison du rejet', 'error');
+      return;
+    }
+    setProcessing(true);
+    try {
+      // Restore previous status on the source record
+      const restoreStatus = review.previous_status || 'submitted';
+      
+      if (review.contract_id) {
+        await supabase.from('contracts').update({
+          status: restoreStatus,
+          quote_review_id: null,
+          quote_rejection_notes: rejectionNotes.trim()
+        }).eq('id', review.contract_id);
+      } else if (review.rental_request_id) {
+        await supabase.from('rental_requests').update({
+          status: restoreStatus,
+          quote_review_id: null,
+          quote_rejection_notes: rejectionNotes.trim()
+        }).eq('id', review.rental_request_id);
+      } else {
+        await supabase.from('service_requests').update({
+          status: restoreStatus,
+          quote_review_id: null,
+          quote_rejection_notes: rejectionNotes.trim()
+        }).eq('id', review.service_request_id);
+      }
+      
+      // Mark review as rejected
+      await supabase.from('quote_reviews').update({
+        status: 'rejected',
+        rejection_notes: rejectionNotes.trim(),
+        reviewed_by: profile?.id,
+        reviewed_by_name: profile?.full_name || profile?.email || 'Admin',
+        reviewed_at: new Date().toISOString()
+      }).eq('id', review.id);
+      
+      notify(lang === 'en' ? '❌ Quote rejected — sent back for correction' : '❌ Devis rejeté — renvoyé pour correction');
+      setRejecting(null);
+      setRejectionNotes('');
+      setSelectedReview(null);
+      loadReviews();
+      reload();
+    } catch (err) {
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+    }
+    setProcessing(false);
+  };
+
+  // ========================
+  // QUOTE PREVIEW RENDERER
+  // ========================
+  const renderQuotePreview = (review) => {
+    const qd = review.quote_data || {};
+    
+    if (review.quote_type === 'initial' || review.quote_type === 'revision') {
+      const devices = qd.devices || [];
+      return (
+        <div className="space-y-4">
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h4 className="font-bold text-gray-800 mb-3">{lang === 'en' ? 'Devices & Pricing' : 'Appareils & Tarification'}</h4>
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-gray-500 border-b"><th className="pb-2">{lang === 'en' ? 'Device' : 'Appareil'}</th><th className="pb-2">SN</th><th className="pb-2">Service</th><th className="pb-2 text-right">{lang === 'en' ? 'Price' : 'Prix'}</th></tr></thead>
+              <tbody>
+                {devices.map((d, i) => (
+                  <tr key={i} className="border-b border-gray-100">
+                    <td className="py-2 flex items-center gap-2">{getDeviceImageUrl(d.model) && <img src={getDeviceImageUrl(d.model)} alt="" className="w-4 h-4 object-contain" />}{d.model}</td>
+                    <td className="py-2 font-mono text-xs">{d.serial}</td>
+                    <td className="py-2">
+                      {d.needsCalibration && <span className="text-blue-600 mr-1">🔬</span>}
+                      {d.needsRepair && <span className="text-orange-600 mr-1">🔧</span>}
+                      {d.needsNettoyage && <span className="text-cyan-600">🧹</span>}
+                      {d.isContractCovered && <span className="ml-1 text-xs bg-green-100 text-green-700 px-1 rounded">Contrat</span>}
+                    </td>
+                    <td className="py-2 text-right font-medium">{(d.serviceTotal || 0).toFixed(2)} €</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+            <div className="flex justify-between text-sm"><span className="text-gray-600">{lang === 'en' ? 'Services subtotal' : 'Sous-total services'}</span><span>{(qd.servicesSubtotal || 0).toFixed(2)} €</span></div>
+            {qd.shipping && <div className="flex justify-between text-sm"><span className="text-gray-600">{lang === 'en' ? 'Shipping' : 'Transport'} ({qd.shipping.parcels || 1} colis)</span><span>{(qd.shippingTotal || qd.shipping.total || 0).toFixed(2)} €</span></div>}
+            {qd.discount?.enabled && <div className="flex justify-between text-sm text-green-600"><span>{lang === 'en' ? 'Discount' : 'Remise'} {qd.discount.note ? `(${qd.discount.note})` : ''}</span><span>-{(qd.discountAmount || 0).toFixed(2)} €</span></div>}
+            <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total HT</span><span className="text-[#00A651]">{(qd.grandTotal || 0).toFixed(2)} €</span></div>
+          </div>
+        </div>
+      );
+    }
+    
+    if (review.quote_type === 'parts') {
+      const parts = qd.parts || [];
+      return (
+        <div className="space-y-4">
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h4 className="font-bold text-gray-800 mb-3">{lang === 'en' ? 'Parts' : 'Pièces'}</h4>
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-gray-500 border-b"><th className="pb-2">{lang === 'en' ? 'Part #' : 'Réf.'}</th><th className="pb-2">Description</th><th className="pb-2 text-center">Qté</th><th className="pb-2 text-right">P.U.</th><th className="pb-2 text-right">Total</th></tr></thead>
+              <tbody>
+                {parts.map((p, i) => (
+                  <tr key={i} className="border-b border-gray-100">
+                    <td className="py-2 font-mono text-xs">{p.partNumber}</td>
+                    <td className="py-2">{p.description}</td>
+                    <td className="py-2 text-center">{p.quantity}</td>
+                    <td className="py-2 text-right">{(p.unitPrice || 0).toFixed(2)} €</td>
+                    <td className="py-2 text-right font-medium">{(p.lineTotal || 0).toFixed(2)} €</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-4">
+            <div className="flex justify-between text-sm"><span className="text-gray-600">{lang === 'en' ? 'Parts' : 'Pièces'}</span><span>{(qd.partsTotal || 0).toFixed(2)} €</span></div>
+            {qd.shipping && <div className="flex justify-between text-sm"><span className="text-gray-600">{lang === 'en' ? 'Shipping' : 'Transport'}</span><span>{(qd.shipping.total || 0).toFixed(2)} €</span></div>}
+            <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total HT</span><span className="text-[#00A651]">{(qd.grandTotal || 0).toFixed(2)} €</span></div>
+          </div>
+        </div>
+      );
+    }
+    
+    if (review.quote_type === 'supplement') {
+      const devices = qd.devices || [];
+      return (
+        <div className="space-y-4">
+          <div className="bg-amber-50 rounded-lg p-4">
+            <h4 className="font-bold text-amber-800 mb-3">⚠ {lang === 'en' ? 'Additional Work Required' : 'Travaux Supplémentaires Requis'}</h4>
+            {devices.map((d, i) => (
+              <div key={i} className="border-b border-amber-200 last:border-0 pb-3 mb-3 last:mb-0">
+                <p className="font-medium flex items-center gap-2">
+                  {getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" className="w-5 h-5 object-contain" />}
+                  {d.model_name} <span className="font-mono text-xs text-gray-500">SN: {d.serial_number}</span>
+                </p>
+                {d.service_findings && <p className="text-sm text-gray-600 mt-1 italic">"{d.service_findings}"</p>}
+                {d.additional_work_pricing && Object.entries(d.additional_work_pricing).map(([key, val]) => (
+                  <div key={key} className="flex justify-between text-sm mt-1 ml-4">
+                    <span>{val.description || key}</span>
+                    <span className="font-medium">{(parseFloat(val.price) || 0).toFixed(2)} €</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+          <div className="bg-gray-50 rounded-lg p-4">
+            <div className="flex justify-between font-bold text-lg"><span>{lang === 'en' ? 'Supplement Total' : 'Total Supplément'}</span><span className="text-amber-600">{(qd.avenantTotal || review.total_amount || 0).toFixed(2)} €</span></div>
+          </div>
+        </div>
+      );
+    }
+    
+    if (review.quote_type === 'contract') {
+      const devices = qd.devices || [];
+      return (
+        <div className="space-y-4">
+          <div className="bg-blue-50 rounded-lg p-4">
+            <h4 className="font-bold text-blue-800 mb-1">📄 {lang === 'en' ? 'Contract Quote' : 'Devis Contrat'}</h4>
+            <p className="text-sm text-gray-600">{qd.contractNumber || review.quote_number}</p>
+            {qd.contractDates && (
+              <p className="text-sm text-gray-500 mt-1">{qd.contractDates.start_date} → {qd.contractDates.end_date}</p>
+            )}
+          </div>
+          <table className="w-full text-sm">
+            <thead><tr className="border-b"><th className="text-left py-2">{lang === 'en' ? 'Device' : 'Appareil'}</th><th className="text-left py-2">SN</th><th className="text-right py-2">{lang === 'en' ? 'Tokens' : 'Tokens'}</th><th className="text-right py-2">{lang === 'en' ? 'Price' : 'Prix'}</th></tr></thead>
+            <tbody>
+              {devices.map((d, i) => (
+                <tr key={i} className="border-b border-gray-100">
+                  <td className="py-2 flex items-center gap-2">{getDeviceImageUrl(d.model) && <img src={getDeviceImageUrl(d.model)} alt="" className="w-4 h-4 object-contain" />}{d.model}</td>
+                  <td className="py-2 font-mono text-xs">{d.serial}</td>
+                  <td className="py-2 text-right">{d.tokens_total || '—'}</td>
+                  <td className="py-2 text-right font-medium">{(d.calibrationPrice || 0).toFixed(2)} €</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="bg-gray-50 rounded-lg p-4 space-y-1">
+            <div className="flex justify-between text-sm"><span>{lang === 'en' ? 'Services' : 'Services'}</span><span>{(qd.servicesSubtotal || 0).toFixed(2)} €</span></div>
+            <div className="flex justify-between text-sm"><span>{lang === 'en' ? 'Shipping' : 'Livraison'}</span><span>{(qd.shippingTotal || 0).toFixed(2)} €</span></div>
+            <div className="flex justify-between font-bold text-lg border-t pt-2"><span>Total HT</span><span className="text-blue-600">{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</span></div>
+          </div>
+        </div>
+      );
+    }
+    
+    if (review.quote_type === 'rental') {
+      const items = qd.items || [];
+      return (
+        <div className="space-y-4">
+          <div className="bg-cyan-50 rounded-lg p-4">
+            <h4 className="font-bold text-cyan-800 mb-1">📅 {lang === 'en' ? 'Rental Quote' : 'Devis Location'}</h4>
+            <p className="text-sm text-gray-600">{qd.rentalNumber || review.quote_number}</p>
+          </div>
+          {items.length > 0 && (
+            <table className="w-full text-sm">
+              <thead><tr className="border-b"><th className="text-left py-2">{lang === 'en' ? 'Equipment' : 'Équipement'}</th><th className="text-right py-2">Qty</th><th className="text-right py-2">{lang === 'en' ? 'Unit' : 'Unit.'}</th><th className="text-right py-2">Total</th></tr></thead>
+              <tbody>
+                {items.map((item, i) => (
+                  <tr key={i} className="border-b border-gray-100">
+                    <td className="py-2">{item.equipment_model || item.description || '—'}</td>
+                    <td className="py-2 text-right">{item.quantity || 1}</td>
+                    <td className="py-2 text-right">{(item.unit_price || 0).toFixed(2)} €</td>
+                    <td className="py-2 text-right font-medium">{(item.line_total || 0).toFixed(2)} €</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div className="bg-gray-50 rounded-lg p-4 space-y-1">
+            {qd.shipping > 0 && <div className="flex justify-between text-sm"><span>{lang === 'en' ? 'Shipping' : 'Livraison'}</span><span>{(qd.shipping || 0).toFixed(2)} €</span></div>}
+            <div className="flex justify-between font-bold text-lg border-t pt-2"><span>Total HT</span><span className="text-cyan-600">{(qd.totalHT || review.total_amount || 0).toFixed(2)} €</span></div>
+            <div className="flex justify-between text-sm text-gray-500"><span>TTC ({qd.taxRate || 20}%)</span><span>{(qd.totalTTC || 0).toFixed(2)} €</span></div>
+          </div>
+          {qd.notes && <div className="bg-amber-50 rounded-lg p-3 text-sm"><span className="font-medium">{lang === 'en' ? 'Notes:' : 'Notes:'}</span> {qd.notes}</div>}
+        </div>
+      );
+    }
+    return (
+      <div className="bg-gray-50 rounded-lg p-4">
+        <pre className="text-xs text-gray-600 whitespace-pre-wrap">{JSON.stringify(qd, null, 2)}</pre>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-800">{lang === 'en' ? '📋 Quote Review' : '📋 Vérification des Devis'}</h1>
+        <div className="flex gap-2">
+          <button onClick={loadReviews} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">
+            🔄 {lang === 'en' ? 'Refresh' : 'Actualiser'}
+          </button>
+        </div>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-2">
+        {[
+          { id: 'pending', label: lang === 'en' ? 'Pending Review' : 'En attente', icon: '⏳', count: reviews.filter(r => r.status === 'pending').length, color: 'amber' },
+          { id: 'approved', label: lang === 'en' ? 'Approved' : 'Approuvés', icon: '✅', count: reviews.filter(r => r.status === 'approved').length, color: 'green' },
+          { id: 'rejected', label: lang === 'en' ? 'Rejected' : 'Rejetés', icon: '❌', count: reviews.filter(r => r.status === 'rejected').length, color: 'red' }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setFilter(tab.id)}
+            className={`px-4 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-colors ${
+              filter === tab.id 
+                ? `bg-${tab.color}-500 text-white` 
+                : 'bg-white text-gray-600 hover:bg-gray-50 border'
+            }`}
+          >
+            {tab.icon} {tab.label}
+            {tab.count > 0 && (
+              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                filter === tab.id ? 'bg-white/20' : `bg-${tab.color}-100 text-${tab.color}-700`
+              }`}>{tab.count}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Reviews list */}
+      {loading ? (
+        <div className="bg-white rounded-xl p-12 text-center">
+          <div className="w-10 h-10 border-4 border-[#00A651] border-t-transparent rounded-full animate-spin mx-auto" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-white rounded-xl p-12 text-center text-gray-400">
+          {filter === 'pending' 
+            ? (lang === 'en' ? 'No quotes pending review' : 'Aucun devis en attente de vérification') 
+            : filter === 'approved'
+            ? (lang === 'en' ? 'No approved quotes yet' : 'Aucun devis approuvé')
+            : (lang === 'en' ? 'No rejected quotes' : 'Aucun devis rejeté')}
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">RMA</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{t('client')}</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">Type</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{lang === 'en' ? 'Devices' : 'Appareils'}</th>
+                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600">Total</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{lang === 'en' ? 'Submitted by' : 'Soumis par'}</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">Date</th>
+                {filter === 'rejected' && <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{lang === 'en' ? 'Reason' : 'Raison'}</th>}
+                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filtered.map(review => (
+                <tr key={review.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3">
+                    <span className="font-mono font-bold text-[#00A651]">{review.rma_number || '—'}</span>
+                    {review.quote_number && <p className="text-xs text-gray-400">{review.quote_number}</p>}
+                  </td>
+                  <td className="px-4 py-3 font-medium">{review.client_name || '—'}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${getTypeColor(review.quote_type)}`}>
+                      {getTypeLabel(review.quote_type)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600 max-w-[200px] truncate">{review.device_summary || '—'}</td>
+                  <td className="px-4 py-3 text-right font-bold">{(review.total_amount || 0).toFixed(2)} €</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{review.submitted_by_name || '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-500">{review.submitted_at ? new Date(review.submitted_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '—'}</td>
+                  {filter === 'rejected' && <td className="px-4 py-3 text-sm text-red-600 max-w-[200px] truncate">{review.rejection_notes || '—'}</td>}
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => setSelectedReview(review)}
+                      className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded text-sm font-medium"
+                    >
+                      {lang === 'en' ? 'Review' : 'Vérifier'} →
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Review Detail Modal */}
+      {selectedReview && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => { setSelectedReview(null); setRejecting(null); setRejectionNotes(''); }}>
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="px-6 py-4 border-b bg-[#1a1a2e] text-white flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-bold">{lang === 'en' ? 'Quote Review' : 'Vérification du Devis'}</h2>
+                <p className="text-sm text-gray-300">
+                  {selectedReview.rma_number} • {selectedReview.client_name} • <span className={`px-2 py-0.5 rounded text-xs ${getTypeColor(selectedReview.quote_type)}`}>{getTypeLabel(selectedReview.quote_type)}</span>
+                </p>
+              </div>
+              <button onClick={() => { setSelectedReview(null); setRejecting(null); setRejectionNotes(''); }} className="text-white/60 hover:text-white text-2xl">×</button>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6 overflow-y-auto flex-1">
+              {/* Submitter info */}
+              <div className="flex items-center gap-3 mb-4 p-3 bg-blue-50 rounded-lg">
+                <span className="w-8 h-8 bg-blue-200 rounded-full flex items-center justify-center text-sm">👤</span>
+                <div>
+                  <p className="font-medium text-blue-800">{lang === 'en' ? 'Submitted by' : 'Soumis par'}: {selectedReview.submitted_by_name}</p>
+                  <p className="text-xs text-blue-600">{selectedReview.submitted_at ? new Date(selectedReview.submitted_at).toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR') : ''}</p>
+                </div>
+              </div>
+
+              {/* Rejection notes if already rejected */}
+              {selectedReview.status === 'rejected' && selectedReview.rejection_notes && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="font-medium text-red-800">❌ {lang === 'en' ? 'Rejected' : 'Rejeté'}: {selectedReview.rejection_notes}</p>
+                  <p className="text-xs text-red-600">{lang === 'en' ? 'By' : 'Par'}: {selectedReview.reviewed_by_name} — {selectedReview.reviewed_at ? new Date(selectedReview.reviewed_at).toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR') : ''}</p>
+                </div>
+              )}
+
+              {/* Approved info */}
+              {selectedReview.status === 'approved' && (
+                <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="font-medium text-green-800">✅ {lang === 'en' ? 'Approved' : 'Approuvé'}</p>
+                  <p className="text-xs text-green-600">{lang === 'en' ? 'By' : 'Par'}: {selectedReview.reviewed_by_name} — {selectedReview.reviewed_at ? new Date(selectedReview.reviewed_at).toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR') : ''}</p>
+                </div>
+              )}
+
+              {/* Quote preview */}
+              {renderQuotePreview(selectedReview)}
+              
+              {/* Rejection notes input */}
+              {rejecting === selectedReview.id && (
+                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg space-y-3">
+                  <p className="font-medium text-red-800">❌ {lang === 'en' ? 'Rejection reason:' : 'Raison du rejet :'}</p>
+                  <textarea
+                    value={rejectionNotes}
+                    onChange={e => setRejectionNotes(e.target.value)}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-400"
+                    placeholder={lang === 'en' ? 'Describe the issue...' : 'Décrivez le problème...'}
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => rejectQuote(selectedReview)}
+                      disabled={processing || !rejectionNotes.trim()}
+                      className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50"
+                    >
+                      {processing ? '...' : (lang === 'en' ? '❌ Confirm Rejection' : '❌ Confirmer le Rejet')}
+                    </button>
+                    <button onClick={() => { setRejecting(null); setRejectionNotes(''); }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+                      {lang === 'en' ? 'Cancel' : 'Annuler'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* Footer actions - only for pending */}
+            {selectedReview.status === 'pending' && rejecting !== selectedReview.id && (
+              <div className="px-6 py-4 border-t bg-gray-50 flex justify-between items-center">
+                <button
+                  onClick={() => setRejecting(selectedReview.id)}
+                  disabled={processing}
+                  className="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50"
+                >
+                  ❌ {lang === 'en' ? 'Reject' : 'Rejeter'}
+                </button>
+                <button
+                  onClick={() => approveQuote(selectedReview)}
+                  disabled={processing}
+                  className="px-6 py-2.5 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold disabled:opacity-50"
+                >
+                  {processing ? (lang === 'en' ? 'Processing...' : 'En cours...') : (lang === 'en' ? '✅ Approve & Send' : '✅ Approuver & Envoyer')}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // KPI SHEET - Business Analytics Dashboard
 // ============================================
 function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
@@ -4415,7 +5162,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
             
             // Early stages = before device physically arrives (use RMA status)
             const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 'quote_revision_declined', 
-                                   'approved', 'bc_pending', 'bc_review', 'waiting_bc', 'waiting_po', 'waiting_device', 'bc_approved'];
+                                   'approved', 'bc_pending', 'bc_review', 'waiting_bc', 'waiting_po', 'waiting_device', 'bc_approved', 'pending_quote_review'];
             
             // Helper to get device's effective status
             // Before devices arrive: use RMA status
@@ -4506,7 +5253,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                   // Repair: 12 steps (0-11) - includes File d'attente
                   const map = {
                     'submitted': 0, 'pending': 0, 'waiting_approval': 0,
-                    'approved': 1, 'rma_created': 1, 'quote_sent': 1,
+                    'approved': 1, 'rma_created': 1, 'quote_sent': 1, 'pending_quote_review': 1,
                     'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
                     'waiting_device': 3, 'bc_approved': 3,
                     'received': 4,
@@ -4523,7 +5270,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                   // Calibration: 10 steps (0-9)
                   const map = {
                     'submitted': 0, 'pending': 0, 'waiting_approval': 0,
-                    'approved': 1, 'rma_created': 1, 'quote_sent': 1,
+                    'approved': 1, 'rma_created': 1, 'quote_sent': 1, 'pending_quote_review': 1,
                     'waiting_bc': 2, 'bc_review': 2, 'waiting_po': 2,
                     'waiting_device': 3, 'bc_approved': 3,
                     'received': 4,
@@ -4541,7 +5288,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               // Before devices arrive: use RMA status
               // After devices arrive: use device.status individually
               const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 'quote_revision_declined', 
-                                     'approved', 'bc_pending', 'bc_review', 'waiting_bc', 'waiting_po', 'waiting_device', 'bc_approved'];
+                                     'approved', 'bc_pending', 'bc_review', 'waiting_bc', 'waiting_po', 'waiting_device', 'bc_approved', 'pending_quote_review'];
               const rmaIsEarly = earlyStatuses.includes(rma.status);
               
               const effectiveStatus = (() => {
@@ -4558,7 +5305,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               const isShipped = effectiveStatus === 'shipped' || effectiveStatus === 'delivered' || effectiveStatus === 'completed';
               
               // Detect: device received but quote not approved
-              const quotePhaseStatuses = ['quote_sent', 'waiting_bc', 'bc_review', 'bc_submitted', 'rma_created', 'approved'];
+              const quotePhaseStatuses = ['quote_sent', 'pending_quote_review', 'waiting_bc', 'bc_review', 'bc_submitted', 'rma_created', 'approved'];
               const deviceReceivedEarly = (rma.received_at || device.status === 'received') && quotePhaseStatuses.includes(rma.status);
               
               return (
@@ -6149,7 +6896,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     if (isRepair) {
       const repairMap = {
         'submitted': 0, 'pending': 0, 'waiting_approval': 0,
-        'approved': 1, 'rma_created': 1, 'quote_sent': 1,
+        'approved': 1, 'rma_created': 1, 'quote_sent': 1, 'pending_quote_review': 1,
         'waiting_bc': 2, 'bc_submitted': 2, 'bc_review': 2,
         'bc_approved': 3, 'waiting_device': 3, 'waiting_po': 3, 'waiting_reception': 3,
         'received': 4,
@@ -6165,7 +6912,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     } else {
       const calMap = {
         'submitted': 0, 'pending': 0, 'waiting_approval': 0,
-        'approved': 1, 'rma_created': 1, 'quote_sent': 1,
+        'approved': 1, 'rma_created': 1, 'quote_sent': 1, 'pending_quote_review': 1,
         'waiting_bc': 2, 'bc_submitted': 2, 'bc_review': 2,
         'bc_approved': 3, 'waiting_device': 3, 'waiting_po': 3, 'waiting_reception': 3,
         'received': 4, 'in_queue': 5,
@@ -6188,7 +6935,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     
     // Detect: device physically received but quote not yet approved
     // RMA has received_at OR device status is 'received' BUT RMA is still in quote/BC phase
-    const quotePhaseStatuses = ['quote_sent', 'waiting_bc', 'bc_review', 'bc_submitted', 'rma_created', 'approved'];
+    const quotePhaseStatuses = ['quote_sent', 'pending_quote_review', 'waiting_bc', 'bc_review', 'bc_submitted', 'rma_created', 'approved'];
     const deviceReceivedEarly = (rma.received_at || device.status === 'received') && quotePhaseStatuses.includes(rma.status);
     
     // Smart status: use device.status only if it's a "real" device status (received onwards)
@@ -6237,7 +6984,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   const getDeviceStatusLabel = (device) => {
     // Early stages = before device physically arrives
     const earlyStatuses = ['submitted', 'pending', 'quote_sent', 'quote_revision_requested', 'quote_revision_declined', 
-                           'approved', 'bc_pending', 'bc_review', 'waiting_bc', 'waiting_po', 'waiting_device', 'bc_approved'];
+                           'approved', 'bc_pending', 'bc_review', 'waiting_bc', 'waiting_po', 'waiting_device', 'bc_approved', 'pending_quote_review'];
     const rmaIsEarly = earlyStatuses.includes(rma.status);
     
     // Priority overrides
@@ -7256,6 +8003,26 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           saving={saving}
           setSaving={setSaving}
         />
+      )}
+
+      {/* Quote Review Status */}
+      {rma.status === 'pending_quote_review' && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="w-3 h-3 bg-amber-500 rounded-full animate-pulse"></span>
+            <span className="font-medium text-amber-800">{lang === 'en' ? '📋 Quote pending review' : '📋 Devis en attente de vérification'}</span>
+          </div>
+          <span className="text-sm text-amber-600">{lang === 'en' ? 'Awaiting approval from reviewer' : 'En attente d\'approbation'}</span>
+        </div>
+      )}
+      {rma.quote_rejection_notes && rma.status !== 'pending_quote_review' && rma.status !== 'quote_sent' && (
+        <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4">
+          <div className="flex items-center gap-3 mb-2">
+            <span className="text-lg">❌</span>
+            <span className="font-bold text-red-800">{lang === 'en' ? 'Quote rejected — please correct and resubmit' : 'Devis rejeté — veuillez corriger et resoumettre'}</span>
+          </div>
+          <p className="text-red-700 ml-9">{rma.quote_rejection_notes}</p>
+        </div>
       )}
 
       {/* Chat Status Indicator - Link to Messages Sheet */}
@@ -8898,63 +9665,57 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
         console.error('Could not generate SUP number:', e);
       }
       
-      // 1. Generate PDF
-      notify('📄 Génération du PDF...');
-      const { blob, total } = await generateAvenantPDF(rma, devicesWithWork, { businessSettings, supNumber });
-      
-      // 2. Upload to storage
-      const fileName = `supplement_${supNumber || rma.request_number}_${Date.now()}.pdf`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('documents')
-        .upload(`avenants/${fileName}`, blob, { contentType: 'application/pdf' });
-      
-      if (uploadError) throw uploadError;
-      
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from('documents')
-        .getPublicUrl(`avenants/${fileName}`);
-      const avenantQuoteUrl = urlData?.publicUrl;
-      
-      // 3. Update service_request with avenant info
-      // IMPORTANT: Clear BC submission fields so customer can submit NEW BC for avenant
-      // BUT preserve signed_quote_url as that's the original devis signé
-      const { error: updateError } = await supabase
-        .from('service_requests')
-        .update({
-          avenant_total: total,
-          avenant_sent_at: new Date().toISOString(),
-          supplement_number: supNumber,
-          // Clear these so customer needs to submit new BC for avenant
-          // The original BC info is preserved in signed_quote_url and attachments
-          bc_submitted_at: null,
-          bc_file_url: null,
-          bc_signature_url: null,
-          bc_signed_by: null,
-          bc_signature_date: null
-          // DO NOT clear signed_quote_url - that's the original devis signé!
-        })
-        .eq('id', rma.id);
-      
-      if (updateError) throw updateError;
-      
-      // 4. Save as attachment for the RMA
-      await supabase.from('request_attachments').insert({
-        request_id: rma.id,
-        file_name: `Supplément_${supNumber || rma.request_number}.pdf`,
-        file_url: avenantQuoteUrl,
-        file_type: 'application/pdf',
-        category: 'avenant_quote',
-        device_serial: devicesWithWork.map(d => d.serial_number).join(', ')
+      // Calculate total for the supplement
+      let avenantTotal = 0;
+      devicesWithWork.forEach(d => {
+        if (d.additional_work_pricing) {
+          avenantTotal += Object.values(d.additional_work_pricing).reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0);
+        }
       });
       
-      notify('✅ Avenant envoyé au client!');
+      // === QUOTE REVIEW: Submit supplement for review ===
+      const deviceSummary = devicesWithWork.map(d => `${d.model_name || 'Device'} (${d.serial_number})`).join(', ');
+      
+      await submitForQuoteReview({
+        serviceRequestId: rma.id,
+        quoteType: 'supplement',
+        quoteData: {
+          supNumber,
+          rmaNumber: rma.request_number,
+          devices: devicesWithWork.map(d => ({
+            id: d.id,
+            model_name: d.model_name,
+            serial_number: d.serial_number,
+            additional_work_needed: d.additional_work_needed,
+            additional_work_pricing: d.additional_work_pricing,
+            service_findings: d.service_findings
+          })),
+          businessSettings: businessSettings || {},
+          avenantTotal
+        },
+        quoteNumber: supNumber,
+        rmaNumber: rma.request_number,
+        clientName: rma.companies?.name || 'Client inconnu',
+        totalAmount: avenantTotal,
+        deviceSummary,
+        previousStatus: rma.status,
+        serviceRequestUpdate: {
+          supplement_number: supNumber
+        },
+        profile: { id: null, full_name: 'System', email: 'system' }
+      });
+      
+      notify(lang === 'en' 
+        ? `📋 Supplement submitted for review! ${supNumber || rma.request_number}` 
+        : `📋 Supplément soumis pour vérification ! ${supNumber || rma.request_number}`);
       reload();
       onClose();
     } catch (err) {
-      console.error('Avenant send error:', err);
+      console.error('Avenant review submit error:', err);
       notify('Erreur: ' + err.message, 'error');
     }
+    setSending(false);
+  };
     setSending(false);
   };
   
@@ -9164,7 +9925,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                 disabled={sending}
                 className="px-6 py-2 bg-[#00A651] hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50"
               >
-                {sending ? 'Génération & envoi...' : '📧 Envoyer au Client'}
+                {sending ? 'Soumission...' : '📋 Soumettre pour Vérification'}
               </button>
             )}
             {alreadySent && (
@@ -9607,6 +10368,7 @@ const STATUS_STYLES = {
     submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'New Order' : 'Nouvelle demande' },
     quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: lang === 'en' ? 'Revision Requested' : 'Révision demandée' },
     quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: lang === 'en' ? 'Quote Sent' : 'Devis envoyé' },
+    pending_quote_review: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'Quote Under Review' : 'Devis en vérification' },
     bc_review: { bg: 'bg-blue-100', text: 'text-blue-700', label: lang === 'en' ? 'PO Under Review' : 'BC à vérifier' },
     in_progress: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? 'In Progress' : 'En cours' },
     ready_to_ship: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: lang === 'en' ? 'Ready to Ship' : 'Prêt à expédier' },
@@ -10298,6 +11060,7 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
   const PARTS_STATUS = {
     submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'New' : 'Nouvelle' },
     quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: lang === 'en' ? 'Quote Sent' : 'Devis envoyé' },
+    pending_quote_review: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'Quote Under Review' : 'Devis en vérification' },
     quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: lang === 'en' ? 'Revision' : 'Révision' },
     bc_review: { bg: 'bg-blue-100', text: 'text-blue-700', label: lang === 'en' ? 'PO to Review' : 'BC à vérifier' },
     in_progress: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? 'In progress' : 'En cours' },
@@ -11605,6 +12368,47 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile, lang = 'fr'
         createdAt: new Date().toISOString()
       };
       
+      // === QUOTE REVIEW: Submit for review ===
+      try {
+        const partsSummary = quoteParts.map(p => `${p.description} x${p.quantity}`).join(', ');
+        
+        await submitForQuoteReview({
+          serviceRequestId: order.id,
+          quoteType: 'parts',
+          quoteData: {
+            ...quoteData,
+            poNumber,
+            quoteNumber: quoteNumber || quoteRef,
+            signatory
+          },
+          quoteNumber: quoteNumber || quoteRef,
+          rmaNumber: poNumber,
+          clientName: order.companies?.name || 'Client inconnu',
+          totalAmount: grandTotal,
+          deviceSummary: partsSummary,
+          previousStatus: order.status,
+          serviceRequestUpdate: {
+            request_number: poNumber,
+            quote_number: quoteNumber,
+            quote_data: quoteData,
+            quoted_at: new Date().toISOString(),
+            revision_notes: null
+          },
+          profile
+        });
+        
+        notify(lang === 'en' 
+          ? `📋 Parts quote submitted for review! ${quoteNumber || quoteRef}` 
+          : `📋 Devis pièces soumis pour vérification ! ${quoteNumber || quoteRef}`);
+        reload();
+        onClose();
+      } catch (err) {
+        notify(lang === 'en' ? `Error: ${err.message}` : `Erreur: ${err.message}`, 'error');
+      }
+      setSaving(false);
+      return;
+      // === END QUOTE REVIEW ===
+      
       // Generate quote PDF
       let quoteUrl = null;
       try {
@@ -12099,7 +12903,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile, lang = 'fr'
                 disabled={saving}
                 className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium disabled:opacity-50"
               >
-                {saving ? (lang === 'en' ? 'Sending...' : 'Envoi...') : (lang === 'en' ? '📧 Send Quote' : '📧 Envoyer le Devis')}
+                {saving ? (lang === 'en' ? 'Submitting...' : 'Envoi...') : (lang === 'en' ? '📋 Submit for Review' : '📋 Soumettre pour Vérification')}
               </button>
             )}
           </div>
@@ -15650,6 +16454,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
                   const poStyles = {
                     submitted: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'New' : 'Nouvelle' },
                     quote_sent: { bg: 'bg-purple-100', text: 'text-purple-700', label: lang === 'en' ? 'Quote Sent' : 'Devis envoyé' },
+    pending_quote_review: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'Quote Under Review' : 'Devis en vérification' },
                     quote_revision_requested: { bg: 'bg-red-100', text: 'text-red-700', label: lang === 'en' ? 'Revision' : 'Révision' },
                     bc_review: { bg: 'bg-blue-100', text: 'text-blue-700', label: lang === 'en' ? 'PO to Review' : 'BC à vérifier' },
                     in_progress: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? 'In progress' : 'En cours' },
@@ -16941,6 +17746,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
 
   const CONTRACT_STATUS_STYLES = {
     requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? '🆕 New request' : '🆕 Nouvelle demande' },
+    pending_quote_review: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? '⏳ Quote Under Review' : '⏳ Devis en vérification' },
     modification_requested: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? '✏️ Modification requested' : '✏️ Modification demandée' },
     refused: { bg: 'bg-red-100', text: 'text-red-700', label: lang === 'en' ? '❌ Rejected' : '❌ Refusé' },
     quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: lang === 'en' ? '📧 Quote sent' : '📧 Devis envoyé' },
@@ -16966,13 +17772,13 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
   const filteredContracts = processedContracts.filter(c => {
     if (filter === 'all') return true;
     if (filter === 'active') return c.status === 'active';
-    if (filter === 'pending') return ['quote_sent', 'quote_approved', 'bc_pending', 'modification_requested', 'refused'].includes(c.status);
+    if (filter === 'pending') return ['pending_quote_review', 'quote_sent', 'quote_approved', 'bc_pending', 'modification_requested', 'refused'].includes(c.status);
     if (filter === 'expired') return c.status === 'expired';
     return true;
   });
 
   const stats = {
-    pending: processedContracts.filter(c => ['quote_sent', 'quote_approved', 'bc_pending', 'modification_requested', 'refused'].includes(c.status)).length,
+    pending: processedContracts.filter(c => ['pending_quote_review', 'quote_sent', 'quote_approved', 'bc_pending', 'modification_requested', 'refused'].includes(c.status)).length,
     active: processedContracts.filter(c => c.status === 'active').length,
     expired: processedContracts.filter(c => c.status === 'expired').length
   };
@@ -17384,20 +18190,16 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent, lang 
         createdAt: new Date().toISOString()
       };
 
-      // Update contract with all quote data
-      const { error: updateError } = await supabase.from('contracts').update({
+      // Save quote data to contract (but don't send yet)
+      await supabase.from('contracts').update({
         contract_number: contractNumber,
         start_date: contractDates.start_date,
         end_date: contractDates.end_date,
-        status: 'quote_sent',
         quote_subtotal: servicesSubtotal,
         quote_shipping: shippingTotal,
         quote_total: grandTotal,
-        quote_data: quoteData,
-        quote_sent_at: new Date().toISOString()
+        quote_data: quoteData
       }).eq('id', contract.id);
-
-      if (updateError) throw updateError;
 
       // Update device pricing in contract_devices
       for (const d of devicePricing) {
@@ -17407,7 +18209,38 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent, lang 
         }).eq('id', d.id);
       }
 
-      notify(lang === 'en' ? `✅ Contract quote sent! # ${contractNumber}` : `✅ Devis contrat envoyé! N° ${contractNumber}`);
+      // === QUOTE REVIEW: Submit for review ===
+      const deviceSummary = devicePricing.map(d => `${d.model} (${d.serial})`).join(', ');
+      const previousStatus = contract.status || 'draft';
+      
+      const { data: review, error: reviewError } = await supabase
+        .from('quote_reviews')
+        .insert({
+          contract_id: contract.id,
+          quote_type: 'contract',
+          quote_data: { ...quoteData, contractNumber, contractId: contract.id },
+          quote_number: contractNumber,
+          rma_number: contractNumber,
+          client_name: contract.companies?.name || contract.client_name || 'Client inconnu',
+          total_amount: grandTotal,
+          device_summary: deviceSummary,
+          submitted_by: profile?.id,
+          submitted_by_name: profile?.full_name || profile?.email || 'Unknown',
+          previous_status: previousStatus
+        })
+        .select()
+        .single();
+      
+      if (reviewError) throw reviewError;
+      
+      // Set contract to pending review
+      await supabase.from('contracts').update({
+        status: 'pending_quote_review',
+        quote_review_id: review.id,
+        quote_rejection_notes: null
+      }).eq('id', contract.id);
+
+      notify(lang === 'en' ? `✅ Contract quote submitted for review! # ${contractNumber}` : `✅ Devis contrat envoyé en vérification! N° ${contractNumber}`);
       onSent();
     } catch (err) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
@@ -18351,6 +19184,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate, lang
 
   const CONTRACT_STATUS_STYLES = {
     requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? '🆕 New request' : '🆕 Nouvelle demande' },
+    pending_quote_review: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? '⏳ Quote Under Review' : '⏳ Devis en vérification' },
     quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: lang === 'en' ? '📧 Quote sent' : '📧 Devis envoyé' },
     quote_approved: { bg: 'bg-purple-100', text: 'text-purple-700', label: lang === 'en' ? '✅ Quote approved' : '✅ Devis approuvé' },
     bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? '📄 Awaiting PO' : '📄 Attente BC' },
@@ -23436,6 +24270,62 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       createdAt: new Date().toISOString()
     };
 
+    // === QUOTE REVIEW: Submit for review instead of sending directly ===
+    if (!isFullyContractCovered) {
+      try {
+        const deviceSummary = devicePricing.map(d => `${d.model} (${d.serial})`).join(', ');
+        
+        await submitForQuoteReview({
+          serviceRequestId: request.id,
+          quoteType: isRevision ? 'revision' : 'initial',
+          quoteData: {
+            ...quoteData,
+            rmaNumber,
+            quoteNumber,
+            newRevisionCount: newRevisionCount || 0,
+            isRevision: !!isRevision,
+            isMetro,
+            hasContractCoveredDevices,
+            contractInfo: contractInfo ? { primaryContract: { id: contractInfo?.primaryContract?.id, contract_number: contractInfo?.primaryContract?.contract_number } } : null,
+            businessSettings: businessSettings || {},
+            signatory
+          },
+          quoteNumber,
+          rmaNumber,
+          clientName: request.companies?.name || 'Client inconnu',
+          totalAmount: grandTotal,
+          deviceSummary,
+          previousStatus: request.status,
+          serviceRequestUpdate: {
+            request_number: rmaNumber,
+            quote_number: quoteNumber,
+            quoted_at: new Date().toISOString(),
+            quote_total: grandTotal,
+            quote_subtotal: servicesSubtotal,
+            quote_shipping: shippingTotal,
+            quote_discount: discountAmount,
+            quote_data: quoteData,
+            quote_revision_notes: null,
+            is_contract_rma: hasContractCoveredDevices,
+            contract_id: hasContractCoveredDevices ? contractInfo?.primaryContract?.id : null,
+            ...(isRevision ? { quote_revision_count: newRevisionCount, bc_file_url: null, bc_submitted_at: null, bc_approved_at: null, bc_signed_by: null, bc_signature_date: null, bc_signature_url: null, signed_quote_url: null, quote_approved_at: null } : {})
+          },
+          profile
+        });
+        
+        notify(lang === 'en' 
+          ? `📋 Quote submitted for review! ${quoteNumber || rmaNumber}` 
+          : `📋 Devis soumis pour vérification ! ${quoteNumber || rmaNumber}`);
+        reload(); 
+        onClose();
+      } catch (err) {
+        notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+      }
+      setSaving(false);
+      return;
+    }
+    // === END QUOTE REVIEW — below only runs for fully contract-covered RMAs ===
+
     try {
       // === REVISION: Archive old quote PDF as internal attachment before generating new one ===
       if (isRevision && request.quote_url) {
@@ -24725,7 +25615,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                   <span className="text-5xl text-white">{isFullyContractCovered ? '📋' : isRevision ? '🔄' : '📧'}</span>
                 </div>
                 <h3 className="text-2xl font-bold text-gray-800 mb-2">
-                  {isFullyContractCovered ? (lang === 'en' ? 'Create RMA (Contract)' : 'Créer le RMA (Contrat)') : isRevision ? (lang === 'en' ? 'Send revised quote' : 'Envoyer le devis révisé') : (lang === 'en' ? 'Confirm quote sending' : "Confirmer l'envoi du devis")}
+                  {isFullyContractCovered ? (lang === 'en' ? 'Create RMA (Contract)' : 'Créer le RMA (Contrat)') : isRevision ? (lang === 'en' ? 'Submit revision for review' : 'Soumettre la révision pour vérification') : (lang === 'en' ? 'Submit quote for review' : 'Soumettre le devis pour vérification')}
                 </h3>
                 <p className="text-gray-600 mb-6">
                   {isFullyContractCovered 
@@ -24810,7 +25700,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                 disabled={saving} 
                 className={`px-10 py-3 text-white rounded-lg font-bold text-lg disabled:opacity-50 ${isFullyContractCovered ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-[#00A651] hover:bg-[#008f45]'}`}
               >
-                {saving ? (lang === 'en' ? 'Sending...' : 'Envoi en cours...') : isFullyContractCovered ? (lang === 'en' ? '📋 Create Contract RMA' : '📋 Créer RMA Contrat') : isRevision ? (lang === 'en' ? '🔄 Send Revised Quote' : '🔄 Envoyer Devis Révisé') : (lang === 'en' ? '✅ Confirm and Send' : '✅ Confirmer et Envoyer')}
+                {saving ? (lang === 'en' ? 'Submitting...' : 'Envoi en cours...') : isFullyContractCovered ? (lang === 'en' ? '📋 Create Contract RMA' : '📋 Créer RMA Contrat') : isRevision ? (lang === 'en' ? '📋 Submit Revision for Review' : '📋 Soumettre Révision pour Vérification') : (lang === 'en' ? '📋 Submit for Review' : '📋 Soumettre pour Vérification')}
               </button>
             )}
             {(loadingContract || loadingParts) && step === 1 && (
@@ -26382,6 +27272,7 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
   const getStatusStyle = (status) => {
     const styles = {
       requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'New request' : 'Nouvelle demande' },
+      pending_quote_review: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'Quote Under Review' : 'Devis en vérification' },
       quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: lang === 'en' ? 'Quote Sent' : 'Devis envoyé' },
       waiting_bc: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'Awaiting PO' : 'Attente BC' },
       bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? '⚠️ PO to review' : '⚠️ BC à vérifier' },
@@ -26591,7 +27482,7 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
       {showAddBundle && <RentalBundleModal bundle={editingBundle} inventory={inventory} onSave={saveBundle} onClose={() => { setShowAddBundle(false); setEditingBundle(null); }} lang={lang} />}
 
       {/* Rental Detail Modal */}
-      {selectedRental && <RentalAdminModal rental={selectedRental} onClose={() => setSelectedRental(null)} notify={notify} reload={reload} businessSettings={businessSettings} lang={lang} />}
+      {selectedRental && <RentalAdminModal rental={selectedRental} onClose={() => setSelectedRental(null)} notify={notify} reload={reload} businessSettings={businessSettings} profile={profile} lang={lang} />}
     </div>
   );
 }
@@ -26834,7 +27725,7 @@ function RentalCalendarView({ bookings, inventory, lang = 'fr' }) {
 }
 
 // Rental Admin Modal - Full management
-function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, lang = 'fr' }) {
+function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, profile, lang = 'fr' }) {
   const t = k => k;
   const [status, setStatus] = useState(rental.status);
   const [saving, setSaving] = useState(false);
@@ -26864,22 +27755,61 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, l
   const sendQuote = async () => {
     setSaving(true);
     try {
-      // Generate quote PDF URL (would be actual PDF generation in production)
-      const quoteUrl = `https://your-domain.com/quotes/rental_${rental.rental_number}.pdf`;
+      // Save quote data to rental (but don't send yet)
       await supabase.from('rental_requests').update({
-        status: 'quote_sent',
         quote_shipping: parseFloat(quoteShipping) || 0,
         quote_tax_rate: taxRate,
         quote_tax: tax,
         quote_total_ht: totalHT,
         quote_total_ttc: totalTTC,
         quote_notes: quoteNotes,
-        quote_url: quoteUrl,
         quoted_at: new Date().toISOString(),
         quote_valid_until: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0]
       }).eq('id', rental.id);
-      notify((lang === 'en' ? 'Quote sent!' : 'Devis envoyé!'));
-      setStatus('quote_sent');
+
+      // === QUOTE REVIEW: Submit for review ===
+      const itemSummary = (rental.rental_request_items || []).map(i => `${i.equipment_model || 'Item'} x${i.quantity}`).join(', ');
+      const previousStatus = rental.status || 'requested';
+      
+      const { data: review, error: reviewError } = await supabase
+        .from('quote_reviews')
+        .insert({
+          rental_request_id: rental.id,
+          quote_type: 'rental',
+          quote_data: {
+            rentalId: rental.id,
+            rentalNumber: rental.rental_number,
+            items: rental.rental_request_items || [],
+            shipping: parseFloat(quoteShipping) || 0,
+            taxRate,
+            totalHT,
+            totalTTC,
+            notes: quoteNotes,
+            clientName: rental.companies?.name || rental.client_name || 'Client'
+          },
+          quote_number: rental.rental_number,
+          rma_number: rental.rental_number,
+          client_name: rental.companies?.name || rental.client_name || 'Client inconnu',
+          total_amount: totalHT,
+          device_summary: itemSummary,
+          submitted_by: profile?.id,
+          submitted_by_name: profile?.full_name || profile?.email || 'Unknown',
+          previous_status: previousStatus
+        })
+        .select()
+        .single();
+      
+      if (reviewError) throw reviewError;
+      
+      // Set rental to pending review
+      await supabase.from('rental_requests').update({
+        status: 'pending_quote_review',
+        quote_review_id: review.id,
+        quote_rejection_notes: null
+      }).eq('id', rental.id);
+
+      notify(lang === 'en' ? '✅ Rental quote submitted for review!' : '✅ Devis location envoyé en vérification!');
+      setStatus('pending_quote_review');
       reload();
     } catch (err) { notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error'); }
     setSaving(false);
@@ -26929,6 +27859,7 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, l
   const getStatusStyle = (s) => {
     const styles = {
       requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'New request' : 'Nouvelle demande' },
+      pending_quote_review: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'Quote Under Review' : 'Devis en vérification' },
       quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: lang === 'en' ? 'Quote Sent' : 'Devis envoyé' },
       waiting_bc: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'Awaiting PO' : 'Attente BC' },
       bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? 'PO to Review' : 'BC à vérifier' },
