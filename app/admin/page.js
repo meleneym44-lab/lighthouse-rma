@@ -7366,10 +7366,10 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       device.inspection_completed_at ? (device.additional_work_needed ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-500') :
                       'bg-gray-100 text-gray-400'
                     }`}>
-                      {device.report_complete ? '✓' : device.inspection_completed_at ? (device.additional_work_needed ? '⚠' : '✓') : idx + 1}
+                      {device.report_complete ? '✓' : device.inspection_completed_at ? (device.additional_work_needed ? '⚠' : '✓') : getDeviceImageUrl(device.model_name) ? <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-7 h-7 object-contain" /> : idx + 1}
                     </div>
                     <div>
-                      <p className="font-bold text-gray-800 flex items-center gap-2">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-5 h-5 object-contain" />}{device.model_name}</p>
+                      <p className="font-bold text-gray-800">{device.model_name}</p>
                       <p className="text-sm text-gray-500 font-mono">SN: {device.serial_number}</p>
                     </div>
                   </div>
