@@ -3786,7 +3786,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
   // APPROVE QUOTE
   // ========================
   const approveQuote = async (review) => {
-    if (review.submitted_by === profile?.id) {
+    if (review.submitted_by === profile?.id && profile?.role !== 'lh_admin') {
       notify(lang === 'en' ? 'You cannot approve your own quote' : 'Vous ne pouvez pas approuver votre propre devis', 'error');
       return;
     }
@@ -4036,169 +4036,454 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
   // ========================
   // QUOTE PREVIEW RENDERER
   // ========================
-  const renderQuotePreview = (review) => {
+const renderQuotePreview = (review) => {
     const qd = review.quote_data || {};
     
+    // ============================================
+    // INITIAL / REVISION QUOTE - Full document view
+    // ============================================
     if (review.quote_type === 'initial' || review.quote_type === 'revision') {
       const devices = qd.devices || [];
+      const bs = qd.businessSettings || {};
+      
       return (
-        <div className="space-y-4">
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h4 className="font-bold text-gray-800 mb-3">{lang === 'en' ? 'Devices & Pricing' : 'Appareils & Tarification'}</h4>
+        <div className="border rounded-xl overflow-hidden">
+          {/* Quote Header */}
+          <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h3>
+                <p className="text-gray-500 text-sm">Worldwide Solutions</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xl font-bold text-[#2D5A7B]">{review.quote_type === 'revision' ? 'DEVIS RÉVISÉ' : 'DEVIS'}</p>
+                <p className="text-sm font-bold text-[#2D5A7B]">N° {qd.quoteNumber || review.quote_number || '—'}</p>
+                {qd.newRevisionCount > 0 && <p className="text-xs text-amber-600 font-medium">Révision {qd.newRevisionCount}</p>}
+                <p className="text-xs text-gray-500">RMA: {qd.rmaNumber || review.rma_number}</p>
+              </div>
+            </div>
+          </div>
+          
+          {/* Info Bar */}
+          <div className="bg-gray-100 px-6 py-2 flex justify-between text-xs border-b">
+            <div><span className="text-gray-500">Date: </span><span className="font-medium">{new Date(qd.createdAt || review.submitted_at).toLocaleDateString('fr-FR')}</span></div>
+            <div><span className="text-gray-500">Validité: </span><span className="font-medium">30 jours</span></div>
+            <div><span className="text-gray-500">Créé par: </span><span className="font-medium">{qd.signatory || qd.createdBy || review.submitted_by_name}</span></div>
+          </div>
+          
+          {/* Client */}
+          <div className="px-6 py-3 border-b">
+            <p className="text-xs text-gray-500 uppercase">Client</p>
+            <p className="font-bold text-[#1a1a2e]">{review.client_name}</p>
+          </div>
+          
+          {/* Contract info if applicable */}
+          {qd.hasContractCoveredDevices && qd.contractInfo?.primaryContract && (
+            <div className="px-6 py-2 bg-green-50 border-b border-green-200">
+              <p className="text-sm text-green-700">📄 {lang === 'en' ? 'Contract' : 'Contrat'}: {qd.contractInfo.primaryContract.contract_number}</p>
+            </div>
+          )}
+          
+          {/* Per-Device Breakdown */}
+          <div className="px-6 py-4 space-y-4">
+            <h4 className="font-bold text-gray-800 text-sm uppercase tracking-wider">{lang === 'en' ? 'Services & Pricing' : 'Services & Tarification'}</h4>
+            
+            {devices.map((d, i) => {
+              const lines = [];
+              if (d.needsCalibration) lines.push({ desc: lang === 'en' ? 'Calibration' : 'Étalonnage', pn: d.calPartNumber, qty: d.calibrationQty || 1, price: d.calibrationPrice || 0 });
+              if (d.needsRepair) lines.push({ desc: lang === 'en' ? 'Repair' : 'Réparation', pn: d.repairPartNumber, qty: 1, price: d.repairPrice || 0 });
+              if (d.needsNettoyage) lines.push({ desc: lang === 'en' ? 'Cleaning' : 'Nettoyage', pn: d.nettoyagePartNumber, qty: 1, price: d.nettoyagePrice || 0 });
+              if (d.additionalParts) {
+                (Array.isArray(d.additionalParts) ? d.additionalParts : []).forEach(p => {
+                  lines.push({ desc: p.description || p.partNumber, pn: p.partNumber, qty: p.quantity || 1, price: p.unitPrice || p.price || 0 });
+                });
+              }
+              
+              return (
+                <div key={i} className="border rounded-lg overflow-hidden">
+                  {/* Device header */}
+                  <div className="bg-gray-50 px-4 py-2 flex justify-between items-center border-b">
+                    <div className="flex items-center gap-2">
+                      {getDeviceImageUrl(d.model) && <img src={getDeviceImageUrl(d.model)} alt="" className="w-5 h-5 object-contain" />}
+                      <span className="font-bold text-[#1a1a2e]">{d.model}</span>
+                      <span className="font-mono text-xs text-gray-500">SN: {d.serial}</span>
+                      {d.isContractCovered && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">📄 Contrat</span>}
+                    </div>
+                    <span className="font-bold text-[#2D5A7B]">{(d.serviceTotal || 0).toFixed(2)} €</span>
+                  </div>
+                  {/* Service line items */}
+                  {lines.length > 0 && (
+                    <table className="w-full text-sm">
+                      <thead className="text-xs text-gray-500">
+                        <tr className="border-b bg-gray-50/50">
+                          <th className="text-left px-4 py-1.5">Description</th>
+                          <th className="text-left px-2 py-1.5">{lang === 'en' ? 'Part #' : 'Réf.'}</th>
+                          <th className="text-center px-2 py-1.5">Qté</th>
+                          <th className="text-right px-2 py-1.5">{lang === 'en' ? 'Unit' : 'P.U.'}</th>
+                          <th className="text-right px-4 py-1.5">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lines.map((line, j) => (
+                          <tr key={j} className="border-b border-gray-50">
+                            <td className="px-4 py-1.5">{line.desc}</td>
+                            <td className="px-2 py-1.5 font-mono text-xs text-gray-500">{line.pn || '—'}</td>
+                            <td className="px-2 py-1.5 text-center">{line.qty}</td>
+                            <td className="px-2 py-1.5 text-right">{(parseFloat(line.price) || 0).toFixed(2)} €</td>
+                            <td className="px-4 py-1.5 text-right font-medium">{((parseFloat(line.price) || 0) * (line.qty || 1)).toFixed(2)} €</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                  {lines.length === 0 && d.isContractCovered && (
+                    <div className="px-4 py-2 text-sm text-green-600 italic">{lang === 'en' ? 'Covered under contract' : 'Couvert par contrat'}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          
+          {/* Totals Section */}
+          <div className="border-t bg-gray-50 px-6 py-4 space-y-1.5">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">{lang === 'en' ? 'Services Subtotal' : 'Sous-total Services'}</span>
+              <span className="font-medium">{(qd.servicesSubtotal || 0).toFixed(2)} €</span>
+            </div>
+            {qd.shipping && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">
+                  {lang === 'en' ? 'Shipping' : 'Transport'}
+                  {qd.shipping.parcels > 0 && ` (${qd.shipping.parcels} ${lang === 'en' ? 'parcels' : 'colis'} × ${(qd.shipping.unitPrice || 0).toFixed(2)} €)`}
+                  {qd.shipping.partNumber && <span className="text-xs text-gray-400 ml-1">[{qd.shipping.partNumber}]</span>}
+                </span>
+                <span className="font-medium">{(qd.shippingTotal || qd.shipping.total || 0).toFixed(2)} €</span>
+              </div>
+            )}
+            {qd.discount?.enabled && (
+              <div className="flex justify-between text-sm text-green-600">
+                <span>
+                  {lang === 'en' ? 'Discount' : 'Remise'}
+                  {qd.discount.type === 'percentage' && ` (${qd.discount.value}%)`}
+                  {qd.discount.note && ` — ${qd.discount.note}`}
+                </span>
+                <span className="font-medium">-{(qd.discountAmount || qd.discount.amount || 0).toFixed(2)} €</span>
+              </div>
+            )}
+            <div className="flex justify-between font-bold text-xl pt-2 border-t-2 border-[#2D5A7B]">
+              <span>TOTAL HT</span>
+              <span className="text-[#00A651]">{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    // ============================================
+    // PARTS QUOTE - Full breakdown
+    // ============================================
+    if (review.quote_type === 'parts') {
+      const parts = qd.parts || [];
+      return (
+        <div className="border rounded-xl overflow-hidden">
+          <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h3>
+                <p className="text-gray-500 text-sm">Worldwide Solutions</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xl font-bold text-[#2D5A7B]">DEVIS PIÈCES</p>
+                <p className="text-sm font-bold text-[#2D5A7B]">N° {qd.quoteNumber || qd.quoteRef || review.quote_number || '—'}</p>
+                <p className="text-xs text-gray-500">PO: {qd.poNumber || review.rma_number}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-gray-100 px-6 py-2 flex justify-between text-xs border-b">
+            <div><span className="text-gray-500">Date: </span><span className="font-medium">{new Date(qd.createdAt || review.submitted_at).toLocaleDateString('fr-FR')}</span></div>
+            <div><span className="text-gray-500">Créé par: </span><span className="font-medium">{qd.signatory || qd.createdBy || review.submitted_by_name}</span></div>
+          </div>
+          
+          <div className="px-6 py-3 border-b">
+            <p className="text-xs text-gray-500 uppercase">Client</p>
+            <p className="font-bold text-[#1a1a2e]">{review.client_name}</p>
+          </div>
+          
+          {/* Parts Table */}
+          <div className="px-6 py-4">
             <table className="w-full text-sm">
-              <thead><tr className="text-left text-gray-500 border-b"><th className="pb-2">{lang === 'en' ? 'Device' : 'Appareil'}</th><th className="pb-2">SN</th><th className="pb-2">Service</th><th className="pb-2 text-right">{lang === 'en' ? 'Price' : 'Prix'}</th></tr></thead>
+              <thead>
+                <tr className="border-b-2 border-gray-200 text-xs text-gray-500">
+                  <th className="text-left py-2">{lang === 'en' ? 'Part #' : 'Réf.'}</th>
+                  <th className="text-left py-2">Description</th>
+                  <th className="text-center py-2">Qté</th>
+                  <th className="text-right py-2">{lang === 'en' ? 'Unit Price' : 'P.U. HT'}</th>
+                  <th className="text-right py-2">Total HT</th>
+                </tr>
+              </thead>
               <tbody>
-                {devices.map((d, i) => (
+                {parts.map((p, i) => (
                   <tr key={i} className="border-b border-gray-100">
-                    <td className="py-2 flex items-center gap-2">{getDeviceImageUrl(d.model) && <img src={getDeviceImageUrl(d.model)} alt="" className="w-4 h-4 object-contain" />}{d.model}</td>
-                    <td className="py-2 font-mono text-xs">{d.serial}</td>
-                    <td className="py-2">
-                      {d.needsCalibration && <span className="text-blue-600 mr-1">🔬</span>}
-                      {d.needsRepair && <span className="text-orange-600 mr-1">🔧</span>}
-                      {d.needsNettoyage && <span className="text-cyan-600">🧹</span>}
-                      {d.isContractCovered && <span className="ml-1 text-xs bg-green-100 text-green-700 px-1 rounded">Contrat</span>}
-                    </td>
-                    <td className="py-2 text-right font-medium">{(d.serviceTotal || 0).toFixed(2)} €</td>
+                    <td className="py-2 font-mono text-xs text-gray-600">{p.partNumber || '—'}</td>
+                    <td className="py-2">{p.description}</td>
+                    <td className="py-2 text-center">{p.quantity}</td>
+                    <td className="py-2 text-right">{(p.unitPrice || 0).toFixed(2)} €</td>
+                    <td className="py-2 text-right font-medium">{(p.lineTotal || (p.quantity * p.unitPrice) || 0).toFixed(2)} €</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           
-          <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-            <div className="flex justify-between text-sm"><span className="text-gray-600">{lang === 'en' ? 'Services subtotal' : 'Sous-total services'}</span><span>{(qd.servicesSubtotal || 0).toFixed(2)} €</span></div>
-            {qd.shipping && <div className="flex justify-between text-sm"><span className="text-gray-600">{lang === 'en' ? 'Shipping' : 'Transport'} ({qd.shipping.parcels || 1} colis)</span><span>{(qd.shippingTotal || qd.shipping.total || 0).toFixed(2)} €</span></div>}
-            {qd.discount?.enabled && <div className="flex justify-between text-sm text-green-600"><span>{lang === 'en' ? 'Discount' : 'Remise'} {qd.discount.note ? `(${qd.discount.note})` : ''}</span><span>-{(qd.discountAmount || 0).toFixed(2)} €</span></div>}
-            <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total HT</span><span className="text-[#00A651]">{(qd.grandTotal || 0).toFixed(2)} €</span></div>
+          {/* Totals */}
+          <div className="border-t bg-gray-50 px-6 py-4 space-y-1.5">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">{lang === 'en' ? 'Parts Subtotal' : 'Sous-total Pièces'}</span>
+              <span className="font-medium">{(qd.partsTotal || 0).toFixed(2)} €</span>
+            </div>
+            {qd.shipping && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">
+                  {lang === 'en' ? 'Shipping' : 'Transport'}
+                  {qd.shipping.parcels > 0 && ` (${qd.shipping.parcels} colis × ${(qd.shipping.unitPrice || 0).toFixed(2)} €)`}
+                </span>
+                <span className="font-medium">{(qd.shipping.total || 0).toFixed(2)} €</span>
+              </div>
+            )}
+            <div className="flex justify-between font-bold text-xl pt-2 border-t-2 border-[#2D5A7B]">
+              <span>TOTAL HT</span>
+              <span className="text-[#00A651]">{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</span>
+            </div>
           </div>
         </div>
       );
     }
     
-    if (review.quote_type === 'parts') {
-      const parts = qd.parts || [];
-      return (
-        <div className="space-y-4">
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h4 className="font-bold text-gray-800 mb-3">{lang === 'en' ? 'Parts' : 'Pièces'}</h4>
-            <table className="w-full text-sm">
-              <thead><tr className="text-left text-gray-500 border-b"><th className="pb-2">{lang === 'en' ? 'Part #' : 'Réf.'}</th><th className="pb-2">Description</th><th className="pb-2 text-center">Qté</th><th className="pb-2 text-right">P.U.</th><th className="pb-2 text-right">Total</th></tr></thead>
-              <tbody>
-                {parts.map((p, i) => (
-                  <tr key={i} className="border-b border-gray-100">
-                    <td className="py-2 font-mono text-xs">{p.partNumber}</td>
-                    <td className="py-2">{p.description}</td>
-                    <td className="py-2 text-center">{p.quantity}</td>
-                    <td className="py-2 text-right">{(p.unitPrice || 0).toFixed(2)} €</td>
-                    <td className="py-2 text-right font-medium">{(p.lineTotal || 0).toFixed(2)} €</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-4">
-            <div className="flex justify-between text-sm"><span className="text-gray-600">{lang === 'en' ? 'Parts' : 'Pièces'}</span><span>{(qd.partsTotal || 0).toFixed(2)} €</span></div>
-            {qd.shipping && <div className="flex justify-between text-sm"><span className="text-gray-600">{lang === 'en' ? 'Shipping' : 'Transport'}</span><span>{(qd.shipping.total || 0).toFixed(2)} €</span></div>}
-            <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total HT</span><span className="text-[#00A651]">{(qd.grandTotal || 0).toFixed(2)} €</span></div>
-          </div>
-        </div>
-      );
-    }
-    
+    // ============================================
+    // SUPPLEMENT / AVENANT - Full breakdown
+    // ============================================
     if (review.quote_type === 'supplement') {
       const devices = qd.devices || [];
       return (
-        <div className="space-y-4">
-          <div className="bg-amber-50 rounded-lg p-4">
-            <h4 className="font-bold text-amber-800 mb-3">⚠ {lang === 'en' ? 'Additional Work Required' : 'Travaux Supplémentaires Requis'}</h4>
-            {devices.map((d, i) => (
-              <div key={i} className="border-b border-amber-200 last:border-0 pb-3 mb-3 last:mb-0">
-                <p className="font-medium flex items-center gap-2">
-                  {getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" className="w-5 h-5 object-contain" />}
-                  {d.model_name} <span className="font-mono text-xs text-gray-500">SN: {d.serial_number}</span>
-                </p>
-                {d.service_findings && <p className="text-sm text-gray-600 mt-1 italic">"{d.service_findings}"</p>}
-                {d.additional_work_pricing && Object.entries(d.additional_work_pricing).map(([key, val]) => (
-                  <div key={key} className="flex justify-between text-sm mt-1 ml-4">
-                    <span>{val.description || key}</span>
-                    <span className="font-medium">{(parseFloat(val.price) || 0).toFixed(2)} €</span>
-                  </div>
-                ))}
+        <div className="border rounded-xl overflow-hidden">
+          <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h3>
+                <p className="text-gray-500 text-sm">Worldwide Solutions</p>
               </div>
-            ))}
+              <div className="text-right">
+                <p className="text-xl font-bold text-[#2D5A7B]">SUPPLÉMENT AU DEVIS</p>
+                <p className="text-sm font-bold text-[#2D5A7B]">N° {qd.supNumber || review.quote_number || '—'}</p>
+                <p className="text-xs text-gray-500">RMA: {qd.rmaNumber || review.rma_number}</p>
+              </div>
+            </div>
           </div>
-          <div className="bg-gray-50 rounded-lg p-4">
-            <div className="flex justify-between font-bold text-lg"><span>{lang === 'en' ? 'Supplement Total' : 'Total Supplément'}</span><span className="text-amber-600">{(qd.avenantTotal || review.total_amount || 0).toFixed(2)} €</span></div>
+          
+          <div className="px-6 py-3 border-b">
+            <p className="text-xs text-gray-500 uppercase">Client</p>
+            <p className="font-bold text-[#1a1a2e]">{review.client_name}</p>
+          </div>
+          
+          <div className="px-6 py-2 bg-amber-50 border-b border-amber-200">
+            <p className="text-sm text-amber-800">⚠ {lang === 'en' ? 'Additional work identified during service' : 'Travaux supplémentaires identifiés lors de l\'intervention'}</p>
+          </div>
+          
+          {/* Per-device breakdown */}
+          <div className="px-6 py-4 space-y-4">
+            {devices.map((d, i) => {
+              const pricing = d.additional_work_pricing || {};
+              const pricingEntries = Object.entries(pricing);
+              const deviceTotal = pricingEntries.reduce((sum, [, val]) => sum + (parseFloat(val.price) || 0), 0);
+              
+              return (
+                <div key={i} className="border rounded-lg overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-2 flex justify-between items-center border-b">
+                    <div className="flex items-center gap-2">
+                      {getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" className="w-5 h-5 object-contain" />}
+                      <span className="font-bold text-[#1a1a2e]">{d.model_name}</span>
+                      <span className="font-mono text-xs text-gray-500">SN: {d.serial_number}</span>
+                    </div>
+                    <span className="font-bold text-[#2D5A7B]">{deviceTotal.toFixed(2)} €</span>
+                  </div>
+                  
+                  {d.service_findings && (
+                    <div className="px-4 py-2 bg-blue-50 border-b text-sm">
+                      <span className="text-xs text-gray-500 uppercase font-medium">{lang === 'en' ? 'Findings' : 'Constatations'}:</span>
+                      <p className="text-gray-700 italic">{d.service_findings}</p>
+                    </div>
+                  )}
+                  
+                  {pricingEntries.length > 0 && (
+                    <table className="w-full text-sm">
+                      <thead className="text-xs text-gray-500">
+                        <tr className="border-b bg-gray-50/50">
+                          <th className="text-left px-4 py-1.5">Description</th>
+                          <th className="text-right px-4 py-1.5">{lang === 'en' ? 'Price' : 'Prix'} HT</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pricingEntries.map(([key, val]) => (
+                          <tr key={key} className="border-b border-gray-50">
+                            <td className="px-4 py-1.5">{val.description || key}</td>
+                            <td className="px-4 py-1.5 text-right font-medium">{(parseFloat(val.price) || 0).toFixed(2)} €</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          
+          {/* Total */}
+          <div className="border-t bg-[#2D5A7B] px-6 py-4">
+            <div className="flex justify-between items-center text-white">
+              <span className="text-lg font-bold">TOTAL SUPPLÉMENT HT</span>
+              <span className="text-2xl font-bold">{(qd.avenantTotal || review.total_amount || 0).toFixed(2)} €</span>
+            </div>
           </div>
         </div>
       );
     }
     
+    // ============================================
+    // CONTRACT QUOTE
+    // ============================================
     if (review.quote_type === 'contract') {
       const devices = qd.devices || [];
       return (
-        <div className="space-y-4">
-          <div className="bg-blue-50 rounded-lg p-4">
-            <h4 className="font-bold text-blue-800 mb-1">📄 {lang === 'en' ? 'Contract Quote' : 'Devis Contrat'}</h4>
-            <p className="text-sm text-gray-600">{qd.contractNumber || review.quote_number}</p>
-            {qd.contractDates && (
-              <p className="text-sm text-gray-500 mt-1">{qd.contractDates.start_date} → {qd.contractDates.end_date}</p>
-            )}
+        <div className="border rounded-xl overflow-hidden">
+          <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h3>
+                <p className="text-gray-500 text-sm">Worldwide Solutions</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xl font-bold text-[#2D5A7B]">DEVIS CONTRAT</p>
+                <p className="text-sm font-bold text-[#2D5A7B]">N° {qd.contractNumber || review.quote_number || '—'}</p>
+              </div>
+            </div>
           </div>
-          <table className="w-full text-sm">
-            <thead><tr className="border-b"><th className="text-left py-2">{lang === 'en' ? 'Device' : 'Appareil'}</th><th className="text-left py-2">SN</th><th className="text-right py-2">{lang === 'en' ? 'Tokens' : 'Tokens'}</th><th className="text-right py-2">{lang === 'en' ? 'Price' : 'Prix'}</th></tr></thead>
-            <tbody>
-              {devices.map((d, i) => (
-                <tr key={i} className="border-b border-gray-100">
-                  <td className="py-2 flex items-center gap-2">{getDeviceImageUrl(d.model) && <img src={getDeviceImageUrl(d.model)} alt="" className="w-4 h-4 object-contain" />}{d.model}</td>
-                  <td className="py-2 font-mono text-xs">{d.serial}</td>
-                  <td className="py-2 text-right">{d.tokens_total || '—'}</td>
-                  <td className="py-2 text-right font-medium">{(d.calibrationPrice || 0).toFixed(2)} €</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="bg-gray-50 rounded-lg p-4 space-y-1">
-            <div className="flex justify-between text-sm"><span>{lang === 'en' ? 'Services' : 'Services'}</span><span>{(qd.servicesSubtotal || 0).toFixed(2)} €</span></div>
-            <div className="flex justify-between text-sm"><span>{lang === 'en' ? 'Shipping' : 'Livraison'}</span><span>{(qd.shippingTotal || 0).toFixed(2)} €</span></div>
-            <div className="flex justify-between font-bold text-lg border-t pt-2"><span>Total HT</span><span className="text-blue-600">{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</span></div>
+          
+          <div className="px-6 py-3 border-b">
+            <p className="text-xs text-gray-500 uppercase">Client</p>
+            <p className="font-bold text-[#1a1a2e]">{review.client_name}</p>
           </div>
-        </div>
-      );
-    }
-    
-    if (review.quote_type === 'rental') {
-      const items = qd.items || [];
-      return (
-        <div className="space-y-4">
-          <div className="bg-cyan-50 rounded-lg p-4">
-            <h4 className="font-bold text-cyan-800 mb-1">📅 {lang === 'en' ? 'Rental Quote' : 'Devis Location'}</h4>
-            <p className="text-sm text-gray-600">{qd.rentalNumber || review.quote_number}</p>
-          </div>
-          {items.length > 0 && (
+          
+          {qd.contractDates && (
+            <div className="px-6 py-2 bg-blue-50 border-b text-sm flex gap-6">
+              <div><span className="text-gray-500">{lang === 'en' ? 'Start' : 'Début'}: </span><span className="font-medium">{qd.contractDates.start_date}</span></div>
+              <div><span className="text-gray-500">{lang === 'en' ? 'End' : 'Fin'}: </span><span className="font-medium">{qd.contractDates.end_date}</span></div>
+              {qd.totalTokens > 0 && <div><span className="text-gray-500">Tokens: </span><span className="font-medium">{qd.totalTokens}</span></div>}
+            </div>
+          )}
+          
+          {/* Devices */}
+          <div className="px-6 py-4">
             <table className="w-full text-sm">
-              <thead><tr className="border-b"><th className="text-left py-2">{lang === 'en' ? 'Equipment' : 'Équipement'}</th><th className="text-right py-2">Qty</th><th className="text-right py-2">{lang === 'en' ? 'Unit' : 'Unit.'}</th><th className="text-right py-2">Total</th></tr></thead>
+              <thead>
+                <tr className="border-b-2 border-gray-200 text-xs text-gray-500">
+                  <th className="text-left py-2">{lang === 'en' ? 'Device' : 'Appareil'}</th>
+                  <th className="text-left py-2">SN</th>
+                  <th className="text-center py-2">Tokens</th>
+                  <th className="text-left py-2">Services</th>
+                  <th className="text-right py-2">{lang === 'en' ? 'Price' : 'Prix'} HT</th>
+                </tr>
+              </thead>
               <tbody>
-                {items.map((item, i) => (
+                {devices.map((d, i) => (
                   <tr key={i} className="border-b border-gray-100">
-                    <td className="py-2">{item.equipment_model || item.description || '—'}</td>
-                    <td className="py-2 text-right">{item.quantity || 1}</td>
-                    <td className="py-2 text-right">{(item.unit_price || 0).toFixed(2)} €</td>
-                    <td className="py-2 text-right font-medium">{(item.line_total || 0).toFixed(2)} €</td>
+                    <td className="py-2 flex items-center gap-2">
+                      {getDeviceImageUrl(d.model) && <img src={getDeviceImageUrl(d.model)} alt="" className="w-4 h-4 object-contain" />}
+                      {d.model}
+                    </td>
+                    <td className="py-2 font-mono text-xs text-gray-500">{d.serial}</td>
+                    <td className="py-2 text-center">{d.tokens_total || '—'}</td>
+                    <td className="py-2 text-xs text-gray-600">
+                      {d.needsCalibration && <span className="mr-1">🔬 {(d.calibrationPrice || 0).toFixed(0)}€</span>}
+                      {d.needsNettoyage && <span>🧹 {(d.nettoyagePrice || 0).toFixed(0)}€</span>}
+                    </td>
+                    <td className="py-2 text-right font-medium">{(d.calibrationPrice || 0).toFixed(2)} €</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          )}
-          <div className="bg-gray-50 rounded-lg p-4 space-y-1">
-            {qd.shipping > 0 && <div className="flex justify-between text-sm"><span>{lang === 'en' ? 'Shipping' : 'Livraison'}</span><span>{(qd.shipping || 0).toFixed(2)} €</span></div>}
-            <div className="flex justify-between font-bold text-lg border-t pt-2"><span>Total HT</span><span className="text-cyan-600">{(qd.totalHT || review.total_amount || 0).toFixed(2)} €</span></div>
-            <div className="flex justify-between text-sm text-gray-500"><span>TTC ({qd.taxRate || 20}%)</span><span>{(qd.totalTTC || 0).toFixed(2)} €</span></div>
           </div>
-          {qd.notes && <div className="bg-amber-50 rounded-lg p-3 text-sm"><span className="font-medium">{lang === 'en' ? 'Notes:' : 'Notes:'}</span> {qd.notes}</div>}
+          
+          <div className="border-t bg-gray-50 px-6 py-4 space-y-1.5">
+            <div className="flex justify-between text-sm"><span className="text-gray-600">{lang === 'en' ? 'Services' : 'Services'}</span><span className="font-medium">{(qd.servicesSubtotal || 0).toFixed(2)} €</span></div>
+            <div className="flex justify-between text-sm"><span className="text-gray-600">{lang === 'en' ? 'Shipping' : 'Transport'}</span><span className="font-medium">{(qd.shippingTotal || 0).toFixed(2)} €</span></div>
+            <div className="flex justify-between font-bold text-xl pt-2 border-t-2 border-[#2D5A7B]"><span>TOTAL HT</span><span className="text-[#00A651]">{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</span></div>
+          </div>
         </div>
       );
     }
+    
+    // ============================================
+    // RENTAL QUOTE
+    // ============================================
+    if (review.quote_type === 'rental') {
+      const items = qd.items || [];
+      return (
+        <div className="border rounded-xl overflow-hidden">
+          <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h3>
+                <p className="text-gray-500 text-sm">Worldwide Solutions</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xl font-bold text-[#2D5A7B]">DEVIS LOCATION</p>
+                <p className="text-sm font-bold text-[#2D5A7B]">N° {qd.rentalNumber || review.quote_number || '—'}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="px-6 py-3 border-b">
+            <p className="text-xs text-gray-500 uppercase">Client</p>
+            <p className="font-bold text-[#1a1a2e]">{review.client_name}</p>
+          </div>
+          
+          {items.length > 0 && (
+            <div className="px-6 py-4">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b-2 border-gray-200 text-xs text-gray-500">
+                    <th className="text-left py-2">{lang === 'en' ? 'Equipment' : 'Équipement'}</th>
+                    <th className="text-center py-2">Qté</th>
+                    <th className="text-right py-2">{lang === 'en' ? 'Unit Price' : 'P.U. HT'}</th>
+                    <th className="text-right py-2">Total HT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item, i) => (
+                    <tr key={i} className="border-b border-gray-100">
+                      <td className="py-2">{item.equipment_model || item.description || '—'}</td>
+                      <td className="py-2 text-center">{item.quantity || 1}</td>
+                      <td className="py-2 text-right">{(item.unit_price || 0).toFixed(2)} €</td>
+                      <td className="py-2 text-right font-medium">{(item.line_total || 0).toFixed(2)} €</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          
+          <div className="border-t bg-gray-50 px-6 py-4 space-y-1.5">
+            {(qd.shipping || 0) > 0 && <div className="flex justify-between text-sm"><span className="text-gray-600">{lang === 'en' ? 'Shipping' : 'Transport'}</span><span className="font-medium">{(qd.shipping || 0).toFixed(2)} €</span></div>}
+            <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total HT</span><span className="text-[#00A651]">{(qd.totalHT || review.total_amount || 0).toFixed(2)} €</span></div>
+            <div className="flex justify-between text-sm text-gray-500"><span>TTC ({qd.taxRate || 20}%)</span><span>{(qd.totalTTC || 0).toFixed(2)} €</span></div>
+          </div>
+          {qd.notes && <div className="px-6 py-3 bg-amber-50 border-t text-sm"><span className="font-medium">Notes:</span> {qd.notes}</div>}
+        </div>
+      );
+    }
+    
+    // Generic fallback - show raw data
     return (
       <div className="bg-gray-50 rounded-lg p-4">
         <pre className="text-xs text-gray-600 whitespace-pre-wrap">{JSON.stringify(qd, null, 2)}</pre>
@@ -4308,7 +4593,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
       {/* Review Detail Modal */}
       {selectedReview && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => { setSelectedReview(null); setRejecting(null); setRejectionNotes(''); }}>
-          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="px-6 py-4 border-b bg-[#1a1a2e] text-white flex justify-between items-center">
               <div>
