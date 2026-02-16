@@ -4103,7 +4103,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
   const waitingBC = activeRMAs.filter(r => ['quote_sent', 'waiting_bc'].includes(r.status) && !r.bc_submitted_at && r.request_type !== 'parts');
   
   // Service statuses: File d'attente, Inspection, Approbation, Étalonnage, Réparation
-  const serviceStatuses = ['in_queue', 'inspection', 'approbation', 'calibration', 'repair', 'calibration_in_progress', 'repair_in_progress'];
+  const serviceStatuses = ['received', 'in_queue', 'inspection', 'approbation', 'calibration', 'repair', 'calibration_in_progress', 'repair_in_progress'];
   // QC statuses
   const qcStatuses = ['qc', 'final_qc'];
   // Ready statuses
