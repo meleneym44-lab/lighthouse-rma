@@ -2451,7 +2451,8 @@ const submitForQuoteReview = async ({
   deviceSummary,
   previousStatus,
   serviceRequestUpdate, // partial update for service_request (quote_data, totals, etc. but NOT status)
-  profile
+  profile,
+  skipStatusChange // If true, don't change main RMA status (used for supplements)
 }) => {
   // 1. Insert review record
   const { data: review, error: reviewError } = await supabase
@@ -2477,10 +2478,14 @@ const submitForQuoteReview = async ({
   // 2. Update service_request with quote data + pending review status
   const srUpdate = {
     ...serviceRequestUpdate,
-    status: 'pending_quote_review',
     quote_review_id: review.id,
     quote_rejection_notes: null // Clear any previous rejection notes
   };
+  
+  // Only change main status for non-supplement reviews
+  if (!skipStatusChange) {
+    srUpdate.status = 'pending_quote_review';
+  }
   
   const { error: updateError } = await supabase
     .from('service_requests')
@@ -3734,6 +3739,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
   const [selectedReview, setSelectedReview] = useState(null);
   const [rejecting, setRejecting] = useState(null);
   const [rejectionNotes, setRejectionNotes] = useState('');
+  const [supplementDeviceNotes, setSupplementDeviceNotes] = useState({}); // { deviceId: notes }
   const [processing, setProcessing] = useState(false);
 
   const loadReviews = useCallback(async () => {
@@ -3918,7 +3924,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
             avenant_total: total,
             avenant_sent_at: new Date().toISOString(),
             supplement_number: qd.supNumber,
-            status: sr.status === 'pending_quote_review' ? (review.previous_status || sr.status) : sr.status,
+            supplement_review_status: null,
             quote_review_id: null,
             bc_submitted_at: null,
             bc_file_url: null,
@@ -3985,16 +3991,53 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
   // REJECT QUOTE
   // ========================
   const rejectQuote = async (review) => {
-    if (!rejectionNotes.trim()) {
+    // For supplements, validate per-device notes
+    if (review.quote_type === 'supplement') {
+      const hasAnyNotes = Object.values(supplementDeviceNotes).some(n => n && n.trim());
+      if (!hasAnyNotes && !rejectionNotes.trim()) {
+        notify(lang === 'en' ? 'Please add correction notes for at least one device' : 'Veuillez ajouter des notes de correction pour au moins un appareil', 'error');
+        return;
+      }
+    } else if (!rejectionNotes.trim()) {
       notify(lang === 'en' ? 'Please describe what needs to be changed' : 'Veuillez décrire ce qui doit être modifié', 'error');
       return;
     }
     setProcessing(true);
     try {
-      // Set status to rma_created (quote needs to be redone) instead of restoring old status
-      const restoreStatus = 'rma_created';
-      
-      if (review.contract_id) {
+      if (review.quote_type === 'supplement') {
+        // === SUPPLEMENT REJECTION: Keep main status, flag supplement for corrections ===
+        await supabase.from('service_requests').update({
+          supplement_review_status: 'corrections_needed',
+          quote_review_id: null
+        }).eq('id', review.service_request_id);
+        
+        // Store per-device supplement rejection notes
+        const qd = review.quote_data || {};
+        const reviewerName = profile?.full_name || profile?.email || 'Admin';
+        for (const device of (qd.devices || [])) {
+          const deviceNotes = supplementDeviceNotes[device.id];
+          if (deviceNotes && deviceNotes.trim()) {
+            await supabase.from('request_devices').update({
+              supplement_rejection_notes: deviceNotes.trim(),
+              supplement_rejection_by: reviewerName,
+              supplement_rejection_at: new Date().toISOString()
+            }).eq('id', device.id);
+          }
+        }
+        // Also store general notes if any
+        if (rejectionNotes.trim()) {
+          for (const device of (qd.devices || [])) {
+            if (!supplementDeviceNotes[device.id]?.trim()) {
+              // Apply general note to devices without specific notes
+              await supabase.from('request_devices').update({
+                supplement_rejection_notes: rejectionNotes.trim(),
+                supplement_rejection_by: reviewerName,
+                supplement_rejection_at: new Date().toISOString()
+              }).eq('id', device.id);
+            }
+          }
+        }
+      } else if (review.contract_id) {
         await supabase.from('contracts').update({
           status: 'requested',
           quote_review_id: null,
@@ -4007,17 +4050,25 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
           quote_rejection_notes: rejectionNotes.trim()
         }).eq('id', review.rental_request_id);
       } else {
+        // Initial/revision/parts quotes
         await supabase.from('service_requests').update({
-          status: restoreStatus,
+          status: 'rma_created',
           quote_review_id: null,
           quote_rejection_notes: rejectionNotes.trim()
         }).eq('id', review.service_request_id);
       }
       
       // Mark review as rejected
+      const allNotes = review.quote_type === 'supplement'
+        ? [rejectionNotes.trim(), ...Object.entries(supplementDeviceNotes).filter(([,n]) => n?.trim()).map(([id, n]) => {
+            const dev = (review.quote_data?.devices || []).find(d => d.id === id);
+            return `[${dev?.model_name || ''} ${dev?.serial_number || ''}] ${n.trim()}`;
+          })].filter(Boolean).join(' | ')
+        : rejectionNotes.trim();
+      
       await supabase.from('quote_reviews').update({
         status: 'rejected',
-        rejection_notes: rejectionNotes.trim(),
+        rejection_notes: allNotes,
         reviewed_by: profile?.id,
         reviewed_by_name: profile?.full_name || profile?.email || 'Admin',
         reviewed_at: new Date().toISOString()
@@ -4026,6 +4077,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
       notify(lang === 'en' ? '✏️ Modification requested — sent back for correction' : '✏️ Modification demandée — renvoyé pour correction');
       setRejecting(null);
       setRejectionNotes('');
+      setSupplementDeviceNotes({});
       setSelectedReview(null);
       loadReviews();
       reload();
@@ -4674,7 +4726,54 @@ const renderQuotePreview = (review) => {
               {renderQuotePreview(selectedReview)}
               
               {/* Modification request input */}
-              {rejecting === selectedReview.id && (
+              {rejecting === selectedReview.id && selectedReview.quote_type === 'supplement' ? (
+                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-3">
+                  <p className="font-medium text-amber-800">✏️ {lang === 'en' ? 'Select devices that need correction:' : 'Sélectionnez les appareils à corriger :'}</p>
+                  
+                  {/* Per-device notes */}
+                  {(selectedReview.quote_data?.devices || []).map(d => (
+                    <div key={d.id} className="bg-white rounded-lg border border-amber-200 p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        {getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" className="w-5 h-5 object-contain" />}
+                        <span className="font-bold text-sm">{d.model_name}</span>
+                        <span className="font-mono text-xs text-gray-500">SN: {d.serial_number}</span>
+                      </div>
+                      <textarea
+                        value={supplementDeviceNotes[d.id] || ''}
+                        onChange={e => setSupplementDeviceNotes(prev => ({ ...prev, [d.id]: e.target.value }))}
+                        rows={2}
+                        className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-400"
+                        placeholder={lang === 'en' ? 'What needs to change on this device? (leave blank to skip)' : 'Que faut-il modifier sur cet appareil ? (laisser vide pour ignorer)'}
+                      />
+                    </div>
+                  ))}
+                  
+                  {/* General note */}
+                  <div>
+                    <p className="text-xs text-amber-600 mb-1">{lang === 'en' ? 'General note (optional):' : 'Note générale (optionnel) :'}</p>
+                    <textarea
+                      value={rejectionNotes}
+                      onChange={e => setRejectionNotes(e.target.value)}
+                      rows={2}
+                      className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400"
+                      placeholder={lang === 'en' ? 'General correction notes...' : 'Notes de correction générales...'}
+                    />
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => rejectQuote(selectedReview)}
+                      disabled={processing || (!rejectionNotes.trim() && !Object.values(supplementDeviceNotes).some(n => n?.trim()))}
+                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
+                    >
+                      {processing ? '...' : (lang === 'en' ? '✏️ Send Back to Technician' : '✏️ Renvoyer au Technicien')}
+                    </button>
+                    <button onClick={() => { setRejecting(null); setRejectionNotes(''); setSupplementDeviceNotes({}); }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+                      {lang === 'en' ? 'Cancel' : 'Annuler'}
+                    </button>
+                  </div>
+                </div>
+              ) : rejecting === selectedReview.id && (
                 <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-3">
                   <p className="font-medium text-amber-800">✏️ {lang === 'en' ? 'What needs to be changed?' : 'Que faut-il modifier ?'}</p>
                   <textarea
@@ -6449,7 +6548,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
   const allReadyToShip = devices.length > 0 && devices.every(d => d.status === 'ready_to_ship' || d.qc_complete);
   const isReadyToShip = allQCComplete && allReadyToShip;
   
-  const hasAdditionalWork = devices.some(d => d.additional_work_needed && !rma.avenant_sent_at);
+  const hasAdditionalWork = devices.some(d => d.additional_work_needed) && !rma.avenant_sent_at && !rma.supplement_review_status;
   const totalAdditionalWork = devices.reduce((sum, d) => {
     if (!d.additional_work_needed || !d.additional_work_items) return sum;
     return sum + d.additional_work_items.reduce((s, item) => s + (parseFloat(item.price) || 0), 0);
@@ -6614,6 +6713,23 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
               className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium flex items-center gap-2"
             >
               {lang === 'en' ? `📄 Create Supplement (€${totalAdditionalWork.toFixed(2)})` : `📄 Créer Supplément (€${totalAdditionalWork.toFixed(2)})`}
+            </button>
+          )}
+          
+          {/* Supplement pending review */}
+          {rma.supplement_review_status === 'pending' && (
+            <span className="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium">
+              📋 {lang === 'en' ? 'Supplement under review' : 'Supplément en vérification'}
+            </span>
+          )}
+          
+          {/* Supplement needs correction */}
+          {rma.supplement_review_status === 'corrections_needed' && (
+            <button
+              onClick={onOpenAvenant}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium flex items-center gap-2 animate-pulse"
+            >
+              ✏️ {lang === 'en' ? 'Correct Supplement' : 'Corriger Supplément'}
             </button>
           )}
           
@@ -8388,16 +8504,20 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           const inspectedWork = withWork.filter(d => d.inspection_completed_at || d.report_complete).length;
           const totalWithWork = withWork.length;
           const allWorkInspected = totalWithWork > 0 && inspectedWork >= totalWithWork;
-          const supplementNeeded = totalWithWork > 0 && !rma.avenant_sent_at;
+          const supplementPendingReview = rma.supplement_review_status === 'pending';
+          const supplementNeedsCorrection = rma.supplement_review_status === 'corrections_needed' || withWork.some(d => d.supplement_rejection_notes);
+          const supplementNeeded = totalWithWork > 0 && !rma.avenant_sent_at && !supplementPendingReview && !supplementNeedsCorrection;
           const supplementSent = !!rma.avenant_sent_at && !rma.avenant_approved_at;
           const supplementApproved = !!rma.avenant_approved_at;
           
-          if (totalWithWork === 0 && !supplementSent && !supplementApproved) return null;
+          if (totalWithWork === 0 && !supplementSent && !supplementApproved && !supplementPendingReview) return null;
           
           return (
             <div className={`mx-4 mt-2 rounded-lg p-3 flex items-center justify-between ${
               supplementApproved ? 'bg-green-50 border border-green-200' :
               supplementSent ? 'bg-purple-50 border border-purple-200' :
+              supplementPendingReview ? 'bg-blue-50 border border-blue-200' :
+              supplementNeedsCorrection ? 'bg-amber-50 border-2 border-amber-300' :
               allWorkInspected && supplementNeeded ? 'bg-amber-50 border border-amber-300' :
               'bg-blue-50 border border-blue-200'
             }`}>
@@ -8430,7 +8550,18 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 {supplementSent && (
                   <span className="text-sm font-medium text-purple-700">⏳ {lang === 'en' ? 'Supplement sent — awaiting approval' : 'Supplément envoyé — attente approbation'}</span>
                 )}
-                {allWorkInspected && supplementNeeded && (
+                {supplementPendingReview && (
+                  <span className="text-sm font-medium text-blue-700">📋 {lang === 'en' ? 'Supplement under review' : 'Supplément en vérification'}</span>
+                )}
+                {supplementNeedsCorrection && !supplementPendingReview && (
+                  <button
+                    onClick={() => setShowAvenantPreview(true)}
+                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium animate-pulse"
+                  >
+                    ✏️ {lang === 'en' ? 'Correct Supplement' : 'Corriger Supplément'}
+                  </button>
+                )}
+                {allWorkInspected && supplementNeeded && !supplementNeedsCorrection && !supplementPendingReview && (
                   <button
                     onClick={() => setShowAvenantPreview(true)}
                     className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium"
@@ -8443,6 +8574,22 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 )}
               </div>
             </div>
+            
+            {/* Per-device supplement correction notes */}
+            {devices.some(d => d.supplement_rejection_notes) && (
+              <div className="mt-3 space-y-2">
+                {devices.filter(d => d.supplement_rejection_notes).map(d => (
+                  <div key={d.id} className="bg-white rounded-lg p-2 border border-amber-200 flex items-start gap-2">
+                    <span className="text-amber-500">✏️</span>
+                    <div className="flex-1">
+                      <span className="font-medium text-sm text-amber-800">{d.model_name} <span className="font-mono text-xs text-gray-500">({d.serial_number})</span></span>
+                      <p className="text-sm text-amber-700">{d.supplement_rejection_notes}</p>
+                      {d.supplement_rejection_by && <p className="text-xs text-amber-500">— {d.supplement_rejection_by}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           );
         })()}
         
@@ -8502,6 +8649,24 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                     {device.shipping_address_id && device.shipping_address_id !== rma.shipping_address_id && (
                       <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium">{lang === 'en' ? 'Specific address' : 'Adresse spécifique'}</span>
                     )}
+                  </div>
+                )}
+                
+                {/* Supplement correction needed badge */}
+                {device.supplement_rejection_notes && (
+                  <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2" onClick={e => e.stopPropagation()}>
+                    <span className="text-amber-500">✏️</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-bold text-amber-800">{lang === 'en' ? 'Correction needed' : 'Correction nécessaire'}</span>
+                      <p className="text-xs text-amber-700 truncate">{device.supplement_rejection_notes}</p>
+                      {device.supplement_rejection_by && <p className="text-[10px] text-amber-400">— {device.supplement_rejection_by}</p>}
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowServiceModal(device); }}
+                      className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-xs font-medium whitespace-nowrap"
+                    >
+                      🔧 {lang === 'en' ? 'Fix' : 'Corriger'}
+                    </button>
                   </div>
                 )}
               </div>
@@ -8848,6 +9013,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
         technician_name: technicianName,
         cal_type: calType,
         reception_result: receptionResult
+        // NOTE: supplement_rejection_notes are NOT cleared here — they persist until re-submission
       };
       
       const { error } = await supabase.from('request_devices').update(updateData).eq('id', device.id);
@@ -9095,6 +9261,22 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
           </div>
         );
       })()}
+
+      {/* Supplement correction notes from reviewer */}
+      {device.supplement_rejection_notes && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+          <div className="flex items-center gap-3 mb-2">
+            <span className="text-lg">✏️</span>
+            <span className="font-bold text-amber-800">{lang === 'en' ? 'Reviewer requested correction' : 'Le vérificateur demande une correction'}</span>
+          </div>
+          <div className="ml-9 bg-white rounded-lg p-3 border border-amber-200">
+            <p className="text-amber-900">{device.supplement_rejection_notes}</p>
+          </div>
+          {device.supplement_rejection_by && (
+            <p className="ml-9 mt-1 text-xs text-amber-500">— {device.supplement_rejection_by}</p>
+          )}
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="space-y-4">
@@ -10048,10 +10230,23 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
         deviceSummary,
         previousStatus: rma.status,
         serviceRequestUpdate: {
-          supplement_number: supNumber
+          supplement_number: supNumber,
+          supplement_review_status: 'pending'
         },
+        skipStatusChange: true, // Don't change main RMA status for supplements
         profile: { id: null, full_name: 'System', email: 'system' }
       });
+      
+      // Clear per-device rejection notes on re-submission
+      for (const d of devicesWithWork) {
+        if (d.supplement_rejection_notes) {
+          await supabase.from('request_devices').update({
+            supplement_rejection_notes: null,
+            supplement_rejection_by: null,
+            supplement_rejection_at: null
+          }).eq('id', d.id);
+        }
+      }
       
       notify(lang === 'en' 
         ? `📋 Supplement submitted for review! ${supNumber || rma.request_number}` 
@@ -10111,6 +10306,29 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
               </div>
             </div>
           </div>
+
+          {/* Correction notes banner */}
+          {rma.supplement_review_status === 'corrections_needed' && devices.some(d => d.supplement_rejection_notes) && (
+            <div className="mx-6 mt-4 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-lg">✏️</span>
+                <span className="font-bold text-amber-800">{lang === 'en' ? 'Reviewer requested corrections' : 'Le vérificateur demande des corrections'}</span>
+              </div>
+              <div className="space-y-2 ml-9">
+                {devices.filter(d => d.supplement_rejection_notes).map(d => (
+                  <div key={d.id} className="bg-white rounded-lg p-3 border border-amber-200">
+                    <div className="flex items-center gap-2 mb-1">
+                      {getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" className="w-4 h-4 object-contain" />}
+                      <span className="font-bold text-sm text-[#1a1a2e]">{d.model_name}</span>
+                      <span className="font-mono text-xs text-gray-500">({d.serial_number})</span>
+                    </div>
+                    <p className="text-amber-900 text-sm">{d.supplement_rejection_notes}</p>
+                    {d.supplement_rejection_by && <p className="text-xs text-amber-500 mt-1">— {d.supplement_rejection_by}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Info Bar */}
           <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
@@ -10276,14 +10494,19 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
             >
               {downloading ? '...' : '📥 Télécharger PDF'}
             </button>
-            {!alreadySent && (
+            {!alreadySent && rma.supplement_review_status !== 'pending' && (
               <button 
                 onClick={sendAvenant}
                 disabled={sending}
                 className="px-6 py-2 bg-[#00A651] hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50"
               >
-                {sending ? 'Soumission...' : '📋 Soumettre pour Vérification'}
+                {sending ? 'Soumission...' : (rma.supplement_review_status === 'corrections_needed' ? '📋 Re-soumettre pour Vérification' : '📋 Soumettre pour Vérification')}
               </button>
+            )}
+            {rma.supplement_review_status === 'pending' && (
+              <span className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-medium">
+                📋 {lang === 'en' ? 'Under review' : 'En cours de vérification'}
+              </span>
             )}
             {alreadySent && (
               <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">
