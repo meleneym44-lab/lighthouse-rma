@@ -5728,7 +5728,8 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               
               // Detect: device received but quote not approved
               const quotePhaseStatuses = ['quote_sent', 'pending_quote_review', 'waiting_bc', 'bc_review', 'bc_submitted', 'rma_created', 'approved'];
-              const deviceReceivedEarly = (rma.received_at || device.status === 'received') && quotePhaseStatuses.includes(rma.status);
+              const initialQuoteDone = rma.quote_sent_at || rma.avenant_sent_at || rma.bc_submitted_at;
+              const deviceReceivedEarly = (rma.received_at || device.status === 'received') && quotePhaseStatuses.includes(rma.status) && !initialQuoteDone;
               
               return (
                 <div className="flex w-full">
@@ -7385,7 +7386,8 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     // Detect: device physically received but quote not yet approved
     // RMA has received_at OR device status is 'received' BUT RMA is still in quote/BC phase
     const quotePhaseStatuses = ['quote_sent', 'pending_quote_review', 'waiting_bc', 'bc_review', 'bc_submitted', 'rma_created', 'approved'];
-    const deviceReceivedEarly = (rma.received_at || device.status === 'received') && quotePhaseStatuses.includes(rma.status);
+    const initialQuoteDone = rma.quote_sent_at || rma.avenant_sent_at || rma.bc_submitted_at;
+    const deviceReceivedEarly = (rma.received_at || device.status === 'received') && quotePhaseStatuses.includes(rma.status) && !initialQuoteDone;
     
     // Smart status: use device.status only if it's a "real" device status (received onwards)
     const deviceSpecificStatuses = ['received', 'in_queue', 'inspection', 'calibration', 'calibration_in_progress', 
@@ -8464,7 +8466,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           <span className="text-sm text-amber-600">{lang === 'en' ? 'Awaiting approval from reviewer' : 'En attente d\'approbation'}</span>
         </div>
       )}
-      {rma.quote_rejection_notes && rma.status !== 'pending_quote_review' && rma.status !== 'quote_sent' && (
+      {rma.quote_rejection_notes && rma.status === 'rma_created' && (
         <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4">
           <div className="flex items-center gap-3 mb-2">
             <span className="text-lg">✏️</span>
