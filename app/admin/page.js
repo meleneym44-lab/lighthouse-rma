@@ -8513,6 +8513,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           if (totalWithWork === 0 && !supplementSent && !supplementApproved && !supplementPendingReview) return null;
           
           return (
+            <>
             <div className={`mx-4 mt-2 rounded-lg p-3 flex items-center justify-between ${
               supplementApproved ? 'bg-green-50 border border-green-200' :
               supplementSent ? 'bg-purple-50 border border-purple-200' :
@@ -8590,6 +8591,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 ))}
               </div>
             )}
+            </>
           );
         })()}
         
