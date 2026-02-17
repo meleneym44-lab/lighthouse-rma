@@ -4295,9 +4295,21 @@ const renderQuotePreview = (review) => {
           {/* Per-device breakdown */}
           <div className="px-6 py-4 space-y-4">
             {devices.map((d, i) => {
-              const pricing = d.additional_work_pricing || {};
-              const pricingEntries = Object.entries(pricing);
-              const deviceTotal = pricingEntries.reduce((sum, [, val]) => sum + (parseFloat(val.price) || 0), 0);
+              // Support both new format (additional_work_items array) and old format (additional_work_pricing object)
+              let items = (d.additional_work_items || []).filter(item => !item.warranty);
+              
+              // Fallback: convert old additional_work_pricing format if new format is empty
+              if (items.length === 0 && d.additional_work_pricing && typeof d.additional_work_pricing === 'object') {
+                items = Object.entries(d.additional_work_pricing).map(([key, val]) => ({
+                  description: val.description || key,
+                  partNumber: val.partNumber || val.part_number || '',
+                  part_number: val.partNumber || val.part_number || '',
+                  quantity: val.quantity || 1,
+                  price: val.price || 0
+                }));
+              }
+              
+              const deviceTotal = items.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0);
               
               return (
                 <div key={i} className="border rounded-lg overflow-hidden">
@@ -4317,23 +4329,52 @@ const renderQuotePreview = (review) => {
                     </div>
                   )}
                   
-                  {pricingEntries.length > 0 && (
+                  {items.length > 0 && (
                     <table className="w-full text-sm">
                       <thead className="text-xs text-gray-500">
                         <tr className="border-b bg-gray-50/50">
                           <th className="text-left px-4 py-1.5">Description</th>
+                          <th className="text-left px-2 py-1.5">{lang === 'en' ? 'Part #' : 'Réf.'}</th>
+                          <th className="text-center px-2 py-1.5">Qté</th>
                           <th className="text-right px-4 py-1.5">{lang === 'en' ? 'Price' : 'Prix'} HT</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {pricingEntries.map(([key, val]) => (
-                          <tr key={key} className="border-b border-gray-50">
-                            <td className="px-4 py-1.5">{val.description || key}</td>
-                            <td className="px-4 py-1.5 text-right font-medium">{(parseFloat(val.price) || 0).toFixed(2)} €</td>
+                        {items.map((item, idx) => (
+                          <tr key={idx} className="border-b border-gray-50">
+                            <td className="px-4 py-1.5">{item.description || item.type || '—'}</td>
+                            <td className="px-2 py-1.5 font-mono text-xs text-gray-500">{item.partNumber || item.part_number || '—'}</td>
+                            <td className="px-2 py-1.5 text-center">{item.quantity || 1}</td>
+                            <td className="px-4 py-1.5 text-right font-medium">{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)} €</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                  )}
+                  
+                  {/* Warranty items shown separately */}
+                  {(d.additional_work_items || []).filter(item => item.warranty).length > 0 && (
+                    <div className="px-4 py-2 bg-green-50 border-t">
+                      <p className="text-xs text-green-700 font-medium mb-1">{lang === 'en' ? 'Under Warranty' : 'Sous Garantie'}</p>
+                      {(d.additional_work_items || []).filter(item => item.warranty).map((item, idx) => (
+                        <p key={idx} className="text-sm text-green-600">✓ {item.description || item.type}</p>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* Debug: show raw data if no items found */}
+                  {items.length === 0 && (
+                    <div className="px-4 py-2 bg-yellow-50 border-t text-xs">
+                      <p className="font-medium text-yellow-800 mb-1">⚠ {lang === 'en' ? 'No pricing items found' : 'Aucun élément tarifaire trouvé'}</p>
+                      <details>
+                        <summary className="cursor-pointer text-yellow-600">Debug data</summary>
+                        <pre className="text-xs text-gray-500 mt-1 whitespace-pre-wrap">{JSON.stringify({
+                          additional_work_items: d.additional_work_items,
+                          additional_work_pricing: d.additional_work_pricing,
+                          keys: Object.keys(d)
+                        }, null, 2)}</pre>
+                      </details>
+                    </div>
                   )}
                 </div>
               );
@@ -9906,11 +9947,35 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
 function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySent, businessSettings, lang = 'fr' }) {
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const devicesWithWork = devices.filter(d => d.additional_work_needed && d.additional_work_items?.length > 0);
-  const devicesRAS = devices.filter(d => !d.additional_work_needed || !d.additional_work_items?.length);
+  const devicesWithWork = devices.filter(d => d.additional_work_needed && (d.additional_work_items?.length > 0 || (d.additional_work_pricing && Object.keys(d.additional_work_pricing).length > 0)));
+  const devicesRAS = devices.filter(d => !d.additional_work_needed || (!d.additional_work_items?.length && !(d.additional_work_pricing && Object.keys(d.additional_work_pricing).length > 0)));
+  
+  console.log('🔍 AvenantPreview devices:', devices.map(d => ({
+    model: d.model_name, serial: d.serial_number,
+    additional_work_needed: d.additional_work_needed,
+    items_count: d.additional_work_items?.length || 0,
+    items: d.additional_work_items,
+    pricing: d.additional_work_pricing
+  })));
+  console.log('🔍 devicesWithWork:', devicesWithWork.length, 'devicesRAS:', devicesRAS.length);
+  
+  // Helper to get work items from device (supports both formats)
+  const getWorkItems = (device) => {
+    if (device.additional_work_items?.length > 0) return device.additional_work_items;
+    if (device.additional_work_pricing && typeof device.additional_work_pricing === 'object') {
+      return Object.entries(device.additional_work_pricing).map(([key, val]) => ({
+        description: val.description || key,
+        part_number: val.partNumber || val.part_number || '',
+        quantity: val.quantity || 1,
+        price: val.price || 0,
+        warranty: false
+      }));
+    }
+    return [];
+  };
   
   const totalAvenant = devicesWithWork.reduce((sum, device) => {
-    const deviceTotal = (device.additional_work_items || []).filter(i => !i.warranty).reduce((dSum, item) => 
+    const deviceTotal = getWorkItems(device).filter(i => !i.warranty).reduce((dSum, item) => 
       dSum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
     );
     return sum + deviceTotal;
@@ -9952,9 +10017,8 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
       // Calculate total for the supplement
       let avenantTotal = 0;
       devicesWithWork.forEach(d => {
-        if (d.additional_work_pricing) {
-          avenantTotal += Object.values(d.additional_work_pricing).reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0);
-        }
+        const items = getWorkItems(d);
+        avenantTotal += items.filter(i => !i.warranty).reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0);
       });
       
       // === QUOTE REVIEW: Submit supplement for review ===
@@ -9971,7 +10035,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
             model_name: d.model_name,
             serial_number: d.serial_number,
             additional_work_needed: d.additional_work_needed,
-            additional_work_pricing: d.additional_work_pricing,
+            additional_work_items: getWorkItems(d),
             service_findings: d.service_findings
           })),
           businessSettings: businessSettings || {},
@@ -10083,7 +10147,10 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
           {/* Devices with additional work */}
           <div className="px-8 py-6 space-y-6">
             {devicesWithWork.map(device => {
-              const deviceTotal = (device.additional_work_items || []).filter(i => !i.warranty).reduce((sum, item) => 
+              const deviceItems = getWorkItems(device);
+              const billableItems = deviceItems.filter(i => !i.warranty);
+              const warrantyItems = deviceItems.filter(i => i.warranty);
+              const deviceTotal = billableItems.reduce((sum, item) => 
                 sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0
               );
               
@@ -10104,7 +10171,7 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                     </div>
                   )}
                   
-                  {device.additional_work_items?.length > 0 && (
+                  {billableItems.length > 0 && (
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b-2 border-gray-200">
@@ -10115,15 +10182,23 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
                         </tr>
                       </thead>
                       <tbody>
-                        {(device.additional_work_items || []).map((item, idx) => (
-                          <tr key={idx} className={`border-b border-gray-100 ${item.warranty ? 'bg-blue-50' : ''}`}>
+                        {billableItems.map((item, idx) => (
+                          <tr key={idx} className="border-b border-gray-100">
+                            <td className="py-2">{item.description}</td>
+                            <td className="py-2 text-center">{item.quantity}</td>
+                            <td className="py-2 text-right whitespace-nowrap">{(parseFloat(item.price) || 0).toFixed(2)} €</td>
+                            <td className="py-2 text-right font-medium whitespace-nowrap">{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)} €</td>
+                          </tr>
+                        ))}
+                        {warrantyItems.map((item, idx) => (
+                          <tr key={`w-${idx}`} className="border-b border-gray-100 bg-blue-50">
                             <td className="py-2">
                               {item.description}
-                              {item.warranty && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">🛡️ Garantie</span>}
+                              <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">🛡️ Garantie</span>
                             </td>
                             <td className="py-2 text-center">{item.quantity}</td>
-                            <td className="py-2 text-right whitespace-nowrap">{item.warranty ? '—' : `${(parseFloat(item.price) || 0).toFixed(2)} €`}</td>
-                            <td className="py-2 text-right font-medium whitespace-nowrap">{item.warranty ? <span className="text-blue-600">Sous garantie</span> : `${((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)} €`}</td>
+                            <td className="py-2 text-right whitespace-nowrap">—</td>
+                            <td className="py-2 text-right font-medium whitespace-nowrap"><span className="text-blue-600">Sous garantie</span></td>
                           </tr>
                         ))}
                       </tbody>
