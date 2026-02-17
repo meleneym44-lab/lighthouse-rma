@@ -6724,14 +6724,24 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
           )}
           
           {/* Supplement needs correction */}
-          {rma.supplement_review_status === 'corrections_needed' && (
-            <button
-              onClick={onOpenAvenant}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium flex items-center gap-2 animate-pulse"
-            >
-              ✏️ {lang === 'en' ? 'Correct Supplement' : 'Corriger Supplément'}
-            </button>
-          )}
+          {rma.supplement_review_status === 'corrections_needed' && (() => {
+            const deviceToFix = devices.find(d => d.supplement_rejection_notes);
+            return deviceToFix ? (
+              <button
+                onClick={() => onStartService(deviceToFix)}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium flex items-center gap-2 animate-pulse"
+              >
+                ✏️ {lang === 'en' ? 'Correct Supplement' : 'Corriger Supplément'} — {deviceToFix.model_name}
+              </button>
+            ) : (
+              <button
+                onClick={onOpenAvenant}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium flex items-center gap-2 animate-pulse"
+              >
+                ✏️ {lang === 'en' ? 'Correct Supplement' : 'Corriger Supplément'}
+              </button>
+            );
+          })()}
           
           {/* Avenant sent indicator */}
           {rma.avenant_sent_at && (
@@ -8466,6 +8476,42 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         </div>
       )}
 
+      {/* Supplement Correction Alert */}
+      {rma.supplement_review_status === 'corrections_needed' && (
+        <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <span className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center text-xl">✏️</span>
+              <div>
+                <span className="font-bold text-amber-900 text-lg">{lang === 'en' ? 'Supplement needs correction' : 'Le supplément nécessite une correction'}</span>
+                <p className="text-sm text-amber-700">{lang === 'en' ? 'The reviewer has requested changes — click a device below to fix' : 'Le vérificateur a demandé des modifications — cliquez sur un appareil ci-dessous pour corriger'}</p>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-2 ml-13">
+            {devices.filter(d => d.supplement_rejection_notes).map(d => (
+              <div key={d.id} className="bg-white rounded-lg p-3 border border-amber-300 flex items-center justify-between">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  {getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" className="w-6 h-6 object-contain" />}
+                  <div className="min-w-0">
+                    <span className="font-bold text-sm text-[#1a1a2e]">{d.model_name}</span>
+                    <span className="font-mono text-xs text-gray-500 ml-2">({d.serial_number})</span>
+                    <p className="text-sm text-amber-800 truncate">{d.supplement_rejection_notes}</p>
+                    {d.supplement_rejection_by && <p className="text-xs text-amber-500">— {d.supplement_rejection_by}</p>}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowServiceModal(d)}
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium whitespace-nowrap ml-3"
+                >
+                  🔧 {lang === 'en' ? 'Fix' : 'Corriger'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Chat Status Indicator - Link to Messages Sheet */}
       {rma.chat_status === 'open' && (
         <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 flex items-center justify-between">
@@ -8554,14 +8600,24 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 {supplementPendingReview && (
                   <span className="text-sm font-medium text-blue-700">📋 {lang === 'en' ? 'Supplement under review' : 'Supplément en vérification'}</span>
                 )}
-                {supplementNeedsCorrection && !supplementPendingReview && (
-                  <button
-                    onClick={() => setShowAvenantPreview(true)}
-                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium animate-pulse"
-                  >
-                    ✏️ {lang === 'en' ? 'Correct Supplement' : 'Corriger Supplément'}
-                  </button>
-                )}
+                {supplementNeedsCorrection && !supplementPendingReview && (() => {
+                  const deviceToFix = devices.find(d => d.supplement_rejection_notes);
+                  return deviceToFix ? (
+                    <button
+                      onClick={() => setShowServiceModal(deviceToFix)}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium animate-pulse"
+                    >
+                      ✏️ {lang === 'en' ? 'Correct Supplement' : 'Corriger Supplément'} — {deviceToFix.model_name} ({deviceToFix.serial_number})
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowAvenantPreview(true)}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium animate-pulse"
+                    >
+                      ✏️ {lang === 'en' ? 'Correct Supplement' : 'Corriger Supplément'}
+                    </button>
+                  );
+                })()}
                 {allWorkInspected && supplementNeeded && !supplementNeedsCorrection && !supplementPendingReview && (
                   <button
                     onClick={() => setShowAvenantPreview(true)}
@@ -9171,10 +9227,12 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     if (inspectionLocked) return (<>
       <span className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium">{lang === 'en' ? '✅ Inspection done' : '✅ Inspection terminée'}</span>
       <button onClick={unlockInspection} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium">{lang === 'en' ? '✏️ Edit' : '✏️ Modifier'}</button>
-      {inspectionStats.allWorkInspected && onOpenSupplement && !avenantSent
+      {inspectionStats.allWorkInspected && onOpenSupplement && !avenantSent && !rma.supplement_review_status
         ? <button onClick={onOpenSupplement} className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Create Supplement' : '📄 Créer Supplément'}</button>
-        : !avenantSent && <span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">{lang === 'en' ? `⏳ ${inspectionStats.inspectedWithWork}/${inspectionStats.totalWithWork} inspected` : `⏳ ${inspectionStats.inspectedWithWork}/${inspectionStats.totalWithWork} inspectés`}</span>
+        : !avenantSent && !rma.supplement_review_status && <span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">{lang === 'en' ? `⏳ ${inspectionStats.inspectedWithWork}/${inspectionStats.totalWithWork} inspected` : `⏳ ${inspectionStats.inspectedWithWork}/${inspectionStats.totalWithWork} inspectés`}</span>
       }
+      {rma.supplement_review_status === 'pending' && <span className="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium">📋 {lang === 'en' ? 'Supplement under review' : 'Supplément en vérification'}</span>}
+      {rma.supplement_review_status === 'corrections_needed' && <span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm font-medium animate-pulse">✏️ {lang === 'en' ? 'Correction needed — edit work items below' : 'Correction nécessaire — modifier les travaux ci-dessous'}</span>}
       {avenantSent && !avenantApproved && <span className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm">{lang === 'en' ? '⏳ Supplement sent' : '⏳ Supplément envoyé'}</span>}
       {avenantApproved && <button onClick={handlePreviewClick} disabled={!canPreviewReport} className={`px-5 py-2 rounded-lg font-medium ${canPreviewReport ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-200 text-blue-400 cursor-not-allowed'}`}>{lang === 'en' ? '📄 Report →' : '📄 Rapport →'}</button>}
     </>);
@@ -9197,6 +9255,18 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     if (additionalWorkNeeded && avenantSent && !avenantApproved) return (<>
       <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : lang === 'en' ? 'Save' : 'Enregistrer'}</button>
       <span className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg">{lang === 'en' ? '⏳ Awaiting supplement approval' : '⏳ Attente approbation supplément'}</span>
+    </>);
+    
+    // Supplement under review
+    if (additionalWorkNeeded && rma.supplement_review_status === 'pending') return (<>
+      <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : lang === 'en' ? 'Save' : 'Enregistrer'}</button>
+      <span className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-medium">📋 {lang === 'en' ? 'Supplement under review' : 'Supplément en vérification'}</span>
+    </>);
+    
+    // Supplement needs correction
+    if (additionalWorkNeeded && rma.supplement_review_status === 'corrections_needed') return (<>
+      <button onClick={saveProgress} disabled={saving} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg disabled:opacity-50">{saving ? '...' : lang === 'en' ? 'Save' : 'Enregistrer'}</button>
+      <span className="px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-medium animate-pulse">✏️ {lang === 'en' ? 'Correction needed — edit work items and re-submit' : 'Correction nécessaire — modifier et re-soumettre'}</span>
     </>);
     
     // Supplement approved → can complete report
