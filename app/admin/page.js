@@ -18608,9 +18608,9 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
             {newRequests.map(contract => {
               const devices = contract.contract_devices || [];
               return (
-                <div key={contract.id} className="bg-white rounded-lg p-4 flex items-center justify-between shadow-sm border border-amber-100">
+                <div key={contract.id} className={`bg-white rounded-lg p-4 flex items-center justify-between shadow-sm border ${contract.quote_rejection_notes ? 'border-amber-300 bg-amber-50/50' : 'border-amber-100'}`}>
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
+                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-2xl ${contract.quote_rejection_notes ? 'bg-amber-200' : 'bg-amber-100'}`}>{contract.quote_rejection_notes ? '✏️' : '📋'}</div>
                     <div>
                       <p className="font-medium text-gray-800">{contract.companies?.name || 'Client'}</p>
                       <p className="text-sm text-gray-500">
@@ -18619,13 +18619,18 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
                       <p className="text-xs text-gray-400">
                         {lang === 'en' ? 'Desired period:' : 'Période souhaitée:'} {new Date(contract.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} - {new Date(contract.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
                       </p>
+                      {contract.quote_rejection_notes && (
+                        <div className="mt-1 px-2 py-1 bg-amber-100 border border-amber-200 rounded text-xs text-amber-800">
+                          ✏️ <strong>{lang === 'en' ? 'Correction:' : 'Correction :'}</strong> {contract.quote_rejection_notes}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <button
                     onClick={() => setQuoteContract(contract)}
-                    className="px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium"
+                    className={`px-4 py-2 ${contract.quote_rejection_notes ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#00A651] hover:bg-[#008f45]'} text-white rounded-lg font-medium`}
                   >
-                    💰 Créer Devis Contrat
+                    {contract.quote_rejection_notes ? '✏️ Corriger Devis' : '💰 Créer Devis Contrat'}
                   </button>
                 </div>
               );
@@ -18954,13 +18959,26 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent, lang 
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <button onClick={onClose} className="text-gray-500 hover:text-gray-700">{lang === 'en' ? '← Back' : '← Retour'}</button>
-        <h1 className="text-2xl font-bold text-gray-800">{lang === 'en' ? 'Create Contract Quote' : 'Créer Devis Contrat'}</h1>
+        <h1 className="text-2xl font-bold text-gray-800">{contract.quote_rejection_notes ? (lang === 'en' ? '✏️ Correct Contract Quote' : '✏️ Corriger Devis Contrat') : (lang === 'en' ? 'Create Contract Quote' : 'Créer Devis Contrat')}</h1>
         <div className="flex gap-1 ml-4">
           {[1,2,3].map(s => (
             <div key={s} className={`w-8 h-2 rounded-full ${step >= s ? 'bg-[#00A651]' : 'bg-gray-300'}`} />
           ))}
         </div>
       </div>
+
+      {/* Correction notes from reviewer */}
+      {contract.quote_rejection_notes && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+          <div className="flex items-center gap-3 mb-2">
+            <span className="text-lg">✏️</span>
+            <span className="font-bold text-amber-800">{lang === 'en' ? 'Reviewer requested correction' : 'Le vérificateur demande une correction'}</span>
+          </div>
+          <div className="ml-9 bg-white rounded-lg p-3 border border-amber-200">
+            <p className="text-amber-900">{contract.quote_rejection_notes}</p>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         {/* Header */}
@@ -20053,6 +20071,19 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate, lang
           </div>
           {getStatusBadge(contract.status)}
         </div>
+
+        {/* Correction notes from reviewer */}
+        {contract.quote_rejection_notes && contract.status === 'requested' && (
+          <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 mb-4">
+            <div className="flex items-center gap-3 mb-2">
+              <span className="text-lg">✏️</span>
+              <span className="font-bold text-amber-800">{lang === 'en' ? 'Reviewer requested correction' : 'Le vérificateur demande une correction'}</span>
+            </div>
+            <div className="ml-9 bg-white rounded-lg p-3 border border-amber-200">
+              <p className="text-amber-900">{contract.quote_rejection_notes}</p>
+            </div>
+          </div>
+        )}
 
         {/* Contract Period */}
         <div className="grid md:grid-cols-3 gap-4 mb-4">
@@ -28129,7 +28160,12 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
                     <td className="px-4 py-3"><span className="font-medium">{rental.companies?.name}</span></td>
                     <td className="px-4 py-3"><span className="text-sm">{new Date(rental.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} → {new Date(rental.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</span><p className="text-xs text-gray-400">{days} jours</p></td>
                     <td className="px-4 py-3"><span className="text-sm">{rental.rental_request_items?.length || 0} {lang === 'en' ? 'device(s)' : 'appareil(s)'}</span></td>
-                    <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span></td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span>
+                      {rental.quote_rejection_notes && rental.status === 'requested' && (
+                        <p className="text-xs text-amber-600 mt-1 truncate max-w-[150px]" title={rental.quote_rejection_notes}>✏️ {rental.quote_rejection_notes}</p>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <button onClick={() => setSelectedRental(rental)} className="px-3 py-1 bg-[#8B5CF6] text-white text-sm rounded hover:bg-[#7C3AED]">{lang === 'en' ? 'Manage' : 'Gérer'}</button>
                     </td>
@@ -28645,8 +28681,17 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
 
           {/* Quote Section (for requested status) */}
           {status === 'requested' && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-              <h3 className="font-bold text-amber-800 mb-4">{lang === 'en' ? 'Create quote' : 'Créer le devis'}</h3>
+            <div className={`${rental.quote_rejection_notes ? 'bg-amber-50 border-2 border-amber-400' : 'bg-amber-50 border border-amber-200'} rounded-lg p-4`}>
+              {rental.quote_rejection_notes && (
+                <div className="bg-white border border-amber-300 rounded-lg p-3 mb-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span>✏️</span>
+                    <span className="font-bold text-amber-800 text-sm">{lang === 'en' ? 'Reviewer requested correction' : 'Le vérificateur demande une correction'}</span>
+                  </div>
+                  <p className="text-amber-900 text-sm ml-7">{rental.quote_rejection_notes}</p>
+                </div>
+              )}
+              <h3 className="font-bold text-amber-800 mb-4">{rental.quote_rejection_notes ? (lang === 'en' ? '✏️ Correct quote' : '✏️ Corriger le devis') : (lang === 'en' ? 'Create quote' : 'Créer le devis')}</h3>
               <div className="grid md:grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">{lang === 'en' ? 'Shipping fees (€)' : 'Frais de port (€)'}</label>
@@ -28665,6 +28710,15 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
                 <div className="flex justify-between font-bold text-lg border-t pt-2"><span>{t('totalTTC')}</span><span className="text-[#8B5CF6]">€{totalTTC.toFixed(2)}</span></div>
               </div>
               <button onClick={sendQuote} disabled={saving} className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold disabled:opacity-50">{saving ? (lang === 'en' ? 'Sending...' : 'Envoi...') : (lang === 'en' ? 'Send quote' : 'Envoyer le devis')}</button>
+            </div>
+          )}
+
+          {/* Pending Review Section */}
+          {status === 'pending_quote_review' && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+              <span className="text-3xl">📋</span>
+              <h3 className="font-bold text-blue-800 mt-2">{lang === 'en' ? 'Quote Under Review' : 'Devis en vérification'}</h3>
+              <p className="text-sm text-blue-600 mt-1">{lang === 'en' ? 'Waiting for admin approval before sending to client' : 'En attente d\'approbation admin avant envoi au client'}</p>
             </div>
           )}
 
