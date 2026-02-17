@@ -12533,6 +12533,29 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile, lang = 'fr'
   
   // DON'T auto-add customer request as quote lines - admin builds quote from scratch
   // Quote starts empty, admin adds parts based on what customer requested
+  // BUT if this is a correction (admin sent back), restore the previously submitted parts
+  useEffect(() => {
+    if (order.quote_rejection_notes && order.quote_data?.parts?.length > 0) {
+      const savedParts = order.quote_data.parts.map((p, i) => ({
+        id: `part_${Date.now()}_${i}`,
+        partNumber: p.partNumber || '',
+        description: p.description || '',
+        quantity: p.quantity || 1,
+        unitPrice: p.unitPrice || 0,
+        isFromRequest: false
+      }));
+      setQuoteParts(savedParts);
+      // Restore shipping if saved
+      if (order.quote_data.shipping) {
+        setShippingData(prev => ({
+          ...prev,
+          unitPrice: order.quote_data.shipping.unitPrice || prev.unitPrice,
+          parcels: order.quote_data.shipping.parcels || prev.parcels,
+          total: order.quote_data.shipping.total || prev.total
+        }));
+      }
+    }
+  }, []);
   
   // Search parts
   const handleSearch = (term) => {
@@ -23951,6 +23974,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
   
   // Revision state
   const isRevision = request?.status === 'quote_revision_requested';
+  const needsCorrection = !!(request?.quote_rejection_notes && request?.quote_data);
   const existingQuoteData = request?.quote_data || null;
   const clientRevisionNotes = request?.quote_revision_notes || '';
   const currentRevisionCount = request?.quote_revision_count || 0;
@@ -24233,8 +24257,22 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
     
     // Initialize device pricing from request
     if (devices.length > 0) {
-      // If this is a revision with saved quote data, restore the previous pricing
-      const savedDevices = isRevision && existingQuoteData?.devices;
+      // If this is a revision or correction with saved quote data, restore the previous pricing
+      const savedDevices = (isRevision || needsCorrection) && existingQuoteData?.devices;
+      
+      console.log('🔍 QuoteEditor init:', {
+        isRevision,
+        needsCorrection,
+        hasQuoteData: !!request?.quote_data,
+        hasRejectionNotes: !!request?.quote_rejection_notes,
+        rejectionNotes: request?.quote_rejection_notes,
+        savedDevicesCount: savedDevices ? savedDevices.length : 0,
+        existingQuoteData: existingQuoteData ? Object.keys(existingQuoteData) : null,
+        requestStatus: request?.status
+      });
+      if (savedDevices) {
+        console.log('✅ Restoring saved pricing:', savedDevices.map(sd => `${sd.model} ${sd.serial}: cal=${sd.calibrationPrice} rep=${sd.repairPrice} nett=${sd.nettoyagePrice}`));
+      }
       
       setDevicePricing(devices.map((d, i) => {
         const deviceType = d.device_type || 'particle_counter';
@@ -24309,7 +24347,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
         };
       }));
 
-      // Also restore shipping data from saved quote if revision
+      // Also restore shipping data from saved quote if revision or correction
       if (savedDevices && existingQuoteData?.shipping) {
         const savedShipping = existingQuoteData.shipping;
         setShippingData(prev => ({
