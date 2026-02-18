@@ -28727,7 +28727,8 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
       await supabase.from('rental_requests').update({
         status: 'pending_quote_review',
         quote_review_id: review.id,
-        quote_rejection_notes: null
+        quote_rejection_notes: null,
+        quote_revision_notes: null
       }).eq('id', rental.id);
 
       notify(lang === 'en' ? '✅ Rental quote submitted for review!' : '✅ Devis location envoyé en vérification!');
@@ -28836,7 +28837,7 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
 
           {/* Quote Section (for requested status) */}
           {status === 'requested' && (
-            <div className={`${rental.quote_rejection_notes ? 'bg-amber-50 border-2 border-amber-400' : 'bg-white border border-gray-200'} rounded-lg overflow-hidden`}>
+            <div className={`${rental.quote_rejection_notes || rental.quote_revision_notes ? 'bg-amber-50 border-2 border-amber-400' : 'bg-white border border-gray-200'} rounded-lg overflow-hidden`}>
               {rental.quote_rejection_notes && (
                 <div className="bg-white border border-amber-300 rounded-lg p-3 m-4 mb-0">
                   <div className="flex items-center gap-2 mb-1">
@@ -28846,10 +28847,20 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
                   <p className="text-amber-900 text-sm ml-7">{rental.quote_rejection_notes}</p>
                 </div>
               )}
+              {rental.quote_revision_notes && (
+                <div className="bg-white border border-orange-300 rounded-lg p-3 m-4 mb-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span>🔄</span>
+                    <span className="font-bold text-orange-800 text-sm">{lang === 'en' ? 'Customer requested modifications' : 'Le client demande des modifications'}</span>
+                  </div>
+                  <p className="text-orange-900 text-sm ml-7">{rental.quote_revision_notes}</p>
+                  {rental.quote_revision_requested_at && <p className="text-xs text-orange-400 ml-7 mt-1">{new Date(rental.quote_revision_requested_at).toLocaleDateString('fr-FR')}</p>}
+                </div>
+              )}
               
               {/* Step indicator */}
               <div className="px-4 pt-4 pb-2 flex items-center gap-3">
-                <h3 className="font-bold text-gray-800 text-lg">{rental.quote_rejection_notes ? '✏️ Corriger le Devis' : '📄 Créer Devis Location'}</h3>
+                <h3 className="font-bold text-gray-800 text-lg">{(rental.quote_rejection_notes || rental.quote_revision_notes) ? '✏️ Corriger le Devis' : '📄 Créer Devis Location'}</h3>
                 <div className="flex gap-1 ml-auto">
                   {[1,2].map(s => (
                     <div key={s} className={`w-8 h-2 rounded-full ${quoteStep >= s ? 'bg-[#8B5CF6]' : 'bg-gray-200'}`} />
