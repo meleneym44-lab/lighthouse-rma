@@ -13586,7 +13586,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 {hasQuote && (
                   <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
                     <p className="font-bold text-sm text-amber-800 mb-1">Conditions générales de location</p>
-                    <p className="text-xs text-amber-700 leading-relaxed">Pendant la durée de la location, l'appareil reste la propriété exclusive de Lighthouse France. La garde juridique et matérielle est transférée au client dès la réception du matériel et jusqu'à sa restitution effective. Le matériel doit être utilisé conformément à sa destination, dans ses conditions normales d'exploitation, par un personnel qualifié. Le client s'interdit de sous-louer, prêter ou céder le matériel sans accord écrit préalable. Le client s'engage à souscrire une assurance couvrant le matériel loué au titre de « Bien Confié » (vol, incendie, dégâts des eaux, bris accidentel). Tout incident, dommage, perte ou vol doit être communiqué à Lighthouse France sous 48h accompagné d'un dépôt de plainte le cas échéant. Le matériel devra être restitué en parfait état de fonctionnement ; tout dommage constaté au retour sera facturé au client. En cas de retard de restitution, les jours supplémentaires seront facturés au tarif journalier en vigueur.</p>
+                    <p className="text-xs text-amber-700 leading-relaxed">Le matériel reste la propriété de Lighthouse France. La garde est transférée au client dès réception jusqu'à restitution. Utilisation conforme à sa destination par un personnel qualifié ; sous-location interdite sans accord écrit. Le client doit souscrire une assurance « Bien Confié ». Tout incident, dommage ou perte signalé sous 48h. Matériel restitué en bon état ; dommages facturés. Retard facturé au tarif journalier +50%.</p>
                     {(qd.totalRetailValue || 0) > 0 && <p className="font-bold text-xs text-amber-800 mt-2">Valeur à assurer : {qd.totalRetailValue.toFixed(2)} € HT</p>}
                   </div>
                 )}
@@ -13836,14 +13836,12 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 <div className="px-8 py-4 border-b">
                   <h3 className="font-bold text-sm text-gray-800 mb-2">Conditions générales de location</h3>
                   <div className="text-sm text-gray-600 leading-relaxed space-y-2">
-                    <p><strong>1. Propriété et garde :</strong> Le matériel reste la propriété exclusive de Lighthouse France pendant toute la durée de la location. La garde juridique et matérielle est transférée au client dès la réception et jusqu'à la restitution effective du matériel.</p>
-                    <p><strong>2. Utilisation :</strong> Le matériel doit être utilisé conformément à sa destination et dans ses conditions normales d'exploitation, par un personnel qualifié et dûment autorisé. Le client s'interdit de sous-louer, prêter, céder ou donner en gage le matériel sans accord écrit préalable de Lighthouse France.</p>
-                    <p><strong>3. Assurance :</strong> Le client s'engage à souscrire, avant la prise de possession du matériel, une assurance couvrant les risques de vol, incendie, dégâts des eaux, et bris accidentel au titre de « Bien Confié ». Le client devra fournir une attestation d'assurance sur simple demande.</p>
-                    <p><strong>4. Incidents et dommages :</strong> Tout incident, dommage, perte ou vol doit être communiqué à Lighthouse France sous 48 heures par écrit, accompagné le cas échéant d'un dépôt de plainte. En cas de non-déclaration dans ce délai, le client sera tenu responsable de l'intégralité des dommages.</p>
-                    <p><strong>5. Restitution :</strong> Le matériel devra être restitué en parfait état de fonctionnement et de propreté à la date convenue. Tout dommage, usure anormale ou pièce manquante constatés au retour seront facturés au client sur la base du coût de remise en état ou de remplacement.</p>
-                    <p><strong>6. Retard de restitution :</strong> En cas de retard de restitution non autorisé, les jours supplémentaires seront facturés au tarif journalier en vigueur, majoré de 50%. Lighthouse France se réserve le droit de récupérer le matériel à tout moment en cas de non-respect des conditions de location.</p>
-                    <p><strong>7. Responsabilité :</strong> Lighthouse France ne pourra être tenu responsable des conséquences directes ou indirectes liées à une indisponibilité, une panne ou un dysfonctionnement du matériel. La responsabilité de Lighthouse France est limitée au remplacement ou à la réparation du matériel.</p>
-                    <p><strong>8. Résiliation :</strong> En cas de non-respect des présentes conditions, Lighthouse France se réserve le droit de résilier immédiatement le contrat de location et d'exiger la restitution du matériel, sans préjudice de tous dommages et intérêts.</p>
+                    <p><strong>1. Propriété et garde :</strong> Le matériel reste la propriété de Lighthouse France pendant toute la durée de la location. La garde est transférée au client dès la réception jusqu'à la restitution.</p>
+                    <p><strong>2. Utilisation et incidents :</strong> Le matériel doit être utilisé conformément à sa destination par un personnel qualifié. La sous-location ou le prêt sans accord écrit est interdit. Tout incident, dommage, perte ou vol doit être signalé sous 48 heures par écrit.</p>
+                    <p><strong>3. Assurance :</strong> Le client doit souscrire une assurance « Bien Confié » couvrant vol, incendie, dégâts des eaux et bris accidentel avant la prise de possession. Attestation fournie sur demande.</p>
+                    <p><strong>4. Restitution :</strong> Le matériel doit être restitué en bon état de fonctionnement à la date convenue. Tout dommage ou pièce manquante sera facturé au coût de remise en état ou de remplacement.</p>
+                    <p><strong>5. Retard de restitution :</strong> Les jours de retard non autorisés seront facturés au tarif journalier majoré de 50%. Lighthouse France se réserve le droit de récupérer le matériel à tout moment en cas de non-respect des conditions.</p>
+                    <p><strong>6. Résiliation :</strong> Le non-respect des présentes conditions peut entraîner la résiliation immédiate du contrat.</p>
                   </div>
                   {(qd.totalRetailValue || 0) > 0 && <p className="font-bold text-sm mt-2">Valeur à assurer : {qd.totalRetailValue.toFixed(2)} € HT</p>}
                 </div>
@@ -14122,9 +14120,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     <input type="checkbox" checked={acceptTerms} onChange={(e) => setAcceptTerms(e.target.checked)} className="mt-1 w-4 h-4 text-[#3B7AB4] border-gray-300 rounded focus:ring-[#3B7AB4]" />
                     <span className="text-sm text-gray-700">
                       Je soussigné(e), <strong>{signatureName || '[Nom]'}</strong>, 
-                      certifie avoir pris connaissance et accepter les conditions générales de location de Lighthouse France. 
-                      Je reconnais que la garde juridique et matérielle du matériel me sera transférée dès réception.
-                      Je m'engage à souscrire une assurance « Bien Confié » couvrant le matériel, à régler la facture correspondante selon les modalités convenues, et à restituer le matériel en parfait état de fonctionnement à la date convenue.
+                      accepte les conditions générales de location de Lighthouse France. Je reconnais que la garde du matériel me sera transférée dès réception et m'engage à souscrire une assurance « Bien Confié », à régler la facture selon les modalités convenues, et à restituer le matériel en bon état à la date convenue.
                       Cette validation électronique a valeur de signature manuscrite conformément aux articles 1366 et 1367 du Code civil français.
                     </span>
                   </label>
