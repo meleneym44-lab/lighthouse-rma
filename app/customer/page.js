@@ -13449,8 +13449,6 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
           })}
         </div>
       )}
-        </div>
-      )}
     </div>
   );
 }
