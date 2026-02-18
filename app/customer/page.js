@@ -2402,6 +2402,16 @@ const STATUS_STYLES = {
 // Step Progress Tracker Component (Chevron Style)
 const StepProgress = ({ status, serviceType }) => {
   // Define steps based on service type
+  // RENTAL: 6 steps
+  const rentalSteps = [
+    { id: 'submitted', label: 'Demande Soumise', shortLabel: 'Soumis' },
+    { id: 'quote', label: 'Devis Envoyé', shortLabel: 'Devis' },
+    { id: 'approved', label: 'BC Approuvé', shortLabel: 'Approuvé' },
+    { id: 'shipped', label: 'Expédié', shortLabel: 'Expédié' },
+    { id: 'in_rental', label: 'En Location', shortLabel: 'Location' },
+    { id: 'returned', label: 'Retourné', shortLabel: 'Retourné' }
+  ];
+  
   // CALIBRATION: 10 steps
   const calibrationSteps = [
     { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
@@ -2433,13 +2443,24 @@ const StepProgress = ({ status, serviceType }) => {
   ];
 
   const isRepair = serviceType === 'repair' || serviceType === 'réparation';
-  const steps = isRepair ? repairSteps : calibrationSteps;
+  const isRental = serviceType === 'rental' || serviceType === 'location';
+  const steps = isRental ? rentalSteps : isRepair ? repairSteps : calibrationSteps;
 
   // Map current status to step index
   const getStepIndex = (currentStatus) => {
     if (!currentStatus) return 0;
     
-    if (isRepair) {
+    if (isRental) {
+      const rentalMap = {
+        'requested': 0, 'submitted': 0, 'pending': 0,
+        'pending_quote_review': 1, 'quote_sent': 1,
+        'waiting_bc': 2, 'bc_review': 2, 'bc_approved': 2,
+        'shipped': 3,
+        'in_rental': 4,
+        'return_pending': 5, 'returned': 5, 'completed': 5, 'cancelled': 0
+      };
+      return rentalMap[currentStatus] ?? 0;
+    } else if (isRepair) {
       // Repair flow mapping (12 steps: 0-11)
       const repairMap = {
         'submitted': 0, 'pending': 0,
@@ -12611,10 +12632,6 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
   const [loading, setLoading] = useState(true);
   const [showNewRental, setShowNewRental] = useState(false);
   const [selectedRental, setSelectedRental] = useState(null);
-  const [showRentalBC, setShowRentalBC] = useState(false);
-  const [rentalBcFile, setRentalBcFile] = useState(null);
-  const [rentalBcSignedBy, setRentalBcSignedBy] = useState(profile?.full_name || '');
-  const [uploadingRentalBC, setUploadingRentalBC] = useState(false);
   
   // Rental detail state
   const [rentalTab, setRentalTab] = useState('overview');
@@ -12626,6 +12643,19 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
   const [showRentalRevision, setShowRentalRevision] = useState(false);
   const [rentalRevisionNotes, setRentalRevisionNotes] = useState('');
   const [rentalProcessing, setRentalProcessing] = useState(false);
+  
+  // BC Submission state (mirrors RMA exactly)
+  const [showBCModal, setShowBCModal] = useState(false);
+  const [bcFileUpload, setBcFileUpload] = useState(null);
+  const [signatureName, setSignatureName] = useState(profile?.full_name || '');
+  const [signatureDateDisplay] = useState(new Date().toLocaleDateString('fr-FR'));
+  const [signatureDateISO] = useState(new Date().toISOString().split('T')[0]);
+  const [luEtApprouve, setLuEtApprouve] = useState('');
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [submittingBC, setSubmittingBC] = useState(false);
+  const [signatureData, setSignatureData] = useState(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const canvasRef = useRef(null);
   
   // New rental form state
   const [startDate, setStartDate] = useState(null);
@@ -13190,31 +13220,160 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
     );
   }
 
-  // BC Upload for rental
-  const uploadRentalBC = async (rental) => {
-    if (!rentalBcFile) { notify('Veuillez sélectionner un fichier', 'error'); return; }
-    setUploadingRentalBC(true);
+  // Signature pad functions (identical to RMA)
+  const startDrawing = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#1E3A5F';
+    setIsDrawing(true);
+  };
+  const draw = (e) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+  const stopDrawing = () => {
+    if (isDrawing) {
+      setIsDrawing(false);
+      const canvas = canvasRef.current;
+      if (canvas) setSignatureData(canvas.toDataURL('image/png'));
+    }
+  };
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      setSignatureData(null);
+    }
+  };
+
+  const hasValidSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
+  const isSubmissionValid = signatureName.trim().length > 0 && acceptTerms && (bcFileUpload || hasValidSignature);
+
+  // Load messages and docs for selected rental
+  const loadRentalComms = async (rentalId) => {
+    const { data: msgs } = await supabase.from('messages').select('*').eq('rental_request_id', rentalId).order('created_at', { ascending: true });
+    if (msgs) setRentalMessages(msgs);
+    const { data: docs } = await supabase.from('request_attachments').select('*').eq('rental_request_id', rentalId);
+    if (docs) setRentalDocs(docs);
+  };
+
+  const sendRentalMessage = async (e) => {
+    e?.preventDefault();
+    if (!rentalNewMsg.trim() || !selectedRental) return;
+    setRentalSending(true);
+    await supabase.from('messages').insert({
+      rental_request_id: selectedRental.id,
+      sender_id: profile?.id,
+      sender_name: profile?.full_name || 'Client',
+      sender_role: 'customer',
+      content: rentalNewMsg.trim()
+    });
+    setRentalNewMsg('');
+    setRentalSending(false);
+    loadRentalComms(selectedRental.id);
+  };
+
+  const handleRentalRevision = async () => {
+    if (!rentalRevisionNotes.trim() || !selectedRental) { notify('Veuillez décrire les modifications', 'error'); return; }
+    setRentalProcessing(true);
+    await supabase.from('rental_requests').update({
+      status: 'requested',
+      quote_revision_notes: rentalRevisionNotes.trim(),
+      quote_revision_requested_at: new Date().toISOString()
+    }).eq('id', selectedRental.id);
+    notify('✅ Demande de modification envoyée !');
+    setShowRentalRevision(false);
+    setShowRentalQuote(false);
+    setRentalProcessing(false);
+    setSelectedRental(null);
+    loadData();
+  };
+
+  // BC submission (mirrors RMA exactly)
+  const submitRentalBC = async () => {
+    if (!selectedRental) return;
+    if (!acceptTerms) { notify('Veuillez accepter les conditions générales', 'error'); return; }
+    if (!signatureName.trim()) { notify('Veuillez entrer votre nom', 'error'); return; }
+    if (!bcFileUpload && !hasValidSignature) { notify('Veuillez télécharger un BC OU signer électroniquement', 'error'); return; }
+    
+    setSubmittingBC(true);
     try {
-      const ext = rentalBcFile.name.split('.').pop();
-      const path = `rental-bc/${rental.id}/bc-${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage.from('documents').upload(path, rentalBcFile);
-      if (uploadError) throw uploadError;
-      const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(path);
+      let fileUrl = null;
+      if (bcFileUpload) {
+        try {
+          const fileName = `rental_bc_${selectedRental.id}_${Date.now()}.${bcFileUpload.name.split('.').pop()}`;
+          const { error: uploadError } = await supabase.storage.from('documents').upload(fileName, bcFileUpload);
+          if (!uploadError) {
+            const { data: publicUrl } = supabase.storage.from('documents').getPublicUrl(fileName);
+            fileUrl = publicUrl?.publicUrl;
+          }
+        } catch (e) { console.log('File upload skipped'); }
+      }
+      
+      let signatureUrl = null;
+      if (signatureData) {
+        try {
+          const signatureBlob = await fetch(signatureData).then(r => r.blob());
+          const sigFileName = `rental_sig_${selectedRental.id}_${Date.now()}.png`;
+          const { error: sigError } = await supabase.storage.from('documents').upload(sigFileName, signatureBlob);
+          if (!sigError) {
+            const { data: sigUrl } = supabase.storage.from('documents').getPublicUrl(sigFileName);
+            signatureUrl = sigUrl?.publicUrl;
+          }
+        } catch (e) { console.error('Signature upload error:', e); }
+      }
       
       await supabase.from('rental_requests').update({
         status: 'bc_review',
-        bc_file_url: publicUrl,
-        bc_signed_by: rentalBcSignedBy,
-        bc_submitted_at: new Date().toISOString()
-      }).eq('id', rental.id);
+        bc_submitted_at: new Date().toISOString(),
+        bc_signed_by: signatureName,
+        bc_signature_date: signatureDateISO,
+        bc_file_url: fileUrl,
+        bc_signature_url: signatureUrl,
+        quote_approved_at: selectedRental.status === 'quote_sent' ? new Date().toISOString() : selectedRental.quote_approved_at
+      }).eq('id', selectedRental.id);
+      
+      // Save to attachments
+      if (fileUrl) {
+        await supabase.from('request_attachments').insert({
+          rental_request_id: selectedRental.id,
+          file_name: `Bon_de_Commande_${selectedRental.rental_number}.pdf`,
+          file_url: fileUrl,
+          file_type: bcFileUpload?.type || 'application/pdf',
+          file_size: bcFileUpload?.size || 0,
+          uploaded_by: profile.id,
+          category: 'bon_commande'
+        });
+      }
       
       notify('✅ Bon de commande soumis avec succès !');
-      setShowRentalBC(false);
-      setRentalBcFile(null);
+      setShowBCModal(false);
+      setBcFileUpload(null);
+      setLuEtApprouve('');
+      setAcceptTerms(false);
+      clearSignature();
       setSelectedRental(null);
       loadData();
-    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
-    setUploadingRentalBC(false);
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSubmittingBC(false);
   };
 
   // Detail view for selected rental
@@ -13226,63 +13385,12 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
     const items = qd.quoteItems || qd.items || rental.rental_request_items || [];
     const hasQuote = !!(rental.quote_total_ht || qd.totalHT);
     const period = qd.rentalPeriod || { start: rental.start_date, end: rental.end_date, days: rentalDaysDisplay };
+    const company = rental.companies || {};
 
-    // Load messages and docs for this rental
-    const loadRentalComms = async () => {
-      const { data: msgs } = await supabase.from('messages').select('*').eq('rental_request_id', rental.id).order('created_at', { ascending: true });
-      if (msgs) setRentalMessages(msgs);
-      const { data: docs } = await supabase.from('request_attachments').select('*').eq('rental_request_id', rental.id);
-      if (docs) setRentalDocs(docs);
-    };
-
-    // Load on first render
+    // Load comms on first render
     if (rentalMessages.length === 0 && rentalDocs.length === 0) {
-      loadRentalComms();
+      loadRentalComms(rental.id);
     }
-
-    const sendRentalMessage = async (e) => {
-      e?.preventDefault();
-      if (!rentalNewMsg.trim()) return;
-      setRentalSending(true);
-      await supabase.from('messages').insert({
-        rental_request_id: rental.id,
-        sender_id: profile?.id,
-        sender_name: profile?.full_name || 'Client',
-        sender_role: 'customer',
-        content: rentalNewMsg.trim()
-      });
-      setRentalNewMsg('');
-      setRentalSending(false);
-      loadRentalComms();
-    };
-
-    const handleRentalApprove = async () => {
-      setRentalProcessing(true);
-      const { error } = await supabase.from('rental_requests').update({
-        status: 'waiting_bc',
-        quote_approved_at: new Date().toISOString()
-      }).eq('id', rental.id);
-      if (error) notify('Erreur: ' + error.message, 'error');
-      else { notify('✅ Devis approuvé ! Veuillez soumettre votre bon de commande.'); setShowRentalQuote(false); }
-      setRentalProcessing(false);
-      setSelectedRental(null);
-      loadData();
-    };
-
-    const handleRentalRevision = async () => {
-      if (!rentalRevisionNotes.trim()) { notify('Veuillez décrire les modifications', 'error'); return; }
-      setRentalProcessing(true);
-      const { error } = await supabase.from('rental_requests').update({
-        status: 'requested',
-        quote_revision_notes: rentalRevisionNotes.trim(),
-        quote_revision_requested_at: new Date().toISOString()
-      }).eq('id', rental.id);
-      if (error) notify('Erreur: ' + error.message, 'error');
-      else { notify('✅ Demande de modification envoyée !'); setShowRentalRevision(false); setShowRentalQuote(false); }
-      setRentalProcessing(false);
-      setSelectedRental(null);
-      loadData();
-    };
 
     return (
       <div>
@@ -13291,16 +13399,24 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
         </button>
         
         <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-          {/* Header */}
-          <div className="px-6 py-4 bg-[#1a1a2e] text-white flex justify-between items-center">
-            <div>
-              <h2 className="text-xl font-bold">{rental.rental_number}</h2>
-              <p className="text-gray-300 text-sm">Du {new Date(rental.start_date).toLocaleDateString('fr-FR')} au {new Date(rental.end_date).toLocaleDateString('fr-FR')} ({rentalDaysDisplay} jours)</p>
+          {/* Header - identical to RMA */}
+          <div className="bg-[#1a1a2e] text-white p-6">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h2 className="text-2xl font-bold">{rental.rental_number}</h2>
+                <p className="text-gray-300 text-sm mt-1">
+                  Du {new Date(rental.start_date).toLocaleDateString('fr-FR')} au {new Date(rental.end_date).toLocaleDateString('fr-FR')} ({rentalDaysDisplay} jours)
+                </p>
+                <p className="text-gray-400 text-xs mt-1">{company.name || ''}</p>
+              </div>
+              {getStatusBadge(rental.status)}
             </div>
-            {getStatusBadge(rental.status)}
+            
+            {/* Progress Bar */}
+            <StepProgress status={rental.status} serviceType="rental" />
           </div>
 
-          {/* Action Required Banner */}
+          {/* Action Required Banner (quote_sent) */}
           {needsAction && (
             <div className="bg-red-50 border-b border-red-200 px-6 py-4">
               <div className="flex items-center justify-between">
@@ -13314,10 +13430,12 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => setShowRentalQuote(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">
-                    👁️ Voir le Devis
-                  </button>
-                  <button onClick={() => setShowRentalBC(true)} className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700">
+                  {hasQuote && (
+                    <button onClick={() => setShowRentalQuote(true)} className="px-4 py-2 border border-[#3B7AB4] text-[#3B7AB4] rounded-lg font-medium hover:bg-blue-50">
+                      👁️ Voir le Devis
+                    </button>
+                  )}
+                  <button onClick={() => setShowBCModal(true)} className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700">
                     📄 Soumettre BC
                   </button>
                 </div>
@@ -13325,54 +13443,61 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
             </div>
           )}
 
-          {/* Waiting BC */}
+          {/* BC Review - Pending */}
+          {(rental.status === 'bc_review' || rental.bc_submitted_at) && rental.status !== 'bc_approved' && !['shipped', 'in_rental', 'return_pending', 'returned', 'completed'].includes(rental.status) && (
+            <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📋</span>
+                <div>
+                  <p className="font-bold text-blue-800">Bon de commande en cours de vérification</p>
+                  <p className="text-sm text-blue-600">Soumis le {rental.bc_submitted_at ? new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR') : '—'} par {rental.bc_signed_by || '—'}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Waiting BC (approved but no file) */}
           {rental.status === 'waiting_bc' && !rental.bc_file_url && (
             <div className="bg-amber-50 border-b border-amber-200 px-6 py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">📋</span>
+                  <span className="text-2xl">✅</span>
                   <div>
-                    <p className="font-bold text-amber-800">Devis approuvé — En attente de votre BC</p>
-                    {hasQuote && <button onClick={() => setShowRentalQuote(true)} className="text-sm text-blue-600 underline mt-1">Revoir le devis</button>}
+                    <p className="font-bold text-amber-800">Devis approuvé — En attente de votre bon de commande</p>
                   </div>
                 </div>
-                <button onClick={() => setShowRentalBC(true)} className="px-4 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-green-600">📄 Soumettre BC</button>
+                <button onClick={() => setShowBCModal(true)} className="px-4 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-green-600">📄 Soumettre BC</button>
               </div>
             </div>
           )}
 
           {/* BC Rejected */}
-          {rental.status === 'waiting_bc' && rental.bc_rejection_reason && (
+          {rental.bc_rejection_reason && (
             <div className="bg-red-50 border-b border-red-300 px-6 py-4">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">❌</span>
-                <div>
-                  <p className="font-bold text-red-800">Bon de commande rejeté</p>
-                  <p className="text-sm text-red-600">{rental.bc_rejection_reason}</p>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center">
+                    <span className="text-white text-2xl">❌</span>
+                  </div>
+                  <div>
+                    <p className="font-bold text-red-800 text-lg">Bon de commande rejeté — Action requise</p>
+                    <p className="text-sm text-red-600">Votre bon de commande a été rejeté. Veuillez corriger et soumettre à nouveau.</p>
+                    <div className="mt-2 p-3 bg-white rounded-lg border-2 border-red-300">
+                      <p className="text-xs text-red-600 font-medium uppercase">Raison du rejet :</p>
+                      <p className="text-sm text-red-800 font-medium mt-1">{rental.bc_rejection_reason}</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <button onClick={() => setShowRentalBC(true)} className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700">📄 Resoumettre BC</button>
-            </div>
-          )}
-
-          {/* BC Submitted - Pending Review */}
-          {rental.status === 'bc_review' && (
-            <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">📋</span>
-                <div>
-                  <p className="font-bold text-blue-800">Bon de commande soumis</p>
-                  <p className="text-sm text-blue-600">En attente de validation par notre équipe</p>
-                </div>
+                <button onClick={() => setShowBCModal(true)} className="px-6 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700">📄 Resoumettre BC</button>
               </div>
             </div>
           )}
 
-          {/* Tabs */}
+          {/* Tabs - identical structure to RMA */}
           <div className="flex gap-1 px-6 pt-4 bg-gray-50 border-b overflow-x-auto">
             {[
               { id: 'overview', label: 'Aperçu', icon: '📋' },
-              { id: 'documents', label: 'Documents', icon: '📄', badge: rentalDocs.length },
+              { id: 'documents', label: 'Documents', icon: '📄', badge: rentalDocs.length + (rental.bc_file_url ? 1 : 0) },
               { id: 'messages', label: 'Messages', icon: '💬', badge: rentalMessages.filter(m => m.sender_role !== 'customer').length }
             ].map(tab => (
               <button
@@ -13383,7 +13508,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 }`}
               >
                 <span>{tab.icon}</span> {tab.label}
-                {tab.badge > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">{tab.badge}</span>}
+                {tab.badge > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 min-w-[20px] text-center">{tab.badge}</span>}
               </button>
             ))}
           </div>
@@ -13394,7 +13519,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
               <div className="space-y-6">
                 {/* Rental period */}
                 <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                  <div className="flex items-center gap-4 text-sm">
+                  <div className="flex items-center gap-4 flex-wrap text-sm">
                     <span className="font-bold text-purple-800">📅 Période de location</span>
                     <span className="font-medium">{new Date(rental.start_date).toLocaleDateString('fr-FR')} → {new Date(rental.end_date).toLocaleDateString('fr-FR')}</span>
                     <span className="px-2 py-0.5 bg-purple-200 text-purple-800 rounded-full text-xs font-bold">{rentalDaysDisplay} jours</span>
@@ -13410,11 +13535,11 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="font-bold text-gray-800">{item.item_name || item.equipment_model || '—'}</p>
-                            {item.serial_number && <p className="text-xs text-gray-500">S/N: {item.serial_number}</p>}
-                            {item.specs && <p className="text-sm text-gray-600 mt-1 whitespace-pre-line">{item.specs}</p>}
+                            {item.serial_number && <p className="text-xs text-gray-500 font-mono">S/N: {item.serial_number}</p>}
+                            {item.specs && <p className="text-sm text-gray-600 mt-2 whitespace-pre-line">{item.specs}</p>}
                           </div>
                           {(item.line_total || 0) > 0 && (
-                            <span className="font-bold text-[#8B5CF6]">{parseFloat(item.line_total).toFixed(2)} € HT</span>
+                            <span className="font-bold text-[#8B5CF6] text-lg">{parseFloat(item.line_total).toFixed(2)} € HT</span>
                           )}
                         </div>
                       </div>
@@ -13426,12 +13551,12 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 {hasQuote && (
                   <div>
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-bold text-gray-800">💰 Devis</h3>
-                      <button onClick={() => setShowRentalQuote(true)} className="text-sm text-blue-600 hover:text-blue-800 font-medium">
+                      <h3 className="font-bold text-gray-800">💰 Résumé du Devis</h3>
+                      <button onClick={() => setShowRentalQuote(true)} className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
                         👁️ Voir le devis complet →
                       </button>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-4 border space-y-1.5">
+                    <div className="bg-gray-50 rounded-lg p-4 border space-y-2">
                       {(qd.discount || 0) > 0 && <>
                         <div className="flex justify-between text-sm"><span>Sous-total</span><span>{(qd.subtotalBeforeDiscount || 0).toFixed(2)} €</span></div>
                         <div className="flex justify-between text-sm text-green-600"><span>Remise {qd.discountType === 'percent' ? `(${qd.discount}%)` : '(forfait)'}</span><span>-{(qd.discountAmount || 0).toFixed(2)} €</span></div>
@@ -13446,9 +13571,16 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 {/* Insurance */}
                 {hasQuote && (
                   <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
-                    <p className="font-bold text-xs text-amber-800 mb-1">Conditions d'assurance</p>
-                    <p className="text-xs text-amber-700">Pendant la durée de la location, l'appareil reste la propriété de Lighthouse France et devient sous la responsabilité du client. L'appareil doit être entreposé dans ses conditions normales d'exploitation et restitué en parfait état. Tout incident doit nous être communiqué sous 48h.</p>
-                    {(qd.totalRetailValue || 0) > 0 && <p className="font-bold text-xs text-amber-800 mt-1">Valeur à assurer : {qd.totalRetailValue.toFixed(2)} € HT</p>}
+                    <p className="font-bold text-sm text-amber-800 mb-1">Conditions d'assurance</p>
+                    <p className="text-xs text-amber-700 leading-relaxed">Pendant la durée de la location, l'appareil reste la propriété de Lighthouse France et devient sous la responsabilité du client. L'appareil doit être entreposé dans ses conditions normales d'exploitation et restitué en parfait état. Tout incident doit nous être communiqué sous 48h. Le client s'engage à souscrire une assurance prenant en compte le "Bien Confié".</p>
+                    {(qd.totalRetailValue || 0) > 0 && <p className="font-bold text-xs text-amber-800 mt-2">Valeur à assurer : {qd.totalRetailValue.toFixed(2)} € HT</p>}
+                  </div>
+                )}
+
+                {/* Buyback */}
+                {qd.buybackClause && (
+                  <div className="bg-green-50 rounded-lg p-3 border border-green-200 text-xs text-green-800">
+                    Si l'appareil est acheté à la fin de la période de location, {qd.buybackPercent || 50}% de la somme versée sera déduite du prix d'achat.
                   </div>
                 )}
 
@@ -13456,16 +13588,24 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 {rental.outbound_tracking && (
                   <div className="bg-cyan-50 rounded-lg p-4 border border-cyan-200">
                     <h3 className="font-bold text-cyan-800 mb-2">🚚 Expédition</h3>
-                    <p className="text-sm">N° de suivi : <span className="font-mono font-bold">{rental.outbound_tracking}</span></p>
+                    <p className="text-sm font-mono font-bold">{rental.outbound_tracking}</p>
                     {rental.outbound_shipped_at && <p className="text-xs text-gray-500">Expédié le {new Date(rental.outbound_shipped_at).toLocaleDateString('fr-FR')}</p>}
+                  </div>
+                )}
+
+                {/* Customer Notes */}
+                {rental.customer_notes && (
+                  <div className="bg-gray-50 rounded-lg p-4 border">
+                    <h3 className="font-bold text-gray-800 mb-2">📝 Vos notes</h3>
+                    <p className="text-sm text-gray-600">{rental.customer_notes}</p>
                   </div>
                 )}
 
                 {/* Action buttons */}
                 {(rental.status === 'quote_sent' || (rental.status === 'waiting_bc' && !rental.bc_file_url)) && (
                   <div className="flex gap-3">
-                    {hasQuote && <button onClick={() => setShowRentalQuote(true)} className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700">👁️ Voir le Devis</button>}
-                    <button onClick={() => setShowRentalBC(true)} className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-green-600">📄 Soumettre mon Bon de Commande</button>
+                    {hasQuote && <button onClick={() => setShowRentalQuote(true)} className="flex-1 py-3 bg-white border-2 border-[#3B7AB4] text-[#3B7AB4] rounded-lg font-bold hover:bg-blue-50">👁️ Voir le Devis</button>}
+                    <button onClick={() => setShowBCModal(true)} className="flex-1 py-3 bg-[#1E3A5F] text-white rounded-lg font-bold hover:bg-[#2a4a6f]">📄 Soumettre mon Bon de Commande</button>
                   </div>
                 )}
               </div>
@@ -13474,15 +13614,47 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
             {/* ========== DOCUMENTS TAB ========== */}
             {rentalTab === 'documents' && (
               <div>
-                {rentalDocs.length === 0 ? (
+                {/* BC Document */}
+                {rental.bc_file_url && (
+                  <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">📋</span>
+                        <div>
+                          <p className="font-medium text-green-800">Bon de commande</p>
+                          <p className="text-xs text-gray-500">Soumis le {rental.bc_submitted_at ? new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR') : '—'} par {rental.bc_signed_by || '—'}</p>
+                        </div>
+                      </div>
+                      <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline font-medium">Télécharger →</a>
+                    </div>
+                  </div>
+                )}
+
+                {/* Signed quote */}
+                {rental.signed_quote_url && (
+                  <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">📄</span>
+                        <div>
+                          <p className="font-medium text-blue-800">Devis signé</p>
+                        </div>
+                      </div>
+                      <a href={rental.signed_quote_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline font-medium">Télécharger →</a>
+                    </div>
+                  </div>
+                )}
+
+                {rentalDocs.length === 0 && !rental.bc_file_url && !rental.signed_quote_url ? (
                   <div className="text-center py-12 text-gray-400">
                     <p className="text-4xl mb-2">📄</p>
                     <p>Aucun document</p>
+                    <p className="text-sm mt-1">Les documents seront disponibles ici</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {rentalDocs.map(doc => (
-                      <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border hover:bg-gray-100">
+                      <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border hover:bg-gray-100 block">
                         <span className="text-2xl">{doc.file_type?.includes('pdf') ? '📕' : doc.file_type?.includes('image') ? '🖼️' : '📄'}</span>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-800 truncate">{doc.file_name || doc.category || 'Document'}</p>
@@ -13493,22 +13665,10 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     ))}
                   </div>
                 )}
-                {rental.bc_file_url && (
-                  <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span>📋</span>
-                        <span className="font-medium text-green-800">Bon de commande soumis</span>
-                        {rental.bc_submitted_at && <span className="text-xs text-gray-500">le {new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR')}</span>}
-                      </div>
-                      <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">Voir →</a>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
-            {/* ========== MESSAGES TAB ========== */}
+            {/* ========== MESSAGES TAB (identical to RMA) ========== */}
             {rentalTab === 'messages' && (
               <div>
                 <div className="h-[400px] overflow-y-auto mb-4 space-y-4">
@@ -13523,13 +13683,13 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                       const isMe = msg.sender_id === profile?.id;
                       return (
                         <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                          <div className={`max-w-[70%] rounded-lg p-3 ${isMe ? 'bg-[#8B5CF6] text-white' : 'bg-gray-100 text-gray-800'}`}>
-                            <p className={`text-xs font-medium mb-1 ${isMe ? 'text-white/70' : 'text-[#8B5CF6]'}`}>
+                          <div className={`max-w-[70%] rounded-lg p-3 ${isMe ? 'bg-[#3B7AB4] text-white' : 'bg-gray-100 text-gray-800'}`}>
+                            <p className={`text-xs font-medium mb-1 ${isMe ? 'text-white/70' : 'text-[#3B7AB4]'}`}>
                               {isMe ? 'Vous' : (msg.sender_name || 'Lighthouse France')}
                             </p>
                             <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                             {msg.attachment_url && (
-                              <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isMe ? 'text-white/80' : 'text-blue-600 hover:underline'}`}>
+                              <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isMe ? 'text-white/80 hover:text-white' : 'text-blue-600 hover:underline'}`}>
                                 📎 {msg.attachment_name || 'Fichier joint'}
                               </a>
                             )}
@@ -13543,22 +13703,22 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   )}
                 </div>
                 <form onSubmit={sendRentalMessage} className="flex gap-2">
-                  <input type="text" value={rentalNewMsg} onChange={e => setRentalNewMsg(e.target.value)} placeholder="Écrivez votre message..." className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8B5CF6]" />
-                  <button type="submit" disabled={!rentalNewMsg.trim() || rentalSending} className="px-6 py-2 bg-[#8B5CF6] text-white rounded-lg font-medium disabled:opacity-50">{rentalSending ? '...' : 'Envoyer'}</button>
+                  <input type="text" value={rentalNewMsg} onChange={e => setRentalNewMsg(e.target.value)} placeholder="Écrivez votre message..." className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B7AB4]" />
+                  <button type="submit" disabled={!rentalNewMsg.trim() || rentalSending} className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50">{rentalSending ? '...' : 'Envoyer'}</button>
                 </form>
               </div>
             )}
           </div>
         </div>
 
-        {/* ========== FULL QUOTE MODAL ========== */}
+        {/* ========== FULL QUOTE MODAL (identical layout to RMA) ========== */}
         {showRentalQuote && hasQuote && (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
                 <div>
-                  <h2 className="text-xl font-bold">Devis Location</h2>
+                  <h2 className="text-xl font-bold">Offre de Prix — Location</h2>
                   <p className="text-gray-400">{rental.rental_number}</p>
                 </div>
                 <button onClick={() => setShowRentalQuote(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
@@ -13577,7 +13737,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-[#2D5A7B]">OFFRE DE PRIX - LOCATION</p>
+                      <p className="text-2xl font-bold text-[#2D5A7B]">OFFRE DE PRIX — LOCATION</p>
                       <p className="text-gray-500 font-medium">N° {rental.rental_number}</p>
                     </div>
                   </div>
@@ -13587,7 +13747,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
                   <div>
                     <p className="text-xs text-gray-500 uppercase">Date</p>
-                    <p className="font-medium">{rental.quoted_at ? new Date(rental.quoted_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
+                    <p className="font-medium">{rental.quote_sent_at ? new Date(rental.quote_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 uppercase">Validité</p>
@@ -13606,52 +13766,66 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     <p className="font-bold">LIGHTHOUSE FRANCE</p>
                     <p className="text-sm text-gray-600">16 Rue Paul Séjourne</p>
                     <p className="text-sm text-gray-600">94000 Créteil, France</p>
+                    <p className="text-sm text-gray-600">France@golighthouse.com</p>
                   </div>
                   <div className="flex-1 pl-6">
                     <p className="text-xs text-gray-500 uppercase mb-1">Client</p>
-                    <p className="font-bold">{rental.companies?.name || qd.clientName || 'Client'}</p>
-                    {(qd.clientAddress || rental.companies?.address) && <p className="text-sm text-gray-600">{qd.clientAddress || rental.companies?.address}</p>}
-                    {(qd.clientCity || rental.companies?.city) && <p className="text-sm text-gray-600">{qd.clientPostalCode || rental.companies?.postal_code} {qd.clientCity || rental.companies?.city}</p>}
-                    {(qd.clientCountry || rental.companies?.country) && <p className="text-sm text-gray-600">{qd.clientCountry || rental.companies?.country}</p>}
+                    <p className="font-bold">{company.name || qd.clientName || 'Client'}</p>
+                    {(qd.clientAddress || company.address) && <p className="text-sm text-gray-600">{qd.clientAddress || company.address}</p>}
+                    {(qd.clientCity || company.city) && <p className="text-sm text-gray-600">{qd.clientPostalCode || company.postal_code} {qd.clientCity || company.city}</p>}
+                    {(qd.clientCountry || company.country) && <p className="text-sm text-gray-600">{qd.clientCountry || company.country}</p>}
                   </div>
                 </div>
 
                 {/* Rental Period */}
-                <div className="px-8 py-3 bg-blue-50 border-b">
+                <div className="px-8 py-3 bg-blue-50 border-b flex items-center gap-3">
+                  <span className="text-lg">📅</span>
                   <p className="text-sm font-medium text-blue-800">
-                    📅 Période de location : du {new Date(period.start || rental.start_date).toLocaleDateString('fr-FR')} au {new Date(period.end || rental.end_date).toLocaleDateString('fr-FR')} ({period.days || rentalDaysDisplay} jours)
+                    Période de location : du {new Date(period.start || rental.start_date).toLocaleDateString('fr-FR')} au {new Date(period.end || rental.end_date).toLocaleDateString('fr-FR')} ({period.days || rentalDaysDisplay} jours)
                   </p>
                 </div>
 
-                {/* Equipment Detail Sections */}
-                {items.map((item, idx) => (
-                  <div key={idx} className="px-8 py-4 border-b">
-                    <h3 className="font-bold text-lg text-[#1a1a2e] mb-2">Location {item.item_name || '—'}</h3>
-                    {item.specs && (
-                      <div className="text-sm text-gray-600 whitespace-pre-line mb-3 pl-4 border-l-2 border-gray-200">{item.specs}</div>
-                    )}
-                    <div className="flex justify-between items-center pt-2 border-t border-dashed">
-                      <span className="text-sm text-gray-600">Prix de location pour {period.days || rentalDaysDisplay} jours</span>
-                      <span className="text-lg font-bold">{(parseFloat(item.line_total) || 0).toFixed(2)} € HT</span>
-                    </div>
-                    {(item.retail_value || 0) > 0 && (
-                      <div className="flex justify-between text-xs text-gray-400 mt-1">
-                        <span>Prix unitaire (valeur neuf)</span>
-                        <span>{parseFloat(item.retail_value).toFixed(2)} € HT</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                {/* Equipment Table - matches RMA device table style */}
+                <div className="px-8 py-4">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-[#1a1a2e] text-white">
+                        <th className="px-4 py-2 text-left">Équipement</th>
+                        <th className="px-4 py-2 text-left">N° Série</th>
+                        <th className="px-4 py-2 text-right">Durée</th>
+                        <th className="px-4 py-2 text-right">Prix HT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item, idx) => (
+                        <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-4 py-3 border-b">
+                            <p className="font-medium">{item.item_name || '—'}</p>
+                            {item.specs && <p className="text-xs text-gray-500 mt-1 whitespace-pre-line">{item.specs}</p>}
+                          </td>
+                          <td className="px-4 py-3 border-b font-mono text-sm">{item.serial_number || '—'}</td>
+                          <td className="px-4 py-3 border-b text-right text-sm">{period.days || rentalDaysDisplay} jours</td>
+                          <td className="px-4 py-3 border-b text-right font-bold">{(parseFloat(item.line_total) || 0).toFixed(2)} €</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-                {/* Totals */}
-                <div className="px-8 py-4 bg-gray-50 border-b space-y-1.5">
-                  {(qd.discount || 0) > 0 && <>
-                    <div className="flex justify-between text-sm"><span>Sous-total location</span><span>{(qd.subtotalBeforeDiscount || 0).toFixed(2)} € HT</span></div>
-                    <div className="flex justify-between text-sm text-green-600"><span>Remise {qd.discountType === 'percent' ? `(${qd.discount}%)` : '(forfait)'}</span><span>-{(qd.discountAmount || 0).toFixed(2)} €</span></div>
-                  </>}
-                  {(qd.shipping || 0) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{parseFloat(qd.shipping || 0).toFixed(2)} € HT</span></div>}
-                  <div className="flex justify-between font-bold text-xl pt-3 border-t"><span>TOTAL HT</span><span className="text-[#00A651]">{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} €</span></div>
-                  <div className="flex justify-between text-sm text-gray-500"><span>TTC ({qd.taxRate || 20}%)</span><span>{(qd.totalTTC || rental.quote_total_ttc || 0).toFixed(2)} €</span></div>
+                {/* Totals - matches RMA */}
+                <div className="px-8 py-4 bg-gray-50 border-t border-b">
+                  <div className="flex justify-end">
+                    <div className="w-72 space-y-1.5">
+                      {(qd.discount || 0) > 0 && <>
+                        <div className="flex justify-between text-sm"><span>Sous-total</span><span>{(qd.subtotalBeforeDiscount || 0).toFixed(2)} €</span></div>
+                        <div className="flex justify-between text-sm text-green-600"><span>Remise {qd.discountType === 'percent' ? `(${qd.discount}%)` : '(forfait)'}</span><span>-{(qd.discountAmount || 0).toFixed(2)} €</span></div>
+                      </>}
+                      {(qd.shipping || 0) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{parseFloat(qd.shipping || 0).toFixed(2)} €</span></div>}
+                      <div className="flex justify-between font-bold text-xl pt-2 border-t border-gray-300"><span>TOTAL HT</span><span className="text-[#00A651]">{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} €</span></div>
+                      <div className="flex justify-between text-sm text-gray-500"><span>TVA ({qd.taxRate || 20}%)</span><span>{((qd.totalTTC || 0) - (qd.totalHT || 0)).toFixed(2)} €</span></div>
+                      <div className="flex justify-between font-bold text-lg"><span>TOTAL TTC</span><span>{(qd.totalTTC || rental.quote_total_ttc || 0).toFixed(2)} €</span></div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Insurance Conditions */}
@@ -13662,10 +13836,10 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     L'appareil doit être entreposé dans ses conditions normales d'exploitation et restitué en parfait état. 
                     Tout incident doit nous être communiqué sous 48h. Le client s'engage à souscrire une assurance prenant en compte le "Bien Confié".
                   </p>
-                  {(qd.totalRetailValue || 0) > 0 && <p className="font-bold text-sm text-gray-800 mt-2">Valeur à assurer : {qd.totalRetailValue.toFixed(2)} € HT</p>}
+                  {(qd.totalRetailValue || 0) > 0 && <p className="font-bold text-sm mt-2">Valeur à assurer : {qd.totalRetailValue.toFixed(2)} € HT</p>}
                 </div>
 
-                {/* Buyback Clause */}
+                {/* Buyback */}
                 {qd.buybackClause && (
                   <div className="px-8 py-3 bg-green-50 border-b">
                     <p className="text-sm text-green-800">
@@ -13674,12 +13848,12 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   </div>
                 )}
 
-                {/* Delivery / Payment Terms */}
-                <div className="px-8 py-4 border-b text-sm flex justify-between">
-                  <div><span className="text-gray-500">Délai de livraison :</span> <span className="font-medium">{qd.deliveryTerms || 'En stock'}</span></div>
-                  <div><span className="text-gray-500">Conditions de paiement :</span> <span className="font-medium">{qd.paymentTerms || 'À réception de facture'}</span></div>
+                {/* Terms */}
+                <div className="px-8 py-3 border-b text-sm flex justify-between">
+                  <span><span className="text-gray-500">Délai :</span> {qd.deliveryTerms || 'En stock'}</span>
+                  <span><span className="text-gray-500">Paiement :</span> {qd.paymentTerms || 'À réception de facture'}</span>
                 </div>
-                <div className="px-8 py-3 text-xs text-gray-400 border-b">Nos prix sont ex works Créteil</div>
+                <div className="px-8 py-2 text-xs text-gray-400 border-b">Nos prix sont ex works Créteil</div>
 
                 {qd.notes && (
                   <div className="px-8 py-3 bg-amber-50 border-b text-sm">
@@ -13687,7 +13861,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   </div>
                 )}
 
-                {/* Signature Area */}
+                {/* Signature area */}
                 <div className="px-8 py-6 flex justify-between items-end">
                   <div>
                     <p className="text-sm font-bold text-gray-800">Lighthouse France</p>
@@ -13700,7 +13874,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 </div>
               </div>
 
-              {/* Action Footer */}
+              {/* Action Footer - identical to RMA */}
               <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex justify-between items-center">
                 <div className="flex gap-2">
                   <button onClick={() => {
@@ -13709,9 +13883,33 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     const printWindow = window.open('', '_blank');
                     printWindow.document.write(`
                       <html><head><title>Devis Location ${rental.rental_number}</title>
-                      <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2/dist/tailwind.min.css" rel="stylesheet">
                       <style>
-                        body { font-family: system-ui, -apple-system, sans-serif; }
+                        body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 20px; }
+                        table { width: 100%; border-collapse: collapse; }
+                        th, td { padding: 0.75rem 1rem; }
+                        .bg-gray-50 { background: #f9fafb; } .bg-gray-100 { background: #f3f4f6; }
+                        .bg-blue-50 { background: #eff6ff; } .bg-green-50 { background: #f0fdf4; }
+                        .bg-amber-50 { background: #fffbeb; }
+                        .font-bold { font-weight: 700; } .font-medium { font-weight: 500; }
+                        .text-sm { font-size: 0.875rem; } .text-xs { font-size: 0.75rem; }
+                        .text-right { text-align: right; } .text-left { text-align: left; }
+                        .border-b { border-bottom: 1px solid #e5e7eb; }
+                        .border-t { border-top: 1px solid #e5e7eb; }
+                        .flex { display: flex; } .justify-between { justify-content: space-between; }
+                        .items-start { align-items: flex-start; } .items-end { align-items: flex-end; }
+                        .w-48 { width: 12rem; } .h-20 { height: 5rem; }
+                        .border-2 { border-width: 2px; } .border-dashed { border-style: dashed; }
+                        .border-gray-300 { border-color: #d1d5db; } .rounded-lg { border-radius: 0.5rem; }
+                        .px-8 { padding-left: 2rem; padding-right: 2rem; }
+                        .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
+                        .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+                        .py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+                        .pt-8 { padding-top: 2rem; } .pb-4 { padding-bottom: 1rem; }
+                        .mb-1 { margin-bottom: 0.25rem; } .mb-2 { margin-bottom: 0.5rem; }
+                        .mt-1 { margin-top: 0.25rem; } .mt-2 { margin-top: 0.5rem; }
+                        .gap-3 { gap: 0.75rem; }
+                        .w-72 { width: 18rem; }
+                        .font-mono { font-family: monospace; }
                         @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
                       </style></head>
                       <body>${content.innerHTML}</body></html>
@@ -13729,7 +13927,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                       <button onClick={() => setShowRentalRevision(true)} className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium">
                         Demander modification
                       </button>
-                      <button onClick={() => { setShowRentalQuote(false); setShowRentalBC(true); }} className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold">
+                      <button onClick={() => { setShowRentalQuote(false); setShowBCModal(true); }} className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold">
                         ✅ Approuver et soumettre BC
                       </button>
                     </>
@@ -13743,7 +13941,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
                     <h3 className="text-xl font-bold text-gray-800 mb-4">Demander une modification</h3>
                     <p className="text-gray-600 mb-4">Décrivez les modifications que vous souhaitez apporter au devis :</p>
-                    <textarea value={rentalRevisionNotes} onChange={e => setRentalRevisionNotes(e.target.value)} className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#8B5CF6]" placeholder="Ex: modifier le tarif, changer la durée, retirer les frais de transport..." />
+                    <textarea value={rentalRevisionNotes} onChange={e => setRentalRevisionNotes(e.target.value)} className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder="Ex: modifier le tarif, changer la durée, retirer les frais de transport, etc." />
                     <div className="mt-4 flex justify-end gap-3">
                       <button onClick={() => setShowRentalRevision(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Annuler</button>
                       <button onClick={handleRentalRevision} disabled={rentalProcessing || !rentalRevisionNotes.trim()} className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50">
@@ -13757,29 +13955,117 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
           </div>
         )}
 
-        {/* ========== BC UPLOAD MODAL ========== */}
-        {showRentalBC && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowRentalBC(false)}>
-            <div className="bg-white rounded-2xl max-w-lg w-full p-6" onClick={e => e.stopPropagation()}>
-              <h3 className="text-xl font-bold mb-4">📄 Soumettre un Bon de Commande</h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Réf: {rental.rental_number} — {(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} € HT
-              </p>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Signataire</label>
-                  <input type="text" value={rentalBcSignedBy} onChange={e => setRentalBcSignedBy(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Fichier BC (PDF)</label>
-                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setRentalBcFile(e.target.files[0])} className="w-full" />
-                </div>
-                <div className="flex gap-3">
-                  <button onClick={() => setShowRentalBC(false)} className="flex-1 py-2 bg-gray-200 rounded-lg font-medium">Annuler</button>
-                  <button onClick={() => uploadRentalBC(rental)} disabled={uploadingRentalBC || !rentalBcFile} className="flex-1 py-2 bg-[#00A651] text-white rounded-lg font-bold disabled:opacity-50">
-                    {uploadingRentalBC ? 'Envoi...' : '✅ Soumettre'}
+        {/* ========== BC SUBMISSION MODAL (identical to RMA) ========== */}
+        {showBCModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold text-[#1E3A5F]">Soumettre Bon de Commande</h2>
+                  <button onClick={() => setShowBCModal(false)} className="text-gray-400 hover:text-gray-600">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                   </button>
                 </div>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                {/* Reference */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-500">Référence location</p>
+                  <p className="font-mono font-bold text-[#1E3A5F]">{rental.rental_number}</p>
+                  <p className="text-sm text-gray-500 mt-1">Total: {(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} € HT</p>
+                </div>
+
+                {/* File Upload */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Télécharger votre Bon de Commande (optionnel)
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#3B7AB4] transition-colors">
+                    <input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(e) => setBcFileUpload(e.target.files?.[0] || null)} className="hidden" id="rental-bc-file" />
+                    <label htmlFor="rental-bc-file" className="cursor-pointer">
+                      {bcFileUpload ? (
+                        <div className="flex items-center justify-center gap-2 text-[#3B7AB4]">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          <span className="font-medium">{bcFileUpload.name}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <svg className="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                          <p className="text-sm text-gray-600">Cliquez pour télécharger ou glissez-déposez</p>
+                          <p className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX, JPG, PNG (max 10MB)</p>
+                        </>
+                      )}
+                    </label>
+                  </div>
+                </div>
+
+                {/* OR Divider */}
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 h-px bg-gray-200"></div>
+                  <span className="text-sm text-gray-500">ou</span>
+                  <div className="flex-1 h-px bg-gray-200"></div>
+                </div>
+
+                {/* Electronic Signature */}
+                <div className="bg-[#F5F9FC] rounded-lg p-4 border border-[#3B7AB4]/20">
+                  <h3 className="font-semibold text-[#1E3A5F] mb-4">Signature électronique</h3>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Nom complet du signataire *</label>
+                        <input type="text" value={signatureName} onChange={(e) => setSignatureName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent" placeholder="Prénom et Nom" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                        <input type="text" value={signatureDateDisplay} readOnly className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600" />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Tapez "Lu et approuvé" *</label>
+                      <input type="text" value={luEtApprouve} onChange={(e) => setLuEtApprouve(e.target.value)} className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent font-medium ${luEtApprouve.toLowerCase().trim() === 'lu et approuvé' ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-300'}`} placeholder="Lu et approuvé" />
+                    </div>
+                    
+                    {/* Signature Pad */}
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="block text-sm font-medium text-gray-700">Signature manuscrite *</label>
+                        <button type="button" onClick={clearSignature} className="text-xs text-red-600 hover:text-red-700">Effacer</button>
+                      </div>
+                      <div className={`border-2 rounded-lg bg-white ${signatureData ? 'border-green-500' : 'border-gray-300 border-dashed'}`}>
+                        <canvas ref={canvasRef} width={400} height={150} className="w-full cursor-crosshair touch-none" onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} />
+                      </div>
+                      {!signatureData && <p className="text-xs text-gray-500 mt-1">Dessinez votre signature ci-dessus</p>}
+                      {signatureData && <p className="text-xs text-green-600 mt-1">✓ Signature enregistrée</p>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Legal Terms */}
+                <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" checked={acceptTerms} onChange={(e) => setAcceptTerms(e.target.checked)} className="mt-1 w-4 h-4 text-[#3B7AB4] border-gray-300 rounded focus:ring-[#3B7AB4]" />
+                    <span className="text-sm text-gray-700">
+                      Je soussigné(e), <strong>{signatureName || '[Nom]'}</strong>, 
+                      certifie avoir pris connaissance et accepter les conditions générales de location de Lighthouse France. 
+                      Je m'engage à régler la facture correspondante selon les modalités convenues et à restituer le matériel en parfait état. 
+                      Cette validation électronique a valeur de signature manuscrite conformément aux articles 1366 et 1367 du Code civil français.
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-6 border-t border-gray-200 bg-gray-50 flex gap-3">
+                <button onClick={() => setShowBCModal(false)} className="flex-1 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors">
+                  Annuler
+                </button>
+                <button onClick={submitRentalBC} disabled={submittingBC || !isSubmissionValid} className={`flex-1 py-3 rounded-lg font-medium transition-colors ${isSubmissionValid ? 'bg-[#1E3A5F] text-white hover:bg-[#2a4a6f]' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>
+                  {submittingBC ? 'Envoi en cours...' : 'Valider et soumettre'}
+                </button>
               </div>
             </div>
           </div>
