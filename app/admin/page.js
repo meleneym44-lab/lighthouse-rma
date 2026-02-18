@@ -3899,7 +3899,7 @@ export default function AdminPortal() {
               filter={dashboardFilter} 
               setFilter={setDashboardFilter} 
             />}
-            {activeSheet === 'quote_review' && <QuoteReviewSheet requests={requests} clients={clients} notify={notify} reload={loadData} profile={profile} t={t} lang={lang} />}
+            {activeSheet === 'quote_review' && <QuoteReviewSheet requests={requests} clients={clients} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
             {activeSheet === 'kpi' && <KPISheet requests={requests} clients={clients} t={t} lang={lang} />}
             {activeSheet === 'requests' && <RequestsSheet requests={requests.filter(r => r.request_type !== 'parts')} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
             {activeSheet === 'parts' && <PartsOrdersSheet requests={partsOrders} notify={notify} reload={loadData} profile={profile} t={t} lang={lang} />}
@@ -4013,7 +4013,7 @@ function LoginPage() {
 // ============================================
 // QUOTE REVIEW SHEET
 // ============================================
-function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile, t = k=>k, lang = 'fr' }) {
+function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile, businessSettings = {}, t = k=>k, lang = 'fr' }) {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('pending');
@@ -4244,20 +4244,25 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
       } else if (review.quote_type === 'rental') {
         // === RENTAL QUOTE: Generate PDF and set status to quote_sent ===
         const rentalId = review.rental_request_id || review.quote_data?.rentalId;
+        console.log('📄 Rental quote approval - rentalId:', rentalId);
         if (rentalId) {
           // Generate rental quote PDF
           let quoteUrl = null;
           try {
-            const { data: rentalData } = await supabase.from('rental_requests')
+            const { data: rentalData, error: fetchErr } = await supabase.from('rental_requests')
               .select('*, companies(*)')
               .eq('id', rentalId).single();
+            console.log('📄 Rental data fetched:', !!rentalData, 'error:', fetchErr);
             if (rentalData) {
+              console.log('📄 Generating PDF with businessSettings:', !!businessSettings);
               const pdfBlob = await generateRentalQuotePDF(rentalData, review.quote_data, businessSettings);
+              console.log('📄 PDF blob generated, size:', pdfBlob?.size);
               const fileName = `${review.quote_data?.rentalNumber || 'LOC'}_devis_${Date.now()}.pdf`;
               quoteUrl = await uploadPDFToStorage(pdfBlob, `quotes/${review.quote_data?.rentalNumber || rentalId}`, fileName);
+              console.log('📄 PDF uploaded, URL:', quoteUrl);
             }
           } catch (pdfErr) {
-            console.error('Rental PDF generation error:', pdfErr);
+            console.error('❌ Rental PDF generation error:', pdfErr);
           }
 
           const updateData = {
@@ -4267,8 +4272,10 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
             quote_rejection_notes: null
           };
           if (quoteUrl) updateData.quote_url = quoteUrl;
+          console.log('📄 Updating rental with:', Object.keys(updateData));
           
-          await supabase.from('rental_requests').update(updateData).eq('id', rentalId);
+          const { error: updateErr } = await supabase.from('rental_requests').update(updateData).eq('id', rentalId);
+          if (updateErr) console.error('❌ Rental update error:', updateErr);
           
           // Save PDF as attachment
           if (quoteUrl) {
