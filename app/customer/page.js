@@ -12616,6 +12616,17 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
   const [rentalBcSignedBy, setRentalBcSignedBy] = useState(profile?.full_name || '');
   const [uploadingRentalBC, setUploadingRentalBC] = useState(false);
   
+  // Rental detail state
+  const [rentalTab, setRentalTab] = useState('overview');
+  const [rentalMessages, setRentalMessages] = useState([]);
+  const [rentalNewMsg, setRentalNewMsg] = useState('');
+  const [rentalSending, setRentalSending] = useState(false);
+  const [rentalDocs, setRentalDocs] = useState([]);
+  const [showRentalQuote, setShowRentalQuote] = useState(false);
+  const [showRentalRevision, setShowRentalRevision] = useState(false);
+  const [rentalRevisionNotes, setRentalRevisionNotes] = useState('');
+  const [rentalProcessing, setRentalProcessing] = useState(false);
+  
   // New rental form state
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
@@ -13213,10 +13224,69 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
     const needsAction = rental.status === 'quote_sent';
     const qd = rental.quote_data || {};
     const items = qd.quoteItems || qd.items || rental.rental_request_items || [];
+    const hasQuote = !!(rental.quote_total_ht || qd.totalHT);
+    const period = qd.rentalPeriod || { start: rental.start_date, end: rental.end_date, days: rentalDaysDisplay };
+
+    // Load messages and docs for this rental
+    const loadRentalComms = async () => {
+      const { data: msgs } = await supabase.from('messages').select('*').eq('rental_request_id', rental.id).order('created_at', { ascending: true });
+      if (msgs) setRentalMessages(msgs);
+      const { data: docs } = await supabase.from('request_attachments').select('*').eq('rental_request_id', rental.id);
+      if (docs) setRentalDocs(docs);
+    };
+
+    // Load on first render
+    if (rentalMessages.length === 0 && rentalDocs.length === 0) {
+      loadRentalComms();
+    }
+
+    const sendRentalMessage = async (e) => {
+      e?.preventDefault();
+      if (!rentalNewMsg.trim()) return;
+      setRentalSending(true);
+      await supabase.from('messages').insert({
+        rental_request_id: rental.id,
+        sender_id: profile?.id,
+        sender_name: profile?.full_name || 'Client',
+        sender_role: 'customer',
+        content: rentalNewMsg.trim()
+      });
+      setRentalNewMsg('');
+      setRentalSending(false);
+      loadRentalComms();
+    };
+
+    const handleRentalApprove = async () => {
+      setRentalProcessing(true);
+      const { error } = await supabase.from('rental_requests').update({
+        status: 'waiting_bc',
+        quote_approved_at: new Date().toISOString()
+      }).eq('id', rental.id);
+      if (error) notify('Erreur: ' + error.message, 'error');
+      else { notify('✅ Devis approuvé ! Veuillez soumettre votre bon de commande.'); setShowRentalQuote(false); }
+      setRentalProcessing(false);
+      setSelectedRental(null);
+      loadData();
+    };
+
+    const handleRentalRevision = async () => {
+      if (!rentalRevisionNotes.trim()) { notify('Veuillez décrire les modifications', 'error'); return; }
+      setRentalProcessing(true);
+      const { error } = await supabase.from('rental_requests').update({
+        status: 'requested',
+        quote_revision_notes: rentalRevisionNotes.trim(),
+        quote_revision_requested_at: new Date().toISOString()
+      }).eq('id', rental.id);
+      if (error) notify('Erreur: ' + error.message, 'error');
+      else { notify('✅ Demande de modification envoyée !'); setShowRentalRevision(false); setShowRentalQuote(false); }
+      setRentalProcessing(false);
+      setSelectedRental(null);
+      loadData();
+    };
 
     return (
       <div>
-        <button onClick={() => setSelectedRental(null)} className="text-gray-500 hover:text-gray-700 mb-4 flex items-center gap-2">
+        <button onClick={() => { setSelectedRental(null); setRentalTab('overview'); setRentalMessages([]); setRentalDocs([]); }} className="text-gray-500 hover:text-gray-700 mb-4 flex items-center gap-2">
           ← Retour aux locations
         </button>
         
@@ -13240,12 +13310,33 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   </div>
                   <div>
                     <p className="font-semibold text-red-800">Action requise</p>
-                    <p className="text-sm text-red-600">Veuillez approuver le devis et soumettre votre bon de commande</p>
+                    <p className="text-sm text-red-600">Veuillez consulter le devis et soumettre votre bon de commande</p>
                   </div>
                 </div>
-                <button onClick={() => setShowRentalBC(true)} className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700">
-                  📄 Soumettre BC
-                </button>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowRentalQuote(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">
+                    👁️ Voir le Devis
+                  </button>
+                  <button onClick={() => setShowRentalBC(true)} className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700">
+                    📄 Soumettre BC
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Waiting BC */}
+          {rental.status === 'waiting_bc' && !rental.bc_file_url && (
+            <div className="bg-amber-50 border-b border-amber-200 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">📋</span>
+                  <div>
+                    <p className="font-bold text-amber-800">Devis approuvé — En attente de votre BC</p>
+                    {hasQuote && <button onClick={() => setShowRentalQuote(true)} className="text-sm text-blue-600 underline mt-1">Revoir le devis</button>}
+                  </div>
+                </div>
+                <button onClick={() => setShowRentalBC(true)} className="px-4 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-green-600">📄 Soumettre BC</button>
               </div>
             </div>
           )}
@@ -13260,13 +13351,11 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   <p className="text-sm text-red-600">{rental.bc_rejection_reason}</p>
                 </div>
               </div>
-              <button onClick={() => setShowRentalBC(true)} className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700">
-                📄 Resoumettre BC
-              </button>
+              <button onClick={() => setShowRentalBC(true)} className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700">📄 Resoumettre BC</button>
             </div>
           )}
 
-          {/* BC Submitted */}
+          {/* BC Submitted - Pending Review */}
           {rental.status === 'bc_review' && (
             <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
               <div className="flex items-center gap-3">
@@ -13279,91 +13368,403 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
             </div>
           )}
 
-          {/* Equipment List */}
-          <div className="px-6 py-4 border-b">
-            <h3 className="font-bold text-gray-800 mb-3">📦 Équipements</h3>
-            <div className="space-y-3">
-              {items.map((item, idx) => (
-                <div key={idx} className="bg-gray-50 rounded-lg p-3 border">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-bold text-gray-800">{item.item_name || item.equipment_model || '—'}</p>
-                      {item.serial_number && <p className="text-xs text-gray-500">S/N: {item.serial_number}</p>}
-                      {item.specs && <p className="text-sm text-gray-600 mt-1 whitespace-pre-line">{item.specs}</p>}
-                    </div>
-                    {(item.line_total || 0) > 0 && (
-                      <span className="font-bold text-[#8B5CF6]">{parseFloat(item.line_total).toFixed(2)} € HT</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+          {/* Tabs */}
+          <div className="flex gap-1 px-6 pt-4 bg-gray-50 border-b overflow-x-auto">
+            {[
+              { id: 'overview', label: 'Aperçu', icon: '📋' },
+              { id: 'documents', label: 'Documents', icon: '📄', badge: rentalDocs.length },
+              { id: 'messages', label: 'Messages', icon: '💬', badge: rentalMessages.filter(m => m.sender_role !== 'customer').length }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setRentalTab(tab.id)}
+                className={`px-4 py-2.5 rounded-t-lg font-medium transition-colors flex items-center gap-2 ${
+                  rentalTab === tab.id ? 'bg-white border border-b-0 border-gray-200 text-[#1E3A5F]' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <span>{tab.icon}</span> {tab.label}
+                {tab.badge > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">{tab.badge}</span>}
+              </button>
+            ))}
           </div>
 
-          {/* Quote Summary (when quote has been prepared) */}
-          {(rental.quote_total_ht || qd.totalHT) && (
-            <div className="px-6 py-4 border-b">
-              <h3 className="font-bold text-gray-800 mb-3">💰 Devis</h3>
-              <div className="bg-gray-50 rounded-lg p-4 border space-y-1.5">
-                {(qd.discount || 0) > 0 && <>
-                  <div className="flex justify-between text-sm"><span>Sous-total</span><span>{(qd.subtotalBeforeDiscount || 0).toFixed(2)} €</span></div>
-                  <div className="flex justify-between text-sm text-green-600"><span>Remise {qd.discountType === 'percent' ? `(${qd.discount}%)` : '(forfait)'}</span><span>-{(qd.discountAmount || 0).toFixed(2)} €</span></div>
-                </>}
-                {(qd.shipping || 0) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{parseFloat(qd.shipping || 0).toFixed(2)} €</span></div>}
-                <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total HT</span><span className="text-[#00A651]">{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} €</span></div>
-                <div className="flex justify-between text-sm text-gray-500"><span>TTC ({qd.taxRate || 20}%)</span><span>{(qd.totalTTC || rental.quote_total_ttc || 0).toFixed(2)} €</span></div>
+          <div className="p-6">
+            {/* ========== OVERVIEW TAB ========== */}
+            {rentalTab === 'overview' && (
+              <div className="space-y-6">
+                {/* Rental period */}
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <div className="flex items-center gap-4 text-sm">
+                    <span className="font-bold text-purple-800">📅 Période de location</span>
+                    <span className="font-medium">{new Date(rental.start_date).toLocaleDateString('fr-FR')} → {new Date(rental.end_date).toLocaleDateString('fr-FR')}</span>
+                    <span className="px-2 py-0.5 bg-purple-200 text-purple-800 rounded-full text-xs font-bold">{rentalDaysDisplay} jours</span>
+                  </div>
+                </div>
+
+                {/* Equipment List */}
+                <div>
+                  <h3 className="font-bold text-gray-800 mb-3">📦 Équipements</h3>
+                  <div className="space-y-3">
+                    {items.map((item, idx) => (
+                      <div key={idx} className="bg-gray-50 rounded-lg p-4 border">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-bold text-gray-800">{item.item_name || item.equipment_model || '—'}</p>
+                            {item.serial_number && <p className="text-xs text-gray-500">S/N: {item.serial_number}</p>}
+                            {item.specs && <p className="text-sm text-gray-600 mt-1 whitespace-pre-line">{item.specs}</p>}
+                          </div>
+                          {(item.line_total || 0) > 0 && (
+                            <span className="font-bold text-[#8B5CF6]">{parseFloat(item.line_total).toFixed(2)} € HT</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Quote Summary */}
+                {hasQuote && (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-bold text-gray-800">💰 Devis</h3>
+                      <button onClick={() => setShowRentalQuote(true)} className="text-sm text-blue-600 hover:text-blue-800 font-medium">
+                        👁️ Voir le devis complet →
+                      </button>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4 border space-y-1.5">
+                      {(qd.discount || 0) > 0 && <>
+                        <div className="flex justify-between text-sm"><span>Sous-total</span><span>{(qd.subtotalBeforeDiscount || 0).toFixed(2)} €</span></div>
+                        <div className="flex justify-between text-sm text-green-600"><span>Remise {qd.discountType === 'percent' ? `(${qd.discount}%)` : '(forfait)'}</span><span>-{(qd.discountAmount || 0).toFixed(2)} €</span></div>
+                      </>}
+                      {(qd.shipping || 0) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{parseFloat(qd.shipping || 0).toFixed(2)} €</span></div>}
+                      <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total HT</span><span className="text-[#00A651]">{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} €</span></div>
+                      <div className="flex justify-between text-sm text-gray-500"><span>TTC ({qd.taxRate || 20}%)</span><span>{(qd.totalTTC || rental.quote_total_ttc || 0).toFixed(2)} €</span></div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Insurance */}
+                {hasQuote && (
+                  <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                    <p className="font-bold text-xs text-amber-800 mb-1">Conditions d'assurance</p>
+                    <p className="text-xs text-amber-700">Pendant la durée de la location, l'appareil reste la propriété de Lighthouse France et devient sous la responsabilité du client. L'appareil doit être entreposé dans ses conditions normales d'exploitation et restitué en parfait état. Tout incident doit nous être communiqué sous 48h.</p>
+                    {(qd.totalRetailValue || 0) > 0 && <p className="font-bold text-xs text-amber-800 mt-1">Valeur à assurer : {qd.totalRetailValue.toFixed(2)} € HT</p>}
+                  </div>
+                )}
+
+                {/* Shipping / Tracking */}
+                {rental.outbound_tracking && (
+                  <div className="bg-cyan-50 rounded-lg p-4 border border-cyan-200">
+                    <h3 className="font-bold text-cyan-800 mb-2">🚚 Expédition</h3>
+                    <p className="text-sm">N° de suivi : <span className="font-mono font-bold">{rental.outbound_tracking}</span></p>
+                    {rental.outbound_shipped_at && <p className="text-xs text-gray-500">Expédié le {new Date(rental.outbound_shipped_at).toLocaleDateString('fr-FR')}</p>}
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                {(rental.status === 'quote_sent' || (rental.status === 'waiting_bc' && !rental.bc_file_url)) && (
+                  <div className="flex gap-3">
+                    {hasQuote && <button onClick={() => setShowRentalQuote(true)} className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700">👁️ Voir le Devis</button>}
+                    <button onClick={() => setShowRentalBC(true)} className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-green-600">📄 Soumettre mon Bon de Commande</button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ========== DOCUMENTS TAB ========== */}
+            {rentalTab === 'documents' && (
+              <div>
+                {rentalDocs.length === 0 ? (
+                  <div className="text-center py-12 text-gray-400">
+                    <p className="text-4xl mb-2">📄</p>
+                    <p>Aucun document</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {rentalDocs.map(doc => (
+                      <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border hover:bg-gray-100">
+                        <span className="text-2xl">{doc.file_type?.includes('pdf') ? '📕' : doc.file_type?.includes('image') ? '🖼️' : '📄'}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-800 truncate">{doc.file_name || doc.category || 'Document'}</p>
+                          <p className="text-xs text-gray-500">{new Date(doc.created_at).toLocaleDateString('fr-FR')}</p>
+                        </div>
+                        <span className="text-blue-600 text-sm">Télécharger →</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+                {rental.bc_file_url && (
+                  <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span>📋</span>
+                        <span className="font-medium text-green-800">Bon de commande soumis</span>
+                        {rental.bc_submitted_at && <span className="text-xs text-gray-500">le {new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR')}</span>}
+                      </div>
+                      <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">Voir →</a>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ========== MESSAGES TAB ========== */}
+            {rentalTab === 'messages' && (
+              <div>
+                <div className="h-[400px] overflow-y-auto mb-4 space-y-4">
+                  {rentalMessages.length === 0 ? (
+                    <div className="text-center text-gray-400 py-12">
+                      <p className="text-4xl mb-2">💬</p>
+                      <p>Aucun message</p>
+                      <p className="text-sm">Envoyez un message à notre équipe</p>
+                    </div>
+                  ) : (
+                    rentalMessages.map(msg => {
+                      const isMe = msg.sender_id === profile?.id;
+                      return (
+                        <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-[70%] rounded-lg p-3 ${isMe ? 'bg-[#8B5CF6] text-white' : 'bg-gray-100 text-gray-800'}`}>
+                            <p className={`text-xs font-medium mb-1 ${isMe ? 'text-white/70' : 'text-[#8B5CF6]'}`}>
+                              {isMe ? 'Vous' : (msg.sender_name || 'Lighthouse France')}
+                            </p>
+                            <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                            {msg.attachment_url && (
+                              <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isMe ? 'text-white/80' : 'text-blue-600 hover:underline'}`}>
+                                📎 {msg.attachment_name || 'Fichier joint'}
+                              </a>
+                            )}
+                            <p className={`text-xs mt-1 ${isMe ? 'text-white/60' : 'text-gray-400'}`}>
+                              {new Date(msg.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+                <form onSubmit={sendRentalMessage} className="flex gap-2">
+                  <input type="text" value={rentalNewMsg} onChange={e => setRentalNewMsg(e.target.value)} placeholder="Écrivez votre message..." className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8B5CF6]" />
+                  <button type="submit" disabled={!rentalNewMsg.trim() || rentalSending} className="px-6 py-2 bg-[#8B5CF6] text-white rounded-lg font-medium disabled:opacity-50">{rentalSending ? '...' : 'Envoyer'}</button>
+                </form>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ========== FULL QUOTE MODAL ========== */}
+        {showRentalQuote && hasQuote && (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
+                <div>
+                  <h2 className="text-xl font-bold">Devis Location</h2>
+                  <p className="text-gray-400">{rental.rental_number}</p>
+                </div>
+                <button onClick={() => setShowRentalQuote(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
               </div>
 
-              {/* Insurance conditions */}
-              <div className="mt-3 bg-amber-50 rounded-lg p-3 border border-amber-200 text-xs text-amber-800">
-                <p className="font-bold mb-1">Conditions d'assurance</p>
-                <p>Pendant la durée de la location, l'appareil reste la propriété de Lighthouse France et devient sous la responsabilité du client. 
-                L'appareil doit être entreposé dans ses conditions normales d'exploitation et restitué en parfait état. 
-                Tout incident doit nous être communiqué sous 48h.</p>
-                {(qd.totalRetailValue || 0) > 0 && <p className="font-bold mt-1">Valeur à assurer : {qd.totalRetailValue.toFixed(2)} € HT</p>}
+              {/* Quote Document */}
+              <div id="rental-quote-print">
+                {/* Quote Header */}
+                <div className="px-8 pt-8 pb-4 border-b-4 border-[#2D5A7B]">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse France" className="h-24 w-auto mb-1" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
+                      <div className="hidden">
+                        <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
+                        <p className="text-gray-500">Worldwide Solutions</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-[#2D5A7B]">OFFRE DE PRIX - LOCATION</p>
+                      <p className="text-gray-500 font-medium">N° {rental.rental_number}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Info Bar */}
+                <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Date</p>
+                    <p className="font-medium">{rental.quoted_at ? new Date(rental.quoted_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Validité</p>
+                    <p className="font-medium">30 jours</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Conditions de paiement</p>
+                    <p className="font-medium">{qd.paymentTerms || 'À réception de facture'}</p>
+                  </div>
+                </div>
+
+                {/* Client / Lighthouse */}
+                <div className="px-8 py-4 flex border-b">
+                  <div className="flex-1 border-r pr-6">
+                    <p className="text-xs text-gray-500 uppercase mb-1">Émetteur</p>
+                    <p className="font-bold">LIGHTHOUSE FRANCE</p>
+                    <p className="text-sm text-gray-600">16 Rue Paul Séjourne</p>
+                    <p className="text-sm text-gray-600">94000 Créteil, France</p>
+                  </div>
+                  <div className="flex-1 pl-6">
+                    <p className="text-xs text-gray-500 uppercase mb-1">Client</p>
+                    <p className="font-bold">{rental.companies?.name || qd.clientName || 'Client'}</p>
+                    {(qd.clientAddress || rental.companies?.address) && <p className="text-sm text-gray-600">{qd.clientAddress || rental.companies?.address}</p>}
+                    {(qd.clientCity || rental.companies?.city) && <p className="text-sm text-gray-600">{qd.clientPostalCode || rental.companies?.postal_code} {qd.clientCity || rental.companies?.city}</p>}
+                    {(qd.clientCountry || rental.companies?.country) && <p className="text-sm text-gray-600">{qd.clientCountry || rental.companies?.country}</p>}
+                  </div>
+                </div>
+
+                {/* Rental Period */}
+                <div className="px-8 py-3 bg-blue-50 border-b">
+                  <p className="text-sm font-medium text-blue-800">
+                    📅 Période de location : du {new Date(period.start || rental.start_date).toLocaleDateString('fr-FR')} au {new Date(period.end || rental.end_date).toLocaleDateString('fr-FR')} ({period.days || rentalDaysDisplay} jours)
+                  </p>
+                </div>
+
+                {/* Equipment Detail Sections */}
+                {items.map((item, idx) => (
+                  <div key={idx} className="px-8 py-4 border-b">
+                    <h3 className="font-bold text-lg text-[#1a1a2e] mb-2">Location {item.item_name || '—'}</h3>
+                    {item.specs && (
+                      <div className="text-sm text-gray-600 whitespace-pre-line mb-3 pl-4 border-l-2 border-gray-200">{item.specs}</div>
+                    )}
+                    <div className="flex justify-between items-center pt-2 border-t border-dashed">
+                      <span className="text-sm text-gray-600">Prix de location pour {period.days || rentalDaysDisplay} jours</span>
+                      <span className="text-lg font-bold">{(parseFloat(item.line_total) || 0).toFixed(2)} € HT</span>
+                    </div>
+                    {(item.retail_value || 0) > 0 && (
+                      <div className="flex justify-between text-xs text-gray-400 mt-1">
+                        <span>Prix unitaire (valeur neuf)</span>
+                        <span>{parseFloat(item.retail_value).toFixed(2)} € HT</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* Totals */}
+                <div className="px-8 py-4 bg-gray-50 border-b space-y-1.5">
+                  {(qd.discount || 0) > 0 && <>
+                    <div className="flex justify-between text-sm"><span>Sous-total location</span><span>{(qd.subtotalBeforeDiscount || 0).toFixed(2)} € HT</span></div>
+                    <div className="flex justify-between text-sm text-green-600"><span>Remise {qd.discountType === 'percent' ? `(${qd.discount}%)` : '(forfait)'}</span><span>-{(qd.discountAmount || 0).toFixed(2)} €</span></div>
+                  </>}
+                  {(qd.shipping || 0) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{parseFloat(qd.shipping || 0).toFixed(2)} € HT</span></div>}
+                  <div className="flex justify-between font-bold text-xl pt-3 border-t"><span>TOTAL HT</span><span className="text-[#00A651]">{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} €</span></div>
+                  <div className="flex justify-between text-sm text-gray-500"><span>TTC ({qd.taxRate || 20}%)</span><span>{(qd.totalTTC || rental.quote_total_ttc || 0).toFixed(2)} €</span></div>
+                </div>
+
+                {/* Insurance Conditions */}
+                <div className="px-8 py-4 border-b">
+                  <h3 className="font-bold text-sm text-gray-800 mb-2">Conditions d'assurance</h3>
+                  <p className="text-sm text-gray-600 leading-relaxed">
+                    Pendant la durée de la location, l'appareil reste la propriété de Lighthouse France et devient sous la responsabilité du client. 
+                    L'appareil doit être entreposé dans ses conditions normales d'exploitation et restitué en parfait état. 
+                    Tout incident doit nous être communiqué sous 48h. Le client s'engage à souscrire une assurance prenant en compte le "Bien Confié".
+                  </p>
+                  {(qd.totalRetailValue || 0) > 0 && <p className="font-bold text-sm text-gray-800 mt-2">Valeur à assurer : {qd.totalRetailValue.toFixed(2)} € HT</p>}
+                </div>
+
+                {/* Buyback Clause */}
+                {qd.buybackClause && (
+                  <div className="px-8 py-3 bg-green-50 border-b">
+                    <p className="text-sm text-green-800">
+                      Si l'appareil est acheté à la fin de la période de location, {qd.buybackPercent || 50}% de la somme versée pour la location sera déduite du prix d'achat de l'appareil.
+                    </p>
+                  </div>
+                )}
+
+                {/* Delivery / Payment Terms */}
+                <div className="px-8 py-4 border-b text-sm flex justify-between">
+                  <div><span className="text-gray-500">Délai de livraison :</span> <span className="font-medium">{qd.deliveryTerms || 'En stock'}</span></div>
+                  <div><span className="text-gray-500">Conditions de paiement :</span> <span className="font-medium">{qd.paymentTerms || 'À réception de facture'}</span></div>
+                </div>
+                <div className="px-8 py-3 text-xs text-gray-400 border-b">Nos prix sont ex works Créteil</div>
+
+                {qd.notes && (
+                  <div className="px-8 py-3 bg-amber-50 border-b text-sm">
+                    <span className="font-medium">Notes :</span> {qd.notes}
+                  </div>
+                )}
+
+                {/* Signature Area */}
+                <div className="px-8 py-6 flex justify-between items-end">
+                  <div>
+                    <p className="text-sm font-bold text-gray-800">Lighthouse France</p>
+                    <p className="text-sm text-gray-600">Service Location</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500 mb-2">Signature et cachet du client</p>
+                    <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded-lg"></div>
+                  </div>
+                </div>
               </div>
 
-              {qd.buybackClause && (
-                <div className="mt-2 bg-green-50 rounded-lg p-3 border border-green-200 text-xs text-green-800">
-                  Si l'appareil est acheté à la fin de la période de location, {qd.buybackPercent || 50}% de la somme versée sera déduite du prix d'achat.
+              {/* Action Footer */}
+              <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex justify-between items-center">
+                <div className="flex gap-2">
+                  <button onClick={() => {
+                    const content = document.getElementById('rental-quote-print');
+                    if (!content) return;
+                    const printWindow = window.open('', '_blank');
+                    printWindow.document.write(`
+                      <html><head><title>Devis Location ${rental.rental_number}</title>
+                      <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2/dist/tailwind.min.css" rel="stylesheet">
+                      <style>
+                        body { font-family: system-ui, -apple-system, sans-serif; }
+                        @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+                      </style></head>
+                      <body>${content.innerHTML}</body></html>
+                    `);
+                    printWindow.document.close();
+                    printWindow.focus();
+                    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+                  }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
+                    🖨️ Imprimer
+                  </button>
+                </div>
+                <div className="flex gap-3">
+                  {(rental.status === 'quote_sent') && (
+                    <>
+                      <button onClick={() => setShowRentalRevision(true)} className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium">
+                        Demander modification
+                      </button>
+                      <button onClick={() => { setShowRentalQuote(false); setShowRentalBC(true); }} className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold">
+                        ✅ Approuver et soumettre BC
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Revision Sub-Modal */}
+              {showRentalRevision && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
+                  <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-xl font-bold text-gray-800 mb-4">Demander une modification</h3>
+                    <p className="text-gray-600 mb-4">Décrivez les modifications que vous souhaitez apporter au devis :</p>
+                    <textarea value={rentalRevisionNotes} onChange={e => setRentalRevisionNotes(e.target.value)} className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#8B5CF6]" placeholder="Ex: modifier le tarif, changer la durée, retirer les frais de transport..." />
+                    <div className="mt-4 flex justify-end gap-3">
+                      <button onClick={() => setShowRentalRevision(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Annuler</button>
+                      <button onClick={handleRentalRevision} disabled={rentalProcessing || !rentalRevisionNotes.trim()} className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50">
+                        {rentalProcessing ? 'Envoi...' : 'Envoyer la demande'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Shipping / Tracking */}
-          {rental.outbound_tracking && (
-            <div className="px-6 py-4 border-b">
-              <h3 className="font-bold text-gray-800 mb-2">🚚 Expédition</h3>
-              <p className="text-sm">N° de suivi : <span className="font-mono font-bold">{rental.outbound_tracking}</span></p>
-              {rental.outbound_shipped_at && <p className="text-xs text-gray-500">Expédié le {new Date(rental.outbound_shipped_at).toLocaleDateString('fr-FR')}</p>}
-            </div>
-          )}
-
-          {/* Customer notes */}
-          {rental.customer_notes && (
-            <div className="px-6 py-4 border-b">
-              <h3 className="font-bold text-gray-800 mb-2">📝 Vos notes</h3>
-              <p className="text-sm text-gray-600">{rental.customer_notes}</p>
-            </div>
-          )}
-
-          {/* Submit BC Button (for quote_sent or waiting_bc) */}
-          {(rental.status === 'quote_sent' || (rental.status === 'waiting_bc' && !rental.bc_file_url)) && (
-            <div className="px-6 py-4">
-              <button onClick={() => setShowRentalBC(true)} className="w-full py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-green-600">
-                📄 Soumettre mon Bon de Commande
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* BC Upload Modal */}
+        {/* ========== BC UPLOAD MODAL ========== */}
         {showRentalBC && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowRentalBC(false)}>
             <div className="bg-white rounded-2xl max-w-lg w-full p-6" onClick={e => e.stopPropagation()}>
               <h3 className="text-xl font-bold mb-4">📄 Soumettre un Bon de Commande</h3>
-              <p className="text-sm text-gray-600 mb-4">Réf: {rental.rental_number} — {(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} € HT</p>
+              <p className="text-sm text-gray-600 mb-4">
+                Réf: {rental.rental_number} — {(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} € HT
+              </p>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Signataire</label>
