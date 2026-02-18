@@ -4518,14 +4518,14 @@ const renderQuotePreview = (review) => {
     // RENTAL QUOTE
     // ============================================
     if (review.quote_type === 'rental') {
-      const items = qd.items || [];
+      const items = qd.quoteItems || qd.items || [];
+      const period = qd.rentalPeriod || {};
+      const rentalDays = period.days || items[0]?.rental_days || '—';
       return (
         <div className="border rounded-xl overflow-hidden">
           <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
             <div className="flex justify-between items-start">
-              <div>
-                <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-10 object-contain" />
-              </div>
+              <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-12 object-contain" />
               <div className="text-right">
                 <p className="text-xl font-bold text-[#2D5A7B]">DEVIS LOCATION</p>
                 <p className="text-sm font-bold text-[#2D5A7B]">N° {qd.rentalNumber || review.quote_number || '—'}</p>
@@ -4533,42 +4533,68 @@ const renderQuotePreview = (review) => {
             </div>
           </div>
           
-          <div className="px-6 py-3 border-b">
-            <p className="text-xs text-gray-500 uppercase">Client</p>
-            <p className="font-bold text-[#1a1a2e]">{review.client_name}</p>
+          <div className="px-6 py-3 border-b bg-gray-50 flex justify-between">
+            <div><p className="text-xs text-gray-500 uppercase">Client</p><p className="font-bold text-[#1a1a2e]">{review.client_name}</p></div>
+            <div className="text-right"><p className="text-xs text-gray-500 uppercase">Validité</p><p className="font-medium">30 jours</p></div>
           </div>
           
-          {items.length > 0 && (
-            <div className="px-6 py-4">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b-2 border-gray-200 text-xs text-gray-500">
-                    <th className="text-left py-2">{lang === 'en' ? 'Equipment' : 'Équipement'}</th>
-                    <th className="text-center py-2">{lang === 'en' ? 'Duration' : 'Durée'}</th>
-                    <th className="text-right py-2">{lang === 'en' ? 'Rate' : 'Tarif'}</th>
-                    <th className="text-right py-2">Total HT</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item, i) => (
-                    <tr key={i} className="border-b border-gray-100">
-                      <td className="py-2">{item.item_name || item.equipment_model || item.description || '—'}</td>
-                      <td className="py-2 text-center">{item.rental_days ? `${item.rental_days}j` : (item.quantity || 1)}</td>
-                      <td className="py-2 text-right">{(parseFloat(item.applied_rate || item.unit_price) || 0).toFixed(2)} € <span className="text-xs text-gray-400">/{item.rate_type || ''}</span></td>
-                      <td className="py-2 text-right font-medium">{(parseFloat(item.line_total) || 0).toFixed(2)} €</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {(period.start || period.end) && (
+            <div className="px-6 py-2 bg-blue-50 border-b text-sm">
+              <span className="font-medium text-blue-800">📅 Période :</span> {period.start ? new Date(period.start).toLocaleDateString('fr-FR') : '—'} au {period.end ? new Date(period.end).toLocaleDateString('fr-FR') : '—'} ({rentalDays} jours)
             </div>
           )}
           
-          <div className="border-t bg-gray-50 px-6 py-4 space-y-1.5">
-            {(qd.shipping || 0) > 0 && <div className="flex justify-between text-sm"><span className="text-gray-600">{lang === 'en' ? 'Shipping' : 'Transport'}</span><span className="font-medium">{(qd.shipping || 0).toFixed(2)} €</span></div>}
-            <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total HT</span><span className="text-[#00A651]">{(qd.totalHT || review.total_amount || 0).toFixed(2)} €</span></div>
+          {/* Equipment details */}
+          {items.map((item, i) => (
+            <div key={i} className="px-6 py-4 border-b">
+              <p className="font-bold text-[#1a1a2e]">Location {item.item_name || '—'}</p>
+              {item.specs && <p className="text-sm text-gray-600 mt-1 whitespace-pre-line">{item.specs}</p>}
+              <div className="flex justify-between mt-2 pt-2 border-t border-dashed text-sm">
+                <span className="text-gray-600">Prix de location ({rentalDays} jours)</span>
+                <span className="font-bold">{(parseFloat(item.line_total) || 0).toFixed(2)} € HT</span>
+              </div>
+              {(item.retail_value || 0) > 0 && (
+                <div className="flex justify-between text-xs text-gray-400"><span>Valeur neuf</span><span>{parseFloat(item.retail_value).toFixed(2)} € HT</span></div>
+              )}
+            </div>
+          ))}
+
+          {/* Totals */}
+          <div className="px-6 py-4 bg-gray-50 space-y-1.5">
+            {(qd.discount || 0) > 0 && <>
+              <div className="flex justify-between text-sm"><span>Sous-total</span><span>{(qd.subtotalBeforeDiscount || 0).toFixed(2)} €</span></div>
+              <div className="flex justify-between text-sm text-green-600"><span>Remise ({qd.discount}%)</span><span>-{(qd.discountAmount || 0).toFixed(2)} €</span></div>
+            </>}
+            {(qd.shipping || 0) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{(qd.shipping || 0).toFixed(2)} €</span></div>}
+            <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>TOTAL HT</span><span className="text-[#00A651]">{(qd.totalHT || review.total_amount || 0).toFixed(2)} €</span></div>
             <div className="flex justify-between text-sm text-gray-500"><span>TTC ({qd.taxRate || 20}%)</span><span>{(qd.totalTTC || 0).toFixed(2)} €</span></div>
           </div>
-          {qd.notes && <div className="px-6 py-3 bg-amber-50 border-t text-sm"><span className="font-medium">Notes:</span> {qd.notes}</div>}
+
+          {/* Insurance conditions */}
+          <div className="px-6 py-4 border-t">
+            <p className="font-bold text-xs text-gray-800 mb-1">Conditions d'assurance</p>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Pendant la durée de la location, l'appareil reste la propriété de Lighthouse France et devient sous la responsabilité du client. 
+              L'appareil doit être entreposé dans ses conditions normales d'exploitation et restitué en parfait état. 
+              Tout incident doit nous être communiqué sous 48h. Le client s'engage à souscrire une assurance prenant en compte le "Bien Confié".
+            </p>
+            {(qd.totalRetailValue || 0) > 0 && <p className="text-xs font-medium text-gray-700 mt-1">Valeur à assurer : {(qd.totalRetailValue).toFixed(2)} € HT</p>}
+          </div>
+
+          {/* Buyback clause */}
+          {qd.buybackClause && (
+            <div className="px-6 py-3 border-t bg-green-50">
+              <p className="text-xs text-green-800">Si l'appareil est acheté à la fin de la période de location, {qd.buybackPercent || 50}% de la somme versée pour la location sera déduite du prix d'achat.</p>
+            </div>
+          )}
+
+          {/* Terms */}
+          <div className="px-6 py-3 border-t text-xs text-gray-500 flex justify-between">
+            <span>Livraison : {qd.deliveryTerms || '—'}</span>
+            <span>Paiement : {qd.paymentTerms || '—'}</span>
+          </div>
+
+          {qd.notes && <div className="px-6 py-3 bg-amber-50 border-t text-sm"><span className="font-medium">Notes :</span> {qd.notes}</div>}
         </div>
       );
     }
@@ -28554,12 +28580,40 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
   const [trackingNumber, setTrackingNumber] = useState(rental.outbound_tracking || '');
   const [returnCondition, setReturnCondition] = useState(rental.return_condition || 'good');
   const [returnNotes, setReturnNotes] = useState(rental.return_notes || '');
+  
+  // Enhanced rental quote state
+  const [quoteItems, setQuoteItems] = useState(() => {
+    // Restore from quote_data if exists, else build from rental items
+    const savedItems = rental.quote_data?.quoteItems;
+    if (savedItems?.length > 0) return savedItems;
+    return (rental.rental_request_items || []).map(item => ({
+      id: item.id,
+      item_name: item.item_name || '',
+      description: item.description || '',
+      rental_days: item.rental_days || 0,
+      applied_rate: item.applied_rate || 0,
+      rate_type: item.rate_type || 'jour',
+      line_total: item.line_total || 0,
+      retail_value: item.retail_value || 0,
+      specs: item.specs || ''
+    }));
+  });
+  const [discount, setDiscount] = useState(rental.quote_data?.discount || 0);
+  const [buybackClause, setBuybackClause] = useState(rental.quote_data?.buybackClause !== false);
+  const [buybackPercent, setBuybackPercent] = useState(rental.quote_data?.buybackPercent || 50);
+  const [deliveryTerms, setDeliveryTerms] = useState(rental.quote_data?.deliveryTerms || 'En stock');
+  const [paymentTerms, setPaymentTerms] = useState(rental.quote_data?.paymentTerms || 'À réception de facture');
+  const [quoteStep, setQuoteStep] = useState(1); // 1=Edit, 2=Preview
 
-  const subtotal = rental.quote_subtotal || rental.rental_request_items?.reduce((s, i) => s + (i.line_total || 0), 0) || 0;
+  const rentalSubtotal = quoteItems.reduce((s, i) => s + (parseFloat(i.line_total) || 0), 0);
+  const discountAmount = rentalSubtotal * (parseFloat(discount) || 0) / 100;
+  const subtotalAfterDiscount = rentalSubtotal - discountAmount;
   const taxRate = rental.quote_tax_rate || 20;
-  const totalHT = subtotal + parseFloat(quoteShipping || 0);
+  const totalHT = subtotalAfterDiscount + parseFloat(quoteShipping || 0);
   const tax = totalHT * (taxRate / 100);
   const totalTTC = totalHT + tax;
+  const totalRetailValue = quoteItems.reduce((s, i) => s + (parseFloat(i.retail_value) || 0), 0);
+  const days = Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1;
 
   const updateStatus = async (newStatus, additionalData = {}) => {
     setSaving(true);
@@ -28575,7 +28629,34 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
   const sendQuote = async () => {
     setSaving(true);
     try {
-      // Save quote data to rental (but don't send yet)
+      const quoteData = {
+        rentalId: rental.id,
+        rentalNumber: rental.rental_number,
+        quoteItems,
+        items: quoteItems, // Keep for backward compat
+        shipping: parseFloat(quoteShipping) || 0,
+        discount: parseFloat(discount) || 0,
+        discountAmount,
+        subtotalBeforeDiscount: rentalSubtotal,
+        subtotalAfterDiscount,
+        taxRate,
+        totalHT,
+        totalTTC,
+        totalRetailValue,
+        notes: quoteNotes,
+        buybackClause,
+        buybackPercent: parseFloat(buybackPercent) || 50,
+        deliveryTerms,
+        paymentTerms,
+        rentalPeriod: { start: rental.start_date, end: rental.end_date, days },
+        clientName: rental.companies?.name || rental.client_name || 'Client',
+        clientAddress: rental.companies?.address || '',
+        clientCity: rental.companies?.city || '',
+        clientPostalCode: rental.companies?.postal_code || '',
+        clientCountry: rental.companies?.country || 'France'
+      };
+
+      // Save quote data to rental
       await supabase.from('rental_requests').update({
         quote_shipping: parseFloat(quoteShipping) || 0,
         quote_tax_rate: taxRate,
@@ -28583,30 +28664,20 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
         quote_total_ht: totalHT,
         quote_total_ttc: totalTTC,
         quote_notes: quoteNotes,
+        quote_data: quoteData,
         quoted_at: new Date().toISOString(),
         quote_valid_until: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0]
       }).eq('id', rental.id);
 
-      // === QUOTE REVIEW: Submit for review ===
-      const itemSummary = (rental.rental_request_items || []).map(i => `${i.item_name || i.equipment_model || 'Item'} (${i.rental_days || 0}j)`).join(', ');
-      const previousStatus = rental.status || 'requested';
+      // Submit for review (direct insert since rental uses rental_request_id)
+      const itemSummary = quoteItems.map(i => `${i.item_name || 'Item'} (${i.rental_days || days}j)`).join(', ');
       
       const { data: review, error: reviewError } = await supabase
         .from('quote_reviews')
         .insert({
           rental_request_id: rental.id,
           quote_type: 'rental',
-          quote_data: {
-            rentalId: rental.id,
-            rentalNumber: rental.rental_number,
-            items: rental.rental_request_items || [],
-            shipping: parseFloat(quoteShipping) || 0,
-            taxRate,
-            totalHT,
-            totalTTC,
-            notes: quoteNotes,
-            clientName: rental.companies?.name || rental.client_name || 'Client'
-          },
+          quote_data: quoteData,
           quote_number: rental.rental_number,
           rma_number: rental.rental_number,
           client_name: rental.companies?.name || rental.client_name || 'Client inconnu',
@@ -28614,7 +28685,7 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
           device_summary: itemSummary,
           submitted_by: profile?.id,
           submitted_by_name: profile?.full_name || profile?.email || 'Unknown',
-          previous_status: previousStatus
+          previous_status: rental.status || 'requested'
         })
         .select()
         .single();
@@ -28694,7 +28765,6 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
     return styles[s] || { bg: 'bg-gray-100', text: 'text-gray-700', label: s };
   };
   const style = getStatusStyle(status);
-  const days = Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1;
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -28735,9 +28805,9 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
 
           {/* Quote Section (for requested status) */}
           {status === 'requested' && (
-            <div className={`${rental.quote_rejection_notes ? 'bg-amber-50 border-2 border-amber-400' : 'bg-amber-50 border border-amber-200'} rounded-lg p-4`}>
+            <div className={`${rental.quote_rejection_notes ? 'bg-amber-50 border-2 border-amber-400' : 'bg-white border border-gray-200'} rounded-lg overflow-hidden`}>
               {rental.quote_rejection_notes && (
-                <div className="bg-white border border-amber-300 rounded-lg p-3 mb-4">
+                <div className="bg-white border border-amber-300 rounded-lg p-3 m-4 mb-0">
                   <div className="flex items-center gap-2 mb-1">
                     <span>✏️</span>
                     <span className="font-bold text-amber-800 text-sm">{lang === 'en' ? 'Reviewer requested correction' : 'Le vérificateur demande une correction'}</span>
@@ -28745,25 +28815,225 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
                   <p className="text-amber-900 text-sm ml-7">{rental.quote_rejection_notes}</p>
                 </div>
               )}
-              <h3 className="font-bold text-amber-800 mb-4">{rental.quote_rejection_notes ? (lang === 'en' ? '✏️ Correct quote' : '✏️ Corriger le devis') : (lang === 'en' ? 'Create quote' : 'Créer le devis')}</h3>
-              <div className="grid md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">{lang === 'en' ? 'Shipping fees (€)' : 'Frais de port (€)'}</label>
-                  <input type="number" step="0.01" value={quoteShipping} onChange={e => setQuoteShipping(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">{lang === 'en' ? 'Quote notes' : 'Notes devis'}</label>
-                  <input type="text" value={quoteNotes} onChange={e => setQuoteNotes(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+              
+              {/* Step indicator */}
+              <div className="px-4 pt-4 pb-2 flex items-center gap-3">
+                <h3 className="font-bold text-gray-800 text-lg">{rental.quote_rejection_notes ? '✏️ Corriger le Devis' : '📄 Créer Devis Location'}</h3>
+                <div className="flex gap-1 ml-auto">
+                  {[1,2].map(s => (
+                    <div key={s} className={`w-8 h-2 rounded-full ${quoteStep >= s ? 'bg-[#8B5CF6]' : 'bg-gray-200'}`} />
+                  ))}
                 </div>
               </div>
-              <div className="bg-white rounded-lg p-4 mb-4">
-                <div className="flex justify-between mb-1"><span>{t('subtotal')}</span><span>€{subtotal.toFixed(2)}</span></div>
-                <div className="flex justify-between mb-1"><span>{lang === 'en' ? 'Shipping fees' : 'Frais de port'}</span><span>€{parseFloat(quoteShipping || 0).toFixed(2)}</span></div>
-                <div className="flex justify-between mb-1 font-bold"><span>{t('totalHT')}</span><span>€{totalHT.toFixed(2)}</span></div>
-                <div className="flex justify-between mb-1 text-sm text-gray-500"><span>TVA ({taxRate}%)</span><span>€{tax.toFixed(2)}</span></div>
-                <div className="flex justify-between font-bold text-lg border-t pt-2"><span>{t('totalTTC')}</span><span className="text-[#8B5CF6]">€{totalTTC.toFixed(2)}</span></div>
-              </div>
-              <button onClick={sendQuote} disabled={saving} className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold disabled:opacity-50">{saving ? (lang === 'en' ? 'Sending...' : 'Envoi...') : (lang === 'en' ? 'Send quote' : 'Envoyer le devis')}</button>
+              
+              {quoteStep === 1 && (
+                <div className="p-4 space-y-4">
+                  {/* Rental Period */}
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                    <div className="flex items-center gap-4 text-sm">
+                      <span className="font-bold text-purple-800">📅 Période de location :</span>
+                      <span className="font-medium">{new Date(rental.start_date).toLocaleDateString('fr-FR')} → {new Date(rental.end_date).toLocaleDateString('fr-FR')}</span>
+                      <span className="px-2 py-0.5 bg-purple-200 text-purple-800 rounded-full text-xs font-bold">{days} jours</span>
+                    </div>
+                  </div>
+
+                  {/* Per-item pricing and descriptions */}
+                  <div className="space-y-3">
+                    <h4 className="font-bold text-gray-700 text-sm uppercase tracking-wider">Équipements</h4>
+                    {quoteItems.map((item, idx) => (
+                      <div key={item.id || idx} className="bg-gray-50 rounded-lg p-3 border space-y-2">
+                        <div className="flex items-center gap-3">
+                          <span className="w-6 h-6 bg-[#8B5CF6] text-white rounded-full flex items-center justify-center text-xs font-bold">{idx + 1}</span>
+                          <span className="font-bold text-gray-800">{item.item_name || 'Équipement'}</span>
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-3 ml-9">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Description / Spécifications</label>
+                            <textarea
+                              value={item.specs || ''}
+                              onChange={e => {
+                                const updated = [...quoteItems];
+                                updated[idx] = { ...updated[idx], specs: e.target.value };
+                                setQuoteItems(updated);
+                              }}
+                              rows={3}
+                              placeholder="Ex: Compteur de particules 28.3 l/mn, 6 canaux 0.3-10µ, écran tactile..."
+                              className="w-full px-3 py-2 border rounded-lg text-sm"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500 mb-1">Prix location ({days}j)</label>
+                              <input
+                                type="number" step="0.01"
+                                value={item.line_total || ''}
+                                onChange={e => {
+                                  const updated = [...quoteItems];
+                                  updated[idx] = { ...updated[idx], line_total: parseFloat(e.target.value) || 0 };
+                                  setQuoteItems(updated);
+                                }}
+                                className="w-full px-3 py-2 border rounded-lg"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500 mb-1">Valeur neuf HT (pour assurance)</label>
+                              <input
+                                type="number" step="0.01"
+                                value={item.retail_value || ''}
+                                onChange={e => {
+                                  const updated = [...quoteItems];
+                                  updated[idx] = { ...updated[idx], retail_value: parseFloat(e.target.value) || 0 };
+                                  setQuoteItems(updated);
+                                }}
+                                className="w-full px-3 py-2 border rounded-lg"
+                                placeholder="Ex: 15500"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Discount, shipping, terms */}
+                  <div className="grid md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Remise (%)</label>
+                      <input type="number" step="1" min="0" max="100" value={discount} onChange={e => setDiscount(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Frais de port (€ HT)</label>
+                      <input type="number" step="0.01" value={quoteShipping} onChange={e => setQuoteShipping(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Délai de livraison</label>
+                      <input type="text" value={deliveryTerms} onChange={e => setDeliveryTerms(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+                    </div>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Conditions de paiement</label>
+                      <input type="text" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+                    </div>
+                    <div className="flex items-center gap-3 pt-4">
+                      <input type="checkbox" id="buyback" checked={buybackClause} onChange={e => setBuybackClause(e.target.checked)} className="w-4 h-4" />
+                      <label htmlFor="buyback" className="text-sm">Clause de rachat ({buybackPercent}% déduit)</label>
+                      {buybackClause && <input type="number" step="1" value={buybackPercent} onChange={e => setBuybackPercent(e.target.value)} className="w-16 px-2 py-1 border rounded text-sm" />}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Notes / Commentaires</label>
+                    <textarea value={quoteNotes} onChange={e => setQuoteNotes(e.target.value)} rows={2} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                  </div>
+
+                  {/* Totals summary */}
+                  <div className="bg-gray-50 rounded-lg p-4 border">
+                    <div className="flex justify-between mb-1 text-sm"><span>Sous-total location</span><span>{rentalSubtotal.toFixed(2)} €</span></div>
+                    {parseFloat(discount) > 0 && <div className="flex justify-between mb-1 text-sm text-green-600"><span>Remise ({discount}%)</span><span>-{discountAmount.toFixed(2)} €</span></div>}
+                    {parseFloat(quoteShipping) > 0 && <div className="flex justify-between mb-1 text-sm"><span>Transport</span><span>{parseFloat(quoteShipping || 0).toFixed(2)} €</span></div>}
+                    <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total HT</span><span className="text-[#8B5CF6]">{totalHT.toFixed(2)} €</span></div>
+                    <div className="flex justify-between text-sm text-gray-500"><span>TTC ({taxRate}%)</span><span>{totalTTC.toFixed(2)} €</span></div>
+                    {totalRetailValue > 0 && <div className="flex justify-between text-xs text-gray-400 mt-1"><span>Valeur à assurer</span><span>{totalRetailValue.toFixed(2)} €</span></div>}
+                  </div>
+
+                  <button onClick={() => setQuoteStep(2)} className="w-full py-3 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white rounded-lg font-bold">
+                    📄 {lang === 'en' ? 'Preview Quote' : 'Aperçu du Devis'} →
+                  </button>
+                </div>
+              )}
+
+              {quoteStep === 2 && (
+                <div className="p-4 space-y-4">
+                  {/* Professional quote preview */}
+                  <div className="border rounded-xl overflow-hidden bg-white shadow-sm">
+                    <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
+                      <div className="flex justify-between items-start">
+                        <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-12 object-contain" />
+                        <div className="text-right">
+                          <p className="text-xl font-bold text-[#2D5A7B]">DEVIS LOCATION</p>
+                          <p className="text-sm font-bold text-[#2D5A7B]">N° {rental.rental_number}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="px-6 py-3 border-b bg-gray-50 flex justify-between text-sm">
+                      <div><span className="text-xs text-gray-500 uppercase">Client</span><p className="font-bold">{rental.companies?.name || 'Client'}</p></div>
+                      <div className="text-right"><span className="text-xs text-gray-500 uppercase">Date</span><p className="font-medium">{new Date().toLocaleDateString('fr-FR')}</p></div>
+                    </div>
+                    <div className="px-6 py-2 bg-blue-50 border-b text-sm">
+                      <span className="font-medium text-blue-800">📅 Période :</span> {new Date(rental.start_date).toLocaleDateString('fr-FR')} au {new Date(rental.end_date).toLocaleDateString('fr-FR')} ({days} jours)
+                    </div>
+                    
+                    {/* Equipment details */}
+                    {quoteItems.map((item, idx) => (
+                      <div key={idx} className="px-6 py-4 border-b">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <p className="font-bold text-[#1a1a2e]">Location {item.item_name}</p>
+                            {item.specs && <p className="text-sm text-gray-600 mt-1 whitespace-pre-line">{item.specs}</p>}
+                          </div>
+                        </div>
+                        <div className="flex justify-between mt-2 pt-2 border-t border-dashed">
+                          <span className="text-sm text-gray-600">Prix de location ({days} jours)</span>
+                          <span className="font-bold">{(item.line_total || 0).toFixed(2)} € HT</span>
+                        </div>
+                        {item.retail_value > 0 && (
+                          <div className="flex justify-between text-xs text-gray-400">
+                            <span>Valeur neuf</span><span>{(item.retail_value).toFixed(2)} € HT</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {/* Totals */}
+                    <div className="px-6 py-4 bg-gray-50 space-y-1.5">
+                      {parseFloat(discount) > 0 && <>
+                        <div className="flex justify-between text-sm"><span>Sous-total</span><span>{rentalSubtotal.toFixed(2)} €</span></div>
+                        <div className="flex justify-between text-sm text-green-600"><span>Remise ({discount}%)</span><span>-{discountAmount.toFixed(2)} €</span></div>
+                      </>}
+                      {parseFloat(quoteShipping) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{parseFloat(quoteShipping || 0).toFixed(2)} €</span></div>}
+                      <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>TOTAL HT</span><span className="text-[#00A651]">{totalHT.toFixed(2)} €</span></div>
+                      <div className="flex justify-between text-sm text-gray-500"><span>TTC ({taxRate}%)</span><span>{totalTTC.toFixed(2)} €</span></div>
+                    </div>
+
+                    {/* Insurance conditions */}
+                    <div className="px-6 py-4 border-t">
+                      <p className="font-bold text-sm text-gray-800 mb-2">Conditions d'assurance</p>
+                      <p className="text-xs text-gray-600 leading-relaxed">
+                        Pendant la durée de la location, l'appareil reste la propriété de Lighthouse France et devient sous la responsabilité du client. 
+                        L'appareil doit être entreposé dans ses conditions normales d'exploitation et restitué en parfait état. 
+                        Tout incident doit nous être communiqué sous 48h. Le client s'engage à souscrire une assurance prenant en compte le "Bien Confié".
+                      </p>
+                      {totalRetailValue > 0 && <p className="text-xs font-medium text-gray-700 mt-1">Valeur à assurer : {totalRetailValue.toFixed(2)} € HT</p>}
+                    </div>
+
+                    {/* Buyback clause */}
+                    {buybackClause && (
+                      <div className="px-6 py-3 border-t bg-green-50">
+                        <p className="text-xs text-green-800">
+                          Si l'appareil est acheté à la fin de la période de location, {buybackPercent}% de la somme versée pour la location sera déduite du prix d'achat.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Terms */}
+                    <div className="px-6 py-3 border-t text-xs text-gray-500 flex justify-between">
+                      <span>Délai de livraison : {deliveryTerms}</span>
+                      <span>Paiement : {paymentTerms}</span>
+                      <span>Validité : 30 jours</span>
+                    </div>
+
+                    {quoteNotes && <div className="px-6 py-3 bg-amber-50 border-t text-sm"><span className="font-medium">Notes :</span> {quoteNotes}</div>}
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex gap-3">
+                    <button onClick={() => setQuoteStep(1)} className="flex-1 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">← Modifier</button>
+                    <button onClick={sendQuote} disabled={saving} className="flex-1 py-3 bg-[#00A651] hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50">
+                      {saving ? 'Soumission...' : '📋 Soumettre pour Vérification'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
