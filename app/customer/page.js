@@ -2595,6 +2595,7 @@ export default function CustomerPortal() {
   const [lang, setLang] = useState('fr');
   const [page, setPage] = useState('dashboard');
   const [previousPage, setPreviousPage] = useState('dashboard');
+  const [pendingRentalId, setPendingRentalId] = useState(null);
   const [toast, setToast] = useState(null);
   
   // Data
@@ -2871,6 +2872,7 @@ export default function CustomerPortal() {
             setPage={setPage}
             setSelectedRequest={setSelectedRequest}
             setPreviousPage={setPreviousPage}
+            setPendingRentalId={setPendingRentalId}
           />
         )}
         
@@ -2948,6 +2950,8 @@ export default function CustomerPortal() {
             notify={notify}
             setPage={setPage}
             refresh={refresh}
+            pendingRentalId={pendingRentalId}
+            setPendingRentalId={setPendingRentalId}
           />
         )}
       </main>
@@ -2968,7 +2972,7 @@ export default function CustomerPortal() {
 // ============================================
 // DASHBOARD COMPONENT (Enhanced)
 // ============================================
-function Dashboard({ profile, requests, contracts, t, setPage, setSelectedRequest, setPreviousPage }) {
+function Dashboard({ profile, requests, contracts, t, setPage, setSelectedRequest, setPreviousPage, setPendingRentalId }) {
   const [messages, setMessages] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'service', 'parts', 'messages'
@@ -3256,7 +3260,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                 {rentalActions.map(rental => (
                   <div 
                     key={rental.id}
-                    onClick={() => setPage('rentals')}
+                    onClick={() => { if (setPendingRentalId) setPendingRentalId(rental.id); setPage('rentals'); }}
                     className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-100 border border-red-200"
                   >
                     <div className="flex items-center gap-3">
@@ -12599,7 +12603,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
 // ============================================
 // RENTALS PAGE (Equipment Rental / Locations)
 // ============================================
-function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
+function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingRentalId, setPendingRentalId }) {
   const [rentals, setRentals] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [bundles, setBundles] = useState([]);
@@ -12626,15 +12630,41 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
     loadData();
   }, [profile?.company_id]);
 
+  // Auto-select rental if navigated from dashboard action
+  useEffect(() => {
+    if (pendingRentalId && rentals.length > 0 && !loading) {
+      const target = rentals.find(r => r.id === pendingRentalId);
+      if (target) {
+        setSelectedRental(target);
+        if (setPendingRentalId) setPendingRentalId(null);
+      }
+    }
+  }, [pendingRentalId, rentals, loading]);
+
   const loadData = async () => {
     setLoading(true);
     
     // Load rental requests for this company
-    const { data: rentalData } = await supabase
+    let rentalData = null;
+    const { data: rd, error: rentalError } = await supabase
       .from('rental_requests')
-      .select('*, rental_request_items(*), companies(*), shipping_addresses(*)')
+      .select('*, rental_request_items(*), companies(*), shipping_address:shipping_addresses!shipping_address_id(*)')
       .eq('company_id', profile.company_id)
       .order('created_at', { ascending: false });
+    
+    if (rentalError) {
+      console.error('Rental load error (with join):', rentalError);
+      // Fallback without shipping address join
+      const { data: rd2 } = await supabase
+        .from('rental_requests')
+        .select('*, rental_request_items(*), companies(*)')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      rentalData = rd2;
+    } else {
+      rentalData = rd;
+    }
+    if (rentalData) setRentals(rentalData);
     
     // Load available inventory
     const { data: invData } = await supabase
@@ -12661,7 +12691,6 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
       .gte('end_date', fromDate.toISOString().split('T')[0])
       .lte('start_date', toDate.toISOString().split('T')[0]);
     
-    if (rentalData) setRentals(rentalData);
     if (invData) setInventory(invData);
     if (bundleData) setBundles(bundleData);
     if (bookingData) setBookings(bookingData);
@@ -13171,6 +13200,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
       notify('✅ Bon de commande soumis avec succès !');
       setShowRentalBC(false);
       setRentalBcFile(null);
+      setSelectedRental(null);
       loadData();
     } catch (err) { notify('Erreur: ' + err.message, 'error'); }
     setUploadingRentalBC(false);
