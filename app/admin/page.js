@@ -28588,7 +28588,7 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
       }).eq('id', rental.id);
 
       // === QUOTE REVIEW: Submit for review ===
-      const itemSummary = (rental.rental_request_items || []).map(i => `${i.equipment_model || 'Item'} x${i.quantity}`).join(', ');
+      const itemSummary = (rental.rental_request_items || []).map(i => `${i.item_name || i.equipment_model || 'Item'} (${i.rental_days || 0}j)`).join(', ');
       const previousStatus = rental.status || 'requested';
       
       const { data: review, error: reviewError } = await supabase
