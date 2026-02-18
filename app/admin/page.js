@@ -3800,14 +3800,18 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
     }
     setProcessing(true);
     try {
-      // Load the full service_request
-      const { data: sr, error: srError } = await supabase
-        .from('service_requests')
-        .select('*, companies(*), request_devices(*)')
-        .eq('id', review.service_request_id)
-        .single();
-      
-      if (srError) throw srError;
+      // Load the full service_request (only for types that need it)
+      let sr = null;
+      if (review.service_request_id) {
+        const { data: srData, error: srError } = await supabase
+          .from('service_requests')
+          .select('*, companies(*), request_devices(*)')
+          .eq('id', review.service_request_id)
+          .single();
+        
+        if (srError) throw srError;
+        sr = srData;
+      }
       
       const qd = review.quote_data;
 
@@ -3962,6 +3966,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
         if (rentalId) {
           await supabase.from('rental_requests').update({
             status: 'quote_sent',
+            quote_sent_at: new Date().toISOString(),
             quote_review_id: null,
             quote_rejection_notes: null
           }).eq('id', rentalId);
