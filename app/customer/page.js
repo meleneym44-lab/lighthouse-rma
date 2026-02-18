@@ -2267,6 +2267,184 @@ async function generateSignedAvenantPDF(options) {
 }
 
 
+// ============================================
+// RENTAL QUOTE PDF GENERATOR (Customer Portal)
+// ============================================
+async function generateRentalQuotePDF(options) {
+  const { rental, isSigned = false, signatureName = '', signatureDate = '', signatureImage = null } = options;
+  
+  await new Promise((resolve, reject) => {
+    if (window.jspdf) { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    script.onload = resolve; script.onerror = reject;
+    document.head.appendChild(script);
+  });
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const pageWidth = 210;
+  const margin = 15;
+  const contentWidth = pageWidth - margin * 2;
+  let y = 15;
+
+  const darkBlue = [26, 26, 46];
+  const midBlue = [45, 90, 123];
+  const green = [0, 166, 81];
+  const purple = [139, 92, 246];
+
+  const qd = rental.quote_data || {};
+  const company = rental.companies || {};
+  const items = qd.quoteItems || qd.items || rental.rental_request_items || [];
+  const period = qd.rentalPeriod || { start: rental.start_date, end: rental.end_date, days: Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1 };
+
+  // Header
+  pdf.setFillColor(...darkBlue);
+  pdf.rect(0, 0, pageWidth, 28, 'F');
+  pdf.setFontSize(16); pdf.setTextColor(255, 255, 255); pdf.setFont('helvetica', 'bold');
+  pdf.text(isSigned ? 'DEVIS LOCATION — SIGNÉ' : 'DEVIS LOCATION', margin, 13);
+  pdf.setFontSize(10); pdf.setFont('helvetica', 'normal');
+  pdf.text('N° ' + (rental.rental_number || '—'), pageWidth - margin, 13, { align: 'right' });
+  pdf.setFontSize(7); pdf.setTextColor(180, 180, 200);
+  pdf.text('LIGHTHOUSE FRANCE — 16 Rue Paul Séjourné, 94000 Créteil', margin, 22);
+  y = 34;
+
+  // Client + Date
+  pdf.setFillColor(245, 245, 250); pdf.rect(margin, y, contentWidth, 20, 'F');
+  pdf.setFontSize(8); pdf.setTextColor(120, 120, 140);
+  pdf.text('CLIENT', margin + 4, y + 5);
+  pdf.text('DATE', pageWidth - margin - 4, y + 5, { align: 'right' });
+  pdf.setFontSize(10); pdf.setTextColor(30, 30, 50); pdf.setFont('helvetica', 'bold');
+  pdf.text(qd.clientName || company.name || 'Client', margin + 4, y + 11);
+  pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8);
+  pdf.text(new Date().toLocaleDateString('fr-FR'), pageWidth - margin - 4, y + 11, { align: 'right' });
+  pdf.setTextColor(80, 80, 100);
+  pdf.text(`${qd.clientPostalCode || ''} ${qd.clientCity || ''}`, margin + 4, y + 16);
+  y += 24;
+
+  // Period bar
+  pdf.setFillColor(...purple); pdf.rect(margin, y, contentWidth, 7, 'F');
+  pdf.setFontSize(8); pdf.setTextColor(255, 255, 255); pdf.setFont('helvetica', 'bold');
+  pdf.text(`PÉRIODE: ${new Date(period.start).toLocaleDateString('fr-FR')} au ${new Date(period.end).toLocaleDateString('fr-FR')} (${period.days} jours)`, margin + 4, y + 5);
+  y += 10;
+
+  // Table header
+  pdf.setFillColor(...darkBlue); pdf.rect(margin, y, contentWidth, 7, 'F');
+  pdf.setFontSize(7); pdf.setTextColor(255, 255, 255); pdf.setFont('helvetica', 'bold');
+  pdf.text('ÉQUIPEMENT', margin + 4, y + 5);
+  pdf.text('TARIF', margin + 95, y + 5);
+  pdf.text('DURÉE', margin + 122, y + 5);
+  pdf.text('MONTANT HT', pageWidth - margin - 4, y + 5, { align: 'right' });
+  y += 9;
+
+  // Items
+  items.forEach((item, idx) => {
+    const specs = item.specs || item.description || '';
+    const specsLines = specs ? pdf.splitTextToSize(specs, 85) : [];
+    const rowH = Math.max(12, 8 + specsLines.length * 3.2);
+    if (y + rowH > 255) { pdf.addPage(); y = 15; }
+
+    pdf.setFillColor(idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 252);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setDrawColor(230, 230, 235); pdf.line(margin, y + rowH, margin + contentWidth, y + rowH);
+
+    pdf.setFontSize(8); pdf.setTextColor(30, 30, 50); pdf.setFont('helvetica', 'bold');
+    pdf.text(`${item.item_name || 'Équipement'}${item.serial_number ? ' (' + item.serial_number + ')' : ''}`, margin + 4, y + 5);
+    if (specsLines.length > 0) {
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(6.5); pdf.setTextColor(100, 100, 120);
+      specsLines.forEach((line, li) => { pdf.text(line, margin + 4, y + 8.5 + li * 3.2); });
+    }
+    const rateLabel = item.rate_type === 'semaine' ? '/sem' : item.rate_type === 'mois' ? '/mois' : item.rate_type === 'forfait' ? '' : '/jour';
+    pdf.setFontSize(7); pdf.setTextColor(60, 60, 80); pdf.setFont('helvetica', 'normal');
+    if (item.applied_rate > 0) pdf.text(`${parseFloat(item.applied_rate).toFixed(2)} €${rateLabel}`, margin + 95, y + 5);
+    pdf.text(`${item.rental_days || period.days}j`, margin + 122, y + 5);
+    pdf.setFont('helvetica', 'bold'); pdf.setTextColor(30, 30, 50);
+    pdf.text(`${(parseFloat(item.line_total) || 0).toFixed(2)} €`, pageWidth - margin - 4, y + 5, { align: 'right' });
+    if (item.retail_value > 0) {
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(6); pdf.setTextColor(140, 140, 160);
+      pdf.text(`Valeur neuf: ${parseFloat(item.retail_value).toFixed(2)} €`, pageWidth - margin - 4, y + 9, { align: 'right' });
+    }
+    y += rowH;
+  });
+
+  y += 3;
+  // Totals
+  const tx = margin + contentWidth - 70;
+  let ty = y + 4;
+  pdf.setFillColor(245, 245, 250); pdf.rect(tx, y, 70, (qd.discountAmount > 0 ? 12 : 0) + (qd.shipping > 0 ? 6 : 0) + 14, 'F');
+  pdf.setFontSize(7); pdf.setTextColor(80, 80, 100); pdf.setFont('helvetica', 'normal');
+  if (qd.discountAmount > 0) {
+    pdf.text('Sous-total:', tx + 2, ty); pdf.text(`${(qd.subtotalBeforeDiscount || 0).toFixed(2)} €`, tx + 68, ty, { align: 'right' }); ty += 5;
+    pdf.setTextColor(0, 150, 0); pdf.text(`Remise ${qd.discountType === 'percent' ? '(' + qd.discount + '%)' : ''}`, tx + 2, ty); pdf.text(`-${(qd.discountAmount || 0).toFixed(2)} €`, tx + 68, ty, { align: 'right' }); ty += 5;
+    pdf.setTextColor(80, 80, 100);
+  }
+  if (qd.shipping > 0) { pdf.text('Transport:', tx + 2, ty); pdf.text(`${qd.shipping.toFixed(2)} €`, tx + 68, ty, { align: 'right' }); ty += 5; }
+  pdf.setFillColor(...green); pdf.rect(tx, ty - 1, 70, 8, 'F');
+  pdf.setFontSize(10); pdf.setTextColor(255, 255, 255); pdf.setFont('helvetica', 'bold');
+  pdf.text('TOTAL HT', tx + 3, ty + 4.5); pdf.text(`${(qd.totalHT || 0).toFixed(2)} €`, tx + 67, ty + 4.5, { align: 'right' });
+  ty += 10;
+  const totalRetail = qd.totalRetailValue || items.reduce((s, i) => s + (parseFloat(i.retail_value) || 0), 0);
+  if (totalRetail > 0) {
+    pdf.setFontSize(7); pdf.setTextColor(...purple); pdf.setFont('helvetica', 'bold');
+    pdf.text(`Valeur totale à assurer: ${totalRetail.toFixed(2)} € HT`, tx + 2, ty);
+    ty += 5;
+  }
+  y = ty + 4;
+
+  // Buyback
+  if (qd.buybackClause) {
+    if (y > 250) { pdf.addPage(); y = 15; }
+    pdf.setFillColor(240, 253, 244); pdf.rect(margin, y, contentWidth, 8, 'F');
+    pdf.setFontSize(7); pdf.setTextColor(22, 101, 52); pdf.setFont('helvetica', 'bold');
+    pdf.text('CLAUSE DE RACHAT', margin + 4, y + 3.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`Si achat à l'issue de la location, ${qd.buybackPercent || 50}% du montant sera déduit du prix d'achat.`, margin + 4, y + 7);
+    y += 11;
+  }
+
+  // Terms
+  if (y > 240) { pdf.addPage(); y = 15; }
+  pdf.setFontSize(6.5); pdf.setTextColor(100, 100, 120); pdf.setFont('helvetica', 'bold');
+  pdf.text('CONDITIONS GÉNÉRALES DE LOCATION', margin, y + 3); pdf.setFont('helvetica', 'normal');
+  y += 5;
+  ['1. Propriété: Le matériel reste propriété de Lighthouse France. Garde transférée au client dès réception.',
+   '2. Utilisation: Usage conforme par personnel qualifié. Sous-location interdite. Incident signalé sous 48h.',
+   '3. Assurance: Assurance « Bien Confié » obligatoire (vol, incendie, dégâts des eaux, bris accidentel).',
+   '4. Restitution: Bon état à la date convenue. Dommages facturés au coût de remise en état.',
+   '5. Retard: Tarif journalier majoré 50%. Récupération possible à tout moment.',
+   '6. Résiliation: Non-respect = résiliation immédiate possible.'
+  ].forEach(t => {
+    const lines = pdf.splitTextToSize(t, contentWidth - 4);
+    if (y + lines.length * 2.8 > 280) { pdf.addPage(); y = 15; }
+    lines.forEach(l => { pdf.text(l, margin + 2, y); y += 2.8; });
+    y += 0.5;
+  });
+
+  // Signature block
+  if (isSigned) {
+    y += 5;
+    if (y > 240) { pdf.addPage(); y = 15; }
+    pdf.setFillColor(240, 253, 244); pdf.rect(margin, y, contentWidth, 35, 'F');
+    pdf.setDrawColor(...green); pdf.rect(margin, y, contentWidth, 35, 'S');
+    pdf.setFontSize(9); pdf.setTextColor(...green); pdf.setFont('helvetica', 'bold');
+    pdf.text('✓ BON POUR ACCORD', margin + 4, y + 7);
+    pdf.setFontSize(8); pdf.setTextColor(60, 60, 80); pdf.setFont('helvetica', 'normal');
+    pdf.text(`Signé par: ${signatureName}`, margin + 4, y + 14);
+    pdf.text(`Date: ${signatureDate}`, margin + 4, y + 20);
+    if (signatureImage) {
+      try { pdf.addImage(signatureImage, 'PNG', margin + contentWidth - 55, y + 3, 50, 25); } catch (e) { console.error('Sig image error:', e); }
+    }
+  }
+
+  // Footer
+  y = Math.max(y + 40, 275);
+  if (y > 290) { pdf.addPage(); y = 280; }
+  pdf.setFontSize(6); pdf.setTextColor(140, 140, 160);
+  pdf.text('LIGHTHOUSE FRANCE — Service Location', margin, y);
+
+  return pdf.output('blob');
+}
+
 
 // Translations
 const T = {
@@ -13329,6 +13507,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
     
     setSubmittingBC(true);
     try {
+      // 1. Upload BC file if provided
       let fileUrl = null;
       if (bcFileUpload) {
         try {
@@ -13341,6 +13520,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
         } catch (e) { console.log('File upload skipped'); }
       }
       
+      // 2. Upload signature image
       let signatureUrl = null;
       if (signatureData) {
         try {
@@ -13354,17 +13534,43 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
         } catch (e) { console.error('Signature upload error:', e); }
       }
       
-      await supabase.from('rental_requests').update({
+      // 3. Generate signed quote PDF if electronic signature
+      let signedQuotePdfUrl = null;
+      if (hasValidSignature) {
+        try {
+          const pdfBlob = await generateRentalQuotePDF({
+            rental: selectedRental,
+            isSigned: true,
+            signatureName: signatureName,
+            signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+            signatureImage: signatureData
+          });
+          const pdfFileName = `devis_location_signe_${selectedRental.rental_number}_${Date.now()}.pdf`;
+          const { error: pdfUploadError } = await supabase.storage
+            .from('documents')
+            .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
+          if (!pdfUploadError) {
+            const { data: pdfUrl } = supabase.storage.from('documents').getPublicUrl(pdfFileName);
+            signedQuotePdfUrl = pdfUrl?.publicUrl;
+          }
+        } catch (e) { console.error('Signed rental PDF error:', e); }
+      }
+      
+      // 4. Update rental request
+      const updateData = {
         status: 'bc_review',
         bc_submitted_at: new Date().toISOString(),
         bc_signed_by: signatureName,
         bc_signature_date: signatureDateISO,
-        bc_file_url: fileUrl,
-        bc_signature_url: signatureUrl,
         quote_approved_at: selectedRental.status === 'quote_sent' ? new Date().toISOString() : selectedRental.quote_approved_at
-      }).eq('id', selectedRental.id);
+      };
+      if (fileUrl) updateData.bc_file_url = fileUrl;
+      if (signatureUrl) updateData.bc_signature_url = signatureUrl;
+      if (signedQuotePdfUrl) updateData.signed_quote_url = signedQuotePdfUrl;
       
-      // Save to attachments
+      await supabase.from('rental_requests').update(updateData).eq('id', selectedRental.id);
+      
+      // 5. Save BC as attachment
       if (fileUrl) {
         await supabase.from('request_attachments').insert({
           rental_request_id: selectedRental.id,
@@ -13374,6 +13580,18 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
           file_size: bcFileUpload?.size || 0,
           uploaded_by: profile.id,
           category: 'bon_commande'
+        });
+      }
+      
+      // 6. Save signed quote PDF as attachment
+      if (signedQuotePdfUrl) {
+        await supabase.from('request_attachments').insert({
+          rental_request_id: selectedRental.id,
+          file_name: `Devis_Signe_${selectedRental.rental_number}.pdf`,
+          file_url: signedQuotePdfUrl,
+          file_type: 'application/pdf',
+          uploaded_by: profile.id,
+          category: 'devis_signe'
         });
       }
       
@@ -13620,6 +13838,38 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
             {/* ========== DOCUMENTS TAB ========== */}
             {rentalTab === 'documents' && (
               <div>
+                {/* Original Quote PDF */}
+                {rental.quote_url && (
+                  <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">📑</span>
+                        <div>
+                          <p className="font-medium text-purple-800">Devis location</p>
+                          <p className="text-xs text-gray-500">Envoyé le {rental.quote_sent_at ? new Date(rental.quote_sent_at).toLocaleDateString('fr-FR') : '—'}</p>
+                        </div>
+                      </div>
+                      <a href={rental.quote_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline font-medium">Télécharger →</a>
+                    </div>
+                  </div>
+                )}
+
+                {/* Signed quote */}
+                {rental.signed_quote_url && (
+                  <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">✅</span>
+                        <div>
+                          <p className="font-medium text-blue-800">Devis signé</p>
+                          <p className="text-xs text-gray-500">Signé le {rental.quote_approved_at ? new Date(rental.quote_approved_at).toLocaleDateString('fr-FR') : '—'} par {rental.bc_signed_by || '—'}</p>
+                        </div>
+                      </div>
+                      <a href={rental.signed_quote_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline font-medium">Télécharger →</a>
+                    </div>
+                  </div>
+                )}
+
                 {/* BC Document */}
                 {rental.bc_file_url && (
                   <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
@@ -13636,22 +13886,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   </div>
                 )}
 
-                {/* Signed quote */}
-                {rental.signed_quote_url && (
-                  <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">📄</span>
-                        <div>
-                          <p className="font-medium text-blue-800">Devis signé</p>
-                        </div>
-                      </div>
-                      <a href={rental.signed_quote_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline font-medium">Télécharger →</a>
-                    </div>
-                  </div>
-                )}
-
-                {rentalDocs.length === 0 && !rental.bc_file_url && !rental.signed_quote_url ? (
+                {rentalDocs.length === 0 && !rental.bc_file_url && !rental.signed_quote_url && !rental.quote_url ? (
                   <div className="text-center py-12 text-gray-400">
                     <p className="text-4xl mb-2">📄</p>
                     <p>Aucun document</p>
