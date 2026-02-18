@@ -4563,7 +4563,7 @@ const renderQuotePreview = (review) => {
           <div className="px-6 py-4 bg-gray-50 space-y-1.5">
             {(qd.discount || 0) > 0 && <>
               <div className="flex justify-between text-sm"><span>Sous-total</span><span>{(qd.subtotalBeforeDiscount || 0).toFixed(2)} €</span></div>
-              <div className="flex justify-between text-sm text-green-600"><span>Remise ({qd.discount}%)</span><span>-{(qd.discountAmount || 0).toFixed(2)} €</span></div>
+              <div className="flex justify-between text-sm text-green-600"><span>Remise {qd.discountType === 'percent' ? `(${qd.discount}%)` : '(forfait)'}</span><span>-{(qd.discountAmount || 0).toFixed(2)} €</span></div>
             </>}
             {(qd.shipping || 0) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{(qd.shipping || 0).toFixed(2)} €</span></div>}
             <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>TOTAL HT</span><span className="text-[#00A651]">{(qd.totalHT || review.total_amount || 0).toFixed(2)} €</span></div>
@@ -28268,13 +28268,14 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Price/Day' : 'Prix/Jour'}</th>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Price/Week' : 'Prix/Semaine'}</th>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Price/Month' : 'Prix/Mois'}</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Retail Value' : 'Valeur neuf'}</th>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('status')}</th>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {inventory.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{lang === 'en' ? "No devices in rental inventory" : "Aucun appareil dans l'inventaire de location"}</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">{lang === 'en' ? "No devices in rental inventory" : "Aucun appareil dans l'inventaire de location"}</td></tr>
               ) : inventory.map(device => (
                 <tr key={device.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><span className="font-medium">{device.model_name}</span><p className="text-xs text-gray-400">{device.device_type}</p></td>
@@ -28282,6 +28283,7 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
                   <td className="px-4 py-3"><span className="font-medium">€{device.price_per_day}</span></td>
                   <td className="px-4 py-3">{device.price_per_week ? `€${device.price_per_week}` : <span className="text-gray-400">—</span>}</td>
                   <td className="px-4 py-3">{device.price_per_month ? `€${device.price_per_month}` : <span className="text-gray-400">—</span>}</td>
+                  <td className="px-4 py-3">{device.retail_value ? <span className="font-medium">€{parseFloat(device.retail_value).toLocaleString()}</span> : <span className="text-gray-400">—</span>}</td>
                   <td className="px-4 py-3">{device.is_available ? <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">{lang === 'en' ? 'Available' : 'Disponible'}</span> : <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">{lang === 'en' ? 'Unavailable' : 'Indisponible'}</span>}</td>
                   <td className="px-4 py-3 flex gap-2">
                     <button onClick={() => { setEditingDevice(device); setShowAddDevice(true); }} className="px-2 py-1 bg-gray-100 text-gray-600 text-sm rounded hover:bg-gray-200">✏️</button>
@@ -28328,7 +28330,7 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
       {showAddBundle && <RentalBundleModal bundle={editingBundle} inventory={inventory} onSave={saveBundle} onClose={() => { setShowAddBundle(false); setEditingBundle(null); }} lang={lang} />}
 
       {/* Rental Detail Modal */}
-      {selectedRental && <RentalAdminModal rental={selectedRental} onClose={() => setSelectedRental(null)} notify={notify} reload={reload} businessSettings={businessSettings} profile={profile} lang={lang} />}
+      {selectedRental && <RentalAdminModal rental={selectedRental} inventory={inventory} onClose={() => setSelectedRental(null)} notify={notify} reload={reload} businessSettings={businessSettings} profile={profile} lang={lang} />}
     </div>
   );
 }
@@ -28343,6 +28345,8 @@ function RentalDeviceModal({ device, onSave, onClose, lang = 'fr' }) {
     brand: device?.brand || 'Lighthouse',
     description: device?.description || '',
     description_fr: device?.description_fr || '',
+    specs: device?.specs || '',
+    retail_value: device?.retail_value || '',
     price_per_day: device?.price_per_day || '',
     price_per_week: device?.price_per_week || '',
     price_per_month: device?.price_per_month || '',
@@ -28362,6 +28366,7 @@ function RentalDeviceModal({ device, onSave, onClose, lang = 'fr' }) {
       price_per_day: parseFloat(formData.price_per_day),
       price_per_week: formData.price_per_week ? parseFloat(formData.price_per_week) : null,
       price_per_month: formData.price_per_month ? parseFloat(formData.price_per_month) : null,
+      retail_value: formData.retail_value ? parseFloat(formData.retail_value) : null,
       min_rental_days: parseInt(formData.min_rental_days) || 1
     });
   };
@@ -28403,7 +28408,11 @@ function RentalDeviceModal({ device, onSave, onClose, lang = 'fr' }) {
             <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Description (FR)' : 'Description (FR)'}</label>
             <textarea value={formData.description_fr} onChange={e => setFormData({...formData, description_fr: e.target.value})} className="w-full px-3 py-2 border rounded-lg h-20 resize-none" placeholder={lang === 'en' ? 'Description visible to clients' : 'Description visible par les clients'} />
           </div>
-          <div className="grid md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Technical specs (for quotes)' : 'Spécifications techniques (pour devis)'}</label>
+            <textarea value={formData.specs} onChange={e => setFormData({...formData, specs: e.target.value})} className="w-full px-3 py-2 border rounded-lg h-20 resize-none" placeholder="Ex: Compteur de particules 28,3 l/mn, 6 canaux 0.3-10µ, écran tactile 7''..." />
+          </div>
+          <div className="grid md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Price/Day (€) *' : 'Prix/Jour (€) *'}</label>
               <input type="number" step="0.01" value={formData.price_per_day} onChange={e => setFormData({...formData, price_per_day: e.target.value})} className="w-full px-3 py-2 border rounded-lg" required />
@@ -28415,6 +28424,10 @@ function RentalDeviceModal({ device, onSave, onClose, lang = 'fr' }) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Price/Month (€)' : 'Prix/Mois (€)'}</label>
               <input type="number" step="0.01" value={formData.price_per_month} onChange={e => setFormData({...formData, price_per_month: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder={lang === 'en' ? 'Auto: 30x day' : 'Auto: 30x jour'} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Retail value (€)' : 'Valeur neuf (€)'}</label>
+              <input type="number" step="0.01" value={formData.retail_value} onChange={e => setFormData({...formData, retail_value: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Ex: 15500" />
             </div>
           </div>
           <div className="grid md:grid-cols-2 gap-4">
@@ -28571,7 +28584,7 @@ function RentalCalendarView({ bookings, inventory, lang = 'fr' }) {
 }
 
 // Rental Admin Modal - Full management
-function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, profile, lang = 'fr' }) {
+function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, businessSettings, profile, lang = 'fr' }) {
   const t = k => k;
   const [status, setStatus] = useState(rental.status);
   const [saving, setSaving] = useState(false);
@@ -28583,22 +28596,32 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
   
   // Enhanced rental quote state
   const [quoteItems, setQuoteItems] = useState(() => {
-    // Restore from quote_data if exists, else build from rental items
+    // Restore from quote_data if exists, else build from rental items + inventory lookup
     const savedItems = rental.quote_data?.quoteItems;
     if (savedItems?.length > 0) return savedItems;
-    return (rental.rental_request_items || []).map(item => ({
-      id: item.id,
-      item_name: item.item_name || '',
-      description: item.description || '',
-      rental_days: item.rental_days || 0,
-      applied_rate: item.applied_rate || 0,
-      rate_type: item.rate_type || 'jour',
-      line_total: item.line_total || 0,
-      retail_value: item.retail_value || 0,
-      specs: item.specs || ''
-    }));
+    return (rental.rental_request_items || []).map(item => {
+      // Try to match inventory device for specs/retail_value
+      const invDevice = inventory.find(d => 
+        d.serial_number === item.serial_number || 
+        d.id === item.inventory_id ||
+        (d.model_name === item.item_name && d.serial_number === item.serial_number)
+      );
+      return {
+        id: item.id,
+        item_name: item.item_name || invDevice?.model_name || '',
+        serial_number: item.serial_number || invDevice?.serial_number || '',
+        description: item.description || invDevice?.description_fr || '',
+        rental_days: item.rental_days || 0,
+        applied_rate: item.applied_rate || invDevice?.price_per_day || 0,
+        rate_type: item.rate_type || 'jour',
+        line_total: item.line_total || 0,
+        retail_value: invDevice?.retail_value || 0,
+        specs: invDevice?.specs || invDevice?.description_fr || ''
+      };
+    });
   });
   const [discount, setDiscount] = useState(rental.quote_data?.discount || 0);
+  const [discountType, setDiscountType] = useState(rental.quote_data?.discountType || 'percent'); // 'percent' or 'fixed'
   const [buybackClause, setBuybackClause] = useState(rental.quote_data?.buybackClause !== false);
   const [buybackPercent, setBuybackPercent] = useState(rental.quote_data?.buybackPercent || 50);
   const [deliveryTerms, setDeliveryTerms] = useState(rental.quote_data?.deliveryTerms || 'En stock');
@@ -28606,7 +28629,9 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
   const [quoteStep, setQuoteStep] = useState(1); // 1=Edit, 2=Preview
 
   const rentalSubtotal = quoteItems.reduce((s, i) => s + (parseFloat(i.line_total) || 0), 0);
-  const discountAmount = rentalSubtotal * (parseFloat(discount) || 0) / 100;
+  const discountAmount = discountType === 'percent' 
+    ? rentalSubtotal * (parseFloat(discount) || 0) / 100 
+    : parseFloat(discount) || 0;
   const subtotalAfterDiscount = rentalSubtotal - discountAmount;
   const taxRate = rental.quote_tax_rate || 20;
   const totalHT = subtotalAfterDiscount + parseFloat(quoteShipping || 0);
@@ -28636,6 +28661,7 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
         items: quoteItems, // Keep for backward compat
         shipping: parseFloat(quoteShipping) || 0,
         discount: parseFloat(discount) || 0,
+        discountType,
         discountAmount,
         subtotalBeforeDiscount: rentalSubtotal,
         subtotalAfterDiscount,
@@ -28844,7 +28870,7 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
                       <div key={item.id || idx} className="bg-gray-50 rounded-lg p-3 border space-y-2">
                         <div className="flex items-center gap-3">
                           <span className="w-6 h-6 bg-[#8B5CF6] text-white rounded-full flex items-center justify-center text-xs font-bold">{idx + 1}</span>
-                          <span className="font-bold text-gray-800">{item.item_name || 'Équipement'}</span>
+                          <span className="font-bold text-gray-800">{item.item_name || 'Équipement'}{item.serial_number ? ` (${item.serial_number})` : ''}</span>
                         </div>
                         <div className="grid md:grid-cols-2 gap-3 ml-9">
                           <div>
@@ -28898,8 +28924,18 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
                   {/* Discount, shipping, terms */}
                   <div className="grid md:grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Remise (%)</label>
-                      <input type="number" step="1" min="0" max="100" value={discount} onChange={e => setDiscount(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Remise</label>
+                      <div className="flex">
+                        <input type="number" step="0.01" min="0" value={discount} onChange={e => setDiscount(e.target.value)} className="w-full px-3 py-2 border rounded-l-lg" />
+                        <button
+                          type="button"
+                          onClick={() => setDiscountType(discountType === 'percent' ? 'fixed' : 'percent')}
+                          className="px-3 py-2 border border-l-0 rounded-r-lg bg-gray-100 hover:bg-gray-200 font-bold text-sm min-w-[40px]"
+                          title="Cliquer pour basculer entre % et €"
+                        >
+                          {discountType === 'percent' ? '%' : '€'}
+                        </button>
+                      </div>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Frais de port (€ HT)</label>
@@ -28929,7 +28965,7 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
                   {/* Totals summary */}
                   <div className="bg-gray-50 rounded-lg p-4 border">
                     <div className="flex justify-between mb-1 text-sm"><span>Sous-total location</span><span>{rentalSubtotal.toFixed(2)} €</span></div>
-                    {parseFloat(discount) > 0 && <div className="flex justify-between mb-1 text-sm text-green-600"><span>Remise ({discount}%)</span><span>-{discountAmount.toFixed(2)} €</span></div>}
+                    {parseFloat(discount) > 0 && <div className="flex justify-between mb-1 text-sm text-green-600"><span>Remise {discountType === 'percent' ? `(${discount}%)` : '(forfait)'}</span><span>-{discountAmount.toFixed(2)} €</span></div>}
                     {parseFloat(quoteShipping) > 0 && <div className="flex justify-between mb-1 text-sm"><span>Transport</span><span>{parseFloat(quoteShipping || 0).toFixed(2)} €</span></div>}
                     <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total HT</span><span className="text-[#8B5CF6]">{totalHT.toFixed(2)} €</span></div>
                     <div className="flex justify-between text-sm text-gray-500"><span>TTC ({taxRate}%)</span><span>{totalTTC.toFixed(2)} €</span></div>
@@ -28988,7 +29024,7 @@ function RentalAdminModal({ rental, onClose, notify, reload, businessSettings, p
                     <div className="px-6 py-4 bg-gray-50 space-y-1.5">
                       {parseFloat(discount) > 0 && <>
                         <div className="flex justify-between text-sm"><span>Sous-total</span><span>{rentalSubtotal.toFixed(2)} €</span></div>
-                        <div className="flex justify-between text-sm text-green-600"><span>Remise ({discount}%)</span><span>-{discountAmount.toFixed(2)} €</span></div>
+                        <div className="flex justify-between text-sm text-green-600"><span>Remise {discountType === 'percent' ? `(${discount}%)` : '(forfait)'}</span><span>-{discountAmount.toFixed(2)} €</span></div>
                       </>}
                       {parseFloat(quoteShipping) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{parseFloat(quoteShipping || 0).toFixed(2)} €</span></div>}
                       <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>TOTAL HT</span><span className="text-[#00A651]">{totalHT.toFixed(2)} €</span></div>
