@@ -2,13 +2,18 @@
   "name": "lighthouse-rma",
   "version": "2.0.0",
   "private": true,
-  "scripts": { "dev": "next dev", "build": "next build", "start": "next start" },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
   "dependencies": {
-    "next": "14.0.4",
-    "react": "^18",
-    "react-dom": "^18",
+    "@anthropic-ai/sdk": "^0.24.0",
     "@supabase/supabase-js": "^2.39.0",
-    "@anthropic-ai/sdk": "^0.24.0"
+    "next": "14.0.4",
+    "nodemailer": "^8.0.1",
+    "react": "^18",
+    "react-dom": "^18"
   },
   "devDependencies": {
     "autoprefixer": "^10",
