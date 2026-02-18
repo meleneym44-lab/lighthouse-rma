@@ -3632,6 +3632,8 @@ export default function AdminPortal() {
               notify={notify} 
               reload={loadData} 
               isAdmin={isAdmin} 
+              businessSettings={businessSettings}
+              profile={profile}
               onSelectRMA={setSelectedRMA}
               onSelectDevice={(device, rma) => {
                 setSelectedDeviceFromDashboard({ device, rma });
@@ -17055,7 +17057,7 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
   );
 }
 
-function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, onSelectRMA, onSelectDevice, t = k=>k, lang = 'fr' }) {
+function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, businessSettings, profile, onSelectRMA, onSelectDevice, t = k=>k, lang = 'fr' }) {
   const [selectedClient, setSelectedClient] = useState(null);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState(null); // null = show clients, object = show search results
@@ -17444,12 +17446,12 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, o
         </div>
       )}
       
-      {selectedClient && <ClientDetailModal client={selectedClient} requests={requests.filter(r => r.company_id === selectedClient.id && r.request_type !== 'parts')} partsOrders={requests.filter(r => r.company_id === selectedClient.id && r.request_type === 'parts')} equipment={equipment.filter(e => e.company_id === selectedClient.id)} onClose={() => setSelectedClient(null)} notify={notify} reload={reload} isAdmin={isAdmin} onSelectRMA={onSelectRMA} onSelectDevice={onSelectDevice} lang={lang} />}
+      {selectedClient && <ClientDetailModal client={selectedClient} requests={requests.filter(r => r.company_id === selectedClient.id && r.request_type !== 'parts')} partsOrders={requests.filter(r => r.company_id === selectedClient.id && r.request_type === 'parts')} equipment={equipment.filter(e => e.company_id === selectedClient.id)} onClose={() => setSelectedClient(null)} notify={notify} reload={reload} isAdmin={isAdmin} businessSettings={businessSettings} profile={profile} onSelectRMA={onSelectRMA} onSelectDevice={onSelectDevice} lang={lang} />}
     </div>
   );
 }
 
-function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, notify, reload, isAdmin, onSelectRMA, onSelectDevice, lang = 'fr' }) {
+function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, notify, reload, isAdmin, businessSettings, profile, onSelectRMA, onSelectDevice, lang = 'fr' }) {
   const t = k => k;
   const [activeTab, setActiveTab] = useState('rmas');
   const [editing, setEditing] = useState(false);
@@ -17666,132 +17668,18 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
               })}
             </div>
           )}
-          {activeTab === 'rentals' && selectedRental && (() => {
-            const rental = selectedRental;
-            const rStatusStyles = { requested:(lang === 'en' ? 'New request' : 'Nouvelle demande'), quote_sent:'Devis envoyé', waiting_bc:'Attente BC', bc_review:'BC à vérifier', bc_approved:'BC approuvé', shipped:'Expédié', in_rental:'En location', return_pending:'Retour attendu', returned:'Retourné', completed:'Terminé', cancelled:'Annulé' };
-            const rStatusColors = { requested:'bg-amber-100 text-amber-700', quote_sent:'bg-blue-100 text-blue-700', bc_review:'bg-orange-100 text-orange-700', bc_approved:'bg-green-100 text-green-700', shipped:'bg-cyan-100 text-cyan-700', in_rental:'bg-purple-100 text-purple-700', return_pending:'bg-orange-100 text-orange-700', returned:'bg-teal-100 text-teal-700', completed:'bg-green-100 text-green-700', cancelled:'bg-red-100 text-red-700' };
-            const items = rental.rental_request_items || [];
-            const days = rental.start_date && rental.end_date ? Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1 : 0;
-            const subtotal = rental.quote_subtotal || items.reduce((s, i) => s + (i.line_total || 0), 0) || 0;
-            const shipping = parseFloat(rental.quote_shipping || 0);
-            const totalHT = subtotal + shipping;
-            const taxRate = rental.quote_tax_rate || 20;
-            const tax = totalHT * (taxRate / 100);
-            const totalTTC = rental.quote_total_ttc || (totalHT + tax);
-            
-            return (
-              <div className="space-y-4">
-                <button onClick={() => setSelectedRental(null)} className="text-sm text-blue-600 hover:underline">{lang === 'en' ? '← Back to rentals' : '← Retour aux locations'}</button>
-                
-                {/* Header */}
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="text-lg font-bold text-purple-800">{rental.rental_number || '—'}</h3>
-                      <p className="text-sm text-purple-600">{rental.companies?.name || client.name}</p>
-                    </div>
-                    <span className={'px-3 py-1.5 rounded-full font-medium text-sm ' + (rStatusColors[rental.status] || 'bg-gray-100 text-gray-700')}>{rStatusStyles[rental.status] || rental.status}</span>
-                  </div>
-                  {rental.start_date && (
-                    <div className="mt-3 pt-3 border-t border-purple-200">
-                      <p className="font-medium text-purple-700">{new Date(rental.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} → {rental.end_date ? new Date(rental.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '—'}</p>
-                      {days > 0 && <p className="text-sm text-purple-500">{days} jours de location</p>}
-                    </div>
-                  )}
-                </div>
-                
-                {/* Equipment */}
-                {items.length > 0 && (
-                  <div>
-                    <h4 className="font-bold text-gray-700 mb-2">{lang === 'en' ? 'Equipment' : 'Équipement'}</h4>
-                    <div className="bg-gray-50 rounded-lg divide-y">
-                      {items.map((item, idx) => (
-                        <div key={idx} className="p-3 flex justify-between items-center">
-                          <div>
-                            <p className="font-medium">{item.item_name || item.model_name || item.device_type || '—'}</p>
-                            {item.rental_days && <p className="text-sm text-gray-500">{item.rental_days} jours × {parseFloat(item.applied_rate || 0).toFixed(2)} € ({item.rate_type || '—'})</p>}
-                            {item.quantity > 1 && <p className="text-sm text-gray-500">{lang === 'en' ? 'Qty' : 'Qté'}: {item.quantity}</p>}
-                          </div>
-                          {item.line_total != null && <p className="font-bold">{parseFloat(item.line_total).toFixed(2)} €</p>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Financials */}
-                {subtotal > 0 && (
-                  <div>
-                    <h4 className="font-bold text-gray-700 mb-2">{lang === 'en' ? 'Amounts' : 'Montants'}</h4>
-                    <div className="bg-gray-50 rounded-lg p-4 space-y-1">
-                      <div className="flex justify-between text-sm"><span>{t('subtotal')}</span><span>{subtotal.toFixed(2)} €</span></div>
-                      {shipping > 0 && <div className="flex justify-between text-sm"><span>{lang === 'en' ? 'Shipping fees' : 'Frais de port'}</span><span>{shipping.toFixed(2)} €</span></div>}
-                      <div className="flex justify-between font-bold border-t pt-1 mt-1"><span>{t('totalHT')}</span><span>{totalHT.toFixed(2)} €</span></div>
-                      <div className="flex justify-between text-sm text-gray-500"><span>TVA ({taxRate}%)</span><span>{tax.toFixed(2)} €</span></div>
-                      <div className="flex justify-between font-bold text-lg border-t pt-2"><span>{t('totalTTC')}</span><span className="text-purple-600">{totalTTC.toFixed(2)} €</span></div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Tracking */}
-                {rental.outbound_tracking && (
-                  <div>
-                    <h4 className="font-bold text-gray-700 mb-2">{lang === 'en' ? 'Shipment Tracking' : 'Suivi expédition'}</h4>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <a href={'https://www.ups.com/track?tracknum=' + rental.outbound_tracking} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-mono">{rental.outbound_tracking}</a>
-                    </div>
-                  </div>
-                )}
-                
-                {/* BC Info */}
-                {rental.bc_file_url && (
-                  <div>
-                    <h4 className="font-bold text-gray-700 mb-2">{lang === 'en' ? 'Purchase order' : 'Bon de commande'}</h4>
-                    <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100">
-                      <span className="text-2xl">📄</span>
-                      <div>
-                        <p className="font-medium">{lang === 'en' ? 'PO' : 'BC'}</p>
-                        {rental.bc_signed_by && <p className="text-sm text-gray-500">{lang === 'en' ? 'Signed by' : 'Signé par'} {rental.bc_signed_by}</p>}
-                        {rental.bc_submitted_at && <p className="text-sm text-gray-400">Le {new Date(rental.bc_submitted_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>}
-                      </div>
-                    </a>
-                  </div>
-                )}
-                
-                {/* Shipping Address */}
-                {rental.shipping_address && (
-                  <div>
-                    <h4 className="font-bold text-gray-700 mb-2">{lang === 'en' ? 'Shipping address' : 'Adresse de livraison'}</h4>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="font-medium">{rental.shipping_address.company_name || rental.shipping_address.label}</p>
-                      {rental.shipping_address.attention && <p className="text-sm text-gray-600">{lang === 'en' ? 'Attn.' : "À l'att."} {rental.shipping_address.attention}</p>}
-                      <p className="text-sm text-gray-500">{rental.shipping_address.address_line1}</p>
-                      <p className="text-sm text-gray-500">{rental.shipping_address.postal_code} {rental.shipping_address.city}</p>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Return Info */}
-                {rental.return_condition && (
-                  <div>
-                    <h4 className="font-bold text-gray-700 mb-2">{t('back')}</h4>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-sm">{lang === 'en' ? 'Condition: ' : 'État: '}<span className="font-medium">{rental.return_condition === 'good' ? (lang === 'en' ? 'Good condition' : 'Bon état') : rental.return_condition === 'damaged' ? (lang === 'en' ? 'Damaged' : 'Endommagé') : (lang === 'en' ? 'Missing items' : 'Éléments manquants')}</span></p>
-                      {rental.return_notes && <p className="text-sm text-gray-500 mt-1">Notes: {rental.return_notes}</p>}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Internal Notes */}
-                {rental.quote_notes && (
-                  <div>
-                    <h4 className="font-bold text-gray-700 mb-2">{t('notes')}</h4>
-                    <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-4">{rental.quote_notes}</p>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          {activeTab === 'rentals' && selectedRental && (
+            <RentalAdminModal 
+              rental={selectedRental} 
+              inventory={[]} 
+              onClose={() => setSelectedRental(null)} 
+              notify={notify} 
+              reload={() => { loadRentals(); if (reload) reload(); }} 
+              businessSettings={businessSettings || {}} 
+              profile={profile || {}} 
+              lang={lang} 
+            />
+          )}
           
           {/* === Sites (Shipping Addresses) === */}
           {activeTab === 'sites' && (
@@ -17982,7 +17870,6 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           
         </div>
       </div>
-      {selectedRental && null}
     </div>
   );
 }
@@ -28133,9 +28020,10 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
     return styles[status] || { bg: 'bg-gray-100', text: 'text-gray-700', label: status };
   };
 
-  const pendingRequests = rentals.filter(r => r.status === 'requested');
+  const pendingRequests = rentals.filter(r => ['requested', 'pending_quote_review'].includes(r.status));
   const bcReviewRequests = rentals.filter(r => r.status === 'bc_review');
   const activeRentals = rentals.filter(r => ['bc_approved', 'shipped', 'in_rental', 'return_pending'].includes(r.status));
+  const overdueRentals = rentals.filter(r => r.status === 'in_rental' && new Date(r.end_date) < new Date());
 
   // Save device
   const saveDevice = async (deviceData) => {
@@ -28197,11 +28085,33 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
         </div>
       </div>
 
+      {/* Overdue Alert */}
+      {overdueRentals.length > 0 && (
+        <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 flex items-center gap-4">
+          <span className="text-3xl">🚨</span>
+          <div className="flex-1">
+            <p className="font-bold text-red-800">{overdueRentals.length} location{overdueRentals.length > 1 ? 's' : ''} en retard de restitution</p>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {overdueRentals.map(r => {
+                const overdueDays = Math.ceil((new Date() - new Date(r.end_date)) / (1000*60*60*24));
+                return (
+                  <button key={r.id} onClick={() => setSelectedRental(r)} className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full hover:bg-red-200 font-medium">
+                    {r.rental_number} — {r.companies?.name} ({overdueDays}j de retard)
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm border"><p className="text-3xl font-bold text-amber-600">{pendingRequests.length}</p><p className="text-gray-500 text-sm">{lang === 'en' ? 'New requests' : 'Nouvelles demandes'}</p></div>
-        <div className="bg-white rounded-xl p-4 shadow-sm border"><p className="text-3xl font-bold text-orange-600">{bcReviewRequests.length}</p><p className="text-gray-500 text-sm">{lang === 'en' ? 'PO to review' : 'BC à vérifier'}</p></div>
-        <div className="bg-white rounded-xl p-4 shadow-sm border"><p className="text-3xl font-bold text-purple-600">{activeRentals.length}</p><p className="text-gray-500 text-sm">{lang === 'en' ? 'Active rentals' : 'Locations actives'}</p></div>
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+        <div className="bg-white rounded-xl p-4 shadow-sm border cursor-pointer hover:border-amber-300" onClick={() => setActiveTab('requests')}><p className="text-3xl font-bold text-amber-600">{pendingRequests.length}</p><p className="text-gray-500 text-sm">{lang === 'en' ? 'New requests' : 'Nouvelles demandes'}</p></div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border cursor-pointer hover:border-orange-300" onClick={() => setActiveTab('requests')}><p className="text-3xl font-bold text-orange-600">{bcReviewRequests.length}</p><p className="text-gray-500 text-sm">{lang === 'en' ? 'PO to review' : 'BC à vérifier'}</p></div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border cursor-pointer hover:border-cyan-300" onClick={() => setActiveTab('requests')}><p className="text-3xl font-bold text-cyan-600">{rentals.filter(r => r.status === 'bc_approved').length}</p><p className="text-gray-500 text-sm">{lang === 'en' ? 'Ready to ship' : 'À expédier'}</p></div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border cursor-pointer hover:border-purple-300" onClick={() => setActiveTab('requests')}><p className="text-3xl font-bold text-purple-600">{activeRentals.length}</p><p className="text-gray-500 text-sm">{lang === 'en' ? 'Active rentals' : 'Locations actives'}</p></div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border cursor-pointer hover:border-teal-300" onClick={() => setActiveTab('requests')}><p className="text-3xl font-bold text-teal-600">{rentals.filter(r => r.status === 'return_pending').length}</p><p className="text-gray-500 text-sm">{lang === 'en' ? 'Returns pending' : 'Retours attendus'}</p></div>
         <div className="bg-white rounded-xl p-4 shadow-sm border"><p className="text-3xl font-bold text-[#8B5CF6]">{inventory.length}</p><p className="text-gray-500 text-sm">{lang === 'en' ? 'Equipment fleet' : 'Appareils en parc'}</p></div>
       </div>
 
@@ -28225,34 +28135,84 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Rental #' : 'N° Location'}</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('client')}</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Period' : 'Période'}</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Equipment' : 'Équipement'}</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('status')}</th>
-                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('actions')}</th>
+                <th className="px-3 py-3 text-left text-xs font-bold text-gray-600 uppercase">{lang === 'en' ? 'Rental #' : 'N° Location'}</th>
+                <th className="px-3 py-3 text-left text-xs font-bold text-gray-600 uppercase">{t('client')}</th>
+                <th className="px-3 py-3 text-left text-xs font-bold text-gray-600 uppercase">{lang === 'en' ? 'Period' : 'Période'}</th>
+                <th className="px-3 py-3 text-left text-xs font-bold text-gray-600 uppercase">{lang === 'en' ? 'Equipment' : 'Équipement'}</th>
+                <th className="px-3 py-3 text-left text-xs font-bold text-gray-600 uppercase">{lang === 'en' ? 'Tracking' : 'Suivi'}</th>
+                <th className="px-3 py-3 text-left text-xs font-bold text-gray-600 uppercase">{t('status')}</th>
+                <th className="px-3 py-3 text-left text-xs font-bold text-gray-600 uppercase">{t('actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {rentals.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">{lang === 'en' ? 'No rental requests' : 'Aucune demande de location'}</td></tr>
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{lang === 'en' ? 'No rental requests' : 'Aucune demande de location'}</td></tr>
               ) : rentals.map(rental => {
                 const style = getStatusStyle(rental.status);
                 const days = Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1;
+                const isOverdue = rental.status === 'in_rental' && new Date(rental.end_date) < new Date();
+                const daysUntilEnd = rental.status === 'in_rental' ? Math.ceil((new Date(rental.end_date) - new Date()) / (1000*60*60*24)) : null;
+                // Progress mini-bar
+                const stepMap = { 'requested': 0, 'pending_quote_review': 1, 'quote_sent': 1, 'waiting_bc': 2, 'bc_review': 2, 'bc_approved': 2, 'shipped': 3, 'in_rental': 4, 'return_pending': 5, 'returned': 5, 'completed': 6 };
+                const progress = stepMap[rental.status] ?? 0;
+                const totalSteps = 6;
                 return (
-                  <tr key={rental.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3"><span className="font-bold text-[#8B5CF6]">{rental.rental_number}</span><p className="text-xs text-gray-400">{new Date(rental.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p></td>
-                    <td className="px-4 py-3"><span className="font-medium">{rental.companies?.name}</span></td>
-                    <td className="px-4 py-3"><span className="text-sm">{new Date(rental.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} → {new Date(rental.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</span><p className="text-xs text-gray-400">{days} jours</p></td>
-                    <td className="px-4 py-3"><span className="text-sm">{rental.rental_request_items?.length || 0} {lang === 'en' ? 'device(s)' : 'appareil(s)'}</span></td>
-                    <td className="px-4 py-3">
+                  <tr key={rental.id} className={`hover:bg-gray-50 ${isOverdue ? 'bg-red-50' : ''}`}>
+                    <td className="px-3 py-3">
+                      <span className="font-bold text-[#8B5CF6] cursor-pointer hover:underline" onClick={() => setSelectedRental(rental)}>{rental.rental_number}</span>
+                      <p className="text-xs text-gray-400">{new Date(rental.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
+                      {/* Mini progress bar */}
+                      <div className="flex gap-0.5 mt-1">
+                        {Array.from({ length: totalSteps }).map((_, i) => (
+                          <div key={i} className={`h-1 flex-1 rounded-full ${i < progress ? 'bg-[#8B5CF6]' : i === progress ? 'bg-[#8B5CF6]/50' : 'bg-gray-200'}`} />
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <span className="font-medium text-sm">{rental.companies?.name}</span>
+                      {rental.shipping_address && <p className="text-xs text-gray-400 truncate max-w-[120px]">{rental.shipping_address.city || rental.shipping_address.address_line1}</p>}
+                    </td>
+                    <td className="px-3 py-3">
+                      <span className="text-sm">{new Date(rental.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR', { day: '2-digit', month: 'short' })} → {new Date(rental.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR', { day: '2-digit', month: 'short' })}</span>
+                      <p className="text-xs text-gray-400">{days}j</p>
+                      {isOverdue && <p className="text-xs text-red-600 font-bold">⚠️ {lang === 'en' ? 'OVERDUE' : 'EN RETARD'}</p>}
+                      {daysUntilEnd !== null && !isOverdue && daysUntilEnd <= 3 && <p className="text-xs text-orange-600">⏰ {daysUntilEnd}j restants</p>}
+                    </td>
+                    <td className="px-3 py-3">
+                      <span className="text-sm">{rental.rental_request_items?.length || 0} {lang === 'en' ? 'device(s)' : 'appareil(s)'}</span>
+                      {rental.rental_request_items?.slice(0, 2).map((item, i) => (
+                        <p key={i} className="text-xs text-gray-400 truncate max-w-[130px]">{item.item_name}{item.serial_number ? ` (${item.serial_number})` : ''}</p>
+                      ))}
+                      {(rental.rental_request_items?.length || 0) > 2 && <p className="text-xs text-gray-300">+{rental.rental_request_items.length - 2} de plus</p>}
+                    </td>
+                    <td className="px-3 py-3">
+                      {rental.outbound_tracking ? (
+                        <div>
+                          <a href={'https://www.ups.com/track?tracknum=' + rental.outbound_tracking} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-blue-600 hover:underline block truncate max-w-[120px]" title={rental.outbound_tracking}>📦 {rental.outbound_tracking}</a>
+                          {rental.bl_number && <p className="text-xs text-cyan-600 font-mono">📋 {rental.bl_number}</p>}
+                          {rental.outbound_shipped_at && <p className="text-xs text-gray-400">{new Date(rental.outbound_shipped_at).toLocaleDateString('fr-FR')}</p>}
+                        </div>
+                      ) : rental.status === 'bc_approved' ? (
+                        <span className="text-xs text-green-600 font-medium">🟢 {lang === 'en' ? 'Ready to ship' : 'Prêt à expédier'}</span>
+                      ) : ['requested', 'pending_quote_review', 'quote_sent', 'waiting_bc', 'bc_review'].includes(rental.status) ? (
+                        <span className="text-xs text-gray-400">—</span>
+                      ) : null}
+                      {rental.return_tracking && <p className="text-xs text-teal-600 font-mono mt-1">↩️ {rental.return_tracking}</p>}
+                      {rental.returned_at && <p className="text-xs text-teal-600">📥 Retour {new Date(rental.returned_at).toLocaleDateString('fr-FR')}</p>}
+                    </td>
+                    <td className="px-3 py-3">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span>
                       {rental.quote_rejection_notes && rental.status === 'requested' && (
-                        <p className="text-xs text-amber-600 mt-1 truncate max-w-[150px]" title={rental.quote_rejection_notes}>✏️ {rental.quote_rejection_notes}</p>
+                        <p className="text-xs text-amber-600 mt-1 truncate max-w-[120px]" title={rental.quote_rejection_notes}>✏️ Correction</p>
                       )}
+                      {rental.quote_revision_notes && rental.status === 'requested' && (
+                        <p className="text-xs text-orange-600 mt-1 truncate max-w-[120px]" title={rental.quote_revision_notes}>🔄 Révision client</p>
+                      )}
+                      {rental.return_condition === 'damaged' && <p className="text-xs text-red-600 mt-1">⚠️ Endommagé</p>}
+                      {rental.return_condition === 'missing_items' && <p className="text-xs text-orange-600 mt-1">❓ Manquant</p>}
                     </td>
-                    <td className="px-4 py-3">
-                      <button onClick={() => setSelectedRental(rental)} className="px-3 py-1 bg-[#8B5CF6] text-white text-sm rounded hover:bg-[#7C3AED]">{lang === 'en' ? 'Manage' : 'Gérer'}</button>
+                    <td className="px-3 py-3">
+                      <button onClick={() => setSelectedRental(rental)} className="px-3 py-1.5 bg-[#8B5CF6] text-white text-sm rounded-lg hover:bg-[#7C3AED] font-medium">{lang === 'en' ? 'Manage' : 'Gérer'}</button>
                     </td>
                   </tr>
                 );
@@ -28589,608 +28549,888 @@ function RentalCalendarView({ bookings, inventory, lang = 'fr' }) {
 }
 
 // Rental Admin Modal - Full management
+
 function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, businessSettings, profile, lang = 'fr' }) {
   const t = k => k;
+  const [activeTab, setActiveTab] = useState('overview');
   const [status, setStatus] = useState(rental.status);
   const [saving, setSaving] = useState(false);
-  const [quoteShipping, setQuoteShipping] = useState(rental.quote_shipping || 0);
-  const [quoteNotes, setQuoteNotes] = useState(rental.quote_notes || '');
+  const [messages, setMessages] = useState([]);
+  const [newMsg, setNewMsg] = useState('');
+  const [sendingMsg, setSendingMsg] = useState(false);
+  const [attachments, setAttachments] = useState([]);
+  
+  // Shipping state
   const [trackingNumber, setTrackingNumber] = useState(rental.outbound_tracking || '');
+  const [returnTracking, setReturnTracking] = useState(rental.return_tracking || '');
+  const [parcels, setParcels] = useState(1);
+  const [weight, setWeight] = useState('');
+  const [shippingStep, setShippingStep] = useState(1); // 1=details, 2=BL preview, 3=done
+  const [generatedBL, setGeneratedBL] = useState(null);
+  
+  // Return state
   const [returnCondition, setReturnCondition] = useState(rental.return_condition || 'good');
   const [returnNotes, setReturnNotes] = useState(rental.return_notes || '');
   
-  // Enhanced rental quote state
+  // Quote editor state
+  const [quoteShipping, setQuoteShipping] = useState(rental.quote_shipping || 0);
+  const [quoteNotes, setQuoteNotes] = useState(rental.quote_notes || '');
   const [quoteItems, setQuoteItems] = useState(() => {
-    // Restore from quote_data if exists, else build from rental items + inventory lookup
     const savedItems = rental.quote_data?.quoteItems;
     if (savedItems?.length > 0) return savedItems;
     return (rental.rental_request_items || []).map(item => {
-      // Try to match inventory device for specs/retail_value
-      const invDevice = inventory.find(d => 
-        d.serial_number === item.serial_number || 
-        d.id === item.inventory_id ||
-        (d.model_name === item.item_name && d.serial_number === item.serial_number)
-      );
+      const invDevice = inventory.find(d => d.serial_number === item.serial_number || d.id === item.inventory_id || (d.model_name === item.item_name && d.serial_number === item.serial_number));
       return {
-        id: item.id,
-        item_name: item.item_name || invDevice?.model_name || '',
+        id: item.id, item_name: item.item_name || invDevice?.model_name || '',
         serial_number: item.serial_number || invDevice?.serial_number || '',
         description: item.description || invDevice?.description_fr || '',
-        rental_days: item.rental_days || 0,
-        applied_rate: item.applied_rate || invDevice?.price_per_day || 0,
-        rate_type: item.rate_type || 'jour',
-        line_total: item.line_total || 0,
-        retail_value: invDevice?.retail_value || 0,
-        specs: invDevice?.specs || invDevice?.description_fr || ''
+        rental_days: item.rental_days || 0, applied_rate: item.applied_rate || invDevice?.price_per_day || 0,
+        rate_type: item.rate_type || 'jour', line_total: item.line_total || 0,
+        retail_value: invDevice?.retail_value || 0, specs: invDevice?.specs || invDevice?.description_fr || ''
       };
     });
   });
   const [discount, setDiscount] = useState(rental.quote_data?.discount || 0);
-  const [discountType, setDiscountType] = useState(rental.quote_data?.discountType || 'percent'); // 'percent' or 'fixed'
+  const [discountType, setDiscountType] = useState(rental.quote_data?.discountType || 'percent');
   const [buybackClause, setBuybackClause] = useState(rental.quote_data?.buybackClause !== false);
   const [buybackPercent, setBuybackPercent] = useState(rental.quote_data?.buybackPercent || 50);
   const [deliveryTerms, setDeliveryTerms] = useState(rental.quote_data?.deliveryTerms || 'En stock');
   const [paymentTerms, setPaymentTerms] = useState(rental.quote_data?.paymentTerms || 'À réception de facture');
-  const [quoteStep, setQuoteStep] = useState(1); // 1=Edit, 2=Preview
+  const [quoteStep, setQuoteStep] = useState(1);
 
-  const rentalSubtotal = quoteItems.reduce((s, i) => s + (parseFloat(i.line_total) || 0), 0);
-  const discountAmount = discountType === 'percent' 
-    ? rentalSubtotal * (parseFloat(discount) || 0) / 100 
-    : parseFloat(discount) || 0;
-  const subtotalAfterDiscount = rentalSubtotal - discountAmount;
-  const taxRate = rental.quote_tax_rate || 20;
-  const totalHT = subtotalAfterDiscount + parseFloat(quoteShipping || 0);
-  const tax = totalHT * (taxRate / 100);
-  const totalTTC = totalHT + tax;
-  const totalRetailValue = quoteItems.reduce((s, i) => s + (parseFloat(i.retail_value) || 0), 0);
+  // Computed
+  const company = rental.companies || {};
+  const items = rental.rental_request_items || [];
   const days = Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1;
+  const rentalSubtotal = quoteItems.reduce((s, i) => s + (parseFloat(i.line_total) || 0), 0);
+  const discountAmount = discountType === 'percent' ? rentalSubtotal * (parseFloat(discount) || 0) / 100 : parseFloat(discount) || 0;
+  const subtotalAfterDiscount = rentalSubtotal - discountAmount;
+  const totalHT = subtotalAfterDiscount + parseFloat(quoteShipping || 0);
+  const totalRetailValue = quoteItems.reduce((s, i) => s + (parseFloat(i.retail_value) || 0), 0);
+  const qd = rental.quote_data || {};
 
+  // Load messages & attachments
+  useEffect(() => {
+    const load = async () => {
+      const { data: msgs } = await supabase.from('messages').select('*').eq('rental_request_id', rental.id).order('created_at', { ascending: true });
+      if (msgs) setMessages(msgs);
+      const { data: docs } = await supabase.from('request_attachments').select('*').eq('rental_request_id', rental.id);
+      if (docs) setAttachments(docs);
+    };
+    load();
+  }, [rental.id]);
+
+  // ===== ACTIONS =====
   const updateStatus = async (newStatus, additionalData = {}) => {
     setSaving(true);
     try {
       await supabase.from('rental_requests').update({ status: newStatus, ...additionalData }).eq('id', rental.id);
-      notify(lang === 'en' ? 'Status updated!' : 'Statut mis à jour!');
+      notify('Statut mis à jour !');
       setStatus(newStatus);
       reload();
-    } catch (err) { notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error'); }
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
     setSaving(false);
+  };
+
+  const sendMessage = async (e) => {
+    e?.preventDefault();
+    if (!newMsg.trim()) return;
+    setSendingMsg(true);
+    await supabase.from('messages').insert({
+      rental_request_id: rental.id, sender_id: profile?.id,
+      sender_name: profile?.full_name || 'Admin', sender_role: 'admin', content: newMsg.trim()
+    });
+    setNewMsg('');
+    setSendingMsg(false);
+    const { data: msgs } = await supabase.from('messages').select('*').eq('rental_request_id', rental.id).order('created_at', { ascending: true });
+    if (msgs) setMessages(msgs);
   };
 
   const sendQuote = async () => {
     setSaving(true);
     try {
       const quoteData = {
-        rentalId: rental.id,
-        rentalNumber: rental.rental_number,
-        quoteItems,
-        items: quoteItems, // Keep for backward compat
-        shipping: parseFloat(quoteShipping) || 0,
-        discount: parseFloat(discount) || 0,
-        discountType,
-        discountAmount,
-        subtotalBeforeDiscount: rentalSubtotal,
-        subtotalAfterDiscount,
-        taxRate,
-        totalHT,
-        totalTTC,
-        totalRetailValue,
-        notes: quoteNotes,
-        buybackClause,
-        buybackPercent: parseFloat(buybackPercent) || 50,
-        deliveryTerms,
-        paymentTerms,
-        rentalPeriod: { start: rental.start_date, end: rental.end_date, days },
-        clientName: rental.companies?.name || rental.client_name || 'Client',
-        clientAddress: rental.companies?.address || '',
-        clientCity: rental.companies?.city || '',
-        clientPostalCode: rental.companies?.postal_code || '',
-        clientCountry: rental.companies?.country || 'France'
+        rentalId: rental.id, rentalNumber: rental.rental_number, quoteItems, items: quoteItems,
+        shipping: parseFloat(quoteShipping) || 0, discount: parseFloat(discount) || 0, discountType, discountAmount,
+        subtotalBeforeDiscount: rentalSubtotal, subtotalAfterDiscount, totalHT, totalRetailValue,
+        notes: quoteNotes, buybackClause, buybackPercent: parseFloat(buybackPercent) || 50,
+        deliveryTerms, paymentTerms, rentalPeriod: { start: rental.start_date, end: rental.end_date, days },
+        clientName: company.name || 'Client', clientAddress: company.address || '',
+        clientCity: company.city || '', clientPostalCode: company.postal_code || '', clientCountry: company.country || 'France'
       };
-
-      // Save quote data to rental
       await supabase.from('rental_requests').update({
-        quote_shipping: parseFloat(quoteShipping) || 0,
-        quote_tax_rate: taxRate,
-        quote_tax: tax,
-        quote_total_ht: totalHT,
-        quote_total_ttc: totalTTC,
-        quote_notes: quoteNotes,
-        quote_data: quoteData,
-        quoted_at: new Date().toISOString(),
+        quote_shipping: parseFloat(quoteShipping) || 0, quote_total_ht: totalHT,
+        quote_notes: quoteNotes, quote_data: quoteData, quoted_at: new Date().toISOString(),
         quote_valid_until: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0]
       }).eq('id', rental.id);
-
-      // Submit for review (direct insert since rental uses rental_request_id)
       const itemSummary = quoteItems.map(i => `${i.item_name || 'Item'} (${i.rental_days || days}j)`).join(', ');
-      
-      const { data: review, error: reviewError } = await supabase
-        .from('quote_reviews')
-        .insert({
-          rental_request_id: rental.id,
-          quote_type: 'rental',
-          quote_data: quoteData,
-          quote_number: rental.rental_number,
-          rma_number: rental.rental_number,
-          client_name: rental.companies?.name || rental.client_name || 'Client inconnu',
-          total_amount: totalHT,
-          device_summary: itemSummary,
-          submitted_by: profile?.id,
-          submitted_by_name: profile?.full_name || profile?.email || 'Unknown',
-          previous_status: rental.status || 'requested'
-        })
-        .select()
-        .single();
-      
+      const { data: review, error: reviewError } = await supabase.from('quote_reviews').insert({
+        rental_request_id: rental.id, quote_type: 'rental', quote_data: quoteData,
+        quote_number: rental.rental_number, rma_number: rental.rental_number,
+        client_name: company.name || 'Client inconnu', total_amount: totalHT,
+        device_summary: itemSummary, submitted_by: profile?.id,
+        submitted_by_name: profile?.full_name || profile?.email || 'Unknown', previous_status: rental.status || 'requested'
+      }).select().single();
       if (reviewError) throw reviewError;
-      
-      // Set rental to pending review
       await supabase.from('rental_requests').update({
-        status: 'pending_quote_review',
-        quote_review_id: review.id,
-        quote_rejection_notes: null,
-        quote_revision_notes: null
+        status: 'pending_quote_review', quote_review_id: review.id, quote_rejection_notes: null, quote_revision_notes: null
       }).eq('id', rental.id);
-
-      notify(lang === 'en' ? '✅ Rental quote submitted for review!' : '✅ Devis location envoyé en vérification!');
+      notify('✅ Devis soumis pour vérification !');
       setStatus('pending_quote_review');
       reload();
-    } catch (err) { notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error'); }
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
     setSaving(false);
   };
 
-  const approveBC = async () => {
-    await updateStatus('bc_approved', { bc_approved_at: new Date().toISOString() });
-  };
-
+  const approveBC = async () => { await updateStatus('bc_approved', { bc_approved_at: new Date().toISOString() }); };
   const rejectBC = async () => {
-    const reason = prompt(lang === 'en' ? 'Reason for rejection:' : 'Raison du rejet:');
+    const reason = prompt('Raison du rejet:');
     if (!reason) return;
     await updateStatus('waiting_bc', { bc_rejected_at: new Date().toISOString(), bc_rejection_reason: reason, bc_file_url: null });
   };
 
   const markShipped = async () => {
-    if (!trackingNumber) { notify(lang === 'en' ? 'Enter the tracking number' : 'Entrez le numéro de suivi', 'error'); return; }
-    await updateStatus('shipped', { 
-      outbound_tracking: trackingNumber, 
-      outbound_shipped_at: new Date().toISOString(),
-      rental_started_at: new Date(rental.start_date).toISOString()
-    });
+    if (!trackingNumber) { notify('Entrez le numéro de suivi', 'error'); return; }
+    setSaving(true);
+    try {
+      // Generate BL number
+      let blNumber = null;
+      try {
+        const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'BL' });
+        if (!docNumError && docNumData) blNumber = docNumData;
+      } catch (e) { console.error('Could not generate BL number:', e); }
+      if (!blNumber) {
+        const mm = String(new Date().getMonth() + 1).padStart(2, '0');
+        const yy = String(new Date().getFullYear()).slice(-2);
+        blNumber = `BL-${mm}${yy}-LOC`;
+      }
+
+      // Generate BL PDF from preview
+      let blUrl = null;
+      try {
+        if (!window.html2canvas) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+            script.onload = resolve; script.onerror = reject;
+            document.head.appendChild(script);
+          });
+        }
+        const element = document.getElementById('rental-bl-preview');
+        if (element) {
+          const numberEl = element.querySelector('[data-bl-number]');
+          if (numberEl) numberEl.textContent = 'N° ' + blNumber;
+          const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+          const jsPDF = await loadJsPDF();
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          const imgData = canvas.toDataURL('image/jpeg', 0.95);
+          pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+          const blPdfBlob = pdf.output('blob');
+          const safeBL = blNumber.replace(/[^a-zA-Z0-9-_]/g, '');
+          const blFileName = `${rental.rental_number}_BL_${safeBL}_${Date.now()}.pdf`;
+          const { error: upErr } = await supabase.storage.from('documents').upload(`shipping/${rental.rental_number}/${blFileName}`, blPdfBlob, { contentType: 'application/pdf' });
+          if (!upErr) {
+            const { data: urlData } = supabase.storage.from('documents').getPublicUrl(`shipping/${rental.rental_number}/${blFileName}`);
+            blUrl = urlData?.publicUrl;
+          }
+        }
+      } catch (err) { console.error('BL generation error:', err); }
+
+      await supabase.from('rental_requests').update({
+        status: 'shipped', outbound_tracking: trackingNumber, outbound_shipped_at: new Date().toISOString(),
+        bl_number: blNumber, bl_url: blUrl, shipped_parcels: parcels, shipped_weight: weight || null,
+        shipped_by: profile?.full_name || 'Admin'
+      }).eq('id', rental.id);
+
+      // Save BL as attachment
+      if (blUrl) {
+        await supabase.from('request_attachments').insert({
+          rental_request_id: rental.id, file_name: `${blNumber}.pdf`, file_url: blUrl,
+          file_type: 'application/pdf', uploaded_by: profile?.id, category: 'bon_livraison'
+        });
+      }
+
+      setGeneratedBL({ blNumber, blUrl, trackingNumber });
+      setShippingStep(3);
+      notify('✅ Expédié ! BL généré : ' + blNumber);
+      setStatus('shipped');
+      reload();
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+    setSaving(false);
   };
 
-  const markInRental = async () => {
-    await updateStatus('in_rental');
-  };
-
-  const markReturnPending = async () => {
-    await updateStatus('return_pending', { rental_ended_at: new Date(rental.end_date).toISOString() });
-  };
-
+  const markInRental = async () => { await updateStatus('in_rental', { rental_started_at: new Date().toISOString() }); };
+  const markReturnPending = async () => { await updateStatus('return_pending', { rental_ended_at: new Date().toISOString() }); };
   const markReturned = async () => {
-    await updateStatus('returned', { 
-      returned_at: new Date().toISOString(),
-      return_condition: returnCondition,
-      return_notes: returnNotes
-    });
-    // Release bookings
+    await updateStatus('returned', { returned_at: new Date().toISOString(), return_condition: returnCondition, return_notes: returnNotes, return_tracking: returnTracking || null });
     await supabase.from('rental_bookings').delete().eq('rental_request_id', rental.id);
   };
+  const completeRental = async () => { await updateStatus('completed', { completed_at: new Date().toISOString() }); };
 
-  const completeRental = async () => {
-    await updateStatus('completed', { completed_at: new Date().toISOString() });
+  // ===== PROGRESS BAR (inline, rental-specific) =====
+  const rentalSteps = [
+    { id: 'submitted', label: 'Soumis' },
+    { id: 'quote', label: 'Devis' },
+    { id: 'bc', label: 'BC' },
+    { id: 'shipped', label: 'Expédié' },
+    { id: 'in_rental', label: 'En location' },
+    { id: 'returned', label: 'Retourné' }
+  ];
+  const stepMap = {
+    'requested': 0, 'pending_quote_review': 1, 'quote_sent': 1,
+    'waiting_bc': 2, 'bc_review': 2, 'bc_approved': 2,
+    'shipped': 3, 'in_rental': 4,
+    'return_pending': 5, 'returned': 5, 'completed': 5
   };
+  const currentStepIndex = stepMap[status] ?? 0;
 
+  // Status styles
   const getStatusStyle = (s) => {
     const styles = {
-      requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'New request' : 'Nouvelle demande' },
-      pending_quote_review: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'Quote Under Review' : 'Devis en vérification' },
-      quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: lang === 'en' ? 'Quote Sent' : 'Devis envoyé' },
-      waiting_bc: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? 'Awaiting PO' : 'Attente BC' },
-      bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? 'PO to Review' : 'BC à vérifier' },
-      bc_approved: { bg: 'bg-green-100', text: 'text-green-700', label: lang === 'en' ? 'PO approved' : 'BC approuvé' },
-      shipped: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: t('stShipped') },
-      in_rental: { bg: 'bg-purple-100', text: 'text-purple-700', label: lang === 'en' ? 'On rental' : 'En location' },
-      return_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? 'Return expected' : 'Retour attendu' },
-      returned: { bg: 'bg-teal-100', text: 'text-teal-700', label: lang === 'en' ? 'Returned' : 'Retourné' },
-      completed: { bg: 'bg-green-100', text: 'text-green-700', label: lang === 'en' ? 'Completed' : 'Terminé' },
-      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: lang === 'en' ? 'Cancelled' : 'Annulé' }
+      requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Nouvelle demande' },
+      pending_quote_review: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Devis en vérification' },
+      quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Devis envoyé' },
+      waiting_bc: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Attente BC' },
+      bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'BC à vérifier' },
+      bc_approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'BC approuvé' },
+      shipped: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Expédié' },
+      in_rental: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'En location' },
+      return_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Retour attendu' },
+      returned: { bg: 'bg-teal-100', text: 'text-teal-700', label: 'Retourné' },
+      completed: { bg: 'bg-green-100', text: 'text-green-700', label: 'Terminé' },
+      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
     };
     return styles[s] || { bg: 'bg-gray-100', text: 'text-gray-700', label: s };
   };
   const style = getStatusStyle(status);
 
+  // Build timeline events
+  const timeline = [];
+  if (rental.submitted_at || rental.created_at) timeline.push({ date: rental.submitted_at || rental.created_at, icon: '📝', label: 'Demande soumise', detail: `par ${rental.submitted_by_name || 'Client'}` });
+  if (rental.quoted_at) timeline.push({ date: rental.quoted_at, icon: '📄', label: 'Devis créé', detail: `Total: ${(rental.quote_total_ht || 0).toFixed(2)} € HT` });
+  if (rental.quote_sent_at) timeline.push({ date: rental.quote_sent_at, icon: '📨', label: 'Devis envoyé au client' });
+  if (rental.quote_revision_requested_at) timeline.push({ date: rental.quote_revision_requested_at, icon: '🔄', label: 'Client demande modification', detail: rental.quote_revision_notes });
+  if (rental.quote_approved_at) timeline.push({ date: rental.quote_approved_at, icon: '✅', label: 'Devis approuvé par client' });
+  if (rental.bc_submitted_at) timeline.push({ date: rental.bc_submitted_at, icon: '📋', label: 'BC soumis', detail: `Signé par ${rental.bc_signed_by || '—'}` });
+  if (rental.bc_rejected_at) timeline.push({ date: rental.bc_rejected_at, icon: '❌', label: 'BC rejeté', detail: rental.bc_rejection_reason });
+  if (rental.bc_approved_at) timeline.push({ date: rental.bc_approved_at, icon: '✅', label: 'BC approuvé' });
+  if (rental.outbound_shipped_at) timeline.push({ date: rental.outbound_shipped_at, icon: '🚚', label: 'Expédié', detail: `Suivi: ${rental.outbound_tracking || '—'} | BL: ${rental.bl_number || '—'}` });
+  if (rental.rental_started_at) timeline.push({ date: rental.rental_started_at, icon: '📦', label: 'En location — Client a reçu' });
+  if (rental.rental_ended_at) timeline.push({ date: rental.rental_ended_at, icon: '⏰', label: 'Fin période — Retour attendu' });
+  if (rental.returned_at) timeline.push({ date: rental.returned_at, icon: '📥', label: 'Retourné', detail: `État: ${rental.return_condition === 'good' ? 'Bon état' : rental.return_condition === 'damaged' ? 'Endommagé' : 'Éléments manquants'}${rental.return_notes ? ' — ' + rental.return_notes : ''}` });
+  if (rental.completed_at) timeline.push({ date: rental.completed_at, icon: '🏁', label: 'Location clôturée' });
+  timeline.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  const address = rental.shipping_address || {};
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="sticky top-0 bg-[#8B5CF6] text-white px-6 py-4 flex justify-between items-center">
-          <div>
-            <h2 className="text-xl font-bold">{rental.rental_number}</h2>
-            <p className="text-sm text-white/70">{rental.companies?.name}</p>
+      <div className="bg-white rounded-2xl max-w-5xl w-full max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        {/* ===== HEADER ===== */}
+        <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 z-10">
+          <div className="flex justify-between items-start mb-3">
+            <div>
+              <h2 className="text-xl font-bold">{rental.rental_number}</h2>
+              <p className="text-sm text-gray-400">{company.name} — {days} jours de location</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className={`px-3 py-1 rounded-full text-xs font-bold ${style.bg} ${style.text}`}>{style.label}</span>
+              <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">&times;</button>
+            </div>
           </div>
-          <button onClick={onClose} className="text-white/70 hover:text-white text-2xl">&times;</button>
+          {/* Progress Bar */}
+          <div className="flex items-center">
+            {rentalSteps.map((step, index) => {
+              const isCompleted = index < currentStepIndex;
+              const isCurrent = index === currentStepIndex;
+              const isLast = index === rentalSteps.length - 1;
+              return (
+                <div key={step.id} className="flex items-center flex-1">
+                  <div className={`relative flex items-center justify-center flex-1 py-1.5 px-1 text-xs font-medium ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#8B5CF6] text-white' : 'bg-gray-600 text-gray-400'} ${index === 0 ? 'rounded-l-md' : ''} ${isLast ? 'rounded-r-md' : ''}`}
+                    style={{ clipPath: isLast ? 'polygon(0 0, 100% 0, 100% 100%, 0 100%, 8px 50%)' : index === 0 ? 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)' : 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}>
+                    <span className="truncate px-1">{step.label}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="p-6 space-y-6">
-          {/* Status & Period */}
-          <div className="flex items-center justify-between">
-            <span className={`px-4 py-2 rounded-full font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span>
-            <div className="text-right">
-              <p className="font-bold">{new Date(rental.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} → {new Date(rental.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
-              <p className="text-sm text-gray-500">{days} jours de location</p>
-            </div>
-          </div>
+        {/* ===== TABS ===== */}
+        <div className="flex gap-1 px-6 pt-3 bg-gray-50 border-b overflow-x-auto">
+          {[
+            { id: 'overview', label: 'Aperçu', icon: '📋' },
+            { id: 'quote', label: 'Devis', icon: '💰' },
+            { id: 'documents', label: 'Documents', icon: '📄', badge: attachments.length + (rental.bc_file_url ? 1 : 0) + (rental.bl_url ? 1 : 0) },
+            { id: 'shipping', label: 'Expédition', icon: '🚚' },
+            { id: 'messages', label: 'Messages', icon: '💬', badge: messages.length },
+            { id: 'timeline', label: 'Historique', icon: '📜', badge: timeline.length }
+          ].map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={`px-3 py-2 rounded-t-lg font-medium transition-colors flex items-center gap-1.5 text-sm ${activeTab === tab.id ? 'bg-white border border-b-0 border-gray-200 text-[#1E3A5F]' : 'text-gray-500 hover:text-gray-700'}`}>
+              <span>{tab.icon}</span> {tab.label}
+              {tab.badge > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 min-w-[18px] text-center">{tab.badge}</span>}
+            </button>
+          ))}
+        </div>
 
-          {/* Equipment */}
-          <div>
-            <h3 className="font-bold text-gray-700 mb-3">{lang === 'en' ? 'Equipment' : 'Équipement'}</h3>
-            <div className="bg-gray-50 rounded-lg divide-y">
-              {rental.rental_request_items?.map((item, idx) => (
-                <div key={idx} className="p-4 flex justify-between items-center">
-                  <div>
-                    <p className="font-medium">{item.item_name}</p>
-                    <p className="text-sm text-gray-500">{item.rental_days} jours × €{item.applied_rate} ({item.rate_type})</p>
-                  </div>
-                  <p className="font-bold">€{item.line_total?.toFixed(2)}</p>
+        <div className="p-6">
+          {/* ===== OVERVIEW TAB ===== */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              {/* Key Info Grid */}
+              <div className="grid md:grid-cols-3 gap-4">
+                <div className={`rounded-lg p-4 border ${status === 'in_rental' && new Date(rental.end_date) < new Date() ? 'bg-red-50 border-red-300' : 'bg-purple-50 border-purple-200'}`}>
+                  <p className="text-xs text-purple-600 uppercase font-medium">Période</p>
+                  <p className="font-bold text-purple-800">{new Date(rental.start_date).toLocaleDateString('fr-FR')} → {new Date(rental.end_date).toLocaleDateString('fr-FR')}</p>
+                  <p className="text-sm text-purple-600">{days} jours</p>
+                  {['in_rental', 'shipped'].includes(status) && (() => {
+                    const daysLeft = Math.ceil((new Date(rental.end_date) - new Date()) / (1000*60*60*24));
+                    const isOverdue = daysLeft < 0;
+                    return isOverdue 
+                      ? <p className="text-sm font-bold text-red-600 mt-1">🚨 {Math.abs(daysLeft)} jour{Math.abs(daysLeft) > 1 ? 's' : ''} de retard !</p>
+                      : daysLeft <= 5 
+                        ? <p className="text-sm font-bold text-orange-600 mt-1">⏰ {daysLeft} jour{daysLeft > 1 ? 's' : ''} restant{daysLeft > 1 ? 's' : ''}</p>
+                        : <p className="text-sm text-green-600 mt-1">✅ {daysLeft} jours restants</p>;
+                  })()}
                 </div>
-              ))}
-            </div>
-          </div>
+                <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                  <p className="text-xs text-blue-600 uppercase font-medium">Total HT</p>
+                  <p className="text-2xl font-bold text-blue-800">{(rental.quote_total_ht || totalHT || 0).toFixed(2)} €</p>
+                  {totalRetailValue > 0 && <p className="text-xs text-blue-500">Valeur à assurer: {totalRetailValue.toFixed(2)} €</p>}
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4 border">
+                  <p className="text-xs text-gray-500 uppercase font-medium">Client</p>
+                  <p className="font-bold">{company.name}</p>
+                  <p className="text-sm text-gray-500">{company.email}</p>
+                </div>
+              </div>
 
-          {/* Quote Section (for requested status) */}
-          {status === 'requested' && (
-            <div className={`${rental.quote_rejection_notes || rental.quote_revision_notes ? 'bg-amber-50 border-2 border-amber-400' : 'bg-white border border-gray-200'} rounded-lg overflow-hidden`}>
-              {rental.quote_rejection_notes && (
-                <div className="bg-white border border-amber-300 rounded-lg p-3 m-4 mb-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span>✏️</span>
-                    <span className="font-bold text-amber-800 text-sm">{lang === 'en' ? 'Reviewer requested correction' : 'Le vérificateur demande une correction'}</span>
-                  </div>
-                  <p className="text-amber-900 text-sm ml-7">{rental.quote_rejection_notes}</p>
-                </div>
-              )}
-              {rental.quote_revision_notes && (
-                <div className="bg-white border border-orange-300 rounded-lg p-3 m-4 mb-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span>🔄</span>
-                    <span className="font-bold text-orange-800 text-sm">{lang === 'en' ? 'Customer requested modifications' : 'Le client demande des modifications'}</span>
-                  </div>
-                  <p className="text-orange-900 text-sm ml-7">{rental.quote_revision_notes}</p>
-                  {rental.quote_revision_requested_at && <p className="text-xs text-orange-400 ml-7 mt-1">{new Date(rental.quote_revision_requested_at).toLocaleDateString('fr-FR')}</p>}
-                </div>
-              )}
-              
-              {/* Step indicator */}
-              <div className="px-4 pt-4 pb-2 flex items-center gap-3">
-                <h3 className="font-bold text-gray-800 text-lg">{(rental.quote_rejection_notes || rental.quote_revision_notes) ? '✏️ Corriger le Devis' : '📄 Créer Devis Location'}</h3>
-                <div className="flex gap-1 ml-auto">
-                  {[1,2].map(s => (
-                    <div key={s} className={`w-8 h-2 rounded-full ${quoteStep >= s ? 'bg-[#8B5CF6]' : 'bg-gray-200'}`} />
+              {/* Equipment */}
+              <div>
+                <h3 className="font-bold text-gray-800 mb-3">📦 Équipements ({items.length})</h3>
+                <div className="bg-gray-50 rounded-lg divide-y border">
+                  {items.map((item, idx) => (
+                    <div key={idx} className="p-3 flex justify-between items-center">
+                      <div>
+                        <p className="font-medium">{item.item_name}</p>
+                        {item.serial_number && !(item.item_name || '').includes(item.serial_number) && <p className="text-xs text-gray-500 font-mono">S/N: {item.serial_number}</p>}
+                        <p className="text-xs text-gray-400">{item.rental_days || days}j × €{item.applied_rate} ({item.rate_type})</p>
+                      </div>
+                      <p className="font-bold text-[#8B5CF6]">{(item.line_total || 0).toFixed(2)} €</p>
+                    </div>
                   ))}
                 </div>
               </div>
-              
-              {quoteStep === 1 && (
-                <div className="p-4 space-y-4">
-                  {/* Rental Period */}
-                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                    <div className="flex items-center gap-4 text-sm">
-                      <span className="font-bold text-purple-800">📅 Période de location :</span>
-                      <span className="font-medium">{new Date(rental.start_date).toLocaleDateString('fr-FR')} → {new Date(rental.end_date).toLocaleDateString('fr-FR')}</span>
-                      <span className="px-2 py-0.5 bg-purple-200 text-purple-800 rounded-full text-xs font-bold">{days} jours</span>
-                    </div>
-                  </div>
 
-                  {/* Per-item pricing and descriptions */}
-                  <div className="space-y-3">
-                    <h4 className="font-bold text-gray-700 text-sm uppercase tracking-wider">Équipements</h4>
-                    {quoteItems.map((item, idx) => (
-                      <div key={item.id || idx} className="bg-gray-50 rounded-lg p-3 border space-y-2">
-                        <div className="flex items-center gap-3">
-                          <span className="w-6 h-6 bg-[#8B5CF6] text-white rounded-full flex items-center justify-center text-xs font-bold">{idx + 1}</span>
-                          <span className="font-bold text-gray-800">{item.item_name || 'Équipement'}{item.serial_number ? ` (${item.serial_number})` : ''}</span>
-                        </div>
-                        <div className="grid md:grid-cols-2 gap-3 ml-9">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Description / Spécifications</label>
-                            <textarea
-                              value={item.specs || ''}
-                              onChange={e => {
-                                const updated = [...quoteItems];
-                                updated[idx] = { ...updated[idx], specs: e.target.value };
-                                setQuoteItems(updated);
-                              }}
-                              rows={3}
-                              placeholder="Ex: Compteur de particules 28.3 l/mn, 6 canaux 0.3-10µ, écran tactile..."
-                              className="w-full px-3 py-2 border rounded-lg text-sm"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <div>
-                              <label className="block text-xs font-medium text-gray-500 mb-1">Prix location ({days}j)</label>
-                              <input
-                                type="number" step="0.01"
-                                value={item.line_total || ''}
-                                onChange={e => {
-                                  const updated = [...quoteItems];
-                                  updated[idx] = { ...updated[idx], line_total: parseFloat(e.target.value) || 0 };
-                                  setQuoteItems(updated);
-                                }}
-                                className="w-full px-3 py-2 border rounded-lg"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-500 mb-1">Valeur neuf HT (pour assurance)</label>
-                              <input
-                                type="number" step="0.01"
-                                value={item.retail_value || ''}
-                                onChange={e => {
-                                  const updated = [...quoteItems];
-                                  updated[idx] = { ...updated[idx], retail_value: parseFloat(e.target.value) || 0 };
-                                  setQuoteItems(updated);
-                                }}
-                                className="w-full px-3 py-2 border rounded-lg"
-                                placeholder="Ex: 15500"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Discount, shipping, terms */}
-                  <div className="grid md:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Remise</label>
-                      <div className="flex">
-                        <input type="number" step="0.01" min="0" value={discount} onChange={e => setDiscount(e.target.value)} className="w-full px-3 py-2 border rounded-l-lg" />
-                        <button
-                          type="button"
-                          onClick={() => setDiscountType(discountType === 'percent' ? 'fixed' : 'percent')}
-                          className="px-3 py-2 border border-l-0 rounded-r-lg bg-gray-100 hover:bg-gray-200 font-bold text-sm min-w-[40px]"
-                          title="Cliquer pour basculer entre % et €"
-                        >
-                          {discountType === 'percent' ? '%' : '€'}
-                        </button>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Frais de port (€ HT)</label>
-                      <input type="number" step="0.01" value={quoteShipping} onChange={e => setQuoteShipping(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Délai de livraison</label>
-                      <input type="text" value={deliveryTerms} onChange={e => setDeliveryTerms(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
-                    </div>
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Conditions de paiement</label>
-                      <input type="text" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
-                    </div>
-                    <div className="flex items-center gap-3 pt-4">
-                      <input type="checkbox" id="buyback" checked={buybackClause} onChange={e => setBuybackClause(e.target.checked)} className="w-4 h-4" />
-                      <label htmlFor="buyback" className="text-sm">Clause de rachat ({buybackPercent}% déduit)</label>
-                      {buybackClause && <input type="number" step="1" value={buybackPercent} onChange={e => setBuybackPercent(e.target.value)} className="w-16 px-2 py-1 border rounded text-sm" />}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Notes / Commentaires</label>
-                    <textarea value={quoteNotes} onChange={e => setQuoteNotes(e.target.value)} rows={2} className="w-full px-3 py-2 border rounded-lg text-sm" />
-                  </div>
-
-                  {/* Totals summary */}
-                  <div className="bg-gray-50 rounded-lg p-4 border">
-                    <div className="flex justify-between mb-1 text-sm"><span>Sous-total location</span><span>{rentalSubtotal.toFixed(2)} €</span></div>
-                    {parseFloat(discount) > 0 && <div className="flex justify-between mb-1 text-sm text-green-600"><span>Remise {discountType === 'percent' ? `(${discount}%)` : '(forfait)'}</span><span>-{discountAmount.toFixed(2)} €</span></div>}
-                    {parseFloat(quoteShipping) > 0 && <div className="flex justify-between mb-1 text-sm"><span>Transport</span><span>{parseFloat(quoteShipping || 0).toFixed(2)} €</span></div>}
-                    <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total HT</span><span className="text-[#8B5CF6]">{totalHT.toFixed(2)} €</span></div>
-                    <div className="flex justify-between text-sm text-gray-500"><span>TTC ({taxRate}%)</span><span>{totalTTC.toFixed(2)} €</span></div>
-                    {totalRetailValue > 0 && <div className="flex justify-between text-xs text-gray-400 mt-1"><span>Valeur à assurer</span><span>{totalRetailValue.toFixed(2)} €</span></div>}
-                  </div>
-
-                  <button onClick={() => setQuoteStep(2)} className="w-full py-3 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white rounded-lg font-bold">
-                    📄 {lang === 'en' ? 'Preview Quote' : 'Aperçu du Devis'} →
-                  </button>
+              {/* Shipping Address */}
+              {address.address_line1 && (
+                <div className="bg-gray-50 rounded-lg p-4 border">
+                  <h3 className="font-bold text-gray-700 mb-2">📍 Adresse de livraison</h3>
+                  <p className="text-sm">{address.company_name || company.name}</p>
+                  {address.attention && <p className="text-sm text-gray-500">À l'att. {address.attention}</p>}
+                  <p className="text-sm">{address.address_line1}</p>
+                  <p className="text-sm">{address.postal_code} {address.city}</p>
+                  <p className="text-sm text-gray-400">{address.country || 'France'}</p>
                 </div>
               )}
 
-              {quoteStep === 2 && (
-                <div className="p-4 space-y-4">
-                  {/* Professional quote preview */}
-                  <div className="border rounded-xl overflow-hidden bg-white shadow-sm">
-                    <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
-                      <div className="flex justify-between items-start">
-                        <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-12 object-contain" />
-                        <div className="text-right">
-                          <p className="text-xl font-bold text-[#2D5A7B]">DEVIS LOCATION</p>
-                          <p className="text-sm font-bold text-[#2D5A7B]">N° {rental.rental_number}</p>
+              {/* Customer Notes */}
+              {rental.customer_notes && (
+                <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                  <h3 className="font-bold text-amber-800 mb-1">📝 Notes client</h3>
+                  <p className="text-sm text-amber-700">{rental.customer_notes}</p>
+                </div>
+              )}
+
+              {/* Tracking Info */}
+              {rental.outbound_tracking && (
+                <div className="bg-cyan-50 rounded-lg p-4 border border-cyan-200">
+                  <h3 className="font-bold text-cyan-800 mb-2">🚚 Expédition</h3>
+                  <div className="grid md:grid-cols-3 gap-4 text-sm">
+                    <div><p className="text-xs text-gray-500">N° suivi</p><p className="font-mono font-bold">{rental.outbound_tracking}</p></div>
+                    {rental.bl_number && <div><p className="text-xs text-gray-500">BL</p><p className="font-mono font-bold">{rental.bl_number}</p></div>}
+                    {rental.outbound_shipped_at && <div><p className="text-xs text-gray-500">Date</p><p className="font-medium">{new Date(rental.outbound_shipped_at).toLocaleDateString('fr-FR')}</p></div>}
+                  </div>
+                </div>
+              )}
+
+              {/* Return Info */}
+              {rental.returned_at && (
+                <div className="bg-teal-50 rounded-lg p-4 border border-teal-200">
+                  <h3 className="font-bold text-teal-800 mb-2">📥 Retour</h3>
+                  <div className="grid md:grid-cols-3 gap-4 text-sm">
+                    <div><p className="text-xs text-gray-500">Date retour</p><p className="font-medium">{new Date(rental.returned_at).toLocaleDateString('fr-FR')}</p></div>
+                    <div><p className="text-xs text-gray-500">État</p><p className="font-medium">{rental.return_condition === 'good' ? '✅ Bon état' : rental.return_condition === 'damaged' ? '⚠️ Endommagé' : '❓ Éléments manquants'}</p></div>
+                    {rental.return_notes && <div><p className="text-xs text-gray-500">Notes</p><p className="text-sm">{rental.return_notes}</p></div>}
+                  </div>
+                </div>
+              )}
+
+              {/* Quick Actions */}
+              <div className="bg-gray-50 rounded-lg p-4 border">
+                <h3 className="font-bold text-gray-800 mb-3">⚡ Actions rapides</h3>
+                <div className="flex flex-wrap gap-2">
+                  {status === 'requested' && <button onClick={() => setActiveTab('quote')} className="px-4 py-2 bg-[#8B5CF6] text-white rounded-lg font-medium hover:bg-[#7C3AED]">📄 Créer le devis</button>}
+                  {status === 'bc_review' && <button onClick={() => setActiveTab('documents')} className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600">📋 Vérifier le BC</button>}
+                  {status === 'bc_approved' && <button onClick={() => setActiveTab('shipping')} className="px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600">🚚 Préparer l'expédition</button>}
+                  {status === 'shipped' && <button onClick={() => markInRental()} disabled={saving} className="px-4 py-2 bg-purple-500 text-white rounded-lg font-medium hover:bg-purple-600">📦 Client a reçu → En location</button>}
+                  {status === 'in_rental' && <button onClick={() => markReturnPending()} disabled={saving} className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600">⏰ Période terminée → Attente retour</button>}
+                  {status === 'return_pending' && <button onClick={() => setActiveTab('shipping')} className="px-4 py-2 bg-teal-500 text-white rounded-lg font-medium hover:bg-teal-600">📥 Réceptionner le retour</button>}
+                  {status === 'returned' && <button onClick={() => completeRental()} disabled={saving} className="px-4 py-2 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600">🏁 Clôturer</button>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===== QUOTE TAB ===== */}
+          {activeTab === 'quote' && (
+            <div>
+              {status === 'requested' ? (
+                <div className={`${rental.quote_rejection_notes || rental.quote_revision_notes ? 'bg-amber-50 border-2 border-amber-400' : 'bg-white border border-gray-200'} rounded-lg overflow-hidden`}>
+                  {rental.quote_rejection_notes && (
+                    <div className="bg-white border border-amber-300 rounded-lg p-3 m-4 mb-0">
+                      <div className="flex items-center gap-2 mb-1"><span>✏️</span><span className="font-bold text-amber-800 text-sm">Le vérificateur demande une correction</span></div>
+                      <p className="text-amber-900 text-sm ml-7">{rental.quote_rejection_notes}</p>
+                    </div>
+                  )}
+                  {rental.quote_revision_notes && (
+                    <div className="bg-white border border-orange-300 rounded-lg p-3 m-4 mb-0">
+                      <div className="flex items-center gap-2 mb-1"><span>🔄</span><span className="font-bold text-orange-800 text-sm">Le client demande des modifications</span></div>
+                      <p className="text-orange-900 text-sm ml-7">{rental.quote_revision_notes}</p>
+                      {rental.quote_revision_requested_at && <p className="text-xs text-orange-400 ml-7 mt-1">{new Date(rental.quote_revision_requested_at).toLocaleDateString('fr-FR')}</p>}
+                    </div>
+                  )}
+                  <div className="px-4 pt-4 pb-2 flex items-center gap-3">
+                    <h3 className="font-bold text-gray-800 text-lg">{(rental.quote_rejection_notes || rental.quote_revision_notes) ? '✏️ Corriger le Devis' : '📄 Créer Devis Location'}</h3>
+                    <div className="flex gap-1 ml-auto">{[1,2].map(s => (<div key={s} className={`w-8 h-2 rounded-full ${quoteStep >= s ? 'bg-[#8B5CF6]' : 'bg-gray-200'}`} />))}</div>
+                  </div>
+
+                  {quoteStep === 1 && (
+                    <div className="p-4 space-y-4">
+                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                        <div className="flex items-center gap-4 text-sm">
+                          <span className="font-bold text-purple-800">📅 Période :</span>
+                          <span className="font-medium">{new Date(rental.start_date).toLocaleDateString('fr-FR')} → {new Date(rental.end_date).toLocaleDateString('fr-FR')}</span>
+                          <span className="px-2 py-0.5 bg-purple-200 text-purple-800 rounded-full text-xs font-bold">{days} jours</span>
                         </div>
                       </div>
+                      <div className="space-y-3">
+                        <h4 className="font-bold text-gray-700 text-sm uppercase tracking-wider">Équipements</h4>
+                        {quoteItems.map((item, idx) => (
+                          <div key={item.id || idx} className="bg-gray-50 rounded-lg p-3 border space-y-2">
+                            <div className="flex items-center gap-3">
+                              <span className="w-6 h-6 bg-[#8B5CF6] text-white rounded-full flex items-center justify-center text-xs font-bold">{idx + 1}</span>
+                              <span className="font-bold text-gray-800">{item.item_name || 'Équipement'}{item.serial_number ? ` (${item.serial_number})` : ''}</span>
+                            </div>
+                            <div className="grid md:grid-cols-2 gap-3 ml-9">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Description / Spécifications</label>
+                                <textarea value={item.specs || ''} onChange={e => { const u = [...quoteItems]; u[idx] = { ...u[idx], specs: e.target.value }; setQuoteItems(u); }} rows={3} placeholder="Ex: Compteur de particules 28.3 l/mn..." className="w-full px-3 py-2 border rounded-lg text-sm" />
+                              </div>
+                              <div className="space-y-2">
+                                <div><label className="block text-xs font-medium text-gray-500 mb-1">Prix location ({days}j)</label><input type="number" step="0.01" value={item.line_total || ''} onChange={e => { const u = [...quoteItems]; u[idx] = { ...u[idx], line_total: parseFloat(e.target.value) || 0 }; setQuoteItems(u); }} className="w-full px-3 py-2 border rounded-lg" /></div>
+                                <div><label className="block text-xs font-medium text-gray-500 mb-1">Valeur neuf HT (assurance)</label><input type="number" step="0.01" value={item.retail_value || ''} onChange={e => { const u = [...quoteItems]; u[idx] = { ...u[idx], retail_value: parseFloat(e.target.value) || 0 }; setQuoteItems(u); }} className="w-full px-3 py-2 border rounded-lg" placeholder="Ex: 15500" /></div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="grid md:grid-cols-3 gap-3">
+                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Remise</label><div className="flex"><input type="number" step="0.01" min="0" value={discount} onChange={e => setDiscount(e.target.value)} className="w-full px-3 py-2 border rounded-l-lg" /><button type="button" onClick={() => setDiscountType(discountType === 'percent' ? 'fixed' : 'percent')} className="px-3 py-2 border border-l-0 rounded-r-lg bg-gray-100 hover:bg-gray-200 font-bold text-sm min-w-[40px]">{discountType === 'percent' ? '%' : '€'}</button></div></div>
+                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Frais de port (€ HT)</label><input type="number" step="0.01" value={quoteShipping} onChange={e => setQuoteShipping(e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
+                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Délai de livraison</label><input type="text" value={deliveryTerms} onChange={e => setDeliveryTerms(e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
+                      </div>
+                      <div className="grid md:grid-cols-2 gap-3">
+                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Conditions de paiement</label><input type="text" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
+                        <div className="flex items-center gap-3 pt-4"><input type="checkbox" id="buyback2" checked={buybackClause} onChange={e => setBuybackClause(e.target.checked)} className="w-4 h-4" /><label htmlFor="buyback2" className="text-sm">Clause de rachat ({buybackPercent}% déduit)</label>{buybackClause && <input type="number" step="1" value={buybackPercent} onChange={e => setBuybackPercent(e.target.value)} className="w-16 px-2 py-1 border rounded text-sm" />}</div>
+                      </div>
+                      <div><label className="block text-xs font-medium text-gray-500 mb-1">Notes</label><textarea value={quoteNotes} onChange={e => setQuoteNotes(e.target.value)} rows={2} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                      <div className="bg-gray-50 rounded-lg p-4 border">
+                        <div className="flex justify-between mb-1 text-sm"><span>Sous-total location</span><span>{rentalSubtotal.toFixed(2)} €</span></div>
+                        {parseFloat(discount) > 0 && <div className="flex justify-between mb-1 text-sm text-green-600"><span>Remise {discountType === 'percent' ? `(${discount}%)` : '(forfait)'}</span><span>-{discountAmount.toFixed(2)} €</span></div>}
+                        {parseFloat(quoteShipping) > 0 && <div className="flex justify-between mb-1 text-sm"><span>Transport</span><span>{parseFloat(quoteShipping || 0).toFixed(2)} €</span></div>}
+                        <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total HT</span><span className="text-[#8B5CF6]">{totalHT.toFixed(2)} €</span></div>
+                        {totalRetailValue > 0 && <div className="flex justify-between text-xs text-gray-400 mt-1"><span>Valeur à assurer</span><span>{totalRetailValue.toFixed(2)} €</span></div>}
+                      </div>
+                      <button onClick={() => setQuoteStep(2)} className="w-full py-3 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white rounded-lg font-bold">📄 Aperçu du Devis →</button>
                     </div>
-                    <div className="px-6 py-3 border-b bg-gray-50 flex justify-between text-sm">
-                      <div><span className="text-xs text-gray-500 uppercase">Client</span><p className="font-bold">{rental.companies?.name || 'Client'}</p></div>
-                      <div className="text-right"><span className="text-xs text-gray-500 uppercase">Date</span><p className="font-medium">{new Date().toLocaleDateString('fr-FR')}</p></div>
-                    </div>
-                    <div className="px-6 py-2 bg-blue-50 border-b text-sm">
-                      <span className="font-medium text-blue-800">📅 Période :</span> {new Date(rental.start_date).toLocaleDateString('fr-FR')} au {new Date(rental.end_date).toLocaleDateString('fr-FR')} ({days} jours)
-                    </div>
-                    
-                    {/* Equipment details */}
-                    {quoteItems.map((item, idx) => (
-                      <div key={idx} className="px-6 py-4 border-b">
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
+                  )}
+
+                  {quoteStep === 2 && (
+                    <div className="p-4 space-y-4">
+                      <div className="border rounded-xl overflow-hidden bg-white shadow-sm">
+                        <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
+                          <div className="flex justify-between items-start">
+                            <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-12 object-contain" />
+                            <div className="text-right"><p className="text-xl font-bold text-[#2D5A7B]">DEVIS LOCATION</p><p className="text-sm font-bold text-[#2D5A7B]">N° {rental.rental_number}</p></div>
+                          </div>
+                        </div>
+                        <div className="px-6 py-3 border-b bg-gray-50 flex justify-between text-sm">
+                          <div><span className="text-xs text-gray-500 uppercase">Client</span><p className="font-bold">{company.name || 'Client'}</p></div>
+                          <div className="text-right"><span className="text-xs text-gray-500 uppercase">Date</span><p className="font-medium">{new Date().toLocaleDateString('fr-FR')}</p></div>
+                        </div>
+                        <div className="px-6 py-2 bg-blue-50 border-b text-sm"><span className="font-medium text-blue-800">📅 Période :</span> {new Date(rental.start_date).toLocaleDateString('fr-FR')} au {new Date(rental.end_date).toLocaleDateString('fr-FR')} ({days} jours)</div>
+                        {quoteItems.map((item, idx) => (
+                          <div key={idx} className="px-6 py-4 border-b">
                             <p className="font-bold text-[#1a1a2e]">Location {item.item_name}</p>
                             {item.specs && <p className="text-sm text-gray-600 mt-1 whitespace-pre-line">{item.specs}</p>}
+                            <div className="flex justify-between mt-2 pt-2 border-t border-dashed"><span className="text-sm text-gray-600">Prix de location ({days} jours)</span><span className="font-bold">{(item.line_total || 0).toFixed(2)} € HT</span></div>
+                            {item.retail_value > 0 && <div className="flex justify-between text-xs text-gray-400"><span>Valeur neuf</span><span>{item.retail_value.toFixed(2)} € HT</span></div>}
+                          </div>
+                        ))}
+                        <div className="px-6 py-4 bg-gray-50 space-y-1.5">
+                          {parseFloat(discount) > 0 && <><div className="flex justify-between text-sm"><span>Sous-total</span><span>{rentalSubtotal.toFixed(2)} €</span></div><div className="flex justify-between text-sm text-green-600"><span>Remise {discountType === 'percent' ? `(${discount}%)` : '(forfait)'}</span><span>-{discountAmount.toFixed(2)} €</span></div></>}
+                          {parseFloat(quoteShipping) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{parseFloat(quoteShipping || 0).toFixed(2)} €</span></div>}
+                          <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>TOTAL HT</span><span className="text-[#00A651]">{totalHT.toFixed(2)} €</span></div>
+                        </div>
+                        {quoteNotes && <div className="px-6 py-3 bg-amber-50 border-t text-sm"><span className="font-medium">Notes :</span> {quoteNotes}</div>}
+                      </div>
+                      <div className="flex gap-3">
+                        <button onClick={() => setQuoteStep(1)} className="flex-1 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">← Modifier</button>
+                        <button onClick={sendQuote} disabled={saving} className="flex-1 py-3 bg-[#00A651] hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50">{saving ? 'Soumission...' : '📋 Soumettre pour Vérification'}</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Show existing quote summary for other statuses */
+                <div className="space-y-4">
+                  {status === 'pending_quote_review' && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center"><span className="text-3xl">📋</span><h3 className="font-bold text-blue-800 mt-2">Devis en vérification</h3><p className="text-sm text-blue-600 mt-1">En attente d'approbation admin</p></div>
+                  )}
+                  {qd.totalHT && (
+                    <div className="bg-gray-50 rounded-lg p-4 border">
+                      <h3 className="font-bold text-gray-800 mb-3">Devis envoyé</h3>
+                      <div className="space-y-1 text-sm">
+                        {(qd.quoteItems || []).map((item, idx) => (<div key={idx} className="flex justify-between"><span>{item.item_name}</span><span className="font-bold">{(item.line_total || 0).toFixed(2)} €</span></div>))}
+                        <div className="flex justify-between font-bold text-lg pt-2 border-t mt-2"><span>Total HT</span><span className="text-[#00A651]">{(qd.totalHT || 0).toFixed(2)} €</span></div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ===== DOCUMENTS TAB ===== */}
+          {activeTab === 'documents' && (
+            <div className="space-y-6">
+              {/* BC Review Section */}
+              {status === 'bc_review' && (
+                <div className="bg-orange-50 border-2 border-orange-300 rounded-lg p-5">
+                  <h3 className="font-bold text-orange-800 text-lg mb-4">📋 Vérifier le Bon de Commande</h3>
+                  {rental.bc_file_url && (
+                    <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-4 bg-white rounded-lg mb-4 hover:bg-gray-50 border">
+                      <span className="text-3xl">📄</span>
+                      <div className="flex-1">
+                        <p className="font-bold">Bon de Commande</p>
+                        <p className="text-sm text-gray-500">Soumis le {rental.bc_submitted_at ? new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR') : '—'}</p>
+                      </div>
+                      <span className="text-blue-600 font-medium">Ouvrir →</span>
+                    </a>
+                  )}
+                  {rental.bc_signature_url && (
+                    <div className="mb-4 p-3 bg-white rounded-lg border">
+                      <p className="text-sm font-medium text-gray-700 mb-2">Signature électronique de {rental.bc_signed_by}</p>
+                      <img src={rental.bc_signature_url} alt="Signature" className="h-16 border rounded" />
+                      <p className="text-xs text-gray-400 mt-1">Date: {rental.bc_signature_date || '—'}</p>
+                    </div>
+                  )}
+                  {rental.signed_quote_url && (
+                    <a href={rental.signed_quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg mb-4 hover:bg-blue-100 border border-blue-200">
+                      <span className="text-2xl">📝</span>
+                      <div className="flex-1"><p className="font-medium text-blue-800">Devis signé par le client</p></div>
+                      <span className="text-blue-600 text-sm">Ouvrir →</span>
+                    </a>
+                  )}
+                  <div className="flex gap-3 mt-4">
+                    <button onClick={rejectBC} disabled={saving} className="flex-1 py-3 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-bold text-lg">❌ Rejeter</button>
+                    <button onClick={approveBC} disabled={saving} className="flex-1 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold text-lg">✅ Approuver</button>
+                  </div>
+                </div>
+              )}
+
+              {/* All Documents List */}
+              <div>
+                <h3 className="font-bold text-gray-800 mb-3">📂 Tous les documents</h3>
+                <div className="space-y-2">
+                  {rental.bc_file_url && (
+                    <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200 hover:bg-green-100">
+                      <span className="text-2xl">📋</span>
+                      <div className="flex-1"><p className="font-medium text-green-800">Bon de Commande</p><p className="text-xs text-gray-500">Par {rental.bc_signed_by} — {rental.bc_submitted_at ? new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR') : ''}</p></div>
+                      <span className="text-blue-600 text-sm">Ouvrir →</span>
+                    </a>
+                  )}
+                  {rental.signed_quote_url && (
+                    <a href={rental.signed_quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100">
+                      <span className="text-2xl">📝</span>
+                      <div className="flex-1"><p className="font-medium text-blue-800">Devis signé</p></div>
+                      <span className="text-blue-600 text-sm">Ouvrir →</span>
+                    </a>
+                  )}
+                  {rental.bl_url && (
+                    <a href={rental.bl_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-cyan-50 rounded-lg border border-cyan-200 hover:bg-cyan-100">
+                      <span className="text-2xl">🚚</span>
+                      <div className="flex-1"><p className="font-medium text-cyan-800">Bon de Livraison — {rental.bl_number}</p><p className="text-xs text-gray-500">{rental.outbound_shipped_at ? new Date(rental.outbound_shipped_at).toLocaleDateString('fr-FR') : ''}</p></div>
+                      <span className="text-blue-600 text-sm">Ouvrir →</span>
+                    </a>
+                  )}
+                  {attachments.map(doc => (
+                    <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border hover:bg-gray-100">
+                      <span className="text-2xl">{doc.file_type?.includes('pdf') ? '📕' : doc.file_type?.includes('image') ? '🖼️' : '📄'}</span>
+                      <div className="flex-1"><p className="font-medium">{doc.file_name || doc.category}</p><p className="text-xs text-gray-500">{new Date(doc.created_at).toLocaleDateString('fr-FR')}</p></div>
+                      <span className="text-blue-600 text-sm">Ouvrir →</span>
+                    </a>
+                  ))}
+                  {!rental.bc_file_url && !rental.signed_quote_url && !rental.bl_url && attachments.length === 0 && (
+                    <div className="text-center py-8 text-gray-400"><p className="text-4xl mb-2">📄</p><p>Aucun document</p></div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===== SHIPPING TAB ===== */}
+          {activeTab === 'shipping' && (
+            <div className="space-y-6">
+              {/* Outbound shipping */}
+              {status === 'bc_approved' && (
+                <div className="bg-cyan-50 border-2 border-cyan-300 rounded-lg overflow-hidden">
+                  <div className="bg-cyan-600 text-white px-4 py-3 flex items-center gap-2"><span className="text-xl">🚚</span><h3 className="font-bold">Préparer l'expédition</h3></div>
+                  
+                  {shippingStep === 1 && (
+                    <div className="p-4 space-y-4">
+                      <div className="bg-white rounded-lg p-4 border">
+                        <h4 className="font-bold text-gray-700 mb-3">📍 Adresse de livraison</h4>
+                        <p className="font-medium">{address.company_name || company.name}</p>
+                        {address.attention && <p className="text-sm text-gray-500">À l'att. {address.attention}</p>}
+                        <p className="text-sm">{address.address_line1}</p>
+                        <p className="text-sm">{address.postal_code} {address.city}</p>
+                      </div>
+                      <div className="grid md:grid-cols-3 gap-3">
+                        <div><label className="block text-sm font-medium mb-1">N° de suivi *</label><input type="text" value={trackingNumber} onChange={e => setTrackingNumber(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="1Z999AA10123456784" /></div>
+                        <div><label className="block text-sm font-medium mb-1">Nombre de colis</label><input type="number" value={parcels} onChange={e => setParcels(parseInt(e.target.value) || 1)} min="1" className="w-full px-3 py-2 border rounded-lg" /></div>
+                        <div><label className="block text-sm font-medium mb-1">Poids total (kg)</label><input type="text" value={weight} onChange={e => setWeight(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="Ex: 5.2" /></div>
+                      </div>
+                      <div className="bg-white rounded-lg p-3 border">
+                        <h4 className="font-bold text-gray-700 mb-2">📦 Équipements à expédier</h4>
+                        {items.map((item, idx) => (
+                          <div key={idx} className="flex items-center gap-2 py-1"><span className="text-green-500">✅</span><span className="font-medium text-sm">{item.item_name}</span>{item.serial_number && <span className="text-xs text-gray-400 font-mono">({item.serial_number})</span>}</div>
+                        ))}
+                      </div>
+                      <button onClick={() => setShippingStep(2)} disabled={!trackingNumber} className="w-full py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-bold disabled:opacity-50">Aperçu BL →</button>
+                    </div>
+                  )}
+
+                  {shippingStep === 2 && (
+                    <div className="p-4 space-y-4">
+                      {/* BL Preview */}
+                      <div id="rental-bl-preview" className="border rounded-xl overflow-hidden bg-white shadow-sm" style={{ width: '100%', minHeight: '500px' }}>
+                        <div style={{ padding: '24px 32px 12px', borderBottom: '4px solid #1a1a2e' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" style={{ height: '48px', objectFit: 'contain' }} />
+                            <div style={{ textAlign: 'right' }}>
+                              <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#1a1a2e' }}>BON DE LIVRAISON</p>
+                              <p data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#2D5A7B', marginTop: '4px' }}>N° —</p>
+                            </div>
                           </div>
                         </div>
-                        <div className="flex justify-between mt-2 pt-2 border-t border-dashed">
-                          <span className="text-sm text-gray-600">Prix de location ({days} jours)</span>
-                          <span className="font-bold">{(item.line_total || 0).toFixed(2)} € HT</span>
-                        </div>
-                        {item.retail_value > 0 && (
-                          <div className="flex justify-between text-xs text-gray-400">
-                            <span>Valeur neuf</span><span>{(item.retail_value).toFixed(2)} € HT</span>
+                        <div style={{ display: 'flex', padding: '16px 32px', borderBottom: '1px solid #e5e7eb' }}>
+                          <div style={{ flex: 1, borderRight: '1px solid #e5e7eb', paddingRight: '24px' }}>
+                            <p style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase' }}>Expéditeur</p>
+                            <p style={{ fontWeight: 'bold' }}>LIGHTHOUSE FRANCE</p>
+                            <p style={{ fontSize: '13px', color: '#4b5563' }}>16 Rue Paul Séjourne</p>
+                            <p style={{ fontSize: '13px', color: '#4b5563' }}>94000 Créteil</p>
                           </div>
-                        )}
+                          <div style={{ flex: 1, paddingLeft: '24px' }}>
+                            <p style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase' }}>Destinataire</p>
+                            <p style={{ fontWeight: 'bold' }}>{address.company_name || company.name}</p>
+                            {address.attention && <p style={{ fontSize: '13px', color: '#4b5563' }}>À l'att. {address.attention}</p>}
+                            <p style={{ fontSize: '13px', color: '#4b5563' }}>{address.address_line1}</p>
+                            <p style={{ fontSize: '13px', color: '#4b5563' }}>{address.postal_code} {address.city}</p>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', padding: '8px 32px', borderBottom: '1px solid #e5e7eb', backgroundColor: '#f9fafb', fontSize: '13px' }}>
+                          <div style={{ flex: 1 }}><span style={{ color: '#6b7280' }}>Date:</span> <strong>{new Date().toLocaleDateString('fr-FR')}</strong></div>
+                          <div style={{ flex: 1 }}><span style={{ color: '#6b7280' }}>Réf:</span> <strong>{rental.rental_number}</strong></div>
+                          <div style={{ flex: 1 }}><span style={{ color: '#6b7280' }}>Suivi:</span> <strong>{trackingNumber}</strong></div>
+                          <div><span style={{ color: '#6b7280' }}>Colis:</span> <strong>{parcels}</strong>{weight && <> — <strong>{weight} kg</strong></>}</div>
+                        </div>
+                        <div style={{ padding: '8px 32px', backgroundColor: '#eff6ff', borderBottom: '1px solid #e5e7eb', fontSize: '13px' }}>
+                          <span style={{ fontWeight: '600', color: '#1e40af' }}>📅 Location:</span> {new Date(rental.start_date).toLocaleDateString('fr-FR')} au {new Date(rental.end_date).toLocaleDateString('fr-FR')} ({days} jours)
+                        </div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead><tr style={{ backgroundColor: '#1a1a2e', color: 'white' }}><th style={{ padding: '8px 16px', textAlign: 'left', fontSize: '12px' }}>#</th><th style={{ padding: '8px 16px', textAlign: 'left', fontSize: '12px' }}>Équipement</th><th style={{ padding: '8px 16px', textAlign: 'left', fontSize: '12px' }}>N° Série</th><th style={{ padding: '8px 16px', textAlign: 'center', fontSize: '12px' }}>Qté</th></tr></thead>
+                          <tbody>
+                            {items.map((item, idx) => (
+                              <tr key={idx} style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: idx % 2 === 0 ? 'white' : '#f9fafb' }}>
+                                <td style={{ padding: '10px 16px', fontSize: '13px' }}>{idx + 1}</td>
+                                <td style={{ padding: '10px 16px', fontSize: '13px', fontWeight: '500' }}>{item.item_name}</td>
+                                <td style={{ padding: '10px 16px', fontSize: '13px', fontFamily: 'monospace' }}>{item.serial_number || '—'}</td>
+                                <td style={{ padding: '10px 16px', fontSize: '13px', textAlign: 'center' }}>1</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <div style={{ padding: '16px 32px', borderTop: '1px solid #e5e7eb', fontSize: '11px', color: '#6b7280' }}>
+                          <p>Le matériel livré reste la propriété de Lighthouse France. Le destinataire reconnaît avoir vérifié le contenu et l'état du matériel à la réception.</p>
+                        </div>
+                        <div style={{ display: 'flex', padding: '16px 32px', borderTop: '1px solid #e5e7eb' }}>
+                          <div style={{ flex: 1 }}><p style={{ fontSize: '11px', color: '#6b7280' }}>Préparé par</p><p style={{ fontWeight: 'bold', fontSize: '13px' }}>{profile?.full_name || 'Admin'}</p><p style={{ fontSize: '11px', color: '#6b7280' }}>Lighthouse France</p></div>
+                          <div style={{ flex: 1, textAlign: 'right' }}><p style={{ fontSize: '11px', color: '#6b7280' }}>Signature client à la réception</p><div style={{ width: '200px', height: '60px', border: '2px dashed #d1d5db', borderRadius: '8px', marginLeft: 'auto', marginTop: '4px' }}></div></div>
+                        </div>
+                      </div>
+                      <div className="flex gap-3">
+                        <button onClick={() => setShippingStep(1)} className="flex-1 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">← Modifier</button>
+                        <button onClick={markShipped} disabled={saving} className="flex-1 py-3 bg-[#00A651] hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50">{saving ? 'Génération BL...' : '✅ Confirmer l\'expédition et générer BL'}</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {shippingStep === 3 && generatedBL && (
+                    <div className="p-4 text-center space-y-4">
+                      <div className="text-4xl mb-2">✅</div>
+                      <h3 className="font-bold text-green-800 text-xl">Expédition confirmée !</h3>
+                      <div className="bg-white rounded-lg p-4 border space-y-2 text-sm">
+                        <div className="flex justify-between"><span className="text-gray-500">BL</span><span className="font-bold font-mono">{generatedBL.blNumber}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">Suivi</span><span className="font-bold font-mono">{generatedBL.trackingNumber}</span></div>
+                      </div>
+                      {generatedBL.blUrl && <a href={generatedBL.blUrl} target="_blank" rel="noopener noreferrer" className="inline-block px-6 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600">📄 Télécharger BL</a>}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Existing shipment info */}
+              {rental.outbound_tracking && status !== 'bc_approved' && (
+                <div className="bg-cyan-50 rounded-lg p-4 border border-cyan-200">
+                  <h3 className="font-bold text-cyan-800 mb-3">🚚 Expédition sortante</h3>
+                  <div className="grid md:grid-cols-4 gap-4 text-sm">
+                    <div><p className="text-xs text-gray-500">N° Suivi</p><p className="font-mono font-bold">{rental.outbound_tracking}</p></div>
+                    <div><p className="text-xs text-gray-500">BL</p><p className="font-mono font-bold">{rental.bl_number || '—'}</p></div>
+                    <div><p className="text-xs text-gray-500">Date</p><p className="font-medium">{rental.outbound_shipped_at ? new Date(rental.outbound_shipped_at).toLocaleDateString('fr-FR') : '—'}</p></div>
+                    <div><p className="text-xs text-gray-500">Expédié par</p><p className="font-medium">{rental.shipped_by || '—'}</p></div>
+                  </div>
+                  {rental.bl_url && <a href={rental.bl_url} target="_blank" rel="noopener noreferrer" className="inline-block mt-3 px-4 py-2 bg-cyan-500 text-white rounded-lg text-sm font-medium hover:bg-cyan-600">📄 Voir le BL</a>}
+                </div>
+              )}
+
+              {/* Mark In Rental */}
+              {status === 'shipped' && (
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <h3 className="font-bold text-purple-800 mb-3">📦 Confirmation de réception</h3>
+                  <p className="text-sm text-purple-600 mb-4">Le client a-t-il reçu le matériel ?</p>
+                  <button onClick={markInRental} disabled={saving} className="w-full py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-bold">✅ Client a reçu → Démarrer la location</button>
+                </div>
+              )}
+
+              {/* In Rental - End period */}
+              {status === 'in_rental' && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <h3 className="font-bold text-orange-800 mb-3">⏰ Fin de période</h3>
+                  <p className="text-sm text-orange-600 mb-4">Fin de location prévue: <strong>{new Date(rental.end_date).toLocaleDateString('fr-FR')}</strong></p>
+                  <button onClick={markReturnPending} disabled={saving} className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold">📦 Période terminée → Attente retour</button>
+                </div>
+              )}
+
+              {/* Return reception */}
+              {status === 'return_pending' && (
+                <div className="bg-teal-50 border-2 border-teal-300 rounded-lg overflow-hidden">
+                  <div className="bg-teal-600 text-white px-4 py-3 flex items-center gap-2"><span className="text-xl">📥</span><h3 className="font-bold">Réception du retour</h3></div>
+                  <div className="p-4 space-y-4">
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div><label className="block text-sm font-medium mb-1">N° suivi retour (optionnel)</label><input type="text" value={returnTracking} onChange={e => setReturnTracking(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="1Z..." /></div>
+                      <div><label className="block text-sm font-medium mb-1">État du matériel *</label><select value={returnCondition} onChange={e => setReturnCondition(e.target.value)} className="w-full px-3 py-2 border rounded-lg"><option value="good">✅ Bon état</option><option value="damaged">⚠️ Endommagé</option><option value="missing_items">❓ Éléments manquants</option></select></div>
+                    </div>
+                    <div><label className="block text-sm font-medium mb-1">Notes de retour</label><textarea value={returnNotes} onChange={e => setReturnNotes(e.target.value)} rows={3} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Observations sur l'état du matériel..." /></div>
+                    <div className="bg-white rounded-lg p-3 border">
+                      <h4 className="font-bold text-gray-700 mb-2">📦 Équipements attendus</h4>
+                      {items.map((item, idx) => (<div key={idx} className="flex items-center gap-2 py-1"><span className="text-orange-500">⏳</span><span className="font-medium text-sm">{item.item_name}</span>{item.serial_number && <span className="text-xs text-gray-400 font-mono">({item.serial_number})</span>}</div>))}
+                    </div>
+                    <button onClick={markReturned} disabled={saving} className="w-full py-3 bg-teal-500 hover:bg-teal-600 text-white rounded-lg font-bold">✅ Confirmer la réception du retour</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Complete */}
+              {status === 'returned' && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <h3 className="font-bold text-green-800 mb-3">🏁 Clôturer la location</h3>
+                  <p className="text-sm text-green-600 mb-4">État: <strong>{rental.return_condition === 'good' ? 'Bon état' : rental.return_condition === 'damaged' ? 'Endommagé' : 'Éléments manquants'}</strong>{rental.return_notes ? ` — ${rental.return_notes}` : ''}</p>
+                  <button onClick={completeRental} disabled={saving} className="w-full py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold">🏁 Clôturer la location</button>
+                </div>
+              )}
+
+              {/* No shipping action needed */}
+              {!['bc_approved', 'shipped', 'in_rental', 'return_pending', 'returned'].includes(status) && !rental.outbound_tracking && (
+                <div className="text-center py-8 text-gray-400"><p className="text-4xl mb-2">🚚</p><p>Aucune expédition pour l'instant</p><p className="text-sm">L'expédition sera disponible après approbation du BC</p></div>
+              )}
+            </div>
+          )}
+
+          {/* ===== MESSAGES TAB ===== */}
+          {activeTab === 'messages' && (
+            <div>
+              <div className="h-[400px] overflow-y-auto mb-4 space-y-3">
+                {messages.length === 0 ? (
+                  <div className="text-center py-12 text-gray-400"><p className="text-4xl mb-2">💬</p><p>Aucun message</p></div>
+                ) : messages.map(msg => {
+                  const isAdmin = msg.sender_role === 'admin';
+                  return (
+                    <div key={msg.id} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[70%] rounded-lg p-3 ${isAdmin ? 'bg-[#8B5CF6] text-white' : 'bg-gray-100 text-gray-800'}`}>
+                        <p className={`text-xs font-medium mb-1 ${isAdmin ? 'text-white/70' : 'text-[#8B5CF6]'}`}>{msg.sender_name || (isAdmin ? 'Admin' : 'Client')}</p>
+                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                        {msg.attachment_url && <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isAdmin ? 'text-white/80' : 'text-blue-600'}`}>📎 {msg.attachment_name || 'Fichier'}</a>}
+                        <p className={`text-xs mt-1 ${isAdmin ? 'text-white/60' : 'text-gray-400'}`}>{new Date(msg.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <form onSubmit={sendMessage} className="flex gap-2">
+                <input type="text" value={newMsg} onChange={e => setNewMsg(e.target.value)} placeholder="Écrire un message au client..." className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8B5CF6]" />
+                <button type="submit" disabled={!newMsg.trim() || sendingMsg} className="px-6 py-2 bg-[#8B5CF6] text-white rounded-lg font-medium disabled:opacity-50">{sendingMsg ? '...' : 'Envoyer'}</button>
+              </form>
+            </div>
+          )}
+
+          {/* ===== TIMELINE TAB ===== */}
+          {activeTab === 'timeline' && (
+            <div>
+              <h3 className="font-bold text-gray-800 mb-4">📜 Historique complet</h3>
+              {timeline.length === 0 ? (
+                <div className="text-center py-8 text-gray-400"><p>Aucun événement</p></div>
+              ) : (
+                <div className="relative">
+                  <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gray-200"></div>
+                  <div className="space-y-6">
+                    {timeline.map((event, idx) => (
+                      <div key={idx} className="flex gap-4 items-start relative">
+                        <div className="w-12 h-12 rounded-full bg-white border-2 border-gray-200 flex items-center justify-center text-lg z-10 shrink-0">{event.icon}</div>
+                        <div className="flex-1 bg-gray-50 rounded-lg p-3 border">
+                          <div className="flex justify-between items-start">
+                            <p className="font-bold text-gray-800">{event.label}</p>
+                            <p className="text-xs text-gray-400">{new Date(event.date).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                          </div>
+                          {event.detail && <p className="text-sm text-gray-600 mt-1">{event.detail}</p>}
+                        </div>
                       </div>
                     ))}
-
-                    {/* Totals */}
-                    <div className="px-6 py-4 bg-gray-50 space-y-1.5">
-                      {parseFloat(discount) > 0 && <>
-                        <div className="flex justify-between text-sm"><span>Sous-total</span><span>{rentalSubtotal.toFixed(2)} €</span></div>
-                        <div className="flex justify-between text-sm text-green-600"><span>Remise {discountType === 'percent' ? `(${discount}%)` : '(forfait)'}</span><span>-{discountAmount.toFixed(2)} €</span></div>
-                      </>}
-                      {parseFloat(quoteShipping) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{parseFloat(quoteShipping || 0).toFixed(2)} €</span></div>}
-                      <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>TOTAL HT</span><span className="text-[#00A651]">{totalHT.toFixed(2)} €</span></div>
-                      <div className="flex justify-between text-sm text-gray-500"><span>TTC ({taxRate}%)</span><span>{totalTTC.toFixed(2)} €</span></div>
-                    </div>
-
-                    {/* Insurance conditions */}
-                    <div className="px-6 py-4 border-t">
-                      <p className="font-bold text-sm text-gray-800 mb-2">Conditions d'assurance</p>
-                      <p className="text-xs text-gray-600 leading-relaxed">
-                        Pendant la durée de la location, l'appareil reste la propriété de Lighthouse France et devient sous la responsabilité du client. 
-                        L'appareil doit être entreposé dans ses conditions normales d'exploitation et restitué en parfait état. 
-                        Tout incident doit nous être communiqué sous 48h. Le client s'engage à souscrire une assurance prenant en compte le "Bien Confié".
-                      </p>
-                      {totalRetailValue > 0 && <p className="text-xs font-medium text-gray-700 mt-1">Valeur à assurer : {totalRetailValue.toFixed(2)} € HT</p>}
-                    </div>
-
-                    {/* Buyback clause */}
-                    {buybackClause && (
-                      <div className="px-6 py-3 border-t bg-green-50">
-                        <p className="text-xs text-green-800">
-                          Si l'appareil est acheté à la fin de la période de location, {buybackPercent}% de la somme versée pour la location sera déduite du prix d'achat.
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Terms */}
-                    <div className="px-6 py-3 border-t text-xs text-gray-500 flex justify-between">
-                      <span>Délai de livraison : {deliveryTerms}</span>
-                      <span>Paiement : {paymentTerms}</span>
-                      <span>Validité : 30 jours</span>
-                    </div>
-
-                    {quoteNotes && <div className="px-6 py-3 bg-amber-50 border-t text-sm"><span className="font-medium">Notes :</span> {quoteNotes}</div>}
-                  </div>
-
-                  {/* Action buttons */}
-                  <div className="flex gap-3">
-                    <button onClick={() => setQuoteStep(1)} className="flex-1 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">← Modifier</button>
-                    <button onClick={sendQuote} disabled={saving} className="flex-1 py-3 bg-[#00A651] hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50">
-                      {saving ? 'Soumission...' : '📋 Soumettre pour Vérification'}
-                    </button>
                   </div>
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Pending Review Section */}
-          {status === 'pending_quote_review' && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-              <span className="text-3xl">📋</span>
-              <h3 className="font-bold text-blue-800 mt-2">{lang === 'en' ? 'Quote Under Review' : 'Devis en vérification'}</h3>
-              <p className="text-sm text-blue-600 mt-1">{lang === 'en' ? 'Waiting for admin approval before sending to client' : 'En attente d\'approbation admin avant envoi au client'}</p>
-            </div>
-          )}
-
-          {/* BC Review Section */}
-          {status === 'bc_review' && (
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-              <h3 className="font-bold text-orange-800 mb-4">{lang === 'en' ? 'Review the PO' : 'Vérifier le BC'}</h3>
-              {rental.bc_file_url && (
-                <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-white rounded-lg mb-4 hover:bg-gray-50">
-                  <span className="text-2xl">📄</span>
-                  <div><p className="font-medium">BC soumis par {rental.bc_signed_by}</p><p className="text-sm text-gray-500">Le {new Date(rental.bc_submitted_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p></div>
-                </a>
-              )}
-              <div className="flex gap-3">
-                <button onClick={rejectBC} disabled={saving} className="flex-1 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-medium">{lang === 'en' ? 'Reject' : 'Rejeter'}</button>
-                <button onClick={approveBC} disabled={saving} className="flex-1 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium">{lang === 'en' ? 'Approve' : 'Approuver'}</button>
-              </div>
-            </div>
-          )}
-
-          {/* Ship Section */}
-          {status === 'bc_approved' && (
-            <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-4">
-              <h3 className="font-bold text-cyan-800 mb-4">{t('shipping')}</h3>
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">{lang === 'en' ? 'Tracking #' : 'N° de suivi'}</label>
-                <input type="text" value={trackingNumber} onChange={e => setTrackingNumber(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="1Z..." />
-              </div>
-              <button onClick={markShipped} disabled={saving || !trackingNumber} className="w-full py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-bold disabled:opacity-50">{lang === 'en' ? 'Mark as shipped' : 'Marquer comme expédié'}</button>
-            </div>
-          )}
-
-          {/* In Rental Actions */}
-          {status === 'shipped' && (
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-              <button onClick={markInRental} disabled={saving} className="w-full py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-bold">{lang === 'en' ? 'Client received → In rental' : 'Client a reçu → En location'}</button>
-            </div>
-          )}
-
-          {status === 'in_rental' && (
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-              <p className="text-orange-700 mb-4">{lang === 'en' ? 'Expected rental end: ' : 'Fin de location prévue: '}<strong>{new Date(rental.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</strong></p>
-              <button onClick={markReturnPending} disabled={saving} className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold">{lang === 'en' ? 'Period ended → Awaiting return' : 'Période terminée → Attente retour'}</button>
-            </div>
-          )}
-
-          {status === 'return_pending' && (
-            <div className="bg-teal-50 border border-teal-200 rounded-lg p-4">
-              <h3 className="font-bold text-teal-800 mb-4">{lang === 'en' ? 'Return reception' : 'Réception retour'}</h3>
-              <div className="grid md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">{lang === 'en' ? 'Equipment condition' : 'État du matériel'}</label>
-                  <select value={returnCondition} onChange={e => setReturnCondition(e.target.value)} className="w-full px-3 py-2 border rounded-lg">
-                    <option value="good">{lang === 'en' ? 'Good condition' : 'Bon état'}</option>
-                    <option value="damaged">{lang === 'en' ? 'Damaged' : 'Endommagé'}</option>
-                    <option value="missing_items">{lang === 'en' ? 'Missing items' : 'Éléments manquants'}</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">{t('notes')}</label>
-                  <input type="text" value={returnNotes} onChange={e => setReturnNotes(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
-                </div>
-              </div>
-              <button onClick={markReturned} disabled={saving} className="w-full py-3 bg-teal-500 hover:bg-teal-600 text-white rounded-lg font-bold">{lang === 'en' ? 'Confirm reception' : 'Confirmer la réception'}</button>
-            </div>
-          )}
-
-          {status === 'returned' && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <p className="text-green-700 mb-4">{lang === 'en' ? 'Equipment returned. Condition: ' : 'Matériel retourné. État: '}<strong>{returnCondition === 'good' ? (lang === 'en' ? 'Good condition' : 'Bon état') : returnCondition === 'damaged' ? (lang === 'en' ? 'Damaged' : 'Endommagé') : (lang === 'en' ? 'Missing items' : 'Éléments manquants')}</strong></p>
-              <button onClick={completeRental} disabled={saving} className="w-full py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold">{lang === 'en' ? 'Close rental' : 'Clôturer la location'}</button>
-            </div>
-          )}
-
-          {/* Tracking Info */}
-          {rental.outbound_tracking && (
-            <div className="bg-gray-50 rounded-lg p-4">
-              <h3 className="font-bold text-gray-700 mb-2">{lang === 'en' ? 'Shipment Tracking' : 'Suivi expédition'}</h3>
-              <p className="font-mono">{rental.outbound_tracking}</p>
-            </div>
-          )}
-
-          {/* Shipping Address */}
-          {rental.shipping_address && (
-            <div>
-              <h3 className="font-bold text-gray-700 mb-2">{lang === 'en' ? 'Shipping address' : 'Adresse de livraison'}</h3>
-              <p className="text-gray-600">{rental.shipping_address.company_name}</p>
-              {rental.shipping_address.attention && <p className="text-gray-600">{lang === 'en' ? 'Attn.' : "À l'att."} {rental.shipping_address.attention}</p>}
-              <p className="text-gray-600">{rental.shipping_address.address_line1}</p>
-              <p className="text-gray-600">{rental.shipping_address.postal_code} {rental.shipping_address.city}</p>
             </div>
           )}
         </div>
 
-        <div className="px-6 py-4 border-t bg-gray-50 flex justify-end">
-          <button onClick={onClose} className="px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">{t('close')}</button>
+        {/* Footer */}
+        <div className="sticky bottom-0 px-6 py-3 border-t bg-gray-50 flex justify-between items-center">
+          <div className="text-xs text-gray-400">
+            Créé le {new Date(rental.created_at).toLocaleDateString('fr-FR')} | ID: {rental.id?.slice(0, 8)}
+          </div>
+          <button onClick={onClose} className="px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Fermer</button>
         </div>
       </div>
     </div>
