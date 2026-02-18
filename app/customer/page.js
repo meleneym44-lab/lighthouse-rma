@@ -14544,6 +14544,9 @@ function LoginPage({ t, login, setPage }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resetMode, setResetMode] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -14552,6 +14555,23 @@ function LoginPage({ t, login, setPage }) {
     const result = await login(email, password);
     if (result) setError(result);
     setLoading(false);
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (!email) { setError('Veuillez entrer votre adresse email'); return; }
+    setResetLoading(true);
+    setError('');
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + '/customer#reset'
+      });
+      if (resetError) throw resetError;
+      setResetSent(true);
+    } catch (err) {
+      setError(err.message || 'Erreur lors de l\'envoi');
+    }
+    setResetLoading(false);
   };
 
   return (
@@ -14613,7 +14633,51 @@ function LoginPage({ t, login, setPage }) {
                 <p className="text-white/60 mt-2">Portail de Service</p>
               </div>
               
-              <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              <form onSubmit={resetMode ? handleResetPassword : handleSubmit} className="p-6 space-y-4">
+                {resetMode ? (
+                  <>
+                    {resetSent ? (
+                      <div className="text-center py-4">
+                        <p className="text-4xl mb-3">📧</p>
+                        <p className="text-white font-bold text-lg mb-2">Email envoyé !</p>
+                        <p className="text-white/60 text-sm">Si un compte existe avec l'adresse <strong className="text-white">{email}</strong>, vous recevrez un lien de réinitialisation.</p>
+                        <button type="button" onClick={() => { setResetMode(false); setResetSent(false); setError(''); }} className="mt-4 text-[#00A651] font-semibold hover:text-[#00c564]">
+                          ← Retour à la connexion
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="text-center mb-2">
+                          <p className="text-white font-bold text-lg">Mot de passe oublié ?</p>
+                          <p className="text-white/60 text-sm">Entrez votre email pour recevoir un lien de réinitialisation</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-white/80 mb-1">Email</label>
+                          <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                            placeholder="votre@email.com"
+                            required
+                          />
+                        </div>
+                        {error && (
+                          <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">{error}</div>
+                        )}
+                        <button type="submit" disabled={resetLoading} className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50">
+                          {resetLoading ? 'Envoi...' : 'Envoyer le lien'}
+                        </button>
+                        <div className="text-center">
+                          <button type="button" onClick={() => { setResetMode(false); setError(''); }} className="text-white/60 hover:text-white text-sm">
+                            ← Retour à la connexion
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
                 <div>
                   <label className="block text-sm font-medium text-white/80 mb-1">Email</label>
                   <input
@@ -14627,7 +14691,12 @@ function LoginPage({ t, login, setPage }) {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-white/80 mb-1">Mot de passe</label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-sm font-medium text-white/80">Mot de passe</label>
+                    <button type="button" onClick={() => { setResetMode(true); setError(''); }} className="text-xs text-[#00A651] hover:text-[#00c564] font-medium">
+                      Mot de passe oublié ?
+                    </button>
+                  </div>
                   <input
                     type="password"
                     value={password}
@@ -14651,6 +14720,8 @@ function LoginPage({ t, login, setPage }) {
                 >
                   {loading ? 'Connexion...' : 'Se connecter'}
                 </button>
+                  </>
+                )}
               </form>
               
               <div className="px-6 pb-6 text-center">
