@@ -12821,9 +12821,24 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
     
     setSaving(true);
     try {
-      // Generate rental number
-      const { data: numberData } = await supabase.rpc('generate_rental_number');
-      const rentalNumber = numberData || `LOC-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`;
+      // Generate rental number from doc counter system (same as DEV/SUP/etc)
+      let rentalNumber = null;
+      try {
+        const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'LOC' });
+        if (!docNumError && docNumData) {
+          rentalNumber = docNumData;
+        }
+      } catch (e) {
+        console.error('Could not generate LOC number:', e);
+      }
+      if (!rentalNumber) {
+        // Fallback: LOC-MMYY-XXXXX
+        const mm = String(new Date().getMonth() + 1).padStart(2, '0');
+        const yy = String(new Date().getFullYear()).slice(-2);
+        const { data: lastLoc } = await supabase.from('rental_requests').select('rental_number').like('rental_number', `LOC-${mm}${yy}-%`).order('rental_number', { ascending: false }).limit(1);
+        const lastNum = lastLoc?.[0]?.rental_number ? parseInt(lastLoc[0].rental_number.split('-').pop()) : 0;
+        rentalNumber = `LOC-${mm}${yy}-${String(lastNum + 1).padStart(5, '0')}`;
+      }
       
       // Create rental request
       const { data: rental, error: rentalErr } = await supabase
@@ -13535,7 +13550,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="font-bold text-gray-800">{item.item_name || item.equipment_model || '—'}</p>
-                            {item.serial_number && <p className="text-xs text-gray-500 font-mono">S/N: {item.serial_number}</p>}
+                            {item.serial_number && !(item.item_name || '').includes(item.serial_number) && <p className="text-xs text-gray-500 font-mono">S/N: {item.serial_number}</p>}
                             {item.specs && <p className="text-sm text-gray-600 mt-2 whitespace-pre-line">{item.specs}</p>}
                           </div>
                           {(item.line_total || 0) > 0 && (
@@ -13563,7 +13578,6 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                       </>}
                       {(qd.shipping || 0) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{parseFloat(qd.shipping || 0).toFixed(2)} €</span></div>}
                       <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total HT</span><span className="text-[#00A651]">{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} €</span></div>
-                      <div className="flex justify-between text-sm text-gray-500"><span>TTC ({qd.taxRate || 20}%)</span><span>{(qd.totalTTC || rental.quote_total_ttc || 0).toFixed(2)} €</span></div>
                     </div>
                   </div>
                 )}
@@ -13571,8 +13585,8 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 {/* Insurance */}
                 {hasQuote && (
                   <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
-                    <p className="font-bold text-sm text-amber-800 mb-1">Conditions d'assurance</p>
-                    <p className="text-xs text-amber-700 leading-relaxed">Pendant la durée de la location, l'appareil reste la propriété de Lighthouse France et devient sous la responsabilité du client. L'appareil doit être entreposé dans ses conditions normales d'exploitation et restitué en parfait état. Tout incident doit nous être communiqué sous 48h. Le client s'engage à souscrire une assurance prenant en compte le "Bien Confié".</p>
+                    <p className="font-bold text-sm text-amber-800 mb-1">Conditions générales de location</p>
+                    <p className="text-xs text-amber-700 leading-relaxed">Pendant la durée de la location, l'appareil reste la propriété exclusive de Lighthouse France. La garde juridique et matérielle est transférée au client dès la réception du matériel et jusqu'à sa restitution effective. Le matériel doit être utilisé conformément à sa destination, dans ses conditions normales d'exploitation, par un personnel qualifié. Le client s'interdit de sous-louer, prêter ou céder le matériel sans accord écrit préalable. Le client s'engage à souscrire une assurance couvrant le matériel loué au titre de « Bien Confié » (vol, incendie, dégâts des eaux, bris accidentel). Tout incident, dommage, perte ou vol doit être communiqué à Lighthouse France sous 48h accompagné d'un dépôt de plainte le cas échéant. Le matériel devra être restitué en parfait état de fonctionnement ; tout dommage constaté au retour sera facturé au client. En cas de retard de restitution, les jours supplémentaires seront facturés au tarif journalier en vigueur.</p>
                     {(qd.totalRetailValue || 0) > 0 && <p className="font-bold text-xs text-amber-800 mt-2">Valeur à assurer : {qd.totalRetailValue.toFixed(2)} € HT</p>}
                   </div>
                 )}
@@ -13598,14 +13612,6 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   <div className="bg-gray-50 rounded-lg p-4 border">
                     <h3 className="font-bold text-gray-800 mb-2">📝 Vos notes</h3>
                     <p className="text-sm text-gray-600">{rental.customer_notes}</p>
-                  </div>
-                )}
-
-                {/* Action buttons */}
-                {(rental.status === 'quote_sent' || (rental.status === 'waiting_bc' && !rental.bc_file_url)) && (
-                  <div className="flex gap-3">
-                    {hasQuote && <button onClick={() => setShowRentalQuote(true)} className="flex-1 py-3 bg-white border-2 border-[#3B7AB4] text-[#3B7AB4] rounded-lg font-bold hover:bg-blue-50">👁️ Voir le Devis</button>}
-                    <button onClick={() => setShowBCModal(true)} className="flex-1 py-3 bg-[#1E3A5F] text-white rounded-lg font-bold hover:bg-[#2a4a6f]">📄 Soumettre mon Bon de Commande</button>
                   </div>
                 )}
               </div>
@@ -13803,7 +13809,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                             <p className="font-medium">{item.item_name || '—'}</p>
                             {item.specs && <p className="text-xs text-gray-500 mt-1 whitespace-pre-line">{item.specs}</p>}
                           </td>
-                          <td className="px-4 py-3 border-b font-mono text-sm">{item.serial_number || '—'}</td>
+                          <td className="px-4 py-3 border-b font-mono text-sm">{item.serial_number && !(item.item_name || '').includes(item.serial_number) ? item.serial_number : ''}</td>
                           <td className="px-4 py-3 border-b text-right text-sm">{period.days || rentalDaysDisplay} jours</td>
                           <td className="px-4 py-3 border-b text-right font-bold">{(parseFloat(item.line_total) || 0).toFixed(2)} €</td>
                         </tr>
@@ -13822,20 +13828,23 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                       </>}
                       {(qd.shipping || 0) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{parseFloat(qd.shipping || 0).toFixed(2)} €</span></div>}
                       <div className="flex justify-between font-bold text-xl pt-2 border-t border-gray-300"><span>TOTAL HT</span><span className="text-[#00A651]">{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} €</span></div>
-                      <div className="flex justify-between text-sm text-gray-500"><span>TVA ({qd.taxRate || 20}%)</span><span>{((qd.totalTTC || 0) - (qd.totalHT || 0)).toFixed(2)} €</span></div>
-                      <div className="flex justify-between font-bold text-lg"><span>TOTAL TTC</span><span>{(qd.totalTTC || rental.quote_total_ttc || 0).toFixed(2)} €</span></div>
                     </div>
                   </div>
                 </div>
 
                 {/* Insurance Conditions */}
                 <div className="px-8 py-4 border-b">
-                  <h3 className="font-bold text-sm text-gray-800 mb-2">Conditions d'assurance</h3>
-                  <p className="text-sm text-gray-600 leading-relaxed">
-                    Pendant la durée de la location, l'appareil reste la propriété de Lighthouse France et devient sous la responsabilité du client. 
-                    L'appareil doit être entreposé dans ses conditions normales d'exploitation et restitué en parfait état. 
-                    Tout incident doit nous être communiqué sous 48h. Le client s'engage à souscrire une assurance prenant en compte le "Bien Confié".
-                  </p>
+                  <h3 className="font-bold text-sm text-gray-800 mb-2">Conditions générales de location</h3>
+                  <div className="text-sm text-gray-600 leading-relaxed space-y-2">
+                    <p><strong>1. Propriété et garde :</strong> Le matériel reste la propriété exclusive de Lighthouse France pendant toute la durée de la location. La garde juridique et matérielle est transférée au client dès la réception et jusqu'à la restitution effective du matériel.</p>
+                    <p><strong>2. Utilisation :</strong> Le matériel doit être utilisé conformément à sa destination et dans ses conditions normales d'exploitation, par un personnel qualifié et dûment autorisé. Le client s'interdit de sous-louer, prêter, céder ou donner en gage le matériel sans accord écrit préalable de Lighthouse France.</p>
+                    <p><strong>3. Assurance :</strong> Le client s'engage à souscrire, avant la prise de possession du matériel, une assurance couvrant les risques de vol, incendie, dégâts des eaux, et bris accidentel au titre de « Bien Confié ». Le client devra fournir une attestation d'assurance sur simple demande.</p>
+                    <p><strong>4. Incidents et dommages :</strong> Tout incident, dommage, perte ou vol doit être communiqué à Lighthouse France sous 48 heures par écrit, accompagné le cas échéant d'un dépôt de plainte. En cas de non-déclaration dans ce délai, le client sera tenu responsable de l'intégralité des dommages.</p>
+                    <p><strong>5. Restitution :</strong> Le matériel devra être restitué en parfait état de fonctionnement et de propreté à la date convenue. Tout dommage, usure anormale ou pièce manquante constatés au retour seront facturés au client sur la base du coût de remise en état ou de remplacement.</p>
+                    <p><strong>6. Retard de restitution :</strong> En cas de retard de restitution non autorisé, les jours supplémentaires seront facturés au tarif journalier en vigueur, majoré de 50%. Lighthouse France se réserve le droit de récupérer le matériel à tout moment en cas de non-respect des conditions de location.</p>
+                    <p><strong>7. Responsabilité :</strong> Lighthouse France ne pourra être tenu responsable des conséquences directes ou indirectes liées à une indisponibilité, une panne ou un dysfonctionnement du matériel. La responsabilité de Lighthouse France est limitée au remplacement ou à la réparation du matériel.</p>
+                    <p><strong>8. Résiliation :</strong> En cas de non-respect des présentes conditions, Lighthouse France se réserve le droit de résilier immédiatement le contrat de location et d'exiger la restitution du matériel, sans préjudice de tous dommages et intérêts.</p>
+                  </div>
                   {(qd.totalRetailValue || 0) > 0 && <p className="font-bold text-sm mt-2">Valeur à assurer : {qd.totalRetailValue.toFixed(2)} € HT</p>}
                 </div>
 
@@ -13882,37 +13891,100 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     if (!content) return;
                     const printWindow = window.open('', '_blank');
                     printWindow.document.write(`
-                      <html><head><title>Devis Location ${rental.rental_number}</title>
-                      <style>
-                        body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 20px; }
-                        table { width: 100%; border-collapse: collapse; }
-                        th, td { padding: 0.75rem 1rem; }
-                        .bg-gray-50 { background: #f9fafb; } .bg-gray-100 { background: #f3f4f6; }
-                        .bg-blue-50 { background: #eff6ff; } .bg-green-50 { background: #f0fdf4; }
-                        .bg-amber-50 { background: #fffbeb; }
-                        .font-bold { font-weight: 700; } .font-medium { font-weight: 500; }
-                        .text-sm { font-size: 0.875rem; } .text-xs { font-size: 0.75rem; }
-                        .text-right { text-align: right; } .text-left { text-align: left; }
-                        .border-b { border-bottom: 1px solid #e5e7eb; }
-                        .border-t { border-top: 1px solid #e5e7eb; }
-                        .flex { display: flex; } .justify-between { justify-content: space-between; }
-                        .items-start { align-items: flex-start; } .items-end { align-items: flex-end; }
-                        .w-48 { width: 12rem; } .h-20 { height: 5rem; }
-                        .border-2 { border-width: 2px; } .border-dashed { border-style: dashed; }
-                        .border-gray-300 { border-color: #d1d5db; } .rounded-lg { border-radius: 0.5rem; }
-                        .px-8 { padding-left: 2rem; padding-right: 2rem; }
-                        .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
-                        .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
-                        .py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
-                        .pt-8 { padding-top: 2rem; } .pb-4 { padding-bottom: 1rem; }
-                        .mb-1 { margin-bottom: 0.25rem; } .mb-2 { margin-bottom: 0.5rem; }
-                        .mt-1 { margin-top: 0.25rem; } .mt-2 { margin-top: 0.5rem; }
-                        .gap-3 { gap: 0.75rem; }
-                        .w-72 { width: 18rem; }
-                        .font-mono { font-family: monospace; }
-                        @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
-                      </style></head>
-                      <body>${content.innerHTML}</body></html>
+                      <!DOCTYPE html>
+                      <html>
+                      <head>
+                        <title>Devis Location ${rental.rental_number}</title>
+                        <style>
+                          * { margin: 0; padding: 0; box-sizing: border-box; }
+                          body { font-family: Arial, sans-serif; }
+                          .border-b { border-bottom: 1px solid #e5e7eb; }
+                          .border-b-4 { border-bottom: 4px solid; }
+                          .border-t { border-top: 1px solid #e5e7eb; }
+                          .border-gray-300 { border-color: #d1d5db; }
+                          .border-\\[\\#2D5A7B\\] { border-color: #2D5A7B; }
+                          .bg-gray-50 { background: #f9fafb; }
+                          .bg-gray-100 { background: #f3f4f6; }
+                          .bg-white { background: white; }
+                          .bg-blue-50 { background: #eff6ff; }
+                          .bg-green-50 { background: #f0fdf4; }
+                          .bg-amber-50 { background: #fffbeb; }
+                          .bg-\\[\\#1a1a2e\\] { background: #1a1a2e; }
+                          .bg-\\[\\#2D5A7B\\] { background: #2D5A7B; }
+                          .text-white { color: white; }
+                          .text-gray-400 { color: #9ca3af; }
+                          .text-gray-500 { color: #6b7280; }
+                          .text-gray-600 { color: #4b5563; }
+                          .text-gray-800 { color: #1f2937; }
+                          .text-green-600 { color: #16a34a; }
+                          .text-green-800 { color: #166534; }
+                          .text-blue-800 { color: #1e40af; }
+                          .text-amber-700 { color: #b45309; }
+                          .text-amber-800 { color: #92400e; }
+                          .text-\\[\\#1a1a2e\\] { color: #1a1a2e; }
+                          .text-\\[\\#00A651\\] { color: #00A651; }
+                          .text-\\[\\#2D5A7B\\] { color: #2D5A7B; }
+                          .text-xs { font-size: 0.75rem; }
+                          .text-sm { font-size: 0.875rem; }
+                          .text-lg { font-size: 1.125rem; }
+                          .text-xl { font-size: 1.25rem; }
+                          .text-2xl { font-size: 1.5rem; }
+                          .font-medium { font-weight: 500; }
+                          .font-bold { font-weight: 700; }
+                          .font-mono { font-family: monospace; }
+                          .uppercase { text-transform: uppercase; }
+                          .text-left { text-align: left; }
+                          .text-right { text-align: right; }
+                          .text-center { text-align: center; }
+                          .whitespace-pre-line { white-space: pre-line; }
+                          .leading-relaxed { line-height: 1.625; }
+                          .px-4 { padding-left: 1rem; padding-right: 1rem; }
+                          .px-8 { padding-left: 2rem; padding-right: 2rem; }
+                          .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+                          .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+                          .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
+                          .py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+                          .pt-8 { padding-top: 2rem; }
+                          .pt-2 { padding-top: 0.5rem; }
+                          .pb-4 { padding-bottom: 1rem; }
+                          .pl-6 { padding-left: 1.5rem; }
+                          .pr-6 { padding-right: 1.5rem; }
+                          .p-4 { padding: 1rem; }
+                          .mb-1 { margin-bottom: 0.25rem; }
+                          .mb-2 { margin-bottom: 0.5rem; }
+                          .mt-1 { margin-top: 0.25rem; }
+                          .mt-2 { margin-top: 0.5rem; }
+                          .gap-3 { gap: 0.75rem; }
+                          .flex { display: flex; }
+                          .flex-1 { flex: 1; }
+                          .items-start { align-items: flex-start; }
+                          .items-center { align-items: center; }
+                          .items-end { align-items: flex-end; }
+                          .justify-between { justify-content: space-between; }
+                          .justify-end { justify-content: flex-end; }
+                          .rounded-lg { border-radius: 0.5rem; }
+                          .w-full { width: 100%; }
+                          .w-48 { width: 12rem; }
+                          .w-72 { width: 18rem; }
+                          .h-20 { height: 5rem; }
+                          .h-24 { height: 6rem; }
+                          .max-h-16 { max-height: 4rem; }
+                          .border { border: 1px solid #e5e7eb; }
+                          .border-2 { border-width: 2px; }
+                          .border-r { border-right: 1px solid #e5e7eb; }
+                          .border-dashed { border-style: dashed; }
+                          .hidden { display: none; }
+                          .space-y-1\\.5 > * + * { margin-top: 0.375rem; }
+                          table { width: 100%; border-collapse: collapse; }
+                          th, td { padding: 0.75rem 1rem; }
+                          img { max-height: 6rem; width: auto; }
+                          @media print {
+                            body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+                          }
+                        </style>
+                      </head>
+                      <body>${content.innerHTML}</body>
+                      </html>
                     `);
                     printWindow.document.close();
                     printWindow.focus();
@@ -14051,7 +14123,8 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     <span className="text-sm text-gray-700">
                       Je soussigné(e), <strong>{signatureName || '[Nom]'}</strong>, 
                       certifie avoir pris connaissance et accepter les conditions générales de location de Lighthouse France. 
-                      Je m'engage à régler la facture correspondante selon les modalités convenues et à restituer le matériel en parfait état. 
+                      Je reconnais que la garde juridique et matérielle du matériel me sera transférée dès réception.
+                      Je m'engage à souscrire une assurance « Bien Confié » couvrant le matériel, à régler la facture correspondante selon les modalités convenues, et à restituer le matériel en parfait état de fonctionnement à la date convenue.
                       Cette validation électronique a valeur de signature manuscrite conformément aux articles 1366 et 1367 du Code civil français.
                     </span>
                   </label>
