@@ -4106,8 +4106,7 @@ const renderQuotePreview = (review) => {
           <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
             <div className="flex justify-between items-start">
               <div>
-                <h3 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h3>
-                <p className="text-gray-500 text-sm">Worldwide Solutions</p>
+                <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-10 object-contain" />
               </div>
               <div className="text-right">
                 <p className="text-xl font-bold text-[#2D5A7B]">{review.quote_type === 'revision' ? 'DEVIS RÉVISÉ' : 'DEVIS'}</p>
@@ -4243,8 +4242,7 @@ const renderQuotePreview = (review) => {
           <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
             <div className="flex justify-between items-start">
               <div>
-                <h3 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h3>
-                <p className="text-gray-500 text-sm">Worldwide Solutions</p>
+                <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-10 object-contain" />
               </div>
               <div className="text-right">
                 <p className="text-xl font-bold text-[#2D5A7B]">DEVIS PIÈCES</p>
@@ -4324,8 +4322,7 @@ const renderQuotePreview = (review) => {
           <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
             <div className="flex justify-between items-start">
               <div>
-                <h3 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h3>
-                <p className="text-gray-500 text-sm">Worldwide Solutions</p>
+                <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-10 object-contain" />
               </div>
               <div className="text-right">
                 <p className="text-xl font-bold text-[#2D5A7B]">SUPPLÉMENT AU DEVIS</p>
@@ -4454,8 +4451,7 @@ const renderQuotePreview = (review) => {
           <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
             <div className="flex justify-between items-start">
               <div>
-                <h3 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h3>
-                <p className="text-gray-500 text-sm">Worldwide Solutions</p>
+                <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-10 object-contain" />
               </div>
               <div className="text-right">
                 <p className="text-xl font-bold text-[#2D5A7B]">DEVIS CONTRAT</p>
@@ -4528,8 +4524,7 @@ const renderQuotePreview = (review) => {
           <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
             <div className="flex justify-between items-start">
               <div>
-                <h3 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h3>
-                <p className="text-gray-500 text-sm">Worldwide Solutions</p>
+                <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-10 object-contain" />
               </div>
               <div className="text-right">
                 <p className="text-xl font-bold text-[#2D5A7B]">DEVIS LOCATION</p>
@@ -4549,18 +4544,18 @@ const renderQuotePreview = (review) => {
                 <thead>
                   <tr className="border-b-2 border-gray-200 text-xs text-gray-500">
                     <th className="text-left py-2">{lang === 'en' ? 'Equipment' : 'Équipement'}</th>
-                    <th className="text-center py-2">Qté</th>
-                    <th className="text-right py-2">{lang === 'en' ? 'Unit Price' : 'P.U. HT'}</th>
+                    <th className="text-center py-2">{lang === 'en' ? 'Duration' : 'Durée'}</th>
+                    <th className="text-right py-2">{lang === 'en' ? 'Rate' : 'Tarif'}</th>
                     <th className="text-right py-2">Total HT</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((item, i) => (
                     <tr key={i} className="border-b border-gray-100">
-                      <td className="py-2">{item.equipment_model || item.description || '—'}</td>
-                      <td className="py-2 text-center">{item.quantity || 1}</td>
-                      <td className="py-2 text-right">{(item.unit_price || 0).toFixed(2)} €</td>
-                      <td className="py-2 text-right font-medium">{(item.line_total || 0).toFixed(2)} €</td>
+                      <td className="py-2">{item.item_name || item.equipment_model || item.description || '—'}</td>
+                      <td className="py-2 text-center">{item.rental_days ? `${item.rental_days}j` : (item.quantity || 1)}</td>
+                      <td className="py-2 text-right">{(parseFloat(item.applied_rate || item.unit_price) || 0).toFixed(2)} € <span className="text-xs text-gray-400">/{item.rate_type || ''}</span></td>
+                      <td className="py-2 text-right font-medium">{(parseFloat(item.line_total) || 0).toFixed(2)} €</td>
                     </tr>
                   ))}
                 </tbody>
@@ -5250,6 +5245,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
   const [reviewingBC, setReviewingBC] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [viewMode, setViewMode] = useState('rma'); // 'rma' or 'device'
+  const [searchQuery, setSearchQuery] = useState('');
   
   const archivedRMAs = requests.filter(r => r.status === 'archived');
   const activeRMAs = requests.filter(r => r.request_number && !['completed', 'cancelled', 'archived', 'shipped'].includes(r.status) && r.request_type !== 'parts');
@@ -5331,16 +5327,47 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
     { id: 'ready', label: lang === 'en' ? 'Ready' : 'Prêt', value: byJob.ready.length, color: 'bg-green-500', icon: '📤' }
   ];
   
+  // Search helper - matches across client name, serial numbers, and RMA number
+  const matchesSearch = (rma, query) => {
+    if (!query.trim()) return true;
+    const q = query.toLowerCase().trim();
+    // RMA number
+    if (rma.request_number?.toLowerCase().includes(q)) return true;
+    // Client name
+    if (rma.companies?.name?.toLowerCase().includes(q)) return true;
+    // Device serial numbers and models
+    const devices = rma.request_devices || [];
+    if (devices.some(d => 
+      d.serial_number?.toLowerCase().includes(q) || 
+      d.model_name?.toLowerCase().includes(q)
+    )) return true;
+    return false;
+  };
+
   // Filter RMAs based on selected filter
   const getFilteredRMAs = () => {
-    if (!filter) return activeRMAs;
-    if (filter === 'all') return activeRMAs;
-    if (filter === 'bc') return needsReview;
-    if (filter === 'avenant') return avenantPending;
-    if (filter === 'waiting_bc') return waitingBC;
-    if (filter === 'waiting_device') return waitingDevice;
-    if (byJob[filter]) return byJob[filter];
-    return activeRMAs;
+    let rmas;
+    if (searchQuery.trim()) {
+      // Search across ALL requests (active + completed + archived), not just active
+      rmas = requests.filter(r => r.request_number && r.request_type !== 'parts' && matchesSearch(r, searchQuery));
+    } else if (!filter) {
+      rmas = activeRMAs;
+    } else if (filter === 'all') {
+      rmas = activeRMAs;
+    } else if (filter === 'bc') {
+      rmas = needsReview;
+    } else if (filter === 'avenant') {
+      rmas = avenantPending;
+    } else if (filter === 'waiting_bc') {
+      rmas = waitingBC;
+    } else if (filter === 'waiting_device') {
+      rmas = waitingDevice;
+    } else if (byJob[filter]) {
+      rmas = byJob[filter];
+    } else {
+      rmas = activeRMAs;
+    }
+    return rmas;
   };
   
   const filteredRMAs = getFilteredRMAs();
@@ -5362,6 +5389,23 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
           )}
           <button onClick={reload} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">{lang === 'en' ? '🔄 Refresh' : '🔄 Actualiser'}</button>
         </div>
+      </div>
+      
+      {/* Search Bar */}
+      <div className="relative">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={e => { setSearchQuery(e.target.value); if (e.target.value.trim()) setFilter(null); }}
+          placeholder={lang === 'en' ? '🔍 Search by client, serial number, or RMA number...' : '🔍 Rechercher par client, N° série ou N° RMA...'}
+          className="w-full px-4 py-3 pl-5 pr-10 border-2 border-gray-200 rounded-xl text-sm focus:border-[#00A651] focus:ring-1 focus:ring-[#00A651] focus:outline-none transition-colors"
+        />
+        {searchQuery && (
+          <button 
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg"
+          >✕</button>
+        )}
       </div>
       
       {/* Archived RMAs Section */}
@@ -5425,7 +5469,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
       </div>
       
       {/* Active Filter Indicator - only show when filtering (not for 'all') */}
-      {filter && filter !== 'all' && (
+      {filter && filter !== 'all' && !searchQuery.trim() && (
         <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
           <span className="text-blue-700 font-medium">Filtre: {filterLabel}</span>
           <span className="text-blue-600">({filteredRMAs.length} RMAs)</span>
@@ -5433,8 +5477,17 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
         </div>
       )}
       
+      {/* Search Results Indicator */}
+      {searchQuery.trim() && (
+        <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-2">
+          <span className="text-green-700 font-medium">🔍 {lang === 'en' ? 'Search results for' : 'Résultats pour'} "{searchQuery}"</span>
+          <span className="text-green-600">({filteredRMAs.length} {lang === 'en' ? 'found' : 'trouvé(s)'})</span>
+          <button onClick={() => setSearchQuery('')} className="ml-auto text-green-600 hover:text-green-800 font-medium">{lang === 'en' ? '✕ Clear' : '✕ Effacer'}</button>
+        </div>
+      )}
+      
       {/* BC Review Section - Always show when there are BCs to review */}
-      {needsReview.length > 0 && (!filter || filter === 'bc') && (
+      {needsReview.length > 0 && (!filter || filter === 'bc') && !searchQuery.trim() && (
         <div className="bg-red-50 border-2 border-red-300 rounded-xl shadow-lg">
           <div className="px-6 py-4 border-b border-red-200 bg-red-100 rounded-t-xl">
             <h2 className="font-bold text-red-800 text-lg">{lang === 'en' ? '⚠️ Purchase Orders to Review' : '⚠️ Bons de Commande à Vérifier'} ({needsReview.length})</h2>
@@ -5467,11 +5520,11 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
       )}
       
       {/* View Toggle & Table */}
-      {filter !== 'bc' && (
+      {(filter !== 'bc' || searchQuery.trim()) && (
         <div className="bg-white rounded-xl shadow-sm">
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="font-bold text-gray-800">
-              {filterLabel ? `${filterLabel} (${filteredRMAs.length})` : `RMAs Actifs (${activeRMAs.length})`}
+              {searchQuery.trim() ? `${lang === 'en' ? 'Results' : 'Résultats'} (${filteredRMAs.length})` : filterLabel ? `${filterLabel} (${filteredRMAs.length})` : `RMAs Actifs (${activeRMAs.length})`}
             </h2>
             {/* View Toggle */}
             <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
@@ -5511,7 +5564,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {filteredRMAs.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{lang === 'en' ? 'No RMAs' : 'Aucun RMA'}</td></tr>
+                    <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{searchQuery.trim() ? (lang === 'en' ? `No results for "${searchQuery}"` : `Aucun résultat pour "${searchQuery}"`) : (lang === 'en' ? 'No RMAs' : 'Aucun RMA')}</td></tr>
                   ) : filteredRMAs.map(rma => {
                     const jobType = getJobType(rma);
                     const jobStyles = {
@@ -5567,8 +5620,9 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
           
           {/* Device View Table */}
           {viewMode === 'device' && (() => {
-            // Flatten all devices from ALL active RMAs (not just filtered)
-            const allDevicesRaw = activeRMAs.flatMap(rma => 
+            // Flatten all devices from active RMAs (or search results)
+            const sourceRMAs = searchQuery.trim() ? filteredRMAs : activeRMAs;
+            const allDevicesRaw = sourceRMAs.flatMap(rma => 
               (rma.request_devices || []).map(device => ({
                 ...device,
                 rma: rma
