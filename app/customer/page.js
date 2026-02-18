@@ -3101,28 +3101,6 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
         </button>
       </div>
 
-      {/* Rental Action Required */}
-      {rentalActions.length > 0 && (
-        <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 mb-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                <span className="text-red-600 font-bold text-lg">!</span>
-              </div>
-              <div>
-                <p className="font-bold text-red-800">Location{rentalActions.length > 1 ? 's' : ''} — Action requise</p>
-                <p className="text-sm text-red-600">
-                  {rentalActions.map(r => r.rental_number).join(', ')} — Devis reçu, veuillez soumettre votre BC
-                </p>
-              </div>
-            </div>
-            <button onClick={() => setPage('rentals')} className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700">
-              Voir les locations →
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Stats Cards */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         {stats.map((stat, i) => (
@@ -3182,7 +3160,8 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
             (r.avenant_sent_at && r.avenant_total > 0 && !r.avenant_approved_at)
           ).length > 0 || 
             partsNeedingAction.length > 0 ||
-            (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0)) && (
+            (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0) ||
+            rentalActions.length > 0) && (
             <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4">
               <h3 className="font-bold text-red-800 mb-2 flex items-center gap-2">
                 <span className="animate-pulse">⚠</span> Action requise
@@ -3267,6 +3246,23 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                       <span className="text-sm text-red-600">
                         {contract.status === 'quote_sent' ? 'Approuver le devis contrat' : 'Resoumettre BC contrat'}
                       </span>
+                    </div>
+                    <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
+                      Agir →
+                    </span>
+                  </div>
+                ))}
+                {/* Rental Quotes */}
+                {rentalActions.map(rental => (
+                  <div 
+                    key={rental.id}
+                    onClick={() => setPage('rentals')}
+                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-100 border border-red-200"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-purple-500">📦</span>
+                      <span className="font-mono font-bold text-red-700">{rental.rental_number}</span>
+                      <span className="text-sm text-red-600">Approuver le devis location</span>
                     </div>
                     <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
                       Agir →
@@ -12611,6 +12607,10 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
   const [loading, setLoading] = useState(true);
   const [showNewRental, setShowNewRental] = useState(false);
   const [selectedRental, setSelectedRental] = useState(null);
+  const [showRentalBC, setShowRentalBC] = useState(false);
+  const [rentalBcFile, setRentalBcFile] = useState(null);
+  const [rentalBcSignedBy, setRentalBcSignedBy] = useState(profile?.full_name || '');
+  const [uploadingRentalBC, setUploadingRentalBC] = useState(false);
   
   // New rental form state
   const [startDate, setStartDate] = useState(null);
@@ -13151,34 +13151,29 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
   }
 
   // BC Upload for rental
-  const [showRentalBC, setShowRentalBC] = useState(false);
-  const [bcFile, setBcFile] = useState(null);
-  const [bcSignedBy, setBcSignedBy] = useState(profile?.full_name || '');
-  const [uploadingBC, setUploadingBC] = useState(false);
-
   const uploadRentalBC = async (rental) => {
-    if (!bcFile) { notify('Veuillez sélectionner un fichier', 'error'); return; }
-    setUploadingBC(true);
+    if (!rentalBcFile) { notify('Veuillez sélectionner un fichier', 'error'); return; }
+    setUploadingRentalBC(true);
     try {
-      const ext = bcFile.name.split('.').pop();
+      const ext = rentalBcFile.name.split('.').pop();
       const path = `rental-bc/${rental.id}/bc-${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage.from('documents').upload(path, bcFile);
+      const { error: uploadError } = await supabase.storage.from('documents').upload(path, rentalBcFile);
       if (uploadError) throw uploadError;
       const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(path);
       
       await supabase.from('rental_requests').update({
         status: 'bc_review',
         bc_file_url: publicUrl,
-        bc_signed_by: bcSignedBy,
+        bc_signed_by: rentalBcSignedBy,
         bc_submitted_at: new Date().toISOString()
       }).eq('id', rental.id);
       
       notify('✅ Bon de commande soumis avec succès !');
       setShowRentalBC(false);
-      setBcFile(null);
+      setRentalBcFile(null);
       loadData();
     } catch (err) { notify('Erreur: ' + err.message, 'error'); }
-    setUploadingBC(false);
+    setUploadingRentalBC(false);
   };
 
   // Detail view for selected rental
@@ -13342,16 +13337,16 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Signataire</label>
-                  <input type="text" value={bcSignedBy} onChange={e => setBcSignedBy(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+                  <input type="text" value={rentalBcSignedBy} onChange={e => setRentalBcSignedBy(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">Fichier BC (PDF)</label>
-                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setBcFile(e.target.files[0])} className="w-full" />
+                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setRentalBcFile(e.target.files[0])} className="w-full" />
                 </div>
                 <div className="flex gap-3">
                   <button onClick={() => setShowRentalBC(false)} className="flex-1 py-2 bg-gray-200 rounded-lg font-medium">Annuler</button>
-                  <button onClick={() => uploadRentalBC(rental)} disabled={uploadingBC || !bcFile} className="flex-1 py-2 bg-[#00A651] text-white rounded-lg font-bold disabled:opacity-50">
-                    {uploadingBC ? 'Envoi...' : '✅ Soumettre'}
+                  <button onClick={() => uploadRentalBC(rental)} disabled={uploadingRentalBC || !rentalBcFile} className="flex-1 py-2 bg-[#00A651] text-white rounded-lg font-bold disabled:opacity-50">
+                    {uploadingRentalBC ? 'Envoi...' : '✅ Soumettre'}
                   </button>
                 </div>
               </div>
