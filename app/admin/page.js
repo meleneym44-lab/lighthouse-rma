@@ -28421,6 +28421,16 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
   const [editingDevice, setEditingDevice] = useState(null);
   const [editingBundle, setEditingBundle] = useState(null);
 
+  // Keep selectedRental in sync with reloaded data
+  useEffect(() => {
+    if (selectedRental) {
+      const updated = rentals.find(r => r.id === selectedRental.id);
+      if (updated && updated.status !== selectedRental.status) {
+        setSelectedRental(updated);
+      }
+    }
+  }, [rentals]);
+
   useEffect(() => {
     const loadInventory = async () => {
       setLoading(true);
@@ -28998,6 +29008,11 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
   const [newMsg, setNewMsg] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
   const [attachments, setAttachments] = useState([]);
+
+  // Sync status when rental prop updates (after reload)
+  React.useEffect(() => {
+    setStatus(rental.status);
+  }, [rental.status, rental.id]);
   
   // Shipping state
   const [trackingNumber, setTrackingNumber] = useState(rental.outbound_tracking || '');
@@ -29101,11 +29116,13 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
         clientCountry: company.country || 'France',
         businessSettings: businessSettings || {}
       };
-      await supabase.from('rental_requests').update({
+      console.log('📋 Saving rental quote data for', rental.id);
+      const { error: quoteUpdateErr } = await supabase.from('rental_requests').update({
         quote_shipping: parseFloat(quoteShipping) || 0, quote_total_ht: totalHT,
         quote_notes: quoteNotes, quote_data: quoteData, quoted_at: new Date().toISOString(),
         quote_valid_until: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0]
       }).eq('id', rental.id);
+      if (quoteUpdateErr) console.error('❌ Quote data update error:', quoteUpdateErr);
       const itemSummary = quoteItems.map(i => `${i.item_name || 'Item'} (${i.rental_days || days}j)`).join(', ');
       const { data: review, error: reviewError } = await supabase.from('quote_reviews').insert({
         rental_request_id: rental.id, quote_type: 'rental', quote_data: quoteData,
@@ -29114,11 +29131,19 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
         device_summary: itemSummary, submitted_by: profile?.id,
         submitted_by_name: profile?.full_name || profile?.email || 'Unknown', previous_status: rental.status || 'requested'
       }).select().single();
-      if (reviewError) throw reviewError;
-      await supabase.from('rental_requests').update({
-        status: 'pending_quote_review', quote_review_id: review.id, quote_rejection_notes: null, quote_revision_notes: null
-      }).eq('id', rental.id);
-      notify('✅ Devis soumis pour vérification !');
+      if (reviewError) {
+        console.error('Quote review insert error:', reviewError);
+        // Still update status even if review insert fails
+        await supabase.from('rental_requests').update({
+          status: 'pending_quote_review', quote_rejection_notes: null, quote_revision_notes: null
+        }).eq('id', rental.id);
+        notify('⚠️ Devis sauvegardé mais erreur lors de la soumission pour vérification', 'warning');
+      } else {
+        await supabase.from('rental_requests').update({
+          status: 'pending_quote_review', quote_review_id: review.id, quote_rejection_notes: null, quote_revision_notes: null
+        }).eq('id', rental.id);
+        notify('✅ Devis soumis pour vérification !');
+      }
       setStatus('pending_quote_review');
       reload();
     } catch (err) { notify('Erreur: ' + err.message, 'error'); }
@@ -29429,7 +29454,7 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
           {/* ===== QUOTE TAB ===== */}
           {activeTab === 'quote' && (
             <div>
-              {status === 'requested' ? (
+              {(['requested', 'quote_revision_requested', 'quote_rejected'].includes(status) || (status === 'requested' && rental.quote_rejection_notes)) ? (
                 <div className={`${rental.quote_rejection_notes || rental.quote_revision_notes ? 'bg-amber-50 border-2 border-amber-400' : 'bg-white border border-gray-200'} rounded-lg overflow-hidden`}>
                   {rental.quote_rejection_notes && (
                     <div className="bg-white border border-amber-300 rounded-lg p-3 m-4 mb-0">
