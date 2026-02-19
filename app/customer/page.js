@@ -14276,11 +14276,11 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   <table style={{width:'100%', borderCollapse:'collapse', fontSize:'11px'}}>
                     <thead>
                       <tr style={{background:'#1a1a2e'}}>
-                        <th style={{color:'white', padding:'6px 8px', textAlign:'left', fontWeight:'bold', width:'30px'}}>Qté</th>
-                        <th style={{color:'white', padding:'6px 8px', textAlign:'left', fontWeight:'bold'}}>Désignation</th>
-                        <th style={{color:'white', padding:'6px 8px', textAlign:'right', fontWeight:'bold'}}>Tarif</th>
-                        <th style={{color:'white', padding:'6px 8px', textAlign:'right', fontWeight:'bold'}}>Durée</th>
-                        <th style={{color:'white', padding:'6px 8px', textAlign:'right', fontWeight:'bold'}}>Total HT</th>
+                        <th style={{color:'white', padding:'8px 10px', textAlign:'left', fontWeight:'bold', width:'5%'}}>Qté</th>
+                        <th style={{color:'white', padding:'8px 10px', textAlign:'left', fontWeight:'bold', width:'45%'}}>Désignation</th>
+                        <th style={{color:'white', padding:'8px 10px', textAlign:'right', fontWeight:'bold', width:'18%'}}>Tarif</th>
+                        <th style={{color:'white', padding:'8px 10px', textAlign:'right', fontWeight:'bold', width:'12%'}}>Durée</th>
+                        <th style={{color:'white', padding:'8px 10px', textAlign:'right', fontWeight:'bold', width:'20%'}}>Total HT</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -14296,21 +14296,22 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                         <Fragment key={idx}>
                         {/* Device name bar - darker gray strip across full width */}
                         <tr style={{background:'#e2e8f0', borderTop: idx > 0 ? '2px solid #cbd5e1' : 'none'}}>
-                          <td style={{padding:'7px 8px', fontWeight:'bold', color:'#1a1a2e', fontSize:'12px'}}>1</td>
-                          <td style={{padding:'7px 8px', fontWeight:'bold', color:'#1a1a2e', fontSize:'12px'}} colSpan={2}>{displayName}</td>
-                          <td style={{padding:'7px 8px', textAlign:'right', fontSize:'10px', color:'#505050'}}>{(item.rental_days || period.days || rentalDaysDisplay)}j</td>
-                          <td style={{padding:'7px 8px', textAlign:'right', fontWeight:'bold', fontSize:'12px', color:'#1a1a2e'}}>{(parseFloat(item.line_total) || 0).toFixed(2)} EUR</td>
+                          <td style={{padding:'8px 10px', fontWeight:'bold', color:'#1a1a2e', fontSize:'12px'}}>1</td>
+                          <td style={{padding:'8px 10px', fontWeight:'bold', color:'#1a1a2e', fontSize:'12px'}}>{displayName}</td>
+                          <td style={{padding:'8px 10px', textAlign:'right', fontSize:'11px', color:'#505050'}}>{appliedRate > 0 ? appliedRate.toFixed(2) + ' EUR' + rateLabel : ''}</td>
+                          <td style={{padding:'8px 10px', textAlign:'right', fontSize:'11px', color:'#505050'}}>{(item.rental_days || period.days || rentalDaysDisplay)}j</td>
+                          <td style={{padding:'8px 10px', textAlign:'right', fontWeight:'bold', fontSize:'12px', color:'#1a1a2e'}}>{(parseFloat(item.line_total) || 0).toFixed(2)} EUR</td>
                         </tr>
-                        {/* Detail row: specs, insurance, rate */}
-                        {(item.specs || retailVal > 0 || appliedRate > 0) && (
+                        {/* Detail row: specs, insurance */}
+                        {(item.specs || retailVal > 0) && (
                         <tr style={{background: idx % 2 === 0 ? '#fff' : '#fafafa'}}>
-                          <td style={{padding:'2px 8px 6px'}}></td>
-                          <td style={{padding:'2px 8px 6px', borderBottom:'1px solid #eee'}} colSpan={2}>
+                          <td style={{padding:'2px 10px 6px'}}></td>
+                          <td style={{padding:'2px 10px 6px', borderBottom:'1px solid #eee'}} colSpan={2}>
                             {item.specs && <p style={{fontSize:'10px', color:'#828282', margin:'0 0 2px 0'}}>{item.specs}</p>}
-                            {retailVal > 0 && <p style={{fontSize:'9px', color:'#828282', fontStyle:'italic', margin:'0'}}>Valeur neuf (assurance) : {retailVal.toFixed(2)} EUR</p>}
+                            {retailVal > 0 && <p style={{fontSize:'10px', color:'#828282', fontStyle:'italic', margin:'0'}}>Valeur neuf (assurance) : {retailVal.toFixed(2)} EUR</p>}
                           </td>
-                          <td style={{padding:'2px 8px 6px', borderBottom:'1px solid #eee', textAlign:'right', fontSize:'9px', color:'#828282', verticalAlign:'top'}}>{appliedRate > 0 ? appliedRate.toFixed(2) + ' EUR' + rateLabel : ''}</td>
-                          <td style={{padding:'2px 8px 6px', borderBottom:'1px solid #eee'}}></td>
+                          <td style={{padding:'2px 10px 6px', borderBottom:'1px solid #eee'}}></td>
+                          <td style={{padding:'2px 10px 6px', borderBottom:'1px solid #eee'}}></td>
                         </tr>
                         )}
                         </Fragment>);
