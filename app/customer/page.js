@@ -14081,73 +14081,81 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
 
             {/* ========== DOCUMENTS TAB ========== */}
             {rentalTab === 'documents' && (
-              <div>
-                {/* Original Quote PDF */}
-                {rental.quote_url && (
-                  <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">📑</span>
-                        <div>
-                          <p className="font-medium text-purple-800">Devis location</p>
-                          <p className="text-xs text-gray-500">Envoyé le {rental.quote_sent_at ? new Date(rental.quote_sent_at).toLocaleDateString('fr-FR') : '—'}</p>
-                        </div>
+              <div className="space-y-6">
+                <h3 className="font-bold text-[#1E3A5F]">📁 Documents</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Devis Location */}
+                  {rental.quote_url && (
+                    <a href={rental.quote_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Devis Location</p>
+                        <p className="text-sm text-purple-600">N° {rental.rental_number}</p>
+                        {rental.quote_sent_at && <p className="text-xs text-gray-400 mt-0.5">Envoyé le {new Date(rental.quote_sent_at).toLocaleDateString('fr-FR')}</p>}
                       </div>
-                      <a href={rental.quote_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline font-medium">Télécharger →</a>
-                    </div>
-                  </div>
-                )}
+                    </a>
+                  )}
 
-                {/* Signed quote */}
-                {rental.signed_quote_url && (
-                  <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">✅</span>
-                        <div>
-                          <p className="font-medium text-blue-800">Devis signé</p>
-                          <p className="text-xs text-gray-500">Signé le {rental.quote_approved_at ? new Date(rental.quote_approved_at).toLocaleDateString('fr-FR') : '—'} par {rental.bc_signed_by || '—'}</p>
-                        </div>
+                  {/* View Quote in modal */}
+                  {hasQuote && (
+                    <button onClick={() => setShowRentalQuote(true)}
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors border-blue-200 text-left">
+                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">👁️</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Voir le Devis</p>
+                        <p className="text-sm text-blue-600">{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} € HT</p>
                       </div>
-                      <a href={rental.signed_quote_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline font-medium">Télécharger →</a>
-                    </div>
-                  </div>
-                )}
+                    </button>
+                  )}
 
-                {/* BC Document */}
-                {rental.bc_file_url && (
-                  <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">📋</span>
-                        <div>
-                          <p className="font-medium text-green-800">Bon de commande</p>
-                          <p className="text-xs text-gray-500">Soumis le {rental.bc_submitted_at ? new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR') : '—'} par {rental.bc_signed_by || '—'}</p>
-                        </div>
+                  {/* Signed Quote */}
+                  {rental.signed_quote_url && (
+                    <a href={rental.signed_quote_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
+                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Devis Signé</p>
+                        <p className="text-sm text-green-600">N° {rental.rental_number}</p>
+                        {rental.quote_approved_at && <p className="text-xs text-gray-400 mt-0.5">Signé le {new Date(rental.quote_approved_at).toLocaleDateString('fr-FR')}</p>}
                       </div>
-                      <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline font-medium">Télécharger →</a>
-                    </div>
-                  </div>
-                )}
+                    </a>
+                  )}
 
-                {rentalDocs.length === 0 && !rental.bc_file_url && !rental.signed_quote_url && !rental.quote_url ? (
-                  <div className="text-center py-12 text-gray-400">
+                  {/* Bon de Commande */}
+                  {rental.bc_file_url && (
+                    <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors border-amber-200">
+                      <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Bon de Commande</p>
+                        <p className="text-sm text-amber-600">N° {rental.bc_number || rental.rental_number}</p>
+                        {rental.bc_submitted_at && <p className="text-xs text-gray-400 mt-0.5">Soumis le {new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR')} par {rental.bc_signed_by || '—'}</p>}
+                      </div>
+                    </a>
+                  )}
+
+                  {/* Additional attachments */}
+                  {rentalDocs.filter(d => d.file_url !== rental.quote_url && d.file_url !== rental.signed_quote_url && d.file_url !== rental.bc_file_url).map(doc => (
+                    <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-sm font-bold text-gray-600">
+                        {doc.file_type?.includes('pdf') ? 'PDF' : doc.file_name?.split('.').pop()?.toUpperCase() || 'DOC'}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-800 truncate">{doc.file_name || doc.category || 'Document'}</p>
+                        <p className="text-sm text-gray-500">{new Date(doc.created_at).toLocaleDateString('fr-FR')}</p>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+
+                {/* No docs fallback */}
+                {!rental.quote_url && !rental.signed_quote_url && !rental.bc_file_url && !hasQuote && rentalDocs.length === 0 && (
+                  <div className="text-center py-8 bg-gray-50 rounded-lg">
                     <p className="text-4xl mb-2">📄</p>
-                    <p>Aucun document</p>
-                    <p className="text-sm mt-1">Les documents seront disponibles ici</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {rentalDocs.map(doc => (
-                      <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border hover:bg-gray-100 block">
-                        <span className="text-2xl">{doc.file_type?.includes('pdf') ? '📕' : doc.file_type?.includes('image') ? '🖼️' : '📄'}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-800 truncate">{doc.file_name || doc.category || 'Document'}</p>
-                          <p className="text-xs text-gray-500">{new Date(doc.created_at).toLocaleDateString('fr-FR')}</p>
-                        </div>
-                        <span className="text-blue-600 text-sm">Télécharger →</span>
-                      </a>
-                    ))}
+                    <p className="font-medium text-gray-500">Aucun document</p>
+                    <p className="text-sm text-gray-400 mt-1">Les documents seront disponibles ici</p>
                   </div>
                 )}
               </div>
@@ -14216,7 +14224,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 {/* Header: Logo left, Title right, navy line */}
                 <div style={{padding:'20px 30px 0 30px'}}>
                   <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
-                    <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" style={{height:'48px', width:'auto'}} onError={e => { e.target.style.display='none'; }} />
+                    <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" style={{height:'64px', width:'auto'}} />
                     <div style={{textAlign:'right'}}>
                       <p style={{fontSize:'20px', fontWeight:'bold', color:'#2D5A7B', margin:0}}>DEVIS LOCATION</p>
                       <p style={{fontSize:'12px', fontWeight:'bold', color:'#1a1a2e', margin:'2px 0 0 0'}}>N° {rental.rental_number}</p>
@@ -14356,7 +14364,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:0}}>{qd.businessSettings?.quote_signatory || 'M. Meleney'}</p>
                     <p style={{fontSize:'10px', color:'#505050', margin:'2px 0 0 0'}}>{qd.businessSettings?.company_name || 'Lighthouse France SAS'}</p>
                   </div>
-                  <img src="/images/logos/capcert-logo.png" alt="Capcert ISO 9001" style={{width:'60px', height:'60px'}} onError={e => { e.target.style.display='none'; }} />
+                  <img src="/images/logos/capcert-logo.png" alt="Capcert ISO 9001" style={{width:'70px', height:'70px', marginLeft:'-10px'}} />
                   <div style={{textAlign:'center'}}>
                     <p style={{fontSize:'9px', color:'#828282', margin:'0 0 4px 0'}}>Signature client</p>
                     <div style={{width:'120px', height:'50px', border:'2px dashed #b4b4b4', borderRadius:'6px'}} />
