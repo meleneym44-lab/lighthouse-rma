@@ -28727,19 +28727,19 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
                       {(rental.rental_request_items?.length || 0) > 2 && <p className="text-xs text-gray-300">+{rental.rental_request_items.length - 2} de plus</p>}
                     </td>
                     <td className="px-3 py-3">
-                      {rental.outbound_tracking ? (
+                      {(rental.quote_data?.outbound_tracking || rental.outbound_tracking) ? (
                         <div>
-                          <a href={'https://www.ups.com/track?tracknum=' + rental.outbound_tracking} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-blue-600 hover:underline block truncate max-w-[120px]" title={rental.outbound_tracking}>📦 {rental.outbound_tracking}</a>
-                          {rental.bl_number && <p className="text-xs text-cyan-600 font-mono">📋 {rental.bl_number}</p>}
-                          {rental.outbound_shipped_at && <p className="text-xs text-gray-400">{new Date(rental.outbound_shipped_at).toLocaleDateString('fr-FR')}</p>}
+                          <a href={'https://www.ups.com/track?tracknum=' + (rental.quote_data?.outbound_tracking || rental.outbound_tracking)} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-blue-600 hover:underline block truncate max-w-[120px]" title={(rental.quote_data?.outbound_tracking || rental.outbound_tracking)}>📦 {(rental.quote_data?.outbound_tracking || rental.outbound_tracking)}</a>
+                          {(rental.quote_data?.bl_number || rental.bl_number) && <p className="text-xs text-cyan-600 font-mono">📋 {(rental.quote_data?.bl_number || rental.bl_number)}</p>}
+                          {(rental.quote_data?.outbound_shipped_at || rental.outbound_shipped_at) && <p className="text-xs text-gray-400">{new Date((rental.quote_data?.outbound_shipped_at || rental.outbound_shipped_at)).toLocaleDateString('fr-FR')}</p>}
                         </div>
                       ) : rental.status === 'bc_approved' ? (
                         <span className="text-xs text-green-600 font-medium">🟢 {lang === 'en' ? 'Ready to ship' : 'Prêt à expédier'}</span>
                       ) : ['requested', 'pending_quote_review', 'quote_sent', 'waiting_bc', 'bc_review'].includes(rental.status) ? (
                         <span className="text-xs text-gray-400">—</span>
                       ) : null}
-                      {rental.return_tracking && <p className="text-xs text-teal-600 font-mono mt-1">↩️ {rental.return_tracking}</p>}
-                      {rental.returned_at && <p className="text-xs text-teal-600">📥 Retour {new Date(rental.returned_at).toLocaleDateString('fr-FR')}</p>}
+                      {(rental.quote_data?.return_tracking || rental.return_tracking) && <p className="text-xs text-teal-600 font-mono mt-1">↩️ {(rental.quote_data?.return_tracking || rental.return_tracking)}</p>}
+                      {(rental.quote_data?.returned_at || rental.returned_at) && <p className="text-xs text-teal-600">📥 Retour {new Date((rental.quote_data?.returned_at || rental.returned_at)).toLocaleDateString('fr-FR')}</p>}
                     </td>
                     <td className="px-3 py-3">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{lang === 'en' && style.en ? style.en : style.label}</span>
@@ -28749,8 +28749,8 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
                       {rental.quote_revision_notes && rental.status === 'requested' && (
                         <p className="text-xs text-orange-600 mt-1 truncate max-w-[120px]" title={rental.quote_revision_notes}>🔄 Révision client</p>
                       )}
-                      {rental.return_condition === 'damaged' && <p className="text-xs text-red-600 mt-1">⚠️ Endommagé</p>}
-                      {rental.return_condition === 'missing_items' && <p className="text-xs text-orange-600 mt-1">❓ Manquant</p>}
+                      {(rental.quote_data?.return_condition || rental.return_condition) === 'damaged' && <p className="text-xs text-red-600 mt-1">⚠️ Endommagé</p>}
+                      {(rental.quote_data?.return_condition || rental.return_condition) === 'missing_items' && <p className="text-xs text-orange-600 mt-1">❓ Manquant</p>}
                     </td>
                     <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                       {rental.status === 'bc_review' ? (
@@ -29644,7 +29644,7 @@ function RentalShippingWizard({ rental, company, address, items, days, profile, 
             if (labelUrlData?.publicUrl) {
               upsLabelUrl = labelUrlData.publicUrl;
               await supabase.from('request_attachments').insert({
-                rental_request_id: rental.id, file_name: labelFileName, file_url: labelUrlData.publicUrl,
+                request_id: rental.id, file_name: labelFileName, file_url: labelUrlData.publicUrl,
                 file_type: 'application/pdf', uploaded_by: profile?.id, category: 'ups_label'
               });
             }
@@ -29652,16 +29652,20 @@ function RentalShippingWizard({ rental, company, address, items, days, profile, 
         } catch (labelErr) { console.error('UPS label upload error:', labelErr); }
       }
 
-      await supabase.from('rental_requests').update({
-        status: 'shipped', outbound_tracking: trackingNumber, outbound_shipped_at: new Date().toISOString(),
+      const shippingInfo = {
+        outbound_tracking: trackingNumber, outbound_shipped_at: new Date().toISOString(),
         bl_number: blNumber, bl_url: blUrl, shipped_parcels: parcels, shipped_weight: weight || null,
         shipped_by: profile?.full_name || 'Admin', ups_label_url: upsLabelUrl || null
+      };
+      const updatedQuoteData = { ...(rental.quote_data || {}), shippingInfo, ...shippingInfo };
+      await supabase.from('rental_requests').update({
+        status: 'shipped', quote_data: updatedQuoteData
       }).eq('id', rental.id);
 
       // Save BL as attachment
       if (blUrl) {
         await supabase.from('request_attachments').insert({
-          rental_request_id: rental.id, file_name: `${blNumber}.pdf`, file_url: blUrl,
+          request_id: rental.id, file_name: `${blNumber}.pdf`, file_url: blUrl,
           file_type: 'application/pdf', uploaded_by: profile?.id, category: 'bon_livraison'
         });
       }
@@ -29949,12 +29953,21 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   const totalHT = rental.quote_total_ht || (qd.totalHT) || items.reduce((s, i) => s + (parseFloat(i.line_total) || 0), 0);
   const totalRetailValue = (qd.quoteItems || items).reduce((s, i) => s + (parseFloat(i.retail_value) || 0), 0);
 
+  // Computed shipping fields (stored in quote_data JSON)
+  const shipping = qd.shippingInfo || {};
+  const outboundTracking = rental.outbound_tracking || shipping.outbound_tracking || '';
+  const blNumber = rental.bl_number || shipping.bl_number || qd.bl_number || '';
+  const blUrl = rental.bl_url || shipping.bl_url || qd.bl_url || '';
+  const upsLabelUrl = rental.ups_label_url || shipping.ups_label_url || qd.ups_label_url || '';
+  const outboundShippedAt = rental.outbound_shipped_at || shipping.outbound_shipped_at || qd.outbound_shipped_at || '';
+  const bcNumber = qd.bc_number || rental.bc_number || '';
+
   // Load messages & attachments
   useEffect(() => {
     const load = async () => {
-      const { data: msgs } = await supabase.from('messages').select('*').eq('rental_request_id', rental.id).order('created_at', { ascending: true });
+      const { data: msgs } = await supabase.from('messages').select('*').eq('request_id', rental.id).order('created_at', { ascending: true });
       if (msgs) setMessages(msgs);
-      const { data: docs } = await supabase.from('request_attachments').select('*').eq('rental_request_id', rental.id);
+      const { data: docs } = await supabase.from('request_attachments').select('*').eq('request_id', rental.id);
       if (docs) setAttachments(docs);
     };
     load();
@@ -29964,7 +29977,23 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   const updateStatus = async (newStatus, additionalData = {}) => {
     setSaving(true);
     try {
-      await supabase.from('rental_requests').update({ status: newStatus, ...additionalData }).eq('id', rental.id);
+      // Separate quote_data fields from real columns
+      const { return_condition, return_notes, return_tracking, ...otherData } = additionalData;
+      const extraFields = {};
+      if (return_condition || return_notes || return_tracking) {
+        extraFields.quote_data = {
+          ...(rental.quote_data || {}),
+          return_condition, return_notes, return_tracking,
+          ...(otherData.rental_started_at ? { rental_started_at: otherData.rental_started_at } : {}),
+          ...(otherData.rental_ended_at ? { rental_ended_at: otherData.rental_ended_at } : {}),
+          ...(otherData.returned_at ? { returned_at: otherData.returned_at } : {}),
+          ...(otherData.completed_at ? { completed_at: otherData.completed_at } : {})
+        };
+      } else if (Object.keys(otherData).length > 0) {
+        // Store timestamp data in quote_data too
+        extraFields.quote_data = { ...(rental.quote_data || {}), ...otherData };
+      }
+      await supabase.from('rental_requests').update({ status: newStatus, ...extraFields }).eq('id', rental.id);
       notify('Statut mis à jour !');
       setStatus(newStatus);
       reload();
@@ -29977,12 +30006,12 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
     if (!newMsg.trim()) return;
     setSendingMsg(true);
     await supabase.from('messages').insert({
-      rental_request_id: rental.id, sender_id: profile?.id,
-      sender_name: profile?.full_name || 'Admin', sender_role: 'admin', content: newMsg.trim()
+      request_id: rental.id, sender_id: profile?.id,
+      sender_name: profile?.full_name || 'Admin', sender_type: 'admin', content: newMsg.trim()
     });
     setNewMsg('');
     setSendingMsg(false);
-    const { data: msgs } = await supabase.from('messages').select('*').eq('rental_request_id', rental.id).order('created_at', { ascending: true });
+    const { data: msgs } = await supabase.from('messages').select('*').eq('request_id', rental.id).order('created_at', { ascending: true });
     if (msgs) setMessages(msgs);
   };
   const markInRental = async () => { await updateStatus('in_rental', { rental_started_at: new Date().toISOString() }); };
@@ -30035,11 +30064,11 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   if (rental.submitted_at || rental.created_at) timeline.push({ date: rental.submitted_at || rental.created_at, icon: '📝', label: 'Demande soumise' });
   if (rental.quote_sent_at) timeline.push({ date: rental.quote_sent_at, icon: '📨', label: 'Devis envoyé' });
   if (rental.quote_approved_at) timeline.push({ date: rental.quote_approved_at, icon: '✅', label: 'Devis approuvé' });
-  if (rental.bc_approved_at) timeline.push({ date: rental.bc_approved_at, icon: '📋', label: 'BC approuvé', detail: (rental.quote_data?.bc_number) ? `N° ${(rental.quote_data?.bc_number)}` : undefined });
-  if (rental.outbound_shipped_at) timeline.push({ date: rental.outbound_shipped_at, icon: '🚚', label: 'Expédié', detail: rental.bl_number ? `BL: ${rental.bl_number}` : undefined });
-  if (rental.rental_started_at) timeline.push({ date: rental.rental_started_at, icon: '📦', label: 'En location' });
-  if (rental.returned_at) timeline.push({ date: rental.returned_at, icon: '📥', label: 'Retourné' });
-  if (rental.completed_at) timeline.push({ date: rental.completed_at, icon: '🏁', label: 'Clôturé' });
+  if (rental.bc_approved_at) timeline.push({ date: rental.bc_approved_at, icon: '📋', label: 'BC approuvé', detail: bcNumber ? `N° ${bcNumber}` : undefined });
+  if (outboundShippedAt) timeline.push({ date: outboundShippedAt, icon: '🚚', label: 'Expédié', detail: blNumber ? `BL: ${blNumber}` : undefined });
+  if ((qd.rental_started_at || rental.rental_started_at)) timeline.push({ date: (qd.rental_started_at || rental.rental_started_at), icon: '📦', label: 'En location' });
+  if ((qd.returned_at || rental.returned_at)) timeline.push({ date: (qd.returned_at || rental.returned_at), icon: '📥', label: 'Retourné' });
+  if ((qd.completed_at || rental.completed_at)) timeline.push({ date: (qd.completed_at || rental.completed_at), icon: '🏁', label: 'Clôturé' });
   timeline.sort((a, b) => new Date(a.date) - new Date(b.date));
 
   const address = rental.shipping_address || {};
@@ -30152,18 +30181,6 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
           {/* ===== OVERVIEW TAB ===== */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
-              {/* BC Approved Banner */}
-              {rental.bc_approved_at && (rental.quote_data?.bc_number) && (
-                <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4 flex items-center gap-4">
-                  <div className="w-12 h-12 bg-green-500 rounded-lg flex items-center justify-center text-2xl text-white">✅</div>
-                  <div className="flex-1">
-                    <p className="font-bold text-green-800 text-lg">Bon de Commande Approuvé</p>
-                    <p className="text-green-700">BC N° <span className="font-mono font-bold">{(rental.quote_data?.bc_number)}</span> — approuvé le {new Date(rental.bc_approved_at).toLocaleDateString('fr-FR')}</p>
-                  </div>
-                  {rental.bc_file_url && <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium">📄 Voir BC ↗</a>}
-                </div>
-              )}
-
               {/* BC Review needed banner */}
               {status === 'bc_review' && (
                 <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 flex items-center gap-4">
@@ -30241,43 +30258,28 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
               )}
 
               {/* Tracking Info */}
-              {rental.outbound_tracking && (
+              {outboundTracking && (
                 <div className="bg-cyan-50 rounded-lg p-4 border border-cyan-200">
                   <h3 className="font-bold text-cyan-800 mb-2">🚚 Expédition</h3>
                   <div className="grid md:grid-cols-3 gap-4 text-sm">
-                    <div><p className="text-xs text-gray-500">N° suivi</p><p className="font-mono font-bold">{rental.outbound_tracking}</p></div>
-                    {rental.bl_number && <div><p className="text-xs text-gray-500">BL</p><p className="font-mono font-bold">{rental.bl_number}</p></div>}
-                    {rental.outbound_shipped_at && <div><p className="text-xs text-gray-500">Date</p><p className="font-medium">{new Date(rental.outbound_shipped_at).toLocaleDateString('fr-FR')}</p></div>}
+                    <div><p className="text-xs text-gray-500">N° suivi</p><p className="font-mono font-bold">{outboundTracking}</p></div>
+                    {blNumber && <div><p className="text-xs text-gray-500">BL</p><p className="font-mono font-bold">{blNumber}</p></div>}
+                    {outboundShippedAt && <div><p className="text-xs text-gray-500">Date</p><p className="font-medium">{new Date(outboundShippedAt).toLocaleDateString('fr-FR')}</p></div>}
                   </div>
                 </div>
               )}
 
               {/* Return Info */}
-              {rental.returned_at && (
+              {(qd.returned_at || rental.returned_at) && (
                 <div className="bg-teal-50 rounded-lg p-4 border border-teal-200">
                   <h3 className="font-bold text-teal-800 mb-2">📥 Retour</h3>
                   <div className="grid md:grid-cols-3 gap-4 text-sm">
-                    <div><p className="text-xs text-gray-500">Date retour</p><p className="font-medium">{new Date(rental.returned_at).toLocaleDateString('fr-FR')}</p></div>
-                    <div><p className="text-xs text-gray-500">État</p><p className="font-medium">{rental.return_condition === 'good' ? '✅ Bon état' : rental.return_condition === 'damaged' ? '⚠️ Endommagé' : '❓ Éléments manquants'}</p></div>
-                    {rental.return_notes && <div><p className="text-xs text-gray-500">Notes</p><p className="text-sm">{rental.return_notes}</p></div>}
+                    <div><p className="text-xs text-gray-500">Date retour</p><p className="font-medium">{new Date((qd.returned_at || rental.returned_at)).toLocaleDateString('fr-FR')}</p></div>
+                    <div><p className="text-xs text-gray-500">État</p><p className="font-medium">{(qd.return_condition || rental.return_condition) === 'good' ? '✅ Bon état' : (qd.return_condition || rental.return_condition) === 'damaged' ? '⚠️ Endommagé' : '❓ Éléments manquants'}</p></div>
+                    {(qd.return_notes || rental.return_notes) && <div><p className="text-xs text-gray-500">Notes</p><p className="text-sm">{(qd.return_notes || rental.return_notes)}</p></div>}
                   </div>
                 </div>
               )}
-
-              {/* Quick Actions */}
-              <div className="bg-gray-50 rounded-lg p-4 border">
-                <h3 className="font-bold text-gray-800 mb-3">⚡ Actions rapides</h3>
-                <div className="flex flex-wrap gap-2">
-                  {status === 'requested' && <button onClick={() => onOpenQuoteEditor && onOpenQuoteEditor(rental)} className="px-4 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008f45]">💰 Créer le devis</button>}
-                  {status === 'quote_revision_requested' && <button onClick={() => onOpenQuoteEditor && onOpenQuoteEditor(rental)} className="px-4 py-2 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600">💰 Réviser le devis</button>}
-                  {status === 'bc_review' && <button onClick={() => setShowBCReview(true)} className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600">🔍 Vérifier le BC</button>}
-                  {status === 'bc_approved' && <button onClick={() => setShowShippingWizard(true)} className="px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600">🚚 Préparer l'expédition</button>}
-                  {status === 'shipped' && <button onClick={() => markInRental()} disabled={saving} className="px-4 py-2 bg-purple-500 text-white rounded-lg font-medium hover:bg-purple-600 disabled:opacity-50">📦 Client a reçu → En location</button>}
-                  {status === 'in_rental' && <button onClick={() => markReturnPending()} disabled={saving} className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 disabled:opacity-50">⏰ Période terminée → Attente retour</button>}
-                  {status === 'return_pending' && <button onClick={() => markReturned()} disabled={saving} className="px-4 py-2 bg-teal-500 text-white rounded-lg font-medium hover:bg-teal-600 disabled:opacity-50">📥 Confirmer réception retour</button>}
-                  {status === 'returned' && <button onClick={() => completeRental()} disabled={saving} className="px-4 py-2 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600 disabled:opacity-50">🏁 Clôturer</button>}
-                </div>
-              </div>
             </div>
           )}
 
@@ -30318,7 +30320,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                     <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl shrink-0">✅</div>
                     <div>
                       <p className="font-medium text-gray-800">Devis Signé / BC</p>
-                      <p className="text-sm text-green-600">{(rental.quote_data?.bc_number) ? `N° ${(rental.quote_data?.bc_number)}` : 'Signé'}</p>
+                      <p className="text-sm text-green-600">{bcNumber ? `N° ${bcNumber}` : 'Signé'}</p>
                       {rental.quote_approved_at && <p className="text-xs text-gray-400">Par {rental.bc_signed_by || '—'} — {new Date(rental.quote_approved_at).toLocaleDateString('fr-FR')}</p>}
                     </div>
                   </a>
@@ -30330,31 +30332,31 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                     <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📝</div>
                     <div>
                       <p className="font-medium text-gray-800">Bon de Commande Client</p>
-                      <p className="text-sm text-purple-600">{(rental.quote_data?.bc_number) ? `N° ${(rental.quote_data?.bc_number)}` : 'BC client'}</p>
+                      <p className="text-sm text-purple-600">{bcNumber ? `N° ${bcNumber}` : 'BC client'}</p>
                       {rental.bc_submitted_at && <p className="text-xs text-gray-400">Soumis le {new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR')}</p>}
                     </div>
                   </a>
                 )}
 
                 {/* 4. BON DE LIVRAISON */}
-                {rental.bl_url && (
-                  <a href={rental.bl_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-cyan-50 transition-colors border-cyan-200">
+                {blUrl && (
+                  <a href={blUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-cyan-50 transition-colors border-cyan-200">
                     <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📄</div>
                     <div>
                       <p className="font-medium text-gray-800">Bon de Livraison</p>
-                      <p className="text-sm text-cyan-600">{rental.bl_number ? `N° ${rental.bl_number}` : 'BL'}</p>
-                      {rental.outbound_shipped_at && <p className="text-xs text-gray-400">{new Date(rental.outbound_shipped_at).toLocaleDateString('fr-FR')}</p>}
+                      <p className="text-sm text-cyan-600">{blNumber ? `N° ${blNumber}` : 'BL'}</p>
+                      {outboundShippedAt && <p className="text-xs text-gray-400">{new Date(outboundShippedAt).toLocaleDateString('fr-FR')}</p>}
                     </div>
                   </a>
                 )}
 
                 {/* 5. UPS LABEL */}
-                {rental.ups_label_url && (
-                  <a href={rental.ups_label_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors">
+                {upsLabelUrl && (
+                  <a href={upsLabelUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors">
                     <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🏷️</div>
                     <div>
                       <p className="font-medium text-gray-800">Étiquette UPS</p>
-                      <p className="text-sm text-amber-600">{rental.outbound_tracking || "Label d'expédition"}</p>
+                      <p className="text-sm text-amber-600">{outboundTracking || "Label d'expédition"}</p>
                     </div>
                   </a>
                 )}
@@ -30372,7 +30374,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
               </div>
 
               {/* UPS Labels from attachments if no main URL */}
-              {attachments.filter(a => a.category === 'ups_label').length > 0 && !rental.ups_label_url && (
+              {attachments.filter(a => a.category === 'ups_label').length > 0 && !upsLabelUrl && (
                 <div>
                   <h4 className="font-medium text-gray-700 mb-2">🏷️ Étiquettes UPS</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -30389,7 +30391,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                 </div>
               )}
 
-              {!rental.quote_url && !rental.bc_file_url && !rental.signed_quote_url && !rental.bl_url && !rental.ups_label_url && attachments.length === 0 && (
+              {!rental.quote_url && !rental.bc_file_url && !rental.signed_quote_url && !blUrl && !upsLabelUrl && attachments.length === 0 && (
                 <div className="text-center py-8 text-gray-400"><p className="text-4xl mb-2">📄</p><p>Aucun document</p></div>
               )}
             </div>
@@ -30401,7 +30403,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                 {messages.length === 0 ? (
                   <div className="text-center py-12 text-gray-400"><p className="text-4xl mb-2">💬</p><p>Aucun message</p></div>
                 ) : messages.map(msg => {
-                  const isAdmin = msg.sender_role === 'admin';
+                  const isAdmin = msg.sender_type === 'admin' || msg.sender_role === 'admin';
                   return (
                     <div key={msg.id} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
                       <div className={`max-w-[70%] rounded-lg p-3 ${isAdmin ? 'bg-[#8B5CF6] text-white' : 'bg-gray-100 text-gray-800'}`}>
@@ -30505,23 +30507,23 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                   <p className="text-xs text-gray-500 uppercase">Total HT</p>
                   <p className="text-xl font-bold text-[#00A651]">{(rental.quote_total_ht || totalHT || 0).toFixed(2)} €</p>
                 </div>
-                {(rental.quote_data?.bc_number) && (
+                {bcNumber && (
                   <div>
                     <p className="text-xs text-gray-500 uppercase">BC N°</p>
-                    <p className="font-mono font-bold">{(rental.quote_data?.bc_number)}</p>
+                    <p className="font-mono font-bold">{bcNumber}</p>
                   </div>
                 )}
-                {rental.bl_number && (
+                {blNumber && (
                   <div>
                     <p className="text-xs text-gray-500 uppercase">BL N°</p>
-                    <p className="font-mono font-bold">{rental.bl_number}</p>
+                    <p className="font-mono font-bold">{blNumber}</p>
                   </div>
                 )}
-                {rental.outbound_tracking && (
+                {outboundTracking && (
                   <div className="pt-2 border-t">
                     <p className="text-xs text-gray-500 uppercase mb-1">Suivi UPS</p>
-                    <p className="font-mono text-sm font-bold">{rental.outbound_tracking}</p>
-                    <a href={`https://www.ups.com/track?tracknum=${rental.outbound_tracking}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">📍 Suivre le colis →</a>
+                    <p className="font-mono text-sm font-bold">{outboundTracking}</p>
+                    <a href={`https://www.ups.com/track?tracknum=${outboundTracking}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">📍 Suivre le colis →</a>
                   </div>
                 )}
               </div>
@@ -30557,8 +30559,8 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                 {status === 'returned' && (
                   <button onClick={completeRental} disabled={saving} className="w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">🏁 Clôturer</button>
                 )}
-                {rental.outbound_tracking && (
-                  <a href={`https://www.ups.com/track?tracknum=${rental.outbound_tracking}`} target="_blank" rel="noopener noreferrer"
+                {outboundTracking && (
+                  <a href={`https://www.ups.com/track?tracknum=${outboundTracking}`} target="_blank" rel="noopener noreferrer"
                     className="block w-full px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium text-center">📍 Suivre colis UPS</a>
                 )}
               </div>
