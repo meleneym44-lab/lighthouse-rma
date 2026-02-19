@@ -28427,6 +28427,7 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
   const [showAddBundle, setShowAddBundle] = useState(false);
   const [editingDevice, setEditingDevice] = useState(null);
   const [editingBundle, setEditingBundle] = useState(null);
+  const [reviewingRentalBC, setReviewingRentalBC] = useState(null);
 
   // Keep selectedRental in sync with reloaded data
   useEffect(() => {
@@ -28586,6 +28587,36 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
       </div>
 
       {/* Requests Tab */}
+      {activeTab === 'requests' && (() => {
+        const needsBCReview = rentals.filter(r => r.status === 'bc_review');
+        return needsBCReview.length > 0 ? (
+        <div className="bg-red-50 border-2 border-red-300 rounded-xl shadow-lg mb-4">
+          <div className="px-6 py-4 border-b border-red-200 bg-red-100 rounded-t-xl">
+            <h2 className="font-bold text-red-800 text-lg">⚠️ {lang === 'en' ? 'Purchase Orders to Review' : 'Bons de Commande à Vérifier'} ({needsBCReview.length})</h2>
+            <p className="text-sm text-red-600">{lang === 'en' ? 'Click "Review" to verify the document and approve' : 'Cliquez sur "Examiner" pour vérifier le document et approuver'}</p>
+          </div>
+          <div className="p-4 space-y-3">
+            {needsBCReview.map(rental => (
+              <div key={rental.id} className="bg-white rounded-lg p-4 flex items-center justify-between shadow-sm border border-red-100">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
+                  <div>
+                    <span className="font-mono font-bold text-[#8B5CF6] text-lg">{rental.rental_number}</span>
+                    <p className="font-medium text-gray-800">{rental.companies?.name}</p>
+                    <p className="text-sm text-gray-500">
+                      BC soumis le {rental.bc_submitted_at ? new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR') : new Date(rental.updated_at).toLocaleDateString('fr-FR')}
+                      {rental.bc_signed_by && <span className="ml-2">• Signé par: {rental.bc_signed_by}</span>}
+                    </p>
+                  </div>
+                </div>
+                <button onClick={() => setReviewingRentalBC(rental)} className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium flex items-center gap-2">🔍 Examiner</button>
+              </div>
+            ))}
+          </div>
+        </div>
+        ) : null;
+      })()}
+
       {activeTab === 'requests' && (
         <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
           <table className="w-full">
@@ -28613,7 +28644,7 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
                 const progress = stepMap[rental.status] ?? 0;
                 const totalSteps = 6;
                 return (
-                  <tr key={rental.id} className={`hover:bg-gray-50 ${isOverdue ? 'bg-red-50' : ''}`}>
+                  <tr key={rental.id} className={`hover:bg-gray-50 cursor-pointer ${isOverdue ? 'bg-red-50' : ''}`} onClick={() => setSelectedRental(rental)}>
                     <td className="px-3 py-3">
                       <span className="font-bold text-[#8B5CF6] cursor-pointer hover:underline" onClick={() => setSelectedRental(rental)}>{rental.rental_number}</span>
                       <p className="text-xs text-gray-400">{new Date(rental.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
@@ -28667,8 +28698,12 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
                       {rental.return_condition === 'damaged' && <p className="text-xs text-red-600 mt-1">⚠️ Endommagé</p>}
                       {rental.return_condition === 'missing_items' && <p className="text-xs text-orange-600 mt-1">❓ Manquant</p>}
                     </td>
-                    <td className="px-3 py-3">
-                      <button onClick={() => setSelectedRental(rental)} className="px-3 py-1.5 bg-[#8B5CF6] text-white text-sm rounded-lg hover:bg-[#7C3AED] font-medium">{lang === 'en' ? 'Manage' : 'Gérer'}</button>
+                    <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                      {rental.status === 'bc_review' ? (
+                        <button onClick={() => setReviewingRentalBC(rental)} className="px-3 py-1.5 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 font-medium">🔍 Examiner BC</button>
+                      ) : (
+                        <button onClick={() => setSelectedRental(rental)} className="px-3 py-1.5 bg-[#8B5CF6] text-white text-sm rounded-lg hover:bg-[#7C3AED] font-medium">{lang === 'en' ? 'Manage' : 'Gérer'}</button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -28752,6 +28787,7 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
 
       {/* Rental Detail Modal */}
       {selectedRental && <RentalAdminModal rental={selectedRental} inventory={inventory} onClose={() => setSelectedRental(null)} notify={notify} reload={reload} businessSettings={businessSettings} profile={profile} lang={lang} />}
+      {reviewingRentalBC && <RentalBCReviewModal rental={reviewingRentalBC} onClose={() => setReviewingRentalBC(null)} notify={notify} reload={reload} lang={lang} />}
     </div>
   );
 }
@@ -29006,6 +29042,228 @@ function RentalCalendarView({ bookings, inventory, lang = 'fr' }) {
 
 // Rental Admin Modal - Full management
 
+function RentalBCReviewModal({ rental, onClose, notify, reload, lang = 'fr' }) {
+  const [approving, setApproving] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [bcNumber, setBcNumber] = useState('');
+  const [useAutoNumber, setUseAutoNumber] = useState(true);
+  const [generatingNumber, setGeneratingNumber] = useState(false);
+
+  const hasCustomerBCFile = !!rental.bc_file_url && rental.bc_file_url !== rental.signed_quote_url;
+
+  useEffect(() => {
+    if (hasCustomerBCFile) {
+      setUseAutoNumber(false);
+    } else {
+      generateBCNumber();
+    }
+  }, []);
+
+  const generateBCNumber = async () => {
+    setGeneratingNumber(true);
+    try {
+      const { data, error } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'BC-LOC' });
+      if (!error && data) setBcNumber(data);
+      else {
+        // Fallback: generate from rental number
+        const num = rental.rental_number ? rental.rental_number.replace('LOC-', 'BC-LOC-') : 'BC-LOC-' + Date.now();
+        setBcNumber(num);
+      }
+    } catch (e) {
+      const num = rental.rental_number ? rental.rental_number.replace('LOC-', 'BC-LOC-') : 'BC-LOC-' + Date.now();
+      setBcNumber(num);
+    }
+    setGeneratingNumber(false);
+  };
+
+  const approveBC = async () => {
+    if (!bcNumber.trim()) {
+      notify('Veuillez entrer un numéro de BC', 'error');
+      return;
+    }
+    setApproving(true);
+    const { error } = await supabase
+      .from('rental_requests')
+      .update({
+        status: 'bc_approved',
+        bc_approved_at: new Date().toISOString(),
+        bc_number: bcNumber.trim()
+      })
+      .eq('id', rental.id);
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify(`✅ BC N° ${bcNumber} approuvé!`);
+      reload();
+      onClose();
+    }
+    setApproving(false);
+  };
+
+  const rejectBC = async () => {
+    if (!rejectReason.trim()) {
+      notify('Veuillez indiquer la raison du refus', 'error');
+      return;
+    }
+    setRejecting(true);
+    const { error } = await supabase
+      .from('rental_requests')
+      .update({
+        status: 'waiting_bc',
+        bc_rejected_at: new Date().toISOString(),
+        bc_rejection_reason: rejectReason,
+        bc_file_url: null,
+        bc_signature_url: null,
+        bc_submitted_at: null
+      })
+      .eq('id', rental.id);
+    if (error) {
+      notify('Erreur: ' + error.message, 'error');
+    } else {
+      notify('BC refusé. Le client devra soumettre un nouveau BC.');
+      reload();
+      onClose();
+    }
+    setRejecting(false);
+  };
+
+  const items = rental.rental_request_items || [];
+  const displayUrl = rental.signed_quote_url || rental.bc_file_url;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={onClose}>
+      <div className="bg-white w-full h-full max-w-[98vw] max-h-[98vh] m-auto rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white flex justify-between items-center flex-shrink-0">
+          <div>
+            <h2 className="text-xl font-bold">📋 Vérification du Bon de Commande — Location</h2>
+            <p className="text-red-100">{rental.rental_number} • {rental.companies?.name}</p>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white text-3xl">&times;</button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-hidden flex">
+          {/* Left: Document Preview */}
+          <div className="flex-1 flex flex-col bg-gray-800 p-4">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-bold text-white text-lg">📄 Document BC</h3>
+              <div className="flex gap-2">
+                {rental.signed_quote_url && (
+                  <a href={rental.signed_quote_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium">📄 Devis Signé ↗</a>
+                )}
+                {rental.bc_file_url && (
+                  <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">📋 BC Uploadé ↗</a>
+                )}
+              </div>
+            </div>
+            {displayUrl ? (
+              <div className="flex-1 rounded-lg overflow-hidden bg-white">
+                {displayUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                  <img src={displayUrl} alt="BC Document" className="w-full h-full object-contain" />
+                ) : (
+                  <object data={`${displayUrl}#view=Fit`} type="application/pdf" className="w-full h-full" style={{ minHeight: '100%' }}>
+                    <iframe src={`${displayUrl}#view=Fit`} className="w-full h-full" title="BC PDF" />
+                  </object>
+                )}
+              </div>
+            ) : (
+              <div className="flex-1 border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center text-gray-400 text-lg">Aucun fichier BC uploadé</div>
+            )}
+          </div>
+
+          {/* Right: Sidebar */}
+          <div className="w-96 flex-shrink-0 bg-gray-50 overflow-y-auto p-4 space-y-4">
+            <h3 className="font-bold text-gray-800 text-lg">📋 Détails de la Location</h3>
+
+            {/* Info */}
+            <div className="bg-white rounded-lg p-4 border">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><p className="text-gray-500">N° Location</p><p className="font-mono font-bold text-[#8B5CF6]">{rental.rental_number}</p></div>
+                <div><p className="text-gray-500">Client</p><p className="font-medium">{rental.companies?.name}</p></div>
+                <div><p className="text-gray-500">Soumission BC</p><p className="font-medium">{rental.bc_submitted_at ? new Date(rental.bc_submitted_at).toLocaleString('fr-FR') : '—'}</p></div>
+                <div><p className="text-gray-500">Signé par</p><p className="font-medium">{rental.bc_signed_by || '—'}</p></div>
+              </div>
+            </div>
+
+            {/* Signature */}
+            {rental.bc_signature_url && (
+              <div className="bg-white rounded-lg p-4 border">
+                <h4 className="font-medium text-gray-700 mb-2">✍️ Signature</h4>
+                <img src={rental.bc_signature_url} alt="Signature" className="max-h-20 mx-auto bg-gray-50 rounded p-2" />
+                <p className="text-center text-xs text-gray-500 mt-1">{rental.bc_signed_by || '—'}</p>
+              </div>
+            )}
+
+            {/* Equipment */}
+            <div className="bg-white rounded-lg p-4 border">
+              <h4 className="font-medium text-gray-700 mb-2">📦 Équipement ({items.length})</h4>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {items.map((d, i) => (
+                  <div key={i} className="bg-gray-50 rounded p-2 text-sm">
+                    <p className="font-medium">{d.item_name || d.model_name}</p>
+                    <p className="text-gray-500">SN: {d.serial_number || '—'}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Quote Info */}
+            {(rental.quote_total || rental.quote_url) && (
+              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                <h4 className="font-medium text-blue-800 mb-1">💰 Devis Location</h4>
+                {rental.quote_total && <p className="text-xl font-bold text-blue-700">{parseFloat(rental.quote_total).toFixed(2)} € HT</p>}
+                <p className="text-xs text-blue-500">
+                  {rental.start_date && rental.end_date ? `${new Date(rental.start_date).toLocaleDateString('fr-FR')} → ${new Date(rental.end_date).toLocaleDateString('fr-FR')}` : ''}
+                </p>
+              </div>
+            )}
+
+            {/* BC Number Input */}
+            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+              <h4 className="font-medium text-green-800 mb-2">📋 Numéro de Bon de Commande</h4>
+              <p className="text-xs text-green-600 mb-3">
+                {hasCustomerBCFile
+                  ? 'Le client a fourni son propre BC. Entrez le numéro du client.'
+                  : 'Devis signé par le client. Auto-générer ou entrer un numéro.'}
+              </p>
+              {!hasCustomerBCFile && (
+                <div className="flex items-center gap-2 mb-3">
+                  <button onClick={() => { setUseAutoNumber(true); generateBCNumber(); }} className={`flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors ${useAutoNumber ? 'bg-green-600 text-white' : 'bg-white border border-green-300 text-green-700'}`}>Auto</button>
+                  <button onClick={() => { setUseAutoNumber(false); setBcNumber(''); }} className={`flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors ${!useAutoNumber ? 'bg-green-600 text-white' : 'bg-white border border-green-300 text-green-700'}`}>Manuel</button>
+                </div>
+              )}
+              <div className="relative">
+                <input type="text" value={bcNumber} onChange={e => setBcNumber(e.target.value)} placeholder={hasCustomerBCFile ? "N° BC du client (requis)" : "BC-LOC-0226-001"} className={`w-full px-3 py-2 border rounded-lg font-mono text-center text-lg ${hasCustomerBCFile && !bcNumber ? 'border-red-300 bg-red-50' : 'border-green-300'}`} disabled={generatingNumber} />
+                {generatingNumber && <div className="absolute right-3 top-1/2 -translate-y-1/2"><div className="w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin"></div></div>}
+              </div>
+              {hasCustomerBCFile && !bcNumber && <p className="text-xs text-red-600 mt-1">⚠️ Numéro BC requis pour le Bon de Livraison</p>}
+              {useAutoNumber && bcNumber && !hasCustomerBCFile && <p className="text-xs text-green-600 mt-1">✓ Ce numéro sera utilisé pour le BL</p>}
+            </div>
+
+            {/* Reject */}
+            <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+              <h4 className="font-medium text-red-800 mb-2">Refuser le BC?</h4>
+              <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Raison du refus..." className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm h-20 resize-none" />
+            </div>
+
+            {/* Actions */}
+            <div className="space-y-2 pt-2">
+              <button onClick={approveBC} disabled={approving} className="w-full px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50">
+                {approving ? 'Approbation...' : '✅ Approuver BC'}
+              </button>
+              <button onClick={rejectBC} disabled={rejecting || !rejectReason.trim()} className="w-full px-6 py-3 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-bold disabled:opacity-50">
+                {rejecting ? 'Rejet...' : '❌ Rejeter BC'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, businessSettings, profile, lang = 'fr' }) {
   const t = k => k;
   const [activeTab, setActiveTab] = useState('overview');
@@ -29058,6 +29316,7 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
   const [deliveryTerms, setDeliveryTerms] = useState(rental.quote_data?.deliveryTerms || 'En stock');
   const [paymentTerms, setPaymentTerms] = useState(rental.quote_data?.paymentTerms || 'À réception de facture');
   const [quoteStep, setQuoteStep] = useState(1);
+  const [showBCReview, setShowBCReview] = useState(false);
 
   // Computed
   const company = rental.companies || {};
@@ -29157,7 +29416,11 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
     setSaving(false);
   };
 
-  const approveBC = async () => { await updateStatus('bc_approved', { bc_approved_at: new Date().toISOString() }); };
+  const approveBC = async () => {
+    const bcNum = prompt('Entrez le numéro de Bon de Commande:');
+    if (!bcNum || !bcNum.trim()) { notify('Numéro BC requis', 'error'); return; }
+    await updateStatus('bc_approved', { bc_approved_at: new Date().toISOString(), bc_number: bcNum.trim() });
+  };
   const rejectBC = async () => {
     const reason = prompt('Raison du rejet:');
     if (!reason) return;
@@ -29279,21 +29542,16 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
   };
   const style = getStatusStyle(status);
 
-  // Build timeline events
+  // Build timeline events - only progress bar milestones
   const timeline = [];
-  if (rental.submitted_at || rental.created_at) timeline.push({ date: rental.submitted_at || rental.created_at, icon: '📝', label: 'Demande soumise', detail: `par ${rental.submitted_by_name || 'Client'}` });
-  if (rental.quoted_at) timeline.push({ date: rental.quoted_at, icon: '📄', label: 'Devis créé', detail: `Total: ${(rental.quote_total_ht || 0).toFixed(2)} € HT` });
-  if (rental.quote_sent_at) timeline.push({ date: rental.quote_sent_at, icon: '📨', label: 'Devis envoyé au client' });
-  if (rental.quote_revision_requested_at) timeline.push({ date: rental.quote_revision_requested_at, icon: '🔄', label: 'Client demande modification', detail: rental.quote_revision_notes });
-  if (rental.quote_approved_at) timeline.push({ date: rental.quote_approved_at, icon: '✅', label: 'Devis approuvé par client' });
-  if (rental.bc_submitted_at) timeline.push({ date: rental.bc_submitted_at, icon: '📋', label: 'BC soumis', detail: `Signé par ${rental.bc_signed_by || '—'}` });
-  if (rental.bc_rejected_at) timeline.push({ date: rental.bc_rejected_at, icon: '❌', label: 'BC rejeté', detail: rental.bc_rejection_reason });
-  if (rental.bc_approved_at) timeline.push({ date: rental.bc_approved_at, icon: '✅', label: 'BC approuvé' });
-  if (rental.outbound_shipped_at) timeline.push({ date: rental.outbound_shipped_at, icon: '🚚', label: 'Expédié', detail: `Suivi: ${rental.outbound_tracking || '—'} | BL: ${rental.bl_number || '—'}` });
-  if (rental.rental_started_at) timeline.push({ date: rental.rental_started_at, icon: '📦', label: 'En location — Client a reçu' });
-  if (rental.rental_ended_at) timeline.push({ date: rental.rental_ended_at, icon: '⏰', label: 'Fin période — Retour attendu' });
-  if (rental.returned_at) timeline.push({ date: rental.returned_at, icon: '📥', label: 'Retourné', detail: `État: ${rental.return_condition === 'good' ? 'Bon état' : rental.return_condition === 'damaged' ? 'Endommagé' : 'Éléments manquants'}${rental.return_notes ? ' — ' + rental.return_notes : ''}` });
-  if (rental.completed_at) timeline.push({ date: rental.completed_at, icon: '🏁', label: 'Location clôturée' });
+  if (rental.submitted_at || rental.created_at) timeline.push({ date: rental.submitted_at || rental.created_at, icon: '📝', label: 'Demande soumise' });
+  if (rental.quote_sent_at) timeline.push({ date: rental.quote_sent_at, icon: '📨', label: 'Devis envoyé' });
+  if (rental.quote_approved_at) timeline.push({ date: rental.quote_approved_at, icon: '✅', label: 'Devis approuvé' });
+  if (rental.bc_approved_at) timeline.push({ date: rental.bc_approved_at, icon: '📋', label: 'BC approuvé', detail: rental.bc_number ? `N° ${rental.bc_number}` : undefined });
+  if (rental.outbound_shipped_at) timeline.push({ date: rental.outbound_shipped_at, icon: '🚚', label: 'Expédié', detail: rental.bl_number ? `BL: ${rental.bl_number}` : undefined });
+  if (rental.rental_started_at) timeline.push({ date: rental.rental_started_at, icon: '📦', label: 'En location' });
+  if (rental.returned_at) timeline.push({ date: rental.returned_at, icon: '📥', label: 'Retourné' });
+  if (rental.completed_at) timeline.push({ date: rental.completed_at, icon: '🏁', label: 'Clôturé' });
   timeline.sort((a, b) => new Date(a.date) - new Date(b.date));
 
   const address = rental.shipping_address || {};
@@ -29353,6 +29611,29 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
           {/* ===== OVERVIEW TAB ===== */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
+              {/* BC Approved Banner */}
+              {rental.bc_approved_at && rental.bc_number && (
+                <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-green-500 rounded-lg flex items-center justify-center text-2xl text-white">✅</div>
+                  <div className="flex-1">
+                    <p className="font-bold text-green-800 text-lg">Bon de Commande Approuvé</p>
+                    <p className="text-green-700">BC N° <span className="font-mono font-bold">{rental.bc_number}</span> — approuvé le {new Date(rental.bc_approved_at).toLocaleDateString('fr-FR')}</p>
+                  </div>
+                  {rental.bc_file_url && <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium">📄 Voir BC ↗</a>}
+                </div>
+              )}
+
+              {/* BC Review needed banner */}
+              {status === 'bc_review' && (
+                <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-red-500 rounded-lg flex items-center justify-center text-2xl text-white animate-pulse">⚠️</div>
+                  <div className="flex-1">
+                    <p className="font-bold text-red-800 text-lg">Bon de Commande à Vérifier</p>
+                    <p className="text-red-600">Soumis le {rental.bc_submitted_at ? new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR') : '—'} par {rental.bc_signed_by || '—'}</p>
+                  </div>
+                  <button onClick={() => setActiveTab('documents')} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium">🔍 Examiner</button>
+                </div>
+              )}
               {/* Key Info Grid */}
               <div className="grid md:grid-cols-3 gap-4">
                 <div className={`rounded-lg p-4 border ${status === 'in_rental' && new Date(rental.end_date) < new Date() ? 'bg-red-50 border-red-300' : 'bg-purple-50 border-purple-200'}`}>
@@ -29447,7 +29728,7 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
                 <h3 className="font-bold text-gray-800 mb-3">⚡ Actions rapides</h3>
                 <div className="flex flex-wrap gap-2">
                   {status === 'requested' && <button onClick={() => setActiveTab('quote')} className="px-4 py-2 bg-[#8B5CF6] text-white rounded-lg font-medium hover:bg-[#7C3AED]">📄 Créer le devis</button>}
-                  {status === 'bc_review' && <button onClick={() => setActiveTab('documents')} className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600">📋 Vérifier le BC</button>}
+                  {status === 'bc_review' && <button onClick={() => setShowBCReview(true)} className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600">📋 Vérifier le BC</button>}
                   {status === 'bc_approved' && <button onClick={() => setActiveTab('shipping')} className="px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600">🚚 Préparer l'expédition</button>}
                   {status === 'shipped' && <button onClick={() => markInRental()} disabled={saving} className="px-4 py-2 bg-purple-500 text-white rounded-lg font-medium hover:bg-purple-600">📦 Client a reçu → En location</button>}
                   {status === 'in_rental' && <button onClick={() => markReturnPending()} disabled={saving} className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600">⏰ Période terminée → Attente retour</button>}
@@ -29721,10 +30002,7 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
                       <span className="text-blue-600 text-sm">Ouvrir →</span>
                     </a>
                   )}
-                  <div className="flex gap-3 mt-4">
-                    <button onClick={rejectBC} disabled={saving} className="flex-1 py-3 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-bold text-lg">❌ Rejeter</button>
-                    <button onClick={approveBC} disabled={saving} className="flex-1 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold text-lg">✅ Approuver</button>
-                  </div>
+                  <button onClick={() => setShowBCReview(true)} className="w-full py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold text-lg">🔍 Ouvrir la Vérification BC</button>
                 </div>
               )}
 
@@ -29749,7 +30027,7 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
                   {rental.bc_file_url && (
                     <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200 hover:bg-green-100">
                       <span className="text-2xl">📋</span>
-                      <div className="flex-1"><p className="font-medium text-green-800">Bon de Commande</p><p className="text-xs text-gray-500">Par {rental.bc_signed_by} — {rental.bc_submitted_at ? new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR') : ''}</p></div>
+                      <div className="flex-1"><p className="font-medium text-green-800">Bon de Commande{rental.bc_number ? ` — N° ${rental.bc_number}` : ''}</p><p className="text-xs text-gray-500">Par {rental.bc_signed_by} — {rental.bc_submitted_at ? new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR') : ''}</p></div>
                       <span className="text-blue-600 text-sm">Ouvrir →</span>
                     </a>
                   )}
@@ -30017,6 +30295,7 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
           <button onClick={onClose} className="px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Fermer</button>
         </div>
       </div>
+      {showBCReview && <RentalBCReviewModal rental={rental} onClose={() => { setShowBCReview(false); reload(); }} notify={notify} reload={reload} lang={lang} />}
     </div>
   );
 }
