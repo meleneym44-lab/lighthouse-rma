@@ -29010,7 +29010,7 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
   const [attachments, setAttachments] = useState([]);
 
   // Sync status when rental prop updates (after reload)
-  React.useEffect(() => {
+  useEffect(() => {
     setStatus(rental.status);
   }, [rental.status, rental.id]);
   
