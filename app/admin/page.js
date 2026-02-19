@@ -2508,7 +2508,13 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text('N\u00B0 ' + (rental.rental_number || '\u2014'), pageWidth - margin, y + 11, { align: 'right' });
+  pdf.text('N\u00B0 ' + (rental.quote_number || rental.rental_number || '\u2014'), pageWidth - margin, y + 11, { align: 'right' });
+  if (rental.quote_number && rental.rental_number) {
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...lightGray);
+    pdf.text('Réf: ' + rental.rental_number, pageWidth - margin, y + 15, { align: 'right' });
+  }
 
   y += 17;
   pdf.setDrawColor(...navy);
@@ -4376,6 +4382,18 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
         const rentalId = review.rental_request_id || review.quote_data?.rentalId;
         console.log('📄 Rental quote approval - rentalId:', rentalId);
         if (rentalId) {
+          // Generate quote number
+          let quoteNumber = null;
+          try {
+            const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'DEV' });
+            if (!docNumError && docNumData) quoteNumber = docNumData;
+          } catch (e) { console.error('Could not generate quote number:', e); }
+          if (!quoteNumber) {
+            const mm = String(new Date().getMonth() + 1).padStart(2, '0');
+            const yy = String(new Date().getFullYear()).slice(-2);
+            quoteNumber = `DEV-${mm}${yy}-LOC`;
+          }
+
           // Generate rental quote PDF
           let quoteUrl = null;
           try {
@@ -4385,9 +4403,9 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
             console.log('📄 Rental data fetched:', !!rentalData, 'error:', fetchErr);
             if (rentalData) {
               console.log('📄 Generating PDF with businessSettings:', !!businessSettings);
-              const pdfBlob = await generateRentalQuotePDF(rentalData, review.quote_data, businessSettings);
+              const pdfBlob = await generateRentalQuotePDF({ ...rentalData, quote_number: quoteNumber }, review.quote_data, businessSettings);
               console.log('📄 PDF blob generated, size:', pdfBlob?.size);
-              const fileName = `${review.quote_data?.rentalNumber || 'LOC'}_devis_${Date.now()}.pdf`;
+              const fileName = `${quoteNumber}_${review.quote_data?.rentalNumber || 'LOC'}.pdf`;
               quoteUrl = await uploadPDFToStorage(pdfBlob, `quotes/${review.quote_data?.rentalNumber || rentalId}`, fileName);
               console.log('📄 PDF uploaded, URL:', quoteUrl);
             }
@@ -4398,6 +4416,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
           const updateData = {
             status: 'quote_sent',
             quote_sent_at: new Date().toISOString(),
+            quote_number: quoteNumber,
             quote_review_id: null,
             quote_rejection_notes: null
           };
@@ -4411,7 +4430,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
           if (quoteUrl) {
             await supabase.from('request_attachments').insert({
               rental_request_id: rentalId,
-              file_name: `Devis_Location_${review.quote_data?.rentalNumber || 'LOC'}.pdf`,
+              file_name: `${quoteNumber}_Devis_Location.pdf`,
               file_url: quoteUrl,
               file_type: 'application/pdf',
               uploaded_by: profile?.id,
@@ -29283,9 +29302,12 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
   const [trackingNumber, setTrackingNumber] = useState(rental.outbound_tracking || '');
   const [returnTracking, setReturnTracking] = useState(rental.return_tracking || '');
   const [parcels, setParcels] = useState(1);
-  const [weight, setWeight] = useState('');
-  const [shippingStep, setShippingStep] = useState(1); // 1=details, 2=BL preview, 3=done
+  const [weight, setWeight] = useState('1.0');
+  const [shippingStep, setShippingStep] = useState(1); // 1=address+parcels, 2=UPS+BL preview, 3=done
   const [generatedBL, setGeneratedBL] = useState(null);
+  const [upsLoading, setUpsLoading] = useState(false);
+  const [upsLabels, setUpsLabels] = useState({}); // PDF label data per package
+  const [labelsPrinted, setLabelsPrinted] = useState({});
   
   // Return state
   const [returnCondition, setReturnCondition] = useState(rental.return_condition || 'good');
@@ -29464,8 +29486,7 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
           const imgData = canvas.toDataURL('image/jpeg', 0.95);
           pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
           const blPdfBlob = pdf.output('blob');
-          const safeBL = blNumber.replace(/[^a-zA-Z0-9-_]/g, '');
-          const blFileName = `${rental.rental_number}_BL_${safeBL}_${Date.now()}.pdf`;
+          const blFileName = `${blNumber}_${rental.rental_number}${rental.bc_number ? '_BC-' + rental.bc_number : ''}.pdf`;
           const { error: upErr } = await supabase.storage.from('documents').upload(`shipping/${rental.rental_number}/${blFileName}`, blPdfBlob, { contentType: 'application/pdf' });
           if (!upErr) {
             const { data: urlData } = supabase.storage.from('documents').getPublicUrl(`shipping/${rental.rental_number}/${blFileName}`);
@@ -29474,10 +29495,33 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
         }
       } catch (err) { console.error('BL generation error:', err); }
 
+      // Save UPS labels as attachments
+      let upsLabelUrl = null;
+      for (const [pkgIdx, labelData] of Object.entries(upsLabels)) {
+        try {
+          const byteChars = atob(labelData);
+          const byteArray = new Uint8Array(byteChars.length);
+          for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
+          const labelBlob = new Blob([byteArray], { type: 'application/pdf' });
+          const labelFileName = `UPS_${trackingNumber}_colis${parseInt(pkgIdx) + 1}_${rental.rental_number}.pdf`;
+          const { error: labelUpErr } = await supabase.storage.from('documents').upload(`shipping/${rental.rental_number}/${labelFileName}`, labelBlob, { contentType: 'application/pdf' });
+          if (!labelUpErr) {
+            const { data: labelUrlData } = supabase.storage.from('documents').getPublicUrl(`shipping/${rental.rental_number}/${labelFileName}`);
+            if (labelUrlData?.publicUrl) {
+              upsLabelUrl = labelUrlData.publicUrl;
+              await supabase.from('request_attachments').insert({
+                rental_request_id: rental.id, file_name: labelFileName, file_url: labelUrlData.publicUrl,
+                file_type: 'application/pdf', uploaded_by: profile?.id, category: 'ups_label'
+              });
+            }
+          }
+        } catch (labelErr) { console.error('UPS label upload error:', labelErr); }
+      }
+
       await supabase.from('rental_requests').update({
         status: 'shipped', outbound_tracking: trackingNumber, outbound_shipped_at: new Date().toISOString(),
         bl_number: blNumber, bl_url: blUrl, shipped_parcels: parcels, shipped_weight: weight || null,
-        shipped_by: profile?.full_name || 'Admin'
+        shipped_by: profile?.full_name || 'Admin', ups_label_url: upsLabelUrl || null
       }).eq('id', rental.id);
 
       // Save BL as attachment
@@ -29488,13 +29532,92 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
         });
       }
 
-      setGeneratedBL({ blNumber, blUrl, trackingNumber });
-      setShippingStep(3);
-      notify('✅ Expédié ! BL généré : ' + blNumber);
+      setGeneratedBL({ blNumber, blUrl, trackingNumber, upsLabelUrl });
+      setShippingStep(4);
+      notify('✅ Expédié ! BL: ' + blNumber + ' | Suivi: ' + trackingNumber);
       setStatus('shipped');
       reload();
     } catch (err) { notify('Erreur: ' + err.message, 'error'); }
     setSaving(false);
+  };
+
+  // Create UPS labels via Edge Function
+  const createUPSLabels = async () => {
+    if (!address.address_line1 && !company.billing_address) {
+      notify("Veuillez vérifier l'adresse de livraison", 'error');
+      return;
+    }
+    setUpsLoading(true);
+    try {
+      const addr = address.address_line1 ? address : {
+        company_name: company.name,
+        attention: '',
+        address_line1: company.billing_address || company.address || '',
+        city: company.billing_city || company.city || '',
+        postal_code: company.billing_postal_code || company.postal_code || '',
+        country: 'France',
+        phone: company.phone || ''
+      };
+      const packagesList = [];
+      for (let p = 0; p < (parcels || 1); p++) {
+        packagesList.push({
+          weight: parseFloat(weight) || 1,
+          length: 30, width: 30, height: 20,
+          description: `${rental.rental_number} - Location - Colis ${p + 1}/${parcels || 1}`
+        });
+      }
+      const { data, error } = await supabase.functions.invoke('ups-shipping', {
+        body: {
+          action: 'create_shipment',
+          shipTo: {
+            name: addr.attention || addr.company_name || 'Customer',
+            company: addr.company_name || 'Customer',
+            attentionName: addr.attention || addr.company_name || 'Customer',
+            phone: addr.phone || '0100000000',
+            addressLine1: addr.address_line1 || '',
+            city: addr.city || '',
+            postalCode: addr.postal_code || '',
+            countryCode: addr.country === 'France' ? 'FR' : (addr.country_code || 'FR')
+          },
+          packages: packagesList,
+          serviceCode: '11',
+          description: `${rental.rental_number} - Location ${items.length} appareil(s)`,
+          isReturn: false
+        }
+      });
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error || 'UPS API error');
+      
+      const newLabels = {};
+      if (data.packages) {
+        data.packages.forEach((pkg, pkgIndex) => {
+          if (pkg.labelData) newLabels[pkgIndex] = pkg.labelData;
+        });
+      }
+      setUpsLabels(newLabels);
+      setTrackingNumber(data.trackingNumber);
+      notify(`✅ ${data.packages?.length || 1} étiquette(s) UPS créée(s): ${data.trackingNumber}`);
+      setShippingStep(2); // Auto advance to BL preview
+    } catch (err) {
+      console.error('UPS error:', err);
+      notify('Erreur UPS: ' + err.message, 'error');
+    }
+    setUpsLoading(false);
+  };
+
+  // Print/view UPS label PDF
+  const printUPSLabel = (labelData, pkgIndex) => {
+    try {
+      const byteChars = atob(labelData);
+      const byteArray = new Uint8Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
+    } catch (e) {
+      console.error('Error opening label:', e);
+    }
   };
 
   const markInRental = async () => { await updateStatus('in_rental', { rental_started_at: new Date().toISOString() }); };
@@ -29974,271 +30097,447 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
           {/* ===== DOCUMENTS TAB ===== */}
           {activeTab === 'documents' && (
             <div className="space-y-6">
-              {/* BC Review Section */}
+              {/* BC Review Banner */}
               {status === 'bc_review' && (
-                <div className="bg-orange-50 border-2 border-orange-300 rounded-lg p-5">
-                  <h3 className="font-bold text-orange-800 text-lg mb-4">📋 Vérifier le Bon de Commande</h3>
-                  {rental.bc_file_url && (
-                    <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-4 bg-white rounded-lg mb-4 hover:bg-gray-50 border">
-                      <span className="text-3xl">📄</span>
-                      <div className="flex-1">
-                        <p className="font-bold">Bon de Commande</p>
-                        <p className="text-sm text-gray-500">Soumis le {rental.bc_submitted_at ? new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR') : '—'}</p>
-                      </div>
-                      <span className="text-blue-600 font-medium">Ouvrir →</span>
-                    </a>
-                  )}
-                  {rental.bc_signature_url && (
-                    <div className="mb-4 p-3 bg-white rounded-lg border">
-                      <p className="text-sm font-medium text-gray-700 mb-2">Signature électronique de {rental.bc_signed_by}</p>
-                      <img src={rental.bc_signature_url} alt="Signature" className="h-16 border rounded" />
-                      <p className="text-xs text-gray-400 mt-1">Date: {rental.bc_signature_date || '—'}</p>
-                    </div>
-                  )}
-                  {rental.signed_quote_url && (
-                    <a href={rental.signed_quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg mb-4 hover:bg-blue-100 border border-blue-200">
-                      <span className="text-2xl">📝</span>
-                      <div className="flex-1"><p className="font-medium text-blue-800">Devis signé par le client</p></div>
-                      <span className="text-blue-600 text-sm">Ouvrir →</span>
-                    </a>
-                  )}
-                  <button onClick={() => setShowBCReview(true)} className="w-full py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold text-lg">🔍 Ouvrir la Vérification BC</button>
+                <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-red-500 rounded-lg flex items-center justify-center text-2xl text-white animate-pulse">⚠️</div>
+                  <div className="flex-1">
+                    <p className="font-bold text-red-800 text-lg">Bon de Commande à Vérifier</p>
+                    <p className="text-red-600">Soumis le {rental.bc_submitted_at ? new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR') : '—'} par {rental.bc_signed_by || '—'}</p>
+                  </div>
+                  <button onClick={() => setShowBCReview(true)} className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium">🔍 Examiner BC</button>
                 </div>
               )}
 
-              {/* All Documents List */}
-              <div>
-                <h3 className="font-bold text-gray-800 mb-3">📂 Tous les documents</h3>
-                <div className="space-y-2">
-                  {rental.quote_url && (
-                    <a href={rental.quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg border border-purple-200 hover:bg-purple-100">
-                      <span className="text-2xl">📑</span>
-                      <div className="flex-1"><p className="font-medium text-purple-800">Devis Location</p><p className="text-xs text-gray-500">Envoyé le {rental.quote_sent_at ? new Date(rental.quote_sent_at).toLocaleDateString('fr-FR') : ''}</p></div>
-                      <span className="text-blue-600 text-sm">Ouvrir →</span>
-                    </a>
-                  )}
-                  {rental.signed_quote_url && (
-                    <a href={rental.signed_quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100">
-                      <span className="text-2xl">📝</span>
-                      <div className="flex-1"><p className="font-medium text-blue-800">Devis signé</p><p className="text-xs text-gray-500">Par {rental.bc_signed_by} — {rental.quote_approved_at ? new Date(rental.quote_approved_at).toLocaleDateString('fr-FR') : ''}</p></div>
-                      <span className="text-blue-600 text-sm">Ouvrir →</span>
-                    </a>
-                  )}
-                  {rental.bc_file_url && (
-                    <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200 hover:bg-green-100">
-                      <span className="text-2xl">📋</span>
-                      <div className="flex-1"><p className="font-medium text-green-800">Bon de Commande{rental.bc_number ? ` — N° ${rental.bc_number}` : ''}</p><p className="text-xs text-gray-500">Par {rental.bc_signed_by} — {rental.bc_submitted_at ? new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR') : ''}</p></div>
-                      <span className="text-blue-600 text-sm">Ouvrir →</span>
-                    </a>
-                  )}
-                  {rental.bl_url && (
-                    <a href={rental.bl_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-cyan-50 rounded-lg border border-cyan-200 hover:bg-cyan-100">
-                      <span className="text-2xl">🚚</span>
-                      <div className="flex-1"><p className="font-medium text-cyan-800">Bon de Livraison — {rental.bl_number}</p><p className="text-xs text-gray-500">{rental.outbound_shipped_at ? new Date(rental.outbound_shipped_at).toLocaleDateString('fr-FR') : ''}</p></div>
-                      <span className="text-blue-600 text-sm">Ouvrir →</span>
-                    </a>
-                  )}
-                  {attachments.map(doc => (
-                    <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border hover:bg-gray-100">
-                      <span className="text-2xl">{doc.file_type?.includes('pdf') ? '📕' : doc.file_type?.includes('image') ? '🖼️' : '📄'}</span>
-                      <div className="flex-1"><p className="font-medium">{doc.file_name || doc.category}</p><p className="text-xs text-gray-500">{new Date(doc.created_at).toLocaleDateString('fr-FR')}</p></div>
-                      <span className="text-blue-600 text-sm">Ouvrir →</span>
-                    </a>
-                  ))}
-                  {!rental.quote_url && !rental.bc_file_url && !rental.signed_quote_url && !rental.bl_url && attachments.length === 0 && (
-                    <div className="text-center py-8 text-gray-400"><p className="text-4xl mb-2">📄</p><p>Aucun document</p></div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+              <h3 className="font-bold text-gray-800">📁 Documents</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
+                {/* 1. DEVIS LOCATION */}
+                {rental.quote_url && (
+                  <a href={rental.quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
+                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl shrink-0">💰</div>
+                    <div>
+                      <p className="font-medium text-gray-800">Devis Location</p>
+                      <p className="text-sm text-blue-600">{rental.quote_number ? `N° ${rental.quote_number}` : (rental.rental_number || '—')}</p>
+                      {rental.quote_sent_at && <p className="text-xs text-gray-400">Envoyé le {new Date(rental.quote_sent_at).toLocaleDateString('fr-FR')}</p>}
+                    </div>
+                  </a>
+                )}
+
+                {/* 2. DEVIS SIGNÉ */}
+                {rental.signed_quote_url && (
+                  <a href={rental.signed_quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
+                    <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl shrink-0">✅</div>
+                    <div>
+                      <p className="font-medium text-gray-800">Devis Signé / BC</p>
+                      <p className="text-sm text-green-600">{rental.bc_number ? `N° ${rental.bc_number}` : 'Signé'}</p>
+                      {rental.quote_approved_at && <p className="text-xs text-gray-400">Par {rental.bc_signed_by || '—'} — {new Date(rental.quote_approved_at).toLocaleDateString('fr-FR')}</p>}
+                    </div>
+                  </a>
+                )}
+
+                {/* 3. BON DE COMMANDE (uploaded separately) */}
+                {rental.bc_file_url && rental.bc_file_url !== rental.signed_quote_url && (
+                  <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                    <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📝</div>
+                    <div>
+                      <p className="font-medium text-gray-800">Bon de Commande Client</p>
+                      <p className="text-sm text-purple-600">{rental.bc_number ? `N° ${rental.bc_number}` : 'BC client'}</p>
+                      {rental.bc_submitted_at && <p className="text-xs text-gray-400">Soumis le {new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR')}</p>}
+                    </div>
+                  </a>
+                )}
+
+                {/* 4. BON DE LIVRAISON */}
+                {rental.bl_url && (
+                  <a href={rental.bl_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-cyan-50 transition-colors border-cyan-200">
+                    <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📄</div>
+                    <div>
+                      <p className="font-medium text-gray-800">Bon de Livraison</p>
+                      <p className="text-sm text-cyan-600">{rental.bl_number ? `N° ${rental.bl_number}` : 'BL'}</p>
+                      {rental.outbound_shipped_at && <p className="text-xs text-gray-400">{new Date(rental.outbound_shipped_at).toLocaleDateString('fr-FR')}</p>}
+                    </div>
+                  </a>
+                )}
+
+                {/* 5. UPS LABEL */}
+                {rental.ups_label_url && (
+                  <a href={rental.ups_label_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors">
+                    <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🏷️</div>
+                    <div>
+                      <p className="font-medium text-gray-800">Étiquette UPS</p>
+                      <p className="text-sm text-amber-600">{rental.outbound_tracking || "Label d'expédition"}</p>
+                    </div>
+                  </a>
+                )}
+
+                {/* 6. OTHER ATTACHMENTS */}
+                {attachments.filter(a => !['ups_label', 'bon_livraison'].includes(a.category)).map(doc => (
+                  <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                    <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-2xl shrink-0">{doc.file_type?.includes('pdf') ? '📕' : doc.file_type?.includes('image') ? '🖼️' : '📄'}</div>
+                    <div>
+                      <p className="font-medium text-gray-800">{doc.file_name || doc.category}</p>
+                      <p className="text-xs text-gray-400">{new Date(doc.created_at).toLocaleDateString('fr-FR')}</p>
+                    </div>
+                  </a>
+                ))}
+              </div>
+
+              {/* UPS Labels from attachments if no main URL */}
+              {attachments.filter(a => a.category === 'ups_label').length > 0 && !rental.ups_label_url && (
+                <div>
+                  <h4 className="font-medium text-gray-700 mb-2">🏷️ Étiquettes UPS</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {/* ===== SHIPPING TAB ===== */}
           {activeTab === 'shipping' && (
             <div className="space-y-6">
-              {/* Outbound shipping */}
+              {/* Outbound shipping wizard */}
               {status === 'bc_approved' && (
-                <div className="bg-cyan-50 border-2 border-cyan-300 rounded-lg overflow-hidden">
-                  <div className="bg-cyan-600 text-white px-4 py-3 flex items-center gap-2"><span className="text-xl">🚚</span><h3 className="font-bold">Préparer l'expédition</h3></div>
-                  
+                <div className="bg-white border-2 border-cyan-300 rounded-xl overflow-hidden shadow-lg">
+                  {/* Step Header */}
+                  <div className="bg-gradient-to-r from-cyan-600 to-cyan-700 text-white px-6 py-4">
+                    <h3 className="font-bold text-lg">🚚 Préparer l'expédition — {rental.rental_number}</h3>
+                    <p className="text-cyan-100 text-sm">{company.name} • {items.length} appareil(s)</p>
+                  </div>
+
+                  {/* Step Indicator */}
+                  <div className="flex items-center px-6 py-3 bg-gray-50 border-b">
+                    {[
+                      { n: 1, label: 'Détails', icon: '📍' },
+                      { n: 2, label: 'Étiquette UPS', icon: '🏷️' },
+                      { n: 3, label: 'Aperçu BL', icon: '📄' },
+                      { n: 4, label: 'Terminé', icon: '✅' }
+                    ].map((s, i) => (
+                      <Fragment key={s.n}>
+                        {i > 0 && <div className={`flex-1 h-0.5 mx-2 ${shippingStep > s.n - 1 ? 'bg-cyan-500' : 'bg-gray-300'}`} />}
+                        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${
+                          shippingStep === s.n ? 'bg-cyan-500 text-white' : shippingStep > s.n ? 'bg-cyan-100 text-cyan-700' : 'bg-gray-200 text-gray-500'
+                        }`}>
+                          <span>{s.icon}</span>
+                          <span className="hidden md:inline">{s.label}</span>
+                        </div>
+                      </Fragment>
+                    ))}
+                  </div>
+
+                  {/* Step 1: Address & Parcel Details */}
                   {shippingStep === 1 && (
-                    <div className="p-4 space-y-4">
+                    <div className="p-6 space-y-4">
+                      <div className="bg-cyan-50 rounded-lg p-4 border border-cyan-200">
+                        <h4 className="font-bold text-cyan-800 mb-3">📍 Adresse de livraison</h4>
+                        <p className="font-bold text-lg">{address.company_name || company.name}</p>
+                        {address.attention && <p className="text-gray-600">À l'att. {address.attention}</p>}
+                        <p className="text-gray-700">{address.address_line1}</p>
+                        <p className="text-gray-700">{address.postal_code} {address.city}</p>
+                        <p className="text-gray-500">{address.country || 'France'}</p>
+                      </div>
+
                       <div className="bg-white rounded-lg p-4 border">
-                        <h4 className="font-bold text-gray-700 mb-3">📍 Adresse de livraison</h4>
-                        <p className="font-medium">{address.company_name || company.name}</p>
-                        {address.attention && <p className="text-sm text-gray-500">À l'att. {address.attention}</p>}
-                        <p className="text-sm">{address.address_line1}</p>
-                        <p className="text-sm">{address.postal_code} {address.city}</p>
+                        <h4 className="font-bold text-gray-700 mb-3">📦 Équipements à expédier ({items.length})</h4>
+                        <div className="divide-y">
+                          {items.map((item, idx) => (
+                            <div key={idx} className="flex items-center gap-3 py-2">
+                              <span className="text-green-500 text-lg">✅</span>
+                              <div>
+                                <span className="font-medium">{item.item_name}</span>
+                                {item.serial_number && <span className="text-xs text-gray-400 font-mono ml-2">SN: {item.serial_number}</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div className="grid md:grid-cols-3 gap-3">
-                        <div><label className="block text-sm font-medium mb-1">N° de suivi *</label><input type="text" value={trackingNumber} onChange={e => setTrackingNumber(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="1Z999AA10123456784" /></div>
-                        <div><label className="block text-sm font-medium mb-1">Nombre de colis</label><input type="number" value={parcels} onChange={e => setParcels(parseInt(e.target.value) || 1)} min="1" className="w-full px-3 py-2 border rounded-lg" /></div>
-                        <div><label className="block text-sm font-medium mb-1">Poids total (kg)</label><input type="text" value={weight} onChange={e => setWeight(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="Ex: 5.2" /></div>
+
+                      <div className="bg-white rounded-lg p-4 border">
+                        <h4 className="font-bold text-gray-700 mb-3">📋 Informations d'expédition</h4>
+                        <div className="grid md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de colis *</label>
+                            <input type="number" value={parcels} onChange={e => setParcels(parseInt(e.target.value) || 1)} min="1" className="w-full px-3 py-2 border rounded-lg text-center text-lg font-bold" />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Poids total (kg)</label>
+                            <input type="text" value={weight} onChange={e => setWeight(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="Ex: 5.2" />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Transporteur</label>
+                            <div className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-700 font-medium">UPS</div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="bg-white rounded-lg p-3 border">
-                        <h4 className="font-bold text-gray-700 mb-2">📦 Équipements à expédier</h4>
-                        {items.map((item, idx) => (
-                          <div key={idx} className="flex items-center gap-2 py-1"><span className="text-green-500">✅</span><span className="font-medium text-sm">{item.item_name}</span>{item.serial_number && <span className="text-xs text-gray-400 font-mono">({item.serial_number})</span>}</div>
-                        ))}
-                      </div>
-                      <button onClick={() => setShippingStep(2)} disabled={!trackingNumber} className="w-full py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-bold disabled:opacity-50">Aperçu BL →</button>
+
+                      <button onClick={() => setShippingStep(2)} className="w-full py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-bold text-lg">Étape suivante: Créer étiquette UPS →</button>
                     </div>
                   )}
 
+                  {/* Step 2: UPS Label */}
                   {shippingStep === 2 && (
-                    <div className="p-4 space-y-4">
-                      {/* BL Preview */}
-                      <div id="rental-bl-preview" className="border rounded-xl overflow-hidden bg-white shadow-sm" style={{ width: '100%', minHeight: '500px' }}>
-                        <div style={{ padding: '24px 32px 12px', borderBottom: '4px solid #1a1a2e' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                            <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" style={{ height: '48px', objectFit: 'contain' }} />
+                    <div className="p-6 space-y-4">
+                      <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                        <h4 className="font-bold text-amber-800 mb-2">🏷️ Étiquette UPS</h4>
+                        <p className="text-amber-600 text-sm mb-4">Créez automatiquement l'étiquette d'expédition UPS, ou entrez un numéro de suivi existant.</p>
+                        
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">N° de suivi UPS *</label>
+                            <input type="text" value={trackingNumber} onChange={e => setTrackingNumber(e.target.value)} className="w-full px-3 py-2 border rounded-lg font-mono text-lg" placeholder="1Z999AA10123456784" />
+                          </div>
+
+                          <div className="flex gap-3">
+                            <button onClick={createUPSLabels} disabled={upsLoading} className="flex-1 py-3 bg-[#351C15] hover:bg-[#4a2a20] text-[#FFB500] rounded-lg font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+                              {upsLoading ? <><div className="w-4 h-4 border-2 border-[#FFB500] border-t-transparent rounded-full animate-spin"></div> Création...</> : '🏷️ Créer étiquette UPS automatique'}
+                            </button>
+                          </div>
+
+                          {Object.keys(upsLabels).length > 0 && (
+                            <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                              <p className="text-green-800 font-bold">✅ {Object.keys(upsLabels).length} étiquette(s) créée(s)</p>
+                              <p className="text-green-600 text-sm">N° suivi: {trackingNumber}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3">
+                        <button onClick={() => setShippingStep(1)} className="flex-1 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">← Retour</button>
+                        <button onClick={() => { if (!trackingNumber) { notify('Entrez un numéro de suivi', 'error'); return; } setShippingStep(3); }} className="flex-1 py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-bold">Aperçu BL →</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 3: BL Preview */}
+                  {shippingStep === 3 && (() => {
+                    const biz = businessSettings || {};
+                    const employeeName = profile?.full_name || 'Admin';
+                    const blDate = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+                    return (
+                    <div className="p-6 space-y-4">
+                      <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                        <p className="text-blue-800 font-medium">📄 Vérifiez le bon de livraison avant confirmation. Le numéro BL sera attribué automatiquement.</p>
+                      </div>
+
+                      {/* Professional BL Preview - matches RMA layout */}
+                      <div id="rental-bl-preview" style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', height: '297mm', position: 'relative', overflow: 'hidden', border: '1px solid #ddd', borderRadius: '8px' }}>
+                        {/* Watermark */}
+                        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.12, pointerEvents: 'none', zIndex: 999 }}>
+                          <img src="/images/logos/Lighthouse-Square-logo.png" alt="" style={{ width: '500px', height: 'auto' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:150px;font-weight:bold;color:#000">LWS</div>'; }} />
+                        </div>
+
+                        <div>
+                          {/* Header */}
+                          <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
                             <div style={{ textAlign: 'right' }}>
-                              <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#1a1a2e' }}>BON DE LIVRAISON</p>
-                              <p data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#2D5A7B', marginTop: '4px' }}>N° —</p>
+                              <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#2D5A7B' }}>BON DE LIVRAISON</div>
+                              <div data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#2D5A7B', marginTop: '4px' }}>N° —</div>
+                              <div style={{ fontSize: '9pt', color: '#666', marginTop: '4px' }}>Réf: {rental.rental_number}</div>
+                            </div>
+                          </div>
+
+                          {/* Date line */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', margin: '12px 0' }}>
+                            <div><span style={{ color: '#666' }}>{biz.city || 'Créteil'}, le</span> <strong>{blDate}</strong></div>
+                          </div>
+
+                          {/* Two column: Client + References */}
+                          <div style={{ display: 'flex', gap: '15px', margin: '12px 0' }}>
+                            <div style={{ flex: '1.5', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
+                              <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Destinataire</div>
+                              <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{address.company_name || company.name}</div>
+                              {address.attention && <div>À l'attention de: <strong>{address.attention}</strong></div>}
+                              <div>{address.address_line1}</div>
+                              <div>{address.postal_code} {(address.city || '').toUpperCase()}</div>
+                              <div>{address.country || 'France'}</div>
+                            </div>
+                            <div style={{ flex: '1', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
+                              <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Références</div>
+                              <div style={{ fontSize: '11pt', fontWeight: 'bold', color: '#2D5A7B' }}>{rental.rental_number}</div>
+                              {rental.bc_number && <div style={{ marginTop: '8px' }}><span style={{ color: '#666' }}>BC N°:</span> <strong>{rental.bc_number}</strong></div>}
+                              <div style={{ marginTop: '8px' }}><span style={{ color: '#666' }}>Type:</span> <strong>Location</strong></div>
+                              <div style={{ marginTop: '4px' }}><span style={{ color: '#666' }}>Période:</span> <strong>{new Date(rental.start_date).toLocaleDateString('fr-FR')} — {new Date(rental.end_date).toLocaleDateString('fr-FR')}</strong></div>
+                            </div>
+                          </div>
+
+                          {/* Equipment table */}
+                          <table style={{ width: '100%', borderCollapse: 'collapse', margin: '12px 0' }}>
+                            <thead>
+                              <tr style={{ background: 'rgba(51,51,51,0.35)' }}>
+                                <th style={{ color: '#333', padding: '10px 12px', textAlign: 'center', fontSize: '10pt', width: '50px', fontWeight: 'bold' }}>Qté</th>
+                                <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '140px', fontWeight: 'bold' }}>N° Série</th>
+                                <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', fontWeight: 'bold' }}>Désignation</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {items.map((item, idx) => (
+                                <tr key={idx}>
+                                  <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', textAlign: 'center', fontWeight: '600', background: idx % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>1</td>
+                                  <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '9pt', fontFamily: 'monospace', background: idx % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>{item.serial_number || '—'}</td>
+                                  <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', background: idx % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>{item.item_name}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+
+                          {/* Shipping info */}
+                          <div style={{ margin: '15px 0' }}>
+                            <div style={{ fontWeight: 'bold', fontSize: '11pt', marginBottom: '10px', borderBottom: '1px solid #333', paddingBottom: '5px' }}>Informations d'expédition</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                              <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Transporteur:</span><span style={{ fontWeight: '600' }}>UPS</span></div>
+                              <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>N° de suivi:</span><span style={{ fontWeight: '600', fontFamily: 'monospace' }}>{trackingNumber}</span></div>
+                              <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Nombre de colis:</span><span style={{ fontWeight: '600' }}>{parcels}</span></div>
+                              <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Poids:</span><span style={{ fontWeight: '600' }}>{weight || '—'} kg</span></div>
+                            </div>
+                          </div>
+
+                          {/* Property notice */}
+                          <div style={{ margin: '12px 0', padding: '10px', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', fontSize: '9pt', color: '#555' }}>
+                            Le matériel livré reste la propriété exclusive de Lighthouse France SAS. Le destinataire reconnaît avoir vérifié le contenu et l'état du matériel à la réception. Tout dommage doit être signalé dans les 48 heures.
+                          </div>
+
+                          {/* Prepared by */}
+                          <div style={{ fontSize: '10pt', marginTop: '12px', color: '#666' }}>
+                            Préparé par: <strong style={{ color: '#333' }}>{employeeName}</strong>
+                          </div>
+                        </div>
+
+                        {/* Footer - absolute positioned at bottom */}
+                        <div style={{ position: 'absolute', bottom: '15px', left: '30px', right: '30px', paddingTop: '12px', borderTop: '1px solid #ccc' }}>
+                          <div style={{ position: 'relative' }}>
+                            <div style={{ position: 'absolute', left: '10px', top: '0' }}>
+                              <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '75px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:14px;color:#333;border:2px solid #333;padding:12px 16px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
+                            </div>
+                            <div style={{ fontSize: '8pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
+                              <strong style={{ color: '#333', fontSize: '8pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
+                              {biz.address || '16 rue Paul Séjourné'}, {biz.postal_code || '94000'} {biz.city || 'CRÉTEIL'} | Tél. {biz.phone || '01 43 77 28 07'}<br/>
+                              SIRET {biz.siret || '50178134800013'} | TVA {biz.tva || 'FR 86501781348'}<br/>
+                              {biz.email || 'France@golighthouse.com'} | {biz.website || 'www.golighthouse.fr'}
                             </div>
                           </div>
                         </div>
-                        <div style={{ display: 'flex', padding: '16px 32px', borderBottom: '1px solid #e5e7eb' }}>
-                          <div style={{ flex: 1, borderRight: '1px solid #e5e7eb', paddingRight: '24px' }}>
-                            <p style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase' }}>Expéditeur</p>
-                            <p style={{ fontWeight: 'bold' }}>LIGHTHOUSE FRANCE</p>
-                            <p style={{ fontSize: '13px', color: '#4b5563' }}>16 Rue Paul Séjourne</p>
-                            <p style={{ fontSize: '13px', color: '#4b5563' }}>94000 Créteil</p>
-                          </div>
-                          <div style={{ flex: 1, paddingLeft: '24px' }}>
-                            <p style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase' }}>Destinataire</p>
-                            <p style={{ fontWeight: 'bold' }}>{address.company_name || company.name}</p>
-                            {address.attention && <p style={{ fontSize: '13px', color: '#4b5563' }}>À l'att. {address.attention}</p>}
-                            <p style={{ fontSize: '13px', color: '#4b5563' }}>{address.address_line1}</p>
-                            <p style={{ fontSize: '13px', color: '#4b5563' }}>{address.postal_code} {address.city}</p>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', padding: '8px 32px', borderBottom: '1px solid #e5e7eb', backgroundColor: '#f9fafb', fontSize: '13px' }}>
-                          <div style={{ flex: 1 }}><span style={{ color: '#6b7280' }}>Date:</span> <strong>{new Date().toLocaleDateString('fr-FR')}</strong></div>
-                          <div style={{ flex: 1 }}><span style={{ color: '#6b7280' }}>Réf:</span> <strong>{rental.rental_number}</strong></div>
-                          <div style={{ flex: 1 }}><span style={{ color: '#6b7280' }}>Suivi:</span> <strong>{trackingNumber}</strong></div>
-                          <div><span style={{ color: '#6b7280' }}>Colis:</span> <strong>{parcels}</strong>{weight && <> — <strong>{weight} kg</strong></>}</div>
-                        </div>
-                        <div style={{ padding: '8px 32px', backgroundColor: '#eff6ff', borderBottom: '1px solid #e5e7eb', fontSize: '13px' }}>
-                          <span style={{ fontWeight: '600', color: '#1e40af' }}>📅 Location:</span> {new Date(rental.start_date).toLocaleDateString('fr-FR')} au {new Date(rental.end_date).toLocaleDateString('fr-FR')} ({days} jours)
-                        </div>
-                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                          <thead><tr style={{ backgroundColor: '#1a1a2e', color: 'white' }}><th style={{ padding: '8px 16px', textAlign: 'left', fontSize: '12px' }}>#</th><th style={{ padding: '8px 16px', textAlign: 'left', fontSize: '12px' }}>Équipement</th><th style={{ padding: '8px 16px', textAlign: 'left', fontSize: '12px' }}>N° Série</th><th style={{ padding: '8px 16px', textAlign: 'center', fontSize: '12px' }}>Qté</th></tr></thead>
-                          <tbody>
-                            {items.map((item, idx) => (
-                              <tr key={idx} style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: idx % 2 === 0 ? 'white' : '#f9fafb' }}>
-                                <td style={{ padding: '10px 16px', fontSize: '13px' }}>{idx + 1}</td>
-                                <td style={{ padding: '10px 16px', fontSize: '13px', fontWeight: '500' }}>{item.item_name}</td>
-                                <td style={{ padding: '10px 16px', fontSize: '13px', fontFamily: 'monospace' }}>{item.serial_number || '—'}</td>
-                                <td style={{ padding: '10px 16px', fontSize: '13px', textAlign: 'center' }}>1</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        <div style={{ padding: '16px 32px', borderTop: '1px solid #e5e7eb', fontSize: '11px', color: '#6b7280' }}>
-                          <p>Le matériel livré reste la propriété de Lighthouse France. Le destinataire reconnaît avoir vérifié le contenu et l'état du matériel à la réception.</p>
-                        </div>
-                        <div style={{ display: 'flex', padding: '16px 32px', borderTop: '1px solid #e5e7eb' }}>
-                          <div style={{ flex: 1 }}><p style={{ fontSize: '11px', color: '#6b7280' }}>Préparé par</p><p style={{ fontWeight: 'bold', fontSize: '13px' }}>{profile?.full_name || 'Admin'}</p><p style={{ fontSize: '11px', color: '#6b7280' }}>Lighthouse France</p></div>
-                          <div style={{ flex: 1, textAlign: 'right' }}><p style={{ fontSize: '11px', color: '#6b7280' }}>Signature client à la réception</p><div style={{ width: '200px', height: '60px', border: '2px dashed #d1d5db', borderRadius: '8px', marginLeft: 'auto', marginTop: '4px' }}></div></div>
-                        </div>
                       </div>
+
                       <div className="flex gap-3">
-                        <button onClick={() => setShippingStep(1)} className="flex-1 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">← Modifier</button>
-                        <button onClick={markShipped} disabled={saving} className="flex-1 py-3 bg-[#00A651] hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50">{saving ? 'Génération BL...' : '✅ Confirmer l\'expédition et générer BL'}</button>
+                        <button onClick={() => setShippingStep(2)} className="flex-1 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">← Modifier</button>
+                        <button onClick={markShipped} disabled={saving} className="flex-1 py-3 bg-[#00A651] hover:bg-green-600 text-white rounded-lg font-bold text-lg disabled:opacity-50">{saving ? '⏳ Génération BL & Envoi...' : '✅ Confirmer l\'expédition'}</button>
                       </div>
                     </div>
+                    );
+                  })()}
                   )}
 
-                  {shippingStep === 3 && generatedBL && (
-                    <div className="p-4 text-center space-y-4">
-                      <div className="text-4xl mb-2">✅</div>
-                      <h3 className="font-bold text-green-800 text-xl">Expédition confirmée !</h3>
-                      <div className="bg-white rounded-lg p-4 border space-y-2 text-sm">
-                        <div className="flex justify-between"><span className="text-gray-500">BL</span><span className="font-bold font-mono">{generatedBL.blNumber}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-500">Suivi</span><span className="font-bold font-mono">{generatedBL.trackingNumber}</span></div>
+                  {/* Step 4: Done */}
+                  {shippingStep === 4 && generatedBL && (
+                    <div className="p-6 text-center space-y-4">
+                      <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto text-4xl">✅</div>
+                      <h3 className="font-bold text-green-800 text-2xl">Expédition confirmée !</h3>
+                      <p className="text-gray-600">L'équipement est en route vers {company.name}</p>
+
+                      <div className="bg-white rounded-lg p-4 border space-y-3 text-left max-w-md mx-auto">
+                        <div className="flex justify-between items-center"><span className="text-gray-500">📄 Bon de Livraison</span><span className="font-bold font-mono text-cyan-700">{generatedBL.blNumber}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-500">📦 N° Suivi UPS</span><span className="font-bold font-mono">{generatedBL.trackingNumber}</span></div>
+                        {rental.bc_number && <div className="flex justify-between items-center"><span className="text-gray-500">📋 Bon de Commande</span><span className="font-bold font-mono">{rental.bc_number}</span></div>}
                       </div>
-                      {generatedBL.blUrl && <a href={generatedBL.blUrl} target="_blank" rel="noopener noreferrer" className="inline-block px-6 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600">📄 Télécharger BL</a>}
+
+                      <div className="flex gap-3 justify-center">
+                        {generatedBL.blUrl && <a href={generatedBL.blUrl} target="_blank" rel="noopener noreferrer" className="px-6 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600">📄 Télécharger BL</a>}
+                        {generatedBL.upsLabelUrl && <a href={generatedBL.upsLabelUrl} target="_blank" rel="noopener noreferrer" className="px-6 py-2 bg-amber-500 text-white rounded-lg font-medium hover:bg-amber-600">🏷️ Étiquette UPS</a>}
+                      </div>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Existing shipment info */}
+              {/* Existing shipment info (after shipped) */}
               {rental.outbound_tracking && status !== 'bc_approved' && (
-                <div className="bg-cyan-50 rounded-lg p-4 border border-cyan-200">
+                <div className="bg-cyan-50 rounded-lg p-5 border border-cyan-200">
                   <h3 className="font-bold text-cyan-800 mb-3">🚚 Expédition sortante</h3>
                   <div className="grid md:grid-cols-4 gap-4 text-sm">
-                    <div><p className="text-xs text-gray-500">N° Suivi</p><p className="font-mono font-bold">{rental.outbound_tracking}</p></div>
-                    <div><p className="text-xs text-gray-500">BL</p><p className="font-mono font-bold">{rental.bl_number || '—'}</p></div>
-                    <div><p className="text-xs text-gray-500">Date</p><p className="font-medium">{rental.outbound_shipped_at ? new Date(rental.outbound_shipped_at).toLocaleDateString('fr-FR') : '—'}</p></div>
-                    <div><p className="text-xs text-gray-500">Expédié par</p><p className="font-medium">{rental.shipped_by || '—'}</p></div>
+                    <div><p className="text-xs text-gray-500 uppercase">N° Suivi UPS</p><p className="font-mono font-bold text-lg">{rental.outbound_tracking}</p></div>
+                    <div><p className="text-xs text-gray-500 uppercase">Bon de Livraison</p><p className="font-mono font-bold text-lg">{rental.bl_number || '—'}</p></div>
+                    <div><p className="text-xs text-gray-500 uppercase">Date d'expédition</p><p className="font-medium">{rental.outbound_shipped_at ? new Date(rental.outbound_shipped_at).toLocaleDateString('fr-FR') : '—'}</p></div>
+                    <div><p className="text-xs text-gray-500 uppercase">Expédié par</p><p className="font-medium">{rental.shipped_by || '—'}</p></div>
                   </div>
-                  {rental.bl_url && <a href={rental.bl_url} target="_blank" rel="noopener noreferrer" className="inline-block mt-3 px-4 py-2 bg-cyan-500 text-white rounded-lg text-sm font-medium hover:bg-cyan-600">📄 Voir le BL</a>}
+                  <div className="flex gap-3 mt-4">
+                    {rental.bl_url && <a href={rental.bl_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-cyan-500 text-white rounded-lg text-sm font-medium hover:bg-cyan-600">📄 Voir le BL</a>}
+                    {rental.ups_label_url && <a href={rental.ups_label_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600">🏷️ Étiquette UPS</a>}
+                    {rental.outbound_tracking && <a href={`https://www.ups.com/track?tracknum=${rental.outbound_tracking}`} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-[#351C15] text-[#FFB500] rounded-lg text-sm font-medium hover:bg-[#4a2a20]">📍 Suivre colis UPS</a>}
+                  </div>
                 </div>
               )}
 
               {/* Mark In Rental */}
               {status === 'shipped' && (
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                  <h3 className="font-bold text-purple-800 mb-3">📦 Confirmation de réception</h3>
-                  <p className="text-sm text-purple-600 mb-4">Le client a-t-il reçu le matériel ?</p>
-                  <button onClick={markInRental} disabled={saving} className="w-full py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-bold">✅ Client a reçu → Démarrer la location</button>
+                <div className="bg-purple-50 border-2 border-purple-300 rounded-lg p-5">
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="w-12 h-12 bg-purple-500 rounded-lg flex items-center justify-center text-2xl text-white">📦</div>
+                    <div>
+                      <h3 className="font-bold text-purple-800 text-lg">Confirmation de réception</h3>
+                      <p className="text-sm text-purple-600">Le client a-t-il reçu le matériel ?</p>
+                    </div>
+                  </div>
+                  <button onClick={markInRental} disabled={saving} className="w-full py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-bold text-lg">✅ Client a reçu → Démarrer la location</button>
                 </div>
               )}
 
               {/* In Rental - End period */}
               {status === 'in_rental' && (
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                  <h3 className="font-bold text-orange-800 mb-3">⏰ Fin de période</h3>
-                  <p className="text-sm text-orange-600 mb-4">Fin de location prévue: <strong>{new Date(rental.end_date).toLocaleDateString('fr-FR')}</strong></p>
-                  <button onClick={markReturnPending} disabled={saving} className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold">📦 Période terminée → Attente retour</button>
+                <div className="bg-orange-50 border-2 border-orange-300 rounded-lg p-5">
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="w-12 h-12 bg-orange-500 rounded-lg flex items-center justify-center text-2xl text-white">⏰</div>
+                    <div>
+                      <h3 className="font-bold text-orange-800 text-lg">Fin de période</h3>
+                      <p className="text-sm text-orange-600">Fin de location prévue: <strong>{new Date(rental.end_date).toLocaleDateString('fr-FR')}</strong></p>
+                    </div>
+                  </div>
+                  <button onClick={markReturnPending} disabled={saving} className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold text-lg">📦 Période terminée → Attente retour</button>
                 </div>
               )}
 
               {/* Return reception */}
               {status === 'return_pending' && (
-                <div className="bg-teal-50 border-2 border-teal-300 rounded-lg overflow-hidden">
-                  <div className="bg-teal-600 text-white px-4 py-3 flex items-center gap-2"><span className="text-xl">📥</span><h3 className="font-bold">Réception du retour</h3></div>
-                  <div className="p-4 space-y-4">
+                <div className="bg-teal-50 border-2 border-teal-300 rounded-xl overflow-hidden">
+                  <div className="bg-teal-600 text-white px-6 py-4 flex items-center gap-3">
+                    <span className="text-2xl">📥</span>
+                    <div>
+                      <h3 className="font-bold text-lg">Réception du retour</h3>
+                      <p className="text-teal-100 text-sm">Vérifiez l'état du matériel retourné</p>
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-4">
                     <div className="grid md:grid-cols-2 gap-4">
                       <div><label className="block text-sm font-medium mb-1">N° suivi retour (optionnel)</label><input type="text" value={returnTracking} onChange={e => setReturnTracking(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="1Z..." /></div>
                       <div><label className="block text-sm font-medium mb-1">État du matériel *</label><select value={returnCondition} onChange={e => setReturnCondition(e.target.value)} className="w-full px-3 py-2 border rounded-lg"><option value="good">✅ Bon état</option><option value="damaged">⚠️ Endommagé</option><option value="missing_items">❓ Éléments manquants</option></select></div>
                     </div>
-                    <div><label className="block text-sm font-medium mb-1">Notes de retour</label><textarea value={returnNotes} onChange={e => setReturnNotes(e.target.value)} rows={3} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Observations sur l'état du matériel..." /></div>
-                    <div className="bg-white rounded-lg p-3 border">
-                      <h4 className="font-bold text-gray-700 mb-2">📦 Équipements attendus</h4>
-                      {items.map((item, idx) => (<div key={idx} className="flex items-center gap-2 py-1"><span className="text-orange-500">⏳</span><span className="font-medium text-sm">{item.item_name}</span>{item.serial_number && <span className="text-xs text-gray-400 font-mono">({item.serial_number})</span>}</div>))}
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Notes de retour</label>
+                      <textarea value={returnNotes} onChange={e => setReturnNotes(e.target.value)} rows={3} className="w-full px-3 py-2 border rounded-lg" placeholder="État du matériel, remarques..." />
                     </div>
-                    <button onClick={markReturned} disabled={saving} className="w-full py-3 bg-teal-500 hover:bg-teal-600 text-white rounded-lg font-bold">✅ Confirmer la réception du retour</button>
+                    <button onClick={markReturned} disabled={saving} className="w-full py-3 bg-teal-500 hover:bg-teal-600 text-white rounded-lg font-bold text-lg">📥 Confirmer la réception du retour</button>
                   </div>
                 </div>
               )}
 
-              {/* Complete */}
-              {status === 'returned' && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h3 className="font-bold text-green-800 mb-3">🏁 Clôturer la location</h3>
-                  <p className="text-sm text-green-600 mb-4">État: <strong>{rental.return_condition === 'good' ? 'Bon état' : rental.return_condition === 'damaged' ? 'Endommagé' : 'Éléments manquants'}</strong>{rental.return_notes ? ` — ${rental.return_notes}` : ''}</p>
-                  <button onClick={completeRental} disabled={saving} className="w-full py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold">🏁 Clôturer la location</button>
+              {/* Returned - can close */}
+              {rental.returned_at && (
+                <div className="bg-teal-50 rounded-lg p-4 border border-teal-200">
+                  <h3 className="font-bold text-teal-800 mb-2">📥 Retour reçu</h3>
+                  <div className="grid md:grid-cols-3 gap-4 text-sm">
+                    <div><p className="text-xs text-gray-500">Date retour</p><p className="font-medium">{new Date(rental.returned_at).toLocaleDateString('fr-FR')}</p></div>
+                    <div><p className="text-xs text-gray-500">État</p><p className="font-medium">{rental.return_condition === 'good' ? '✅ Bon état' : rental.return_condition === 'damaged' ? '⚠️ Endommagé' : '❓ Éléments manquants'}</p></div>
+                    {rental.return_notes && <div><p className="text-xs text-gray-500">Notes</p><p className="text-sm">{rental.return_notes}</p></div>}
+                  </div>
                 </div>
               )}
 
-              {/* No shipping action needed */}
+              {/* No shipping applicable */}
               {!['bc_approved', 'shipped', 'in_rental', 'return_pending', 'returned'].includes(status) && !rental.outbound_tracking && (
-                <div className="text-center py-8 text-gray-400"><p className="text-4xl mb-2">🚚</p><p>Aucune expédition pour l'instant</p><p className="text-sm">L'expédition sera disponible après approbation du BC</p></div>
+                <div className="text-center py-8 text-gray-400">
+                  <p className="text-4xl mb-2">🚚</p>
+                  <p>L'expédition sera disponible une fois le BC approuvé</p>
+                </div>
               )}
             </div>
           )}
 
-          {/* ===== MESSAGES TAB ===== */}
-          {activeTab === 'messages' && (
-            <div>
-              <div className="h-[400px] overflow-y-auto mb-4 space-y-3">
-                {messages.length === 0 ? (
-                  <div className="text-center py-12 text-gray-400"><p className="text-4xl mb-2">💬</p><p>Aucun message</p></div>
-                ) : messages.map(msg => {
-                  const isAdmin = msg.sender_role === 'admin';
                   return (
                     <div key={msg.id} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
                       <div className={`max-w-[70%] rounded-lg p-3 ${isAdmin ? 'bg-[#8B5CF6] text-white' : 'bg-gray-100 text-gray-800'}`}>
