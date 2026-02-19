@@ -14200,7 +14200,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
           const totalRetailValue = qd.totalRetailValue || items.reduce((s, i) => s + (parseFloat(i.retail_value) || 0), 0);
           return (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl w-full max-w-3xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
                 <div>
@@ -14215,7 +14215,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 {/* Header: Logo left, Title right, navy line */}
                 <div style={{padding:'20px 30px 0 30px'}}>
                   <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
-                    <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" style={{height:'64px', width:'auto'}} />
+                    <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" style={{height:'80px', width:'auto'}} />
                     <div style={{textAlign:'right'}}>
                       <p style={{fontSize:'20px', fontWeight:'bold', color:'#2D5A7B', margin:0}}>DEVIS LOCATION</p>
                       <p style={{fontSize:'12px', fontWeight:'bold', color:'#1a1a2e', margin:'2px 0 0 0'}}>N° {rental.rental_number}</p>
@@ -14279,17 +14279,27 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                         const appliedRate = parseFloat(item.applied_rate) || 0;
                         const retailVal = parseFloat(item.retail_value) || 0;
                         return (
-                        <tr key={idx} style={{background: idx % 2 === 0 ? '#fff' : '#f8f8f8'}}>
-                          <td style={{padding:'8px', borderBottom:'1px solid #eee', verticalAlign:'top'}}>1</td>
-                          <td style={{padding:'8px', borderBottom:'1px solid #eee', verticalAlign:'top'}}>
-                            <span style={{fontWeight:'bold', color:'#1a1a2e'}}>{displayName}</span>
-                            {item.specs && <p style={{fontSize:'9px', color:'#828282', margin:'3px 0 0 0'}}>{item.specs}</p>}
-                            {retailVal > 0 && <p style={{fontSize:'9px', color:'#828282', fontStyle:'italic', margin:'2px 0 0 0'}}>Valeur neuf (assurance) : {retailVal.toFixed(2)} EUR</p>}
+                        <Fragment key={idx}>
+                        {/* Device name bar - darker gray strip across full width */}
+                        <tr style={{background:'#e2e8f0', borderTop: idx > 0 ? '2px solid #cbd5e1' : 'none'}}>
+                          <td style={{padding:'7px 8px', fontWeight:'bold', color:'#1a1a2e', fontSize:'11px'}}>1</td>
+                          <td style={{padding:'7px 8px', fontWeight:'bold', color:'#1a1a2e', fontSize:'11px'}} colSpan={2}>{displayName}</td>
+                          <td style={{padding:'7px 8px', textAlign:'right', fontSize:'10px', color:'#505050'}}>{(item.rental_days || period.days || rentalDaysDisplay)}j</td>
+                          <td style={{padding:'7px 8px', textAlign:'right', fontWeight:'bold', fontSize:'11px', color:'#1a1a2e'}}>{(parseFloat(item.line_total) || 0).toFixed(2)} EUR</td>
+                        </tr>
+                        {/* Detail row: specs, insurance, rate */}
+                        {(item.specs || retailVal > 0 || appliedRate > 0) && (
+                        <tr style={{background: idx % 2 === 0 ? '#fff' : '#fafafa'}}>
+                          <td style={{padding:'2px 8px 6px'}}></td>
+                          <td style={{padding:'2px 8px 6px', borderBottom:'1px solid #eee'}} colSpan={2}>
+                            {item.specs && <p style={{fontSize:'9px', color:'#828282', margin:'0 0 2px 0'}}>{item.specs}</p>}
+                            {retailVal > 0 && <p style={{fontSize:'9px', color:'#828282', fontStyle:'italic', margin:'0'}}>Valeur neuf (assurance) : {retailVal.toFixed(2)} EUR</p>}
                           </td>
-                          <td style={{padding:'8px', borderBottom:'1px solid #eee', textAlign:'right', verticalAlign:'top'}}>{appliedRate > 0 ? appliedRate.toFixed(2) + ' EUR' + rateLabel : ''}</td>
-                          <td style={{padding:'8px', borderBottom:'1px solid #eee', textAlign:'right', verticalAlign:'top'}}>{(item.rental_days || period.days || rentalDaysDisplay)}j</td>
-                          <td style={{padding:'8px', borderBottom:'1px solid #eee', textAlign:'right', fontWeight:'bold', verticalAlign:'top'}}>{(parseFloat(item.line_total) || 0).toFixed(2)} EUR</td>
-                        </tr>);
+                          <td style={{padding:'2px 8px 6px', borderBottom:'1px solid #eee', textAlign:'right', fontSize:'9px', color:'#828282', verticalAlign:'top'}}>{appliedRate > 0 ? appliedRate.toFixed(2) + ' EUR' + rateLabel : ''}</td>
+                          <td style={{padding:'2px 8px 6px', borderBottom:'1px solid #eee'}}></td>
+                        </tr>
+                        )}
+                        </Fragment>);
                       })}
                       {(qd.shipping || 0) > 0 && (
                         <tr style={{background:'#f5f5f5'}}>
@@ -14371,21 +14381,8 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
               </div>
 
               {/* Action Footer */}
-              <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex justify-between items-center">
+              <div className="print-hide sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex flex-wrap gap-3 justify-between items-center">
                 <div className="flex gap-2">
-                  <button onClick={async () => {
-                    try {
-                      const blob = await generateRentalQuotePDF({ rental, isSigned: false });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = rental.rental_number + '_devis.pdf';
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    } catch (err) { console.error('PDF download error:', err); }
-                  }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
-                    📥 Télécharger PDF
-                  </button>
                   <button onClick={() => {
                     const content = document.getElementById('rental-quote-print');
                     if (!content) return;
@@ -14395,7 +14392,22 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     printWindow.focus();
                     setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
                   }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
-                    🖨️ Imprimer
+                    Imprimer
+                  </button>
+                  <button onClick={async () => {
+                    try {
+                      const blob = await generateRentalQuotePDF({ rental, isSigned: false });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = rental.rental_number + '_devis.pdf';
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    } catch (err) { console.error('PDF download error:', err); }
+                  }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
+                    Telecharger PDF
                   </button>
                 </div>
                 <div className="flex gap-3">
