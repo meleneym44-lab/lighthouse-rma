@@ -30537,6 +30537,14 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
             </div>
           )}
 
+          {/* ===== MESSAGES TAB ===== */}
+          {activeTab === 'messages' && (
+            <div>
+              <div className="h-[400px] overflow-y-auto mb-4 space-y-3">
+                {messages.length === 0 ? (
+                  <div className="text-center py-12 text-gray-400"><p className="text-4xl mb-2">💬</p><p>Aucun message</p></div>
+                ) : messages.map(msg => {
+                  const isAdmin = msg.sender_role === 'admin';
                   return (
                     <div key={msg.id} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
                       <div className={`max-w-[70%] rounded-lg p-3 ${isAdmin ? 'bg-[#8B5CF6] text-white' : 'bg-gray-100 text-gray-800'}`}>
