@@ -13055,6 +13055,8 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
     }
   }, [rentals]);
 
+  const [rentalCommsLoaded, setRentalCommsLoaded] = useState(null); // tracks which rental id comms are loaded for
+
   // Rental detail state
   const [rentalTab, setRentalTab] = useState('overview');
   const [rentalMessages, setRentalMessages] = useState([]);
@@ -13864,14 +13866,15 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
     const period = qd.rentalPeriod || { start: rental.start_date, end: rental.end_date, days: rentalDaysDisplay };
     const company = rental.companies || {};
 
-    // Load comms on first render
-    if (rentalMessages.length === 0 && rentalDocs.length === 0) {
+    // Load comms once per rental (not on every render)
+    if (rentalCommsLoaded !== rental.id) {
+      setRentalCommsLoaded(rental.id);
       loadRentalComms(rental.id);
     }
 
     return (
       <div>
-        <button onClick={() => { setSelectedRental(null); setRentalTab('overview'); setRentalMessages([]); setRentalDocs([]); }} className="text-gray-500 hover:text-gray-700 mb-4 flex items-center gap-2">
+        <button onClick={() => { setSelectedRental(null); setRentalTab('overview'); setRentalMessages([]); setRentalDocs([]); setRentalCommsLoaded(null); }} className="text-gray-500 hover:text-gray-700 mb-4 flex items-center gap-2">
           ← Retour aux locations
         </button>
         
@@ -14097,18 +14100,6 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     </a>
                   )}
 
-                  {/* View Quote in modal */}
-                  {hasQuote && (
-                    <button onClick={() => setShowRentalQuote(true)}
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors border-blue-200 text-left">
-                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">👁️</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Voir le Devis</p>
-                        <p className="text-sm text-blue-600">{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} € HT</p>
-                      </div>
-                    </button>
-                  )}
-
                   {/* Signed Quote */}
                   {rental.signed_quote_url && (
                     <a href={rental.signed_quote_url} target="_blank" rel="noopener noreferrer"
@@ -14151,7 +14142,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 </div>
 
                 {/* No docs fallback */}
-                {!rental.quote_url && !rental.signed_quote_url && !rental.bc_file_url && !hasQuote && rentalDocs.length === 0 && (
+                {!rental.quote_url && !rental.signed_quote_url && !rental.bc_file_url && rentalDocs.length === 0 && (
                   <div className="text-center py-8 bg-gray-50 rounded-lg">
                     <p className="text-4xl mb-2">📄</p>
                     <p className="font-medium text-gray-500">Aucun document</p>
@@ -14358,14 +14349,14 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 )}
 
                 {/* Signature Section */}
-                <div style={{margin:'16px 30px 0 30px', borderTop:'1px solid #ccc', paddingTop:'12px', display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
-                  <div>
+                <div style={{margin:'16px 30px 0 30px', borderTop:'1px solid #ccc', paddingTop:'12px', display:'flex', alignItems:'flex-start'}}>
+                  <div style={{marginRight:'12px'}}>
                     <p style={{fontSize:'9px', color:'#828282', textTransform:'uppercase', margin:'0 0 4px 0'}}>Établi par</p>
                     <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:0}}>{qd.businessSettings?.quote_signatory || 'M. Meleney'}</p>
                     <p style={{fontSize:'10px', color:'#505050', margin:'2px 0 0 0'}}>{qd.businessSettings?.company_name || 'Lighthouse France SAS'}</p>
                   </div>
-                  <img src="/images/logos/capcert-logo.png" alt="Capcert ISO 9001" style={{width:'70px', height:'70px', marginLeft:'-10px'}} />
-                  <div style={{textAlign:'center'}}>
+                  <img src="/images/logos/capcert-logo.png" alt="Capcert ISO 9001" style={{width:'80px', height:'80px'}} />
+                  <div style={{marginLeft:'auto', textAlign:'center'}}>
                     <p style={{fontSize:'9px', color:'#828282', margin:'0 0 4px 0'}}>Signature client</p>
                     <div style={{width:'120px', height:'50px', border:'2px dashed #b4b4b4', borderRadius:'6px'}} />
                     <p style={{fontSize:'8px', color:'#828282', margin:'4px 0 0 0'}}>Lu et approuvé</p>
