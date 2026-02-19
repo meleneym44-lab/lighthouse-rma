@@ -28461,6 +28461,25 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
     }
   }, [rentals]);
 
+  useEffect(() => {
+    const loadInventory = async () => {
+      setLoading(true);
+      const { data: inv, error: invErr } = await supabase.from('rental_inventory').select('*').order('model_name');
+      const { data: bun, error: bunErr } = await supabase.from('rental_bundles').select('*, rental_bundle_items(*, rental_inventory(*))').order('bundle_name');
+      const { data: book, error: bookErr } = await supabase.from('rental_bookings').select('*, rental_requests(rental_number, companies(name))').order('start_date', { ascending: false });
+      console.log('Rental inventory load:', { inv, invErr, bun, bunErr, book, bookErr });
+      if (inv) setInventory(inv);
+      if (bun) setBundles(bun);
+      if (book) setBookings(book);
+      setLoading(false);
+    };
+    loadInventory();
+  }, []);
+
+  useEffect(() => {
+    console.log('RentalsSheet received rentals:', rentals);
+  }, [rentals]);
+
   // Full page view - like Parts Orders
   if (fullPageRental) {
     return (
@@ -28493,26 +28512,6 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
       />
     );
   }
-
-  useEffect(() => {
-    const loadInventory = async () => {
-      setLoading(true);
-      const { data: inv, error: invErr } = await supabase.from('rental_inventory').select('*').order('model_name');
-      const { data: bun, error: bunErr } = await supabase.from('rental_bundles').select('*, rental_bundle_items(*, rental_inventory(*))').order('bundle_name');
-      const { data: book, error: bookErr } = await supabase.from('rental_bookings').select('*, rental_requests(rental_number, companies(name))').order('start_date', { ascending: false });
-      console.log('Rental inventory load:', { inv, invErr, bun, bunErr, book, bookErr });
-      if (inv) setInventory(inv);
-      if (bun) setBundles(bun);
-      if (book) setBookings(book);
-      setLoading(false);
-    };
-    loadInventory();
-  }, []);
-
-  // Debug log
-  useEffect(() => {
-    console.log('RentalsSheet received rentals:', rentals);
-  }, [rentals]);
 
   const getStatusStyle = (status) => {
     const styles = {
