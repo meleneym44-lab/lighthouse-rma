@@ -14211,55 +14211,55 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
               </div>
 
               {/* Quote Document - PDF Style */}
-              <div id="rental-quote-print" style={{fontFamily:'Helvetica,Arial,sans-serif', maxWidth:'210mm', margin:'0 auto'}}>
+              <div id="rental-quote-print" style={{fontFamily:'Helvetica,Arial,sans-serif'}}>
                 {/* Header: Logo left, Title right, navy line */}
-                <div style={{padding:'20px 30px 0 30px'}}>
+                <div style={{padding:'32px 32px 0 32px'}}>
                   <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
                     <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" style={{height:'80px', width:'auto'}} />
                     <div style={{textAlign:'right'}}>
-                      <p style={{fontSize:'20px', fontWeight:'bold', color:'#2D5A7B', margin:0}}>DEVIS LOCATION</p>
-                      <p style={{fontSize:'12px', fontWeight:'bold', color:'#1a1a2e', margin:'2px 0 0 0'}}>N° {rental.rental_number}</p>
+                      <p style={{fontSize:'24px', fontWeight:'bold', color:'#2D5A7B', margin:0}}>DEVIS LOCATION</p>
+                      <p style={{fontSize:'14px', fontWeight:'bold', color:'#1a1a2e', margin:'4px 0 0 0'}}>N° {rental.rental_number}</p>
                     </div>
                   </div>
-                  <div style={{height:'3px', background:'#2D5A7B', marginTop:'12px'}} />
+                  <div style={{height:'4px', background:'#2D5A7B', marginTop:'16px'}} />
                 </div>
 
                 {/* Info Bar */}
-                <div style={{display:'flex', background:'#f5f5f5', margin:'8px 30px 0 30px', padding:'8px 12px'}}>
+                <div style={{display:'flex', background:'#f5f5f5', margin:'10px 32px 0 32px', padding:'10px 16px'}}>
                   <div style={{flex:1}}>
-                    <p style={{fontSize:'9px', color:'#828282', textTransform:'uppercase', margin:0}}>Date</p>
-                    <p style={{fontSize:'12px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>{rental.quote_sent_at ? new Date(rental.quote_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
+                    <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:0}}>Date</p>
+                    <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>{rental.quote_sent_at ? new Date(rental.quote_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
                   </div>
                   <div style={{flex:1}}>
-                    <p style={{fontSize:'9px', color:'#828282', textTransform:'uppercase', margin:0}}>Validité</p>
-                    <p style={{fontSize:'12px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>30 jours</p>
+                    <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:0}}>Validité</p>
+                    <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>30 jours</p>
                   </div>
                   <div style={{flex:1}}>
-                    <p style={{fontSize:'9px', color:'#828282', textTransform:'uppercase', margin:0}}>Conditions</p>
-                    <p style={{fontSize:'11px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>{qd.paymentTerms || 'À réception de facture'}</p>
+                    <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:0}}>Conditions</p>
+                    <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>{qd.paymentTerms || 'À réception de facture'}</p>
                   </div>
                 </div>
 
                 {/* Client */}
-                <div style={{padding:'12px 30px 0 30px'}}>
-                  <p style={{fontSize:'9px', color:'#828282', textTransform:'uppercase', margin:0}}>Client</p>
-                  <p style={{fontSize:'15px', fontWeight:'bold', color:'#1a1a2e', margin:'4px 0 0 0'}}>{company.name || qd.clientName || 'Client'}</p>
-                  {(qd.clientAddress || company.billing_address || company.address) && <p style={{fontSize:'11px', color:'#505050', margin:'2px 0 0 0'}}>{qd.clientAddress || company.billing_address || company.address}</p>}
-                  {(qd.clientPostalCode || company.billing_postal_code || company.postal_code || qd.clientCity || company.billing_city || company.city) && <p style={{fontSize:'11px', color:'#505050', margin:'2px 0 0 0'}}>{qd.clientPostalCode || company.billing_postal_code || company.postal_code} {qd.clientCity || company.billing_city || company.city}</p>}
+                <div style={{padding:'16px 32px 0 32px'}}>
+                  <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:0}}>Client</p>
+                  <p style={{fontSize:'17px', fontWeight:'bold', color:'#1a1a2e', margin:'4px 0 0 0'}}>{company.name || qd.clientName || 'Client'}</p>
+                  {(qd.clientAddress || company.billing_address || company.address) && <p style={{fontSize:'12px', color:'#505050', margin:'2px 0 0 0'}}>{qd.clientAddress || company.billing_address || company.address}</p>}
+                  {(qd.clientPostalCode || company.billing_postal_code || company.postal_code || qd.clientCity || company.billing_city || company.city) && <p style={{fontSize:'12px', color:'#505050', margin:'2px 0 0 0'}}>{qd.clientPostalCode || company.billing_postal_code || company.postal_code} {qd.clientCity || company.billing_city || company.city}</p>}
                 </div>
 
                 {/* Location de Materiel block with purple left border */}
-                <div style={{margin:'12px 30px 0 30px', borderLeft:'3px solid #8B5CF6', paddingLeft:'12px'}}>
-                  <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:'0 0 8px 0'}}>Location de Matériel</p>
-                  <p style={{fontSize:'10px', color:'#505050', margin:'0 0 3px 0'}}>- Période : du {new Date(period.start || rental.start_date).toLocaleDateString('fr-FR')} au {new Date(period.end || rental.end_date).toLocaleDateString('fr-FR')} ({period.days || rentalDaysDisplay} jours)</p>
-                  {qd.deliveryTerms && <p style={{fontSize:'10px', color:'#505050', margin:'0 0 3px 0'}}>- Délai de livraison : {qd.deliveryTerms}</p>}
-                  <p style={{fontSize:'10px', color:'#505050', margin:0}}>- Assurance « Bien Confié » obligatoire (vol, incendie, dégâts des eaux, bris accidentel)</p>
+                <div style={{margin:'16px 32px 0 32px', borderLeft:'3px solid #8B5CF6', paddingLeft:'12px'}}>
+                  <p style={{fontSize:'15px', fontWeight:'bold', color:'#1a1a2e', margin:'0 0 8px 0'}}>Location de Matériel</p>
+                  <p style={{fontSize:'11px', color:'#505050', margin:'0 0 3px 0'}}>- Période : du {new Date(period.start || rental.start_date).toLocaleDateString('fr-FR')} au {new Date(period.end || rental.end_date).toLocaleDateString('fr-FR')} ({period.days || rentalDaysDisplay} jours)</p>
+                  {qd.deliveryTerms && <p style={{fontSize:'11px', color:'#505050', margin:'0 0 3px 0'}}>- Délai de livraison : {qd.deliveryTerms}</p>}
+                  <p style={{fontSize:'11px', color:'#505050', margin:0}}>- Assurance « Bien Confié » obligatoire (vol, incendie, dégâts des eaux, bris accidentel)</p>
                 </div>
 
                 {/* Récapitulatif des Prix */}
-                <div style={{padding:'16px 30px 0 30px'}}>
-                  <p style={{fontSize:'14px', fontWeight:'bold', color:'#1a1a2e', margin:'0 0 8px 0'}}>Récapitulatif des Prix</p>
-                  <table style={{width:'100%', borderCollapse:'collapse', fontSize:'10px'}}>
+                <div style={{padding:'20px 32px 0 32px'}}>
+                  <p style={{fontSize:'16px', fontWeight:'bold', color:'#1a1a2e', margin:'0 0 8px 0'}}>Récapitulatif des Prix</p>
+                  <table style={{width:'100%', borderCollapse:'collapse', fontSize:'11px'}}>
                     <thead>
                       <tr style={{background:'#1a1a2e'}}>
                         <th style={{color:'white', padding:'6px 8px', textAlign:'left', fontWeight:'bold', width:'30px'}}>Qté</th>
@@ -14282,17 +14282,17 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                         <Fragment key={idx}>
                         {/* Device name bar - darker gray strip across full width */}
                         <tr style={{background:'#e2e8f0', borderTop: idx > 0 ? '2px solid #cbd5e1' : 'none'}}>
-                          <td style={{padding:'7px 8px', fontWeight:'bold', color:'#1a1a2e', fontSize:'11px'}}>1</td>
-                          <td style={{padding:'7px 8px', fontWeight:'bold', color:'#1a1a2e', fontSize:'11px'}} colSpan={2}>{displayName}</td>
+                          <td style={{padding:'7px 8px', fontWeight:'bold', color:'#1a1a2e', fontSize:'12px'}}>1</td>
+                          <td style={{padding:'7px 8px', fontWeight:'bold', color:'#1a1a2e', fontSize:'12px'}} colSpan={2}>{displayName}</td>
                           <td style={{padding:'7px 8px', textAlign:'right', fontSize:'10px', color:'#505050'}}>{(item.rental_days || period.days || rentalDaysDisplay)}j</td>
-                          <td style={{padding:'7px 8px', textAlign:'right', fontWeight:'bold', fontSize:'11px', color:'#1a1a2e'}}>{(parseFloat(item.line_total) || 0).toFixed(2)} EUR</td>
+                          <td style={{padding:'7px 8px', textAlign:'right', fontWeight:'bold', fontSize:'12px', color:'#1a1a2e'}}>{(parseFloat(item.line_total) || 0).toFixed(2)} EUR</td>
                         </tr>
                         {/* Detail row: specs, insurance, rate */}
                         {(item.specs || retailVal > 0 || appliedRate > 0) && (
                         <tr style={{background: idx % 2 === 0 ? '#fff' : '#fafafa'}}>
                           <td style={{padding:'2px 8px 6px'}}></td>
                           <td style={{padding:'2px 8px 6px', borderBottom:'1px solid #eee'}} colSpan={2}>
-                            {item.specs && <p style={{fontSize:'9px', color:'#828282', margin:'0 0 2px 0'}}>{item.specs}</p>}
+                            {item.specs && <p style={{fontSize:'10px', color:'#828282', margin:'0 0 2px 0'}}>{item.specs}</p>}
                             {retailVal > 0 && <p style={{fontSize:'9px', color:'#828282', fontStyle:'italic', margin:'0'}}>Valeur neuf (assurance) : {retailVal.toFixed(2)} EUR</p>}
                           </td>
                           <td style={{padding:'2px 8px 6px', borderBottom:'1px solid #eee', textAlign:'right', fontSize:'9px', color:'#828282', verticalAlign:'top'}}>{appliedRate > 0 ? appliedRate.toFixed(2) + ' EUR' + rateLabel : ''}</td>
@@ -14323,24 +14323,24 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   </table>
 
                   {/* Navy Total Bar */}
-                  <div style={{background:'#2D5A7B', display:'flex', justifyContent:'flex-end', alignItems:'center', padding:'8px 12px', marginTop:'0'}}>
-                    <span style={{color:'white', fontWeight:'bold', fontSize:'12px', marginRight:'20px'}}>TOTAL HT</span>
-                    <span style={{color:'white', fontWeight:'bold', fontSize:'18px'}}>{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} EUR</span>
+                  <div style={{background:'#2D5A7B', display:'flex', justifyContent:'flex-end', alignItems:'center', padding:'10px 16px', marginTop:'0'}}>
+                    <span style={{color:'white', fontWeight:'bold', fontSize:'14px', marginRight:'20px'}}>TOTAL HT</span>
+                    <span style={{color:'white', fontWeight:'bold', fontSize:'22px'}}>{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} EUR</span>
                   </div>
                 </div>
 
                 {/* Buyback Clause */}
                 {qd.buybackClause && (
-                  <div style={{margin:'12px 30px 0 30px', borderLeft:'3px solid #00A651', paddingLeft:'12px'}}>
-                    <p style={{fontSize:'12px', fontWeight:'bold', color:'#1a1a2e', margin:'0 0 3px 0'}}>Clause de Rachat</p>
-                    <p style={{fontSize:'10px', color:'#505050', margin:0}}>Si achat à l'issue de la location, {qd.buybackPercent || 50}% du montant de location sera déduit du prix d'achat.</p>
+                  <div style={{margin:'16px 32px 0 32px', borderLeft:'3px solid #00A651', paddingLeft:'12px'}}>
+                    <p style={{fontSize:'14px', fontWeight:'bold', color:'#1a1a2e', margin:'0 0 3px 0'}}>Clause de Rachat</p>
+                    <p style={{fontSize:'11px', color:'#505050', margin:0}}>Si achat à l'issue de la location, {qd.buybackPercent || 50}% du montant de location sera déduit du prix d'achat.</p>
                   </div>
                 )}
 
                 {/* Conditions */}
-                <div style={{padding:'12px 30px 0 30px'}}>
-                  <p style={{fontSize:'10px', fontWeight:'bold', color:'#828282', textTransform:'uppercase', margin:'0 0 6px 0'}}>Conditions Générales de Location</p>
-                  <div style={{fontSize:'10px', color:'#505050', lineHeight:'1.6'}}>
+                <div style={{padding:'16px 32px 0 32px'}}>
+                  <p style={{fontSize:'11px', fontWeight:'bold', color:'#828282', textTransform:'uppercase', margin:'0 0 6px 0'}}>Conditions Générales de Location</p>
+                  <div style={{fontSize:'11px', color:'#505050', lineHeight:'1.6'}}>
                     <p style={{margin:'0 0 3px 0'}}>1. Le matériel reste la propriété de Lighthouse France. La garde est transférée au client dès réception jusqu'à restitution.</p>
                     <p style={{margin:'0 0 3px 0'}}>2. Utilisation conforme par personnel qualifié. Sous-location interdite sans accord écrit. Tout incident doit être signalé sous 48h par écrit.</p>
                     <p style={{margin:'0 0 3px 0'}}>3. Le client doit souscrire une assurance « Bien Confié » couvrant : vol, incendie, dégâts des eaux, bris accidentel.</p>
@@ -14352,24 +14352,24 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
 
                 {/* Notes */}
                 {qd.notes && (
-                  <div style={{padding:'8px 30px 0 30px'}}>
-                    <p style={{fontSize:'10px', fontWeight:'bold', color:'#828282', textTransform:'uppercase', margin:'0 0 4px 0'}}>Notes</p>
-                    <p style={{fontSize:'10px', color:'#505050', margin:0}}>{qd.notes}</p>
+                  <div style={{padding:'12px 32px 0 32px'}}>
+                    <p style={{fontSize:'11px', fontWeight:'bold', color:'#828282', textTransform:'uppercase', margin:'0 0 4px 0'}}>Notes</p>
+                    <p style={{fontSize:'11px', color:'#505050', margin:0}}>{qd.notes}</p>
                   </div>
                 )}
 
                 {/* Signature Section */}
-                <div style={{margin:'16px 30px 0 30px', borderTop:'1px solid #ccc', paddingTop:'12px', display:'flex', alignItems:'flex-start'}}>
+                <div style={{margin:'20px 32px 0 32px', borderTop:'1px solid #ccc', paddingTop:'12px', display:'flex', alignItems:'flex-start'}}>
                   <div style={{marginRight:'12px'}}>
-                    <p style={{fontSize:'9px', color:'#828282', textTransform:'uppercase', margin:'0 0 4px 0'}}>Établi par</p>
-                    <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:0}}>{qd.businessSettings?.quote_signatory || 'M. Meleney'}</p>
-                    <p style={{fontSize:'10px', color:'#505050', margin:'2px 0 0 0'}}>{qd.businessSettings?.company_name || 'Lighthouse France SAS'}</p>
+                    <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:'0 0 4px 0'}}>Établi par</p>
+                    <p style={{fontSize:'14px', fontWeight:'bold', color:'#1a1a2e', margin:0}}>{qd.businessSettings?.quote_signatory || 'M. Meleney'}</p>
+                    <p style={{fontSize:'11px', color:'#505050', margin:'2px 0 0 0'}}>{qd.businessSettings?.company_name || 'Lighthouse France SAS'}</p>
                   </div>
-                  <img src="/images/logos/capcert-logo.png" alt="Capcert ISO 9001" style={{width:'80px', height:'80px'}} />
+                  <img src="/images/logos/capcert-logo.png" alt="Capcert ISO 9001" style={{width:'85px', height:'85px'}} />
                   <div style={{marginLeft:'auto', textAlign:'center'}}>
-                    <p style={{fontSize:'9px', color:'#828282', margin:'0 0 4px 0'}}>Signature client</p>
-                    <div style={{width:'120px', height:'50px', border:'2px dashed #b4b4b4', borderRadius:'6px'}} />
-                    <p style={{fontSize:'8px', color:'#828282', margin:'4px 0 0 0'}}>Lu et approuvé</p>
+                    <p style={{fontSize:'10px', color:'#828282', margin:'0 0 4px 0'}}>Signature client</p>
+                    <div style={{width:'160px', height:'60px', border:'2px dashed #b4b4b4', borderRadius:'6px'}} />
+                    <p style={{fontSize:'9px', color:'#828282', margin:'4px 0 0 0'}}>Lu et approuvé</p>
                   </div>
                 </div>
 
