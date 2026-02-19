@@ -29504,67 +29504,87 @@ function RentalQuoteEditor({ rental, inventory = [], profile, businessSettings, 
 // ============================================
 // RENTAL SHIPPING WIZARD - Full page shipping workflow
 // ============================================
-function RentalShippingWizard({ rental, company, address, items, days, profile, businessSettings, notify, reload, onBack, lang = 'fr' }) {
-  const [step, setStep] = useState(1); // 1=Address, 2=UPS Label, 3=BL Preview, 4=Done
-  const [trackingNumber, setTrackingNumber] = useState('');
-  const [parcels, setParcels] = useState(1);
-  const [weight, setWeight] = useState('1.0');
+function RentalShippingModal({ rental, company, address, items, days, profile, businessSettings, notify, reload, onClose, lang = 'fr' }) {
+  const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [upsLoading, setUpsLoading] = useState(false);
-  const [upsLabels, setUpsLabels] = useState({});
+
+  // Shipping state
+  const [shipAddress, setShipAddress] = useState({
+    company_name: address.company_name || address.label || company.name || '',
+    attention: address.attention || '',
+    address_line1: address.address_line1 || '',
+    city: address.city || '',
+    postal_code: address.postal_code || '',
+    country: address.country || 'France',
+    phone: address.phone || ''
+  });
+  const [parcels, setParcels] = useState(1);
+  const [weight, setWeight] = useState('2');
+  const [notes, setNotes] = useState('');
+  const [shippingMode, setShippingMode] = useState('ups'); // 'ups' or 'custom'
+  const [customTracking, setCustomTracking] = useState('');
+
+  // Generated data
+  const [trackingNumber, setTrackingNumber] = useState('');
+  const [upsLabels, setUpsLabels] = useState({}); // { pkgIndex: base64 }
+  const [packageLabels, setPackageLabels] = useState([]);
+  const [blNumber, setBlNumber] = useState('');
   const [generatedBL, setGeneratedBL] = useState(null);
+  const [labelsPrinted, setLabelsPrinted] = useState({});
+  const [blPrinted, setBlPrinted] = useState(false);
 
+  const qd = rental.quote_data || {};
+  const bcNumber = qd.bc_number || '';
   const biz = businessSettings || {};
-  const employeeName = profile?.full_name || 'Admin';
-  const blDate = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const employeeName = profile?.full_name || 'Lighthouse France';
 
-  // Create UPS labels via Edge Function
+  const frenchMonths = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  const getFrenchDate = () => { const d = new Date(); return `${d.getDate()} ${frenchMonths[d.getMonth()]} ${d.getFullYear()}`; };
+
+  // ===== STEP 1 → Create UPS Label =====
   const createUPSLabels = async () => {
-    if (!address.address_line1 && !company.billing_address) {
-      notify("Veuillez vérifier l'adresse de livraison", 'error');
+    if (!shipAddress.company_name || !shipAddress.address_line1) {
+      notify('Veuillez remplir l\'adresse de livraison', 'error');
       return;
     }
     setUpsLoading(true);
     try {
-      const addr = address.address_line1 ? address : {
-        company_name: company.name,
-        attention: '',
-        address_line1: company.billing_address || company.address || '',
-        city: company.billing_city || company.city || '',
-        postal_code: company.billing_postal_code || company.postal_code || '',
-        country: 'France',
-        phone: company.phone || ''
-      };
       const packagesList = [];
-      for (let p = 0; p < (parcels || 1); p++) {
+      for (let p = 0; p < parcels; p++) {
         packagesList.push({
-          weight: parseFloat(weight) || 1,
-          length: 30, width: 30, height: 20,
-          description: `${rental.rental_number} - Location - Colis ${p + 1}/${parcels || 1}`
+          weight: parseFloat(weight) || 2,
+          length: 30, width: 30, height: 30,
+          description: `Location ${rental.rental_number} - Colis ${p + 1}/${parcels}`
         });
       }
+
       const { data, error } = await supabase.functions.invoke('ups-shipping', {
         body: {
           action: 'create_shipment',
           shipTo: {
-            name: addr.attention || addr.company_name || 'Customer',
-            company: addr.company_name || 'Customer',
-            attentionName: addr.attention || addr.company_name || 'Customer',
-            phone: addr.phone || '0100000000',
-            addressLine1: addr.address_line1 || '',
-            city: addr.city || '',
-            postalCode: addr.postal_code || '',
-            countryCode: addr.country === 'France' ? 'FR' : (addr.country_code || 'FR')
+            name: shipAddress.attention || shipAddress.company_name || 'Customer',
+            company: shipAddress.company_name || 'Customer',
+            attentionName: shipAddress.attention || shipAddress.company_name || 'Customer',
+            phone: shipAddress.phone || '0100000000',
+            addressLine1: shipAddress.address_line1 || '',
+            city: shipAddress.city || '',
+            postalCode: shipAddress.postal_code || '',
+            countryCode: shipAddress.country === 'France' ? 'FR' : 'FR'
           },
           packages: packagesList,
           serviceCode: '11',
-          description: `${rental.rental_number} - Location ${items.length} appareil(s)`,
+          description: `Location ${rental.rental_number} - ${items.length} appareil(s)`,
           isReturn: false
         }
       });
+
       if (error) throw error;
       if (!data.success) throw new Error(data.error || 'UPS API error');
-      
+
+      setTrackingNumber(data.trackingNumber);
+      setPackageLabels(data.packages || []);
+
       const newLabels = {};
       if (data.packages) {
         data.packages.forEach((pkg, pkgIndex) => {
@@ -29572,351 +29592,533 @@ function RentalShippingWizard({ rental, company, address, items, days, profile, 
         });
       }
       setUpsLabels(newLabels);
-      setTrackingNumber(data.trackingNumber);
       notify(`✅ ${data.packages?.length || 1} étiquette(s) UPS créée(s): ${data.trackingNumber}`);
-      setStep(3); // Auto advance to BL preview
+      setStep(2);
     } catch (err) {
-      console.error('UPS error:', err);
-      notify('Erreur UPS: ' + err.message, 'error');
+      console.error('UPS Label creation error:', err);
+      notify('❌ Erreur UPS: ' + (err.message || 'Erreur inconnue'), 'error');
     }
     setUpsLoading(false);
   };
 
-  // Mark as shipped - generate BL PDF, save everything
-  const markShipped = async () => {
-    if (!trackingNumber) { notify('Entrez le numéro de suivi', 'error'); return; }
+  // Use custom tracking → skip to BL
+  const proceedWithCustomTracking = () => {
+    if (!customTracking.trim()) {
+      notify('Veuillez entrer un numéro de suivi', 'error');
+      return;
+    }
+    setTrackingNumber(customTracking.trim());
+    setStep(3); // Skip UPS labels, go straight to BL
+  };
+
+  // ===== STEP 3 → Save Documents =====
+  const saveShippingDocs = async () => {
     setSaving(true);
     try {
-      // Generate BL number
-      let blNumber = null;
+      // Generate BL number from DB
+      let finalBLNumber = null;
       try {
         const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'BL' });
-        if (!docNumError && docNumData) blNumber = docNumData;
-      } catch (e) { console.error('Could not generate BL number:', e); }
-      if (!blNumber) {
-        const mm = String(new Date().getMonth() + 1).padStart(2, '0');
-        const yy = String(new Date().getFullYear()).slice(-2);
-        blNumber = `BL-${mm}${yy}-LOC`;
+        if (!docNumError && docNumData) finalBLNumber = docNumData;
+      } catch (e) {
+        console.error('Could not generate BL number:', e);
+        const dateStr = `${String(new Date().getDate()).padStart(2, '0')}${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getFullYear()).slice(-2)}`;
+        finalBLNumber = `BL-LOC-${rental.rental_number?.replace('LOC-', '') || '00000'}-${dateStr}`;
       }
+      setBlNumber(finalBLNumber);
 
-      // Generate BL PDF from preview
+      // Update BL number in preview before capture
+      const numberEl = document.querySelector('[data-rental-bl-number]');
+      if (numberEl) numberEl.textContent = 'N° ' + finalBLNumber;
+
+      // Generate BL PDF via html2canvas
       let blUrl = null;
       try {
         if (!window.html2canvas) {
           await new Promise((resolve, reject) => {
             const script = document.createElement('script');
             script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-            script.onload = resolve; script.onerror = reject;
+            script.onload = resolve;
+            script.onerror = reject;
             document.head.appendChild(script);
           });
         }
         const element = document.getElementById('rental-bl-preview');
         if (element) {
-          const numberEl = element.querySelector('[data-bl-number]');
-          if (numberEl) numberEl.textContent = 'N° ' + blNumber;
           const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
           const jsPDF = await loadJsPDF();
           const pdf = new jsPDF('p', 'mm', 'a4');
           const imgData = canvas.toDataURL('image/jpeg', 0.95);
           pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
           const blPdfBlob = pdf.output('blob');
-          const blFileName = `${blNumber}_${rental.rental_number}${(rental.quote_data?.bc_number) ? '_BC-' + (rental.quote_data?.bc_number) : ''}.pdf`;
-          const { error: upErr } = await supabase.storage.from('documents').upload(`shipping/${rental.rental_number}/${blFileName}`, blPdfBlob, { contentType: 'application/pdf' });
-          if (!upErr) {
-            const { data: urlData } = supabase.storage.from('documents').getPublicUrl(`shipping/${rental.rental_number}/${blFileName}`);
-            blUrl = urlData?.publicUrl;
-          }
+          const safeBL = (finalBLNumber || 'BL').replace(/[^a-zA-Z0-9-_]/g, '');
+          const blFileName = `${rental.rental_number}_BL_${safeBL}_${Date.now()}.pdf`;
+          blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${rental.rental_number}`, blFileName);
         }
-      } catch (err) { console.error('BL generation error:', err); }
-
-      // Save UPS labels as attachments
-      let upsLabelUrl = null;
-      for (const [pkgIdx, labelData] of Object.entries(upsLabels)) {
-        try {
-          const byteChars = atob(labelData);
-          const byteArray = new Uint8Array(byteChars.length);
-          for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
-          const labelBlob = new Blob([byteArray], { type: 'application/pdf' });
-          const labelFileName = `UPS_${trackingNumber}_colis${parseInt(pkgIdx) + 1}_${rental.rental_number}.pdf`;
-          const { error: labelUpErr } = await supabase.storage.from('documents').upload(`shipping/${rental.rental_number}/${labelFileName}`, labelBlob, { contentType: 'application/pdf' });
-          if (!labelUpErr) {
-            const { data: labelUrlData } = supabase.storage.from('documents').getPublicUrl(`shipping/${rental.rental_number}/${labelFileName}`);
-            if (labelUrlData?.publicUrl) {
-              upsLabelUrl = labelUrlData.publicUrl;
-              await supabase.from('request_attachments').insert({
-                request_id: rental.id, file_name: labelFileName, file_url: labelUrlData.publicUrl,
-                file_type: 'application/pdf', uploaded_by: profile?.id, category: 'ups_label'
-              });
-            }
-          }
-        } catch (labelErr) { console.error('UPS label upload error:', labelErr); }
+      } catch (pdfErr) {
+        console.error('BL PDF generation error:', pdfErr);
       }
 
+      // Save UPS Label PDF
+      let upsLabelUrl = null;
+      if (shippingMode === 'ups' && Object.keys(upsLabels).length > 0) {
+        try {
+          const labelData = upsLabels[0];
+          if (labelData) {
+            const byteCharacters = atob(labelData);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let j = 0; j < byteCharacters.length; j++) {
+              byteNumbers[j] = byteCharacters.charCodeAt(j);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const upsPdfBlob = new Blob([byteArray], { type: 'application/pdf' });
+            const safeTracking = (trackingNumber || 'label').replace(/[^a-zA-Z0-9-_]/g, '');
+            const upsFileName = `${rental.rental_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
+            upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rental.rental_number}`, upsFileName);
+          }
+        } catch (pdfErr) {
+          console.error('UPS Label PDF save error:', pdfErr);
+        }
+      }
+
+      // Save BL as attachment
+      if (blUrl) {
+        await supabase.from('request_attachments').insert({
+          request_id: rental.id, file_name: `${finalBLNumber}.pdf`, file_url: blUrl,
+          file_type: 'application/pdf', uploaded_by: profile?.id, category: 'bon_livraison'
+        });
+      }
+
+      // Save UPS label as attachment
+      if (upsLabelUrl) {
+        await supabase.from('request_attachments').insert({
+          request_id: rental.id, file_name: `UPS_${trackingNumber}.pdf`, file_url: upsLabelUrl,
+          file_type: 'application/pdf', uploaded_by: profile?.id, category: 'ups_label'
+        });
+      }
+
+      setGeneratedBL({ blNumber: finalBLNumber, blUrl, upsLabelUrl, trackingNumber });
+      setStep(4);
+      notify('✅ Documents d\'expédition enregistrés !');
+      reload();
+    } catch (err) {
+      notify('Erreur: ' + (err.message || 'Erreur'), 'error');
+    }
+    setSaving(false);
+  };
+
+  // ===== STEP 4 → Mark as Shipped =====
+  const markAsShipped = async () => {
+    setSaving(true);
+    try {
       const shippingInfo = {
-        outbound_tracking: trackingNumber, outbound_shipped_at: new Date().toISOString(),
-        bl_number: blNumber, bl_url: blUrl, shipped_parcels: parcels, shipped_weight: weight || null,
-        shipped_by: profile?.full_name || 'Admin', ups_label_url: upsLabelUrl || null
+        outbound_tracking: trackingNumber,
+        outbound_shipped_at: new Date().toISOString(),
+        bl_number: generatedBL?.blNumber || blNumber,
+        bl_url: generatedBL?.blUrl || null,
+        ups_label_url: generatedBL?.upsLabelUrl || null,
+        shipped_parcels: parcels,
+        shipped_weight: weight || null,
+        shipped_by: employeeName
       };
       const updatedQuoteData = { ...(rental.quote_data || {}), shippingInfo, ...shippingInfo };
       await supabase.from('rental_requests').update({
         status: 'shipped', quote_data: updatedQuoteData
       }).eq('id', rental.id);
 
-      // Save BL as attachment
-      if (blUrl) {
-        await supabase.from('request_attachments').insert({
-          request_id: rental.id, file_name: `${blNumber}.pdf`, file_url: blUrl,
-          file_type: 'application/pdf', uploaded_by: profile?.id, category: 'bon_livraison'
-        });
-      }
-
-      setGeneratedBL({ blNumber, blUrl, trackingNumber, upsLabelUrl });
-      setStep(4);
-      notify('✅ Expédié ! BL: ' + blNumber + ' | Suivi: ' + trackingNumber);
+      notify('🚚 Location marquée comme expédiée !');
       reload();
-    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+      onClose();
+    } catch (err) {
+      notify('Erreur: ' + (err.message || 'Erreur'), 'error');
+    }
     setSaving(false);
   };
 
-  const steps = [
-    { n: 1, label: 'Détails', icon: '📍' },
-    { n: 2, label: 'Étiquette UPS', icon: '🏷️' },
-    { n: 3, label: 'Aperçu BL', icon: '📄' },
-    { n: 4, label: 'Terminé', icon: '✅' }
-  ];
+  // Print helpers
+  const printLabel = (pkgIdx) => {
+    const labelData = upsLabels[pkgIdx];
+    if (labelData) {
+      const byteCharacters = atob(labelData);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) { byteNumbers[i] = byteCharacters.charCodeAt(i); }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setLabelsPrinted(prev => ({ ...prev, [pkgIdx]: true }));
+    }
+  };
+
+  const printBL = () => {
+    const element = document.getElementById('rental-bl-preview');
+    if (element) {
+      const w = window.open('', '_blank');
+      w.document.write('<html><head><title>BL</title></head><body style="margin:0">' + element.outerHTML + '</body></html>');
+      w.document.close();
+      w.print();
+      setBlPrinted(true);
+    }
+  };
+
+  const stepLabels = shippingMode === 'custom'
+    ? ['Vérification', 'Bon de Livraison', 'Expédier']
+    : ['Vérification', 'Étiquette UPS', 'Bon de Livraison', 'Expédier'];
+  const displayStep = shippingMode === 'custom' ? (step === 1 ? 1 : step === 3 ? 2 : step === 4 ? 3 : step) : step;
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b shadow-sm">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-              </button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-800">🚚 Expédition — {rental.rental_number}</h1>
-                <p className="text-gray-500">{company.name} • {items.length} appareil(s)</p>
-              </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 border-b bg-gradient-to-r from-green-600 to-emerald-600 text-white">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-bold">🚚 Préparer l'expédition</h2>
+              <p className="text-green-100 text-sm">{rental.rental_number} • {company.name} • {items.length} appareil(s)</p>
             </div>
+            <button onClick={onClose} className="text-white/70 hover:text-white text-2xl">✕</button>
           </div>
-
-          {/* Step Indicator */}
+          {/* Step indicator */}
           <div className="flex items-center gap-2 mt-3">
-            {steps.map((s, i) => (
-              <Fragment key={s.n}>
-                {i > 0 && <div className={`flex-grow h-0.5 ${step > s.n - 1 ? 'bg-cyan-400' : 'bg-gray-200'}`} />}
-                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${
-                  step === s.n ? 'bg-cyan-500 text-white' : step > s.n ? 'bg-cyan-100 text-cyan-700' : 'bg-gray-200 text-gray-500'
-                }`}>
-                  <span>{s.icon}</span> {s.label}
+            {stepLabels.map((label, idx) => (
+              <Fragment key={idx}>
+                {idx > 0 && <div className={`flex-grow h-0.5 ${displayStep > idx ? 'bg-white' : 'bg-green-500'}`} />}
+                <div className={`flex items-center gap-1.5 whitespace-nowrap`}>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${displayStep > idx + 1 ? 'bg-white text-green-600' : displayStep === idx + 1 ? 'bg-white text-green-600' : 'bg-green-500 text-green-200'}`}>
+                    {displayStep > idx + 1 ? '✓' : idx + 1}
+                  </div>
+                  <span className={`text-xs hidden sm:inline ${displayStep === idx + 1 ? 'text-white font-medium' : 'text-green-200'}`}>{label}</span>
                 </div>
               </Fragment>
             ))}
           </div>
         </div>
-      </div>
 
-      <div className="max-w-4xl mx-auto p-6">
-        {/* Step 1: Address & Parcel Details */}
-        {step === 1 && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <h2 className="font-bold text-lg text-gray-800 mb-4">📍 Adresse de livraison</h2>
-              <div className="bg-cyan-50 rounded-lg p-4 border border-cyan-200">
-                <p className="font-bold">{address.company_name || company.name}</p>
-                {address.attention && <p className="text-sm text-gray-600">À l'att. {address.attention}</p>}
-                <p className="text-sm">{address.address_line1}</p>
-                <p className="text-sm">{address.postal_code} {address.city}</p>
-                <p className="text-sm text-gray-400">{address.country || 'France'}</p>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {/* ===== STEP 1: REVIEW ===== */}
+          {step === 1 && (
+            <div className="space-y-6">
+              {/* Address Section */}
+              <div className="bg-white border-2 border-gray-200 rounded-xl">
+                <div className="bg-amber-50 px-4 py-3 border-b">
+                  <h3 className="font-bold text-amber-800">📍 Adresse de livraison</h3>
+                </div>
+                <div className="p-4 grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Société *</label>
+                    <input type="text" value={shipAddress.company_name} onChange={e => setShipAddress(p => ({...p, company_name: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{"À l'attention de"}</label>
+                    <input type="text" value={shipAddress.attention} onChange={e => setShipAddress(p => ({...p, attention: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Nom du contact" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Adresse *</label>
+                    <input type="text" value={shipAddress.address_line1} onChange={e => setShipAddress(p => ({...p, address_line1: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Code postal *</label>
+                    <input type="text" value={shipAddress.postal_code} onChange={e => setShipAddress(p => ({...p, postal_code: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Ville *</label>
+                    <input type="text" value={shipAddress.city} onChange={e => setShipAddress(p => ({...p, city: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Pays</label>
+                    <input type="text" value={shipAddress.country} onChange={e => setShipAddress(p => ({...p, country: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
+                    <input type="text" value={shipAddress.phone} onChange={e => setShipAddress(p => ({...p, phone: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="+33..." />
+                  </div>
+                </div>
+              </div>
+
+              {/* Shipping Details */}
+              <div className="bg-white border-2 border-gray-200 rounded-xl">
+                <div className="bg-green-50 px-4 py-3 border-b flex justify-between items-center">
+                  <h3 className="font-bold text-green-800">🚚 {"Détails d'expédition"}</h3>
+                  <span className="text-xs text-green-600">💡 UPS crée 1 étiquette par colis</span>
+                </div>
+                <div className="p-4 grid md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de colis</label>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setParcels(Math.max(1, parcels - 1))} className="w-10 h-10 bg-gray-200 hover:bg-gray-300 rounded-lg font-bold text-lg">-</button>
+                      <input type="number" min="1" value={parcels} onChange={e => setParcels(parseInt(e.target.value) || 1)} className="w-20 px-3 py-2 border border-gray-300 rounded-lg text-center font-bold text-lg" />
+                      <button onClick={() => setParcels(parcels + 1)} className="w-10 h-10 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold text-lg">+</button>
+                    </div>
+                    {parcels > 1 && <p className="text-xs text-green-600 mt-1">📦 {parcels} étiquettes seront créées</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Poids total (kg)</label>
+                    <input type="text" value={weight} onChange={e => setWeight(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Notes internes</label>
+                    <input type="text" value={notes} onChange={e => setNotes(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Notes..." />
+                  </div>
+                </div>
+              </div>
+
+              {/* Shipping Mode Toggle */}
+              <div className="bg-white border-2 border-gray-200 rounded-xl">
+                <div className="bg-blue-50 px-4 py-3 border-b">
+                  <h3 className="font-bold text-blue-800">📦 Mode {"d'expédition"}</h3>
+                </div>
+                <div className="p-4 grid md:grid-cols-2 gap-4">
+                  <button
+                    onClick={() => setShippingMode('ups')}
+                    className={`p-4 rounded-lg border-2 text-left transition-all ${shippingMode === 'ups' ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-gray-300'}`}
+                  >
+                    <div className="font-bold text-lg mb-1">📦 UPS</div>
+                    <p className="text-sm text-gray-600">Créer étiquette UPS automatiquement</p>
+                  </button>
+                  <button
+                    onClick={() => setShippingMode('custom')}
+                    className={`p-4 rounded-lg border-2 text-left transition-all ${shippingMode === 'custom' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}
+                  >
+                    <div className="font-bold text-lg mb-1">✈️ Autre transporteur</div>
+                    <p className="text-sm text-gray-600">Entrer un numéro de suivi manuellement</p>
+                  </button>
+                </div>
+                {shippingMode === 'custom' && (
+                  <div className="px-4 pb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">N° de suivi *</label>
+                    <input type="text" value={customTracking} onChange={e => setCustomTracking(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono" placeholder="Numéro de suivi..." />
+                  </div>
+                )}
+              </div>
+
+              {/* Equipment Summary */}
+              <div className="bg-gray-50 rounded-xl p-4">
+                <h4 className="font-bold text-gray-700 mb-2">📋 Récapitulatif Location</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div><span className="text-gray-500">Location:</span> <span className="font-mono font-bold text-[#00A651]">{rental.rental_number}</span></div>
+                  <div><span className="text-gray-500">Client:</span> <span className="font-medium">{company.name}</span></div>
+                  <div><span className="text-gray-500">Appareils:</span> <span className="font-medium">{items.length}</span></div>
+                  <div><span className="text-gray-500">Période:</span> <span className="font-medium">{days}j</span></div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {items.map((item, i) => (
+                    <span key={i} className="px-2 py-1 bg-white border rounded text-xs font-mono">{item.model_name || item.device_model} ({item.serial_number || 'N/A'})</span>
+                  ))}
+                </div>
               </div>
             </div>
+          )}
 
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <h2 className="font-bold text-lg text-gray-800 mb-4">📦 Équipements ({items.length})</h2>
-              <div className="divide-y">
-                {items.map((item, idx) => (
-                  <div key={idx} className="py-3 flex items-center gap-3">
-                    <span className="text-green-500">✅</span>
-                    <div>
-                      <p className="font-medium">{item.item_name}</p>
-                      {item.serial_number && <p className="text-xs text-gray-500 font-mono">S/N: {item.serial_number}</p>}
+          {/* ===== STEP 2: UPS LABELS ===== */}
+          {step === 2 && (
+            <div className="bg-white border-2 rounded-xl p-6">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h3 className="font-bold text-lg">Étiquettes UPS</h3>
+                  <p className="text-gray-500">{shipAddress.postal_code} {shipAddress.city}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-mono text-lg font-bold text-amber-600">{trackingNumber}</p>
+                  <a href={`https://www.ups.com/track?tracknum=${trackingNumber}`} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline">Suivre →</a>
+                </div>
+              </div>
+              <div className="space-y-4">
+                {(packageLabels.length > 0 ? packageLabels : [{ trackingNumber }]).map((pkg, pkgIdx) => (
+                  <div key={pkgIdx} className="bg-gray-50 rounded-lg p-4 border">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <div className="text-2xl font-bold text-[#351C15]">UPS</div>
+                        <div className="font-mono text-sm">{pkg.trackingNumber || trackingNumber}</div>
+                        <div className="text-sm text-gray-500 mt-1">Colis {pkgIdx + 1} / {parcels}</div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className={labelsPrinted[pkgIdx] ? 'text-green-600 font-medium text-sm' : 'text-gray-400 text-sm'}>
+                          {labelsPrinted[pkgIdx] ? '✓ Imprimé' : ''}
+                        </span>
+                        <button
+                          onClick={() => printLabel(pkgIdx)}
+                          className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium text-sm"
+                        >🖨️ Imprimer</button>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <h2 className="font-bold text-lg text-gray-800 mb-4">📋 Détails colis</h2>
-              <div className="grid md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de colis</label>
-                  <input type="number" min="1" value={parcels} onChange={e => setParcels(parseInt(e.target.value) || 1)} className="w-full px-4 py-2 border rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Poids total (kg)</label>
-                  <input type="number" step="0.1" min="0.1" value={weight} onChange={e => setWeight(e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Transporteur</label>
-                  <input type="text" value="UPS" disabled className="w-full px-4 py-2 border rounded-lg bg-gray-50" />
-                </div>
+              <div className="mt-4 pt-4 border-t flex justify-between items-center text-sm text-gray-600">
+                <span>{shipAddress.company_name} • {parcels} colis • {weight} kg</span>
+                <span className="text-gray-400">{rental.rental_number}</span>
               </div>
             </div>
+          )}
 
-            <button onClick={() => setStep(2)} className="w-full py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-xl font-bold text-lg">
-              Étape suivante: Créer étiquette UPS →
-            </button>
-          </div>
-        )}
-
-        {/* Step 2: UPS Label */}
-        {step === 2 && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <h2 className="font-bold text-lg text-gray-800 mb-4">🏷️ Étiquette UPS</h2>
-              <div className="bg-amber-50 rounded-lg p-4 border border-amber-200 mb-4">
-                <p className="text-amber-800">Créez une étiquette UPS automatiquement ou entrez un numéro de suivi manuellement.</p>
-              </div>
-
-              <button onClick={createUPSLabels} disabled={upsLoading} className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold disabled:opacity-50 mb-4">
-                {upsLoading ? '⏳ Création en cours...' : '📦 Créer étiquette UPS automatique'}
-              </button>
-
-              <div className="relative my-4"><div className="absolute inset-0 flex items-center"><div className="w-full border-t"></div></div><div className="relative flex justify-center text-sm"><span className="px-2 bg-white text-gray-500">ou</span></div></div>
-
+          {/* ===== STEP 3: BL PREVIEW ===== */}
+          {step === 3 && (() => {
+            const blDate = getFrenchDate();
+            return (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">N° de suivi UPS (manuel)</label>
-                <input type="text" value={trackingNumber} onChange={e => setTrackingNumber(e.target.value)} className="w-full px-4 py-2 border rounded-lg font-mono" placeholder="1Z..." />
-              </div>
-
-              {trackingNumber && (
-                <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-3">
-                  <p className="text-green-800 font-medium">✅ N° suivi: <span className="font-mono">{trackingNumber}</span></p>
+                <div className="bg-gray-100 px-4 py-3 rounded-t-xl flex justify-between items-center">
+                  <div>
+                    <h3 className="font-bold">Bon de Livraison</h3>
+                    <p className="text-sm text-gray-500">{items.length} appareil(s)</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={blPrinted ? 'text-green-600 font-medium' : 'text-gray-400'}>{blPrinted ? '✓ Imprimé' : ''}</span>
+                    <button onClick={() => setStep(1)} className="px-3 py-1 bg-white hover:bg-gray-50 border rounded text-sm">✏️ Modifier</button>
+                    <button onClick={printBL} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">🖨️ Imprimer BL</button>
+                  </div>
                 </div>
+                <div className="bg-white border-2 border-t-0 rounded-b-xl overflow-hidden shadow-lg">
+                  <div id="rental-bl-preview" style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', height: '297mm', position: 'relative', overflow: 'hidden' }}>
+                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.12, pointerEvents: 'none', zIndex: 999 }}>
+                      <img src="/images/logos/Lighthouse-Square-logo.png" alt="" style={{ width: '500px', height: 'auto' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:150px;font-weight:bold;color:#000">LWS</div>'; }} />
+                    </div>
+                    <div>
+                      <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#2D5A7B' }}>BON DE LIVRAISON</div>
+                          <div data-rental-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#2D5A7B', marginTop: '4px' }}>N° (auto)</div>
+                          <div style={{ fontSize: '9pt', color: '#666', marginTop: '2px' }}>Location: {rental.rental_number}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', margin: '12px 0' }}>
+                        <div><span style={{ color: '#666' }}>{biz.city || 'Créteil'}, le</span> <strong>{blDate}</strong></div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '15px', margin: '12px 0' }}>
+                        <div style={{ flex: '1.5', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
+                          <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Destinataire</div>
+                          <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{shipAddress.company_name}</div>
+                          {shipAddress.attention && <div>{"À l'attention de: "}<strong>{shipAddress.attention}</strong></div>}
+                          <div>{shipAddress.address_line1}</div>
+                          <div>{shipAddress.postal_code} {shipAddress.city}</div>
+                          <div>{shipAddress.country}</div>
+                        </div>
+                        <div style={{ flex: '1', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
+                          <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Références Commande</div>
+                          {bcNumber ? <div style={{ fontSize: '11pt', fontWeight: 'bold', color: '#2D5A7B' }}>{bcNumber}</div> : <div style={{ fontSize: '11pt', color: '#999' }}>—</div>}
+                        </div>
+                      </div>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', margin: '12px 0' }}>
+                        <thead>
+                          <tr style={{ background: 'rgba(51,51,51,0.35)' }}>
+                            <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '50px', fontWeight: 'bold' }}>Qté</th>
+                            <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', fontWeight: 'bold' }}>Désignation</th>
+                            <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '120px', fontWeight: 'bold' }}>N° Série</th>
+                            <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '100px', fontWeight: 'bold' }}>Type</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {items.map((item, i) => (
+                            <tr key={i}>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', textAlign: 'center', fontWeight: '600', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>1</td>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>Compteur de particules LIGHTHOUSE {item.model_name || item.device_model}</td>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', fontFamily: 'monospace', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>{item.serial_number || 'N/A'}</td>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', background: i % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>Location</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div style={{ margin: '15px 0' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '11pt', marginBottom: '10px', borderBottom: '1px solid #333', paddingBottom: '5px' }}>{"Informations d'expédition"}</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Transporteur:</span><span style={{ fontWeight: '600' }}>{shippingMode === 'ups' ? 'UPS' : 'Autre'}</span></div>
+                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>N° de suivi:</span><span style={{ fontWeight: '600', fontFamily: 'monospace' }}>{trackingNumber || 'N/A'}</span></div>
+                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Nombre de colis:</span><span style={{ fontWeight: '600' }}>{parcels}</span></div>
+                          <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Poids:</span><span style={{ fontWeight: '600' }}>{weight} kg</span></div>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '10pt', marginTop: '12px', color: '#666' }}>
+                        Préparé par: <strong style={{ color: '#333' }}>{employeeName}</strong>
+                      </div>
+                    </div>
+                    <div style={{ position: 'absolute', bottom: '15px', left: '30px', right: '30px', paddingTop: '12px', borderTop: '1px solid #ccc' }}>
+                      <div style={{ position: 'relative' }}>
+                        <div style={{ position: 'absolute', left: '10px', top: '0' }}>
+                          <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '75px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:14px;color:#333;border:2px solid #333;padding:12px 16px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
+                        </div>
+                        <div style={{ fontSize: '8pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
+                          <strong style={{ color: '#333', fontSize: '8pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
+                          {biz.address || '16 rue Paul Séjourné'}, {biz.postal_code || '94000'} {biz.city || 'CRÉTEIL'} | Tél. {biz.phone || '01 43 77 28 07'}<br/>
+                          SIRET {biz.siret || '50178134800013'} | TVA {biz.tva || 'FR 86501781348'}<br/>
+                          {biz.email || 'France@golighthouse.com'} | {biz.website || 'www.golighthouse.fr'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ===== STEP 4: COMPLETE ===== */}
+          {step === 4 && (
+            <div className="text-center py-8">
+              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto text-4xl mb-4">✅</div>
+              <h2 className="font-bold text-green-800 text-2xl mb-2">Documents enregistrés !</h2>
+              <p className="text-gray-600 mb-6">{"L'équipement"} est prêt à être expédié vers {company.name}</p>
+              <div className="bg-green-50 rounded-lg p-6 max-w-md mx-auto space-y-3 text-left mb-6">
+                {generatedBL?.blNumber && <div className="flex justify-between"><span className="text-gray-600">BL:</span><span className="font-mono font-bold">{generatedBL.blNumber}</span></div>}
+                <div className="flex justify-between"><span className="text-gray-600">Suivi:</span><span className="font-mono font-bold">{trackingNumber}</span></div>
+                {bcNumber && <div className="flex justify-between"><span className="text-gray-600">BC:</span><span className="font-mono font-bold">{bcNumber}</span></div>}
+              </div>
+              <div className="flex justify-center gap-3 mb-4">
+                {generatedBL?.blUrl && <a href={generatedBL.blUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg">📄 Télécharger BL</a>}
+                {generatedBL?.upsLabelUrl && <a href={generatedBL.upsLabelUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg">🏷️ Étiquette UPS</a>}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t bg-gray-50 flex justify-between">
+          {step === 1 && (
+            <>
+              <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Annuler</button>
+              {shippingMode === 'custom' ? (
+                <button
+                  onClick={proceedWithCustomTracking}
+                  disabled={!customTracking.trim() || !shipAddress.company_name || !shipAddress.address_line1}
+                  className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50"
+                >📄 Créer Bon de Livraison →</button>
+              ) : (
+                <button
+                  onClick={createUPSLabels}
+                  disabled={upsLoading || !shipAddress.company_name || !shipAddress.address_line1}
+                  className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
+                >
+                  {upsLoading ? (
+                    <><span className="animate-spin">⏳</span> Création étiquette UPS...</>
+                  ) : (
+                    <>📦 Créer Étiquette UPS →</>
+                  )}
+                </button>
               )}
+            </>
+          )}
+          {step === 2 && (
+            <>
+              <button onClick={() => setStep(1)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">← Retour</button>
+              <button onClick={() => setStep(3)} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium">Continuer vers BL →</button>
+            </>
+          )}
+          {step === 3 && (
+            <>
+              <button onClick={() => setStep(shippingMode === 'custom' ? 1 : 2)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">← Retour</button>
+              <button onClick={saveShippingDocs} disabled={saving} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">
+                {saving ? '⏳ Traitement...' : '💾 Enregistrer Documents'}
+              </button>
+            </>
+          )}
+          {step === 4 && (
+            <div className="flex gap-3 ml-auto">
+              <button onClick={onClose} className="px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">📋 Voir la location</button>
+              <button onClick={markAsShipped} disabled={saving} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50">
+                {saving ? '⏳...' : '🚚 Marquer Expédié'}
+              </button>
             </div>
-
-            <div className="flex gap-3">
-              <button onClick={() => setStep(1)} className="flex-1 py-3 bg-gray-200 hover:bg-gray-300 rounded-xl font-medium">← Retour</button>
-              <button onClick={() => { if (!trackingNumber) { notify('Entrez un numéro de suivi', 'error'); return; } setStep(3); }} className="flex-1 py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-xl font-bold">Aperçu BL →</button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: BL Preview */}
-        {step === 3 && (
-          <div className="space-y-6">
-            <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
-              <p className="text-blue-800 font-medium">📄 Vérifiez le bon de livraison. Le numéro BL sera attribué automatiquement.</p>
-            </div>
-
-            {/* Professional BL Preview */}
-            <div id="rental-bl-preview" style={{ fontFamily: 'Arial, sans-serif', fontSize: '11pt', color: '#333', padding: '25px 30px', maxWidth: '210mm', margin: '0 auto', background: 'white', height: '297mm', position: 'relative', overflow: 'hidden', border: '1px solid #ddd', borderRadius: '8px' }}>
-              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.12, pointerEvents: 'none', zIndex: 999 }}>
-                <img src="/images/logos/Lighthouse-Square-logo.png" alt="" style={{ width: '500px', height: 'auto' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:150px;font-weight:bold;color:#000">LWS</div>'; }} />
-              </div>
-              <div>
-                <div style={{ marginBottom: '15px', paddingBottom: '12px', borderBottom: '2px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse" style={{ height: '50px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:24px;font-weight:bold;color:#333">LIGHTHOUSE<div style="font-size:10px;color:#666">FRANCE</div></div>'; }} />
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '18pt', fontWeight: 'bold', color: '#2D5A7B' }}>BON DE LIVRAISON</div>
-                    <div data-bl-number="true" style={{ fontSize: '12pt', fontWeight: 'bold', color: '#2D5A7B', marginTop: '4px' }}>N° —</div>
-                    <div style={{ fontSize: '9pt', color: '#666', marginTop: '4px' }}>Réf: {rental.rental_number}</div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', margin: '12px 0' }}>
-                  <div><span style={{ color: '#666' }}>{biz.city || 'Créteil'}, le</span> <strong>{blDate}</strong></div>
-                </div>
-                <div style={{ display: 'flex', gap: '15px', margin: '12px 0' }}>
-                  <div style={{ flex: '1.5', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
-                    <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Destinataire</div>
-                    <div style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '5px' }}>{address.company_name || company.name}</div>
-                    {address.attention && <div>{"À l'attention de: "}<strong>{address.attention}</strong></div>}
-                    <div>{address.address_line1}</div>
-                    <div>{address.postal_code} {(address.city || '').toUpperCase()}</div>
-                  </div>
-                  <div style={{ flex: '1', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', padding: '15px' }}>
-                    <div style={{ fontSize: '9pt', color: '#666', textTransform: 'uppercase', fontWeight: '600', marginBottom: '5px' }}>Références</div>
-                    <div style={{ fontSize: '11pt', fontWeight: 'bold', color: '#2D5A7B' }}>{rental.rental_number}</div>
-                    {(rental.quote_data?.bc_number) && <div style={{ marginTop: '8px' }}><span style={{ color: '#666' }}>BC N°:</span> <strong>{(rental.quote_data?.bc_number)}</strong></div>}
-                    <div style={{ marginTop: '8px' }}><span style={{ color: '#666' }}>Période:</span> <strong>{new Date(rental.start_date).toLocaleDateString('fr-FR')} — {new Date(rental.end_date).toLocaleDateString('fr-FR')}</strong></div>
-                  </div>
-                </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', margin: '12px 0' }}>
-                  <thead><tr style={{ background: 'rgba(51,51,51,0.35)' }}>
-                    <th style={{ color: '#333', padding: '10px 12px', textAlign: 'center', fontSize: '10pt', width: '50px', fontWeight: 'bold' }}>Qté</th>
-                    <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '140px', fontWeight: 'bold' }}>N° Série</th>
-                    <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', fontWeight: 'bold' }}>Désignation</th>
-                  </tr></thead>
-                  <tbody>
-                    {items.map((item, idx) => (
-                      <tr key={idx}>
-                        <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', textAlign: 'center', fontWeight: '600', background: idx % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>1</td>
-                        <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '9pt', fontFamily: 'monospace', background: idx % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>{item.serial_number || '—'}</td>
-                        <td style={{ padding: '10px 12px', borderBottom: '1px solid #ddd', fontSize: '10pt', background: idx % 2 === 0 ? 'rgba(255,255,255,0.9)' : 'rgba(249,249,249,0.9)' }}>{item.item_name}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div style={{ margin: '15px 0' }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '11pt', marginBottom: '10px', borderBottom: '1px solid #333', paddingBottom: '5px' }}>{"Informations d'expédition"}</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                    <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Transporteur:</span><span style={{ fontWeight: '600' }}>UPS</span></div>
-                    <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>N° de suivi:</span><span style={{ fontWeight: '600', fontFamily: 'monospace' }}>{trackingNumber}</span></div>
-                    <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Nombre de colis:</span><span style={{ fontWeight: '600' }}>{parcels}</span></div>
-                    <div style={{ display: 'flex', padding: '6px 0' }}><span style={{ color: '#666', width: '130px' }}>Poids:</span><span style={{ fontWeight: '600' }}>{weight || '—'} kg</span></div>
-                  </div>
-                </div>
-                <div style={{ margin: '12px 0', padding: '10px', background: 'rgba(248,249,250,0.85)', border: '1px solid #ddd', fontSize: '9pt', color: '#555' }}>
-                  Le matériel livré reste la propriété exclusive de Lighthouse France SAS. Le destinataire reconnaît avoir vérifié le contenu et {"l'état"} du matériel à la réception. Tout dommage doit être signalé dans les 48 heures.
-                </div>
-                <div style={{ fontSize: '10pt', marginTop: '12px', color: '#666' }}>
-                  Préparé par: <strong style={{ color: '#333' }}>{employeeName}</strong>
-                </div>
-              </div>
-              <div style={{ position: 'absolute', bottom: '15px', left: '30px', right: '30px', paddingTop: '12px', borderTop: '1px solid #ccc' }}>
-                <div style={{ position: 'relative' }}>
-                  <div style={{ position: 'absolute', left: '10px', top: '0' }}>
-                    <img src="/images/logos/capcert-logo.png" alt="CAPCERT" style={{ height: '75px' }} onError={(e) => { e.target.outerHTML = '<div style="font-size:14px;color:#333;border:2px solid #333;padding:12px 16px;border-radius:6px;text-align:center"><strong>CAPCERT</strong><br/>ISO 9001</div>'; }} />
-                  </div>
-                  <div style={{ fontSize: '8pt', color: '#555', textAlign: 'center', lineHeight: '1.8' }}>
-                    <strong style={{ color: '#333', fontSize: '8pt' }}>{biz.company_name || 'Lighthouse France SAS'}</strong> au capital de {biz.capital || '10 000'} €<br/>
-                    {biz.address || '16 rue Paul Séjourné'}, {biz.postal_code || '94000'} {biz.city || 'CRÉTEIL'} | Tél. {biz.phone || '01 43 77 28 07'}<br/>
-                    SIRET {biz.siret || '50178134800013'} | TVA {biz.tva || 'FR 86501781348'}<br/>
-                    {biz.email || 'France@golighthouse.com'} | {biz.website || 'www.golighthouse.fr'}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button onClick={() => setStep(2)} className="flex-1 py-3 bg-gray-200 hover:bg-gray-300 rounded-xl font-medium">← Modifier</button>
-              <button onClick={markShipped} disabled={saving} className="flex-1 py-3 bg-[#00A651] hover:bg-green-600 text-white rounded-xl font-bold text-lg disabled:opacity-50">{saving ? '⏳ Génération BL...' : '✅ Confirmer l\'expédition'}</button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 4: Done */}
-        {step === 4 && generatedBL && (
-          <div className="bg-white rounded-xl shadow-sm border p-8 text-center space-y-6">
-            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto text-4xl">✅</div>
-            <h2 className="font-bold text-green-800 text-2xl">Expédition confirmée !</h2>
-            <p className="text-gray-600">{"L'équipement"} est en route vers {company.name}</p>
-            <div className="bg-green-50 rounded-lg p-4 text-left max-w-md mx-auto space-y-2">
-              <div className="flex justify-between"><span className="text-gray-600">BL:</span><span className="font-mono font-bold">{generatedBL.blNumber}</span></div>
-              <div className="flex justify-between"><span className="text-gray-600">Suivi:</span><span className="font-mono font-bold">{generatedBL.trackingNumber}</span></div>
-              {(rental.quote_data?.bc_number) && <div className="flex justify-between"><span className="text-gray-600">BC:</span><span className="font-mono font-bold">{(rental.quote_data?.bc_number)}</span></div>}
-            </div>
-            <div className="flex justify-center gap-3">
-              {generatedBL.blUrl && <a href={generatedBL.blUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg">📄 Télécharger BL</a>}
-              {generatedBL.upsLabelUrl && <a href={generatedBL.upsLabelUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg">🏷️ Étiquette UPS</a>}
-            </div>
-            <button onClick={onBack} className="px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">← Retour à la location</button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
@@ -30007,7 +30209,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
     setSendingMsg(true);
     await supabase.from('messages').insert({
       request_id: rental.id, sender_id: profile?.id,
-      sender_name: profile?.full_name || 'Admin', sender_type: 'admin', content: newMsg.trim()
+      sender_name: profile?.full_name || (onOpenQuoteEditor ? 'Admin' : 'Client'), sender_type: onOpenQuoteEditor ? 'admin' : 'customer', content: newMsg.trim()
     });
     setNewMsg('');
     setSendingMsg(false);
@@ -30074,26 +30276,23 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   const address = rental.shipping_address || {};
 
   // Shipping wizard overlay
-  if (showShippingWizard) {
-    return (
-      <RentalShippingWizard
-        rental={rental}
-        company={company}
-        address={address}
-        items={items}
-        days={days}
-        profile={profile}
-        businessSettings={businessSettings}
-        notify={notify}
-        reload={reload}
-        onBack={() => setShowShippingWizard(false)}
-        lang={lang}
-      />
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gray-100">
+      {showShippingWizard && (
+        <RentalShippingModal
+          rental={rental}
+          company={company}
+          address={address}
+          items={items}
+          days={days}
+          profile={profile}
+          businessSettings={businessSettings}
+          notify={notify}
+          reload={reload}
+          onClose={() => setShowShippingWizard(false)}
+          lang={lang}
+        />
+      )}
       {/* ===== STICKY HEADER ===== */}
       <div className="sticky top-0 z-10 bg-white border-b shadow-sm">
         <div className="px-6 py-4">
@@ -30403,14 +30602,15 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                 {messages.length === 0 ? (
                   <div className="text-center py-12 text-gray-400"><p className="text-4xl mb-2">💬</p><p>Aucun message</p></div>
                 ) : messages.map(msg => {
-                  const isAdmin = msg.sender_type === 'admin' || msg.sender_role === 'admin';
+                  const isMe = msg.sender_id === profile?.id;
+                  const isAdminMsg = msg.sender_type === 'admin' || msg.sender_role === 'admin';
                   return (
-                    <div key={msg.id} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[70%] rounded-lg p-3 ${isAdmin ? 'bg-[#8B5CF6] text-white' : 'bg-gray-100 text-gray-800'}`}>
-                        <p className={`text-xs font-medium mb-1 ${isAdmin ? 'text-white/70' : 'text-[#8B5CF6]'}`}>{msg.sender_name || (isAdmin ? 'Admin' : 'Client')}</p>
+                    <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[70%] rounded-lg p-3 ${isMe ? 'bg-[#8B5CF6] text-white' : 'bg-gray-100 text-gray-800'}`}>
+                        <p className={`text-xs font-medium mb-1 ${isMe ? 'text-white/70' : 'text-[#8B5CF6]'}`}>{msg.sender_name || (isAdminMsg ? 'Admin' : 'Client')}</p>
                         <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                        {msg.attachment_url && <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isAdmin ? 'text-white/80' : 'text-blue-600'}`}>📎 {msg.attachment_name || 'Fichier'}</a>}
-                        <p className={`text-xs mt-1 ${isAdmin ? 'text-white/60' : 'text-gray-400'}`}>{new Date(msg.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
+                        {msg.attachment_url && <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isMe ? 'text-white/80' : 'text-blue-600'}`}>📎 {msg.attachment_name || 'Fichier'}</a>}
+                        <p className={`text-xs mt-1 ${isMe ? 'text-white/60' : 'text-gray-400'}`}>{new Date(msg.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
                       </div>
                     </div>
                   );
