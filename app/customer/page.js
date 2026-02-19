@@ -11,8 +11,6 @@ if (typeof window !== 'undefined') {
 // Valid France Metropolitan: 5 digits, starting with 01-95 (includes Corsica 20)
 // INVALID (show warning): DOM-TOM (97xxx, 98xxx), foreign addresses, or non-French codes
 
-const isFranceMetropolitan = (postalCode) => {
-
 // French date formatter: "19 février 2026"
 const formatDateWrittenFR = (d) => {
   const date = new Date(d);
@@ -20,7 +18,7 @@ const formatDateWrittenFR = (d) => {
   return date.getDate() + ' ' + months[date.getMonth()] + ' ' + date.getFullYear();
 };
 
-
+const isFranceMetropolitan = (postalCode) => {
   if (!postalCode) return false; // No postal code = can't verify = show warning
   
   // Clean the postal code (remove spaces)
