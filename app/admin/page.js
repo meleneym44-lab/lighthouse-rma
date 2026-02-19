@@ -4413,23 +4413,24 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
             console.error('❌ Rental PDF generation error:', pdfErr);
           }
 
-          const updateData = {
-            status: 'quote_sent',
+          const existingQD = review.quote_data || {};
+          const approvalQuoteData = {
+            ...existingQD,
             quote_sent_at: new Date().toISOString(),
             quote_number: quoteNumber,
             quote_review_id: null,
             quote_rejection_notes: null
           };
-          if (quoteUrl) updateData.quote_url = quoteUrl;
-          console.log('📄 Updating rental with:', Object.keys(updateData));
+          if (quoteUrl) approvalQuoteData.quote_url = quoteUrl;
+          console.log('📄 Updating rental with quote_data keys:', Object.keys(approvalQuoteData));
           
-          const { error: updateErr } = await supabase.from('rental_requests').update(updateData).eq('id', rentalId);
+          const { error: updateErr } = await supabase.from('rental_requests').update({ status: 'quote_sent', quote_data: approvalQuoteData }).eq('id', rentalId);
           if (updateErr) console.error('❌ Rental update error:', updateErr);
           
           // Save PDF as attachment
           if (quoteUrl) {
             await supabase.from('request_attachments').insert({
-              rental_request_id: rentalId,
+              request_id: rentalId,
               file_name: `${quoteNumber}_Devis_Location.pdf`,
               file_url: quoteUrl,
               file_type: 'application/pdf',
@@ -4516,10 +4517,10 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
           quote_rejection_notes: rejectionNotes.trim()
         }).eq('id', review.contract_id);
       } else if (review.rental_request_id) {
+        const rejQD = { ...(review.quote_data || {}), quote_review_id: null, quote_rejection_notes: rejectionNotes.trim() };
         await supabase.from('rental_requests').update({
           status: 'requested',
-          quote_review_id: null,
-          quote_rejection_notes: rejectionNotes.trim()
+          quote_data: rejQD
         }).eq('id', review.rental_request_id);
       } else {
         // Initial/revision/parts quotes
@@ -18103,7 +18104,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                 const rColors = { requested:'bg-amber-100 text-amber-700', quote_sent:'bg-blue-100 text-blue-700', bc_review:'bg-orange-100 text-orange-700', bc_approved:'bg-green-100 text-green-700', shipped:'bg-cyan-100 text-cyan-700', in_rental:'bg-purple-100 text-purple-700', return_pending:'bg-orange-100 text-orange-700', returned:'bg-teal-100 text-teal-700', completed:'bg-green-100 text-green-700', cancelled:'bg-red-100 text-red-700' };
                 const items = rental.rental_request_items || [];
                 return (
-                  <div key={rental.id} onClick={() => setFullPageRental(rental)} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 cursor-pointer transition-colors">
+                  <div key={rental.id} onClick={() => setSelectedRental(rental)} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 cursor-pointer transition-colors">
                     <div className="flex justify-between items-start">
                       <div>
                         <span className="font-mono font-bold text-purple-600">{rental.rental_number || '—'}</span>
@@ -18117,7 +18118,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                       <div className="text-right">
                         <span className={'px-2 py-1 rounded-full text-xs font-medium ' + (rColors[rental.status] || 'bg-gray-100 text-gray-700')}>{rStyles[rental.status] || rental.status}</span>
                         <p className="text-xs text-gray-400 mt-1">{new Date(rental.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
-                        {rental.quote_total > 0 && <p className="text-sm font-bold text-gray-700 mt-1">{parseFloat(rental.quote_total).toFixed(2)} €</p>}
+                        {(rental.quote_data?.totalHT || rental.quote_total) > 0 && <p className="text-sm font-bold text-gray-700 mt-1">{parseFloat(rental.quote_data?.totalHT || rental.quote_total).toFixed(2)} €</p>}
                         <p className="text-xs text-blue-500 mt-1">{lang === 'en' ? 'View details →' : 'Voir détails →'}</p>
                       </div>
                     </div>
@@ -29104,7 +29105,10 @@ function RentalBCReviewModal({ rental, onClose, notify, reload, lang = 'fr' }) {
   const [useAutoNumber, setUseAutoNumber] = useState(true);
   const [generatingNumber, setGeneratingNumber] = useState(false);
 
-  const hasCustomerBCFile = !!rental.bc_file_url && rental.bc_file_url !== rental.signed_quote_url;
+  const rqd = rental.quote_data || {};
+  const rentalBcFileUrl = rqd.bc_file_url || rental.bc_file_url || '';
+  const rentalSignedQuoteUrl = rqd.signed_quote_url || rental.signed_quote_url || '';
+  const hasCustomerBCFile = !!rentalBcFileUrl && rentalBcFileUrl !== rentalSignedQuoteUrl;
 
   useEffect(() => {
     if (hasCustomerBCFile) {
@@ -29137,12 +29141,11 @@ function RentalBCReviewModal({ rental, onClose, notify, reload, lang = 'fr' }) {
       return;
     }
     setApproving(true);
-    const updatedQuoteData = { ...(rental.quote_data || {}), bc_number: bcNumber.trim() };
+    const updatedQuoteData = { ...(rental.quote_data || {}), bc_number: bcNumber.trim(), bc_approved_at: new Date().toISOString() };
     const { error } = await supabase
       .from('rental_requests')
       .update({
         status: 'bc_approved',
-        bc_approved_at: new Date().toISOString(),
         quote_data: updatedQuoteData
       })
       .eq('id', rental.id);
@@ -29162,15 +29165,12 @@ function RentalBCReviewModal({ rental, onClose, notify, reload, lang = 'fr' }) {
       return;
     }
     setRejecting(true);
+    const rejectedQD = { ...(rental.quote_data || {}), bc_rejected_at: new Date().toISOString(), bc_rejection_reason: rejectReason, bc_file_url: null, bc_signature_url: null, bc_submitted_at: null };
     const { error } = await supabase
       .from('rental_requests')
       .update({
         status: 'waiting_bc',
-        bc_rejected_at: new Date().toISOString(),
-        bc_rejection_reason: rejectReason,
-        bc_file_url: null,
-        bc_signature_url: null,
-        bc_submitted_at: null
+        quote_data: rejectedQD
       })
       .eq('id', rental.id);
     if (error) {
@@ -29184,7 +29184,7 @@ function RentalBCReviewModal({ rental, onClose, notify, reload, lang = 'fr' }) {
   };
 
   const items = rental.rental_request_items || [];
-  const displayUrl = rental.signed_quote_url || rental.bc_file_url;
+  const displayUrl = rentalSignedQuoteUrl || rentalBcFileUrl;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={onClose}>
@@ -29205,11 +29205,11 @@ function RentalBCReviewModal({ rental, onClose, notify, reload, lang = 'fr' }) {
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-bold text-white text-lg">📄 Document BC</h3>
               <div className="flex gap-2">
-                {rental.signed_quote_url && (
-                  <a href={rental.signed_quote_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium">📄 Devis Signé ↗</a>
+                {rentalSignedQuoteUrl && (
+                  <a href={rentalSignedQuoteUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium">📄 Devis Signé ↗</a>
                 )}
-                {rental.bc_file_url && (
-                  <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">📋 BC Uploadé ↗</a>
+                {rentalBcFileUrl && (
+                  <a href={rentalBcFileUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">📋 BC Uploadé ↗</a>
                 )}
               </div>
             </div>
@@ -29265,10 +29265,10 @@ function RentalBCReviewModal({ rental, onClose, notify, reload, lang = 'fr' }) {
             </div>
 
             {/* Quote Info */}
-            {(rental.quote_total || rental.quote_url) && (
+            {((rqd.totalHT || rental.quote_total) || (rqd.quote_url || rental.quote_url)) && (
               <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
                 <h4 className="font-medium text-blue-800 mb-1">💰 Devis Location</h4>
-                {rental.quote_total && <p className="text-xl font-bold text-blue-700">{parseFloat(rental.quote_total).toFixed(2)} € HT</p>}
+                {(rqd.totalHT || rental.quote_total) && <p className="text-xl font-bold text-blue-700">{parseFloat((rqd.totalHT || rental.quote_total)).toFixed(2)} € HT</p>}
                 <p className="text-xs text-blue-500">
                   {rental.start_date && rental.end_date ? `${new Date(rental.start_date).toLocaleDateString('fr-FR')} → ${new Date(rental.end_date).toLocaleDateString('fr-FR')}` : ''}
                 </p>
@@ -29381,11 +29381,15 @@ function RentalQuoteEditor({ rental, inventory = [], profile, businessSettings, 
         clientCity: company.billing_city || company.city || '', clientPostalCode: company.billing_postal_code || company.postal_code || '',
         clientCountry: company.country || 'France', businessSettings: businessSettings || {}
       };
-      await supabase.from('rental_requests').update({
-        quote_shipping: parseFloat(quoteShipping) || 0, quote_total_ht: totalHT,
-        quote_notes: quoteNotes, quote_data: quoteData, quoted_at: new Date().toISOString(),
+      const mergedQuoteData = {
+        ...(rental.quote_data || {}), ...quoteData,
+        quoted_at: new Date().toISOString(),
         quote_valid_until: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0]
+      };
+      const { error: saveErr } = await supabase.from('rental_requests').update({
+        quote_data: mergedQuoteData
       }).eq('id', rental.id);
+      if (saveErr) { console.error('Quote save error:', saveErr); notify('Erreur sauvegarde devis: ' + saveErr.message, 'error'); setSaving(false); return; }
       const itemSummary = quoteItems.map(i => `${i.item_name || 'Item'} (${i.rental_days || days}j)`).join(', ');
       const { data: review, error: reviewError } = await supabase.from('quote_reviews').insert({
         rental_request_id: rental.id, quote_type: 'rental', quote_data: quoteData,
@@ -29395,10 +29399,13 @@ function RentalQuoteEditor({ rental, inventory = [], profile, businessSettings, 
         submitted_by_name: profile?.full_name || profile?.email || 'Unknown', previous_status: rental.status || 'requested'
       }).select().single();
       if (reviewError) {
-        await supabase.from('rental_requests').update({ status: 'pending_quote_review', quote_rejection_notes: null, quote_revision_notes: null }).eq('id', rental.id);
+        console.error('Review insert error:', reviewError);
+        const { error: statusErr } = await supabase.from('rental_requests').update({ status: 'pending_quote_review', quote_data: { ...mergedQuoteData, quote_rejection_notes: null, quote_revision_notes: null } }).eq('id', rental.id);
+        if (statusErr) console.error('Status update error:', statusErr);
         notify('⚠️ Devis sauvegardé mais erreur soumission', 'warning');
       } else {
-        await supabase.from('rental_requests').update({ status: 'pending_quote_review', quote_review_id: review.id, quote_rejection_notes: null, quote_revision_notes: null }).eq('id', rental.id);
+        const { error: statusErr } = await supabase.from('rental_requests').update({ status: 'pending_quote_review', quote_data: { ...mergedQuoteData, quote_review_id: review.id, quote_rejection_notes: null, quote_revision_notes: null } }).eq('id', rental.id);
+        if (statusErr) console.error('Status update error:', statusErr);
         notify('✅ Devis soumis pour vérification !');
       }
       reload();
@@ -30163,6 +30170,13 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   const upsLabelUrl = rental.ups_label_url || shipping.ups_label_url || qd.ups_label_url || '';
   const outboundShippedAt = rental.outbound_shipped_at || shipping.outbound_shipped_at || qd.outbound_shipped_at || '';
   const bcNumber = qd.bc_number || rental.bc_number || '';
+  const bcApprovedAt = qd.bc_approved_at || rental.bc_approved_at || '';
+  const quoteSentAt = qd.quote_sent_at || rental.quote_sent_at || '';
+  const quoteUrl = qd.quote_url || rental.quote_url || '';
+  const quoteNumber = qd.quote_number || rental.quote_number || '';
+  const signedQuoteUrl = qd.signed_quote_url || rental.signed_quote_url || '';
+  const bcFileUrl = qd.bc_file_url || rental.bc_file_url || '';
+  const bcSignatureUrl = qd.bc_signature_url || rental.bc_signature_url || '';
 
   // Load messages & attachments
   useEffect(() => {
@@ -30264,9 +30278,9 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   // Build timeline events - only progress bar milestones
   const timeline = [];
   if (rental.submitted_at || rental.created_at) timeline.push({ date: rental.submitted_at || rental.created_at, icon: '📝', label: 'Demande soumise' });
-  if (rental.quote_sent_at) timeline.push({ date: rental.quote_sent_at, icon: '📨', label: 'Devis envoyé' });
+  if (quoteSentAt) timeline.push({ date: quoteSentAt, icon: '📨', label: 'Devis envoyé' });
   if (rental.quote_approved_at) timeline.push({ date: rental.quote_approved_at, icon: '✅', label: 'Devis approuvé' });
-  if (rental.bc_approved_at) timeline.push({ date: rental.bc_approved_at, icon: '📋', label: 'BC approuvé', detail: bcNumber ? `N° ${bcNumber}` : undefined });
+  if (bcApprovedAt) timeline.push({ date: bcApprovedAt, icon: '📋', label: 'BC approuvé', detail: bcNumber ? `N° ${bcNumber}` : undefined });
   if (outboundShippedAt) timeline.push({ date: outboundShippedAt, icon: '🚚', label: 'Expédié', detail: blNumber ? `BL: ${blNumber}` : undefined });
   if ((qd.rental_started_at || rental.rental_started_at)) timeline.push({ date: (qd.rental_started_at || rental.rental_started_at), icon: '📦', label: 'En location' });
   if ((qd.returned_at || rental.returned_at)) timeline.push({ date: (qd.returned_at || rental.returned_at), icon: '📥', label: 'Retourné' });
@@ -30502,20 +30516,20 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                 {/* 1. DEVIS LOCATION */}
-                {rental.quote_url && (
-                  <a href={rental.quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
+                {quoteUrl && (
+                  <a href={quoteUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
                     <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl shrink-0">💰</div>
                     <div>
                       <p className="font-medium text-gray-800">Devis Location</p>
-                      <p className="text-sm text-blue-600">{rental.quote_number ? `N° ${rental.quote_number}` : (rental.rental_number || '—')}</p>
-                      {rental.quote_sent_at && <p className="text-xs text-gray-400">Envoyé le {new Date(rental.quote_sent_at).toLocaleDateString('fr-FR')}</p>}
+                      <p className="text-sm text-blue-600">{quoteNumber ? `N° ${quoteNumber}` : (rental.rental_number || '—')}</p>
+                      {quoteSentAt && <p className="text-xs text-gray-400">Envoyé le {new Date(quoteSentAt).toLocaleDateString('fr-FR')}</p>}
                     </div>
                   </a>
                 )}
 
                 {/* 2. DEVIS SIGNÉ */}
-                {rental.signed_quote_url && (
-                  <a href={rental.signed_quote_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
+                {signedQuoteUrl && (
+                  <a href={signedQuoteUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
                     <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl shrink-0">✅</div>
                     <div>
                       <p className="font-medium text-gray-800">Devis Signé / BC</p>
@@ -30526,8 +30540,8 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                 )}
 
                 {/* 3. BON DE COMMANDE (uploaded separately) */}
-                {rental.bc_file_url && rental.bc_file_url !== rental.signed_quote_url && (
-                  <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                {bcFileUrl && bcFileUrl !== signedQuoteUrl && (
+                  <a href={bcFileUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
                     <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📝</div>
                     <div>
                       <p className="font-medium text-gray-800">Bon de Commande Client</p>
@@ -30590,7 +30604,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                 </div>
               )}
 
-              {!rental.quote_url && !rental.bc_file_url && !rental.signed_quote_url && !blUrl && !upsLabelUrl && attachments.length === 0 && (
+              {!quoteUrl && !bcFileUrl && !signedQuoteUrl && !blUrl && !upsLabelUrl && attachments.length === 0 && (
                 <div className="text-center py-8 text-gray-400"><p className="text-4xl mb-2">📄</p><p>Aucun document</p></div>
               )}
             </div>
@@ -30767,13 +30781,13 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
             </div>
 
             {/* Signature Card */}
-            {rental.bc_signature_url && (
+            {bcSignatureUrl && (
               <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
                 <div className="bg-green-500 px-4 py-3">
                   <h3 className="font-bold text-white">✍️ Signature</h3>
                 </div>
                 <div className="p-4">
-                  <img src={rental.bc_signature_url} alt="Signature" className="max-h-20 mx-auto bg-gray-50 rounded p-2 border" />
+                  <img src={bcSignatureUrl} alt="Signature" className="max-h-20 mx-auto bg-gray-50 rounded p-2 border" />
                   <p className="text-center text-sm text-gray-500 mt-2">
                     {rental.bc_signed_by || '—'} {rental.bc_signature_date && `• ${new Date(rental.bc_signature_date).toLocaleDateString('fr-FR')}`}
                   </p>
