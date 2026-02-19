@@ -13045,6 +13045,16 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
   const [showNewRental, setShowNewRental] = useState(false);
   const [selectedRental, setSelectedRental] = useState(null);
   
+  // Keep selectedRental in sync with reloaded data
+  useEffect(() => {
+    if (selectedRental) {
+      const updated = rentals.find(r => r.id === selectedRental.id);
+      if (updated && updated.status !== selectedRental.status) {
+        setSelectedRental(updated);
+      }
+    }
+  }, [rentals]);
+
   // Rental detail state
   const [rentalTab, setRentalTab] = useState('overview');
   const [rentalMessages, setRentalMessages] = useState([]);
