@@ -30422,7 +30422,6 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
                     </div>
                     );
                   })()}
-                  )}
 
                   {/* Step 4: Done */}
                   {shippingStep === 4 && generatedBL && (
