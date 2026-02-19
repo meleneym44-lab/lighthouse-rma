@@ -2483,7 +2483,7 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y, 80, 20);
+      pdf.addImage(lighthouseLogo, format, margin, y - 5, 80, 20);
     } catch (e) {
       pdf.setFontSize(24); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
       pdf.text('LIGHTHOUSE', margin, y + 8);
@@ -2556,7 +2556,7 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   pdf.text('Location de Materiel', margin + 5, y + 4);
-  y += 7;
+  y += 10;
   pdf.setFontSize(8.5);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
@@ -2570,7 +2570,7 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   y += 2;
   // Draw purple border line to match actual height
   pdf.line(margin, periodStartY, margin, y);
-  y += 5;
+  y += 8;
 
   // ===== PRICING TABLE =====
   const rowH = 7;
@@ -2670,9 +2670,9 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
     // Insurance value per device
     if (retailVal > 0) {
       pdf.setFontSize(7.5);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(139, 92, 246);
-      pdf.text('\u26A1 Valeur neuf (assurance): ' + retailVal.toFixed(2) + ' EUR', colDesc, subY - 1);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(...lightGray);
+      pdf.text('Valeur neuf (assurance): ' + retailVal.toFixed(2) + ' EUR', colDesc, subY - 1);
     }
     
     y += totalRowH;
@@ -2750,18 +2750,18 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
 
   y += 2;
   checkPageBreak(8 + RENTAL_CONDITIONS.length * 4);
-  pdf.setFontSize(7.5);
+  pdf.setFontSize(8);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...lightGray);
   pdf.text('CONDITIONS GENERALES DE LOCATION', margin, y);
   y += 4;
-  pdf.setFontSize(7.5);
+  pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
   RENTAL_CONDITIONS.forEach((d, i) => {
     checkPageBreak(5);
     const wrapped = pdf.splitTextToSize((i + 1) + '. ' + d, contentWidth);
-    wrapped.forEach(line => { checkPageBreak(3.5); pdf.text(line, margin, y); y += 3.5; });
+    wrapped.forEach(line => { checkPageBreak(4); pdf.text(line, margin, y); y += 4; });
   });
 
   // Notes
