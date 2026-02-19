@@ -2342,7 +2342,7 @@ async function generateRentalQuotePDF(options) {
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y, 80, 20);
+      pdf.addImage(lighthouseLogo, format, margin, y - 5, 80, 20);
     } catch (e) {
       pdf.setFontSize(24); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
       pdf.text('LIGHTHOUSE', margin, y + 8);
@@ -2415,7 +2415,7 @@ async function generateRentalQuotePDF(options) {
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   pdf.text('Location de Materiel', margin + 5, y + 4);
-  y += 7;
+  y += 10;
   pdf.setFontSize(8.5);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
@@ -2425,7 +2425,7 @@ async function generateRentalQuotePDF(options) {
   pdf.text('- Assurance \u00AB Bien Confie \u00BB obligatoire (vol, incendie, degats des eaux, bris accidentel)', margin + 9, y);
   y += 2;
   pdf.line(margin, periodStartY, margin, y);
-  y += 5;
+  y += 8;
 
   // ===== PRICING TABLE =====
   const rowH = 7;
@@ -2515,9 +2515,9 @@ async function generateRentalQuotePDF(options) {
     
     if (retailVal > 0) {
       pdf.setFontSize(7.5);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(139, 92, 246);
-      pdf.text('\u26A1 Valeur neuf (assurance): ' + retailVal.toFixed(2) + ' EUR', colDesc, subY - 1);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(...lightGray);
+      pdf.text('Valeur neuf (assurance): ' + retailVal.toFixed(2) + ' EUR', colDesc, subY - 1);
     }
     
     y += totalRowH;
@@ -2590,14 +2590,14 @@ async function generateRentalQuotePDF(options) {
 
   y += 2;
   checkPageBreak(8 + RENTAL_CONDITIONS.length * 4);
-  pdf.setFontSize(7.5); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...lightGray);
+  pdf.setFontSize(8); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...lightGray);
   pdf.text('CONDITIONS GENERALES DE LOCATION', margin, y);
   y += 4;
-  pdf.setFontSize(7.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
+  pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
   RENTAL_CONDITIONS.forEach((d, i) => {
     checkPageBreak(5);
     const wrapped = pdf.splitTextToSize((i + 1) + '. ' + d, contentWidth);
-    wrapped.forEach(line => { checkPageBreak(3.5); pdf.text(line, margin, y); y += 3.5; });
+    wrapped.forEach(line => { checkPageBreak(4); pdf.text(line, margin, y); y += 4; });
   });
 
   if (qd.notes) {
@@ -14197,272 +14197,201 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
         </div>
 
         {/* ========== FULL QUOTE MODAL (identical layout to RMA) ========== */}
-        {showRentalQuote && hasQuote && (
+        {showRentalQuote && hasQuote && (() => {
+          const totalRetailValue = qd.totalRetailValue || items.reduce((s, i) => s + (parseFloat(i.retail_value) || 0), 0);
+          return (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="bg-white rounded-xl w-full max-w-3xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
                 <div>
-                  <h2 className="text-xl font-bold">Offre de Prix — Location</h2>
+                  <h2 className="text-xl font-bold">Devis Location</h2>
                   <p className="text-gray-400">{rental.rental_number}</p>
                 </div>
                 <button onClick={() => setShowRentalQuote(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
               </div>
 
-              {/* Quote Document */}
-              <div id="rental-quote-print">
-                {/* Quote Header */}
-                <div className="px-8 pt-8 pb-4 border-b-4 border-[#2D5A7B]">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse France" className="h-24 w-auto mb-1" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
-                      <div className="hidden">
-                        <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
-                        <p className="text-gray-500">Worldwide Solutions</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-bold text-[#2D5A7B]">OFFRE DE PRIX — LOCATION</p>
-                      <p className="text-gray-500 font-medium">N° {rental.rental_number}</p>
+              {/* Quote Document - PDF Style */}
+              <div id="rental-quote-print" style={{fontFamily:'Helvetica,Arial,sans-serif', maxWidth:'210mm', margin:'0 auto'}}>
+                {/* Header: Logo left, Title right, navy line */}
+                <div style={{padding:'20px 30px 0 30px'}}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
+                    <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" style={{height:'48px', width:'auto'}} onError={e => { e.target.style.display='none'; }} />
+                    <div style={{textAlign:'right'}}>
+                      <p style={{fontSize:'20px', fontWeight:'bold', color:'#2D5A7B', margin:0}}>DEVIS LOCATION</p>
+                      <p style={{fontSize:'12px', fontWeight:'bold', color:'#1a1a2e', margin:'2px 0 0 0'}}>N° {rental.rental_number}</p>
                     </div>
                   </div>
+                  <div style={{height:'3px', background:'#2D5A7B', marginTop:'12px'}} />
                 </div>
 
                 {/* Info Bar */}
-                <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase">Date</p>
-                    <p className="font-medium">{rental.quote_sent_at ? new Date(rental.quote_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
+                <div style={{display:'flex', background:'#f5f5f5', margin:'8px 30px 0 30px', padding:'8px 12px'}}>
+                  <div style={{flex:1}}>
+                    <p style={{fontSize:'9px', color:'#828282', textTransform:'uppercase', margin:0}}>Date</p>
+                    <p style={{fontSize:'12px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>{rental.quote_sent_at ? new Date(rental.quote_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
                   </div>
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase">Validité</p>
-                    <p className="font-medium">30 jours</p>
+                  <div style={{flex:1}}>
+                    <p style={{fontSize:'9px', color:'#828282', textTransform:'uppercase', margin:0}}>Validité</p>
+                    <p style={{fontSize:'12px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>30 jours</p>
                   </div>
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase">Conditions de paiement</p>
-                    <p className="font-medium">{qd.paymentTerms || 'À réception de facture'}</p>
-                  </div>
-                </div>
-
-                {/* Client / Lighthouse */}
-                <div className="px-8 py-4 flex border-b">
-                  <div className="flex-1 border-r pr-6">
-                    <p className="text-xs text-gray-500 uppercase mb-1">Émetteur</p>
-                    <p className="font-bold">LIGHTHOUSE FRANCE</p>
-                    <p className="text-sm text-gray-600">16 Rue Paul Séjourne</p>
-                    <p className="text-sm text-gray-600">94000 Créteil, France</p>
-                    <p className="text-sm text-gray-600">France@golighthouse.com</p>
-                  </div>
-                  <div className="flex-1 pl-6">
-                    <p className="text-xs text-gray-500 uppercase mb-1">Client</p>
-                    <p className="font-bold">{company.name || qd.clientName || 'Client'}</p>
-                    {(qd.clientAddress || company.address) && <p className="text-sm text-gray-600">{qd.clientAddress || company.address}</p>}
-                    {(qd.clientCity || company.city) && <p className="text-sm text-gray-600">{qd.clientPostalCode || company.postal_code} {qd.clientCity || company.city}</p>}
-                    {(qd.clientCountry || company.country) && <p className="text-sm text-gray-600">{qd.clientCountry || company.country}</p>}
+                  <div style={{flex:1}}>
+                    <p style={{fontSize:'9px', color:'#828282', textTransform:'uppercase', margin:0}}>Conditions</p>
+                    <p style={{fontSize:'11px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>{qd.paymentTerms || 'À réception de facture'}</p>
                   </div>
                 </div>
 
-                {/* Rental Period */}
-                <div className="px-8 py-3 bg-blue-50 border-b flex items-center gap-3">
-                  <span className="text-lg">📅</span>
-                  <p className="text-sm font-medium text-blue-800">
-                    Période de location : du {new Date(period.start || rental.start_date).toLocaleDateString('fr-FR')} au {new Date(period.end || rental.end_date).toLocaleDateString('fr-FR')} ({period.days || rentalDaysDisplay} jours)
-                  </p>
+                {/* Client */}
+                <div style={{padding:'12px 30px 0 30px'}}>
+                  <p style={{fontSize:'9px', color:'#828282', textTransform:'uppercase', margin:0}}>Client</p>
+                  <p style={{fontSize:'15px', fontWeight:'bold', color:'#1a1a2e', margin:'4px 0 0 0'}}>{company.name || qd.clientName || 'Client'}</p>
+                  {(qd.clientAddress || company.billing_address || company.address) && <p style={{fontSize:'11px', color:'#505050', margin:'2px 0 0 0'}}>{qd.clientAddress || company.billing_address || company.address}</p>}
+                  {(qd.clientPostalCode || company.billing_postal_code || company.postal_code || qd.clientCity || company.billing_city || company.city) && <p style={{fontSize:'11px', color:'#505050', margin:'2px 0 0 0'}}>{qd.clientPostalCode || company.billing_postal_code || company.postal_code} {qd.clientCity || company.billing_city || company.city}</p>}
                 </div>
 
-                {/* Equipment Table - matches RMA device table style */}
-                <div className="px-8 py-4">
-                  <table className="w-full">
+                {/* Location de Materiel block with purple left border */}
+                <div style={{margin:'12px 30px 0 30px', borderLeft:'3px solid #8B5CF6', paddingLeft:'12px'}}>
+                  <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:'0 0 8px 0'}}>Location de Matériel</p>
+                  <p style={{fontSize:'10px', color:'#505050', margin:'0 0 3px 0'}}>- Période : du {new Date(period.start || rental.start_date).toLocaleDateString('fr-FR')} au {new Date(period.end || rental.end_date).toLocaleDateString('fr-FR')} ({period.days || rentalDaysDisplay} jours)</p>
+                  {qd.deliveryTerms && <p style={{fontSize:'10px', color:'#505050', margin:'0 0 3px 0'}}>- Délai de livraison : {qd.deliveryTerms}</p>}
+                  <p style={{fontSize:'10px', color:'#505050', margin:0}}>- Assurance « Bien Confié » obligatoire (vol, incendie, dégâts des eaux, bris accidentel)</p>
+                </div>
+
+                {/* Récapitulatif des Prix */}
+                <div style={{padding:'16px 30px 0 30px'}}>
+                  <p style={{fontSize:'14px', fontWeight:'bold', color:'#1a1a2e', margin:'0 0 8px 0'}}>Récapitulatif des Prix</p>
+                  <table style={{width:'100%', borderCollapse:'collapse', fontSize:'10px'}}>
                     <thead>
-                      <tr className="bg-[#1a1a2e] text-white">
-                        <th className="px-4 py-2 text-left">Équipement</th>
-                        <th className="px-4 py-2 text-left">N° Série</th>
-                        <th className="px-4 py-2 text-right">Durée</th>
-                        <th className="px-4 py-2 text-right">Prix HT</th>
+                      <tr style={{background:'#1a1a2e'}}>
+                        <th style={{color:'white', padding:'6px 8px', textAlign:'left', fontWeight:'bold', width:'30px'}}>Qté</th>
+                        <th style={{color:'white', padding:'6px 8px', textAlign:'left', fontWeight:'bold'}}>Désignation</th>
+                        <th style={{color:'white', padding:'6px 8px', textAlign:'right', fontWeight:'bold'}}>Tarif</th>
+                        <th style={{color:'white', padding:'6px 8px', textAlign:'right', fontWeight:'bold'}}>Durée</th>
+                        <th style={{color:'white', padding:'6px 8px', textAlign:'right', fontWeight:'bold'}}>Total HT</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map((item, idx) => (
-                        <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                          <td className="px-4 py-3 border-b">
-                            <p className="font-medium">{item.item_name || '—'}</p>
-                            {item.specs && <p className="text-xs text-gray-500 mt-1 whitespace-pre-line">{item.specs}</p>}
+                      {items.map((item, idx) => {
+                        const rawName = item.item_name || 'Équipement';
+                        const serial = item.serial_number || '';
+                        const nameHasSerial = serial && rawName.includes(serial);
+                        const displayName = nameHasSerial ? rawName : (serial ? rawName + ' (SN: ' + serial + ')' : rawName);
+                        const rateLabel = item.rate_type === 'semaine' ? '/sem' : item.rate_type === 'mois' ? '/mois' : '/jour';
+                        const appliedRate = parseFloat(item.applied_rate) || 0;
+                        const retailVal = parseFloat(item.retail_value) || 0;
+                        return (
+                        <tr key={idx} style={{background: idx % 2 === 0 ? '#fff' : '#f8f8f8'}}>
+                          <td style={{padding:'8px', borderBottom:'1px solid #eee', verticalAlign:'top'}}>1</td>
+                          <td style={{padding:'8px', borderBottom:'1px solid #eee', verticalAlign:'top'}}>
+                            <span style={{fontWeight:'bold', color:'#1a1a2e'}}>{displayName}</span>
+                            {item.specs && <p style={{fontSize:'9px', color:'#828282', margin:'3px 0 0 0'}}>{item.specs}</p>}
+                            {retailVal > 0 && <p style={{fontSize:'9px', color:'#828282', fontStyle:'italic', margin:'2px 0 0 0'}}>Valeur neuf (assurance) : {retailVal.toFixed(2)} EUR</p>}
                           </td>
-                          <td className="px-4 py-3 border-b font-mono text-sm">{item.serial_number && !(item.item_name || '').includes(item.serial_number) ? item.serial_number : ''}</td>
-                          <td className="px-4 py-3 border-b text-right text-sm">{period.days || rentalDaysDisplay} jours</td>
-                          <td className="px-4 py-3 border-b text-right font-bold">{(parseFloat(item.line_total) || 0).toFixed(2)} €</td>
+                          <td style={{padding:'8px', borderBottom:'1px solid #eee', textAlign:'right', verticalAlign:'top'}}>{appliedRate > 0 ? appliedRate.toFixed(2) + ' EUR' + rateLabel : ''}</td>
+                          <td style={{padding:'8px', borderBottom:'1px solid #eee', textAlign:'right', verticalAlign:'top'}}>{(item.rental_days || period.days || rentalDaysDisplay)}j</td>
+                          <td style={{padding:'8px', borderBottom:'1px solid #eee', textAlign:'right', fontWeight:'bold', verticalAlign:'top'}}>{(parseFloat(item.line_total) || 0).toFixed(2)} EUR</td>
+                        </tr>);
+                      })}
+                      {(qd.shipping || 0) > 0 && (
+                        <tr style={{background:'#f5f5f5'}}>
+                          <td style={{padding:'8px', borderBottom:'1px solid #eee'}}>1</td>
+                          <td style={{padding:'8px', borderBottom:'1px solid #eee'}}>Frais de port</td>
+                          <td style={{padding:'8px', borderBottom:'1px solid #eee', textAlign:'right'}}>{parseFloat(qd.shipping).toFixed(2)} EUR</td>
+                          <td style={{padding:'8px', borderBottom:'1px solid #eee'}}></td>
+                          <td style={{padding:'8px', borderBottom:'1px solid #eee', textAlign:'right', fontWeight:'bold'}}>{parseFloat(qd.shipping).toFixed(2)} EUR</td>
                         </tr>
-                      ))}
+                      )}
+                      {(qd.discountAmount || 0) > 0 && (
+                        <tr style={{background:'#fffbeb'}}>
+                          <td style={{padding:'8px'}}>1</td>
+                          <td style={{padding:'8px', color:'#b41e1e'}}>{qd.discountType === 'percent' ? 'Remise (' + qd.discount + '%)' : 'Remise'}</td>
+                          <td style={{padding:'8px'}}></td>
+                          <td style={{padding:'8px'}}></td>
+                          <td style={{padding:'8px', textAlign:'right', fontWeight:'bold', color:'#b41e1e'}}>-{(qd.discountAmount || 0).toFixed(2)} EUR</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
-                </div>
 
-                {/* Totals - matches RMA */}
-                <div className="px-8 py-4 bg-gray-50 border-t border-b">
-                  <div className="flex justify-end">
-                    <div className="w-72 space-y-1.5">
-                      {(qd.discount || 0) > 0 && <>
-                        <div className="flex justify-between text-sm"><span>Sous-total</span><span>{(qd.subtotalBeforeDiscount || 0).toFixed(2)} €</span></div>
-                        <div className="flex justify-between text-sm text-green-600"><span>Remise {qd.discountType === 'percent' ? `(${qd.discount}%)` : '(forfait)'}</span><span>-{(qd.discountAmount || 0).toFixed(2)} €</span></div>
-                      </>}
-                      {(qd.shipping || 0) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{parseFloat(qd.shipping || 0).toFixed(2)} €</span></div>}
-                      <div className="flex justify-between font-bold text-xl pt-2 border-t border-gray-300"><span>TOTAL HT</span><span className="text-[#00A651]">{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} €</span></div>
-                    </div>
+                  {/* Navy Total Bar */}
+                  <div style={{background:'#2D5A7B', display:'flex', justifyContent:'flex-end', alignItems:'center', padding:'8px 12px', marginTop:'0'}}>
+                    <span style={{color:'white', fontWeight:'bold', fontSize:'12px', marginRight:'20px'}}>TOTAL HT</span>
+                    <span style={{color:'white', fontWeight:'bold', fontSize:'18px'}}>{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} EUR</span>
                   </div>
                 </div>
 
-                {/* Insurance Conditions */}
-                <div className="px-8 py-4 border-b">
-                  <h3 className="font-bold text-sm text-gray-800 mb-2">Conditions générales de location</h3>
-                  <div className="text-sm text-gray-600 leading-relaxed space-y-2">
-                    <p><strong>1. Propriété et garde :</strong> Le matériel reste la propriété de Lighthouse France pendant toute la durée de la location. La garde est transférée au client dès la réception jusqu'à la restitution.</p>
-                    <p><strong>2. Utilisation et incidents :</strong> Le matériel doit être utilisé conformément à sa destination par un personnel qualifié. La sous-location ou le prêt sans accord écrit est interdit. Tout incident, dommage, perte ou vol doit être signalé sous 48 heures par écrit.</p>
-                    <p><strong>3. Assurance :</strong> Le client doit souscrire une assurance « Bien Confié » couvrant vol, incendie, dégâts des eaux et bris accidentel avant la prise de possession. Attestation fournie sur demande.</p>
-                    <p><strong>4. Restitution :</strong> Le matériel doit être restitué en bon état de fonctionnement à la date convenue. Tout dommage ou pièce manquante sera facturé au coût de remise en état ou de remplacement.</p>
-                    <p><strong>5. Retard de restitution :</strong> Les jours de retard non autorisés seront facturés au tarif journalier majoré de 50%. Lighthouse France se réserve le droit de récupérer le matériel à tout moment en cas de non-respect des conditions.</p>
-                    <p><strong>6. Résiliation :</strong> Le non-respect des présentes conditions peut entraîner la résiliation immédiate du contrat.</p>
-                  </div>
-                  {(qd.totalRetailValue || 0) > 0 && <p className="font-bold text-sm mt-2">Valeur à assurer : {qd.totalRetailValue.toFixed(2)} € HT</p>}
-                </div>
-
-                {/* Buyback */}
+                {/* Buyback Clause */}
                 {qd.buybackClause && (
-                  <div className="px-8 py-3 bg-green-50 border-b">
-                    <p className="text-sm text-green-800">
-                      Si l'appareil est acheté à la fin de la période de location, {qd.buybackPercent || 50}% de la somme versée pour la location sera déduite du prix d'achat de l'appareil.
-                    </p>
+                  <div style={{margin:'12px 30px 0 30px', borderLeft:'3px solid #00A651', paddingLeft:'12px'}}>
+                    <p style={{fontSize:'12px', fontWeight:'bold', color:'#1a1a2e', margin:'0 0 3px 0'}}>Clause de Rachat</p>
+                    <p style={{fontSize:'10px', color:'#505050', margin:0}}>Si achat à l'issue de la location, {qd.buybackPercent || 50}% du montant de location sera déduit du prix d'achat.</p>
                   </div>
                 )}
 
-                {/* Terms */}
-                <div className="px-8 py-3 border-b text-sm flex justify-between">
-                  <span><span className="text-gray-500">Délai :</span> {qd.deliveryTerms || 'En stock'}</span>
-                  <span><span className="text-gray-500">Paiement :</span> {qd.paymentTerms || 'À réception de facture'}</span>
+                {/* Conditions */}
+                <div style={{padding:'12px 30px 0 30px'}}>
+                  <p style={{fontSize:'10px', fontWeight:'bold', color:'#828282', textTransform:'uppercase', margin:'0 0 6px 0'}}>Conditions Générales de Location</p>
+                  <div style={{fontSize:'10px', color:'#505050', lineHeight:'1.6'}}>
+                    <p style={{margin:'0 0 3px 0'}}>1. Le matériel reste la propriété de Lighthouse France. La garde est transférée au client dès réception jusqu'à restitution.</p>
+                    <p style={{margin:'0 0 3px 0'}}>2. Utilisation conforme par personnel qualifié. Sous-location interdite sans accord écrit. Tout incident doit être signalé sous 48h par écrit.</p>
+                    <p style={{margin:'0 0 3px 0'}}>3. Le client doit souscrire une assurance « Bien Confié » couvrant : vol, incendie, dégâts des eaux, bris accidentel.</p>
+                    <p style={{margin:'0 0 3px 0'}}>4. Le matériel doit être restitué en bon état à la date convenue. Les dommages ou pièces manquantes seront facturés au coût de remise en état.</p>
+                    <p style={{margin:'0 0 3px 0'}}>5. Les jours de retard seront facturés au tarif journalier majoré de 50%. Lighthouse France pourra récupérer le matériel à tout moment.</p>
+                    <p style={{margin:0}}>6. Le non-respect des conditions peut entraîner la résiliation immédiate du contrat de location.</p>
+                  </div>
                 </div>
-                <div className="px-8 py-2 text-xs text-gray-400 border-b">Nos prix sont ex works Créteil</div>
 
+                {/* Notes */}
                 {qd.notes && (
-                  <div className="px-8 py-3 bg-amber-50 border-b text-sm">
-                    <span className="font-medium">Notes :</span> {qd.notes}
+                  <div style={{padding:'8px 30px 0 30px'}}>
+                    <p style={{fontSize:'10px', fontWeight:'bold', color:'#828282', textTransform:'uppercase', margin:'0 0 4px 0'}}>Notes</p>
+                    <p style={{fontSize:'10px', color:'#505050', margin:0}}>{qd.notes}</p>
                   </div>
                 )}
 
-                {/* Signature area */}
-                <div className="px-8 py-6 flex justify-between items-end">
+                {/* Signature Section */}
+                <div style={{margin:'16px 30px 0 30px', borderTop:'1px solid #ccc', paddingTop:'12px', display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
                   <div>
-                    <p className="text-sm font-bold text-gray-800">Lighthouse France</p>
-                    <p className="text-sm text-gray-600">Service Location</p>
+                    <p style={{fontSize:'9px', color:'#828282', textTransform:'uppercase', margin:'0 0 4px 0'}}>Établi par</p>
+                    <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:0}}>{qd.businessSettings?.quote_signatory || 'M. Meleney'}</p>
+                    <p style={{fontSize:'10px', color:'#505050', margin:'2px 0 0 0'}}>{qd.businessSettings?.company_name || 'Lighthouse France SAS'}</p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500 mb-2">Signature et cachet du client</p>
-                    <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded-lg"></div>
+                  <img src="/images/logos/capcert-logo.png" alt="Capcert ISO 9001" style={{width:'60px', height:'60px'}} onError={e => { e.target.style.display='none'; }} />
+                  <div style={{textAlign:'center'}}>
+                    <p style={{fontSize:'9px', color:'#828282', margin:'0 0 4px 0'}}>Signature client</p>
+                    <div style={{width:'120px', height:'50px', border:'2px dashed #b4b4b4', borderRadius:'6px'}} />
+                    <p style={{fontSize:'8px', color:'#828282', margin:'4px 0 0 0'}}>Lu et approuvé</p>
                   </div>
+                </div>
+
+                {/* Footer */}
+                <div style={{background:'#1a1a2e', padding:'8px 0', marginTop:'16px', textAlign:'center'}}>
+                  <p style={{color:'white', fontSize:'10px', fontWeight:'bold', margin:0}}>Lighthouse France SAS</p>
+                  <p style={{color:'#b4b4b4', fontSize:'9px', margin:'2px 0 0 0'}}>16, rue Paul Séjourné - 94000 CRÉTEIL - Tél. 01 43 77 28 07</p>
                 </div>
               </div>
 
-              {/* Action Footer - identical to RMA */}
+              {/* Action Footer */}
               <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex justify-between items-center">
                 <div className="flex gap-2">
+                  <button onClick={async () => {
+                    try {
+                      const blob = await generateRentalQuotePDF({ rental, isSigned: false });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = rental.rental_number + '_devis.pdf';
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    } catch (err) { console.error('PDF download error:', err); }
+                  }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
+                    📥 Télécharger PDF
+                  </button>
                   <button onClick={() => {
                     const content = document.getElementById('rental-quote-print');
                     if (!content) return;
                     const printWindow = window.open('', '_blank');
-                    printWindow.document.write(`
-                      <!DOCTYPE html>
-                      <html>
-                      <head>
-                        <title>Devis Location ${rental.rental_number}</title>
-                        <style>
-                          * { margin: 0; padding: 0; box-sizing: border-box; }
-                          body { font-family: Arial, sans-serif; }
-                          .border-b { border-bottom: 1px solid #e5e7eb; }
-                          .border-b-4 { border-bottom: 4px solid; }
-                          .border-t { border-top: 1px solid #e5e7eb; }
-                          .border-gray-300 { border-color: #d1d5db; }
-                          .border-\\[\\#2D5A7B\\] { border-color: #2D5A7B; }
-                          .bg-gray-50 { background: #f9fafb; }
-                          .bg-gray-100 { background: #f3f4f6; }
-                          .bg-white { background: white; }
-                          .bg-blue-50 { background: #eff6ff; }
-                          .bg-green-50 { background: #f0fdf4; }
-                          .bg-amber-50 { background: #fffbeb; }
-                          .bg-\\[\\#1a1a2e\\] { background: #1a1a2e; }
-                          .bg-\\[\\#2D5A7B\\] { background: #2D5A7B; }
-                          .text-white { color: white; }
-                          .text-gray-400 { color: #9ca3af; }
-                          .text-gray-500 { color: #6b7280; }
-                          .text-gray-600 { color: #4b5563; }
-                          .text-gray-800 { color: #1f2937; }
-                          .text-green-600 { color: #16a34a; }
-                          .text-green-800 { color: #166534; }
-                          .text-blue-800 { color: #1e40af; }
-                          .text-amber-700 { color: #b45309; }
-                          .text-amber-800 { color: #92400e; }
-                          .text-\\[\\#1a1a2e\\] { color: #1a1a2e; }
-                          .text-\\[\\#00A651\\] { color: #00A651; }
-                          .text-\\[\\#2D5A7B\\] { color: #2D5A7B; }
-                          .text-xs { font-size: 0.75rem; }
-                          .text-sm { font-size: 0.875rem; }
-                          .text-lg { font-size: 1.125rem; }
-                          .text-xl { font-size: 1.25rem; }
-                          .text-2xl { font-size: 1.5rem; }
-                          .font-medium { font-weight: 500; }
-                          .font-bold { font-weight: 700; }
-                          .font-mono { font-family: monospace; }
-                          .uppercase { text-transform: uppercase; }
-                          .text-left { text-align: left; }
-                          .text-right { text-align: right; }
-                          .text-center { text-align: center; }
-                          .whitespace-pre-line { white-space: pre-line; }
-                          .leading-relaxed { line-height: 1.625; }
-                          .px-4 { padding-left: 1rem; padding-right: 1rem; }
-                          .px-8 { padding-left: 2rem; padding-right: 2rem; }
-                          .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
-                          .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
-                          .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
-                          .py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
-                          .pt-8 { padding-top: 2rem; }
-                          .pt-2 { padding-top: 0.5rem; }
-                          .pb-4 { padding-bottom: 1rem; }
-                          .pl-6 { padding-left: 1.5rem; }
-                          .pr-6 { padding-right: 1.5rem; }
-                          .p-4 { padding: 1rem; }
-                          .mb-1 { margin-bottom: 0.25rem; }
-                          .mb-2 { margin-bottom: 0.5rem; }
-                          .mt-1 { margin-top: 0.25rem; }
-                          .mt-2 { margin-top: 0.5rem; }
-                          .gap-3 { gap: 0.75rem; }
-                          .flex { display: flex; }
-                          .flex-1 { flex: 1; }
-                          .items-start { align-items: flex-start; }
-                          .items-center { align-items: center; }
-                          .items-end { align-items: flex-end; }
-                          .justify-between { justify-content: space-between; }
-                          .justify-end { justify-content: flex-end; }
-                          .rounded-lg { border-radius: 0.5rem; }
-                          .w-full { width: 100%; }
-                          .w-48 { width: 12rem; }
-                          .w-72 { width: 18rem; }
-                          .h-20 { height: 5rem; }
-                          .h-24 { height: 6rem; }
-                          .max-h-16 { max-height: 4rem; }
-                          .border { border: 1px solid #e5e7eb; }
-                          .border-2 { border-width: 2px; }
-                          .border-r { border-right: 1px solid #e5e7eb; }
-                          .border-dashed { border-style: dashed; }
-                          .hidden { display: none; }
-                          .space-y-1\\.5 > * + * { margin-top: 0.375rem; }
-                          table { width: 100%; border-collapse: collapse; }
-                          th, td { padding: 0.75rem 1rem; }
-                          img { max-height: 6rem; width: auto; }
-                          @media print {
-                            body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-                          }
-                        </style>
-                      </head>
-                      <body>${content.innerHTML}</body>
-                      </html>
-                    `);
+                    printWindow.document.write('<!DOCTYPE html><html><head><title>Devis ' + rental.rental_number + '</title><style>* { margin:0; padding:0; box-sizing:border-box; } body { font-family:Helvetica,Arial,sans-serif; } @media print { body { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }</style></head><body>' + content.innerHTML + '</body></html>');
                     printWindow.document.close();
                     printWindow.focus();
                     setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
@@ -14502,7 +14431,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
               )}
             </div>
           </div>
-        )}
+        ); })()}
 
         {/* ========== BC SUBMISSION MODAL (identical to RMA) ========== */}
         {showBCModal && (
