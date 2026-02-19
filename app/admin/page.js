@@ -29379,17 +29379,14 @@ function RentalQuoteEditor({ rental, inventory = [], profile, businessSettings, 
         deliveryTerms, paymentTerms, rentalPeriod: { start: rental.start_date, end: rental.end_date, days },
         clientName: company.name || 'Client', clientAddress: company.billing_address || company.address || '',
         clientCity: company.billing_city || company.city || '', clientPostalCode: company.billing_postal_code || company.postal_code || '',
-        clientCountry: company.country || 'France', businessSettings: businessSettings || {}
+        clientCountry: company.country || 'France'
       };
       const mergedQuoteData = {
         ...(rental.quote_data || {}), ...quoteData,
         quoted_at: new Date().toISOString(),
-        quote_valid_until: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0]
+        quote_valid_until: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+        quote_rejection_notes: null, quote_revision_notes: null
       };
-      const { error: saveErr } = await supabase.from('rental_requests').update({
-        quote_data: mergedQuoteData
-      }).eq('id', rental.id);
-      if (saveErr) { console.error('Quote save error:', saveErr); notify('Erreur sauvegarde devis: ' + saveErr.message, 'error'); setSaving(false); return; }
       const itemSummary = quoteItems.map(i => `${i.item_name || 'Item'} (${i.rental_days || days}j)`).join(', ');
       const { data: review, error: reviewError } = await supabase.from('quote_reviews').insert({
         rental_request_id: rental.id, quote_type: 'rental', quote_data: quoteData,
@@ -29398,14 +29395,14 @@ function RentalQuoteEditor({ rental, inventory = [], profile, businessSettings, 
         device_summary: itemSummary, submitted_by: profile?.id,
         submitted_by_name: profile?.full_name || profile?.email || 'Unknown', previous_status: rental.status || 'requested'
       }).select().single();
-      if (reviewError) {
-        console.error('Review insert error:', reviewError);
-        const { error: statusErr } = await supabase.from('rental_requests').update({ status: 'pending_quote_review', quote_data: { ...mergedQuoteData, quote_rejection_notes: null, quote_revision_notes: null } }).eq('id', rental.id);
-        if (statusErr) console.error('Status update error:', statusErr);
-        notify('⚠️ Devis sauvegardé mais erreur soumission', 'warning');
+      if (reviewError) console.error('Review insert error:', reviewError);
+      if (review?.id) mergedQuoteData.quote_review_id = review.id;
+      // Single atomic update: status + quote_data together
+      const { error: statusErr } = await supabase.from('rental_requests').update({ status: 'pending_quote_review', quote_data: mergedQuoteData }).eq('id', rental.id);
+      if (statusErr) {
+        console.error('Status update error:', statusErr);
+        notify('Erreur mise à jour statut: ' + statusErr.message, 'error');
       } else {
-        const { error: statusErr } = await supabase.from('rental_requests').update({ status: 'pending_quote_review', quote_data: { ...mergedQuoteData, quote_review_id: review.id, quote_rejection_notes: null, quote_revision_notes: null } }).eq('id', rental.id);
-        if (statusErr) console.error('Status update error:', statusErr);
         notify('✅ Devis soumis pour vérification !');
       }
       reload();
