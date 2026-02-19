@@ -2454,9 +2454,8 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   const footerHeight = 16;
   const { navy, darkBlue, gray, lightGray, white } = PDF_COLORS;
   
-  let y = margin;
+  let y = 8;
 
-  // Load logos
   let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
   let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
 
@@ -2476,12 +2475,7 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   const getUsableHeight = () => pageHeight - footerHeight - margin;
 
   const checkPageBreak = (needed) => {
-    if (y + needed > getUsableHeight()) {
-      addFooter();
-      pdf.addPage();
-      y = margin;
-      return true;
-    }
+    if (y + needed > getUsableHeight()) { addFooter(); pdf.addPage(); y = margin; return true; }
     return false;
   };
 
@@ -2489,13 +2483,13 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 2, 85, 22);
+      pdf.addImage(lighthouseLogo, format, margin, y, 80, 20);
     } catch (e) {
-      pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+      pdf.setFontSize(24); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
       pdf.text('LIGHTHOUSE', margin, y + 8);
     }
   } else {
-    pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+    pdf.setFontSize(24); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
     pdf.text('LIGHTHOUSE', margin, y + 8);
   }
 
@@ -2509,78 +2503,76 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   pdf.setTextColor(...darkBlue);
   pdf.text('N\u00B0 ' + (rental.rental_number || '\u2014'), pageWidth - margin, y + 11, { align: 'right' });
 
-  y += 20;
+  y += 17;
   pdf.setDrawColor(...navy);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
-  y += 7;
+  y += 3;
 
   // ===== INFO BAR =====
   pdf.setFillColor(245, 245, 245);
-  pdf.rect(margin, y, contentWidth, 16, 'F');
-  pdf.setFontSize(8);
+  pdf.rect(margin, y, contentWidth, 14, 'F');
+  pdf.setFontSize(7);
   pdf.setTextColor(...lightGray);
-  pdf.text('DATE', margin + 5, y + 5);
-  pdf.text('VALIDITE', margin + 50, y + 5);
-  pdf.text('CONDITIONS', margin + 100, y + 5);
-  pdf.setFontSize(11);
+  pdf.text('DATE', margin + 5, y + 4);
+  pdf.text('VALIDITE', margin + 60, y + 4);
+  pdf.text('CONDITIONS', margin + 115, y + 4);
+  pdf.setFontSize(10);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  const qDate = new Date().toLocaleDateString('fr-FR');
-  const validDate = rental.quote_valid_until ? new Date(rental.quote_valid_until).toLocaleDateString('fr-FR') : '30 jours';
-  pdf.text(qDate, margin + 5, y + 12);
-  pdf.text(validDate, margin + 50, y + 12);
-  pdf.setFontSize(10);
-  pdf.text(qd.paymentTerms || 'A reception de facture', margin + 100, y + 12);
-  y += 20;
+  pdf.text(new Date().toLocaleDateString('fr-FR'), margin + 5, y + 10);
+  pdf.text('30 jours', margin + 60, y + 10);
+  pdf.setFontSize(9);
+  pdf.text(qd.paymentTerms || 'A reception de facture', margin + 115, y + 10);
+  y += 17;
 
   // ===== CLIENT =====
-  pdf.setFontSize(8);
+  pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...lightGray);
   pdf.text('CLIENT', margin, y);
-  y += 5;
-  pdf.setFontSize(14);
+  y += 4;
+  pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   pdf.text(qd.clientName || company.name || 'Client', margin, y);
-  y += 6;
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  const addr = qd.clientAddress || company.billing_address || company.address || '';
-  if (addr) { pdf.text(addr, margin, y); y += 5; }
-  const cityLine = [qd.clientPostalCode || company.billing_postal_code || company.postal_code, qd.clientCity || company.billing_city || company.city].filter(Boolean).join(' ');
-  if (cityLine) { pdf.text(cityLine, margin, y); y += 5; }
   y += 5;
-
-  // ===== RENTAL PERIOD BLOCK (blue left border, like service description) =====
-  const periodBlockH = 18;
-  checkPageBreak(periodBlockH);
-  const periodStartY = y;
-  pdf.setDrawColor(139, 92, 246); // Purple accent for rental
-  pdf.setLineWidth(1);
-  pdf.line(margin, periodStartY, margin, periodStartY + periodBlockH - 3);
-  
-  pdf.setFontSize(12);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  pdf.text('Location de Materiel', margin + 5, y + 5);
-  y += 9;
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
+  const addr = qd.clientAddress || company.billing_address || company.address || '';
+  if (addr) { pdf.text(addr, margin, y); y += 4; }
+  const cityLine = [qd.clientPostalCode || company.billing_postal_code || company.postal_code, qd.clientCity || company.billing_city || company.city].filter(Boolean).join(' ');
+  if (cityLine) { pdf.text(cityLine, margin, y); y += 4; }
+  y += 3;
+
+  // ===== RENTAL PERIOD BLOCK =====
+  checkPageBreak(16);
+  const periodStartY = y;
+  pdf.setDrawColor(139, 92, 246);
+  pdf.setLineWidth(1);
+  
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Location de Materiel', margin + 5, y + 4);
+  y += 7;
+  pdf.setFontSize(8.5);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
   pdf.text('- Periode: du ' + new Date(period.start).toLocaleDateString('fr-FR') + ' au ' + new Date(period.end).toLocaleDateString('fr-FR') + ' (' + period.days + ' jours)', margin + 9, y);
-  y += 5;
+  y += 4;
   if (qd.deliveryTerms) {
     pdf.text('- Delai de livraison: ' + qd.deliveryTerms, margin + 9, y);
-    y += 5;
+    y += 4;
   }
   pdf.text('- Assurance \u00AB Bien Confie \u00BB obligatoire (vol, incendie, degats des eaux, bris accidentel)', margin + 9, y);
-  y += 8;
+  y += 2;
+  // Draw purple border line to match actual height
+  pdf.line(margin, periodStartY, margin, y);
+  y += 5;
 
   // ===== PRICING TABLE =====
-  y += 3;
   const rowH = 7;
   const colQty = margin;
   const colDesc = margin + 12;
@@ -2590,34 +2582,28 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
 
   const drawTableHeader = () => {
     pdf.setFillColor(...darkBlue);
-    pdf.rect(margin, y, contentWidth, 9, 'F');
-    pdf.setFontSize(9);
+    pdf.rect(margin, y, contentWidth, 8, 'F');
+    pdf.setFontSize(8);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...white);
-    pdf.text('Qte', colQty + 3, y + 6);
-    pdf.text('Designation', colDesc, y + 6);
-    pdf.text('Tarif', colRate, y + 6, { align: 'right' });
-    pdf.text('Duree', colDuration, y + 6, { align: 'right' });
-    pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
-    y += 9;
+    pdf.text('Qte', colQty + 3, y + 5.5);
+    pdf.text('Designation', colDesc, y + 5.5);
+    pdf.text('Tarif', colRate, y + 5.5, { align: 'right' });
+    pdf.text('Duree', colDuration, y + 5.5, { align: 'right' });
+    pdf.text('Total HT', colTotal, y + 5.5, { align: 'right' });
+    y += 8;
   };
 
   const checkTablePageBreak = (needed) => {
-    if (y + needed > getUsableHeight()) {
-      addFooter();
-      pdf.addPage();
-      y = margin;
-      drawTableHeader();
-      return true;
-    }
+    if (y + needed > getUsableHeight()) { addFooter(); pdf.addPage(); y = margin; drawTableHeader(); return true; }
     return false;
   };
 
-  pdf.setFontSize(13);
+  pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   pdf.text('Recapitulatif des Prix', margin, y);
-  y += 7;
+  y += 5;
 
   drawTableHeader();
 
@@ -2631,50 +2617,65 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
     const retailVal = parseFloat(item.retail_value) || 0;
     const daysDisplay = (item.rental_days || period.days) + 'j';
     
-    // Device name + serial + specs = may need 2 rows
-    const deviceName = (item.item_name || 'Equipement') + (item.serial_number ? ' (SN: ' + item.serial_number + ')' : '');
+    // Build device name - avoid duplicate serial
+    const rawName = item.item_name || 'Equipement';
+    const serial = item.serial_number || '';
+    const nameHasSerial = serial && rawName.includes(serial);
+    const deviceName = nameHasSerial ? rawName : (serial ? rawName + ' (SN: ' + serial + ')' : rawName);
+    
+    // Specs/description
     const specs = item.specs || item.description || '';
     const hasSpecs = specs.length > 0;
-    const neededH = hasSpecs ? rowH * 2 : rowH;
     
-    checkTablePageBreak(neededH + (retailVal > 0 ? 4 : 0));
+    // Calculate row height: main line + specs line + insurance line
+    const mainLineH = 6;
+    const specsLineH = hasSpecs ? 5 : 0;
+    const insuranceLineH = retailVal > 0 ? 4 : 0;
+    const totalRowH = mainLineH + specsLineH + insuranceLineH + 2;
     
-    // Main row
-    pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250, rowIndex % 2 === 0 ? 255 : 250);
-    pdf.rect(margin, y, contentWidth, hasSpecs ? rowH * 2 : rowH, 'F');
+    checkTablePageBreak(totalRowH);
     
+    // Row background
+    pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 248, rowIndex % 2 === 0 ? 255 : 248, rowIndex % 2 === 0 ? 255 : 248);
+    pdf.rect(margin, y, contentWidth, totalRowH, 'F');
+    
+    // Main line: Qty, Name, Rate, Duration, Total
+    const textY = y + 4.5;
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...darkBlue);
-    pdf.text('1', colQty + 3, y + 5);
-    pdf.text(deviceName.substring(0, 55), colDesc, y + 5);
-    
-    if (appliedRate > 0) {
-      pdf.text(appliedRate.toFixed(2) + ' EUR' + rateLabel, colRate, y + 5, { align: 'right' });
-    }
-    pdf.text(daysDisplay, colDuration, y + 5, { align: 'right' });
+    pdf.text('1', colQty + 3, textY);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+    pdf.text(deviceName.substring(0, 52), colDesc, textY);
     
-    // Specs on second line
+    pdf.setFont('helvetica', 'normal');
+    if (appliedRate > 0) {
+      pdf.text(appliedRate.toFixed(2) + ' EUR' + rateLabel, colRate, textY, { align: 'right' });
+    }
+    pdf.text(daysDisplay, colDuration, textY, { align: 'right' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, textY, { align: 'right' });
+    
+    let subY = textY + mainLineH;
+    
+    // Specs line (clean, spaced)
     if (hasSpecs) {
-      pdf.setFont('helvetica', 'italic');
-      pdf.setFontSize(8);
-      pdf.setTextColor(...lightGray);
-      pdf.text(specs.substring(0, 75), colDesc, y + 5 + rowH);
-    }
-    
-    y += hasSpecs ? rowH * 2 : rowH;
-    
-    // Insurance value sub-line
-    if (retailVal > 0) {
-      pdf.setFontSize(7);
       pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(139, 92, 246); // Purple
-      pdf.text('Valeur neuf (assurance): ' + retailVal.toFixed(2) + ' EUR', colDesc, y);
-      y += 4;
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(...lightGray);
+      pdf.text(specs.substring(0, 80), colDesc, subY - 1);
+      subY += specsLineH;
     }
     
+    // Insurance value per device
+    if (retailVal > 0) {
+      pdf.setFontSize(7.5);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(139, 92, 246);
+      pdf.text('\u26A1 Valeur neuf (assurance): ' + retailVal.toFixed(2) + ' EUR', colDesc, subY - 1);
+    }
+    
+    y += totalRowH;
     rowIndex++;
   });
 
@@ -2684,13 +2685,10 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
     checkTablePageBreak(rowH);
     pdf.setFillColor(245, 245, 245);
     pdf.rect(margin, y, contentWidth, rowH, 'F');
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...darkBlue);
+    pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkBlue);
     pdf.text('1', colQty + 3, y + 5);
     pdf.text('Frais de port', colDesc, y + 5);
     pdf.text(shippingVal.toFixed(2) + ' EUR', colRate, y + 5, { align: 'right' });
-    pdf.text('', colDuration, y + 5, { align: 'right' });
     pdf.setFont('helvetica', 'bold');
     pdf.text(shippingVal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
     y += rowH;
@@ -2702,45 +2700,30 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
     checkTablePageBreak(rowH);
     pdf.setFillColor(255, 251, 235);
     pdf.rect(margin, y, contentWidth, rowH, 'F');
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(180, 30, 30);
+    pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(180, 30, 30);
     pdf.text('1', colQty + 3, y + 5);
-    const discLabel = qd.discountType === 'percent' ? 'Remise (' + qd.discount + '%)' : 'Remise';
-    pdf.text(discLabel, colDesc, y + 5);
-    pdf.text('', colRate, y + 5, { align: 'right' });
-    pdf.text('', colDuration, y + 5, { align: 'right' });
+    pdf.text(qd.discountType === 'percent' ? 'Remise (' + qd.discount + '%)' : 'Remise', colDesc, y + 5);
     pdf.setFont('helvetica', 'bold');
     pdf.text('-' + discountAmount.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
     y += rowH;
   }
 
   // ===== TOTAL ROW =====
-  checkPageBreak(15);
+  checkPageBreak(12);
   pdf.setFillColor(...navy);
-  pdf.rect(margin, y, contentWidth, 11, 'F');
+  pdf.rect(margin, y, contentWidth, 10, 'F');
   pdf.setTextColor(...white);
-  pdf.setFontSize(11);
+  pdf.setFontSize(10);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('TOTAL HT', colDuration - 20, y + 7.5);
-  pdf.setFontSize(16);
-  pdf.text((qd.totalHT || 0).toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
-  y += 15;
-
-  // Insurance total
-  const totalRetail = qd.totalRetailValue || items.reduce((s, i) => s + (parseFloat(i.retail_value) || 0), 0);
-  if (totalRetail > 0) {
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(139, 92, 246);
-    pdf.text('Valeur totale a assurer: ' + totalRetail.toFixed(2) + ' EUR HT', pageWidth - margin, y, { align: 'right' });
-    y += 6;
-  }
+  pdf.text('TOTAL HT', colDuration - 20, y + 7);
+  pdf.setFontSize(15);
+  pdf.text((qd.totalHT || 0).toFixed(2) + ' EUR', colTotal, y + 7, { align: 'right' });
+  y += 13;
 
   // ===== BUYBACK CLAUSE =====
   if (qd.buybackClause) {
     checkPageBreak(12);
-    y += 2;
+    y += 1;
     pdf.setDrawColor(0, 166, 81);
     pdf.setLineWidth(1);
     pdf.line(margin, y, margin, y + 9);
@@ -2748,11 +2731,11 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
     pdf.text('Clause de Rachat', margin + 5, y + 4);
-    pdf.setFontSize(9);
+    pdf.setFontSize(8.5);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...gray);
     pdf.text('Si achat a l\'issue de la location, ' + (qd.buybackPercent || 50) + '% du montant de location sera deduit du prix d\'achat.', margin + 5, y + 9);
-    y += 14;
+    y += 12;
   }
 
   // ===== CONDITIONS =====
@@ -2765,53 +2748,45 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
     'Le non-respect des conditions peut entrainer la resiliation immediate du contrat de location.'
   ];
 
-  y += 3;
+  y += 2;
   checkPageBreak(8 + RENTAL_CONDITIONS.length * 4);
-  pdf.setFontSize(8);
+  pdf.setFontSize(7.5);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...lightGray);
   pdf.text('CONDITIONS GENERALES DE LOCATION', margin, y);
   y += 4;
-  pdf.setFontSize(8);
+  pdf.setFontSize(7.5);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
   RENTAL_CONDITIONS.forEach((d, i) => {
     checkPageBreak(5);
     const wrapped = pdf.splitTextToSize((i + 1) + '. ' + d, contentWidth);
-    wrapped.forEach(line => {
-      checkPageBreak(4);
-      pdf.text(line, margin, y);
-      y += 4;
-    });
+    wrapped.forEach(line => { checkPageBreak(3.5); pdf.text(line, margin, y); y += 3.5; });
   });
 
   // Notes
   if (qd.notes) {
-    y += 3;
+    y += 2;
     checkPageBreak(10);
-    pdf.setFontSize(8);
+    pdf.setFontSize(7.5);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...lightGray);
     pdf.text('NOTES', margin, y);
-    y += 4;
+    y += 3;
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...gray);
     const noteLines = pdf.splitTextToSize(qd.notes, contentWidth);
-    noteLines.forEach(line => { checkPageBreak(4); pdf.text(line, margin, y); y += 4; });
+    noteLines.forEach(line => { checkPageBreak(3.5); pdf.text(line, margin, y); y += 3.5; });
   }
 
   // ===== SIGNATURE SECTION =====
-  const signatureHeight = 38;
+  const signatureHeight = 36;
   const qs = biz.quote_settings || {};
   const signatoryName = qs.signatory_name || biz.quote_signatory || 'M. Meleney';
   const signatoryCompany = qs.signatory_company || biz.company_name || 'Lighthouse France';
 
   const signatureLimit = pageHeight - footerHeight - 2;
-  if (y + signatureHeight > signatureLimit) {
-    addFooter();
-    pdf.addPage();
-    y = margin;
-  }
+  if (y + signatureHeight > signatureLimit) { addFooter(); pdf.addPage(); y = margin; }
 
   const sigY = Math.max(y + 3, signatureLimit - signatureHeight);
 
@@ -2819,41 +2794,38 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   pdf.setLineWidth(0.3);
   pdf.line(margin, sigY, pageWidth - margin, sigY);
 
-  pdf.setFontSize(8);
+  pdf.setFontSize(7);
   pdf.setTextColor(...lightGray);
-  pdf.text('ETABLI PAR', margin, sigY + 7);
-  pdf.setFontSize(12);
+  pdf.text('ETABLI PAR', margin, sigY + 6);
+  pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(signatoryName, margin, sigY + 14);
-  pdf.setFontSize(10);
+  pdf.text(signatoryName, margin, sigY + 12);
+  pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text(signatoryCompany, margin, sigY + 20);
+  pdf.text(signatoryCompany, margin, sigY + 17);
 
-  // Capcert logo
   if (capcertLogo) {
     try {
       const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 30, 30);
+      pdf.addImage(capcertLogo, format, margin + 50, sigY + 2, 28, 28);
     } catch (e) {}
   }
 
-  // Signature box
-  const sigBoxX = pageWidth - margin - 62;
-  pdf.setFontSize(8);
+  const sigBoxX = pageWidth - margin - 60;
+  pdf.setFontSize(7);
   pdf.setTextColor(...lightGray);
-  pdf.text('Signature client', sigBoxX + 16, sigY + 7);
+  pdf.text('Signature client', sigBoxX + 16, sigY + 6);
   pdf.setDrawColor(180, 180, 180);
   pdf.setLineWidth(0.3);
   pdf.setLineDashPattern([2, 2], 0);
-  pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 20, 2, 2, 'D');
+  pdf.roundedRect(sigBoxX + 5, sigY + 9, 50, 18, 2, 2, 'D');
   pdf.setLineDashPattern([], 0);
-  pdf.text('Lu et approuve', sigBoxX + 18, sigY + 34);
+  pdf.text('Lu et approuve', sigBoxX + 17, sigY + 30);
 
   addFooter();
 
-  // Page numbers
   const totalPages = pdf.internal.getNumberOfPages();
   if (totalPages > 1) {
     for (let i = 1; i <= totalPages; i++) {
