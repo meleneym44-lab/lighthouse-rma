@@ -29344,6 +29344,9 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
   const company = rental.companies || {};
   const items = rental.rental_request_items || [];
   const days = Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1;
+  const biz = businessSettings || {};
+  const employeeName = profile?.full_name || 'Admin';
+  const blDate = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
   const rentalSubtotal = quoteItems.reduce((s, i) => s + (parseFloat(i.line_total) || 0), 0);
   const discountAmount = discountType === 'percent' ? rentalSubtotal * (parseFloat(discount) || 0) / 100 : parseFloat(discount) || 0;
   const subtotalAfterDiscount = rentalSubtotal - discountAmount;
@@ -30188,6 +30191,25 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
                 <div>
                   <h4 className="font-medium text-gray-700 mb-2">🏷️ Étiquettes UPS</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {attachments.filter(a => a.category === 'ups_label').map(att => (
+                      <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors">
+                        <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🏷️</div>
+                        <div>
+                          <p className="font-medium text-gray-800">{att.file_name}</p>
+                          <p className="text-xs text-gray-400">{new Date(att.created_at).toLocaleDateString('fr-FR')}</p>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!rental.quote_url && !rental.bc_file_url && !rental.signed_quote_url && !rental.bl_url && !rental.ups_label_url && attachments.length === 0 && (
+                <div className="text-center py-8 text-gray-400"><p className="text-4xl mb-2">📄</p><p>Aucun document</p></div>
+              )}
+            </div>
+          )}
+
           {/* ===== SHIPPING TAB ===== */}
           {activeTab === 'shipping' && (
             <div className="space-y-6">
@@ -30305,11 +30327,7 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
                   )}
 
                   {/* Step 3: BL Preview */}
-                  {shippingStep === 3 && (() => {
-                    const biz = businessSettings || {};
-                    const employeeName = profile?.full_name || 'Admin';
-                    const blDate = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-                    return (
+                  {shippingStep === 3 && (
                     <div className="p-6 space-y-4">
                       <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
                         <p className="text-blue-800 font-medium">📄 Vérifiez le bon de livraison avant confirmation. Le numéro BL sera attribué automatiquement.</p>
@@ -30420,8 +30438,7 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
                         <button onClick={markShipped} disabled={saving} className="flex-1 py-3 bg-[#00A651] hover:bg-green-600 text-white rounded-lg font-bold text-lg disabled:opacity-50">{saving ? '⏳ Génération BL & Envoi...' : '✅ Confirmer l\'expédition'}</button>
                       </div>
                     </div>
-                    );
-                  })()}
+                  )}
 
                   {/* Step 4: Done */}
                   {shippingStep === 4 && generatedBL && (
@@ -30600,8 +30617,8 @@ function RentalAdminModal({ rental, inventory = [], onClose, notify, reload, bus
           </div>
           <button onClick={onClose} className="px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Fermer</button>
         </div>
+        {showBCReview && <RentalBCReviewModal rental={rental} onClose={() => { setShowBCReview(false); reload(); }} notify={notify} reload={reload} lang={lang} />}
       </div>
-      {showBCReview && <RentalBCReviewModal rental={rental} onClose={() => { setShowBCReview(false); reload(); }} notify={notify} reload={reload} lang={lang} />}
     </div>
   );
 }
