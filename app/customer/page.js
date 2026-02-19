@@ -12,6 +12,15 @@ if (typeof window !== 'undefined') {
 // INVALID (show warning): DOM-TOM (97xxx, 98xxx), foreign addresses, or non-French codes
 
 const isFranceMetropolitan = (postalCode) => {
+
+// French date formatter: "19 février 2026"
+const formatDateWrittenFR = (d) => {
+  const date = new Date(d);
+  const months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  return date.getDate() + ' ' + months[date.getMonth()] + ' ' + date.getFullYear();
+};
+
+
   if (!postalCode) return false; // No postal code = can't verify = show warning
   
   // Clean the postal code (remove spaces)
@@ -2289,6 +2298,13 @@ async function generateRentalQuotePDF(options) {
   const items = qd.quoteItems || qd.items || rental.rental_request_items || [];
   const period = qd.rentalPeriod || { start: rental.start_date, end: rental.end_date, days: Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1 };
 
+  // French date formatter: "19 février 2026"
+  const formatDateFR = (d) => {
+    const date = new Date(d);
+    const months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+    return date.getDate() + ' ' + months[date.getMonth()] + ' ' + date.getFullYear();
+  };
+
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
   const footerHeight = 16;
@@ -2370,40 +2386,40 @@ async function generateRentalQuotePDF(options) {
 
   // ===== INFO BAR =====
   pdf.setFillColor(245, 245, 245);
-  pdf.rect(margin, y, contentWidth, 14, 'F');
+  pdf.rect(margin, y, contentWidth, 16, 'F');
   pdf.setFontSize(7);
   pdf.setTextColor(...lightGray);
   pdf.text('DATE', margin + 5, y + 4);
-  pdf.text('VALIDITE', margin + 60, y + 4);
-  pdf.text('CONDITIONS', margin + 115, y + 4);
+  pdf.text('VALIDITE', margin + 65, y + 4);
+  pdf.text('CONDITIONS', margin + 120, y + 4);
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(new Date().toLocaleDateString('fr-FR'), margin + 5, y + 10);
-  pdf.text('30 jours', margin + 60, y + 10);
+  pdf.text(formatDateFR(new Date()), margin + 5, y + 11);
+  pdf.text('30 jours', margin + 65, y + 11);
   pdf.setFontSize(9);
-  pdf.text(qd.paymentTerms || 'A reception de facture', margin + 115, y + 10);
-  y += 17;
+  pdf.text(qd.paymentTerms || 'A reception de facture', margin + 120, y + 11);
+  y += 20;
 
   // ===== CLIENT =====
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...lightGray);
   pdf.text('CLIENT', margin, y);
-  y += 4;
-  pdf.setFontSize(13);
+  y += 5;
+  pdf.setFontSize(14);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   pdf.text(qd.clientName || company.name || 'Client', margin, y);
-  y += 5;
-  pdf.setFontSize(9);
+  y += 6;
+  pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
   const addr = qd.clientAddress || company.billing_address || company.address || '';
-  if (addr) { pdf.text(addr, margin, y); y += 4; }
+  if (addr) { pdf.text(addr, margin, y); y += 5; }
   const cityLine = [qd.clientPostalCode || company.billing_postal_code || company.postal_code, qd.clientCity || company.billing_city || company.city].filter(Boolean).join(' ');
-  if (cityLine) { pdf.text(cityLine, margin, y); y += 4; }
-  y += 3;
+  if (cityLine) { pdf.text(cityLine, margin, y); y += 5; }
+  y += 5;
 
   // ===== RENTAL PERIOD BLOCK =====
   checkPageBreak(16);
@@ -2411,19 +2427,19 @@ async function generateRentalQuotePDF(options) {
   pdf.setDrawColor(139, 92, 246);
   pdf.setLineWidth(1);
   
-  pdf.setFontSize(11);
+  pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   pdf.text('Location de Materiel', margin + 5, y + 4);
-  y += 10;
-  pdf.setFontSize(8.5);
+  y += 11;
+  pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text('- Periode: du ' + new Date(period.start).toLocaleDateString('fr-FR') + ' au ' + new Date(period.end).toLocaleDateString('fr-FR') + ' (' + period.days + ' jours)', margin + 9, y);
-  y += 4;
-  if (qd.deliveryTerms) { pdf.text('- Delai de livraison: ' + qd.deliveryTerms, margin + 9, y); y += 4; }
+  pdf.text('- Periode: du ' + formatDateFR(period.start) + ' au ' + formatDateFR(period.end) + ' (' + period.days + ' jours)', margin + 9, y);
+  y += 5;
+  if (qd.deliveryTerms) { pdf.text('- Delai de livraison: ' + qd.deliveryTerms, margin + 9, y); y += 5; }
   pdf.text('- Assurance \u00AB Bien Confie \u00BB obligatoire (vol, incendie, degats des eaux, bris accidentel)', margin + 9, y);
-  y += 2;
+  y += 3;
   pdf.line(margin, periodStartY, margin, y);
   y += 8;
 
@@ -2437,16 +2453,16 @@ async function generateRentalQuotePDF(options) {
 
   const drawTableHeader = () => {
     pdf.setFillColor(...darkBlue);
-    pdf.rect(margin, y, contentWidth, 8, 'F');
-    pdf.setFontSize(8);
+    pdf.rect(margin, y, contentWidth, 9, 'F');
+    pdf.setFontSize(9);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...white);
-    pdf.text('Qte', colQty + 3, y + 5.5);
-    pdf.text('Designation', colDesc, y + 5.5);
-    pdf.text('Tarif', colRate, y + 5.5, { align: 'right' });
-    pdf.text('Duree', colDuration, y + 5.5, { align: 'right' });
-    pdf.text('Total HT', colTotal, y + 5.5, { align: 'right' });
-    y += 8;
+    pdf.text('Qte', colQty + 3, y + 6);
+    pdf.text('Designation', colDesc, y + 6);
+    pdf.text('Tarif', colRate, y + 6, { align: 'right' });
+    pdf.text('Duree', colDuration, y + 6, { align: 'right' });
+    pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
+    y += 9;
   };
 
   const checkTablePageBreak = (needed) => {
@@ -2454,11 +2470,11 @@ async function generateRentalQuotePDF(options) {
     return false;
   };
 
-  pdf.setFontSize(12);
+  pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   pdf.text('Recapitulatif des Prix', margin, y);
-  y += 5;
+  y += 6;
   drawTableHeader();
 
   let rowIndex = 0;
@@ -2479,9 +2495,9 @@ async function generateRentalQuotePDF(options) {
     const specs = item.specs || item.description || '';
     const hasSpecs = specs.length > 0;
     
-    const mainLineH = 6;
+    const mainLineH = 7;
     const specsLineH = hasSpecs ? 5 : 0;
-    const insuranceLineH = retailVal > 0 ? 4 : 0;
+    const insuranceLineH = retailVal > 0 ? 5 : 0;
     const totalRowH = mainLineH + specsLineH + insuranceLineH + 2;
     
     checkTablePageBreak(totalRowH);
@@ -2489,8 +2505,8 @@ async function generateRentalQuotePDF(options) {
     pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 248, rowIndex % 2 === 0 ? 255 : 248, rowIndex % 2 === 0 ? 255 : 248);
     pdf.rect(margin, y, contentWidth, totalRowH, 'F');
     
-    const textY = y + 4.5;
-    pdf.setFontSize(9);
+    const textY = y + 5;
+    pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...darkBlue);
     pdf.text('1', colQty + 3, textY);
@@ -2507,14 +2523,14 @@ async function generateRentalQuotePDF(options) {
     
     if (hasSpecs) {
       pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(7.5);
+      pdf.setFontSize(8);
       pdf.setTextColor(...lightGray);
       pdf.text(specs.substring(0, 80), colDesc, subY - 1);
       subY += specsLineH;
     }
     
     if (retailVal > 0) {
-      pdf.setFontSize(7.5);
+      pdf.setFontSize(8);
       pdf.setFont('helvetica', 'italic');
       pdf.setTextColor(...lightGray);
       pdf.text('Valeur neuf (assurance): ' + retailVal.toFixed(2) + ' EUR', colDesc, subY - 1);
@@ -2554,28 +2570,28 @@ async function generateRentalQuotePDF(options) {
   }
 
   // Total
-  checkPageBreak(12);
+  checkPageBreak(14);
   pdf.setFillColor(...navy);
-  pdf.rect(margin, y, contentWidth, 10, 'F');
+  pdf.rect(margin, y, contentWidth, 12, 'F');
   pdf.setTextColor(...white);
-  pdf.setFontSize(10); pdf.setFont('helvetica', 'bold');
-  pdf.text('TOTAL HT', colDuration - 20, y + 7);
-  pdf.setFontSize(15);
-  pdf.text((qd.totalHT || 0).toFixed(2) + ' EUR', colTotal, y + 7, { align: 'right' });
-  y += 13;
+  pdf.setFontSize(11); pdf.setFont('helvetica', 'bold');
+  pdf.text('TOTAL HT', colDuration - 20, y + 8);
+  pdf.setFontSize(16);
+  pdf.text((qd.totalHT || 0).toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
+  y += 16;
 
   // Buyback
   if (qd.buybackClause) {
-    checkPageBreak(12);
-    y += 1;
+    checkPageBreak(14);
+    y += 2;
     pdf.setDrawColor(0, 166, 81);
     pdf.setLineWidth(1);
-    pdf.line(margin, y, margin, y + 9);
-    pdf.setFontSize(10); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
-    pdf.text('Clause de Rachat', margin + 5, y + 4);
-    pdf.setFontSize(8.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
-    pdf.text('Si achat a l\'issue de la location, ' + (qd.buybackPercent || 50) + '% du montant de location sera deduit du prix d\'achat.', margin + 5, y + 9);
-    y += 12;
+    pdf.line(margin, y, margin, y + 11);
+    pdf.setFontSize(11); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+    pdf.text('Clause de Rachat', margin + 5, y + 5);
+    pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
+    pdf.text('Si achat a l\'issue de la location, ' + (qd.buybackPercent || 50) + '% du montant de location sera deduit du prix d\'achat.', margin + 5, y + 10);
+    y += 14;
   }
 
   // Conditions
@@ -2588,16 +2604,16 @@ async function generateRentalQuotePDF(options) {
     'Le non-respect des conditions peut entrainer la resiliation immediate du contrat de location.'
   ];
 
-  y += 2;
-  checkPageBreak(8 + RENTAL_CONDITIONS.length * 4);
-  pdf.setFontSize(8); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...lightGray);
+  y += 5;
+  checkPageBreak(8 + RENTAL_CONDITIONS.length * 5);
+  pdf.setFontSize(8.5); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...lightGray);
   pdf.text('CONDITIONS GENERALES DE LOCATION', margin, y);
-  y += 4;
-  pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
+  y += 5;
+  pdf.setFontSize(8.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
   RENTAL_CONDITIONS.forEach((d, i) => {
     checkPageBreak(5);
     const wrapped = pdf.splitTextToSize((i + 1) + '. ' + d, contentWidth);
-    wrapped.forEach(line => { checkPageBreak(4); pdf.text(line, margin, y); y += 4; });
+    wrapped.forEach(line => { checkPageBreak(4.5); pdf.text(line, margin, y); y += 4.5; });
   });
 
   if (qd.notes) {
@@ -14228,7 +14244,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 <div style={{display:'flex', background:'#f5f5f5', margin:'10px 32px 0 32px', padding:'10px 16px'}}>
                   <div style={{flex:1}}>
                     <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:0}}>Date</p>
-                    <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>{rental.quote_sent_at ? new Date(rental.quote_sent_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</p>
+                    <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>{formatDateWrittenFR(rental.quote_sent_at || new Date())}</p>
                   </div>
                   <div style={{flex:1}}>
                     <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:0}}>Validité</p>
@@ -14251,7 +14267,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 {/* Location de Materiel block with purple left border */}
                 <div style={{margin:'16px 32px 0 32px', borderLeft:'3px solid #8B5CF6', paddingLeft:'12px'}}>
                   <p style={{fontSize:'15px', fontWeight:'bold', color:'#1a1a2e', margin:'0 0 8px 0'}}>Location de Matériel</p>
-                  <p style={{fontSize:'11px', color:'#505050', margin:'0 0 3px 0'}}>- Période : du {new Date(period.start || rental.start_date).toLocaleDateString('fr-FR')} au {new Date(period.end || rental.end_date).toLocaleDateString('fr-FR')} ({period.days || rentalDaysDisplay} jours)</p>
+                  <p style={{fontSize:'11px', color:'#505050', margin:'0 0 3px 0'}}>- Période : du {formatDateWrittenFR(period.start || rental.start_date)} au {formatDateWrittenFR(period.end || rental.end_date)} ({period.days || rentalDaysDisplay} jours)</p>
                   {qd.deliveryTerms && <p style={{fontSize:'11px', color:'#505050', margin:'0 0 3px 0'}}>- Délai de livraison : {qd.deliveryTerms}</p>}
                   <p style={{fontSize:'11px', color:'#505050', margin:0}}>- Assurance « Bien Confié » obligatoire (vol, incendie, dégâts des eaux, bris accidentel)</p>
                 </div>
