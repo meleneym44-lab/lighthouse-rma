@@ -17157,7 +17157,7 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
   const [filter, setFilter] = useState('open');
   const [search, setSearch] = useState('');
   const [profile, setProfile] = useState(null);
-  const [englishMode, setEnglishMode] = useState(true);
+  const [englishMode, setEnglishMode] = useState(false);
   const [englishInput, setEnglishInput] = useState('');
   const [frenchOutput, setFrenchOutput] = useState('');
   const [processingMessage, setProcessingMessage] = useState(false);
@@ -17363,12 +17363,7 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
       if (error) throw error;
       setMessages(p => [...p, data]);
       setEnglishInput(''); setFrenchOutput('');
-      if ((selectedConvo._type === 'rma' || selectedConvo._type === 'parts') && selectedConvo.chat_status !== 'open') {
-        await supabase.from('service_requests').update({ chat_status: 'open' }).eq('id', selectedConvo.id);
-        setSelectedConvo(p => ({ ...p, chat_status: 'open', _isOpen: true }));
-      }
-      notify('✅ Sent!');
-      reload();
+      notify('✅ Envoyé !');
     } catch (e) { notify('Error: ' + e.message, 'error'); }
     setSendingMessage(false);
   };
@@ -17378,8 +17373,7 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
     const ns = selectedConvo.chat_status === 'open' ? 'closed' : 'open';
     await supabase.from('service_requests').update({ chat_status: ns }).eq('id', selectedConvo.id);
     setSelectedConvo(p => ({ ...p, chat_status: ns, _isOpen: ns === 'open' }));
-    notify(ns === 'open' ? '🔔 Opened' : '✅ Closed');
-    reload();
+    notify(ns === 'open' ? '🔔 Ouvert' : '✅ Fermé');
   };
   
   const handleFile = async (e) => {
@@ -17463,7 +17457,7 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => setEnglishMode(!englishMode)} className={`px-2 py-1 rounded text-xs font-medium ${englishMode ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
-                    {englishMode ? '🇬🇧 EN' : '🇫🇷 FR'}
+                    {englishMode ? '🇬🇧 EN→FR' : '🇫🇷 FR'}
                   </button>
                   <button onClick={() => setShowInfoSidebar(!showInfoSidebar)} className={`px-2 py-1 rounded text-xs font-medium ${showInfoSidebar ? 'bg-purple-500 text-white' : 'bg-purple-100'}`}>📋 Info</button>
                   {(selectedConvo._type === 'rma' || selectedConvo._type === 'parts') && (
@@ -17552,11 +17546,15 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
                         </div>
                       </div>
                     ) : (
-                      <div className="flex gap-2">
-                        <textarea value={frenchOutput} onChange={e => setFrenchOutput(e.target.value)} placeholder={lang === 'en' ? 'Message in French...' : 'Message en français...'} className="flex-1 px-2 py-1.5 border rounded text-sm resize-none" rows={2} />
-                        <div className="flex flex-col gap-1">
-                          <label className="px-2 py-1.5 bg-gray-200 rounded text-xs cursor-pointer text-center">📎<input type="file" className="hidden" onChange={handleFile} /></label>
-                          <button onClick={sendMessage} disabled={sendingMessage || !frenchOutput.trim()} className="px-3 py-1.5 bg-blue-500 text-white rounded text-xs disabled:opacity-50">📤</button>
+                      <div className="space-y-2">
+                        <textarea value={frenchOutput} onChange={e => setFrenchOutput(e.target.value)} placeholder="Écrivez votre message en français..." className="w-full px-3 py-2 border rounded text-sm resize-none" rows={3} />
+                        <div className="flex justify-between">
+                          <label className="px-3 py-1.5 bg-gray-200 rounded text-xs font-medium cursor-pointer">
+                            📎 Fichier<input type="file" className="hidden" onChange={handleFile} disabled={uploadingFile} />
+                          </label>
+                          <button onClick={sendMessage} disabled={sendingMessage || !frenchOutput.trim()} className="px-4 py-1.5 bg-blue-500 text-white rounded text-xs font-medium disabled:opacity-50">
+                            {sendingMessage ? '⏳ Envoi...' : '📤 Envoyer'}
+                          </button>
                         </div>
                       </div>
                     )}
