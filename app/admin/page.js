@@ -4720,7 +4720,7 @@ const renderQuotePreview = (review) => {
               <div className="text-right">
                 <p className="text-xl font-bold text-[#2D5A7B]">DEVIS PIÈCES</p>
                 <p className="text-sm font-bold text-[#2D5A7B]">N° {qd.quoteNumber || qd.quoteRef || review.quote_number || '—'}</p>
-                <p className="text-xs text-gray-500">PO: {qd.poNumber || review.rma_number}</p>
+                <p className="text-xs text-gray-500">CDP: {qd.poNumber || review.rma_number}</p>
               </div>
             </div>
           </div>
@@ -13557,23 +13557,23 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile, lang = 'fr'
     
     setSaving(true);
     try {
-      // Generate Parts Order number if not exists (PO-MMYY-NNN format)
+      // Generate Parts Order number if not exists (CDP-MMYY-NNN format)
       let poNumber = order.request_number;
       if (!poNumber) {
         try {
-          const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'PO' });
+          const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'CDP' });
           if (!docNumError && docNumData) {
             poNumber = docNumData;
           }
         } catch (e) {
-          console.error('Could not generate PO number:', e);
+          console.error('Could not generate CDP number:', e);
         }
         // Fallback if RPC fails
         if (!poNumber) {
           const now = new Date();
           const mm = String(now.getMonth() + 1).padStart(2, '0');
           const yy = String(now.getFullYear()).slice(-2);
-          poNumber = `PO-${mm}${yy}-001`;
+          poNumber = `CDP-${mm}${yy}-001`;
         }
       }
       
@@ -14580,7 +14580,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       } catch (e) {
         console.error('Could not generate BL number:', e);
         // Fallback to old method
-        const poNum = order.request_number?.replace('PO-', '') || '00000';
+        const poNum = order.request_number?.replace(/^(PO|CDP)-/, '') || '00000';
         const date = new Date();
         const dateStr = `${String(date.getDate()).padStart(2, '0')}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getFullYear()).slice(-2)}`;
         blNumber = `BL-${poNum}-${dateStr}`;
@@ -17168,7 +17168,65 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
   const [showInfoSidebar, setShowInfoSidebar] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [showEnglishConfirm, setShowEnglishConfirm] = useState(false);
-  const [rentalUnreadCounts, setRentalUnreadCounts] = useState({});
+  const [rentalConvoData, setRentalConvoData] = useState({ ids: new Set(), unread: {} });
+
+  // Load rental conversations - only rentals that have messages (ticket model)
+  useEffect(() => {
+    const loadRentalConvos = async () => {
+      if (!rentals.length) return;
+      // Get all messages for rentals
+      const { data: rentalMsgs } = await supabase.from('messages')
+        .select('rental_request_id, sender_type, is_read')
+        .not('rental_request_id', 'is', null);
+      if (!rentalMsgs) return;
+      
+      const ids = new Set();
+      const unread = {};
+      rentalMsgs.forEach(m => {
+        if (m.rental_request_id) {
+          ids.add(m.rental_request_id);
+          if (m.sender_type === 'customer' && !m.is_read) {
+            unread[m.rental_request_id] = (unread[m.rental_request_id] || 0) + 1;
+          }
+        }
+      });
+      setRentalConvoData({ ids, unread });
+    };
+    loadRentalConvos();
+  }, [rentals]);
+
+  // Type config for different conversation types
+  const typeConfig = {
+    rma: { icon: '🔧', color: 'text-[#00A651]', label: 'RMA', bgActive: 'bg-green-50' },
+    parts: { icon: '🔩', color: 'text-[#2D5A7B]', label: 'CDP', bgActive: 'bg-blue-50' },
+    rental: { icon: '📅', color: 'text-[#8B5CF6]', label: 'LOC', bgActive: 'bg-purple-50' },
+  };
+
+  // Build unified conversation list
+  const allConversations = useMemo(() => {
+    const rmaConvos = requests.map(r => ({
+      ...r,
+      _type: r.request_type === 'parts' ? 'parts' : 'rma',
+      _number: r.request_type === 'parts' ? (r.request_number || r.quote_number) : r.request_number,
+      _company: r.companies?.name || '',
+      _unread: r.unread_admin_count || 0,
+      _isOpen: r.chat_status === 'open',
+      _lastActivity: r.last_message_at || r.updated_at
+    }));
+    // Only include rentals that have messages (ticket model)
+    const rentalConvos = rentals
+      .filter(r => rentalConvoData.ids.has(r.id))
+      .map(r => ({
+        ...r,
+        _type: 'rental',
+        _number: r.rental_number,
+        _company: r.companies?.name || '',
+        _unread: rentalConvoData.unread[r.id] || 0,
+        _isOpen: (rentalConvoData.unread[r.id] || 0) > 0,
+        _lastActivity: r.updated_at
+      }));
+    return [...rmaConvos, ...rentalConvos];
+  }, [requests, rentals, rentalConvoData]);
   
   const badWords = ['fuck', 'shit', 'bitch', 'ass', 'crap'];
   
@@ -17183,55 +17241,6 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
     loadProfile();
   }, []);
 
-  // Load unread counts for rentals (since they don't have unread_admin_count column)
-  useEffect(() => {
-    const loadRentalUnread = async () => {
-      if (!rentals.length) return;
-      const rentalIds = rentals.map(r => r.id);
-      const { data: unreadMsgs } = await supabase.from('messages')
-        .select('rental_request_id')
-        .in('rental_request_id', rentalIds)
-        .eq('sender_type', 'customer')
-        .eq('is_read', false);
-      if (unreadMsgs) {
-        const counts = {};
-        unreadMsgs.forEach(m => { counts[m.rental_request_id] = (counts[m.rental_request_id] || 0) + 1; });
-        setRentalUnreadCounts(counts);
-      }
-    };
-    loadRentalUnread();
-  }, [rentals]);
-
-  // Type config for different conversation types
-  const typeConfig = {
-    rma: { icon: '🔧', color: 'text-[#00A651]', label: 'RMA', bgActive: 'bg-green-50' },
-    parts: { icon: '🔩', color: 'text-[#2D5A7B]', label: 'PO', bgActive: 'bg-blue-50' },
-    rental: { icon: '📅', color: 'text-[#8B5CF6]', label: 'LOC', bgActive: 'bg-purple-50' },
-  };
-
-  // Build unified conversation list
-  const allConversations = useMemo(() => {
-    const rmaConvos = requests.map(r => ({
-      ...r,
-      _type: r.request_type === 'parts' ? 'parts' : 'rma',
-      _number: r.request_type === 'parts' ? (r.quote_number || r.bc_number || r.request_number) : r.request_number,
-      _company: r.companies?.name || '',
-      _unread: r.unread_admin_count || 0,
-      _isOpen: r.chat_status === 'open',
-      _lastActivity: r.last_message_at || r.updated_at
-    }));
-    const rentalConvos = rentals.map(r => ({
-      ...r,
-      _type: 'rental',
-      _number: r.rental_number,
-      _company: r.companies?.name || '',
-      _unread: rentalUnreadCounts[r.id] || 0,
-      _isOpen: (rentalUnreadCounts[r.id] || 0) > 0,
-      _lastActivity: r.updated_at
-    }));
-    return [...rmaConvos, ...rentalConvos];
-  }, [requests, rentals, rentalUnreadCounts]);
-  
   const getUserSignature = () => {
     if (!profile?.full_name) return 'Lighthouse France';
     const names = profile.full_name.split(' ');
@@ -17290,7 +17299,7 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
         }
         // Update local unread
         if (selectedConvo._type === 'rental') {
-          setRentalUnreadCounts(p => ({ ...p, [selectedConvo.id]: 0 }));
+          setRentalConvoData(p => ({ ...p, unread: { ...p.unread, [selectedConvo.id]: 0 } }));
         }
         reload();
       }
@@ -17593,8 +17602,8 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
                       </div>
                     ) : selectedConvo._type === 'parts' ? (
                       <div className="space-y-2 text-sm">
-                        <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">PO / Ref</span><p className="font-mono font-bold text-[#2D5A7B]">{selectedConvo.quote_number || selectedConvo.bc_number || selectedConvo.request_number}</p></div>
-                        {selectedConvo.request_number && <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">RMA Ref</span><p className="font-mono">{selectedConvo.request_number}</p></div>}
+                        <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">CDP Ref</span><p className="font-mono font-bold text-[#2D5A7B]">{selectedConvo.request_number || selectedConvo.quote_number}</p></div>
+                        {selectedConvo.bc_number && <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">BC N°</span><p className="font-mono">{selectedConvo.bc_number}</p></div>}
                         <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Status</span><p>{selectedConvo.status}</p></div>
                         <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Company</span><p>{selectedConvo.companies?.name}</p></div>
                         <div className="bg-white p-2 rounded border">
@@ -30537,14 +30546,16 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
     e?.preventDefault();
     if (!newMsg.trim()) return;
     setSendingMsg(true);
-    await supabase.from('messages').insert({
-      rental_request_id: rental.id, sender_id: profile?.id,
-      sender_name: profile?.full_name || (onOpenQuoteEditor ? 'Admin' : 'Client'), sender_type: onOpenQuoteEditor ? 'admin' : 'customer', content: newMsg.trim()
-    });
+    try {
+      const { data: inserted, error: insertErr } = await supabase.from('messages').insert({
+        rental_request_id: rental.id, sender_id: profile?.id,
+        sender_name: profile?.full_name || (onOpenQuoteEditor ? 'Admin' : 'Client'), sender_type: onOpenQuoteEditor ? 'admin' : 'customer', content: newMsg.trim()
+      }).select().single();
+      if (insertErr) { console.error('Rental message insert error:', insertErr); notify && notify('Erreur envoi: ' + insertErr.message, 'error'); }
+      else { setMessages(p => [...p, inserted]); }
+    } catch (err) { console.error('Rental message error:', err); }
     setNewMsg('');
     setSendingMsg(false);
-    const { data: msgs } = await supabase.from('messages').select('*').eq('rental_request_id', rental.id).order('created_at', { ascending: true });
-    if (msgs) setMessages(msgs);
   };
   const markInRental = async () => { await updateStatus('in_rental', { rental_started_at: new Date().toISOString() }); };
   const markReturnPending = async () => { await updateStatus('return_pending', { rental_ended_at: new Date().toISOString() }); };
