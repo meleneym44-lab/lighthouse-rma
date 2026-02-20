@@ -18083,8 +18083,8 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           {activeTab === 'rentals' && !selectedRental && (
             <div className="space-y-3">
               {clientRentals.length === 0 ? <p className="text-center text-gray-400 py-8">{lang === 'en' ? 'No rentals' : 'Aucune location'}</p> : clientRentals.map(rental => {
-                const rStyles = lang === 'en' ? { requested:'New', quote_sent:'Quote Sent', waiting_bc:'Awaiting PO', bc_review:'PO to Review', bc_approved:'PO Approved', shipped:'Shipped', in_rental:'On Rental', return_pending:'Return Expected', returned:'Returned', completed:'Completed', cancelled:'Cancelled' } : { requested:'Nouvelle', quote_sent:'Devis envoyé', waiting_bc:'Attente BC', bc_review:'BC à vérifier', bc_approved:'BC approuvé', shipped:'Expédié', in_rental:'En location', return_pending:'Retour attendu', returned:'Retourné', completed:'Terminé', cancelled:'Annulé' };
-                const rColors = { requested:'bg-amber-100 text-amber-700', quote_sent:'bg-blue-100 text-blue-700', bc_review:'bg-orange-100 text-orange-700', bc_approved:'bg-green-100 text-green-700', shipped:'bg-cyan-100 text-cyan-700', in_rental:'bg-purple-100 text-purple-700', return_pending:'bg-orange-100 text-orange-700', returned:'bg-teal-100 text-teal-700', completed:'bg-green-100 text-green-700', cancelled:'bg-red-100 text-red-700' };
+                const rStyles = lang === 'en' ? { requested:'New', quote_sent:'Quote Sent', waiting_bc:'Awaiting PO', bc_review:'PO to Review', bc_approved:'PO Approved', shipped:'Shipped', in_rental:'Shipped', return_pending:'Return Expected', returned:'Returned', inspection:'Inspection', inspection_issue:'Damage Found', completed:'Completed', cancelled:'Cancelled' } : { requested:'Nouvelle', quote_sent:'Devis envoyé', waiting_bc:'Attente BC', bc_review:'BC à vérifier', bc_approved:'BC approuvé', shipped:'Expédié', in_rental:'Expédié', return_pending:'Retour attendu', returned:'Retourné', inspection:'Inspection', inspection_issue:'Dommages', completed:'Terminé', cancelled:'Annulé' };
+                const rColors = { requested:'bg-amber-100 text-amber-700', quote_sent:'bg-blue-100 text-blue-700', bc_review:'bg-orange-100 text-orange-700', bc_approved:'bg-green-100 text-green-700', shipped:'bg-cyan-100 text-cyan-700', in_rental:'bg-cyan-100 text-cyan-700', return_pending:'bg-orange-100 text-orange-700', returned:'bg-teal-100 text-teal-700', inspection:'bg-blue-100 text-blue-700', inspection_issue:'bg-red-100 text-red-700', completed:'bg-green-100 text-green-700', cancelled:'bg-red-100 text-red-700' };
                 const items = rental.rental_request_items || [];
                 return (
                   <div key={rental.id} onClick={() => setSelectedRental(rental)} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 cursor-pointer transition-colors">
@@ -28675,12 +28675,12 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
               ) : rentals.map(rental => {
                 const style = getStatusStyle(rental.status);
                 const days = Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1;
-                const isOverdue = rental.status === 'in_rental' && new Date(rental.end_date) < new Date();
-                const daysUntilEnd = rental.status === 'in_rental' ? Math.ceil((new Date(rental.end_date) - new Date()) / (1000*60*60*24)) : null;
+                const isOverdue = ['shipped', 'in_rental'].includes(rental.status) && new Date(rental.end_date) < new Date();
+                const daysUntilEnd = ['shipped', 'in_rental'].includes(rental.status) ? Math.ceil((new Date(rental.end_date) - new Date()) / (1000*60*60*24)) : null;
                 // Progress mini-bar
-                const stepMap = { 'requested': 0, 'pending_quote_review': 1, 'quote_sent': 1, 'waiting_bc': 2, 'bc_review': 2, 'bc_approved': 2, 'shipped': 3, 'in_rental': 4, 'return_pending': 5, 'returned': 5, 'completed': 6 };
+                const stepMap = { 'requested': 0, 'pending_quote_review': 1, 'quote_sent': 1, 'waiting_bc': 2, 'bc_review': 2, 'bc_approved': 2, 'shipped': 3, 'in_rental': 3, 'returned': 4, 'inspection': 5, 'inspection_issue': 5, 'completed': 6 };
                 const progress = stepMap[rental.status] ?? 0;
-                const totalSteps = 6;
+                const totalSteps = 7;
                 return (
                   <tr key={rental.id} className={`hover:bg-gray-50 cursor-pointer ${isOverdue ? 'bg-red-50' : ''}`} onClick={() => setFullPageRental(rental)}>
                     <td className="px-3 py-3">
@@ -30228,6 +30228,9 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
     await updateStatus('returned', { returned_at: new Date().toISOString(), return_condition: returnCondition, return_notes: returnNotes, return_tracking: returnTracking || null });
     await supabase.from('rental_bookings').delete().eq('rental_request_id', rental.id);
   };
+  const startInspection = async () => { await updateStatus('inspection', { inspection_started_at: new Date().toISOString() }); };
+  const completeInspectionOk = async () => { await updateStatus('completed', { completed_at: new Date().toISOString(), inspection_result: 'ok', inspection_completed_at: new Date().toISOString() }); };
+  const completeInspectionIssue = async () => { await updateStatus('inspection_issue', { inspection_result: 'damage', inspection_completed_at: new Date().toISOString() }); };
   const completeRental = async () => { await updateStatus('completed', { completed_at: new Date().toISOString() }); };
 
   // Document management (admin only)
@@ -30284,15 +30287,18 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
     { id: 'submitted', label: 'Soumis' },
     { id: 'quote', label: 'Devis' },
     { id: 'bc', label: 'BC' },
-    { id: 'shipped', label: 'Expédié' },
-    { id: 'in_rental', label: 'En location' },
-    { id: 'returned', label: 'Retourné' }
+    { id: 'shipped', label: 'Expédié / En location' },
+    { id: 'returned', label: 'Retourné' },
+    { id: 'inspection', label: 'Inspection' },
+    { id: 'completed', label: 'Terminé' }
   ];
   const stepMap = {
     'requested': 0, 'pending_quote_review': 1, 'quote_sent': 1,
     'waiting_bc': 2, 'bc_review': 2, 'bc_approved': 2,
-    'shipped': 3, 'in_rental': 4,
-    'return_pending': 5, 'returned': 5, 'completed': 5
+    'shipped': 3, 'in_rental': 3,
+    'returned': 4,
+    'inspection': 5, 'inspection_issue': 5,
+    'completed': 6
   };
   const currentStepIndex = stepMap[status] ?? 0;
 
@@ -30305,10 +30311,12 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
       waiting_bc: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Attente BC' },
       bc_review: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'BC à vérifier' },
       bc_approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'BC approuvé' },
-      shipped: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Expédié' },
-      in_rental: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'En location' },
+      shipped: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Expédié / En location' },
+      in_rental: { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'Expédié / En location' },
       return_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Retour attendu' },
       returned: { bg: 'bg-teal-100', text: 'text-teal-700', label: 'Retourné' },
+      inspection: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Inspection' },
+      inspection_issue: { bg: 'bg-red-100', text: 'text-red-700', label: 'Dommages constatés' },
       completed: { bg: 'bg-green-100', text: 'text-green-700', label: 'Terminé' },
       cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Annulé' }
     };
@@ -30323,8 +30331,9 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   if (rental.quote_approved_at) timeline.push({ date: rental.quote_approved_at, icon: '✅', label: 'Devis approuvé' });
   if (bcApprovedAt) timeline.push({ date: bcApprovedAt, icon: '📋', label: 'BC approuvé', detail: bcNumber ? `N° ${bcNumber}` : undefined });
   if (outboundShippedAt) timeline.push({ date: outboundShippedAt, icon: '🚚', label: 'Expédié', detail: blNumber ? `BL: ${blNumber}` : undefined });
-  if ((qd.rental_started_at || rental.rental_started_at)) timeline.push({ date: (qd.rental_started_at || rental.rental_started_at), icon: '📦', label: 'En location' });
   if ((qd.returned_at || rental.returned_at)) timeline.push({ date: (qd.returned_at || rental.returned_at), icon: '📥', label: 'Retourné' });
+  if ((qd.inspection_started_at)) timeline.push({ date: qd.inspection_started_at, icon: '🔍', label: 'Inspection' });
+  if ((qd.inspection_completed_at)) timeline.push({ date: qd.inspection_completed_at, icon: qd.inspection_result === 'ok' ? '✅' : '⚠️', label: qd.inspection_result === 'ok' ? 'Inspection OK' : 'Dommages constatés' });
   if ((qd.completed_at || rental.completed_at)) timeline.push({ date: (qd.completed_at || rental.completed_at), icon: '🏁', label: 'Clôturé' });
   timeline.sort((a, b) => new Date(a.date) - new Date(b.date));
 
@@ -30385,11 +30394,21 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                   <button onClick={() => setShowShippingWizard(true)} className="px-3 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-sm">📦 Refaire</button>
                 </>
               )}
-              {status === 'shipped' && (
-                <button onClick={markInRental} disabled={saving} className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-medium disabled:opacity-50">✅ Confirmer réception</button>
+              {(status === 'shipped' || status === 'in_rental') && (
+                <button onClick={markReturned} disabled={saving} className="px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg font-medium disabled:opacity-50">📥 Appareil Retourné</button>
               )}
-              {status === 'in_rental' && (
-                <button onClick={markReturnPending} disabled={saving} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50">📦 Fin de période</button>
+              {status === 'returned' && (
+                <button onClick={startInspection} disabled={saving} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50">🔍 Inspecter l'appareil</button>
+              )}
+              {status === 'inspection' && (
+                <>
+                  <button onClick={completeInspectionOk} disabled={saving} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">✅ Inspection OK</button>
+                  <button onClick={completeInspectionIssue} disabled={saving} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50">⚠️ Dommages constatés</button>
+                </>
+              )}
+              {status === 'inspection_issue' && (
+                <button onClick={() => onOpenQuoteEditor && onOpenQuoteEditor({ ...rental, _isDamageQuote: true })}
+                  className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium">💰 Créer Devis Réparation</button>
               )}
             </div>
           </div>
@@ -30538,6 +30557,24 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                     <div><p className="text-xs text-gray-500">État</p><p className="font-medium">{(qd.return_condition || rental.return_condition) === 'good' ? '✅ Bon état' : (qd.return_condition || rental.return_condition) === 'damaged' ? '⚠️ Endommagé' : '❓ Éléments manquants'}</p></div>
                     {(qd.return_notes || rental.return_notes) && <div><p className="text-xs text-gray-500">Notes</p><p className="text-sm">{(qd.return_notes || rental.return_notes)}</p></div>}
                   </div>
+                </div>
+              )}
+
+              {/* Inspection Status */}
+              {['inspection', 'inspection_issue'].includes(status) && (
+                <div className={`rounded-lg p-4 border ${status === 'inspection_issue' ? 'bg-red-50 border-red-300' : 'bg-blue-50 border-blue-200'}`}>
+                  <h3 className={`font-bold mb-2 ${status === 'inspection_issue' ? 'text-red-800' : 'text-blue-800'}`}>
+                    🔍 {status === 'inspection_issue' ? 'Dommages constatés' : 'Inspection en cours'}
+                  </h3>
+                  {status === 'inspection' && (
+                    <p className="text-sm text-blue-700">L'appareil est en cours d'inspection. Vérifiez l'état et les fonctionnalités avant de clôturer.</p>
+                  )}
+                  {status === 'inspection_issue' && (
+                    <div className="space-y-2">
+                      <p className="text-sm text-red-700">Des dommages ou problèmes ont été constatés lors de l'inspection. Un devis de réparation doit être envoyé au client.</p>
+                      {qd.inspection_notes && <p className="text-sm text-red-600 bg-red-100 rounded p-2">{qd.inspection_notes}</p>}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -30865,49 +30902,6 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                     <p className="font-mono text-sm font-bold">{outboundTracking}</p>
                     <a href={`https://www.ups.com/track?tracknum=${outboundTracking}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">📍 Suivre le colis →</a>
                   </div>
-                )}
-              </div>
-            </div>
-
-            {/* Quick Actions Card */}
-            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-              <div className="bg-[#8B5CF6] px-4 py-3">
-                <h3 className="font-bold text-white">⚡ Actions</h3>
-              </div>
-              <div className="p-4 space-y-2">
-                {(['requested', 'quote_revision_requested'].includes(status)) && (
-                  <button onClick={() => onOpenQuoteEditor && onOpenQuoteEditor(rental)}
-                    className="w-full px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium">
-                    💰 {status === 'quote_revision_requested' ? 'Réviser Devis' : 'Créer Devis'}
-                  </button>
-                )}
-                {status === 'bc_review' && (
-                  <button onClick={() => setShowBCReview(true)} className="w-full px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium">🔍 Examiner BC</button>
-                )}
-                {status === 'bc_approved' && !outboundTracking && (
-                  <button onClick={() => setShowShippingWizard(true)} className="w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium">📦 Préparer Expédition</button>
-                )}
-                {status === 'bc_approved' && outboundTracking && (
-                  <div className="space-y-2">
-                    <button onClick={markAsShipped} disabled={saving} className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50">{saving ? '⏳...' : '🚚 Marquer Expédié'}</button>
-                    <button onClick={() => setShowShippingWizard(true)} className="w-full px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-sm">📦 Refaire expédition</button>
-                  </div>
-                )}
-                {status === 'shipped' && (
-                  <button onClick={markInRental} disabled={saving} className="w-full px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-medium disabled:opacity-50">✅ Confirmer réception</button>
-                )}
-                {status === 'in_rental' && (
-                  <button onClick={markReturnPending} disabled={saving} className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50">📦 Fin de période</button>
-                )}
-                {status === 'return_pending' && (
-                  <button onClick={markReturned} disabled={saving} className="w-full px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg font-medium disabled:opacity-50">📥 Confirmer retour</button>
-                )}
-                {status === 'returned' && (
-                  <button onClick={completeRental} disabled={saving} className="w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">🏁 Clôturer</button>
-                )}
-                {outboundTracking && (
-                  <a href={`https://www.ups.com/track?tracknum=${outboundTracking}`} target="_blank" rel="noopener noreferrer"
-                    className="block w-full px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium text-center">📍 Suivre colis UPS</a>
                 )}
               </div>
             </div>
