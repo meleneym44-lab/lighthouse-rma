@@ -17297,11 +17297,8 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
         if (selectedConvo._type === 'rma' || selectedConvo._type === 'parts') {
           await supabase.from('service_requests').update({ unread_admin_count: 0 }).eq('id', selectedConvo.id);
         }
-        // Update local unread
-        if (selectedConvo._type === 'rental') {
-          setRentalConvoData(p => ({ ...p, unread: { ...p.unread, [selectedConvo.id]: 0 } }));
-        }
-        reload();
+        // Only clear badge on selected item — don't touch list data to keep it in Open filter
+        setSelectedConvo(p => p ? ({ ...p, _unread: 0 }) : p);
       }
     };
     load();
@@ -17502,7 +17499,7 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
                     })}
                   </div>
                   
-                  {/* AI Suggestions (RMA only) */}
+                  {/* AI Suggestions */}
                   {(selectedConvo._type === 'rma' || selectedConvo._type === 'parts') && (loadingSuggestions || aiSuggestions.length > 0) && (
                     <div className="border-t bg-purple-50 p-2">
                       <div className="flex items-center justify-between mb-1">
@@ -17549,9 +17546,22 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
                       <div className="space-y-2">
                         <textarea value={frenchOutput} onChange={e => setFrenchOutput(e.target.value)} placeholder="Écrivez votre message en français..." className="w-full px-3 py-2 border rounded text-sm resize-none" rows={3} />
                         <div className="flex justify-between">
-                          <label className="px-3 py-1.5 bg-gray-200 rounded text-xs font-medium cursor-pointer">
-                            📎 Fichier<input type="file" className="hidden" onChange={handleFile} disabled={uploadingFile} />
-                          </label>
+                          <div className="flex gap-2">
+                            <button onClick={async () => {
+                              if (!frenchOutput.trim()) return;
+                              setProcessingMessage(true);
+                              try {
+                                const res = await fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: `Améliore ce message professionnel en français. Corrige la grammaire, l'orthographe et le ton. Retourne uniquement le message amélioré, rien d'autre. Message: ${frenchOutput}`, direction: 'fr-to-fr' }) });
+                                if (res.ok) { const d = await res.json(); setFrenchOutput(d.translation); }
+                              } catch (e) { console.error(e); }
+                              setProcessingMessage(false);
+                            }} disabled={processingMessage || !frenchOutput.trim()} className="px-3 py-1.5 bg-purple-500 text-white rounded text-xs font-medium disabled:opacity-50">
+                              {processingMessage ? '⏳...' : '✨ Améliorer'}
+                            </button>
+                            <label className="px-3 py-1.5 bg-gray-200 rounded text-xs font-medium cursor-pointer">
+                              📎 Fichier<input type="file" className="hidden" onChange={handleFile} disabled={uploadingFile} />
+                            </label>
+                          </div>
                           <button onClick={sendMessage} disabled={sendingMessage || !frenchOutput.trim()} className="px-4 py-1.5 bg-blue-500 text-white rounded text-xs font-medium disabled:opacity-50">
                             {sendingMessage ? '⏳ Envoi...' : '📤 Envoyer'}
                           </button>
