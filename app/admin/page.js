@@ -3882,15 +3882,6 @@ export default function AdminPortal() {
   // Open chats count - includes unread messages
   const openChatsCount = requests.filter(r => r.chat_status === 'open' || (r.unread_admin_count || 0) > 0).length;
   const totalUnreadMessages = requests.reduce((sum, r) => sum + (r.unread_admin_count || 0), 0);
-  const [rentalUnreadCount, setRentalUnreadCount] = useState(0);
-  useEffect(() => {
-    const loadRentalUnread = async () => {
-      const { data, count } = await supabase.from('messages').select('id', { count: 'exact', head: true })
-        .not('rental_request_id', 'is', null).eq('sender_type', 'customer').eq('is_read', false);
-      if (count != null) setRentalUnreadCount(count);
-    };
-    loadRentalUnread();
-  }, [rentalRequests]);
   
   // Dashboard filter state
   const [dashboardFilter, setDashboardFilter] = useState(null);
@@ -3901,6 +3892,17 @@ export default function AdminPortal() {
     r.status === 'requested' || 
     r.status === 'bc_review'
   ).length;
+
+  // Rental unread messages count
+  const [rentalUnreadCount, setRentalUnreadCount] = useState(0);
+  useEffect(() => {
+    const loadRentalUnread = async () => {
+      const { data, count } = await supabase.from('messages').select('id', { count: 'exact', head: true })
+        .not('rental_request_id', 'is', null).eq('sender_type', 'customer').eq('is_read', false);
+      if (count != null) setRentalUnreadCount(count);
+    };
+    loadRentalUnread();
+  }, [rentalRequests]);
   
   // Parts Orders count - pending parts requests AND BC to review
   const partsOrders = requests.filter(r => r.request_type === 'parts');
