@@ -4299,7 +4299,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
         let quoteUrl = null;
         try {
           const pdfBlob = await generatePartsQuotePDF(sr, { ...qd, quoteRef: qd.quoteNumber || qd.quoteRef });
-          const fileName = `devis_pieces_${qd.poNumber || sr.request_number}_${Date.now()}.pdf`;
+          const fileName = `quotes/parts/${sr.request_number}/devis_pieces_${qd.poNumber || sr.request_number}_${Date.now()}.pdf`;
           
           const { error: uploadError } = await supabase.storage
             .from('documents')
@@ -4332,13 +4332,14 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
           });
           
           const fileName = `supplement_${qd.supNumber || sr.request_number}_${Date.now()}.pdf`;
+          const filePath = `supplements/${sr.request_number}/${fileName}`;
           const { error: uploadError } = await supabase.storage
             .from('documents')
-            .upload(`avenants/${fileName}`, blob, { contentType: 'application/pdf' });
+            .upload(filePath, blob, { contentType: 'application/pdf' });
           
           if (uploadError) throw uploadError;
           
-          const { data: urlData } = supabase.storage.from('documents').getPublicUrl(`avenants/${fileName}`);
+          const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
           const avenantQuoteUrl = urlData?.publicUrl;
           
           await supabase.from('service_requests').update({
@@ -7701,12 +7702,13 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     try {
       const ext = docUploadFile.name.split('.').pop();
       const fileName = `doc_${rma.request_number}_${Date.now()}.${ext}`;
+      const filePath = `attachments/${rma.request_number}/${fileName}`;
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('documents')
-        .upload(`attachments/${fileName}`, docUploadFile, { contentType: docUploadFile.type });
+        .upload(filePath, docUploadFile, { contentType: docUploadFile.type });
       if (uploadError) throw uploadError;
       
-      const { data: urlData } = supabase.storage.from('documents').getPublicUrl(`attachments/${fileName}`);
+      const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
       const fileUrl = urlData?.publicUrl;
       
       const displayName = docUploadName.trim() || docUploadFile.name;
@@ -11408,12 +11410,13 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
     try {
       const ext = docUploadFile.name.split('.').pop();
       const fileName = `doc_${order.request_number}_${Date.now()}.${ext}`;
+      const filePath = `attachments/${order.request_number}/${fileName}`;
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('documents')
-        .upload(`attachments/${fileName}`, docUploadFile, { contentType: docUploadFile.type });
+        .upload(filePath, docUploadFile, { contentType: docUploadFile.type });
       if (uploadError) throw uploadError;
       
-      const { data: urlData } = supabase.storage.from('documents').getPublicUrl(`attachments/${fileName}`);
+      const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
       const fileUrl = urlData?.publicUrl;
       
       const displayName = docUploadName.trim() || docUploadFile.name;
@@ -13655,7 +13658,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile, lang = 'fr'
       let quoteUrl = null;
       try {
         const pdfBlob = await generatePartsQuotePDF(order, { ...quoteData, quoteRef: quoteNumber || quoteRef });
-        const pdfFileName = `devis_pieces_${poNumber}_${Date.now()}.pdf`;
+        const pdfFileName = `quotes/parts/${order.request_number}/devis_pieces_${poNumber}_${Date.now()}.pdf`;
         
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('documents')
@@ -20923,7 +20926,7 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate, lang
 // ============================================
 // BC FILE UPLOADER (Admin side)
 // ============================================
-function BCFileUploader({ onUploaded, currentUrl, lang = 'fr' }) {
+function BCFileUploader({ onUploaded, currentUrl, lang = 'fr', folder = 'bons-commande/manual' }) {
   const t = k => k;
   const [uploading, setUploading] = useState(false);
   const [urlMode, setUrlMode] = useState(false);
@@ -20936,17 +20939,17 @@ function BCFileUploader({ onUploaded, currentUrl, lang = 'fr' }) {
     setUploading(true);
     try {
       const fileExt = file.name.split('.').pop();
-      const fileName = `bc_manual_${Date.now()}.${fileExt}`;
+      const filePath = `${folder}/bc_${Date.now()}.${fileExt}`;
       
       const { error: uploadError } = await supabase.storage
-        .from('bc-documents')
-        .upload(fileName, file);
+        .from('documents')
+        .upload(filePath, file);
       
       if (uploadError) throw uploadError;
       
       const { data: { publicUrl } } = supabase.storage
-        .from('bc-documents')
-        .getPublicUrl(fileName);
+        .from('documents')
+        .getPublicUrl(filePath);
       
       onUploaded(publicUrl);
     } catch (err) {
@@ -28130,7 +28133,7 @@ function CreateUSAOrderModal({ onClose, onSaved, clients = [], notify, profile, 
       }
 
       // Upload PDF to storage
-      const fileName = `usa-orders/${Date.now()}_${file.name}`;
+      const fileName = `usa-orders/${form.po_number || Date.now()}/${Date.now()}_${file.name}`;
       await supabase.storage.from('documents').upload(fileName, file);
       setForm(prev => ({ ...prev, source_pdf_path: fileName }));
 
@@ -30258,9 +30261,10 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
     setDocUploading(true);
     try {
       const fileName = `rental_${rental.rental_number}_${Date.now()}_${file.name}`;
-      const { error: uploadError } = await supabase.storage.from('documents').upload(`attachments/${fileName}`, file, { contentType: file.type });
+      const filePath = `attachments/rentals/${rental.rental_number}/${fileName}`;
+      const { error: uploadError } = await supabase.storage.from('documents').upload(filePath, file, { contentType: file.type });
       if (uploadError) throw uploadError;
-      const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(`attachments/${fileName}`);
+      const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(filePath);
       await supabase.from('request_attachments').insert({
         request_id: rental.id, file_name: file.name, file_url: publicUrl,
         file_type: file.type, uploaded_by: profile?.id, category: 'other'
