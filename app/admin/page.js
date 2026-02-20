@@ -30131,6 +30131,7 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
 }
 
 function RentalFullPage({ rental, inventory = [], onBack, notify, reload, businessSettings, profile, onOpenQuoteEditor, lang = 'fr' }) {
+  const isAdmin = !!onOpenQuoteEditor;
   const t = k => k;
   const [activeTab, setActiveTab] = useState('overview');
   const [status, setStatus] = useState(rental.status);
@@ -30152,6 +30153,8 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   const [returnNotes, setReturnNotes] = useState(rental.return_notes || '');
   
   const [showBCReview, setShowBCReview] = useState(false);
+  const [docUploading, setDocUploading] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   // Computed values from rental data
   const company = rental.companies || {};
@@ -30247,6 +30250,54 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
     await supabase.from('rental_bookings').delete().eq('rental_request_id', rental.id);
   };
   const completeRental = async () => { await updateStatus('completed', { completed_at: new Date().toISOString() }); };
+
+  // Document management (admin only)
+  const uploadDocument = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setDocUploading(true);
+    try {
+      const fileName = `rental_${rental.rental_number}_${Date.now()}_${file.name}`;
+      const { error: uploadError } = await supabase.storage.from('documents').upload(`attachments/${fileName}`, file, { contentType: file.type });
+      if (uploadError) throw uploadError;
+      const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(`attachments/${fileName}`);
+      await supabase.from('request_attachments').insert({
+        request_id: rental.id, file_name: file.name, file_url: publicUrl,
+        file_type: file.type, uploaded_by: profile?.id, category: 'other'
+      });
+      const { data: docs } = await supabase.from('request_attachments').select('*').eq('request_id', rental.id);
+      if (docs) setAttachments(docs);
+      notify('✅ Document uploadé !');
+    } catch (err) { notify('Erreur upload: ' + err.message, 'error'); }
+    setDocUploading(false);
+    e.target.value = '';
+  };
+
+  const archiveAttachment = async (att) => {
+    try {
+      await supabase.from('request_attachments').update({ category: 'archived_' + (att.category || 'other') }).eq('id', att.id);
+      setAttachments(prev => prev.map(a => a.id === att.id ? { ...a, category: 'archived_' + (a.category || 'other') } : a));
+      notify('📦 Document archivé');
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+  };
+
+  const restoreAttachment = async (att) => {
+    try {
+      const origCategory = (att.category || '').replace('archived_', '');
+      await supabase.from('request_attachments').update({ category: origCategory || 'other' }).eq('id', att.id);
+      setAttachments(prev => prev.map(a => a.id === att.id ? { ...a, category: origCategory || 'other' } : a));
+      notify('✅ Document restauré');
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+  };
+
+  const deleteAttachment = async (att) => {
+    if (!window.confirm('Supprimer définitivement ce document ?')) return;
+    try {
+      await supabase.from('request_attachments').delete().eq('id', att.id);
+      setAttachments(prev => prev.filter(a => a.id !== att.id));
+      notify('🗑️ Document supprimé');
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+  };
 
   // ===== PROGRESS BAR (inline, rental-specific) =====
   const rentalSteps = [
@@ -30514,117 +30565,101 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
 
 
           {/* ===== DOCUMENTS TAB ===== */}
-          {activeTab === 'documents' && (
+          {activeTab === 'documents' && (() => {
+            const activeAttachments = attachments.filter(a => !(a.category || '').startsWith('archived_'));
+            const archivedAttachments = attachments.filter(a => (a.category || '').startsWith('archived_'));
+            const getCategoryIcon = (cat) => ({ devis: '💰', bon_livraison: '📄', ups_label: '🏷️', signed_quote: '✅', bon_commande: '📝', other: '📎' }[cat] || '📎');
+            const getCategoryLabel = (cat) => ({ devis: 'Devis', bon_livraison: 'Bon de Livraison', ups_label: 'Étiquette UPS', signed_quote: 'Devis Signé', bon_commande: 'Bon de Commande', other: 'Document' }[cat] || cat || 'Document');
+
+            return (
             <div className="space-y-6">
-              {/* BC Review Banner */}
-              {status === 'bc_review' && (
+              {/* BC Review Banner (admin only) */}
+              {isAdmin && status === 'bc_review' && (
                 <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 flex items-center gap-4">
                   <div className="w-12 h-12 bg-red-500 rounded-lg flex items-center justify-center text-2xl text-white animate-pulse">⚠️</div>
                   <div className="flex-1">
                     <p className="font-bold text-red-800 text-lg">Bon de Commande à Vérifier</p>
-                    <p className="text-red-600">Soumis le {rental.bc_submitted_at ? new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR') : '—'} par {rental.bc_signed_by || '—'}</p>
                   </div>
                   <button onClick={() => setShowBCReview(true)} className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium">🔍 Examiner BC</button>
                 </div>
               )}
 
-              <h3 className="font-bold text-gray-800">📁 Documents</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                {/* 1. DEVIS LOCATION */}
-                {quoteUrl && (
-                  <a href={quoteUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
-                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl shrink-0">💰</div>
-                    <div>
-                      <p className="font-medium text-gray-800">Devis Location</p>
-                      <p className="text-sm text-blue-600">{quoteNumber ? `N° ${quoteNumber}` : (rental.rental_number || '—')}</p>
-                      {quoteSentAt && <p className="text-xs text-gray-400">Envoyé le {new Date(quoteSentAt).toLocaleDateString('fr-FR')}</p>}
-                    </div>
-                  </a>
+              {/* Header with upload */}
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-gray-800">📁 Documents ({activeAttachments.length})</h3>
+                {isAdmin && (
+                  <div className="flex items-center gap-2">
+                    {archivedAttachments.length > 0 && (
+                      <button onClick={() => setShowArchived(!showArchived)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${showArchived ? 'bg-slate-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                        📦 Archives ({archivedAttachments.length})
+                      </button>
+                    )}
+                    <label className="px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium text-sm cursor-pointer flex items-center gap-1">
+                      📤 Uploader
+                      <input type="file" className="hidden" onChange={uploadDocument} disabled={docUploading} />
+                    </label>
+                  </div>
                 )}
-
-                {/* 2. DEVIS SIGNÉ */}
-                {signedQuoteUrl && (
-                  <a href={signedQuoteUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
-                    <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl shrink-0">✅</div>
-                    <div>
-                      <p className="font-medium text-gray-800">Devis Signé / BC</p>
-                      <p className="text-sm text-green-600">{bcNumber ? `N° ${bcNumber}` : 'Signé'}</p>
-                      {rental.quote_approved_at && <p className="text-xs text-gray-400">Par {rental.bc_signed_by || '—'} — {new Date(rental.quote_approved_at).toLocaleDateString('fr-FR')}</p>}
-                    </div>
-                  </a>
-                )}
-
-                {/* 3. BON DE COMMANDE (uploaded separately) */}
-                {bcFileUrl && bcFileUrl !== signedQuoteUrl && (
-                  <a href={bcFileUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
-                    <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📝</div>
-                    <div>
-                      <p className="font-medium text-gray-800">Bon de Commande Client</p>
-                      <p className="text-sm text-purple-600">{bcNumber ? `N° ${bcNumber}` : 'BC client'}</p>
-                      {rental.bc_submitted_at && <p className="text-xs text-gray-400">Soumis le {new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR')}</p>}
-                    </div>
-                  </a>
-                )}
-
-                {/* 4. BON DE LIVRAISON */}
-                {blUrl && (
-                  <a href={blUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-cyan-50 transition-colors border-cyan-200">
-                    <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📄</div>
-                    <div>
-                      <p className="font-medium text-gray-800">Bon de Livraison</p>
-                      <p className="text-sm text-cyan-600">{blNumber ? `N° ${blNumber}` : 'BL'}</p>
-                      {outboundShippedAt && <p className="text-xs text-gray-400">{new Date(outboundShippedAt).toLocaleDateString('fr-FR')}</p>}
-                    </div>
-                  </a>
-                )}
-
-                {/* 5. UPS LABEL */}
-                {upsLabelUrl && (
-                  <a href={upsLabelUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors">
-                    <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🏷️</div>
-                    <div>
-                      <p className="font-medium text-gray-800">Étiquette UPS</p>
-                      <p className="text-sm text-amber-600">{outboundTracking || "Label d'expédition"}</p>
-                    </div>
-                  </a>
-                )}
-
-                {/* 6. OTHER ATTACHMENTS */}
-                {attachments.filter(a => !['ups_label', 'bon_livraison'].includes(a.category)).map(doc => (
-                  <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                    <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-2xl shrink-0">{doc.file_type?.includes('pdf') ? '📕' : doc.file_type?.includes('image') ? '🖼️' : '📄'}</div>
-                    <div>
-                      <p className="font-medium text-gray-800">{doc.file_name || doc.category}</p>
-                      <p className="text-xs text-gray-400">{new Date(doc.created_at).toLocaleDateString('fr-FR')}</p>
-                    </div>
-                  </a>
-                ))}
               </div>
 
-              {/* UPS Labels from attachments if no main URL */}
-              {attachments.filter(a => a.category === 'ups_label').length > 0 && !upsLabelUrl && (
-                <div>
-                  <h4 className="font-medium text-gray-700 mb-2">🏷️ Étiquettes UPS</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {attachments.filter(a => a.category === 'ups_label').map(att => (
-                      <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors">
-                        <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🏷️</div>
-                        <div>
-                          <p className="font-medium text-gray-800">{att.file_name}</p>
-                          <p className="text-xs text-gray-400">{new Date(att.created_at).toLocaleDateString('fr-FR')}</p>
+              {/* Active Documents */}
+              {activeAttachments.length > 0 ? (
+                <div className="space-y-2">
+                  {activeAttachments.map(doc => (
+                    <div key={doc.id} className="flex items-center gap-4 p-4 border rounded-lg bg-white hover:bg-gray-50 transition-colors group">
+                      <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-2xl shrink-0">
+                          {getCategoryIcon(doc.category)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-800 truncate">{doc.file_name || getCategoryLabel(doc.category)}</p>
+                          <div className="flex items-center gap-2 text-xs text-gray-400">
+                            <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-500">{getCategoryLabel(doc.category)}</span>
+                            <span>{new Date(doc.created_at).toLocaleDateString('fr-FR')}</span>
+                          </div>
                         </div>
                       </a>
+                      {isAdmin && (
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          <button onClick={() => archiveAttachment(doc)} className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded" title="Archiver">📦</button>
+                          <button onClick={() => deleteAttachment(doc)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Supprimer">🗑️</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-400"><p className="text-4xl mb-2">📄</p><p>Aucun document</p></div>
+              )}
+
+              {/* Archived Documents (admin only) */}
+              {isAdmin && showArchived && archivedAttachments.length > 0 && (
+                <div>
+                  <h4 className="font-medium text-slate-500 mb-2">📦 Documents archivés</h4>
+                  <div className="space-y-2">
+                    {archivedAttachments.map(doc => (
+                      <div key={doc.id} className="flex items-center gap-4 p-3 border border-dashed rounded-lg bg-slate-50 group">
+                        <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0 opacity-60">
+                          <div className="w-10 h-10 bg-slate-200 rounded-lg flex items-center justify-center text-xl shrink-0">
+                            {getCategoryIcon((doc.category || '').replace('archived_', ''))}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium text-gray-600 truncate text-sm">{doc.file_name}</p>
+                            <p className="text-xs text-gray-400">{new Date(doc.created_at).toLocaleDateString('fr-FR')}</p>
+                          </div>
+                        </a>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button onClick={() => restoreAttachment(doc)} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded text-sm" title="Restaurer">♻️</button>
+                          <button onClick={() => deleteAttachment(doc)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded text-sm" title="Supprimer">🗑️</button>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
               )}
-
-              {!quoteUrl && !bcFileUrl && !signedQuoteUrl && !blUrl && !upsLabelUrl && attachments.length === 0 && (
-                <div className="text-center py-8 text-gray-400"><p className="text-4xl mb-2">📄</p><p>Aucun document</p></div>
-              )}
             </div>
-          )}
+            );
+          })()}
           {/* ===== MESSAGES TAB ===== */}
           {activeTab === 'messages' && (
             <div>
