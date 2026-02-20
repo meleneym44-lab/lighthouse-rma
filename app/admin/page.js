@@ -3882,6 +3882,15 @@ export default function AdminPortal() {
   // Open chats count - includes unread messages
   const openChatsCount = requests.filter(r => r.chat_status === 'open' || (r.unread_admin_count || 0) > 0).length;
   const totalUnreadMessages = requests.reduce((sum, r) => sum + (r.unread_admin_count || 0), 0);
+  const [rentalUnreadCount, setRentalUnreadCount] = useState(0);
+  useEffect(() => {
+    const loadRentalUnread = async () => {
+      const { data, count } = await supabase.from('messages').select('id', { count: 'exact', head: true })
+        .not('rental_request_id', 'is', null).eq('sender_type', 'customer').eq('is_read', false);
+      if (count != null) setRentalUnreadCount(count);
+    };
+    loadRentalUnread();
+  }, [rentalRequests]);
   
   // Dashboard filter state
   const [dashboardFilter, setDashboardFilter] = useState(null);
@@ -3906,7 +3915,7 @@ export default function AdminPortal() {
   
   const sheets = [
     { id: 'dashboard', label: t('dashboard'), icon: '📊' },
-    { id: 'messages', label: t('messages'), icon: '💬', badge: totalUnreadMessages > 0 ? totalUnreadMessages : (openChatsCount > 0 ? openChatsCount : null) },
+    { id: 'messages', label: t('messages'), icon: '💬', badge: (totalUnreadMessages + rentalUnreadCount) > 0 ? (totalUnreadMessages + rentalUnreadCount) : (openChatsCount > 0 ? openChatsCount : null) },
     { id: 'quote_review', label: lang === 'en' ? 'Quote Review' : 'Vérif. Devis', icon: '✅', badge: quoteReviewCount > 0 ? quoteReviewCount : null },
     { id: 'requests', label: t('requests'), icon: '📋', badge: totalBadge > 0 ? totalBadge : null },
     { id: 'parts', label: t('parts'), icon: '🔩', badge: partsOrdersActionCount > 0 ? partsOrdersActionCount : null },
@@ -4039,7 +4048,8 @@ export default function AdminPortal() {
             />}
             {activeSheet === 'messages' && <MessagesSheet
               t={t} lang={lang} 
-              requests={requests} 
+              requests={requests}
+              rentals={rentalRequests}
               notify={notify} 
               reload={loadData}
               onSelectRMA={setSelectedRMA}
@@ -17138,8 +17148,8 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
 // MESSAGES SHEET - All chats with clients
 // ============================================
 
-function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang = 'fr' }) {
-  const [selectedRMA, setSelectedRMA] = useState(null);
+function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t = k=>k, lang = 'fr' }) {
+  const [selectedConvo, setSelectedConvo] = useState(null);
   const [messages, setMessages] = useState([]);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [filter, setFilter] = useState('open');
@@ -17153,9 +17163,10 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [translatedMessages, setTranslatedMessages] = useState({});
   const [translatingMessages, setTranslatingMessages] = useState({});
-  const [showRMASidebar, setShowRMASidebar] = useState(false);
+  const [showInfoSidebar, setShowInfoSidebar] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [showEnglishConfirm, setShowEnglishConfirm] = useState(false);
+  const [rentalUnreadCounts, setRentalUnreadCounts] = useState({});
   
   const badWords = ['fuck', 'shit', 'bitch', 'ass', 'crap'];
   
@@ -17169,6 +17180,55 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
     };
     loadProfile();
   }, []);
+
+  // Load unread counts for rentals (since they don't have unread_admin_count column)
+  useEffect(() => {
+    const loadRentalUnread = async () => {
+      if (!rentals.length) return;
+      const rentalIds = rentals.map(r => r.id);
+      const { data: unreadMsgs } = await supabase.from('messages')
+        .select('rental_request_id')
+        .in('rental_request_id', rentalIds)
+        .eq('sender_type', 'customer')
+        .eq('is_read', false);
+      if (unreadMsgs) {
+        const counts = {};
+        unreadMsgs.forEach(m => { counts[m.rental_request_id] = (counts[m.rental_request_id] || 0) + 1; });
+        setRentalUnreadCounts(counts);
+      }
+    };
+    loadRentalUnread();
+  }, [rentals]);
+
+  // Type config for different conversation types
+  const typeConfig = {
+    rma: { icon: '🔧', color: 'text-[#00A651]', label: 'RMA', bgActive: 'bg-green-50' },
+    parts: { icon: '🔩', color: 'text-[#2D5A7B]', label: 'PO', bgActive: 'bg-blue-50' },
+    rental: { icon: '📅', color: 'text-[#8B5CF6]', label: 'LOC', bgActive: 'bg-purple-50' },
+  };
+
+  // Build unified conversation list
+  const allConversations = useMemo(() => {
+    const rmaConvos = requests.map(r => ({
+      ...r,
+      _type: r.request_type === 'parts' ? 'parts' : 'rma',
+      _number: r.request_type === 'parts' ? (r.quote_number || r.bc_number || r.request_number) : r.request_number,
+      _company: r.companies?.name || '',
+      _unread: r.unread_admin_count || 0,
+      _isOpen: r.chat_status === 'open',
+      _lastActivity: r.last_message_at || r.updated_at
+    }));
+    const rentalConvos = rentals.map(r => ({
+      ...r,
+      _type: 'rental',
+      _number: r.rental_number,
+      _company: r.companies?.name || '',
+      _unread: rentalUnreadCounts[r.id] || 0,
+      _isOpen: (rentalUnreadCounts[r.id] || 0) > 0,
+      _lastActivity: r.updated_at
+    }));
+    return [...rmaConvos, ...rentalConvos];
+  }, [requests, rentals, rentalUnreadCounts]);
   
   const getUserSignature = () => {
     if (!profile?.full_name) return 'Lighthouse France';
@@ -17185,47 +17245,57 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
     return (now - msgDate) / (1000 * 60 * 60) <= 48;
   };
   
-  const filteredRMAs = requests.filter(r => {
-    const hasUnread = (r.unread_admin_count || 0) > 0;
-    const isOpen = r.chat_status === 'open';
+  const filteredConvos = allConversations.filter(r => {
+    const hasUnread = r._unread > 0;
+    const isOpen = r._isOpen;
     if (filter === 'open' && !isOpen && !hasUnread) return false;
     if (filter === 'closed' && (isOpen || hasUnread)) return false;
     if (search.trim()) {
       const s = search.toLowerCase();
-      if (r.request_number?.toLowerCase().includes(s)) return true;
-      if (r.companies?.name?.toLowerCase().includes(s)) return true;
+      if (r._number?.toLowerCase().includes(s)) return true;
+      if (r._company?.toLowerCase().includes(s)) return true;
       return false;
     }
     return true;
   }).sort((a, b) => {
-    const aOpen = a.chat_status === 'open' || (a.unread_admin_count || 0) > 0;
-    const bOpen = b.chat_status === 'open' || (b.unread_admin_count || 0) > 0;
+    const aOpen = a._isOpen || a._unread > 0;
+    const bOpen = b._isOpen || b._unread > 0;
     if (aOpen && !bOpen) return -1;
     if (bOpen && !aOpen) return 1;
-    if (aOpen && bOpen) return new Date(a.last_message_at || a.updated_at) - new Date(b.last_message_at || b.updated_at);
-    return new Date(b.updated_at) - new Date(a.updated_at);
+    if (aOpen && bOpen) return new Date(a._lastActivity) - new Date(b._lastActivity);
+    return new Date(b._lastActivity) - new Date(a._lastActivity);
   });
-  
+
+  // Load messages when conversation selected
   useEffect(() => {
-    if (!selectedRMA) { setMessages([]); setAiSuggestions([]); return; }
+    if (!selectedConvo) { setMessages([]); setAiSuggestions([]); return; }
     const load = async () => {
-      const { data } = await supabase.from('messages').select('*').eq('request_id', selectedRMA.id).order('created_at', { ascending: true });
+      const fk = selectedConvo._type === 'rental' ? 'rental_request_id' : 'request_id';
+      const { data } = await supabase.from('messages').select('*').eq(fk, selectedConvo.id).order('created_at', { ascending: true });
       if (data) {
         setMessages(data);
         if (englishMode) {
           data.filter(m => m.sender_type === 'customer' && isWithin48Hours(m.created_at)).forEach(m => translateMsg(m.id, m.content));
         }
-        generateSuggestions(data);
+        if (selectedConvo._type === 'rma' || selectedConvo._type === 'parts') generateSuggestions(data);
       }
-      if (selectedRMA.unread_admin_count > 0) {
-        await supabase.from('messages').update({ is_read: true }).eq('request_id', selectedRMA.id).eq('sender_type', 'customer');
-        await supabase.from('service_requests').update({ unread_admin_count: 0 }).eq('id', selectedRMA.id);
+      // Mark as read
+      if (selectedConvo._unread > 0) {
+        const fkField = selectedConvo._type === 'rental' ? 'rental_request_id' : 'request_id';
+        await supabase.from('messages').update({ is_read: true }).eq(fkField, selectedConvo.id).eq('sender_type', 'customer');
+        if (selectedConvo._type === 'rma' || selectedConvo._type === 'parts') {
+          await supabase.from('service_requests').update({ unread_admin_count: 0 }).eq('id', selectedConvo.id);
+        }
+        // Update local unread
+        if (selectedConvo._type === 'rental') {
+          setRentalUnreadCounts(p => ({ ...p, [selectedConvo.id]: 0 }));
+        }
         reload();
       }
     };
     load();
     setEnglishInput(''); setFrenchOutput('');
-  }, [selectedRMA?.id]);
+  }, [selectedConvo?.id, selectedConvo?._type]);
   
   const translateMsg = async (id, text) => {
     if (translatedMessages[id] || translatingMessages[id]) return;
@@ -17238,11 +17308,11 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
   };
   
   const generateSuggestions = async (msgs) => {
-    if (!selectedRMA) return;
+    if (!selectedConvo || (selectedConvo._type !== 'rma' && selectedConvo._type !== 'parts')) return;
     setLoadingSuggestions(true);
     try {
       const res = await fetch('/api/chat-suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        rma: { request_number: selectedRMA.request_number, status: selectedRMA.status, requested_service: selectedRMA.requested_service, company_name: selectedRMA.companies?.name, devices: selectedRMA.request_devices?.map(d => ({ model: d.model_name, serial: d.serial_number, status: d.status })) },
+        rma: { request_number: selectedConvo.request_number, status: selectedConvo.status, requested_service: selectedConvo.requested_service, company_name: selectedConvo.companies?.name, devices: selectedConvo.request_devices?.map(d => ({ model: d.model_name, serial: d.serial_number, status: d.status })) },
         messages: msgs.slice(-10).map(m => ({ sender: m.sender_type, content: m.content }))
       })});
       if (res.ok) { const d = await res.json(); if (d.french) setAiSuggestions([d]); }
@@ -17262,7 +17332,7 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
   };
   
   const sendMessage = async () => {
-    if (!frenchOutput.trim() || sendingMessage || !selectedRMA) return;
+    if (!frenchOutput.trim() || sendingMessage || !selectedConvo) return;
     const frW = ['le','la','les','de','est','sont','nous','vous'];
     const enW = ['the','is','are','we','you','your','have','will'];
     const lm = frenchOutput.toLowerCase();
@@ -17272,13 +17342,19 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
     setShowEnglishConfirm(false);
     setSendingMessage(true);
     try {
-      const { data, error } = await supabase.from('messages').insert({ request_id: selectedRMA.id, sender_id: profile?.id, sender_type: 'admin', sender_name: profile?.full_name || 'Admin', content: frenchOutput.trim() }).select().single();
+      const insertData = {
+        sender_id: profile?.id, sender_type: 'admin', sender_name: profile?.full_name || 'Admin', content: frenchOutput.trim()
+      };
+      if (selectedConvo._type === 'rental') { insertData.rental_request_id = selectedConvo.id; }
+      else { insertData.request_id = selectedConvo.id; }
+      
+      const { data, error } = await supabase.from('messages').insert(insertData).select().single();
       if (error) throw error;
       setMessages(p => [...p, data]);
       setEnglishInput(''); setFrenchOutput('');
-      if (selectedRMA.chat_status !== 'open') {
-        await supabase.from('service_requests').update({ chat_status: 'open' }).eq('id', selectedRMA.id);
-        setSelectedRMA(p => ({ ...p, chat_status: 'open' }));
+      if ((selectedConvo._type === 'rma' || selectedConvo._type === 'parts') && selectedConvo.chat_status !== 'open') {
+        await supabase.from('service_requests').update({ chat_status: 'open' }).eq('id', selectedConvo.id);
+        setSelectedConvo(p => ({ ...p, chat_status: 'open', _isOpen: true }));
       }
       notify('✅ Sent!');
       reload();
@@ -17287,24 +17363,29 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
   };
   
   const toggleChat = async () => {
-    if (!selectedRMA) return;
-    const ns = selectedRMA.chat_status === 'open' ? 'closed' : 'open';
-    await supabase.from('service_requests').update({ chat_status: ns }).eq('id', selectedRMA.id);
-    setSelectedRMA(p => ({ ...p, chat_status: ns }));
+    if (!selectedConvo || (selectedConvo._type !== 'rma' && selectedConvo._type !== 'parts')) return;
+    const ns = selectedConvo.chat_status === 'open' ? 'closed' : 'open';
+    await supabase.from('service_requests').update({ chat_status: ns }).eq('id', selectedConvo.id);
+    setSelectedConvo(p => ({ ...p, chat_status: ns, _isOpen: ns === 'open' }));
     notify(ns === 'open' ? '🔔 Opened' : '✅ Closed');
     reload();
   };
   
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
-    if (!file || !selectedRMA) return;
+    if (!file || !selectedConvo) return;
     setUploadingFile(true);
     try {
-      const path = `chat/${selectedRMA.id}/${Date.now()}_${file.name}`;
+      const path = `chat/${selectedConvo.id}/${Date.now()}_${file.name}`;
       const { error: ue } = await supabase.storage.from('documents').upload(path, file);
       if (ue) throw ue;
       const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(path);
-      const { data } = await supabase.from('messages').insert({ request_id: selectedRMA.id, sender_id: profile?.id, sender_type: 'admin', sender_name: profile?.full_name, content: `📎 ${file.name}`, attachment_url: publicUrl, attachment_name: file.name }).select().single();
+      const insertData = {
+        sender_id: profile?.id, sender_type: 'admin', sender_name: profile?.full_name, content: `📎 ${file.name}`, attachment_url: publicUrl, attachment_name: file.name
+      };
+      if (selectedConvo._type === 'rental') { insertData.rental_request_id = selectedConvo.id; }
+      else { insertData.request_id = selectedConvo.id; }
+      const { data } = await supabase.from('messages').insert(insertData).select().single();
       if (data) setMessages(p => [...p, data]);
       notify('✅ Uploaded!');
     } catch (e) { notify('Error: ' + e.message, 'error'); }
@@ -17312,9 +17393,11 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
     e.target.value = '';
   };
   
-  const totalUnread = requests.reduce((s, r) => s + (r.unread_admin_count || 0), 0);
-  const openCount = requests.filter(r => r.chat_status === 'open' || (r.unread_admin_count || 0) > 0).length;
+  const totalUnread = allConversations.reduce((s, r) => s + (r._unread || 0), 0);
+  const openCount = allConversations.filter(r => r._isOpen || r._unread > 0).length;
   
+  const cfg = selectedConvo ? typeConfig[selectedConvo._type] || typeConfig.rma : null;
+
   return (
     <div className="p-6">
       <div className="flex gap-4 h-[calc(100vh-180px)]">
@@ -17322,7 +17405,7 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
         <div className="w-72 bg-white rounded-xl shadow-sm border flex flex-col flex-shrink-0">
           <div className="p-3 border-b bg-gray-50">
             <div className="flex items-center justify-between mb-2">
-              <span className="font-bold text-gray-800">{lang === 'en' ? '💬 Messages' : '💬 Messages'}</span>
+              <span className="font-bold text-gray-800">💬 Messages</span>
               {totalUnread > 0 && <span className="px-2 py-0.5 bg-red-500 text-white rounded-full text-xs font-bold">{totalUnread}</span>}
             </div>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search..." className="w-full px-3 py-1.5 border rounded text-sm mb-2" />
@@ -17335,40 +17418,48 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
             </div>
           </div>
           <div className="flex-1 overflow-y-auto divide-y">
-            {filteredRMAs.map(rma => (
-              <div key={rma.id} onClick={() => setSelectedRMA(rma)} className={`p-3 cursor-pointer ${selectedRMA?.id === rma.id ? 'bg-blue-50 border-l-4 border-blue-500' : (rma.unread_admin_count || 0) > 0 ? 'bg-amber-50' : 'hover:bg-gray-50'}`}>
-                <div className="flex justify-between mb-1">
-                  <span className="font-mono text-xs font-bold text-[#00A651]">{rma.request_number}</span>
-                  {(rma.unread_admin_count || 0) > 0 && <span className="px-1.5 bg-red-500 text-white rounded-full text-xs">{rma.unread_admin_count}</span>}
+            {filteredConvos.length === 0 ? (
+              <div className="p-4 text-center text-gray-400 text-sm">No conversations</div>
+            ) : filteredConvos.map(convo => {
+              const tc = typeConfig[convo._type] || typeConfig.rma;
+              const isSelected = selectedConvo?.id === convo.id && selectedConvo?._type === convo._type;
+              return (
+                <div key={`${convo._type}-${convo.id}`} onClick={() => setSelectedConvo(convo)} className={`p-3 cursor-pointer ${isSelected ? 'bg-blue-50 border-l-4 border-blue-500' : convo._unread > 0 ? 'bg-amber-50' : 'hover:bg-gray-50'}`}>
+                  <div className="flex justify-between mb-1">
+                    <span className={`font-mono text-xs font-bold ${tc.color}`}>{tc.icon} {convo._number}</span>
+                    {convo._unread > 0 && <span className="px-1.5 bg-red-500 text-white rounded-full text-xs">{convo._unread}</span>}
+                  </div>
+                  <p className="text-sm font-medium truncate">{convo._company}</p>
                 </div>
-                <p className="text-sm font-medium truncate">{rma.companies?.name}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
         
         {/* Chat Area */}
         <div className="flex-1 bg-white rounded-xl shadow-sm border flex flex-col">
-          {!selectedRMA ? (
+          {!selectedConvo ? (
             <div className="flex-1 flex items-center justify-center text-gray-400">
               <div className="text-center"><p className="text-4xl mb-2">💬</p><p>Select a conversation</p></div>
             </div>
           ) : (
             <>
               {/* Header */}
-              <div className={`p-3 border-b flex justify-between items-center ${selectedRMA.chat_status === 'open' ? 'bg-amber-50' : 'bg-gray-50'}`}>
+              <div className={`p-3 border-b flex justify-between items-center ${selectedConvo._isOpen || selectedConvo._unread > 0 ? 'bg-amber-50' : 'bg-gray-50'}`}>
                 <div>
-                  <span className="font-mono font-bold text-[#00A651]">{selectedRMA.request_number}</span>
-                  <span className="text-sm text-gray-500 ml-2">{selectedRMA.companies?.name}</span>
+                  <span className={`font-mono font-bold ${cfg.color}`}>{cfg.icon} {selectedConvo._number}</span>
+                  <span className="text-sm text-gray-500 ml-2">{selectedConvo._company}</span>
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => setEnglishMode(!englishMode)} className={`px-2 py-1 rounded text-xs font-medium ${englishMode ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
                     {englishMode ? '🇬🇧 EN' : '🇫🇷 FR'}
                   </button>
-                  <button onClick={() => setShowRMASidebar(!showRMASidebar)} className={`px-2 py-1 rounded text-xs font-medium ${showRMASidebar ? 'bg-purple-500 text-white' : 'bg-purple-100'}`}>{lang === 'en' ? '📋 RMA' : '📋 RMA'}</button>
-                  <button onClick={toggleChat} className={`px-2 py-1 rounded text-xs font-medium ${selectedRMA.chat_status === 'open' ? 'bg-green-500 text-white' : 'bg-amber-500 text-white'}`}>
-                    {selectedRMA.chat_status === 'open' ? '✓ Close' : '+ Open'}
-                  </button>
+                  <button onClick={() => setShowInfoSidebar(!showInfoSidebar)} className={`px-2 py-1 rounded text-xs font-medium ${showInfoSidebar ? 'bg-purple-500 text-white' : 'bg-purple-100'}`}>📋 Info</button>
+                  {(selectedConvo._type === 'rma' || selectedConvo._type === 'parts') && (
+                    <button onClick={toggleChat} className={`px-2 py-1 rounded text-xs font-medium ${selectedConvo.chat_status === 'open' ? 'bg-green-500 text-white' : 'bg-amber-500 text-white'}`}>
+                      {selectedConvo.chat_status === 'open' ? '✓ Close' : '+ Open'}
+                    </button>
+                  )}
                 </div>
               </div>
               
@@ -17406,8 +17497,8 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
                     })}
                   </div>
                   
-                  {/* AI Suggestions */}
-                  {(loadingSuggestions || aiSuggestions.length > 0) && (
+                  {/* AI Suggestions (RMA only) */}
+                  {(selectedConvo._type === 'rma' || selectedConvo._type === 'parts') && (loadingSuggestions || aiSuggestions.length > 0) && (
                     <div className="border-t bg-purple-50 p-2">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-xs font-medium text-purple-700">🤖 AI Suggestion</span>
@@ -17461,26 +17552,61 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
                   </div>
                 </div>
                 
-                {/* RMA Sidebar */}
-                {showRMASidebar && (
+                {/* Info Sidebar */}
+                {showInfoSidebar && selectedConvo && (
                   <div className="w-72 border-l bg-gray-50 p-3 overflow-y-auto flex-shrink-0">
-                    <h3 className="font-bold text-gray-700 mb-3">{lang === 'en' ? '📋 RMA Info' : '📋 RMA Info'}</h3>
-                    <div className="space-y-2 text-sm">
-                      <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">RMA</span><p className="font-mono font-bold text-[#00A651]">{selectedRMA.request_number}</p></div>
-                      <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Status</span><p>{selectedRMA.status}</p></div>
-                      <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">{lang === 'en' ? 'Service' : 'Service'}</span><p>{selectedRMA.requested_service}</p></div>
-                      <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Company</span><p>{selectedRMA.companies?.name}</p></div>
-                      <div className="bg-white p-2 rounded border">
-                        <span className="text-gray-500 text-xs">Devices ({selectedRMA.request_devices?.length || 0})</span>
-                        {selectedRMA.request_devices?.map((d, i) => (
-                          <div key={i} className="mt-1 pt-1 border-t text-xs">
-                            <p className="font-medium flex items-center gap-2">{getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" className="w-4 h-4 object-contain" />}{d.model_name}</p>
-                            <p className="text-gray-400">SN: {d.serial_number}</p>
-                          </div>
-                        ))}
+                    <h3 className="font-bold text-gray-700 mb-3">📋 {cfg.label} Info</h3>
+                    {selectedConvo._type === 'rma' ? (
+                      <div className="space-y-2 text-sm">
+                        <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">RMA</span><p className="font-mono font-bold text-[#00A651]">{selectedConvo.request_number}</p></div>
+                        <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Status</span><p>{selectedConvo.status}</p></div>
+                        <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Service</span><p>{selectedConvo.requested_service}</p></div>
+                        <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Company</span><p>{selectedConvo.companies?.name}</p></div>
+                        <div className="bg-white p-2 rounded border">
+                          <span className="text-gray-500 text-xs">Devices ({selectedConvo.request_devices?.length || 0})</span>
+                          {selectedConvo.request_devices?.map((d, i) => (
+                            <div key={i} className="mt-1 pt-1 border-t text-xs">
+                              <p className="font-medium flex items-center gap-2">{getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" className="w-4 h-4 object-contain" />}{d.model_name}</p>
+                              <p className="text-gray-400">SN: {d.serial_number}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <button onClick={() => onSelectRMA(selectedConvo)} className="w-full py-2 bg-blue-500 text-white rounded text-sm font-medium">Open Full RMA →</button>
                       </div>
-                      <button onClick={() => onSelectRMA(selectedRMA)} className="w-full py-2 bg-blue-500 text-white rounded text-sm font-medium">Open Full RMA →</button>
-                    </div>
+                    ) : selectedConvo._type === 'rental' ? (
+                      <div className="space-y-2 text-sm">
+                        <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Location</span><p className="font-mono font-bold text-[#8B5CF6]">{selectedConvo.rental_number}</p></div>
+                        <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Status</span><p>{selectedConvo.status}</p></div>
+                        <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Company</span><p>{selectedConvo.companies?.name}</p></div>
+                        <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Période</span><p>{new Date(selectedConvo.start_date).toLocaleDateString('fr-FR')} → {new Date(selectedConvo.end_date).toLocaleDateString('fr-FR')}</p></div>
+                        <div className="bg-white p-2 rounded border">
+                          <span className="text-gray-500 text-xs">Équipement ({selectedConvo.rental_request_items?.length || 0})</span>
+                          {selectedConvo.rental_request_items?.map((d, i) => (
+                            <div key={i} className="mt-1 pt-1 border-t text-xs">
+                              <p className="font-medium">{d.item_name}</p>
+                              {d.serial_number && <p className="text-gray-400">SN: {d.serial_number}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : selectedConvo._type === 'parts' ? (
+                      <div className="space-y-2 text-sm">
+                        <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">PO / Ref</span><p className="font-mono font-bold text-[#2D5A7B]">{selectedConvo.quote_number || selectedConvo.bc_number || selectedConvo.request_number}</p></div>
+                        {selectedConvo.request_number && <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">RMA Ref</span><p className="font-mono">{selectedConvo.request_number}</p></div>}
+                        <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Status</span><p>{selectedConvo.status}</p></div>
+                        <div className="bg-white p-2 rounded border"><span className="text-gray-500 text-xs">Company</span><p>{selectedConvo.companies?.name}</p></div>
+                        <div className="bg-white p-2 rounded border">
+                          <span className="text-gray-500 text-xs">Parts ({selectedConvo.request_devices?.length || 0})</span>
+                          {selectedConvo.request_devices?.map((d, i) => (
+                            <div key={i} className="mt-1 pt-1 border-t text-xs">
+                              <p className="font-medium">{d.model_name}</p>
+                              <p className="text-gray-400">{d.serial_number || 'N/A'}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <button onClick={() => onSelectRMA(selectedConvo)} className="w-full py-2 bg-[#2D5A7B] text-white rounded text-sm font-medium">Open Parts Order →</button>
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -17505,7 +17631,6 @@ function MessagesSheet({ requests, notify, reload, onSelectRMA, t = k=>k, lang =
     </div>
   );
 }
-
 function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, businessSettings, profile, onSelectRMA, onSelectDevice, t = k=>k, lang = 'fr' }) {
   const [selectedClient, setSelectedClient] = useState(null);
   const [search, setSearch] = useState('');
@@ -31037,7 +31162,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                 {[
                   { id: 'overview', label: 'Aperçu', icon: '📋' },
                   { id: 'documents', label: 'Documents', icon: '📄' },
-                  { id: 'messages', label: 'Messages', icon: '💬', badge: messages.filter(m => m.sender_role === 'client').length },
+                  { id: 'messages', label: 'Messages', icon: '💬', badge: messages.filter(m => m.sender_type === 'customer' && !m.is_read).length },
                   { id: 'timeline', label: 'Historique', icon: '📜' }
                 ].map(tab => (
                   <button key={tab.id} onClick={() => setActiveTab(tab.id)}
