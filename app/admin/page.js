@@ -28497,11 +28497,11 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
   useEffect(() => {
     if (fullPageRental) {
       const updated = rentals.find(r => r.id === fullPageRental.id);
-      if (updated) setFullPageRental(updated);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(fullPageRental)) setFullPageRental(updated);
     }
     if (quoteRental) {
       const updated = rentals.find(r => r.id === quoteRental.id);
-      if (updated) setQuoteRental(updated);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(quoteRental)) setQuoteRental(updated);
     }
   }, [rentals]);
 
@@ -30290,9 +30290,9 @@ function InspectionSheetModal({ rental, company, items, initialItems, initialNot
           </div>
 
           {/* Info */}
-          <div className="bg-amber-50 rounded-lg p-3 border border-amber-200 text-xs text-amber-700">
-            <p className="font-bold mb-1">ℹ️ Document interne</p>
-            <p>Les coûts seront ajoutés au total de la location lors de la facturation. Disponible comme justificatif en cas de litige.</p>
+          <div className="bg-blue-50 rounded-lg p-3 border border-blue-200 text-xs text-blue-700">
+            <p className="font-bold mb-1">ℹ️ Fiche d'inspection</p>
+            <p>Ce document sera joint à la facture. Les coûts supplémentaires seront ajoutés au total de la location.</p>
           </div>
 
           {/* Actions */}
@@ -30509,36 +30509,37 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
         pdf.setFont('helvetica', 'bold');
         pdf.setTextColor(...darkBlue);
         pdf.text(rental.rental_number || '', pageWidth - margin, y + 10, { align: 'right' });
-        pdf.setFontSize(8);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(...lightGray);
-        pdf.text('DOCUMENT INTERNE', pageWidth - margin, y + 15, { align: 'right' });
 
-        y += 17;
+        y += 13;
         pdf.setDrawColor(...navy);
         pdf.setLineWidth(1);
         pdf.line(margin, y, pageWidth - margin, y);
         y += 3;
+
+        // French date formatter
+        const inspDateFR = (() => {
+          const d = new Date();
+          const months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+          return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+        })();
 
         // ===== INFO BAR =====
         pdf.setFillColor(245, 245, 245);
         pdf.rect(margin, y, contentWidth, 14, 'F');
         pdf.setFontSize(7);
         pdf.setTextColor(...lightGray);
-        pdf.text('DATE D\'INSPECTION', margin + 5, y + 4);
-        pdf.text('INSPECTEUR', margin + 55, y + 4);
-        pdf.text('RÉSULTAT', margin + 115, y + 4);
+        pdf.text("DATE D'INSPECTION", margin + 5, y + 4);
+        pdf.text('RÉSULTAT', margin + 90, y + 4);
         pdf.setFontSize(10);
         pdf.setFont('helvetica', 'bold');
         pdf.setTextColor(...darkBlue);
-        pdf.text(new Date().toLocaleDateString('fr-FR'), margin + 5, y + 10);
-        pdf.text(profile?.full_name || profile?.email || 'Service France', margin + 55, y + 10);
+        pdf.text(inspDateFR, margin + 5, y + 10);
         if (hasIssues) {
           pdf.setTextColor(200, 30, 30);
-          pdf.text('ANOMALIE(S) DETECTEE(S)', margin + 115, y + 10);
+          pdf.text('ANOMALIE(S) DETECTEE(S)', margin + 90, y + 10);
         } else {
           pdf.setTextColor(0, 150, 50);
-          pdf.text('CONFORME - RAS', margin + 115, y + 10);
+          pdf.text('CONFORME - RAS', margin + 90, y + 10);
         }
         y += 18;
 
@@ -30717,15 +30718,16 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
           y += 8;
         }
 
-        // ===== SUMMARY BOX =====
-        checkPageBreak(30);
+        // ===== SUMMARY BOX + SIGNATORY (keep together) =====
+        const summaryH = inspectionTotal > 0 ? 28 : 16;
+        const sigBlockH = 35;
+        checkPageBreak(summaryH + sigBlockH + 15);
         const rentalTotal = rental.quote_total_ht || qd.totalHT || 0;
         const grandTotal = rentalTotal + inspectionTotal;
 
         pdf.setFillColor(240, 245, 255);
         pdf.setDrawColor(...navy);
         pdf.setLineWidth(0.3);
-        const summaryH = inspectionTotal > 0 ? 28 : 16;
         pdf.rect(pageWidth - margin - 85, y, 85, summaryH, 'FD');
         pdf.setFontSize(8);
         pdf.setFont('helvetica', 'normal');
@@ -30752,9 +30754,8 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
           pdf.text(grandTotal.toFixed(2) + ' \u20AC HT', pageWidth - margin - 5, y + 23, { align: 'right' });
         }
 
-        // ===== SIGNATORY + CAPCERT (matches quote style) =====
+        // ===== SIGNATORY + CAPCERT (same page) =====
         y += summaryH + 10;
-        checkPageBreak(35);
         let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
         
         pdf.setDrawColor(200, 200, 200);
@@ -30804,15 +30805,15 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
       if (inspectionPdfUrl) {
         await supabase.from('request_attachments').delete()
           .eq('rental_request_id', rental.id)
-          .eq('category', 'internal_inspection');
+          .eq('category', 'inspection');
         await supabase.from('request_attachments').insert({
           rental_request_id: rental.id,
           file_name: `Inspection_${rental.rental_number}.pdf`,
           file_url: inspectionPdfUrl,
           file_type: 'application/pdf',
-          category: 'internal_inspection',
+          category: 'inspection',
           uploaded_by: profile?.id,
-          visibility: 'internal'
+          visibility: 'customer'
         });
       }
       
@@ -30995,10 +30996,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                 <button onClick={startInspection} disabled={saving} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50">🔍 Inspecter l'appareil</button>
               )}
               {status === 'inspection' && (
-                <>
-                  <button onClick={completeInspectionOk} disabled={saving} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">✅ Inspection OK — Clôturer</button>
-                  <button onClick={() => setShowInspectionSheet(true)} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium">📋 Fiche d'Inspection</button>
-                </>
+                <button onClick={() => setShowInspectionSheet(true)} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium">📋 Fiche d'Inspection</button>
               )}
               {status === 'inspection_issue' && (
                 <>
@@ -31216,7 +31214,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
             const activeAttachments = attachments.filter(a => !(a.category || '').startsWith('archived_') && !(a.category || '').startsWith('internal_archived') && !a.archived_at);
             const archivedAttachments = attachments.filter(a => (a.category || '').startsWith('archived_') || (a.category || '').startsWith('internal_archived') || a.archived_at);
             // Filter out system-category docs from "additional" list (they're shown as system docs above)
-            const systemCategories = ['devis', 'bon_commande', 'signed_quote', 'devis_signe', 'bon_livraison', 'ups_label', 'internal_inspection'];
+            const systemCategories = ['devis', 'bon_commande', 'signed_quote', 'devis_signe', 'bon_livraison', 'ups_label', 'inspection'];
             const additionalDocs = activeAttachments.filter(a => !systemCategories.includes(a.category) && !systemCategories.includes((a.category || '').replace('internal_', '')));
 
             return (
