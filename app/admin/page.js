@@ -2733,24 +2733,6 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   pdf.text((qd.totalHT || 0).toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
   y += 16;
 
-  // ===== BUYBACK CLAUSE =====
-  if (qd.buybackClause) {
-    checkPageBreak(14);
-    y += 2;
-    pdf.setDrawColor(0, 166, 81);
-    pdf.setLineWidth(1);
-    pdf.line(margin, y, margin, y + 11);
-    pdf.setFontSize(11);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...darkBlue);
-    pdf.text('Clause de Rachat', margin + 5, y + 5);
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...gray);
-    pdf.text('Si achat a l\'issue de la location, ' + (qd.buybackPercent || 50) + '% du montant de location sera deduit du prix d\'achat.', margin + 5, y + 10);
-    y += 14;
-  }
-
   // ===== CONDITIONS =====
   const RENTAL_CONDITIONS = [
     'Le materiel reste la propriete de Lighthouse France. La garde est transferee au client des reception jusqu\'a restitution.',
@@ -4425,13 +4407,18 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
           if (quoteUrl) approvalQuoteData.quote_url = quoteUrl;
           console.log('📄 Updating rental with quote_data keys:', Object.keys(approvalQuoteData));
           
-          const { error: updateErr } = await supabase.from('rental_requests').update({ status: 'quote_sent', quote_data: approvalQuoteData }).eq('id', rentalId);
+          const { error: updateErr } = await supabase.from('rental_requests').update({ 
+            status: 'quote_sent', 
+            quote_data: approvalQuoteData,
+            quote_url: quoteUrl || undefined,
+            quote_sent_at: new Date().toISOString()
+          }).eq('id', rentalId);
           if (updateErr) console.error('❌ Rental update error:', updateErr);
           
           // Save PDF as attachment
           if (quoteUrl) {
             await supabase.from('request_attachments').insert({
-              request_id: rentalId,
+              rental_request_id: rentalId,
               file_name: `${quoteNumber}_Devis_Location.pdf`,
               file_url: quoteUrl,
               file_type: 'application/pdf',
@@ -5054,13 +5041,6 @@ const renderQuotePreview = (review) => {
             </p>
             {(qd.totalRetailValue || 0) > 0 && <p className="text-xs font-medium text-gray-700 mt-1">Valeur à assurer : {(qd.totalRetailValue).toFixed(2)} € HT</p>}
           </div>
-
-          {/* Buyback clause */}
-          {qd.buybackClause && (
-            <div className="px-6 py-3 border-t bg-green-50">
-              <p className="text-xs text-green-800">Si l'appareil est acheté à la fin de la période de location, {qd.buybackPercent || 50}% de la somme versée pour la location sera déduite du prix d'achat.</p>
-            </div>
-          )}
 
           {/* Terms */}
           <div className="px-6 py-3 border-t text-xs text-gray-500 flex justify-between">
@@ -29483,10 +29463,6 @@ function RentalQuoteEditor({ rental, inventory = [], profile, businessSettings, 
             </div>
             <div><label className="block text-xs font-medium text-gray-500 mb-1">Délai livraison</label><input type="text" value={deliveryTerms} onChange={e => setDeliveryTerms(e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
             <div><label className="block text-xs font-medium text-gray-500 mb-1">Conditions paiement</label><input type="text" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
-            <div className="flex items-center gap-3 bg-amber-50 rounded-lg p-3 border border-amber-200">
-              <input type="checkbox" checked={buybackClause} onChange={e => setBuybackClause(e.target.checked)} className="w-4 h-4 rounded" />
-              <div className="flex-1"><p className="font-medium text-amber-800 text-sm">Clause de rachat</p>{buybackClause && (<div className="flex items-center gap-2 mt-1"><input type="number" value={buybackPercent} onChange={e => setBuybackPercent(e.target.value)} className="w-20 px-2 py-1 border rounded text-sm text-center" /><span className="text-xs text-amber-600">% de la valeur neuve</span></div>)}</div>
-            </div>
             <div><label className="block text-xs font-medium text-gray-500 mb-1">Notes</label><textarea value={quoteNotes} onChange={e => setQuoteNotes(e.target.value)} rows={3} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Notes visibles sur le devis..." /></div>
           </div>
           <div className="bg-white rounded-xl border-2 border-gray-200 shadow-sm p-5">
