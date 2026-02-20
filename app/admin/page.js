@@ -29623,6 +29623,7 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
       let finalBLNumber = null;
       try {
         const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'BL' });
+        console.log('📄 BL number generation:', { docNumData, docNumError });
         if (!docNumError && docNumData) finalBLNumber = docNumData;
       } catch (e) {
         console.error('Could not generate BL number:', e);
@@ -29630,10 +29631,14 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
         finalBLNumber = `BL-LOC-${rental.rental_number?.replace('LOC-', '') || '00000'}-${dateStr}`;
       }
       setBlNumber(finalBLNumber);
+      console.log('📄 BL number:', finalBLNumber);
 
       // Update BL number in preview before capture
       const numberEl = document.querySelector('[data-rental-bl-number]');
       if (numberEl) numberEl.textContent = 'N° ' + finalBLNumber;
+
+      // Small delay for DOM update
+      await new Promise(r => setTimeout(r, 200));
 
       // Generate BL PDF via html2canvas
       let blUrl = null;
@@ -29648,6 +29653,7 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
           });
         }
         const element = document.getElementById('rental-bl-preview');
+        console.log('📄 BL preview element found:', !!element);
         if (element) {
           const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
           const jsPDF = await loadJsPDF();
@@ -29655,12 +29661,15 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
           const imgData = canvas.toDataURL('image/jpeg', 0.95);
           pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
           const blPdfBlob = pdf.output('blob');
+          console.log('📄 BL PDF blob size:', blPdfBlob?.size);
           const safeBL = (finalBLNumber || 'BL').replace(/[^a-zA-Z0-9-_]/g, '');
           const blFileName = `${rental.rental_number}_BL_${safeBL}_${Date.now()}.pdf`;
           blUrl = await uploadPDFToStorage(blPdfBlob, `shipping/${rental.rental_number}`, blFileName);
+          console.log('📄 BL uploaded, URL:', blUrl);
         }
       } catch (pdfErr) {
-        console.error('BL PDF generation error:', pdfErr);
+        console.error('❌ BL PDF generation error:', pdfErr);
+        notify('⚠️ Erreur génération BL PDF: ' + pdfErr.message, 'warning');
       }
 
       // Save UPS Label PDF
@@ -29668,6 +29677,7 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
       if (shippingMode === 'ups' && Object.keys(upsLabels).length > 0) {
         try {
           const labelData = upsLabels[0];
+          console.log('📄 UPS label data present:', !!labelData, 'size:', labelData?.length);
           if (labelData) {
             const byteCharacters = atob(labelData);
             const byteNumbers = new Array(byteCharacters.length);
@@ -29676,64 +29686,60 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
             }
             const byteArray = new Uint8Array(byteNumbers);
             const upsPdfBlob = new Blob([byteArray], { type: 'application/pdf' });
+            console.log('📄 UPS PDF blob size:', upsPdfBlob?.size);
             const safeTracking = (trackingNumber || 'label').replace(/[^a-zA-Z0-9-_]/g, '');
             const upsFileName = `${rental.rental_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
             upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rental.rental_number}`, upsFileName);
+            console.log('📄 UPS label uploaded, URL:', upsLabelUrl);
           }
         } catch (pdfErr) {
-          console.error('UPS Label PDF save error:', pdfErr);
+          console.error('❌ UPS Label PDF save error:', pdfErr);
+          notify('⚠️ Erreur sauvegarde étiquette UPS: ' + pdfErr.message, 'warning');
         }
       }
 
       // Save BL as attachment
       if (blUrl) {
-        await supabase.from('request_attachments').insert({
+        const { error: blAttErr } = await supabase.from('request_attachments').insert({
           request_id: rental.id, file_name: `${finalBLNumber}.pdf`, file_url: blUrl,
           file_type: 'application/pdf', uploaded_by: profile?.id, category: 'bon_livraison'
         });
+        if (blAttErr) console.error('❌ BL attachment save error:', blAttErr);
+        else console.log('✅ BL attachment saved');
       }
 
       // Save UPS label as attachment
       if (upsLabelUrl) {
-        await supabase.from('request_attachments').insert({
+        const { error: upsAttErr } = await supabase.from('request_attachments').insert({
           request_id: rental.id, file_name: `UPS_${trackingNumber}.pdf`, file_url: upsLabelUrl,
           file_type: 'application/pdf', uploaded_by: profile?.id, category: 'ups_label'
         });
+        if (upsAttErr) console.error('❌ UPS attachment save error:', upsAttErr);
+        else console.log('✅ UPS attachment saved');
       }
+
+      // Persist shipping info to quote_data (do NOT change status - that's a separate action)
+      const shippingInfo = {
+        outbound_tracking: trackingNumber,
+        bl_number: finalBLNumber,
+        bl_url: blUrl || null,
+        ups_label_url: upsLabelUrl || null,
+        shipped_parcels: parcels,
+        shipped_weight: weight || null,
+        prepared_by: employeeName,
+        prepared_at: new Date().toISOString()
+      };
+      const updatedQD = { ...(rental.quote_data || {}), shippingInfo, ...shippingInfo };
+      const { error: qdErr } = await supabase.from('rental_requests').update({ quote_data: updatedQD }).eq('id', rental.id);
+      if (qdErr) console.error('❌ quote_data update error:', qdErr);
+      else console.log('✅ Shipping info saved to quote_data');
 
       setGeneratedBL({ blNumber: finalBLNumber, blUrl, upsLabelUrl, trackingNumber });
       setStep(4);
-      notify('✅ Documents d\'expédition enregistrés !');
+      notify(blUrl || upsLabelUrl ? '✅ Documents d\'expédition enregistrés !' : '⚠️ Documents créés mais erreur upload');
       reload();
     } catch (err) {
-      notify('Erreur: ' + (err.message || 'Erreur'), 'error');
-    }
-    setSaving(false);
-  };
-
-  // ===== STEP 4 → Mark as Shipped =====
-  const markAsShipped = async () => {
-    setSaving(true);
-    try {
-      const shippingInfo = {
-        outbound_tracking: trackingNumber,
-        outbound_shipped_at: new Date().toISOString(),
-        bl_number: generatedBL?.blNumber || blNumber,
-        bl_url: generatedBL?.blUrl || null,
-        ups_label_url: generatedBL?.upsLabelUrl || null,
-        shipped_parcels: parcels,
-        shipped_weight: weight || null,
-        shipped_by: employeeName
-      };
-      const updatedQuoteData = { ...(rental.quote_data || {}), shippingInfo, ...shippingInfo };
-      await supabase.from('rental_requests').update({
-        status: 'shipped', quote_data: updatedQuoteData
-      }).eq('id', rental.id);
-
-      notify('🚚 Location marquée comme expédiée !');
-      reload();
-      onClose();
-    } catch (err) {
+      console.error('❌ saveShippingDocs error:', err);
       notify('Erreur: ' + (err.message || 'Erreur'), 'error');
     }
     setSaving(false);
@@ -30059,8 +30065,8 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
           {step === 4 && (
             <div className="text-center py-8">
               <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto text-4xl mb-4">✅</div>
-              <h2 className="font-bold text-green-800 text-2xl mb-2">Documents enregistrés !</h2>
-              <p className="text-gray-600 mb-6">{"L'équipement"} est prêt à être expédié vers {company.name}</p>
+              <h2 className="font-bold text-green-800 text-2xl mb-2">Documents d'expédition créés !</h2>
+              <p className="text-gray-600 mb-6">Étiquette UPS et Bon de Livraison enregistrés pour {company.name}</p>
               <div className="bg-green-50 rounded-lg p-6 max-w-md mx-auto space-y-3 text-left mb-6">
                 {generatedBL?.blNumber && <div className="flex justify-between"><span className="text-gray-600">BL:</span><span className="font-mono font-bold">{generatedBL.blNumber}</span></div>}
                 <div className="flex justify-between"><span className="text-gray-600">Suivi:</span><span className="font-mono font-bold">{trackingNumber}</span></div>
@@ -30070,6 +30076,7 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
                 {generatedBL?.blUrl && <a href={generatedBL.blUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg">📄 Télécharger BL</a>}
                 {generatedBL?.upsLabelUrl && <a href={generatedBL.upsLabelUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg">🏷️ Étiquette UPS</a>}
               </div>
+              <p className="text-sm text-gray-400 mt-4">💡 Vous pouvez marquer comme expédié depuis la fiche location</p>
             </div>
           )}
         </div>
@@ -30115,12 +30122,7 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
             </>
           )}
           {step === 4 && (
-            <div className="flex gap-3 ml-auto">
-              <button onClick={onClose} className="px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">📋 Voir la location</button>
-              <button onClick={markAsShipped} disabled={saving} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50">
-                {saving ? '⏳...' : '🚚 Marquer Expédié'}
-              </button>
-            </div>
+            <button onClick={onClose} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold ml-auto">✓ Fermer</button>
           )}
         </div>
       </div>
@@ -30229,6 +30231,17 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   };
   const markInRental = async () => { await updateStatus('in_rental', { rental_started_at: new Date().toISOString() }); };
   const markReturnPending = async () => { await updateStatus('return_pending', { rental_ended_at: new Date().toISOString() }); };
+  const markAsShipped = async () => {
+    setSaving(true);
+    try {
+      const shippingInfo = qd.shippingInfo || {};
+      const updatedQD = { ...qd, shippingInfo: { ...shippingInfo, outbound_shipped_at: new Date().toISOString(), shipped_by: profile?.full_name || 'Admin' }, outbound_shipped_at: new Date().toISOString() };
+      const { error } = await supabase.from('rental_requests').update({ status: 'shipped', quote_data: updatedQD }).eq('id', rental.id);
+      if (error) { notify('Erreur: ' + error.message, 'error'); }
+      else { notify('🚚 Location marquée comme expédiée !'); setStatus('shipped'); reload(); }
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+    setSaving(false);
+  };
   const markReturned = async () => {
     await updateStatus('returned', { returned_at: new Date().toISOString(), return_condition: returnCondition, return_notes: returnNotes, return_tracking: returnTracking || null });
     await supabase.from('rental_bookings').delete().eq('rental_request_id', rental.id);
@@ -30332,8 +30345,14 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
               {status === 'bc_review' && (
                 <button onClick={() => setShowBCReview(true)} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium">🔍 Examiner BC</button>
               )}
-              {status === 'bc_approved' && (
+              {status === 'bc_approved' && !outboundTracking && (
                 <button onClick={() => setShowShippingWizard(true)} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium">📦 Préparer Expédition</button>
+              )}
+              {status === 'bc_approved' && outboundTracking && (
+                <>
+                  <button onClick={markAsShipped} disabled={saving} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50">{saving ? '⏳...' : '🚚 Marquer Expédié'}</button>
+                  <button onClick={() => setShowShippingWizard(true)} className="px-3 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-sm">📦 Refaire</button>
+                </>
               )}
               {status === 'shipped' && (
                 <button onClick={markInRental} disabled={saving} className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-medium disabled:opacity-50">✅ Confirmer réception</button>
@@ -30755,8 +30774,14 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                 {status === 'bc_review' && (
                   <button onClick={() => setShowBCReview(true)} className="w-full px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium">🔍 Examiner BC</button>
                 )}
-                {status === 'bc_approved' && (
+                {status === 'bc_approved' && !outboundTracking && (
                   <button onClick={() => setShowShippingWizard(true)} className="w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium">📦 Préparer Expédition</button>
+                )}
+                {status === 'bc_approved' && outboundTracking && (
+                  <div className="space-y-2">
+                    <button onClick={markAsShipped} disabled={saving} className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50">{saving ? '⏳...' : '🚚 Marquer Expédié'}</button>
+                    <button onClick={() => setShowShippingWizard(true)} className="w-full px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-sm">📦 Refaire expédition</button>
+                  </div>
                 )}
                 {status === 'shipped' && (
                   <button onClick={markInRental} disabled={saving} className="w-full px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-medium disabled:opacity-50">✅ Confirmer réception</button>
