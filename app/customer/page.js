@@ -2820,7 +2820,9 @@ const StepProgress = ({ status, serviceType }) => {
     { id: 'quote', label: 'Devis Envoyé', shortLabel: 'Devis' },
     { id: 'approved', label: 'BC Approuvé', shortLabel: 'Approuvé' },
     { id: 'shipped', label: 'Expédié / En Location', shortLabel: 'En cours' },
-    { id: 'returned', label: 'Retourné', shortLabel: 'Retourné' }
+    { id: 'returned', label: 'Retourné', shortLabel: 'Retourné' },
+    { id: 'inspection', label: 'Inspection', shortLabel: 'Inspection' },
+    { id: 'completed', label: 'Terminé', shortLabel: 'Terminé' }
   ];
   
   // CALIBRATION: 10 steps
@@ -2867,7 +2869,9 @@ const StepProgress = ({ status, serviceType }) => {
         'pending_quote_review': 1, 'quote_sent': 1,
         'waiting_bc': 2, 'bc_review': 2, 'bc_approved': 2,
         'shipped': 3, 'in_rental': 3,
-        'return_pending': 4, 'returned': 4, 'completed': 4, 'cancelled': 0
+        'return_pending': 4, 'returned': 4,
+        'inspection': 5, 'inspection_issue': 5,
+        'completed': 6, 'cancelled': 0
       };
       return rentalMap[currentStatus] ?? 0;
     } else if (isRepair) {
@@ -13358,9 +13362,11 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
       bc_review: 'bg-indigo-100 text-indigo-700',
       bc_approved: 'bg-teal-100 text-teal-700',
       shipped: 'bg-cyan-100 text-cyan-700',
-      in_rental: 'bg-green-100 text-green-700',
+      in_rental: 'bg-cyan-100 text-cyan-700',
       return_pending: 'bg-orange-100 text-orange-700',
-      returned: 'bg-gray-100 text-gray-700',
+      returned: 'bg-teal-100 text-teal-700',
+      inspection: 'bg-blue-100 text-blue-700',
+      inspection_issue: 'bg-red-100 text-red-700',
       completed: 'bg-emerald-100 text-emerald-700',
       cancelled: 'bg-red-100 text-red-700'
     };
@@ -13371,10 +13377,12 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
       waiting_bc: 'En attente BC',
       bc_review: 'BC en révision',
       bc_approved: 'BC approuvé',
-      shipped: 'Expédié',
-      in_rental: 'En location',
+      shipped: 'Expédié / En location',
+      in_rental: 'Expédié / En location',
       return_pending: 'Retour en attente',
       returned: 'Retourné',
+      inspection: 'Inspection en cours',
+      inspection_issue: '⚠ Action requise',
       completed: 'Terminé',
       cancelled: 'Annulé'
     };
@@ -13932,7 +13940,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
           )}
 
           {/* BC Review - Pending */}
-          {(rental.status === 'bc_review' || rental.bc_submitted_at) && rental.status !== 'bc_approved' && !['shipped', 'in_rental', 'return_pending', 'returned', 'completed'].includes(rental.status) && (
+          {(rental.status === 'bc_review' || rental.bc_submitted_at) && rental.status !== 'bc_approved' && !['shipped', 'in_rental', 'return_pending', 'returned', 'inspection', 'inspection_issue', 'completed'].includes(rental.status) && (
             <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">📋</span>
@@ -14092,6 +14100,30 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     <p className="font-bold text-sm text-amber-800 mb-1">Conditions générales de location</p>
                     <p className="text-xs text-amber-700 leading-relaxed">Le matériel reste la propriété de Lighthouse France. La garde est transférée au client dès réception jusqu'à restitution. Utilisation conforme à sa destination par un personnel qualifié ; sous-location interdite sans accord écrit. Le client doit souscrire une assurance « Bien Confié ». Tout incident, dommage ou perte signalé sous 48h. Matériel restitué en bon état ; dommages facturés. Retard facturé au tarif journalier +50%.</p>
                     {(qd.totalRetailValue || 0) > 0 && <p className="font-bold text-xs text-amber-800 mt-2">Valeur à assurer : {qd.totalRetailValue.toFixed(2)} € HT</p>}
+                  </div>
+                )}
+
+                {/* Inspection Status - Customer View */}
+                {rental.status === 'inspection' && (
+                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🔍</span>
+                      <div>
+                        <p className="font-bold text-blue-800">Inspection en cours</p>
+                        <p className="text-sm text-blue-600">Votre appareil a été reçu et est en cours d'inspection par notre équipe technique.</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {rental.status === 'inspection_issue' && (
+                  <div className="bg-red-50 rounded-lg p-4 border border-red-300">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">⚠️</span>
+                      <div>
+                        <p className="font-bold text-red-800">Action requise — Dommages constatés</p>
+                        <p className="text-sm text-red-600">Lors de la réception de votre appareil, nous avons constaté des problèmes nécessitant une intervention. Veuillez consulter le devis de réparation dans vos messages ou documents.</p>
+                      </div>
+                    </div>
                   </div>
                 )}
 
