@@ -29704,7 +29704,7 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
       // Save BL as attachment
       if (blUrl) {
         const { error: blAttErr } = await supabase.from('request_attachments').insert({
-          request_id: rental.id, file_name: `${finalBLNumber}.pdf`, file_url: blUrl,
+          rental_request_id: rental.id, file_name: `${finalBLNumber}.pdf`, file_url: blUrl,
           file_type: 'application/pdf', uploaded_by: profile?.id, category: 'bon_livraison'
         });
         if (blAttErr) console.error('❌ BL attachment save error:', blAttErr);
@@ -29714,7 +29714,7 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
       // Save UPS label as attachment
       if (upsLabelUrl) {
         const { error: upsAttErr } = await supabase.from('request_attachments').insert({
-          request_id: rental.id, file_name: `UPS_${trackingNumber}.pdf`, file_url: upsLabelUrl,
+          rental_request_id: rental.id, file_name: `UPS_${trackingNumber}.pdf`, file_url: upsLabelUrl,
           file_type: 'application/pdf', uploaded_by: profile?.id, category: 'ups_label'
         });
         if (upsAttErr) console.error('❌ UPS attachment save error:', upsAttErr);
@@ -30186,9 +30186,9 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   // Load messages & attachments
   useEffect(() => {
     const load = async () => {
-      const { data: msgs } = await supabase.from('messages').select('*').eq('request_id', rental.id).order('created_at', { ascending: true });
+      const { data: msgs } = await supabase.from('messages').select('*').eq('rental_request_id', rental.id).order('created_at', { ascending: true });
       if (msgs) setMessages(msgs);
-      const { data: docs } = await supabase.from('request_attachments').select('*').eq('request_id', rental.id);
+      const { data: docs } = await supabase.from('request_attachments').select('*').eq('rental_request_id', rental.id);
       if (docs) setAttachments(docs);
     };
     load();
@@ -30227,12 +30227,12 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
     if (!newMsg.trim()) return;
     setSendingMsg(true);
     await supabase.from('messages').insert({
-      request_id: rental.id, sender_id: profile?.id,
+      rental_request_id: rental.id, sender_id: profile?.id,
       sender_name: profile?.full_name || (onOpenQuoteEditor ? 'Admin' : 'Client'), sender_type: onOpenQuoteEditor ? 'admin' : 'customer', content: newMsg.trim()
     });
     setNewMsg('');
     setSendingMsg(false);
-    const { data: msgs } = await supabase.from('messages').select('*').eq('request_id', rental.id).order('created_at', { ascending: true });
+    const { data: msgs } = await supabase.from('messages').select('*').eq('rental_request_id', rental.id).order('created_at', { ascending: true });
     if (msgs) setMessages(msgs);
   };
   const markInRental = async () => { await updateStatus('in_rental', { rental_started_at: new Date().toISOString() }); };
@@ -30266,10 +30266,10 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
       if (uploadError) throw uploadError;
       const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(filePath);
       await supabase.from('request_attachments').insert({
-        request_id: rental.id, file_name: file.name, file_url: publicUrl,
+        rental_request_id: rental.id, file_name: file.name, file_url: publicUrl,
         file_type: file.type, uploaded_by: profile?.id, category: 'other'
       });
-      const { data: docs } = await supabase.from('request_attachments').select('*').eq('request_id', rental.id);
+      const { data: docs } = await supabase.from('request_attachments').select('*').eq('rental_request_id', rental.id);
       if (docs) setAttachments(docs);
       notify('✅ Document uploadé !');
     } catch (err) { notify('Erreur upload: ' + err.message, 'error'); }
@@ -30570,96 +30570,191 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
 
           {/* ===== DOCUMENTS TAB ===== */}
           {activeTab === 'documents' && (() => {
-            const activeAttachments = attachments.filter(a => !(a.category || '').startsWith('archived_'));
-            const archivedAttachments = attachments.filter(a => (a.category || '').startsWith('archived_'));
-            const getCategoryIcon = (cat) => ({ devis: '💰', bon_livraison: '📄', ups_label: '🏷️', signed_quote: '✅', bon_commande: '📝', other: '📎' }[cat] || '📎');
-            const getCategoryLabel = (cat) => ({ devis: 'Devis', bon_livraison: 'Bon de Livraison', ups_label: 'Étiquette UPS', signed_quote: 'Devis Signé', bon_commande: 'Bon de Commande', other: 'Document' }[cat] || cat || 'Document');
+            const activeAttachments = attachments.filter(a => !(a.category || '').startsWith('archived_') && !(a.category || '').startsWith('internal_archived') && !a.archived_at);
+            const archivedAttachments = attachments.filter(a => (a.category || '').startsWith('archived_') || (a.category || '').startsWith('internal_archived') || a.archived_at);
+            // Filter out system-category docs from "additional" list (they're shown as system docs above)
+            const systemCategories = ['bon_commande', 'signed_quote', 'devis_signe', 'bon_livraison', 'ups_label'];
+            const additionalDocs = activeAttachments.filter(a => !systemCategories.includes(a.category) && !systemCategories.includes((a.category || '').replace('internal_', '')));
 
             return (
-            <div className="space-y-6">
-              {/* BC Review Banner (admin only) */}
+            <div className="space-y-4">
+              {/* BC Review Banner */}
               {isAdmin && status === 'bc_review' && (
                 <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 flex items-center gap-4">
                   <div className="w-12 h-12 bg-red-500 rounded-lg flex items-center justify-center text-2xl text-white animate-pulse">⚠️</div>
-                  <div className="flex-1">
-                    <p className="font-bold text-red-800 text-lg">Bon de Commande à Vérifier</p>
-                  </div>
+                  <div className="flex-1"><p className="font-bold text-red-800 text-lg">Bon de Commande à Vérifier</p></div>
                   <button onClick={() => setShowBCReview(true)} className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium">🔍 Examiner BC</button>
                 </div>
               )}
 
-              {/* Header with upload */}
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-gray-800">📁 Documents ({activeAttachments.length})</h3>
-                {isAdmin && (
-                  <div className="flex items-center gap-2">
-                    {archivedAttachments.length > 0 && (
-                      <button onClick={() => setShowArchived(!showArchived)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${showArchived ? 'bg-slate-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                        📦 Archives ({archivedAttachments.length})
-                      </button>
-                    )}
-                    <label className="px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium text-sm cursor-pointer flex items-center gap-1">
-                      📤 Uploader
-                      <input type="file" className="hidden" onChange={uploadDocument} disabled={docUploading} />
-                    </label>
-                  </div>
+              <h3 className="font-bold text-gray-800">📁 Documents</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                {/* === 1. DEVIS (Quote PDF) === */}
+                {quoteUrl && (
+                  <a href={quoteUrl} target="_blank" rel="noopener noreferrer"
+                     className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
+                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl shrink-0">💰</div>
+                    <div>
+                      <p className="font-medium text-gray-800">Devis Location</p>
+                      <p className="text-sm text-blue-600">N° {quoteNumber || rental.rental_number}</p>
+                      {quoteSentAt && <p className="text-xs text-gray-400">Envoyé le {new Date(quoteSentAt).toLocaleDateString('fr-FR')}</p>}
+                    </div>
+                  </a>
+                )}
+
+                {/* === 2. DEVIS SIGNÉ / BON DE COMMANDE === */}
+                {signedQuoteUrl && (
+                  <a href={signedQuoteUrl} target="_blank" rel="noopener noreferrer"
+                     className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
+                    <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl shrink-0">✅</div>
+                    <div>
+                      <p className="font-medium text-gray-800">Devis Signé / BC</p>
+                      <p className="text-sm text-green-600">{bcNumber ? `N° ${bcNumber}` : 'Signé'}</p>
+                      {bcApprovedAt && <p className="text-xs text-gray-400">Approuvé le {new Date(bcApprovedAt).toLocaleDateString('fr-FR')}</p>}
+                    </div>
+                  </a>
+                )}
+
+                {/* === 3. BON DE COMMANDE (client uploaded BC, different from signed) === */}
+                {bcFileUrl && bcFileUrl !== signedQuoteUrl && (
+                  <a href={bcFileUrl} target="_blank" rel="noopener noreferrer"
+                     className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                    <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📝</div>
+                    <div>
+                      <p className="font-medium text-gray-800">Bon de Commande Client</p>
+                      <p className="text-sm text-purple-600">{bcNumber ? `N° ${bcNumber}` : 'BC client'}</p>
+                    </div>
+                  </a>
+                )}
+
+                {/* === 4. BON DE LIVRAISON === */}
+                {blUrl && (
+                  <a href={blUrl} target="_blank" rel="noopener noreferrer"
+                     className="flex items-center gap-4 p-4 border rounded-lg hover:bg-cyan-50 transition-colors">
+                    <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center text-2xl shrink-0">📄</div>
+                    <div>
+                      <p className="font-medium text-gray-800">Bon de Livraison</p>
+                      <p className="text-sm text-cyan-600">{blNumber ? `N° ${blNumber}` : 'BL'}</p>
+                    </div>
+                  </a>
+                )}
+
+                {/* === 5. UPS LABEL === */}
+                {upsLabelUrl && (
+                  <a href={upsLabelUrl} target="_blank" rel="noopener noreferrer"
+                     className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors">
+                    <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🏷️</div>
+                    <div>
+                      <p className="font-medium text-gray-800">Étiquette UPS</p>
+                      <p className="text-sm text-amber-600">{outboundTracking || "Label d'expédition"}</p>
+                    </div>
+                  </a>
+                )}
+
+                {/* === 6. BC Signature Image === */}
+                {bcSignatureUrl && (
+                  <a href={bcSignatureUrl} target="_blank" rel="noopener noreferrer"
+                     className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                    <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-2xl shrink-0">✍️</div>
+                    <div>
+                      <p className="font-medium text-gray-800">Signature Client</p>
+                      <p className="text-sm text-gray-500">{rental.bc_signed_by || '—'}</p>
+                    </div>
+                  </a>
                 )}
               </div>
 
-              {/* Active Documents */}
-              {activeAttachments.length > 0 ? (
-                <div className="space-y-2">
-                  {activeAttachments.map(doc => (
-                    <div key={doc.id} className="flex items-center gap-4 p-4 border rounded-lg bg-white hover:bg-gray-50 transition-colors group">
-                      <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
-                        <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-2xl shrink-0">
-                          {getCategoryIcon(doc.category)}
+              {/* === ADDITIONAL DOCUMENTS (uploaded by admin) === */}
+              {additionalDocs.length > 0 && (
+                <div className="mt-4">
+                  <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Documents supplémentaires</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {additionalDocs.map(doc => {
+                      const isInternal = (doc.category || '').startsWith('internal_');
+                      return (
+                        <div key={doc.id} className={`flex items-center gap-3 p-3 border rounded-lg ${isInternal ? 'bg-gray-50 border-gray-300 border-dashed' : 'bg-white'} group`}>
+                          <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg ${isInternal ? 'bg-gray-200' : 'bg-blue-100'}`}>
+                              {isInternal ? '🔒' : '📄'}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-gray-800 truncate text-sm">{doc.file_name || 'Document'}</p>
+                              <p className="text-xs text-gray-400">
+                                {isInternal ? '🔒 Interne' : '👁️ Visible client'} • {new Date(doc.created_at).toLocaleDateString('fr-FR')}
+                              </p>
+                            </div>
+                          </a>
+                          {isAdmin && (
+                            <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={async () => {
+                                  const newCat = isInternal ? (doc.category || '').replace('internal_', '') || 'other' : 'internal_' + (doc.category || 'other');
+                                  await supabase.from('request_attachments').update({ category: newCat }).eq('id', doc.id);
+                                  setAttachments(prev => prev.map(a => a.id === doc.id ? { ...a, category: newCat } : a));
+                                  notify(isInternal ? '👁️ Visible au client' : '🔒 Masqué au client');
+                                }}
+                                className={`p-1.5 rounded-lg transition-colors ${isInternal ? 'text-gray-400 hover:bg-blue-50 hover:text-blue-600' : 'text-blue-500 hover:bg-gray-100 hover:text-gray-600'}`}
+                                title={isInternal ? 'Rendre visible au client' : 'Masquer au client'}
+                              >
+                                {isInternal ? (
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" /></svg>
+                                ) : (
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                )}
+                              </button>
+                              <button onClick={() => archiveAttachment(doc)} className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded" title="Archiver">📦</button>
+                            </div>
+                          )}
                         </div>
-                        <div className="min-w-0">
-                          <p className="font-medium text-gray-800 truncate">{doc.file_name || getCategoryLabel(doc.category)}</p>
-                          <div className="flex items-center gap-2 text-xs text-gray-400">
-                            <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-500">{getCategoryLabel(doc.category)}</span>
-                            <span>{new Date(doc.created_at).toLocaleDateString('fr-FR')}</span>
-                          </div>
-                        </div>
-                      </a>
-                      {isAdmin && (
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                          <button onClick={() => archiveAttachment(doc)} className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded" title="Archiver">📦</button>
-                          <button onClick={() => deleteAttachment(doc)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Supprimer">🗑️</button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-gray-400"><p className="text-4xl mb-2">📄</p><p>Aucun document</p></div>
-              )}
-
-              {/* Archived Documents (admin only) */}
-              {isAdmin && showArchived && archivedAttachments.length > 0 && (
-                <div>
-                  <h4 className="font-medium text-slate-500 mb-2">📦 Documents archivés</h4>
-                  <div className="space-y-2">
-                    {archivedAttachments.map(doc => (
-                      <div key={doc.id} className="flex items-center gap-4 p-3 border border-dashed rounded-lg bg-slate-50 group">
-                        <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0 opacity-60">
-                          <div className="w-10 h-10 bg-slate-200 rounded-lg flex items-center justify-center text-xl shrink-0">
-                            {getCategoryIcon((doc.category || '').replace('archived_', ''))}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-medium text-gray-600 truncate text-sm">{doc.file_name}</p>
-                            <p className="text-xs text-gray-400">{new Date(doc.created_at).toLocaleDateString('fr-FR')}</p>
-                          </div>
-                        </a>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button onClick={() => restoreAttachment(doc)} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded text-sm" title="Restaurer">♻️</button>
-                          <button onClick={() => deleteAttachment(doc)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded text-sm" title="Supprimer">🗑️</button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
+              )}
+
+              {/* === ARCHIVED DOCUMENTS === */}
+              {isAdmin && archivedAttachments.length > 0 && (
+                <div className="mt-4">
+                  <button onClick={() => setShowArchived(!showArchived)} className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 transition-colors">
+                    <svg className={`w-3 h-3 transition-transform ${showArchived ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                    </svg>
+                    📦 Archives ({archivedAttachments.length})
+                  </button>
+                  {showArchived && (
+                    <div className="mt-2 space-y-2">
+                      {archivedAttachments.map(doc => (
+                        <div key={doc.id} className="flex items-center gap-3 p-3 border border-dashed border-gray-300 rounded-lg bg-gray-50/50">
+                          <div className="w-8 h-8 rounded-lg bg-gray-200 flex items-center justify-center text-sm">📦</div>
+                          <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 hover:opacity-80">
+                            <p className="text-sm font-medium text-gray-500 truncate">{(doc.file_name || 'Document').replace('[Archivé] ', '')}</p>
+                            <p className="text-xs text-gray-400">Archivé {doc.archived_at ? new Date(doc.archived_at).toLocaleDateString('fr-FR') : ''}</p>
+                          </a>
+                          <button onClick={() => restoreAttachment(doc)} className="px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors shrink-0">
+                            ↩ Restaurer
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Add Document Button */}
+              {isAdmin && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <label className="flex items-center gap-2 px-4 py-2.5 bg-[#8B5CF6] text-white rounded-lg hover:bg-[#7C3AED] transition-colors font-medium text-sm cursor-pointer w-fit">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                    {docUploading ? '⏳ Upload...' : '📤 Ajouter un document'}
+                    <input type="file" className="hidden" onChange={uploadDocument} disabled={docUploading} />
+                  </label>
+                </div>
+              )}
+
+              {/* No docs at all */}
+              {!quoteUrl && !signedQuoteUrl && !bcFileUrl && !blUrl && !upsLabelUrl && additionalDocs.length === 0 && (
+                <div className="text-center py-8 text-gray-400"><p className="text-4xl mb-2">📄</p><p>Aucun document</p></div>
               )}
             </div>
             );
