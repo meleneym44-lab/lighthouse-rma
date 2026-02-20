@@ -17338,6 +17338,17 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
     } catch (e) { notify('Translation error', 'error'); }
     setProcessingMessage(false);
   };
+
+  const polishFrench = async () => {
+    if (!englishInput.trim()) return;
+    setProcessingMessage(true);
+    try {
+      const res = await fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: `Améliore ce message pour une communication professionnelle en français. Corrige la grammaire, l'orthographe et améliore le ton professionnel. Retourne uniquement le message corrigé en français, rien d'autre. Message: ${englishInput}`, direction: 'en-to-fr' }) });
+      if (res.ok) { const d = await res.json(); setFrenchOutput(d.translation); }
+      else { notify('Erreur API', 'error'); }
+    } catch (e) { notify('Erreur de correction', 'error'); }
+    setProcessingMessage(false);
+  };
   
   const sendMessage = async () => {
     if (!frenchOutput.trim() || sendingMessage || !selectedConvo) return;
@@ -17538,32 +17549,33 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
                             </label>
                           </div>
                           <button onClick={sendMessage} disabled={sendingMessage || !frenchOutput.trim()} className="px-4 py-1.5 bg-green-500 text-white rounded text-xs font-medium disabled:opacity-50">
-                            {sendingMessage ? '⏳...' : '📤 Send French'}
+                            {sendingMessage ? '⏳...' : '📤 Send'}
                           </button>
                         </div>
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        <textarea value={frenchOutput} onChange={e => setFrenchOutput(e.target.value)} placeholder="Écrivez votre message en français..." className="w-full px-3 py-2 border rounded text-sm resize-none" rows={3} />
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-xs text-gray-500 mb-1 block">✏️ Brouillon</label>
+                            <textarea value={englishInput} onChange={e => setEnglishInput(e.target.value)} placeholder="Tapez votre message..." className="w-full px-2 py-1.5 border rounded text-sm h-16 resize-none" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 mb-1 block">✅ Corrigé (sera envoyé)</label>
+                            <textarea value={frenchOutput} onChange={e => setFrenchOutput(e.target.value)} placeholder="Version corrigée..." className="w-full px-2 py-1.5 border rounded text-sm h-16 resize-none bg-white" />
+                          </div>
+                        </div>
                         <div className="flex justify-between">
                           <div className="flex gap-2">
-                            <button onClick={async () => {
-                              if (!frenchOutput.trim()) return;
-                              setProcessingMessage(true);
-                              try {
-                                const res = await fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: `Améliore ce message professionnel en français. Corrige la grammaire, l'orthographe et le ton. Retourne uniquement le message amélioré, rien d'autre. Message: ${frenchOutput}`, direction: 'fr-to-fr' }) });
-                                if (res.ok) { const d = await res.json(); setFrenchOutput(d.translation); }
-                              } catch (e) { console.error(e); }
-                              setProcessingMessage(false);
-                            }} disabled={processingMessage || !frenchOutput.trim()} className="px-3 py-1.5 bg-purple-500 text-white rounded text-xs font-medium disabled:opacity-50">
-                              {processingMessage ? '⏳...' : '✨ Améliorer'}
+                            <button onClick={polishFrench} disabled={processingMessage || !englishInput.trim()} className="px-3 py-1.5 bg-purple-500 text-white rounded text-xs font-medium disabled:opacity-50">
+                              {processingMessage ? '⏳...' : '✨ Corriger'}
                             </button>
                             <label className="px-3 py-1.5 bg-gray-200 rounded text-xs font-medium cursor-pointer">
                               📎 Fichier<input type="file" className="hidden" onChange={handleFile} disabled={uploadingFile} />
                             </label>
                           </div>
                           <button onClick={sendMessage} disabled={sendingMessage || !frenchOutput.trim()} className="px-4 py-1.5 bg-blue-500 text-white rounded text-xs font-medium disabled:opacity-50">
-                            {sendingMessage ? '⏳ Envoi...' : '📤 Envoyer'}
+                            {sendingMessage ? '⏳...' : '📤 Envoyer'}
                           </button>
                         </div>
                       </div>
