@@ -17157,7 +17157,7 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
   const [filter, setFilter] = useState('open');
   const [search, setSearch] = useState('');
   const [profile, setProfile] = useState(null);
-  const [englishMode, setEnglishMode] = useState(false);
+  const [englishMode, setEnglishMode] = useState(true);
   const [englishInput, setEnglishInput] = useState('');
   const [frenchOutput, setFrenchOutput] = useState('');
   const [processingMessage, setProcessingMessage] = useState(false);
@@ -17289,6 +17289,7 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
           data.filter(m => m.sender_type === 'customer' && isWithin48Hours(m.created_at)).forEach(m => translateMsg(m.id, m.content));
         }
         if (selectedConvo._type === 'rma' || selectedConvo._type === 'parts') generateSuggestions(data);
+        else if (selectedConvo._type === 'rental' && data.length > 0) generateSuggestions(data);
       }
       // Mark as read
       if (selectedConvo._unread > 0) {
@@ -17311,16 +17312,20 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
     try {
       const res = await fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, direction: 'fr-to-en' }) });
       if (res.ok) { const d = await res.json(); setTranslatedMessages(p => ({ ...p, [id]: d.translation })); }
-    } catch (e) { console.error(e); }
+      else { console.error('Translate API error:', res.status, await res.text().catch(() => '')); }
+    } catch (e) { console.error('Translate fetch error:', e); }
     setTranslatingMessages(p => ({ ...p, [id]: false }));
   };
   
   const generateSuggestions = async (msgs) => {
-    if (!selectedConvo || (selectedConvo._type !== 'rma' && selectedConvo._type !== 'parts')) return;
+    if (!selectedConvo) return;
     setLoadingSuggestions(true);
     try {
+      const rmaData = selectedConvo._type === 'rental' 
+        ? { request_number: selectedConvo.rental_number, status: selectedConvo.status, requested_service: 'Rental / Location', company_name: selectedConvo.companies?.name, devices: selectedConvo.rental_request_items?.map(d => ({ model: d.item_name, serial: d.serial_number || '', status: d.status || '' })) }
+        : { request_number: selectedConvo.request_number, status: selectedConvo.status, requested_service: selectedConvo.requested_service, company_name: selectedConvo.companies?.name, devices: selectedConvo.request_devices?.map(d => ({ model: d.model_name, serial: d.serial_number, status: d.status })) };
       const res = await fetch('/api/chat-suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        rma: { request_number: selectedConvo.request_number, status: selectedConvo.status, requested_service: selectedConvo.requested_service, company_name: selectedConvo.companies?.name, devices: selectedConvo.request_devices?.map(d => ({ model: d.model_name, serial: d.serial_number, status: d.status })) },
+        rma: rmaData,
         messages: msgs.slice(-10).map(m => ({ sender: m.sender_type, content: m.content }))
       })});
       if (res.ok) { const d = await res.json(); if (d.french) setAiSuggestions([d]); }
@@ -17335,7 +17340,8 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
     try {
       const res = await fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: `Improve this English message for professional business communication, fix any grammar or spelling errors, then translate it to French. Only return the French translation, nothing else. Message: ${englishInput}`, direction: 'en-to-fr' }) });
       if (res.ok) { const d = await res.json(); setFrenchOutput(d.translation); }
-    } catch (e) { notify('Translation error', 'error'); }
+      else { const errText = await res.text().catch(() => ''); notify(`Translation failed (${res.status}): ${errText.slice(0, 100)}`, 'error'); }
+    } catch (e) { notify('Translation error: ' + e.message, 'error'); }
     setProcessingMessage(false);
   };
 
@@ -17465,7 +17471,7 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => setEnglishMode(!englishMode)} className={`px-2 py-1 rounded text-xs font-medium ${englishMode ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
-                    {englishMode ? '🇬🇧 EN→FR' : '🇫🇷 FR'}
+                    {englishMode ? '🇬🇧 EN' : '🇫🇷 FR'}
                   </button>
                   <button onClick={() => setShowInfoSidebar(!showInfoSidebar)} className={`px-2 py-1 rounded text-xs font-medium ${showInfoSidebar ? 'bg-purple-500 text-white' : 'bg-purple-100'}`}>📋 Info</button>
                   {(selectedConvo._type === 'rma' || selectedConvo._type === 'parts') && (
@@ -17473,6 +17479,9 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
                       {selectedConvo.chat_status === 'open' ? '✓ Close' : '+ Open'}
                     </button>
                   )}
+                  <button onClick={() => { setSelectedConvo(null); setMessages([]); setAiSuggestions([]); }} className="px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-600 hover:bg-red-200">
+                    ✕
+                  </button>
                 </div>
               </div>
               
@@ -17511,7 +17520,7 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
                   </div>
                   
                   {/* AI Suggestions */}
-                  {(selectedConvo._type === 'rma' || selectedConvo._type === 'parts') && (loadingSuggestions || aiSuggestions.length > 0) && (
+                  {(loadingSuggestions || aiSuggestions.length > 0) && (
                     <div className="border-t bg-purple-50 p-2">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-xs font-medium text-purple-700">🤖 AI Suggestion</span>
@@ -17554,29 +17563,11 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
                         </div>
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-xs text-gray-500 mb-1 block">✏️ Brouillon</label>
-                            <textarea value={englishInput} onChange={e => setEnglishInput(e.target.value)} placeholder="Tapez votre message..." className="w-full px-2 py-1.5 border rounded text-sm h-16 resize-none" />
-                          </div>
-                          <div>
-                            <label className="text-xs text-gray-500 mb-1 block">✅ Corrigé (sera envoyé)</label>
-                            <textarea value={frenchOutput} onChange={e => setFrenchOutput(e.target.value)} placeholder="Version corrigée..." className="w-full px-2 py-1.5 border rounded text-sm h-16 resize-none bg-white" />
-                          </div>
-                        </div>
-                        <div className="flex justify-between">
-                          <div className="flex gap-2">
-                            <button onClick={polishFrench} disabled={processingMessage || !englishInput.trim()} className="px-3 py-1.5 bg-purple-500 text-white rounded text-xs font-medium disabled:opacity-50">
-                              {processingMessage ? '⏳...' : '✨ Corriger'}
-                            </button>
-                            <label className="px-3 py-1.5 bg-gray-200 rounded text-xs font-medium cursor-pointer">
-                              📎 Fichier<input type="file" className="hidden" onChange={handleFile} disabled={uploadingFile} />
-                            </label>
-                          </div>
-                          <button onClick={sendMessage} disabled={sendingMessage || !frenchOutput.trim()} className="px-4 py-1.5 bg-blue-500 text-white rounded text-xs font-medium disabled:opacity-50">
-                            {sendingMessage ? '⏳...' : '📤 Envoyer'}
-                          </button>
+                      <div className="flex gap-2">
+                        <textarea value={frenchOutput} onChange={e => setFrenchOutput(e.target.value)} placeholder="Message en français..." className="flex-1 px-2 py-1.5 border rounded text-sm resize-none" rows={2} />
+                        <div className="flex flex-col gap-1">
+                          <label className="px-2 py-1.5 bg-gray-200 rounded text-xs cursor-pointer text-center">📎<input type="file" className="hidden" onChange={handleFile} /></label>
+                          <button onClick={sendMessage} disabled={sendingMessage || !frenchOutput.trim()} className="px-3 py-1.5 bg-blue-500 text-white rounded text-xs disabled:opacity-50">📤</button>
                         </div>
                       </div>
                     )}
