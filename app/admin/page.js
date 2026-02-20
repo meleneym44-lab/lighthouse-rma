@@ -4047,7 +4047,7 @@ export default function AdminPortal() {
             {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} t={t} lang={lang} />}
             {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} t={t} lang={lang} reloadMain={loadData} />}
             {activeSheet === 'pending_arrivals' && <PendingArrivalsSheet clients={clients} requests={requests} notify={notify} reload={loadData} profile={profile} t={t} lang={lang} />}
-            {activeSheet === 'invoices' && <InvoicesSheet requests={requests} clients={clients} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
+            {activeSheet === 'invoices' && <InvoicesSheet requests={requests} rentals={rentalRequests} clients={clients} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
             {activeSheet === 'usa_orders' && <USAOrdersSheet clients={clients} notify={notify} reload={loadData} profile={profile} t={t} lang={lang} />}
             {activeSheet === 'rentals' && <RentalsSheet
               t={t} lang={lang} 
@@ -22102,7 +22102,7 @@ Lighthouse France`
 // ============================================
 // INVOICES SHEET - Full invoicing workflow v1
 // ============================================
-function InvoicesSheet({ requests, clients, notify, reload, profile, businessSettings, t = k=>k, lang = 'fr' }) {
+function InvoicesSheet({ requests, rentals = [], clients, notify, reload, profile, businessSettings, t = k=>k, lang = 'fr' }) {
   const [activeTab, setActiveTab] = useState('to_create');
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22132,6 +22132,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
 
   // RMAs ready for invoicing: all devices shipped, no invoice yet
   const invoicedRequestIds = new Set(invoices.map(inv => inv.request_id).filter(Boolean));
+  const invoicedRentalIds = new Set(invoices.map(inv => inv.rental_request_id).filter(Boolean));
   
   const rmasToInvoice = (requests || []).filter(r => {
     if (!r.request_number || r.request_type === 'parts') return false;
@@ -22140,6 +22141,12 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
     if (devices.length === 0) return false;
     const allShipped = devices.every(d => ['shipped', 'completed', 'delivered'].includes(d.status));
     return allShipped || ['shipped', 'completed'].includes(r.status);
+  });
+
+  // Rentals ready for invoicing: completed, no invoice yet
+  const rentalsToInvoice = (rentals || []).filter(r => {
+    if (invoicedRentalIds.has(r.id)) return false;
+    return r.status === 'completed';
   });
 
   // Filter by search
@@ -22303,7 +22310,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
   };
 
   const tabs = [
-    { id: 'to_create', label: lang === 'en' ? 'To Invoice' : 'À Facturer', icon: '🔔', count: rmasToInvoice.length, color: 'amber' },
+    { id: 'to_create', label: lang === 'en' ? 'To Invoice' : 'À Facturer', icon: '🔔', count: rmasToInvoice.length + rentalsToInvoice.length, color: 'amber' },
     { id: 'invoices', label: lang === 'en' ? 'Invoices' : 'Factures', icon: '📄', count: invoices.length, color: 'blue' }
   ];
 
@@ -22338,7 +22345,7 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-amber-400">
           <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'To invoice' : 'À facturer'}</p>
-          <p className="text-2xl font-bold text-amber-600">{rmasToInvoice.length}</p>
+          <p className="text-2xl font-bold text-amber-600">{rmasToInvoice.length + rentalsToInvoice.length}</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-blue-400">
           <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'Invoices created' : 'Factures créées'}</p>
@@ -22378,13 +22385,22 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
               {/* ========== TAB 1: À Facturer ========== */}
               {activeTab === 'to_create' && (
                 <div className="space-y-3">
-                  {filterRMAs(rmasToInvoice).length === 0 ? (
+                  {filterRMAs(rmasToInvoice).length === 0 && rentalsToInvoice.length === 0 ? (
                     <div className="text-center py-12 text-gray-400">
                       <div className="text-4xl mb-2">✅</div>
-                      <p>{lang === 'en' ? 'No RMAs awaiting invoicing' : 'Aucune RMA en attente de facturation'}</p>
+                      <p>{lang === 'en' ? 'Nothing awaiting invoicing' : 'Rien en attente de facturation'}</p>
                     </div>
                   ) : (
-                    filterRMAs(rmasToInvoice).map(rma => {
+                    <>
+                    {/* RMA Section */}
+                    {filterRMAs(rmasToInvoice).length > 0 && (
+                      <>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-lg">🔧</span>
+                        <h3 className="font-bold text-gray-700">{lang === 'en' ? 'Service RMAs' : 'RMAs Service'}</h3>
+                        <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">{filterRMAs(rmasToInvoice).length}</span>
+                      </div>
+                      {filterRMAs(rmasToInvoice).map(rma => {
                       const devices = rma.request_devices || [];
                       const total = rma.quote_total || devices.reduce((s, d) => s + (parseFloat(d.quoted_price) || parseFloat(d.unit_price) || 0), 0);
                       const supplementTotal = devices.reduce((s, d) => {
@@ -22416,7 +22432,51 @@ function InvoicesSheet({ requests, clients, notify, reload, profile, businessSet
                           </button>
                         </div>
                       );
-                    })
+                    })}
+                    </>
+                    )}
+
+                    {/* Rental Section */}
+                    {rentalsToInvoice.length > 0 && (
+                      <>
+                      <div className="flex items-center gap-2 mt-4 mb-1">
+                        <span className="text-lg">📅</span>
+                        <h3 className="font-bold text-gray-700">{lang === 'en' ? 'Completed Rentals' : 'Locations terminées'}</h3>
+                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full font-medium">{rentalsToInvoice.length}</span>
+                      </div>
+                      {rentalsToInvoice.map(rental => {
+                        const qd = rental.quote_data || {};
+                        const rentalTotal = rental.quote_total_ht || qd.totalHT || 0;
+                        const inspectionTotal = qd.inspection_total || 0;
+                        const grandTotal = rentalTotal + inspectionTotal;
+                        return (
+                          <div key={rental.id} className="flex items-center gap-4 p-4 border rounded-xl hover:bg-purple-50 hover:border-purple-200 transition-all group">
+                            <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-bold text-sm shrink-0">📅</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-[#8B5CF6]">{rental.rental_number}</span>
+                                <span className="text-gray-400">—</span>
+                                <span className="font-medium text-gray-700">{rental.companies?.name}</span>
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                {rental.rental_request_items?.length || 0} {lang === 'en' ? 'device(s)' : 'appareil(s)'}
+                                {qd.completed_at && ` • ${lang === 'en' ? 'Completed:' : 'Terminé:'} ${frenchDate(qd.completed_at)}`}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="font-bold text-gray-800">{rentalTotal.toFixed(2)} € HT</p>
+                              {inspectionTotal > 0 && <p className="text-xs text-red-600">+ {inspectionTotal.toFixed(2)} € inspection</p>}
+                              {inspectionTotal > 0 && <p className="text-xs font-bold text-gray-600">= {grandTotal.toFixed(2)} € total</p>}
+                            </div>
+                            <div className="px-3 py-2 bg-gray-100 text-gray-500 rounded-lg text-sm font-medium">
+                              🔜 Bientôt
+                            </div>
+                          </div>
+                        );
+                      })}
+                      </>
+                    )}
+                    </>
                   )}
                 </div>
               )}
@@ -28517,7 +28577,9 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
 
   const pendingRequests = rentals.filter(r => ['requested', 'pending_quote_review'].includes(r.status));
   const bcReviewRequests = rentals.filter(r => r.status === 'bc_review');
-  const activeRentals = rentals.filter(r => ['bc_approved', 'shipped', 'in_rental', 'return_pending'].includes(r.status));
+  const activeRentals = rentals.filter(r => ['bc_approved', 'shipped', 'in_rental'].includes(r.status));
+  const completedRentals = rentals.filter(r => ['completed', 'cancelled'].includes(r.status));
+  const displayRentals = rentals.filter(r => !['completed', 'cancelled'].includes(r.status));
   const overdueRentals = rentals.filter(r => r.status === 'in_rental' && new Date(r.end_date) < new Date());
 
   // Save device
@@ -28670,9 +28732,9 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
               </tr>
             </thead>
             <tbody className="divide-y">
-              {rentals.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{lang === 'en' ? 'No rental requests' : 'Aucune demande de location'}</td></tr>
-              ) : rentals.map(rental => {
+              {displayRentals.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{lang === 'en' ? 'No active rental requests' : 'Aucune demande de location active'}</td></tr>
+              ) : displayRentals.map(rental => {
                 const style = getStatusStyle(rental.status);
                 const days = Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1;
                 const isOverdue = ['shipped', 'in_rental'].includes(rental.status) && new Date(rental.end_date) < new Date();
@@ -30335,12 +30397,146 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
         inspection_completed_at: new Date().toISOString(),
         inspection_result: items.length > 0 ? 'damage' : 'ok'
       };
+
+      // Generate Inspection PDF
+      let inspectionPdfUrl = null;
+      try {
+        const jsPDF = await loadJsPDF();
+        const doc = new jsPDF('p', 'mm', 'a4');
+        const pw = doc.internal.pageSize.getWidth();
+        let y = 15;
+        
+        // Header
+        doc.setFillColor(26, 26, 46);
+        doc.rect(0, 0, pw, 35, 'F');
+        doc.setTextColor(255);
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+        doc.text("FICHE D'INSPECTION", 15, 15);
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${rental.rental_number} — ${company.name}`, 15, 23);
+        doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, 30);
+        
+        y = 45;
+        doc.setTextColor(0);
+        
+        // Equipment
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Équipement(s) inspecté(s)', 15, y); y += 7;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        (qd.quoteItems || qd.items || rental.rental_request_items || []).forEach(item => {
+          doc.text(`• ${item.item_name || item.name || ''}${item.serial_number ? ' (S/N: ' + item.serial_number + ')' : ''}`, 18, y);
+          y += 5;
+        });
+        y += 5;
+        
+        // Observations
+        if (notes) {
+          doc.setFontSize(11);
+          doc.setFont('helvetica', 'bold');
+          doc.text('Observations / Dommages constatés', 15, y); y += 7;
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(9);
+          const splitNotes = doc.splitTextToSize(notes, pw - 30);
+          doc.text(splitNotes, 18, y);
+          y += splitNotes.length * 4.5 + 5;
+        }
+        
+        // Line items table
+        if (items.length > 0) {
+          doc.setFontSize(11);
+          doc.setFont('helvetica', 'bold');
+          doc.text("Pièces et main-d'œuvre", 15, y); y += 7;
+          
+          // Table header
+          doc.setFillColor(240, 240, 240);
+          doc.rect(15, y - 4, pw - 30, 7, 'F');
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'bold');
+          doc.text('Description', 18, y);
+          doc.text('Qté', pw - 75, y, { align: 'center' });
+          doc.text('P.U. € HT', pw - 50, y, { align: 'right' });
+          doc.text('Total € HT', pw - 18, y, { align: 'right' });
+          y += 6;
+          
+          doc.setFont('helvetica', 'normal');
+          items.forEach(item => {
+            const lineTotal = (parseFloat(item.qty) || 0) * (parseFloat(item.unit_price) || 0);
+            doc.text(item.description || '', 18, y);
+            doc.text(String(item.qty || 1), pw - 75, y, { align: 'center' });
+            doc.text((parseFloat(item.unit_price) || 0).toFixed(2), pw - 50, y, { align: 'right' });
+            doc.text(lineTotal.toFixed(2), pw - 18, y, { align: 'right' });
+            y += 5;
+          });
+          
+          // Total
+          doc.setDrawColor(0);
+          doc.line(pw - 65, y, pw - 15, y);
+          y += 5;
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(10);
+          doc.text('TOTAL INSPECTION:', pw - 65, y);
+          doc.text(`${inspectionTotal.toFixed(2)} € HT`, pw - 18, y, { align: 'right' });
+          y += 10;
+        }
+        
+        // Rental total summary
+        const rentalTotal = rental.quote_total_ht || qd.totalHT || 0;
+        if (rentalTotal > 0) {
+          doc.setFillColor(245, 245, 255);
+          doc.rect(15, y - 4, pw - 30, items.length > 0 ? 22 : 12, 'F');
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'normal');
+          doc.text(`Location HT: ${rentalTotal.toFixed(2)} €`, 18, y);
+          if (items.length > 0) {
+            y += 5;
+            doc.text(`Inspection HT: ${inspectionTotal.toFixed(2)} €`, 18, y);
+            y += 6;
+            doc.setFont('helvetica', 'bold');
+            doc.text(`TOTAL À FACTURER: ${(rentalTotal + inspectionTotal).toFixed(2)} € HT`, 18, y);
+          }
+        }
+        
+        // Footer
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(150);
+        doc.text('Document interne — Lighthouse France', 15, 285);
+        doc.text(`Généré le ${new Date().toLocaleString('fr-FR')}`, pw - 15, 285, { align: 'right' });
+        
+        const pdfBlob = doc.output('blob');
+        const fileName = `Inspection_${rental.rental_number}_${Date.now()}.pdf`;
+        inspectionPdfUrl = await uploadPDFToStorage(pdfBlob, `inspections/${rental.rental_number}`, fileName);
+      } catch (pdfErr) {
+        console.error('Inspection PDF error:', pdfErr);
+      }
+      
+      // Save PDF URL to quote_data
+      if (inspectionPdfUrl) updatedQD.inspection_pdf_url = inspectionPdfUrl;
+
       const updateData = { 
         quote_data: updatedQD,
         status: markComplete ? 'completed' : (items.length > 0 ? 'inspection_issue' : 'completed')
       };
       if (markComplete) updateData.quote_data.completed_at = new Date().toISOString();
       await supabase.from('rental_requests').update(updateData).eq('id', rental.id);
+      
+      // Save as attachment on the rental
+      if (inspectionPdfUrl) {
+        await supabase.from('request_attachments').insert({
+          rental_request_id: rental.id,
+          file_name: `Inspection_${rental.rental_number}.pdf`,
+          file_url: inspectionPdfUrl,
+          file_type: 'application/pdf',
+          category: 'internal_inspection',
+          uploaded_by: profile?.id,
+          visibility: 'internal'
+        });
+      }
+      
       setInspectionItems(items);
       setInspectionNotes(notes);
       notify(markComplete ? '🏁 Location clôturée avec fiche d\'inspection' : '📋 Fiche d\'inspection enregistrée');
@@ -30722,7 +30918,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
             const activeAttachments = attachments.filter(a => !(a.category || '').startsWith('archived_') && !(a.category || '').startsWith('internal_archived') && !a.archived_at);
             const archivedAttachments = attachments.filter(a => (a.category || '').startsWith('archived_') || (a.category || '').startsWith('internal_archived') || a.archived_at);
             // Filter out system-category docs from "additional" list (they're shown as system docs above)
-            const systemCategories = ['devis', 'bon_commande', 'signed_quote', 'devis_signe', 'bon_livraison', 'ups_label'];
+            const systemCategories = ['devis', 'bon_commande', 'signed_quote', 'devis_signe', 'bon_livraison', 'ups_label', 'internal_inspection'];
             const additionalDocs = activeAttachments.filter(a => !systemCategories.includes(a.category) && !systemCategories.includes((a.category || '').replace('internal_', '')));
 
             return (
@@ -30809,6 +31005,18 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                     <div>
                       <p className="font-medium text-gray-800">Signature Client</p>
                       <p className="text-sm text-gray-500">{rental.bc_signed_by || '—'}</p>
+                    </div>
+                  </a>
+                )}
+
+                {/* === 7. Inspection Sheet PDF === */}
+                {(qd.inspection_pdf_url) && (
+                  <a href={qd.inspection_pdf_url} target="_blank" rel="noopener noreferrer"
+                     className="flex items-center gap-4 p-4 border rounded-lg hover:bg-red-50 transition-colors border-red-200">
+                    <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🔍</div>
+                    <div>
+                      <p className="font-medium text-gray-800">Fiche d'Inspection</p>
+                      <p className="text-sm text-red-600">{qd.inspection_result === 'ok' ? '✅ RAS' : `⚠️ ${(qd.inspection_items || []).length} problème(s) — ${(qd.inspection_total || 0).toFixed(2)} € HT`}</p>
                     </div>
                   </a>
                 )}
@@ -30902,7 +31110,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
               )}
 
               {/* No docs at all */}
-              {!quoteUrl && !signedQuoteUrl && !bcFileUrl && !blUrl && !upsLabelUrl && additionalDocs.length === 0 && (
+              {!quoteUrl && !signedQuoteUrl && !bcFileUrl && !blUrl && !upsLabelUrl && !qd.inspection_pdf_url && additionalDocs.length === 0 && (
                 <div className="text-center py-8 text-gray-400"><p className="text-4xl mb-2">📄</p><p>Aucun document</p></div>
               )}
             </div>
