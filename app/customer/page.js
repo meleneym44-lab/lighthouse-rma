@@ -4186,23 +4186,30 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
     if (!newMessage.trim() || !selectedThread) return;
     
     setSending(true);
-    const { data, error } = await supabase
-      .from('messages')
-      .insert({
-        request_id: selectedThread.request.id,
-        sender_id: profile.id,
-        sender_type: 'customer',
-        sender_name: profile.full_name || 'Client',
-        content: newMessage.trim()
-      })
-      .select()
-      .single();
-    
-    if (!error && data) {
-      setMessages(prevMessages => [data, ...prevMessages]);
-      setNewMessage('');
-      // Scroll to bottom after sending
-      setTimeout(scrollToBottom, 100);
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
+          request_id: selectedThread.request.id,
+          sender_id: profile.id,
+          sender_type: 'customer',
+          sender_name: profile.full_name || 'Client',
+          content: newMessage.trim()
+        })
+        .select()
+        .single();
+      
+      if (!error && data) {
+        setMessages(prevMessages => [data, ...prevMessages]);
+        setNewMessage('');
+        setTimeout(scrollToBottom, 100);
+      } else if (error) {
+        console.error('Message send error:', error);
+        alert('Erreur envoi: ' + (error.message || error.details || JSON.stringify(error)));
+      }
+    } catch (err) {
+      console.error('Message send exception:', err);
+      alert('Erreur: ' + err.message);
     }
     setSending(false);
   };
@@ -8630,24 +8637,30 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
     if (!newMessage.trim()) return;
     
     setSending(true);
-    const { data, error } = await supabase
-      .from('messages')
-      .insert({
-        request_id: request.id,
-        sender_id: profile.id,
-        sender_type: 'customer',
-        sender_name: profile.full_name || 'Client',
-        content: newMessage.trim()
-      })
-      .select()
-      .single();
-    
-    if (!error && data) {
-      setMessages([...messages, data]);
-      setNewMessage('');
-      notify('Message envoyé!');
-    } else if (error) {
-      notify('Erreur: ' + error.message, 'error');
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
+          request_id: request.id,
+          sender_id: profile.id,
+          sender_type: 'customer',
+          sender_name: profile.full_name || 'Client',
+          content: newMessage.trim()
+        })
+        .select()
+        .single();
+      
+      if (!error && data) {
+        setMessages([...messages, data]);
+        setNewMessage('');
+        notify('Message envoyé!');
+      } else if (error) {
+        console.error('Message send error:', error);
+        notify('Erreur: ' + (error.message || error.details || JSON.stringify(error)), 'error');
+      }
+    } catch (err) {
+      console.error('Message send exception:', err);
+      notify('Erreur: ' + err.message, 'error');
     }
     setSending(false);
   };
@@ -13732,16 +13745,27 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
     e?.preventDefault();
     if (!rentalNewMsg.trim() || !selectedRental) return;
     setRentalSending(true);
-    await supabase.from('messages').insert({
-      rental_request_id: selectedRental.id,
-      sender_id: profile?.id,
-      sender_name: profile?.full_name || 'Client',
-      sender_role: 'customer',
-      content: rentalNewMsg.trim()
-    });
-    setRentalNewMsg('');
+    try {
+      const { data, error: sendErr } = await supabase.from('messages').insert({
+        rental_request_id: selectedRental.id,
+        sender_id: profile?.id,
+        sender_name: profile?.full_name || 'Client',
+        sender_type: 'customer',
+        content: rentalNewMsg.trim()
+      }).select().single();
+      if (sendErr) {
+        console.error('Rental message send error:', sendErr);
+        notify('Erreur: ' + (sendErr.message || sendErr.details || JSON.stringify(sendErr)), 'error');
+      } else {
+        setRentalNewMsg('');
+        setRentalMessages(prev => [...prev, data]);
+        notify('Message envoyé !');
+      }
+    } catch (err) {
+      console.error('Rental message exception:', err);
+      notify('Erreur: ' + err.message, 'error');
+    }
     setRentalSending(false);
-    loadRentalComms(selectedRental.id);
   };
 
   const handleRentalRevision = async () => {
@@ -13994,7 +14018,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
             {[
               { id: 'overview', label: 'Aperçu', icon: '📋' },
               { id: 'documents', label: 'Documents', icon: '📄', badge: rentalDocs.filter(d => !(d.category||'').startsWith('internal_') && !(d.category||'').startsWith('archived_') && !d.archived_at).length + [rental.quote_url, rental.signed_quote_url, rental.bc_file_url, (rental.quote_data||{}).bl_url || ((rental.quote_data||{}).shippingInfo||{}).bl_url, (rental.quote_data||{}).ups_label_url || ((rental.quote_data||{}).shippingInfo||{}).ups_label_url].filter(Boolean).length },
-              { id: 'messages', label: 'Messages', icon: '💬', badge: rentalMessages.filter(m => m.sender_role !== 'customer').length }
+              { id: 'messages', label: 'Messages', icon: '💬', badge: rentalMessages.filter(m => m.sender_type !== 'customer' && !m.is_read).length }
             ].map(tab => (
               <button
                 key={tab.id}
