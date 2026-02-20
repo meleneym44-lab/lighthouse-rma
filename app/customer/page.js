@@ -8420,7 +8420,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       let fileUrl = null;
       if (bcFile) {
         try {
-          const fileName = `bc_${request.id}_${Date.now()}.${bcFile.name.split('.').pop()}`;
+          const fileName = `bons-commande/${request.request_number}/bc_${Date.now()}.${bcFile.name.split('.').pop()}`;
           const { error: uploadError } = await supabase.storage
             .from('documents')
             .upload(fileName, bcFile);
@@ -8442,7 +8442,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         try {
           console.log('🖊️ Uploading signature...');
           const signatureBlob = await fetch(signatureData).then(r => r.blob());
-          const signatureFileName = `signature_${request.id}_${Date.now()}.png`;
+          const signatureFileName = `signatures/${request.request_number}/sig_bc_${Date.now()}.png`;
           console.log('🖊️ Signature file name:', signatureFileName);
           
           const { data: sigUploadData, error: sigError } = await supabase.storage
@@ -8508,7 +8508,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
               signatureImage: signatureData
             });
-            pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
+            pdfFileName = `bons-commande/${request.request_number}/devis_signe_${Date.now()}.pdf`;
           }
           
           console.log('📄 PDF blob generated, size:', pdfBlob?.size);
@@ -11483,7 +11483,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
       let fileUrl = null;
       if (bcFile) {
         try {
-          const fileName = `bc_contract_${selectedContract.id}_${Date.now()}.${bcFile.name.split('.').pop()}`;
+          const fileName = `bons-commande/contracts/${selectedContract.contract_number}/bc_${Date.now()}.${bcFile.name.split('.').pop()}`;
           const { error: uploadError } = await supabase.storage
             .from('documents')
             .upload(fileName, bcFile);
@@ -11504,7 +11504,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
       if (signatureData) {
         try {
           const signatureBlob = await fetch(signatureData).then(r => r.blob());
-          const signatureFileName = `signature_contract_${selectedContract.id}_${Date.now()}.png`;
+          const signatureFileName = `signatures/contracts/${selectedContract.contract_number}/sig_bc_${Date.now()}.png`;
           const { error: sigError } = await supabase.storage
             .from('documents')
             .upload(signatureFileName, signatureBlob);
@@ -11536,7 +11536,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
             signatureImage: signatureData
           });
           
-          const pdfFileName = `devis_signe_contrat_${selectedContract.contract_number}_${Date.now()}.pdf`;
+          const pdfFileName = `bons-commande/contracts/${selectedContract.contract_number}/devis_signe_${Date.now()}.pdf`;
           const { error: pdfUploadError } = await supabase.storage
             .from('documents')
             .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
@@ -13771,7 +13771,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
       let fileUrl = null;
       if (bcFileUpload) {
         try {
-          const fileName = `rental_bc_${selectedRental.id}_${Date.now()}.${bcFileUpload.name.split('.').pop()}`;
+          const fileName = `bons-commande/rentals/${selectedRental.rental_number}/bc_${Date.now()}.${bcFileUpload.name.split('.').pop()}`;
           const { error: uploadError } = await supabase.storage.from('documents').upload(fileName, bcFileUpload);
           if (!uploadError) {
             const { data: publicUrl } = supabase.storage.from('documents').getPublicUrl(fileName);
@@ -13785,7 +13785,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
       if (signatureData) {
         try {
           const signatureBlob = await fetch(signatureData).then(r => r.blob());
-          const sigFileName = `rental_sig_${selectedRental.id}_${Date.now()}.png`;
+          const sigFileName = `signatures/rentals/${selectedRental.rental_number}/sig_bc_${Date.now()}.png`;
           const { error: sigError } = await supabase.storage.from('documents').upload(sigFileName, signatureBlob);
           if (!sigError) {
             const { data: sigUrl } = supabase.storage.from('documents').getPublicUrl(sigFileName);
@@ -13805,7 +13805,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
             signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
             signatureImage: signatureData
           });
-          const pdfFileName = `devis_location_signe_${selectedRental.rental_number}_${Date.now()}.pdf`;
+          const pdfFileName = `bons-commande/rentals/${selectedRental.rental_number}/devis_signe_${Date.now()}.pdf`;
           const { error: pdfUploadError } = await supabase.storage
             .from('documents')
             .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
